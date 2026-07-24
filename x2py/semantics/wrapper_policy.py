@@ -113,6 +113,18 @@ class BridgeDataAction(str, Enum):
     BLOCKED = "blocked"
 
 
+_ARRAY_VALUE_OPTIONAL_MODES = frozenset({OptionalMode.REQUIRED, OptionalMode.NULLABLE_VALUE})
+_ARRAY_DESCRIPTOR_OPTIONAL_MODES = frozenset({OptionalMode.REQUIRED, OptionalMode.DESCRIPTOR})
+_ARRAY_VIEW_CODEGEN_ACTIONS = frozenset(
+    {
+        CodegenAction.CALL_LOCAL_INPUT,
+        CodegenAction.IN_PLACE_ARGUMENT,
+        CodegenAction.IDENTITY_OUTPUT,
+    }
+)
+_RAW_ARRAY_VIEW_CODEGEN_ACTIONS = frozenset({CodegenAction.CALL_LOCAL_INPUT, CodegenAction.IN_PLACE_ARGUMENT})
+
+
 class WritebackPhase(str, Enum):
     """Ordered phases of one completed replacement writeback."""
 
@@ -5663,55 +5675,72 @@ def _array_argument_bridge_data_action(
     optional_mode: OptionalMode,
 ) -> tuple[BridgeDataAction, str | None]:
     """Complete one buffer, raw-address, or native-descriptor bridge view."""
-    if (
-        optional_mode in {OptionalMode.REQUIRED, OptionalMode.NULLABLE_VALUE}
+    if _scalar_storage_array_bridge_uses_view(decision, optional_mode):
+        return BridgeDataAction.ASSOCIATE_VIEW, None
+    if _copy_in_out_array_bridge_uses_view(decision, optional_mode):
+        return BridgeDataAction.ASSOCIATE_VIEW, None
+    native_descriptor_action = _native_descriptor_array_bridge_data_action(decision, optional_mode)
+    if native_descriptor_action is not None:
+        return native_descriptor_action, None
+    if _raw_array_address_bridge_uses_view(decision, optional_mode):
+        return BridgeDataAction.ASSOCIATE_VIEW, None
+    if _array_storage_bridge_uses_view(decision, optional_mode):
+        return BridgeDataAction.ASSOCIATE_VIEW, None
+    return BridgeDataAction.BLOCKED, None
+
+
+def _scalar_storage_array_bridge_uses_view(decision: OwnershipDecision, optional_mode: OptionalMode) -> bool:
+    return (
+        optional_mode in _ARRAY_VALUE_OPTIONAL_MODES
         and decision.python_barrier_action is PythonBarrierAction.SCALAR_STORAGE
         and decision.native_barrier_action is NativeBarrierAction.PASS_STORAGE_ADDRESS
-        and decision.codegen_action
-        in {
-            CodegenAction.CALL_LOCAL_INPUT,
-            CodegenAction.IN_PLACE_ARGUMENT,
-            CodegenAction.IDENTITY_OUTPUT,
-        }
-    ):
-        return BridgeDataAction.ASSOCIATE_VIEW, None
-    if (
+        and decision.codegen_action in _ARRAY_VIEW_CODEGEN_ACTIONS
+    )
+
+
+def _copy_in_out_array_bridge_uses_view(decision: OwnershipDecision, optional_mode: OptionalMode) -> bool:
+    return (
         optional_mode is OptionalMode.REQUIRED
         and decision.python_barrier_action is PythonBarrierAction.ARRAY_STORAGE
         and decision.native_barrier_action is NativeBarrierAction.PASS_ARRAY_BUFFER
         and decision.codegen_action is CodegenAction.COPY_IN_OUT
         and decision.transfer is TransferMode.COPY_RETURN
-    ):
-        return BridgeDataAction.ASSOCIATE_VIEW, None
-    if (
-        optional_mode in {OptionalMode.REQUIRED, OptionalMode.DESCRIPTOR}
-        and decision.python_barrier_action is PythonBarrierAction.WRAPPER_INSTANCE
-        and decision.native_barrier_action is NativeBarrierAction.PASS_NATIVE_DESCRIPTOR
-    ):
-        if decision.codegen_action is CodegenAction.CALL_LOCAL_INPUT:
-            return BridgeDataAction.ASSOCIATE_VIEW, None
-        if decision.codegen_action is CodegenAction.IN_PLACE_ARGUMENT:
-            return BridgeDataAction.DIRECT_TRANSFER, None
-    if (
+    )
+
+
+def _native_descriptor_array_bridge_data_action(
+    decision: OwnershipDecision,
+    optional_mode: OptionalMode,
+) -> BridgeDataAction | None:
+    if optional_mode not in _ARRAY_DESCRIPTOR_OPTIONAL_MODES:
+        return None
+    if decision.python_barrier_action is not PythonBarrierAction.WRAPPER_INSTANCE:
+        return None
+    if decision.native_barrier_action is not NativeBarrierAction.PASS_NATIVE_DESCRIPTOR:
+        return None
+    if decision.codegen_action is CodegenAction.CALL_LOCAL_INPUT:
+        return BridgeDataAction.ASSOCIATE_VIEW
+    if decision.codegen_action is CodegenAction.IN_PLACE_ARGUMENT:
+        return BridgeDataAction.DIRECT_TRANSFER
+    return None
+
+
+def _raw_array_address_bridge_uses_view(decision: OwnershipDecision, optional_mode: OptionalMode) -> bool:
+    return (
         optional_mode is OptionalMode.REQUIRED
         and decision.python_barrier_action is PythonBarrierAction.RAW_ADDRESS
         and decision.native_barrier_action is NativeBarrierAction.PASS_RAW_ADDRESS
-        and decision.codegen_action in {CodegenAction.CALL_LOCAL_INPUT, CodegenAction.IN_PLACE_ARGUMENT}
-    ):
-        return BridgeDataAction.ASSOCIATE_VIEW, None
-    if (
-        optional_mode in {OptionalMode.REQUIRED, OptionalMode.NULLABLE_VALUE}
+        and decision.codegen_action in _RAW_ARRAY_VIEW_CODEGEN_ACTIONS
+    )
+
+
+def _array_storage_bridge_uses_view(decision: OwnershipDecision, optional_mode: OptionalMode) -> bool:
+    return (
+        optional_mode in _ARRAY_VALUE_OPTIONAL_MODES
         and decision.python_barrier_action is PythonBarrierAction.ARRAY_STORAGE
         and decision.native_barrier_action is NativeBarrierAction.PASS_ARRAY_BUFFER
-        and decision.codegen_action
-        in {
-            CodegenAction.CALL_LOCAL_INPUT,
-            CodegenAction.IN_PLACE_ARGUMENT,
-            CodegenAction.IDENTITY_OUTPUT,
-        }
-    ):
-        return BridgeDataAction.ASSOCIATE_VIEW, None
-    return BridgeDataAction.BLOCKED, None
+        and decision.codegen_action in _ARRAY_VIEW_CODEGEN_ACTIONS
+    )
 
 
 # String bridge data policy.
