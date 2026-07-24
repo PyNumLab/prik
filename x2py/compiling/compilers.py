@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from functools import cache
 import json
 import os
 from pathlib import Path
@@ -66,9 +67,15 @@ class Compiler:
 
         object_file.object_path.parent.mkdir(parents=True, exist_ok=True)
         language = self._language(object_file.language)
+        executable = self._executable(language, object_file.tools)
         command = [
-            self._executable(language, object_file.tools),
-            *self._flags(language, object_file.tools, object_file.flags),
+            executable,
+            *self._flags(
+                language,
+                object_file.tools,
+                object_file.flags,
+                executable=executable if self._execute_commands else None,
+            ),
             "-c",
             *self._path_flags("-I", self._include_dirs(language, object_file.tools, object_file.include_dirs)),
             str(object_file.source),
@@ -115,12 +122,18 @@ class Compiler:
         )
         resolved_library_dirs = self._library_dirs(language_info, selected_tools, selected_library_dirs)
         extension_path = output_path / f"{module_name}{language_info['python']['shared_suffix']}"
+        executable = self._executable(language_info, selected_tools)
         if verbose:
             print(f">> Create shared library: {extension_path}")
         command = [
-            self._executable(language_info, selected_tools),
+            executable,
             "-shared",
-            *self._flags(language_info, selected_tools - {"python"}, flags),
+            *self._flags(
+                language_info,
+                selected_tools - {"python"},
+                flags,
+                executable=executable if self._execute_commands else None,
+            ),
             *self._path_flags("-L", resolved_library_dirs),
             *self._path_flags("-Wl,-rpath", resolved_library_dirs),
             *(str(path) for path in object_paths),
@@ -198,9 +211,12 @@ class Compiler:
         language: Mapping[str, object],
         tools: Iterable[str],
         requested: Iterable[str],
+        *,
+        executable: str | None = None,
     ) -> tuple[str, ...]:
         profile = "debug_flags" if self._debug else "release_flags"
         values = [*self._strings(language.get(profile, ())), *self._strings(language.get("general_flags", ()))]
+        values.extend(self._supported_optional_flags(executable, language.get("optional_general_flags", ())))
         for tool in sorted(set(tools)):
             flags = self._tool_mapping(language, tool).get("flags", ())
             if tool == "python":
@@ -208,6 +224,28 @@ class Compiler:
             values.extend(self._strings(flags))
         values.extend(str(flag) for flag in requested)
         return tuple(values)
+
+    def _supported_optional_flags(self, executable: str | None, flags: object) -> tuple[str, ...]:
+        """Return profile flags accepted by the selected compiler executable."""
+        if executable is None:
+            return ()
+        return tuple(flag for flag in self._strings(flags) if self._supports_optional_flag(executable, flag))
+
+    @staticmethod
+    @cache
+    def _supports_optional_flag(executable: str, flag: str) -> bool:
+        """Probe help text instead of making newer profile flags mandatory."""
+        help_key = flag.split("=", maxsplit=1)[0] + "=" if "=" in flag else flag
+        try:
+            completed = subprocess.run(
+                (executable, "-Q", "--help=common"),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError:
+            return False
+        return completed.returncode == 0 and help_key in f"{completed.stdout}\n{completed.stderr}"
 
     def _include_dirs(
         self,

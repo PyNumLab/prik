@@ -586,7 +586,8 @@ end module callbacks
     assert "@prototype\ndef transform_iface(" in emitted
     assert "callback: transform_iface" in emitted
     assert "@prototype\ndef value_iface(" in emitted
-    assert "value: Value(Int32)" in emitted
+    assert "value: Int32" in emitted
+    assert "ref: Addr(Float64)" in emitted
     assert "@prototype\ndef string_iface(" in emitted
     assert "read_label: String[8]" in emitted
     assert native_contract_issues(parse_pyi_text(emitted, module_name=module.name)) == []

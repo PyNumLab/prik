@@ -25,14 +25,14 @@ these are true:
 - [ ] The page status is accurate: `maintained` for current public behavior,
   `design` for accepted architecture, or `not-yet-implemented` for explicit
   future behavior.
-- [ ] The page explains what is supported now, what is unsupported, and where to
-  find the supporting tests, fixtures, examples, or source owner.
+- [ ] The page explains what is supported now and what is unsupported without
+  exposing internal test-evidence ledgers in public user-facing prose.
 - [ ] User-facing pages include a task-oriented workflow, expected output or API
   shape, limitations, and troubleshooting links.
 - [ ] Developer-facing pages include ownership boundaries, source routes,
   focused verification commands, and rules for updating related docs.
-- [ ] Examples are either executable documentation examples, checked fixtures,
-  or clearly labeled illustrative snippets.
+- [ ] Examples are polished, copyable, and internally coherent. Executable
+  examples and fixture-backed source stay synchronized with their checks.
 - [ ] Reuse earlier examples by reference instead of reprinting them, unless the
   page must be self-contained for a first-time user task.
 - [ ] User-facing examples use clean copyable filenames and module names; keep

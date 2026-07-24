@@ -598,10 +598,16 @@ class PyiPrinter(ClassVisitor):
         return visible
 
     def _emit_prototype_argument(self, argument: SemanticArgument) -> str:
-        """Emit one prototype dummy with reference default and one value override."""
+        """Emit one prototype dummy using the public callback transport rules."""
+        if self._is_prototype_descriptor_type(argument.semantic_type):
+            return self._prototype_descriptor_type_text(argument.semantic_type)
         inner = self._prototype_argument_inner_type(argument.semantic_type)
         if bool(getattr(argument.origin, "metadata", {}).get("value")):
+            if self._is_prototype_primitive_value(argument.semantic_type):
+                return inner
             return f"{self._contract('Value')}({inner})"
+        if self._is_prototype_primitive_reference(argument.semantic_type):
+            return f"{self._contract('Addr')}({inner})"
         return inner
 
     def _prototype_argument_inner_type(self, semantic_type: SemanticType) -> str:
@@ -617,6 +623,51 @@ class PyiPrinter(ClassVisitor):
         if storage is not None and storage.kind in {"reference", "address", "pointer"}:
             return self._address_target_type(semantic_type)
         return self._visit(semantic_type)
+
+    def _prototype_descriptor_type_text(self, semantic_type: SemanticType) -> str:
+        """Render descriptor metadata without a second reference wrapper."""
+        if semantic_type.metadata.get("fortran_allocatable") or semantic_type.metadata.get("fortran_pointer"):
+            return self._visit(semantic_type)
+        visible = deepcopy(semantic_type)
+        if visible.storage is not None and visible.storage.kind in {"reference", "address", "pointer"}:
+            visible.storage = None
+        return self._visit(visible)
+
+    @staticmethod
+    def _is_prototype_primitive_value(semantic_type: SemanticType) -> bool:
+        storage = semantic_type.storage
+        return bool(
+            semantic_type.rank == 0
+            and semantic_type.name not in {"String", "Void"}
+            and (semantic_type.dtype or semantic_type.name) in SEMANTIC_SCALAR_TYPE_NAMES
+            and (storage is None or storage.kind == "value")
+            and not PyiPrinter._is_prototype_descriptor_type(semantic_type)
+        )
+
+    @staticmethod
+    def _is_prototype_primitive_reference(semantic_type: SemanticType) -> bool:
+        storage = semantic_type.storage
+        return bool(
+            semantic_type.rank == 0
+            and semantic_type.name not in {"String", "Void"}
+            and (semantic_type.dtype or semantic_type.name) in SEMANTIC_SCALAR_TYPE_NAMES
+            and storage is not None
+            and storage.kind in {"reference", "address", "pointer"}
+            and storage.pointer_depth == 1
+            and not PyiPrinter._is_prototype_descriptor_type(semantic_type)
+        )
+
+    @staticmethod
+    def _is_prototype_descriptor_type(semantic_type: SemanticType) -> bool:
+        return any(
+            semantic_type.metadata.get(name)
+            for name in (
+                "fortran_allocatable",
+                "fortran_pointer",
+                "fortran_polymorphic",
+                "fortran_assumed_type",
+            )
+        )
 
     def _emit_data_member(self, variable: SemanticVariable) -> str:
         """Emit a variable in class-field context rather than argument context."""

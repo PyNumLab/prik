@@ -48,6 +48,13 @@ python3 -m x2py contracts/edited_solver/__init__.pyi \
 
 The semantic `.pyi` entry contract selects the wrapper build automatically;
 the native artifact options provide the implementation to compile or link.
+When the implementation should be compiled from source during the edited
+contract build, pass the native sources instead:
+
+```bash
+python3 -m x2py contracts/solver/__init__.pyi \
+  --native-fortran-sources solver.f90
+```
 
 The entry `.pyi` is the sole semantic input to wrapper generation. x2py does
 not reparse the native source to restore a removed declaration, projection, or
@@ -331,12 +338,10 @@ assert module.scalar_status(base, status) is None
 assert status[()] == np.int32(15)
 ```
 
-This exact edit is compiled and exercised by
-[`test_native_order_contracts.py`](../../../tests/wrapper/fortran/edit_pyi_contracts/test_native_order_contracts.py).
-It covers scalar, array, matrix, string, mixed-result, and derived-type native
-order calls. An ordinary Python `str` cannot observe mutation of the temporary
-native character buffer; use a projected replacement when Python must see the
-new string.
+This style covers scalar, array, matrix, string, mixed-result, and derived-type
+native-order calls. An ordinary Python `str` cannot observe mutation of the
+temporary native character buffer; use a projected replacement when Python must
+see the new string.
 
 For a native-order scalar character dummy, keep the Python boundary as
 `String[n]`:
@@ -401,9 +406,7 @@ def scale_with_status(
 ```
 
 At runtime, x2py copies `values` into mutable native storage, calls native code,
-and returns a different NumPy array. The original remains unchanged. The
-compiled evidence is
-[`test_policy_dispatch_contracts.py`](../../../tests/wrapper/fortran/edit_pyi_contracts/test_policy_dispatch_contracts.py).
+and returns a different NumPy array. The original remains unchanged.
 
 Mutability is a property of this argument boundary, not of `Float64`,
 `String[n]`, or another datatype in isolation. The same datatype may be an
@@ -713,24 +716,9 @@ Do not fix a policy blocker by deleting metadata until the wrapper happens to
 build. The corrected contract must explicitly describe the intended boundary
 behavior and its owner.
 
-## Runtime Evidence
+## Troubleshooting
 
-Editable-contract runtime fixtures live under
-[`tests/wrapper/fortran/edit_pyi_contracts`](../../../tests/wrapper/fortran/edit_pyi_contracts/README.md):
-
-- `test_native_order_contracts.py` removes `@native_call` and exposes native
-  argument order;
-- `test_ownership_contracts.py` applies explicit native-owned module,
-  wrapper-owned field, and wrapper-owned result-handle lifetime policies to the
-  same descriptor concept;
-- `test_visibility_contracts.py` removes and hides declarations while checking
-  unaffected runtime behavior;
-- `test_surface_edit_contracts.py` removes classes, methods, constructors,
-  fields, and overload candidates and adds renamed bindings and overloads; and
-- `test_policy_dispatch_contracts.py` proves immutable replacement through the
-  completed ownership/action policy.
-
-Broader handle ownership and lifetime evidence is in
-[`test_allocatable_views.py`](../../../tests/wrapper/fortran/module_state/test_allocatable_views.py).
-The Semantic `.pyi` Wrapper Checklist later provides the active completion
-ledger.
+When an edited contract fails, reduce the edit to one surface change at a time:
+visibility, call ordering, ownership, mutability, or type shape. Keep the
+generated contract nearby and compare each intentional edit against the native
+artifact you are asking x2py to call.

@@ -538,7 +538,6 @@ class OwnershipPolicyResolver:
         facts = self._semantic_facts(semantic_type)
         decision = self._apply_overrides(self._decide(facts, context), facts, context)
         decision = self._validate_aliased_decision(decision, facts, context)
-        decision = self._validate_scalar_descriptor_decision(decision, facts, context)
         decision = self._validate_pointer_decision(decision, facts, context)
         decision = self._complete_immutable_policy(decision, facts, context)
         decision = self._validate_result_projection(decision, context)
@@ -681,6 +680,8 @@ class OwnershipPolicyResolver:
         return self._handlers[kind](facts, context)
 
     def _kind(self, facts: _StorageFacts, context: OwnershipContext) -> ObjectKind:
+        if facts.scalar_storage and not facts.is_string and not facts.allocatable and not facts.pointer:
+            return ObjectKind.NUMPY_ARRAY
         if facts.rank > 0 or facts.is_ndarray:
             return ObjectKind.NUMPY_ARRAY
         if facts.is_string:
@@ -925,6 +926,27 @@ class OwnershipPolicyResolver:
                 nullable=True,
                 descriptor_boundary=True,
                 reason="scalar string descriptor result is copied before native descriptor release",
+            )
+        if (
+            (facts.allocatable or facts.pointer)
+            and context.writes_argument
+            and context.projects_result
+            and not context.python_visible
+        ):
+            storage = StorageMode.HEAP if facts.allocatable else StorageMode.ALIAS
+            return OwnershipDecision(
+                ObjectKind.STRING,
+                OwnershipOwner.PYTHON,
+                TransferMode.COPY_RETURN,
+                DestructionPolicy.PYTHON_REFCOUNT,
+                storage_mode=storage,
+                boundary_storage_mode=storage,
+                nullable=True,
+                descriptor_boundary=True,
+                mutates_native=True,
+                projects_result=True,
+                python_visible=False,
+                reason="hidden scalar string descriptor output is copied before native descriptor release",
             )
         if facts.address_role == ADDRESS_ROLE_RAW:
             return OwnershipDecision(
@@ -1483,29 +1505,6 @@ class OwnershipPolicyResolver:
     ) -> OwnershipDecision:
         """Keep Aliased as addressability metadata, not live-object eligibility."""
         return decision
-
-    @staticmethod
-    def _validate_scalar_descriptor_decision(
-        decision: OwnershipDecision,
-        facts: _StorageFacts,
-        context: OwnershipContext,
-    ) -> OwnershipDecision:
-        if decision.is_blocked or facts.rank != 0 or not (facts.allocatable or facts.pointer):
-            return decision
-        blocker = None
-        if context.is_argument and context.writes_argument and facts.is_string:
-            blocker = "scalar descriptor output projection currently supports primitive numeric values only"
-        if blocker is None:
-            return decision
-        return replace(
-            decision,
-            owner=OwnershipOwner.UNKNOWN,
-            transfer=TransferMode.BLOCKED,
-            destruction=DestructionPolicy.BLOCKED,
-            borrowed=False,
-            blocker=blocker,
-            reason="scalar descriptor construction and readback must have a complete supported policy",
-        )
 
     @staticmethod
     def _validate_pointer_decision(

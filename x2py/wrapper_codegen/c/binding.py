@@ -11,6 +11,7 @@ from x2py.semantics.ownership import (
     PythonBarrierAction,
     SetterAction,
 )
+from x2py.semantics.metadata import SCALAR_STORAGE_CATEGORY
 from x2py.semantics.wrapper_policy import (
     ArgumentHandoffMode,
     BridgeDataAction,
@@ -392,7 +393,25 @@ class CBindingGenerator(ClassVisitor):
         if argument.binding.python_action is PythonBarrierAction.RAW_ADDRESS:
             self._require_raw_array_argument_supported(argument)
             return
+        if argument.binding.python_action is PythonBarrierAction.SCALAR_STORAGE:
+            self._require_scalar_storage_array_argument_supported(argument)
+            return
         self._require_array_buffer_argument_supported(argument)
+
+    def _require_scalar_storage_array_argument_supported(self, argument: ArgumentTransferPlan) -> None:
+        """Require one rank-zero NumPy storage handoff to a scalar native dummy."""
+        array = argument.array
+        if not self._is_scalar_storage_array(array):
+            raise ValueError(f"Unsupported C scalar-storage array rank for {argument.owner_path!r}")
+        if argument.bridge.handoff_mode is not ArgumentHandoffMode.OPAQUE_ADDRESS:
+            raise ValueError(f"Unsupported C scalar-storage handoff for {argument.owner_path!r}")
+        if argument.bridge.data_action is not BridgeDataAction.ASSOCIATE_VIEW:
+            raise ValueError(f"Unsupported C scalar-storage data action for {argument.owner_path!r}")
+        PrimitiveScalarTypeRegistry.type_for(argument.semantic_type_name)
+
+    @staticmethod
+    def _is_scalar_storage_array(array) -> bool:
+        return bool(array is not None and array.rank == 0 and array.category == SCALAR_STORAGE_CATEGORY)
 
     def _require_native_array_handle_argument_supported(self, argument: ArgumentTransferPlan) -> None:
         """Require one typed standard-descriptor argument handoff."""
@@ -1775,12 +1794,12 @@ class CBindingGenerator(ClassVisitor):
                         CDeclaration(
                             self._derived_origin_active_name(variable),
                             "static atomic_bool",
-                            CodeExpression("ATOMIC_VAR_INIT(false)"),
+                            CodeExpression("false"),
                         ),
                         CDeclaration(
                             self._derived_origin_poisoned_name(variable),
                             "static atomic_bool",
-                            CodeExpression("ATOMIC_VAR_INIT(false)"),
+                            CodeExpression("false"),
                         ),
                     )
                 )
@@ -7358,6 +7377,8 @@ class CBindingGenerator(ClassVisitor):
         context: _CFunctionContext,
     ) -> tuple[CDeclaration | CExpressionStatement | CIf, ...]:
         """Return omitted-or-value conversion nodes for an optional value."""
+        if plan.binding.python_action is PythonBarrierAction.SCALAR_STORAGE:
+            return self._lower_argument_nullable_scalar_storage(plan, context)
         if plan.object_kind is ObjectKind.NUMPY_ARRAY:
             return self._lower_argument_nullable_array_storage(plan, context)
         if plan.object_kind is ObjectKind.STRING:
@@ -7368,8 +7389,6 @@ class CBindingGenerator(ClassVisitor):
             raise ValueError(
                 f"Unsupported optional C argument object kind for {plan.owner_path!r}: {plan.object_kind!r}"
             )
-        if plan.binding.python_action is PythonBarrierAction.SCALAR_STORAGE:
-            return self._lower_argument_nullable_scalar_storage(plan, context)
         scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
         names = context.arguments[plan.owner_path]
         return (
@@ -7758,8 +7777,16 @@ class CBindingGenerator(ClassVisitor):
             self._array_extent_expression(handoff, axis, expression, context)
             for axis, expression in enumerate(handoff.shape)
         )
-        dims_name = f"{python_name}_dims"
-        fortran_order = 0 if handoff.order == "ORDER_C" or handoff.rank == 1 else 1
+        dimension_declarations: tuple[CDeclaration, ...]
+        if handoff.rank == 0:
+            dims_name = "NULL"
+            dimension_declarations = ()
+        else:
+            dims_name = f"{python_name}_dims"
+            dimension_declarations = (
+                CDeclaration(f"{dims_name}[]", "npy_intp", CodeExpression(f"{{{', '.join(dimensions)}}}")),
+            )
+        fortran_order = 0 if handoff.order == "ORDER_C" or handoff.rank <= 1 else 1
         base_name = f"{python_name}_base"
         decrefs = tuple(CExpressionStatement(CodeExpression(f"Py_DECREF({name})")) for name in failure_cleanup)
         return (
@@ -7775,7 +7802,7 @@ class CBindingGenerator(ClassVisitor):
                     CReturn(CodeExpression("NULL")),
                 ),
             ),
-            CDeclaration(f"{dims_name}[]", "npy_intp", CodeExpression(f"{{{', '.join(dimensions)}}}")),
+            *dimension_declarations,
             CDeclaration(
                 python_name,
                 "PyObject *",

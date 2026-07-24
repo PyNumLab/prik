@@ -110,12 +110,37 @@ def _relative_document_target(source_uri: str, raw_target: str) -> str | None:
     return posixpath.normpath(posixpath.join(source_parent, unquote(parsed.path)))
 
 
-def _unlink_unpublished_targets(markdown: str, source_uri: str) -> str:
+def _document_route(markdown_uri: str) -> str:
+    path = PurePosixPath(markdown_uri)
+    route = path.parent.as_posix() if path.name == "index.md" else path.with_suffix("").as_posix()
+    return "" if route == "." else route
+
+
+def _unpublished_document_site_target(source_uri: str, raw_target: str, resolved_target: str) -> str:
+    target_parts = raw_target.strip().split(maxsplit=1)
+    parsed = urlsplit(target_parts[0])
+    source_route = _document_route(source_uri)
+    target_route = _document_route(resolved_target)
+    rewritten = posixpath.relpath(target_route or ".", start=source_route or ".")
+    if rewritten == ".":
+        rewritten = ""
+    elif not rewritten.endswith("/"):
+        rewritten += "/"
+    if parsed.query:
+        rewritten += f"?{parsed.query}"
+    if parsed.fragment:
+        rewritten += f"#{parsed.fragment}"
+    if len(target_parts) == 2:
+        rewritten += f" {target_parts[1]}"
+    return rewritten
+
+
+def _rewrite_unpublished_document_targets(markdown: str, source_uri: str) -> str:
     def replace_link(match: re.Match[str]) -> str:
         label, target = match.groups()
         resolved = _relative_document_target(source_uri, target)
         if resolved in _known_document_paths and resolved not in _published_paths:
-            return label
+            return f"[{label}]({_unpublished_document_site_target(source_uri, target, resolved)})"
         return match.group(0)
 
     return _MARKDOWN_LINK.sub(replace_link, markdown)
@@ -185,7 +210,7 @@ def on_files(files, **_kwargs):
 
 
 def on_page_markdown(markdown: str, page, **_kwargs) -> str:
-    """Label local drafts and remove production links to unpublished pages."""
+    """Label local drafts and preserve production links to unpublished pages."""
     source_uri = page.file.src_uri
     markdown = _rewrite_repository_targets(markdown, source_uri)
     if _include_drafts:
@@ -196,4 +221,4 @@ def on_page_markdown(markdown: str, page, **_kwargs) -> str:
             )
             return warning + markdown
         return markdown
-    return _unlink_unpublished_targets(markdown, source_uri)
+    return _rewrite_unpublished_document_targets(markdown, source_uri)

@@ -1929,15 +1929,63 @@ class _PyiAstParser:
                 semantic_type = self.semantic_type(node.args[0])
                 if semantic_type.rank > 0:
                     raise ValueError("Value(...) callback arguments must be scalar")
+                if self._is_primitive_scalar_value_type(semantic_type):
+                    raise ValueError(
+                        "Value(...) is unnecessary for primitive callback arguments; "
+                        "bare primitive types are passed by value"
+                    )
+                if (
+                    semantic_type.name == "String"
+                    or semantic_type.storage is not None
+                    or self._has_callback_descriptor_metadata(semantic_type)
+                ):
+                    raise ValueError("Value(...) callback arguments are only valid for rank-zero wrapped types")
                 return _CallbackArgumentSpec(semantic_type, True)
             if self._is_addr_call(node):
-                raise ValueError(
-                    "Addr(...) is unnecessary inside prototype declarations; reference passing is the default"
-                )
+                return self._prototype_address_argument_spec(node)
 
         semantic_type = self.semantic_type(node)
+        if self._is_primitive_scalar_value_type(semantic_type):
+            return _CallbackArgumentSpec(semantic_type, True)
         self._mark_callback_reference_type(semantic_type)
         return _CallbackArgumentSpec(semantic_type, False)
+
+    def _prototype_address_argument_spec(self, node: ast.Call) -> _CallbackArgumentSpec:
+        """Parse the callback-only primitive reference marker."""
+        if len(node.args) != 1 or node.keywords:
+            raise ValueError(f"Addr type expects one callback argument type: {ast.unparse(node)!r}")
+        if self._addr_depth(node.func) != 1:
+            raise ValueError("Addr[...](...) is not supported inside prototype declarations; use Addr(T)")
+        semantic_type = self.semantic_type(node.args[0])
+        if not self._is_primitive_scalar_value_type(semantic_type):
+            raise ValueError(
+                "Addr(...) inside prototype declarations is only valid for primitive scalar reference dummies; "
+                "arrays, strings, and wrapped objects already use reference storage"
+            )
+        self._mark_callback_reference_type(semantic_type)
+        return _CallbackArgumentSpec(semantic_type, False)
+
+    @staticmethod
+    def _is_primitive_scalar_value_type(semantic_type: SemanticType) -> bool:
+        return bool(
+            semantic_type.rank == 0
+            and semantic_type.name not in {"String", "Void"}
+            and (semantic_type.dtype or semantic_type.name) in SEMANTIC_SCALAR_TYPE_NAMES
+            and semantic_type.storage is None
+            and not _PyiAstParser._has_callback_descriptor_metadata(semantic_type)
+        )
+
+    @staticmethod
+    def _has_callback_descriptor_metadata(semantic_type: SemanticType) -> bool:
+        return any(
+            semantic_type.metadata.get(name)
+            for name in (
+                "fortran_allocatable",
+                "fortran_pointer",
+                "fortran_polymorphic",
+                "fortran_assumed_type",
+            )
+        )
 
     @staticmethod
     def _mark_callback_reference_type(semantic_type: SemanticType) -> None:

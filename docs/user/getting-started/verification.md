@@ -1,5 +1,6 @@
 ---
 title: Verification
+description: Verify that x2py, NumPy, and the native toolchain are working correctly
 audience: users, contributors
 prerequisites: installation
 related: first-wrapped-function.md, ../troubleshooting/index.md, ../reference/cli-commands.md
@@ -9,139 +10,104 @@ publication: reviewed
 
 # Verification
 
-Verify the Python environment, contract-generation path, and native build path
-separately. This makes a failure easier to route.
+After installation, verify the Python package, contract generation, and native build toolchain separately. This makes debugging much easier.
 
-## 1. Verify The Installed Package
+---
 
-Run these commands from the activated environment:
+## 1. Verify the Installed Package
+
+Run these commands in your activated virtual environment:
 
 ```bash
-python3 -c "from importlib.metadata import version; import x2py; print(version('x2py'))"
-python3 -c "import numpy; print(numpy.__version__)"
+# Check x2py and NumPy
+python3 -c "from importlib.metadata import version; import x2py, numpy; print('x2py:', version('x2py')); print('NumPy:', numpy.__version__)"
+
+# Check CLI entrypoint
 python3 -m x2py --help
 ```
 
-The first two commands prove that x2py and NumPy import from the selected
-interpreter. The third proves that the module entrypoint is installed.
+---
 
-## 2. Verify The Contract Path
+## 2. Verify Contract Generation
 
-Use the `scale.f90` input created in the
-[homepage example](../../index.md#try-x2py).
+Use the `scale.f90` file from the homepage example.
 
-From the directory containing `scale.f90`, print the semantic `.pyi` contract
-without compiling a wrapper:
+Run this command in the directory containing `scale.f90`:
 
 ```bash
 python3 -m x2py generate --pyi scale.f90
 ```
 
-The generated declaration should look like:
+You should see a clean `.pyi`-style contract. This confirms parsing, semantic analysis, and type probing work correctly.
 
-```python
-from x2py.contracts import Addr, Arg, Float64, external, native_call
+---
 
-@external
-@native_call([Addr(Arg(0)), Addr(Arg(1))])
-def scale(
-    value: Float64,
-    factor: Float64
-) -> Float64: ...
-```
+## 3. Verify Native Build Toolchain
 
-This verifies preprocessing, parsing, semantic lowering, type probing, and
-contract printing. It does not compile or import an extension.
-
-## 3. Verify The Native Toolchain
-
-Check compiler discovery before running a build:
+First, check the compiler:
 
 ```bash
 gfortran --version
 ```
 
-<!-- X2PY_C_DOCS_START
-```bash
-gfortran &#45;&#45;version
-gcc &#45;&#45;version
-```
-X2PY_C_DOCS_END -->
-
-From the same directory, build `scale.f90` into a dedicated directory:
+Then build the extension:
 
 ```bash
-python3 -m x2py scale.f90 \
-  --out-dir build/verify
+python3 -m x2py scale.f90 --out-dir build/verify
 ```
 
-The command must create:
+This should create an importable `scale` module inside `build/verify`.
 
-- an importable `scale` extension under `build/verify`; and
-- generated native bridge, object, native-support, and extension files.
-
-<!-- X2PY_C_DOCS_START
-- generated bridge, C binding, object, and native-support files.
-X2PY_C_DOCS_END -->
-
-Import the extension from that build directory:
+Test it:
 
 ```python
 import sys
-
 import numpy as np
 
 sys.path.insert(0, "build/verify")
 import scale
 
-assert scale.scale(np.float64(3.0), np.float64(2.5)) == np.float64(7.5)
+result = scale.scale(np.float64(3.0), np.float64(2.5))
+print(result)        # Should print 7.5
 ```
 
-## 4. Inspect Generated Files
+---
 
-`WrapperBuildResult` is the stable way to inspect a Python API build:
+## 4. Inspect Generated Files (Optional)
+
+You can also inspect the build programmatically:
 
 ```python
-from pathlib import Path
-
 from x2py import build_fortran_extension
 
-build = build_fortran_extension(
-    "scale.f90",
-    output_dir="build/verify",
-)
+build = build_fortran_extension("scale.f90", output_dir="build/verify")
 
-assert build.compiled
-assert build.shared_library.is_file()
-assert all(Path(path).exists() for path in build.generated_files)
-print(build.output_dir)
-print(build.shared_library)
+print("Compiled:", build.compiled)
+print("Shared library:", build.shared_library)
+print("Output directory:", build.output_dir)
 ```
 
-For CLI builds, add `--verbose` when a compiler or linker command fails; it
-prints the exact native commands and stage timings.
+For detailed output when something fails, add `--verbose`:
 
-## Escalation Path
+```bash
+python3 -m x2py scale.f90 --out-dir build/verify --verbose
+```
 
-| Failure | Next action |
-| --- | --- |
-| `import x2py` or `import numpy` fails | Recheck the active interpreter; Installation Issues is covered later. |
-| `--help` works but `.pyi` generation fails | Read the diagnostic; diagnostic codes are catalogued later in the reference section. |
-| Compiler executable is missing | Recheck `PATH` and the compiler command; Compiler Issues is covered later. |
-| Native compilation or linking fails | Rebuild with `--verbose`; Build Issues is covered later. |
-| Build succeeds but import or call fails | Compare the call with the generated contract; Runtime Issues is covered later. |
-| The checked smoke test passes but an advanced construct fails | The language feature matrix later records its support status and focused evidence. |
+---
 
-Contributors changing documentation should run
-`python3 -m pytest -q tests/docs/test_examples.py tests/docs/test_structure.py`.
-Wrapper behavior changes require the focused `tests/wrapper/fortran/...` path;
-the full GitHub Actions matrix is the final cross-version evidence.
+## Troubleshooting Guide
 
-## Evidence
+| Failure Type                    | Recommended Action                          |
+|--------------------------------|---------------------------------------------|
+| Cannot import x2py / NumPy     | Check active virtual environment            |
+| `x2py --help` works but `.pyi` fails | Check diagnostics and reference section   |
+| Compiler not found             | Fix `PATH` or reinstall gfortran           |
+| Build / linking fails          | Run with `--verbose`                        |
+| Builds but import/call fails   | Compare against generated contract          |
 
-The linked `scale.f90` input is checked against the repository fixture by
-[`test_examples.py`](../../../tests/docs/test_examples.py).
-Native artifact placement and runtime calls are checked by
-[`test_build_modes.py`](../../../tests/wrapper/fortran/build_from_source/test_build_modes.py)
-and
-[`test_runtime_abi.py`](../../../tests/wrapper/fortran/build_from_source/test_runtime_abi.py).
+---
+
+## Next
+
+- Proceed to [Your First Wrapped Function](first-wrapped-function.md).
+- For detailed help, use [Troubleshooting](../troubleshooting/index.md).

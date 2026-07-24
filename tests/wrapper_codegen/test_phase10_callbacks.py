@@ -59,7 +59,7 @@ def _sources(plan):
     return c_source, bridge
 
 
-def test_callback_policy_completes_reference_default_and_value_override_before_planning():
+def test_callback_policy_completes_value_default_and_explicit_reference_before_planning():
     module = _module()
     policies = {
         function.name: function.metadata[models.RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]

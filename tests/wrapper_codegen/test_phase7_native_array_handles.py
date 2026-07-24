@@ -39,7 +39,10 @@ def replace(
 @native_call([Addr(Arg(0))])
 def make(n: Int32) -> Allocatable[Float64[:]]: ...
 
-@native_call([Arg(0)], result=Allocatable(Return(0)))
+@native_call([Addr(Arg(0)), Addr(Arg(1))])
+def make_matrix(n: Int32, m: Int32) -> Allocatable[Float64[:, :]]: ...
+
+@native_call([Arg(0), Allocatable(Return("value", 0))])
 def deferred(text: String) -> String | None: ...
 
 def make_names() -> Allocatable[String[:][:]]: ...
@@ -142,6 +145,12 @@ def test_phase7_keeps_datatype_specific_state_under_argument_and_result_plans():
     assert owned.native_array_handle.handoff.owner_storage_role is not None
     assert NativeArrayOperation.DESTROY in owned.native_array_handle.operations
 
+    owned_matrix = functions["make_matrix"].results[0]
+    assert owned_matrix.native_array_handle is not None
+    assert owned_matrix.native_array_handle.array.rank == 2
+    assert owned_matrix.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
+    assert owned_matrix.native_array_handle.descriptor_ownership is NativeArrayDescriptorOwnership.OWNED
+
     deferred = functions["deferred"].results[0]
     assert deferred.native_array_handle is None
     assert deferred.scalar_descriptor is not None
@@ -233,8 +242,10 @@ def test_phase7_generated_artifacts_follow_one_typed_action_vocabulary():
     assert '"_native_array_descriptor_handoff_for_binding_positional"' in c_source
     assert '"_native_array_handle_from_generated_ops"' in c_source
     assert "CFI_CDESC_T(1)" in c_source
+    assert "CFI_CDESC_T(2)" in c_source
     assert "real(c_double), allocatable, dimension(:) :: values" in bridge_source
     assert "real(c_double), pointer, dimension(:) :: values" in bridge_source
+    assert "real(c_double), allocatable, dimension(:, :) :: result_value" in bridge_source
     optional_start = bridge_source.index("function bind_c_optional(")
     optional_end = bridge_source.index("end function bind_c_optional", optional_start)
     optional_bridge = bridge_source[optional_start:optional_end]
@@ -248,11 +259,10 @@ def test_phase7_generated_artifacts_follow_one_typed_action_vocabulary():
     assert "bound_values_elem_len = sizeof(double);" in optional_binding
     assert "bound_values_descriptor_rank = 1;" in optional_binding
     assert "bound_values = (CFI_cdesc_t *)&bound_values_storage;" in optional_binding
-    assert "x2py_collect_make_allocatable_array_result" in bridge_source
-    assert "call x2py_collect_make_allocatable_array_result(native_make(n), result_value)" in bridge_source
+    assert "result_value = native_make(n)" in bridge_source
+    assert "result_value = native_make_matrix(n, m)" in bridge_source
     assert "call move_alloc(result_value, result)" in bridge_source
-    assert "x2py_collect_deferred_scalar_descriptor_result" in bridge_source
-    assert "character(kind=c_char, len=:), allocatable :: result_value" in bridge_source
+    assert "character(kind=c_char, len=:), allocatable :: value_value" in bridge_source
     assert "result_itemsize" in c_source
     assert "CFI_type_char" in c_source
     assert "character(kind=c_char, len=:), allocatable, dimension(:) :: names" in bridge_source
@@ -270,15 +280,10 @@ def test_phase7_numeric_owned_result_is_collected_before_persistent_descriptor_m
 
     assert "real(c_double), allocatable, dimension(:), intent(out) :: result" in procedure
     assert "real(c_double), allocatable, dimension(:) :: result_value" in procedure
-    assert "call x2py_collect_make_allocatable_array_result(native_make(n), result_value)" in procedure
+    assert "result_value = native_make(n)" in procedure
     assert "call move_alloc(result_value, result)" in procedure
     assert "result = result_value" not in procedure
-
-    helper_start = bridge_source.index("subroutine x2py_collect_make_allocatable_array_result(")
-    helper_end = bridge_source.index("end subroutine", helper_start)
-    helper = bridge_source[helper_start:helper_end]
-    assert "if (allocated(value)) then" in helper
-    assert "target = value" in helper
+    assert "x2py_collect_make_allocatable_array_result" not in bridge_source
 
 
 @pytest.mark.parametrize(

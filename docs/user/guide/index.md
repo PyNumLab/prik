@@ -1,5 +1,6 @@
 ---
 title: User Guide
+description: Detailed guides for wrapping Fortran code with x2py
 audience: users
 prerequisites: getting started
 related: data-types.md, fortran-wrapper.md, ../language-support/index.md
@@ -9,52 +10,62 @@ publication: reviewed
 
 # User Guide
 
-The user guide continues from the completed
-[Getting Started](../getting-started/index.md) workflow. Start with the datatype
-mapping, then follow the workflow group that matches the native API you are
-wrapping. Each page states the current supported subset, Python API shape,
-limitations, troubleshooting route, and runtime evidence.
+This section builds on the [Getting Started](../getting-started/index.md)
+workflow. It explains data type mapping, supported Fortran constructs, runtime
+behavior, packaging, and distribution.
+
+---
 
 ## Start Here
 
-- [Data types](data-types.md): Fortran storage, semantic `.pyi` names, exact
-  NumPy dtypes, strings, arrays, and generated classes.
-- [Wrapping functions](wrapping-functions.md)
-- [Wrapping subroutines](wrapping-subroutines.md)
-- [Wrapping modules](wrapping-modules.md)
-- [Arrays](arrays.md)
-- [Optional arguments](optional-arguments.md)
-- [Generic interfaces](generic-interfaces.md)
+- [Data Types](data-types.md) — Fortran types, semantic `.pyi` names, exact NumPy dtypes, strings, and arrays
+- [Arrays](arrays.md) — Rank, shape, strides, contiguity, and layout rules
+- [Wrapping Functions](wrapping-functions.md)
+- [Wrapping Subroutines](wrapping-subroutines.md)
+- [Wrapping Modules](wrapping-modules.md)
+- [Optional Arguments](optional-arguments.md)
+- [Generic Interfaces](generic-interfaces.md)
+- [Wrapping Derived Types](wrapping-derived-types.md)
 
-## Storage And Objects
+---
+
+## Storage and Objects
 
 - [Allocatables](allocatables.md)
 - [Pointers](pointers.md)
-- [Wrapping derived types](wrapping-derived-types.md)
-- [Memory management](memory-management.md)
+- [Memory Management](memory-management.md)
+
+---
 
 ## Runtime Behavior
 
 - [Callbacks](callbacks.md)
 - [Enumerations](enumerations.md)
-- [Error handling](error-handling.md)
+- [Error Handling](error-handling.md)
 
-## Build And Deployment
+---
+
+## Build and Deployment
 
 - [Packaging](packaging.md)
 - [Distribution](distribution.md)
 
-## Contract References
+---
 
-- [Fortran wrapper guide](fortran-wrapper.md): complete contract and evidence
-  ledger for the generated runtime surface.
-- [Editing semantic `.pyi` contracts](editing-semantic-pyi-contracts.md):
-  intentional changes to generated wrapper policy.
-- [Semantic `.pyi` format](../reference/semantic-pyi-format.md): annotation and
-  metadata reference.
-- [Language feature matrix](../language-support/feature-matrix.md): central
-  supported, partial, unsupported, and planned status.
+## Contract & Reference
 
-The workflow pages explain the normal source-driven wrapper. Edit a semantic
-`.pyi` only after the generated behavior is understood and the native artifacts
-needed by a `.pyi`-driven build are available.
+- **[Fortran Wrapper Guide](fortran-wrapper.md)** — Complete reference for the generated runtime surface
+- [Editing Semantic `.pyi` Contracts](editing-semantic-pyi-contracts.md) — When and how to customize contracts
+- [Semantic `.pyi` Format](../reference/semantic-pyi-format.md) — Full annotation reference
+- [Language Feature Matrix](../language-support/feature-matrix.md) — Current support status (supported / partial / unsupported)
+
+---
+
+**Important Note**
+
+The recommended workflow is **source-driven** (starting from `.f90` files).
+Only move to editing semantic `.pyi` contracts after you understand the default generated behavior and are ready to manage native artifacts manually.
+
+---
+
+Start with **[Data Types](data-types.md)**.

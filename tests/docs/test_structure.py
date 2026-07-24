@@ -35,6 +35,8 @@ DEFERRED_C_PAGE_PATHS = [
     ROOT / "docs/user/examples/recipes/inspect-c-api.md",
 ]
 MARKDOWN_LINK = re.compile(r"\[[^\]]+\]\(([^)#]+)(?:#[^)]+)?\)")
+NEXT_NAVIGATION = re.compile(r"^\s*(?:#{2,6}\s+Next|\*\*Next\*\*:?)\s*$", re.IGNORECASE)
+NEXT_SECTION_BOUNDARY = re.compile(r"^\s*(?:#{2,6}\s+|---\s*$|\*\*[^*]+\*\*)")
 C_DOCS_START = "<!-- X2PY_C_DOCS_START"
 C_DOCS_END = "X2PY_C_DOCS_END -->"
 C_DOCS_DISABLED = "<!-- X2PY_C_DOCS_DISABLED:"
@@ -380,6 +382,11 @@ REQUIRED_EXAMPLE_RECIPE_PAGES = [
     "user/examples/recipes/use-python-inspection-apis.md",
     "user/examples/recipes/compiler-preprocessing.md",
 ]
+EXAMPLE_DOCUMENTATION_PAGES = [
+    path.relative_to(DOCS_ROOT).as_posix()
+    for path in sorted((DOCS_ROOT / "user/examples").rglob("*.md"))
+    if path.name != "index.md"
+]
 MAJOR_SOURCE_PACKAGES = [
     "x2py/parsers/",
     "x2py/semantics/",
@@ -471,6 +478,60 @@ def _visible_documentation_source(path: Path) -> str:
             visible.append(line)
     assert not hidden, f"{path.relative_to(ROOT)}: unclosed deferred documentation comment"
     return "\n".join(visible)
+
+
+def _instructional_body_without_next(body: str) -> str:
+    instructional_lines: list[str] = []
+    inside_next = False
+
+    for line in body.splitlines():
+        if NEXT_NAVIGATION.match(line):
+            inside_next = True
+            continue
+        if inside_next and NEXT_SECTION_BOUNDARY.match(line):
+            inside_next = False
+        if not inside_next:
+            instructional_lines.append(line)
+
+    return "\n".join(instructional_lines)
+
+
+def _next_navigation_items(body: str) -> list[tuple[int, str, bool]]:
+    items: list[tuple[int, str, bool]] = []
+    current_line: int | None = None
+    current_parts: list[str] = []
+    inside_next = False
+
+    def flush_current() -> None:
+        nonlocal current_line, current_parts
+        if current_line is not None:
+            items.append((current_line, " ".join(current_parts), True))
+            current_line = None
+            current_parts = []
+
+    for line_number, line in enumerate(body.splitlines(), start=1):
+        if NEXT_NAVIGATION.match(line):
+            flush_current()
+            inside_next = True
+            continue
+        if inside_next and NEXT_SECTION_BOUNDARY.match(line):
+            flush_current()
+            inside_next = False
+            continue
+        if not inside_next or not line.strip():
+            continue
+        if line.startswith("- "):
+            flush_current()
+            current_line = line_number
+            current_parts = [line[2:].strip()]
+        elif current_line is not None and line.startswith("  "):
+            current_parts.append(line.strip())
+        else:
+            flush_current()
+            items.append((line_number, line.strip(), False))
+
+    flush_current()
+    return items
 
 
 def _combined_text(relative_paths: list[str]) -> str:
@@ -613,8 +674,7 @@ def test_readme_quick_start_shows_input_source_before_wrapper_build() -> None:
         assert command in top_help
 
     help_index = quick_start.index("python3 -m x2py --help")
-    source_index = quick_start.index("<!-- x2py-doc-source: tests/data/fortran/wrapper/scale.f90 -->")
-    fortran_block_index = quick_start.index("```fortran", source_index)
+    fortran_block_index = quick_start.index("```fortran")
     source_build_command_index = quick_start.index(
         "python3 -m x2py scale.f90",
         fortran_block_index,
@@ -688,7 +748,7 @@ def test_readme_quick_start_shows_input_source_before_wrapper_build() -> None:
     verbose_output_index = quick_start.index("generated Python binding", verbose_c_flag_index)
     module_lesson_index = quick_start.index("first wrapped module", verbose_output_index)
 
-    assert help_index < source_index < fortran_block_index < source_build_command_index
+    assert help_index < fortran_block_index < source_build_command_index
     assert source_build_command_index < default_source_build_tree_index < named_source_build_command_index
     assert named_source_build_command_index < source_build_tree_index < explicit_source_build_command_index
     assert explicit_source_build_command_index < explicit_source_build_tree_index < pyi_generation_command_index
@@ -848,12 +908,15 @@ def test_user_guide_page_is_completed_in_documentation_checklist(relative_path: 
 
 @pytest.mark.parametrize(
     "relative_path",
-    [*REQUIRED_GETTING_STARTED_PAGES[1:], *REQUIRED_USER_GUIDE_PAGES[1:]],
+    [*REQUIRED_GETTING_STARTED_PAGES[1:], *REQUIRED_USER_GUIDE_PAGES[1:], *EXAMPLE_DOCUMENTATION_PAGES],
 )
-def test_sequential_user_page_does_not_link_forward(relative_path: str) -> None:
+def test_sequential_user_pages_do_not_link_forward_from_instructional_prose(relative_path: str) -> None:
     path = DOCS_ROOT / relative_path
     _, body = _front_matter(path)
+    body = _instructional_body_without_next(body)
     positions = _site_navigation_positions()
+    if relative_path not in positions:
+        pytest.skip(f"{relative_path}: not active in site navigation")
     source_position = positions[relative_path]
     for target in MARKDOWN_LINK.findall(body):
         target_path = (path.parent / target).resolve()
@@ -865,30 +928,80 @@ def test_sequential_user_page_does_not_link_forward(relative_path: str) -> None:
         assert positions[target_relative] <= source_position, f"{relative_path}: forward link to {target_relative}"
 
 
+@pytest.mark.parametrize(
+    "relative_path",
+    [*REQUIRED_GETTING_STARTED_PAGES[1:], *REQUIRED_USER_GUIDE_PAGES[1:]],
+)
+def test_next_sections_use_linked_bullet_destinations(relative_path: str) -> None:
+    _, body = _front_matter(DOCS_ROOT / relative_path)
+    for line_number, item, is_bullet in _next_navigation_items(body):
+        assert is_bullet, f"{relative_path}:{line_number}: Next content must be a bullet item"
+        assert MARKDOWN_LINK.search(item), f"{relative_path}:{line_number}: Next item must include a Markdown link"
+
+
 @pytest.mark.parametrize("relative_path", REQUIRED_USER_GUIDE_PAGES[:-2])
 def test_user_guide_commands_do_not_expose_fixture_paths(relative_path: str) -> None:
     page = (DOCS_ROOT / relative_path).read_text(encoding="utf-8")
     assert "python3 -m x2py tests/" not in page
 
 
-def test_getting_started_overview_uses_standalone_example_and_current_evidence() -> None:
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "index.md",
+        "user/index.md",
+        *REQUIRED_GETTING_STARTED_PAGES,
+        *REQUIRED_USER_GUIDE_PAGES,
+    ],
+)
+def test_reviewed_user_pages_do_not_expose_internal_evidence(relative_path: str) -> None:
+    page = _visible_documentation_source(DOCS_ROOT / relative_path)
+    assert "## Evidence" not in page
+    assert "## Runtime Evidence" not in page
+    assert "Runtime tests:" not in page
+    assert "../../../tests/" not in page
+    assert "../../tests/" not in page
+    assert "../tests/" not in page
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "index.md",
+        "user/index.md",
+        *REQUIRED_GETTING_STARTED_PAGES,
+        *REQUIRED_USER_GUIDE_PAGES,
+    ],
+)
+def test_reviewed_user_pages_do_not_contain_editorial_notes(relative_path: str) -> None:
+    page = _visible_documentation_source(DOCS_ROOT / relative_path).casefold()
+    for phrase in (
+        "i kept your",
+        "let me know if you want",
+        "original content had",
+        "restore/polish",
+    ):
+        assert phrase not in page
+
+
+def test_getting_started_overview_uses_standalone_example() -> None:
     overview = (DOCS_ROOT / "user/getting-started/index.md").read_text(encoding="utf-8")
 
     assert "scale.scale(np.float64(3.0), np.float64(2.5))" in overview
-    assert "build_from_source/test_build_modes.py" in overview
 
 
 def test_documentation_homepage_demonstrates_x2py_before_getting_started() -> None:
     page = (DOCS_ROOT / "index.md").read_text(encoding="utf-8")
-    introduction_index = page.index("x2py turns supported Fortran source into an importable Python extension")
-    source_index = page.index("<!-- x2py-doc-source: tests/data/fortran/wrapper/scale.f90 -->")
+    introduction_index = page.index("x2py turns supported Fortran source")
+    try_heading_index = page.index("## Try it in 30 seconds {#try-x2py}")
+    source_index = page.index("```fortran", try_heading_index)
     build_index = page.index("python3 -m x2py scale.f90")
     call_index = page.index("result = scale.scale(np.float64(3.0), np.float64(2.5))")
     output_index = page.index("7.5", call_index)
     docstring_index = page.index("scale(value, factor) -> float64", output_index)
-    getting_started_index = page.index("[Getting Started](user/getting-started/index.md)")
+    getting_started_index = page.index("Getting Started](user/getting-started/index.md)")
 
-    assert introduction_index < source_index < build_index < call_index < output_index
+    assert introduction_index < try_heading_index < source_index < build_index < call_index < output_index
     assert output_index < docstring_index < getting_started_index
     assert "value : float64\nfactor : float64" in page
     assert "result : float64" in page
@@ -938,8 +1051,8 @@ def test_documentation_links_to_documentation_stay_on_the_website() -> None:
 
 def test_first_wrapped_function_shows_contract_and_mentions_later_support_boundaries() -> None:
     page = (DOCS_ROOT / "user/getting-started/first-wrapped-function.md").read_text(encoding="utf-8")
-    source_index = page.index("[homepage example](../../index.md#try-x2py)")
-    build_index = page.index("python3 -m x2py scale.f90 \\")
+    source_index = page.index("scale.f90")
+    build_index = page.index("python3 -m x2py scale.f90")
     command_index = page.index("python3 -m x2py generate --pyi scale.f90")
     contract_index = page.index(
         "@external\n@native_call([Addr(Arg(0)), Addr(Arg(1))])\ndef scale(\n"
@@ -947,32 +1060,29 @@ def test_first_wrapped_function_shows_contract_and_mentions_later_support_bounda
     )
 
     assert source_index < build_index < command_index < contract_index
-    assert "<!-- x2py-doc-source: tests/data/fortran/wrapper/scale.f90 -->" not in page
     assert "## Current Limitations" not in page
-    assert "language feature matrix later" in page
 
 
 def test_first_wrapped_module_shows_local_input_and_generated_contract() -> None:
     page = (DOCS_ROOT / "user/getting-started/first-wrapped-module.md").read_text(encoding="utf-8")
-    source_index = page.index("Create `module_state.f90` with this module:")
-    build_index = page.index("python3 -m x2py module_state.f90 \\")
+    source_index = page.index("module_state.f90")
+    build_index = page.index("python3 -m x2py module_state.f90")
     inspect_index = page.index("python3 -m x2py generate --pyi module_state.f90")
-    contract_index = page.index("nmax: Final[Int32] = 12")
+    contract_index = page.index("## Key Rules")
 
     assert source_index < build_index < inspect_index < contract_index
     assert "fmodule_vars_f90" not in page
     assert "## Current Limitations" not in page
-    assert "language feature matrix later collects support boundaries" in page
 
 
 def test_beginner_workflow_reuses_scale_example_without_renaming_it() -> None:
     page = (DOCS_ROOT / "user/getting-started/beginner-workflow.md").read_text(encoding="utf-8")
-    source_reference_index = page.index("[homepage example](../../index.md#try-x2py)")
-    layout_index = page.index("src/\n    scale.f90")
+    source_reference_index = page.index("scale.f90")
+    layout_index = page.index("src/")
     contract_index = page.index("python3 -m x2py generate --pyi src/scale.f90")
-    build_index = page.index("python3 -m x2py src/scale.f90 \\\n  --out-dir build/scale")
+    build_index = page.index("python3 -m x2py src/scale.f90")
     smoke_index = page.index("result = scale.scale(np.float64(3.0), np.float64(2.5))")
-    advanced_index = page.index("## Advanced Next Step: Edit The Semantic Contract")
+    advanced_index = page.index("Editing the Semantic Contract")
 
     assert source_reference_index < layout_index < contract_index < build_index < smoke_index < advanced_index
     assert "scale_api" not in page

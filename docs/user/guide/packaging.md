@@ -1,5 +1,6 @@
 ---
 title: Packaging
+description: How to package and distribute x2py-based extensions in your projects
 audience: users, packagers
 prerequisites: common beginner workflow
 related: distribution.md, ../reference/cli-commands.md, ../tutorials/packaging.md
@@ -9,34 +10,35 @@ publication: reviewed
 
 # Packaging
 
-x2py currently produces an importable native extension and its build artifacts;
-it does not provide a stable Python wheel backend or project template. The
-supported packaging workflow is therefore local project integration: keep the
-native source and Python tests under version control, rebuild into an explicit
-directory, and treat generated native artifacts as replaceable build output.
+x2py currently focuses on **building importable native extensions**. It does not yet provide a full wheel-building backend or project template. The recommended approach is a clean local project workflow.
 
-## Complete Local Project Example
+---
 
-Reuse `scale.f90`, whose complete source is first shown in the
-[homepage example](../../index.md#try-x2py). Place that file in this
-simple project:
+## Recommended Project Layout
 
-```text
-scale-project/
-  src/
-    scale.f90
-  build/
-  python/
-    check_scale.py
+```
+my-project/
+├── src/                  # Fortran source
+│   └── scale.f90
+├── build/                # Generated (do not commit)
+├── tests/                # Python tests
+│   └── test_scale.py
+└── pyproject.toml        # (optional)
 ```
 
-Build from the project root:
+---
+
+## Basic Workflow
+
+1. **Build the extension**
 
 ```bash
 python3 -m x2py src/scale.f90 --out-dir build/scale
 ```
 
-Put the following result check in `python/check_scale.py`:
+2. **Test it**
+
+Create `tests/test_scale.py`:
 
 ```python
 import sys
@@ -45,95 +47,57 @@ import numpy as np
 sys.path.insert(0, "build/scale")
 import scale
 
-assert scale.scale(np.float64(3.0), np.float64(2.5)) == np.float64(7.5)
+def test_scale():
+    result = scale.scale(np.float64(3.0), np.float64(2.5))
+    assert result == 7.5
+
+if __name__ == "__main__":
+    test_scale()
+    print("✅ All tests passed")
 ```
 
-Run it from the project root:
+Run with:
 
 ```bash
-python3 python/check_scale.py
+python3 -m pytest tests/ -q
 ```
 
-No output means the assertion passed.
+---
 
-## Generated Package Shape
+## Rebuilding
 
-The extension module name normally comes from the first source filename.
-Contained native modules become child Python modules; standalone procedures
-remain at the extension root. `--out NAME` selects a different extension name.
-
-Use the selected output directory as the import location during development.
-The shared-library filename is platform-specific, so avoid hard-coding a suffix
-outside project-specific build scripts.
-
-## Generated Artifacts
-
-An output directory can contain native object and module files, generated
-wrapper sources, header-only native binding support, build metadata, and the importable extension.
-These files are build products. Do not edit them as the source of the public
-API; change the native source or an intentional semantic `.pyi` contract.
-
-The extension is tied to its Python implementation, NumPy ABI, platform,
-architecture, compiler ABI, and linked native dependencies. Merely copying it
-into another project is not a portable packaging guarantee.
-
-## Editable Makefile
-
-Generate a Makefile when a local build needs inspectable commands or controlled
-flags:
+When you change source code, compiler flags, or the contract:
 
 ```bash
-python3 -m x2py generate --makefile src/scale.f90 \
-  --out-dir build/scale
-
-make -f build/scale/Makefile.x2py X2PY_FFLAGS=-O3 X2PY_CFLAGS=-O3
-```
-
-`generate --makefile` selects the editable wrapper-build mode directly. Makefile mode
-and verbose direct compilation are separate modes. The generated
-Makefile expects GNU Make and a POSIX-style shell. Semantic `.pyi` Makefile
-builds also write `x2py-build.json`, which can regenerate or replay the build.
-
-## Rebuild Policy
-
-Rebuild when source, source order, compiler, flags, Python, NumPy, native
-dependencies, or the semantic contract changes. For a contract-changing build,
-remove the selected output directory first so stale objects and modules cannot
-mask the new build:
-
-```bash
-rm -rf build/scale
+rm -rf build/scale                    # Clean previous build
 python3 -m x2py src/scale.f90 --out-dir build/scale
 ```
 
-Keep sources, explicit contracts, build commands, and Python assertions under
-version control. Keep `build/` out of version control unless a release process
-deliberately captures platform-specific artifacts.
+---
 
-## Import Paths
+## Makefile Mode (Advanced)
 
-During local development, add the build directory to `sys.path`, set
-`PYTHONPATH`, or run Python from a location where the extension is importable.
-x2py does not currently install the extension into a project package or manage
-editable Python installs automatically.
+For inspectable builds and custom flags:
 
-## Limitations
+```bash
+python3 -m x2py generate --makefile src/scale.f90 --out-dir build/scale
 
-- No stable wheel-building backend or generated `pyproject.toml` integration.
-- No automatic repair or bundling of external native shared libraries.
-- No cross-platform artifact promise.
-- No automatic native dependency discovery or source reordering.
-- No guarantee that a copied extension imports under another Python or NumPy ABI.
+make -f build/scale/Makefile.x2py
+```
 
-## Evidence And Troubleshooting
+---
 
-Output names, directories, native build plans, verbose mode, and Makefile option
-validation are exercised by
-[`test_build_modes.py`](../../../tests/wrapper/fortran/build_from_source/test_build_modes.py).
-Multi-source package shape is exercised by
-[`test_multi_source_builds.py`](../../../tests/wrapper/fortran/multiple_files/test_multi_source_builds.py).
+## Important Notes
 
-For compile or link failures, rerun with `--verbose` and inspect the emitted
-native commands; Build Issues expands that diagnosis later. Distribution later
-explains the requirements for sharing an artifact with another machine or
-environment.
+- The extension name is usually taken from the first source file (you can override with `--out`).
+- Generated artifacts in `build/` are **not** portable across Python versions, NumPy ABIs, or platforms.
+- Keep `src/`, tests, and build commands under version control.
+- Do **not** commit the `build/` directory (except in special release processes).
+
+---
+
+## Next
+
+- See [Distribution](distribution.md) for sharing built extensions
+- Check the [Packaging Tutorial](../tutorials/packaging.md) for more advanced setups
+- For build or linking problems, see [Troubleshooting](../troubleshooting/index.md) and rerun with `--verbose`.

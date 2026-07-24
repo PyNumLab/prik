@@ -533,7 +533,7 @@ def update(scale: Float64 | None = ..., target: Float64 | None = ...) -> None: .
     assert "Default is None." not in c_wrapper
 
 
-def test_printer_emits_named_prototype_and_reference_with_value_override():
+def test_printer_emits_named_prototype_with_primitive_reference_and_derived_value():
     printer = PyiPrinter()
     missing_reference = SemanticType(
         "Float64",
@@ -552,6 +552,16 @@ def test_printer_emits_named_prototype_and_reference_with_value_override():
     input_reference = SemanticType(
         "Int32",
         storage=SemanticStorageContract(kind="reference", read_only=True, pointer_depth=1),
+    )
+    descriptor_reference = SemanticType(
+        "Float64",
+        metadata={"fortran_allocatable": True},
+        storage=SemanticStorageContract(kind="reference", mutable=True, pointer_depth=1),
+    )
+    polymorphic_reference = SemanticType(
+        "point_t",
+        metadata={"fortran_polymorphic": True},
+        storage=SemanticStorageContract(kind="reference", mutable=True, pointer_depth=1),
     )
     output_array = SemanticType(
         "Float64",
@@ -595,6 +605,16 @@ def test_printer_emits_named_prototype_and_reference_with_value_override():
             origin=SemanticOrigin(metadata={"value": False}),
         ),
         SemanticArgument(
+            "descriptor",
+            descriptor_reference,
+            origin=SemanticOrigin(metadata={"value": False}),
+        ),
+        SemanticArgument(
+            "polymorphic",
+            polymorphic_reference,
+            origin=SemanticOrigin(metadata={"value": False}),
+        ),
+        SemanticArgument(
             "write",
             output_array,
             origin=SemanticOrigin(metadata={"value": False}),
@@ -603,6 +623,11 @@ def test_printer_emits_named_prototype_and_reference_with_value_override():
             "readwrite",
             inout_array,
             origin=SemanticOrigin(metadata={"value": False}),
+        ),
+        SemanticArgument(
+            "derived_value",
+            SemanticType("point_t"),
+            origin=SemanticOrigin(metadata={"value": True}),
         ),
     ]
     prototype = SemanticPrototype(
@@ -628,8 +653,14 @@ def test_printer_emits_named_prototype_and_reference_with_value_override():
     )
 
     assert printer.emit(callback) == "update_values"
-    assert "@prototype\ndef update_values(" in printer.emit(prototype)
-    assert "value: Value(Int32)" in printer.emit(prototype)
+    emitted = printer.emit(prototype)
+    assert "@prototype\ndef update_values(" in emitted
+    assert "value: Int32" in emitted
+    assert "missing: Addr(Float64)" in emitted
+    assert "read: Addr(Int32)" in emitted
+    assert "descriptor: Allocatable[Float64]" in emitted
+    assert "polymorphic: Annotated[point_t, Polymorphic]" in emitted
+    assert "derived_value: Value(point_t)" in emitted
 
 
 def test_printer_projection_return_helpers_and_keyword_data_members():

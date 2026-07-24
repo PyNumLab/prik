@@ -1,5 +1,6 @@
 ---
 title: First Wrapped Function
+description: Build and call your first Fortran function as a Python extension
 audience: users
 prerequisites: installation, verification
 related: first-wrapped-module.md, ../guide/wrapping-functions.md, ../reference/semantic-pyi-format.md
@@ -9,56 +10,63 @@ publication: reviewed
 
 # First Wrapped Function
 
-This example builds one checked scalar function and calls it with the exact
-NumPy dtypes required by its native contract.
+This example shows how to build a simple scalar Fortran function and call it from Python using the exact NumPy dtypes required by its contract.
 
-## Source
+---
 
-Reuse the same `scale.f90` input from the
-[homepage example](../../index.md#try-x2py).
+## Source Code
 
-The generated Python call accepts two `numpy.float64` values and returns a
-Python `float` result.
+Use the same `scale.f90` from the homepage:
 
-## Build
-
-From the directory containing `scale.f90`:
-
-```bash
-python3 -m x2py scale.f90 \
-  --out-dir build/first-function
+```fortran
+real(8) function scale(value, factor) result(output)
+  real(8), intent(in) :: value
+  real(8), intent(in) :: factor
+  output = value * factor
+end function scale
 ```
 
-The extension is named after the source stem: `scale`. The standalone native
-function is exposed directly at that extension's root.
+---
 
-## Import And Call
+## Build the Extension
+
+From the directory containing `scale.f90`, run:
+
+```bash
+python3 -m x2py scale.f90 --out-dir build/first-function
+```
+
+This creates an importable `scale` extension module in the `build/first-function` directory.
+
+---
+
+## Import and Call
 
 ```python
 import sys
-
 import numpy as np
 
 sys.path.insert(0, "build/first-function")
 import scale
 
 result = scale.scale(np.float64(3.0), np.float64(2.5))
+print(result)          # → 7.5
 
 assert isinstance(result, float)
 assert result == 7.5
 ```
 
-The checked call returns the Python value `7.5`.
+---
 
-## Inspect The Generated Signature
+## Inspect the Generated Contract
 
-Before compiling, print the semantic contract:
+You can preview the semantic interface without building:
 
 ```bash
 python3 -m x2py generate --pyi scale.f90
 ```
 
-The generated declaration is:
+The generated contract has this shape:
 
 ```python
 from x2py.contracts import Addr, Arg, Float64, external, native_call
@@ -71,46 +79,34 @@ def scale(
 ) -> Float64: ...
 ```
 
-The contract describes `value` and `factor` as read-only `Float64` values at
-the Python boundary. The `@native_call` decorator records that the native call
-receives the address of each converted native scalar slot. It does not mean the
-caller passes references. The semantic `.pyi` is a native contract, not an
-ordinary pure-Python type stub. Do not edit it during this first workflow; the
-Semantic `.pyi` Format reference explains the complete grammar later.
+This contract is the source of truth for the generated wrapper.
 
-Fortran `intent` is not printed into the semantic `.pyi`. It helps generate the
-initial Python argument/result projection, but the visible signature,
-`Returns[...]`, and ordered `@native_call` list are the wrapper authority after
-the contract is loaded. The compiled Fortran procedure retains its own `intent`.
+---
 
-## Failure Mode: Wrong Scalar Type
+## Common Pitfall: Wrong Scalar Type
 
-Native scalar arguments use exact NumPy dtypes. A plain Python `float` is not a
-replacement for `numpy.float64` at this boundary:
+You **must** pass the exact NumPy scalar types:
 
 ```python
-scale.scale(3.0, 2.5)  # raises TypeError
-```
+# This will raise TypeError
+scale.scale(3.0, 2.5)
 
-Do not fix this by adding an implicit conversion inside generated code. Convert
-at the Python call site so the selected ABI is explicit:
-
-```python
+# Correct way
 scale.scale(np.float64(3.0), np.float64(2.5))
 ```
 
-For array functions, rank, dtype, shape, order, contiguity, and allowed stride
-patterns can also be contract requirements. Wrapping Functions and Arrays
-expand those rules later in the User Guide. The language feature matrix later
-records supported, partial, and unsupported wrapper forms.
+Always convert at the call site for scalar arguments.
 
-Build Issues and Runtime Issues are covered later in Troubleshooting. For now,
-rerun failed builds with `--verbose`, and compare rejected calls with the
-generated `.pyi` contract.
+---
 
-## Evidence
+## Next
 
-The linked `scale.f90` input is checked against the repository fixture by
-[`test_examples.py`](../../../tests/docs/test_examples.py).
-The default extension name and `7.5` runtime result are checked by
-[`test_build_modes.py`](../../../tests/wrapper/fortran/build_from_source/test_build_modes.py).
+- Learn how to wrap [Fortran modules](first-wrapped-module.md)
+- Read more about [wrapping functions](../guide/wrapping-functions.md)
+- Understand the [semantic .pyi format](../reference/semantic-pyi-format.md)
+
+---
+
+**Troubleshooting**
+If the build fails, rerun with `--verbose`.
+If the call fails, compare your arguments with the generated contract.

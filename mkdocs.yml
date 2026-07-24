@@ -21,6 +21,7 @@ hooks:
   - tools/mkdocs_publication.py
 markdown_extensions:
   - admonition
+  - attr_list
   - toc:
       permalink: true
 exclude_docs: |
@@ -66,7 +67,6 @@ nav:
           - Scientific Library: user/tutorials/scientific-library.md
       - Examples:
           - Overview: user/examples/index.md
-          - Verified Examples Cookbook: user/examples/verified-cookbook.md
           - BLAS Wrapper: user/examples/blas-wrapper.md
           - LAPACK Wrapper: user/examples/lapack-wrapper.md
           - CFD Mini Example: user/examples/cfd-mini-example.md
@@ -85,6 +85,7 @@ nav:
               - Control CLI Output: user/examples/recipes/control-cli-output.md
               - Use Python Inspection APIs: user/examples/recipes/use-python-inspection-apis.md
               - Use Compiler Preprocessing Options: user/examples/recipes/compiler-preprocessing.md
+          - Verified Examples Cookbook: user/examples/verified-cookbook.md
       - Reference:
           - Overview: user/reference/index.md
           - CLI Commands: user/reference/cli-commands.md

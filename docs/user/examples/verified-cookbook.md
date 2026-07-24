@@ -15,8 +15,8 @@ uses checked repository fixtures where the command output is stable.
 Start with the [basic wrapper tutorial](../tutorials/basic-wrapper.md) if this
 is your first x2py workflow. Use the
 [Fortran wrapper guide](../guide/fortran-wrapper.md) for the full runtime
-contract and [Semantic .pyi Format](../reference/semantic-pyi-format.md) for
-editable wrapper contracts.
+contract. The Semantic .pyi Format reference gives the complete editable
+wrapper contract syntax.
 
 ## Choose A Recipe
 
@@ -65,6 +65,6 @@ X2PY_C_DOCS_END -->
 
 - [Basic wrapper tutorial](../tutorials/basic-wrapper.md)
 - [Fortran wrapper guide](../guide/fortran-wrapper.md)
-- [Semantic .pyi Format](../reference/semantic-pyi-format.md)
-- [Semantic IR Reference](../reference/semantic-ir.md)
-- [Diagnostic Codes](../reference/diagnostic-codes.md)
+- Semantic .pyi Format
+- Semantic IR Reference
+- Diagnostic Codes

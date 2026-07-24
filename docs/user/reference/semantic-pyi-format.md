@@ -782,7 +782,8 @@ X2PY_C_DOCS_END -->
 | Text | `String` |
 | User types | class names and imported type names |
 | Named callable prototypes | `@prototype` function declarations referenced by name |
-| Prototype value override | `Value(T)` inside a `@prototype` declaration only |
+| Prototype primitive reference | `Addr(T)` inside a `@prototype` declaration |
+| Prototype non-primitive value override | `Value(T)` inside a `@prototype` declaration |
 
 <!-- X2PY_C_DOCS_START
 `Unknown` is intentionally rejected in `.pyi` annotations. Generated stubs must
@@ -795,21 +796,21 @@ type, rank, shape, character length, result shape, and value/reference passing.
 It does not repeat native callback direction:
 
 ```python
-from x2py.contracts import Float64, Int32, Value, prototype
+from x2py.contracts import Addr, Float64, Int32, prototype
 
 @prototype
-def update_values(count: Int32, scale: Value(Float64), values: Float64[:]) -> None: ...
+def update_values(count: Addr(Int32), scale: Float64, values: Float64[:]) -> None: ...
 
-def apply_update(callback: update_values, ...) -> ...: ...
+def apply_update(callback: update_values) -> None: ...
 ```
 
-Bare callback argument types use the normal Fortran reference form. A primitive
-scalar reference becomes an independent NumPy scalar value, arrays become
-writable NumPy views, fixed-length character references become mutable
+Bare primitive callback arguments use native value passing, matching ordinary
+wrapper signatures. Use `Addr(T)` when a primitive callback dummy is passed by
+reference; Python still receives an independent NumPy scalar value. Arrays
+become writable NumPy views, fixed-length character references become mutable
 rank-zero bytes storage, and wrapped objects retain their native reference.
-`Value(T)` selects the native Fortran `value` attribute; both forms give Python
-an independent primitive scalar value. `Addr(...)` is unnecessary because
-reference is the default.
+`Value(T)` is reserved for supported non-primitive scalar value dummies, such
+as derived types declared with the Fortran `value` attribute.
 
 Prototype declarations are not runtime functions and are not exported from the
 generated Python module. They may be referenced from another semantic contract
@@ -818,7 +819,7 @@ module through a relative import:
 ```python
 from .callback_shapes import transform
 
-def apply_transform(callback: transform, ...) -> ...: ...
+def apply_transform(callback: transform) -> None: ...
 ```
 
 Post-IR policy completes each prototype reference as an implicit external or a
@@ -827,8 +828,12 @@ contains an explicit-interface-only characteristic such as an optional or
 descriptor dummy, polymorphism, or an array/pointer/allocatable
 result. The backend imports that real interface from the prototype's native
 module, including its native direction attributes; the semantic `.pyi` does not
-duplicate them. `Value(...)` alone may still use a typed external declaration
-when no other characteristic requires the explicit interface.
+duplicate them. Primitive `Addr(...)` or non-primitive `Value(...)` alone may
+still use a typed external declaration when no other characteristic requires
+the explicit interface.
+
+Optional callback dummies and allocatable, pointer, or polymorphic callback
+dummies and results are currently rejected during policy completion.
 
 Before wrapper planning, x2py completes these declarations into explicit
 callback ABI, primitive-scalar value projection, non-scalar reference
@@ -903,15 +908,18 @@ from x2py.contracts import Float64
 def dot(a: Float64, b: Float64) -> Float64: ...
 ```
 
-`T[()]` represents caller-provided scalar storage. The caller passes an
+`T[()]` represents rank-zero NumPy storage. For arguments, the caller passes an
 addressable rank-0 NumPy array with the declared dtype; x2py validates the
-object and uses its data storage for the native call:
+object and uses its data storage for the native call. For direct or projected
+results, x2py returns a rank-0 NumPy array instead of collapsing the contract to
+a scalar value:
 
 ```python
 from x2py.contracts import Float64, Int32
 
 def update_storage(value: Float64[()]) -> None: ...
 def inspect_storage(value: Int32[()]) -> None: ...
+def current_storage() -> Float64[()]: ...
 ```
 
 The caller writes:
@@ -1210,9 +1218,9 @@ from x2py.contracts import Allocatable, Arg, Float64, Pointer, Return, Returns, 
 @native_call(
     [
         Allocatable(Arg(0)),
+        Allocatable(Return("normalized", 0)),
         Pointer(Return("selected", 2)),
     ],
-    result=Allocatable(Return(0)),
 )
 def normalize(
     value: Float64 | None,
@@ -1232,6 +1240,15 @@ create hidden `intent(out)` descriptor dummies projected into Python result slot
 result; its nested `Return(j)` selects that result's position among all Python
 results. Other Python results come from projected `intent(out)` and
 `intent(inout)` dummies.
+
+Use hidden descriptor outputs for nullable rank-zero results that must preserve
+`None`: `Allocatable(Return("name", j))` or `Pointer(Return("name", j))`.
+Direct rank-zero allocatable function results are blocked because the bridge
+cannot safely preserve the unallocated function-result state across supported
+Fortran compilers.
+Direct allocatable array function results use wrapper-owned descriptor handles
+and preserve allocated, zero-sized, and unallocated state for rank one and
+higher.
 
 Descriptor projection uses calls, not type subscriptions. Write
 `Allocatable(Arg(0))`, not `Allocatable[Arg(0)]`. This is distinct from
@@ -1663,6 +1680,13 @@ native argument order. Each `Return(...)` entry is hidden writable storage passe
 to the native procedure by address. The optional `result=` keyword records a
 native scalar descriptor function result, for example
 `result=Allocatable(Return(0))` or `result=Pointer(Return(0))`.
+
+For nullable rank-zero values, prefer a hidden output dummy:
+`Allocatable(Return("name", 0))` or `Pointer(Return("name", 0))`. Direct
+rank-zero allocatable function results are rejected when the wrapper would need
+to preserve an unallocated result as Python `None`.
+Direct allocatable array function results use wrapper-owned descriptor handles
+and are supported for matrices and higher-rank arrays.
 
 For descriptor projections, `Pointer(Arg(i))` without a matching
 `Returns["name", T]` creates a permissive call-local pointer adapter and
@@ -2257,6 +2281,11 @@ Hidden native literals must be typed call expressions inside `@native_call`.
 `result=Allocatable(Return(i))` or `result=Pointer(Return(i))` keyword. The
 `result=` mapping describes the native function result and is not another native
 dummy argument.
+For nullable rank-zero outputs, use `Allocatable(Return("name", i))` or
+`Pointer(Return("name", i))` in the native-argument list instead of a direct
+allocatable function result.
+Allocatable array function results can be direct returns or hidden output
+dummies; both forms preserve unallocated handle state.
 Bare literals such as `1` or `"N"` are rejected because they do not declare the
 native ABI type. Fixed-length string literals must include their length, for
 example `String[1]("N")`; plain `String("N")` is not enough.

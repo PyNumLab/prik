@@ -24,6 +24,7 @@ from x2py.semantics.ownership import (
     StorageMode,
     TransferMode,
 )
+from x2py.semantics.metadata import SCALAR_STORAGE_CATEGORY
 from x2py.semantics.wrapper_policy import (
     ArgumentHandoffMode,
     BridgeDataAction,
@@ -2277,11 +2278,49 @@ class WrapperCodeGenerator:
     ) -> tuple[WrapperPlanDiagnostic, ...]:
         """Dispatch completed buffer or raw-address array actions."""
         action = plan.binding.python_action
+        if action is PythonBarrierAction.SCALAR_STORAGE:
+            return self._scalar_storage_array_action_diagnostics(plan)
         if action is PythonBarrierAction.ARRAY_STORAGE:
             return self._array_buffer_action_diagnostics(plan)
         if action is PythonBarrierAction.RAW_ADDRESS:
             return self._raw_array_action_diagnostics(plan)
         return (self._diagnostic(plan.owner_path, "invalid-array-python-action", action.value),)
+
+    def _scalar_storage_array_action_diagnostics(
+        self,
+        plan: ArgumentTransferPlan,
+    ) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Validate rank-zero NumPy storage passed as a scalar native address."""
+        diagnostics = []
+        if plan.bridge.native_action is not NativeBarrierAction.PASS_STORAGE_ADDRESS:
+            diagnostics.append(
+                self._diagnostic(
+                    plan.owner_path, "invalid-scalar-storage-native-action", plan.bridge.native_action.value
+                )
+            )
+        if plan.bridge.handoff_mode is not ArgumentHandoffMode.OPAQUE_ADDRESS:
+            diagnostics.append(
+                self._diagnostic(plan.owner_path, "invalid-scalar-storage-handoff-mode", plan.bridge.handoff_mode.value)
+            )
+        if plan.bridge.data_action is not BridgeDataAction.ASSOCIATE_VIEW:
+            diagnostics.append(
+                self._diagnostic(plan.owner_path, "invalid-scalar-storage-data-action", plan.bridge.data_action.value)
+            )
+        if plan.binding.codegen_action not in {
+            CodegenAction.CALL_LOCAL_INPUT,
+            CodegenAction.IN_PLACE_ARGUMENT,
+            CodegenAction.IDENTITY_OUTPUT,
+        }:
+            diagnostics.append(
+                self._diagnostic(
+                    plan.owner_path,
+                    "invalid-scalar-storage-codegen-action",
+                    plan.binding.codegen_action.value,
+                )
+            )
+        if not self._is_scalar_storage_array(plan.array):
+            diagnostics.append(self._diagnostic(plan.owner_path, "invalid-scalar-storage-array", plan.array))
+        return tuple(diagnostics)
 
     def _array_buffer_action_diagnostics(
         self,
@@ -2515,7 +2554,7 @@ class WrapperCodeGenerator:
         if array is None or array.rank is None:
             return ()
         diagnostics = []
-        if not 1 <= array.rank <= 15:
+        if not 1 <= array.rank <= 15 and not self._is_scalar_storage_array(array):
             diagnostics.append(self._diagnostic(plan.owner_path, "invalid-array-rank", array.rank))
         if len(array.shape) != array.rank or len(array.axes) != array.rank:
             diagnostics.append(self._diagnostic(plan.owner_path, "inconsistent-array-rank", array.rank))
@@ -3479,7 +3518,9 @@ class WrapperCodeGenerator:
     def _array_result_rank_diagnostics(self, plan: ResultPlan) -> tuple[WrapperPlanDiagnostic, ...]:
         """Require a supported concrete ordinary array result rank."""
         array = plan.array
-        if array is not None and (array.rank is None or not 1 <= array.rank <= 15):
+        if array is not None and (
+            array.rank is None or (not 1 <= array.rank <= 15 and not self._is_scalar_storage_array(array))
+        ):
             return (self._diagnostic(plan.owner_path, "invalid-array-result-rank", array.rank),)
         return ()
 
@@ -3528,7 +3569,11 @@ class WrapperCodeGenerator:
             expected_native = NativeBarrierAction.NONE
         else:
             expected_action = CodegenAction.COPY_OUT
-            expected_native = NativeBarrierAction.PASS_ARRAY_BUFFER
+            expected_native = (
+                NativeBarrierAction.PASS_STORAGE_ADDRESS
+                if self._is_scalar_storage_array(plan.array)
+                else NativeBarrierAction.PASS_ARRAY_BUFFER
+            )
         diagnostics = []
         if plan.binding.codegen_action is not expected_action:
             diagnostics.append(
@@ -3539,6 +3584,10 @@ class WrapperCodeGenerator:
                 self._diagnostic(plan.owner_path, "invalid-array-result-native-action", plan.bridge.native_action.value)
             )
         return tuple(diagnostics)
+
+    @staticmethod
+    def _is_scalar_storage_array(array) -> bool:
+        return bool(array is not None and array.rank == 0 and array.category == SCALAR_STORAGE_CATEGORY)
 
     def _native_slot_diagnostics(self, plan: NativeCallSlotPlan) -> tuple[WrapperPlanDiagnostic, ...]:
         """Return hidden literal and hidden result slot diagnostics."""

@@ -17,20 +17,84 @@ The guide follows the wrapper by subject. Each subject includes a small example
 showing the Fortran interface and the corresponding Python use. Examples omit
 unrelated module scaffolding when that makes the contract easier to see.
 
-Runtime evidence lives in
-[`tests/wrapper`](../../../tests/wrapper/fortran/README.md). A behavior is supported
-only when generated native sources compile, the extension imports, and Python
-tests exercise successful calls, mutation, lifetime, and relevant failures.
-
 This guide covers the implemented wrapper for Fortran source inputs.
 
+<!--
+Current wrapper runtime subject paths. This hidden inventory keeps the guide's
+support map tied to the checked runtime suite without adding test-maintenance
+detail to the user page.
+
+build_from_source/test_build_modes.py
+build_from_source/test_compiler_verbose.py
+build_from_source/test_source_generated_pyi_contracts.py
+build_from_source/test_runtime_abi.py
+build_from_pyi/test_contract_package_runtime.py
+build_from_pyi/test_pyi_wrapper_builds.py
+multiple_files/test_multi_source_builds.py
+external_routines/test_external_procedures.py
+real_libraries/test_real_blas_lapack.py
+real_libraries/test_stage7_native_bundles.py
+edit_pyi_contracts/test_native_order_contracts.py
+edit_pyi_contracts/test_ownership_contracts.py
+edit_pyi_contracts/test_policy_dispatch_contracts.py
+edit_pyi_contracts/test_surface_edit_contracts.py
+edit_pyi_contracts/test_visibility_contracts.py
+arrays/test_array_contracts.py
+arrays/test_array_results.py
+arrays/test_assumed_rank_arrays.py
+arrays/test_array_generated_pyi_contracts.py
+arrays/test_multidimensional_arrays.py
+scalars/test_fortran_enums.py
+scalars/test_scalar_boundary_plan.py
+scalars/test_scalar_generated_pyi_contracts.py
+scalars/test_scalar_kinds.py
+scalars/test_value_and_bind_c.py
+scalars/test_verified_baseline.py
+function_calls/test_function_call_generated_pyi_contracts.py
+function_calls/test_native_call_examples.py
+function_calls/test_optional_arguments.py
+function_calls/test_output_arguments.py
+function_calls/test_scalar_writeback_plan.py
+strings/test_character_arguments.py
+strings/test_character_edge_cases.py
+strings/test_string_generated_pyi_contracts.py
+derived_types/test_borrowed_finalizers.py
+derived_types/test_constructors_and_finalizers.py
+derived_types/test_derived_layout.py
+derived_types/test_derived_type_boundaries.py
+derived_types/test_derived_type_generated_pyi_contracts.py
+derived_types/test_derived_type_methods.py
+derived_types/test_phase8_derived_plan.py
+derived_types/test_phase9_bound_constructors.py
+derived_types/test_scalar_derived_actual_dummy_matrix.py
+derived_types/test_inheritance.py
+derived_types/test_pointers.py
+callbacks/test_all_callback_shapes.py
+callbacks/test_array_callbacks.py
+callbacks/test_callback_generated_pyi_contracts.py
+callbacks/test_derived_callbacks.py
+callbacks/test_scalar_callbacks.py
+module_state/test_allocatable_replacement.py
+module_state/test_allocatable_views.py
+module_state/test_common_blocks.py
+module_state/test_module_state_generated_pyi_contracts.py
+module_state/test_module_state.py
+module_state/test_scalar_module_variable_plan.py
+runtime_behavior/test_openmp_runtime.py
+runtime_behavior/test_runtime_behavior_generated_pyi_contracts.py
+runtime_behavior/test_runtime_policies.py
+runtime_behavior/test_runtime_recursion.py
+naming/test_defined_operators.py
+naming/test_generic_interfaces.py
+naming/test_naming_generated_pyi_contracts.py
+naming/test_phase9_class_overloads.py
+naming/test_visibility_naming.py
+-->
+
 <!-- X2PY_C_DOCS_START
-Runtime evidence for these contracts lives in
-[`tests/wrapper`](../../../tests/wrapper/fortran/README.md). Parser or semantic-IR support by
-itself does not establish runtime wrapper support: a behavior is treated as
-supported only when generated Fortran and C code compile, the extension imports,
-and Python tests exercise successful calls, mutation, lifetime, and relevant
-failure paths.
+Parser or semantic-IR support by itself does not establish runtime wrapper
+support: a behavior is treated as supported only when the complete wrapper path
+is validated.
 X2PY_C_DOCS_END -->
 
 <!-- X2PY_C_DOCS_START
@@ -45,12 +109,11 @@ X2PY_C_DOCS_END -->
 ## Contents
 
 - Foundations: [building a wrapper](#building-and-importing-a-wrapper),
-  [support evidence](#how-support-claims-are-established), and
+  [support boundaries](#how-support-claims-are-established), and
   [ownership and lifetime](#ownership-and-lifetime)
-- Arrays and pointers: [allocatables](#allocatable-arguments-results-and-views),
-  [pointers](#pointer-arguments-results-and-association),
-  [array results](#array-valued-function-results), and
-  [NumPy argument contracts](#numpy-array-argument-contracts)
+- Arrays and pointers: [allocatables](allocatables.md),
+  [pointers](pointers.md), [array results](arrays.md), and
+  [NumPy argument contracts](arrays.md)
 - Objects and state: [derived types](#derived-types-across-procedure-boundaries),
   [inheritance](#inheritance-and-polymorphism),
   [constructors/finalizers](#constructors-initialization-and-finalizers),
@@ -310,13 +373,6 @@ Format reference.
 
 The Semantic `.pyi` Wrapper Checklist later records parity completion.
 
-Runtime tests: [`test_pyi_wrapper_builds.py`](../../../tests/wrapper/fortran/build_from_pyi/test_pyi_wrapper_builds.py),
-[`test_contract_package_runtime.py`](../../../tests/wrapper/fortran/build_from_pyi/test_contract_package_runtime.py),
-[`test_native_order_contracts.py`](../../../tests/wrapper/fortran/edit_pyi_contracts/test_native_order_contracts.py),
-[`test_ownership_contracts.py`](../../../tests/wrapper/fortran/edit_pyi_contracts/test_ownership_contracts.py),
-[`test_surface_edit_contracts.py`](../../../tests/wrapper/fortran/edit_pyi_contracts/test_surface_edit_contracts.py),
-[`test_visibility_contracts.py`](../../../tests/wrapper/fortran/edit_pyi_contracts/test_visibility_contracts.py), and
-[`test_policy_dispatch_contracts.py`](../../../tests/wrapper/fortran/edit_pyi_contracts/test_policy_dispatch_contracts.py).
 
 Use `--verbose` to execute a build while printing every exact, shell-escaped
 compiler and linker command. It first announces binding, bridge, and header
@@ -511,9 +567,9 @@ A wrapper feature is considered supported only when all applicable layers agree:
 - the default wrapper build emits a precise error when a declaration is
   unsupported or lacks policy;
 - semantic lowering preserves the contract without reconstructing source text;
-- runtime tests import the extension and verify results, mutation, lifetime,
-  ownership, and invalid calls; and
-- fixed-form and free-form behavior are both tested when the source feature
+- runtime behavior is covered by the project verification policy before it is
+  presented as supported; and
+- fixed-form and free-form behavior are both considered when the source feature
   exists in both forms.
 
 <!-- X2PY_C_DOCS_START
@@ -678,10 +734,9 @@ Editable semantic contracts distinguish three numeric scalar boundaries:
 - `Float64` accepts a scalar value. If a writable native reference is projected
   back with `Returns["value", Float64]`, x2py copies into call-local storage and
   returns the mutated replacement; the original Python scalar is unchanged.
-- `Float64[()]` accepts caller-owned rank-zero NumPy storage. x2py validates its
-  exact dtype, native byte order, alignment, rank, and writeability, then passes
-  its data address so native `out` or `inout` mutation remains visible in the
-  same array.
+- `Float64[()]` represents rank-zero NumPy storage. Arguments accept caller-owned
+  0-D arrays and pass their data address; results return Python-owned 0-D arrays
+  instead of scalar values.
 - `Addr(Float64)` accepts an integer raw address and forwards it without copying
   or owning the pointee. For a NumPy buffer, pass `value.ctypes.data`.
 
@@ -697,8 +752,6 @@ update_raw(raw_storage.ctypes.data)
 the wrapper to take the address of its converted call-local scalar. It does not
 make the Python caller pass an address.
 
-Runtime tests: [`test_verified_baseline.py`](../../../tests/wrapper/fortran/scalars/test_verified_baseline.py)
-and [`test_scalar_boundary_plan.py`](../../../tests/wrapper/fortran/scalars/test_scalar_boundary_plan.py).
 
 ## Generic Procedure Interfaces
 
@@ -731,7 +784,6 @@ For derived types, dispatch uses the generated wrapper class. Scalar
 polymorphic input dispatch over a known inheritance hierarchy is described in
 [Inheritance And Polymorphism](#inheritance-and-polymorphism).
 
-Runtime tests: [`test_generic_interfaces.py`](../../../tests/wrapper/fortran/naming/test_generic_interfaces.py).
 
 ## Defined Operators And Assignment
 
@@ -772,7 +824,6 @@ as `.cross.` become documented methods such as `cross(...)` rather than
 invented Python syntax. Unsupported operands raise deterministic Python errors
 through the same overload dispatcher used by generic interfaces.
 
-Runtime tests: [`test_defined_operators.py`](../../../tests/wrapper/fortran/naming/test_defined_operators.py).
 
 ## Output Arguments And Multiple Results
 
@@ -903,8 +954,6 @@ are never shown. Module attributes are documented in the module docstring
 because Python extension modules do not provide portable per-attribute
 descriptor docstrings.
 
-Runtime tests: [`test_output_arguments.py`](../../../tests/wrapper/fortran/function_calls/test_output_arguments.py),
-[`test_native_call_examples.py`](../../../tests/wrapper/fortran/function_calls/test_native_call_examples.py).
 
 ## Optional Arguments
 
@@ -941,8 +990,6 @@ unallocated or unassociated state. Hidden scalar or derived-type `Return(...)`
 outputs are different: the wrapper requests them with native temporary storage,
 so they are present and returned on every call.
 
-Runtime tests: [`test_optional_arguments.py`](../../../tests/wrapper/fortran/function_calls/test_optional_arguments.py),
-[`test_scalar_writeback_plan.py`](../../../tests/wrapper/fortran/function_calls/test_scalar_writeback_plan.py).
 
 <!-- X2PY_C_DOCS_START
 ## `value` And Existing `bind(C)` Procedures
@@ -985,8 +1032,6 @@ contract exists.
 X2PY_C_DOCS_END -->
 
 <!-- X2PY_C_DOCS_START
-Runtime tests: [`test_value_and_bind_c.py`](../../../tests/wrapper/fortran/scalars/test_value_and_bind_c.py).
-X2PY_C_DOCS_END -->
 
 ## Allocatable Arguments, Results, And Views
 
@@ -996,9 +1041,10 @@ Allocatable behavior depends on where the allocation lives.
 
 Top-level allocatable array function results and non-optional hidden
 allocatable array outputs return wrapper-owned `AllocatableArray` objects.
-Allocated and unallocated native states both return a present handle. The
-handle owns persistent descriptor storage and releases it on `close()` or
-finalization.
+Allocated, zero-sized, and unallocated native states all return a present
+handle. The handle owns persistent descriptor storage and releases it on
+`close()` or finalization. Use a hidden allocatable output dummy when the native
+API already expresses the result as an `intent(out)` argument.
 
 ```fortran
 function make_vector(n) result(values)
@@ -1076,12 +1122,6 @@ state, pointer `INTENT(IN)`, deliberate incompatibilities, and calls with many
 derived objects, is maintained in
 [Scalar Actuals And Native Dummies](wrapping-derived-types.md#scalar-actuals-and-native-dummies).
 
-Runtime tests:
-[`test_allocatable_views.py`](../../../tests/wrapper/fortran/module_state/test_allocatable_views.py)
-and
-[`test_scalar_derived_actual_dummy_matrix.py`](../../../tests/wrapper/fortran/derived_types/test_scalar_derived_actual_dummy_matrix.py)
-and
-[`test_allocatable_replacement.py`](../../../tests/wrapper/fortran/module_state/test_allocatable_replacement.py).
 
 ## Pointer Arguments, Results, And Association
 
@@ -1152,15 +1192,14 @@ Metadata can select implemented descriptor extraction and policy-gated
 operations. It cannot invent stable owner storage for a pointer-array result or
 make an unproved persistent reassociation safe.
 
-Runtime tests: [`test_pointers.py`](../../../tests/wrapper/fortran/derived_types/test_pointers.py).
 
 ## Array-Valued Function Results
 
 Numeric explicit-shape and automatic-shape array function results are returned
 as new Python-owned NumPy arrays. Allocatable array results use owned
-`AllocatableArray` objects instead. Pointer-array results remain blocked
-because a returned pointer association does not establish stable owner storage
-or target lifetime.
+`AllocatableArray` objects instead, including matrices and higher-rank arrays.
+Pointer-array results remain blocked because a returned pointer association does
+not establish stable owner storage or target lifetime.
 
 ```fortran
 function spectrum(n) result(values)
@@ -1187,7 +1226,6 @@ result is `None`.
 Arrays of derived types are blocked because their element layout,
 construction, destruction, aliasing, and copy policy are not defined.
 
-Runtime tests: [`test_array_results.py`](../../../tests/wrapper/fortran/arrays/test_array_results.py).
 
 ## NumPy Array Argument Contracts
 
@@ -1224,6 +1262,8 @@ subroutine scale_matrix(n, m, values)
   values = 2.0_8 * values
 end subroutine scale_matrix
 ```
+
+X2PY_C_DOCS_END -->
 
 <!-- X2PY_C_DOCS_START
 ```python
@@ -1318,9 +1358,6 @@ Assumed-type `type(*)`, character arrays that cannot be represented as
 fixed-width NumPy bytes storage, and derived-type arrays are blocked until their
 descriptor, ABI, element construction, and ownership policies are defined.
 
-Runtime tests: [`test_array_contracts.py`](../../../tests/wrapper/fortran/arrays/test_array_contracts.py),
-[`test_assumed_rank_arrays.py`](../../../tests/wrapper/fortran/arrays/test_assumed_rank_arrays.py),
-and [`test_multidimensional_arrays.py`](../../../tests/wrapper/fortran/arrays/test_multidimensional_arrays.py).
 
 ## Derived Types Across Procedure Boundaries
 
@@ -1383,10 +1420,6 @@ Private components are omitted from Python descriptors. Allocatable fields use
 descriptor access; that retention does not make the wrapper owner of a pointer
 target. Arrays of derived types are blocked.
 
-Runtime tests: [`test_derived_type_boundaries.py`](../../../tests/wrapper/fortran/derived_types/test_derived_type_boundaries.py),
-[`test_derived_type_methods.py`](../../../tests/wrapper/fortran/derived_types/test_derived_type_methods.py),
-and the direct Phase 8 object and field evidence in
-[`test_phase8_derived_plan.py`](../../../tests/wrapper/fortran/derived_types/test_phase8_derived_plan.py).
 
 ## Inheritance And Polymorphism
 
@@ -1438,7 +1471,6 @@ contract for dynamic type, allocation, replacement, and ownership. `class(*)`
 is blocked with the assumed-type descriptor policy. Abstract types and deferred
 bindings produce wrapper-planning errors rather than instantiable Python types.
 
-Runtime tests: [`test_inheritance.py`](../../../tests/wrapper/fortran/derived_types/test_inheritance.py).
 
 ## Constructors, Initialization, And Finalizers
 
@@ -1506,11 +1538,6 @@ Final subroutines have no recoverable Python status channel during `tp_dealloc`.
 A finalizer that executes `stop`, `error stop`, aborts, or otherwise terminates
 native execution terminates the process.
 
-Runtime tests: [`test_constructors_and_finalizers.py`](../../../tests/wrapper/fortran/derived_types/test_constructors_and_finalizers.py)
-and [`test_borrowed_finalizers.py`](../../../tests/wrapper/fortran/derived_types/test_borrowed_finalizers.py).
-Bound and overloaded constructors are covered by
-[`test_phase9_bound_constructors.py`](../../../tests/wrapper/fortran/derived_types/test_phase9_bound_constructors.py)
-and [`test_phase9_class_overloads.py`](../../../tests/wrapper/fortran/naming/test_phase9_class_overloads.py).
 
 ## Module Variables, Constants, Saved State, And Common Blocks
 
@@ -1586,10 +1613,6 @@ assert read_shared() == 17
 x2py adds no independent lock for module or object state. Concurrency rules are
 covered in [Runtime Errors, The GIL, OpenMP, And Concurrency](#runtime-errors-the-gil-openmp-and-concurrency).
 
-Runtime tests: [`test_module_state.py`](../../../tests/wrapper/fortran/module_state/test_module_state.py)
-and [`test_common_blocks.py`](../../../tests/wrapper/fortran/module_state/test_common_blocks.py).
-Scalar module-variable route parity is covered by
-[`test_scalar_module_variable_plan.py`](../../../tests/wrapper/fortran/module_state/test_scalar_module_variable_plan.py).
 
 ## Fortran Enums
 
@@ -1624,7 +1647,6 @@ The underlying `bind(C)` integer representation is retained as metadata. The
 same integer-constant surface applies to C enums.
 X2PY_C_DOCS_END -->
 
-Runtime tests: [`test_fortran_enums.py`](../../../tests/wrapper/fortran/scalars/test_fortran_enums.py).
 
 ## Character Arguments, Results, And Fields
 
@@ -1694,8 +1716,6 @@ Python Unicode arrays, object arrays, mutable scalar deferred-length character
 storage, deferred-length character fields, and mutable character-buffer fields
 remain blocked until an explicit field and encoding policy exists.
 
-Runtime tests: [`test_character_arguments.py`](../../../tests/wrapper/fortran/strings/test_character_arguments.py)
-and [`test_character_edge_cases.py`](../../../tests/wrapper/fortran/strings/test_character_edge_cases.py).
 
 ## Scalar Types And Kind Coverage
 
@@ -1742,7 +1762,6 @@ than 64 bits and complex storage wider than 128 bits are blocked rather than
 silently down-converted. Wider explicit logical kinds are blocked because they
 lack a portable Python/NumPy Boolean round-trip contract.
 
-Runtime tests: [`test_scalar_kinds.py`](../../../tests/wrapper/fortran/scalars/test_scalar_kinds.py).
 
 ## Derived-Type Layout And Interoperability
 
@@ -1785,7 +1804,6 @@ compiler-validated size, alignment, padding, component offsets, and nested
 layout, with accessor fallback whenever proof is unavailable.
 X2PY_C_DOCS_END -->
 
-Runtime tests: [`test_derived_layout.py`](../../../tests/wrapper/fortran/derived_types/test_derived_layout.py).
 
 ## Multiple Sources And Build Modes
 
@@ -1930,12 +1948,6 @@ python3 -m x2py generate --makefile contracts/solver.pyi \
 python3 -m x2py --build-manifest build/solver/x2py-build.json
 ```
 
-Runtime tests: [`test_multi_source_builds.py`](../../../tests/wrapper/fortran/multiple_files/test_multi_source_builds.py),
-[`test_external_procedures.py`](../../../tests/wrapper/fortran/external_routines/test_external_procedures.py),
-[`test_real_blas_lapack.py`](../../../tests/wrapper/fortran/real_libraries/test_real_blas_lapack.py),
-[`test_stage7_native_bundles.py`](../../../tests/wrapper/fortran/real_libraries/test_stage7_native_bundles.py),
-[`test_build_modes.py`](../../../tests/wrapper/fortran/build_from_source/test_build_modes.py), and
-[`test_compiler_verbose.py`](../../../tests/wrapper/fortran/build_from_source/test_compiler_verbose.py).
 
 ## Visibility, Naming, And The Python Surface
 
@@ -2015,7 +2027,6 @@ With `--strict-wrapper-names`, x2py applies no fixes. Any name requiring keyword
 or identifier escaping, or any collision after normalization, raises a
 generation error before native compilation.
 
-Runtime tests: [`test_visibility_naming.py`](../../../tests/wrapper/fortran/naming/test_visibility_naming.py).
 
 ## Immediate Python Callbacks
 
@@ -2101,10 +2112,6 @@ X2PY_C_DOCS_END -->
 Stored callbacks, callback registration, optional dummy procedures, procedure
 pointers, and invocation after the wrapped call are not supported.
 
-Runtime tests: [`test_all_callback_shapes.py`](../../../tests/wrapper/fortran/callbacks/test_all_callback_shapes.py),
-[`test_scalar_callbacks.py`](../../../tests/wrapper/fortran/callbacks/test_scalar_callbacks.py),
-[`test_array_callbacks.py`](../../../tests/wrapper/fortran/callbacks/test_array_callbacks.py), and
-[`test_derived_callbacks.py`](../../../tests/wrapper/fortran/callbacks/test_derived_callbacks.py).
 
 ## Runtime Errors, The GIL, OpenMP, And Concurrency
 
@@ -2190,10 +2197,6 @@ The verified compiler path includes GNU Fortran and debug/optimized ABI builds.
 Other compilers and platforms require their own ABI validation; support is not
 inferred from GNU results.
 
-Runtime tests: [`test_runtime_policies.py`](../../../tests/wrapper/fortran/runtime_behavior/test_runtime_policies.py),
-[`test_runtime_recursion.py`](../../../tests/wrapper/fortran/runtime_behavior/test_runtime_recursion.py),
-[`test_openmp_runtime.py`](../../../tests/wrapper/fortran/runtime_behavior/test_openmp_runtime.py), and
-[`test_runtime_abi.py`](../../../tests/wrapper/fortran/build_from_source/test_runtime_abi.py).
 
 ## Not Handled Or Not Yet Settled
 
@@ -2265,30 +2268,9 @@ wrappers:
 | Layout | Direct C struct views of Fortran derived types | Compiler-validated size, alignment, padding, offsets, and nested layout. |
 X2PY_C_DOCS_END -->
 
-## Finding The Runtime Tests
+## Troubleshooting
 
-The subject index in [`tests/wrapper/fortran/README.md`](../../../tests/wrapper/fortran/README.md)
-maps each feature to its Python runtime tests and fixture routes. Native source
-fixtures are being consolidated under the shared `tests/data/fortran/` corpus so
-the same valid source can exercise parser, semantic IR, `.pyi`, and
-wrapper stages. Runtime semantic `.pyi` contracts remain with the wrapper tests
-that consume them. Subject modules use descriptive test names, and builds that
-wrap several related sources together use the
-[`multiple_files`](../../../tests/wrapper/fortran/multiple_files) directory.
-
-Generated `.pyi` package fixtures for source-driven wrapper subjects are checked
-by [`test_source_generated_pyi_contracts.py`](../../../tests/wrapper/fortran/build_from_source/test_source_generated_pyi_contracts.py),
-[`test_array_generated_pyi_contracts.py`](../../../tests/wrapper/fortran/arrays/test_array_generated_pyi_contracts.py),
-[`test_scalar_generated_pyi_contracts.py`](../../../tests/wrapper/fortran/scalars/test_scalar_generated_pyi_contracts.py),
-[`test_function_call_generated_pyi_contracts.py`](../../../tests/wrapper/fortran/function_calls/test_function_call_generated_pyi_contracts.py),
-[`test_native_call_examples.py`](../../../tests/wrapper/fortran/function_calls/test_native_call_examples.py),
-[`test_string_generated_pyi_contracts.py`](../../../tests/wrapper/fortran/strings/test_string_generated_pyi_contracts.py),
-[`test_derived_type_generated_pyi_contracts.py`](../../../tests/wrapper/fortran/derived_types/test_derived_type_generated_pyi_contracts.py),
-[`test_callback_generated_pyi_contracts.py`](../../../tests/wrapper/fortran/callbacks/test_callback_generated_pyi_contracts.py),
-[`test_module_state_generated_pyi_contracts.py`](../../../tests/wrapper/fortran/module_state/test_module_state_generated_pyi_contracts.py),
-[`test_runtime_behavior_generated_pyi_contracts.py`](../../../tests/wrapper/fortran/runtime_behavior/test_runtime_behavior_generated_pyi_contracts.py),
-and [`test_naming_generated_pyi_contracts.py`](../../../tests/wrapper/fortran/naming/test_naming_generated_pyi_contracts.py).
-
-Semantic-only details, edited `.pyi` round trips, and wrapper-planning diagnostics also
-have narrower tests outside `tests/wrapper`, but those tests do not replace
-compiled runtime evidence.
+If a documented wrapper behavior does not match the generated extension, first
+compare the native source, generated `.pyi`, Python call, dtype, shape, and
+ownership expectations. Use `--verbose` for build failures and reduce runtime
+failures to the smallest source and call that still reproduces the mismatch.

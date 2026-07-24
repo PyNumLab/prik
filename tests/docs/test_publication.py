@@ -39,7 +39,7 @@ def test_navigation_drops_drafts_and_empty_sections() -> None:
     ]
 
 
-def test_production_links_to_unpublished_pages_become_plain_text(monkeypatch) -> None:
+def test_production_links_to_unpublished_pages_point_to_draft_site_route(monkeypatch) -> None:
     monkeypatch.setattr(
         mkdocs_publication,
         "_known_document_paths",
@@ -48,8 +48,8 @@ def test_production_links_to_unpublished_pages_become_plain_text(monkeypatch) ->
     monkeypatch.setattr(mkdocs_publication, "_published_paths", {"index.md", "user/index.md"})
     markdown = "[User](user/index.md) [Draft](user/draft.md) [Source](../README.md) [External](https://example.com)"
 
-    assert mkdocs_publication._unlink_unpublished_targets(markdown, "index.md") == (
-        "[User](user/index.md) Draft [Source](../README.md) [External](https://example.com)"
+    assert mkdocs_publication._rewrite_unpublished_document_targets(markdown, "index.md") == (
+        "[User](user/index.md) [Draft](user/draft/) [Source](../README.md) [External](https://example.com)"
     )
 
 

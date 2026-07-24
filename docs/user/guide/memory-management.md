@@ -1,5 +1,6 @@
 ---
 title: Memory Management
+description: Clear ownership rules, views vs copies, lifetimes, and destruction responsibility in x2py
 audience: users, advanced users
 prerequisites: arrays, wrapping derived types
 related: allocatables.md, pointers.md, editing-semantic-pyi-contracts.md
@@ -9,121 +10,259 @@ publication: reviewed
 
 # Memory Management
 
-Ownership determines whether Python sees a value, copy, live view, or generated
-native object; whether mutation reaches native storage; and which runtime is
-responsible for destruction. x2py completes these decisions before wrapper
-generation. Bridge and binding code consume the completed policy and do not
-guess from datatype or intent.
+x2py lets Python work directly with native Fortran storage when that is safe.
+That gives you fast wrappers without surprise copies, but it also means
+ownership has to be explicit.
 
-## Ownership Vocabulary
+The guiding question is:
 
-| Owner or transfer | Meaning | First complete example |
-| --- | --- | --- |
-| Python-owned value or copy | Python or NumPy releases detached storage after references are gone. | an ordinary array function result or `.copy()` of an extracted view |
-| Caller-owned storage | The Python caller retains the exact object supplied to the call. | [`outputs.f90` output array](wrapping-subroutines.md#complete-output-example) |
-| Wrapper-owned instance | A generated Python extension object owns one native derived instance. | [`points.f90` result](wrapping-derived-types.md#complete-derived-type-example) |
-| Native-owned storage | Native module state or another native owner controls allocation and release. | [`allocations.f90` module handle](allocatables.md#complete-allocatable-example) |
-| Borrowed view or child | Python refers to storage owned by a module or containing wrapper. | [`points.f90` nested child](wrapping-derived-types.md#complete-derived-type-example) |
-| Detached copy (`snapshot_copy` policy) | Python receives copied current native state where an explicit value-copy policy requires it. Native-array-handle `to_numpy()` and derived module-object reads do not select this behavior. | Explicit copy-result contracts |
-| Call-local association | Native code may refer to Python storage only during one wrapped call. | [`pointers.f90` input](pointers.md#complete-pointer-example) |
+> Who is allowed to release this storage, and how long is the Python object allowed to use it?
 
-Those linked pages contain the full source, build commands, and asserted
-results. The examples are not repeated here so ownership differences remain
-attached to one canonical source listing.
+x2py answers that question **before** wrapper code is generated. The generated
+Python extension then follows the completed policy exactly, so ownership is a
+documented contract rather than a runtime guess.
 
-## Core Invariants
+---
 
-1. Exactly one owner destroys each owned native allocation.
-2. Python-owned copies are independent of later native mutation.
-3. Caller-owned arrays are never freed by x2py.
-4. A borrowed child or component view retains its generated wrapper owner.
-5. Owner retention does not protect a view from explicit native reallocation or deallocation.
-6. A pointer declaration never proves ownership of its target.
-7. Missing owner, lifetime, release, shape, dtype, mutability, nullability, or aliasing facts block generation.
-8. Addressability is an object-origin fact: generated constructors allocate
-   pointer-backed instances, while pre-existing derived module objects need
-   either proved `Aliased` addressability or typed module-specific bridge
-   operations. A backend must not fabricate an address.
-9. Native array descriptor state lives in `Allocatable[T[...]]` and
-   `Pointer[T[...]]` handles; borrowed NumPy views and detached NumPy copies are
-   explicit extraction results from `to_numpy()`.
+## The Short Version
 
-## Destruction Responsibilities
+Most memory-management questions in x2py reduce to three cases:
 
-| Value | Release responsibility |
+| Situation | What to expect |
 | --- | --- |
-| scalar, string, copy-return array, scalar pointer copied value | Python, NumPy, or its generated base capsule |
-| caller-supplied NumPy array | Python caller |
-| wrapper-owned derived instance | generated wrapper deallocator and native finalization |
-| borrowed nested component | containing wrapper owner |
-| allocatable or pointer array handle | containing wrapper, native module, or explicit x2py owner storage |
-| borrowed view extracted from a handle | the handle's completed owner policy |
-| call-local temporary | generated bridge before return |
-| pointer target | explicit proved owner, never the pointer declaration alone |
+| Python receives a normal value or NumPy array result | Python owns an independent value. |
+| Python passes an object into a wrapped call | The same object remains with the caller; native code may mutate through it only when the contract allows it. |
+| Python receives a handle, wrapper object, component, or view into native state | The Python object may be live, borrowed, or wrapper-owned; check the ownership kind before keeping views across native calls. |
 
-Users do not call a generated `destroy()` method for ordinary wrapper-owned
-objects. Explicit native allocation and deallocation routines remain normal
-wrapped calls, but using one can invalidate previously borrowed storage.
+!!! tip "A reliable habit"
+    Before keeping a view or passing an object back into native code, ask two
+    separate questions: who owns the Python object, and who owns the storage
+    behind it?
 
-## Copies Versus Views
+---
 
-Use a copy when Python needs an independent lifetime:
+## Two Ownership Layers
+
+Ownership can describe two different things:
+
+| Layer | Question | Example |
+| --- | --- | --- |
+| **Boundary object** | Who supplied and keeps the Python object used in this call? | A NumPy array, handle, or wrapper instance passed as an argument |
+| **Target storage** | Who owns the native allocation that object exposes or points at? | Python array data, Fortran module storage, or a wrapper-owned native instance |
+
+Those layers can have different owners. A caller-owned handle can point at a
+native-owned module allocation. A caller-owned child wrapper can borrow storage
+owned by its parent wrapper. There is still exactly one owner for each real
+allocation.
+
+---
+
+## Ownership Terms
+
+| Term | Plain meaning | Typical example |
+| --- | --- | --- |
+| **Python-owned** | Python owns an independent value or array. | Function array result, `view.copy()` |
+| **Caller-owned** | Your Python code supplied the boundary object and keeps it after the call. | Writable NumPy array, native-backed handle, wrapper instance |
+| **Wrapper-owned** | A generated x2py Python object owns native storage. | Derived-type result, owned allocatable result handle |
+| **Native-owned** | Fortran module state or another native owner controls release. | Module variable, module allocatable |
+| **Borrowed view** | Python sees storage owned by someone else. | `handle.to_numpy()`, nested component |
+| **Call-local** | x2py creates temporary storage for one native call only. | Scalar address slot, fixed string buffer |
+
+### Python-owned
+
+Python-owned values are ordinary Python or NumPy objects with independent
+lifetime. If native storage changes later, a Python-owned copy does not change.
 
 ```python
-independent = borrowed_view.copy()
+view = handle.to_numpy()
+copy = None if view is None else view.copy()
 ```
 
-This operation is ordinary NumPy behavior applied after obtaining the view from
-the complete `allocations.f90` example. It is the safe boundary before a native
-operation that may reallocate or deallocate the authoritative storage.
+Use this when the data must survive native reallocation, deallocation, or
+reassociation.
 
-Do not use `del view` as a native deallocation mechanism. Releasing a borrowed
-Python object only releases the view and any owner-retaining Python reference;
-it does not transfer native release responsibility.
+### Caller-owned
 
-## Mutability And Replacement
+"Caller" means your Python code: the code that calls the wrapped function. This
+label says x2py must preserve the Python object you supplied. It does not always
+say who owns every allocation reachable through that object.
 
-- Ordinary caller-owned arrays **mutate in place**;
-- Python strings use **replacement** because `str` is immutable;
-- Allocatable array descriptors use **handles** because native allocation identity may change;
-- Ordinary non-descriptor array/function results use **copy-return**;
-- Allocatable array results use wrapper-owned handles whose finalizer releases
-  x2py-owned descriptor storage;
-- Pointer-array handle results stop wrapper planning until owner storage, target
-  lifetime, descriptor extraction, and destroy behavior are implemented;
-- plain and `Aliased` derived module variables remain live native-owned objects
-  through module-specific or address-backed mechanisms respectively; and
-- Borrowed views extracted from handles **share native storage** until native
-  invalidation.
+For an ordinary NumPy array, the boundary object and the target storage are both
+Python-owned:
 
-Native-array-handle extraction remains live-view-or-`None`; callers use
-`.copy()` on an extracted NumPy view for independent array storage.
+```python
+values = np.ones(4, dtype=np.float64)
+api.scale(values)
 
-Return projection and ownership are one contract. An edited `.pyi` cannot ask
-for copy-return without a projected replacement, or combine immutable storage
-with a writable borrowed view.
+# Same array object, possibly mutated in place.
+assert values[0] == 2.0
+```
 
-## Policy Source Of Truth
+The wrapper may mutate through a caller-owned object when the contract allows
+it, but it must not free, reallocate, or secretly replace that object.
 
-Generated source facts enter semantic IR, then post-IR policy completion chooses
-object kind, ownership, transfer, destruction, mutability, nullability, output
-projection, release responsibility, storage mode, getter behavior, native
-setter assignment, and Python setter exposure. Unsupported or contradictory
-combinations stop before wrapper lowering.
+For a native-backed handle or borrowed wrapper, the caller owns the Python
+object it passes, but native code or a parent wrapper may still own the target
+storage behind it:
 
-Advanced users can inspect or edit explicit `Ownership(...)`, `Transfer(...)`,
-and `Destruction(...)` metadata. Editing Semantic `.pyi` Contracts and the
-semantic format reference explain the editable forms later. Metadata can select
-an implemented policy; it cannot invent a backend path.
+```python
+handle = api.values          # Python holds the handle object.
+view = handle.to_numpy()     # Native module storage may be behind the view.
+api.update_values(handle)    # The call keeps using the same handle object.
+```
 
-## Evidence And Troubleshooting
+!!! note "Ownership is not transferred"
+    Passing an object to native code does not transfer the owner of that object
+    or its target storage. Mutation is allowed only when the completed contract
+    says that specific object can be written through.
 
-The same array concept under native-owned, wrapper-owned, and Python-owned
-lifetimes is exercised by
-[`test_ownership_contracts.py`](../../../tests/wrapper/fortran/edit_pyi_contracts/test_ownership_contracts.py).
-Exactly-once wrapper finalization is exercised by
-[`test_borrowed_finalizers.py`](../../../tests/wrapper/fortran/derived_types/test_borrowed_finalizers.py).
+### Wrapper-owned
 
-Treat use-after-deallocation risk as an application lifetime bug, not a signal
-to guess ownership. Copy before native reallocation. Runtime Issues later
-covers reproducible lifetime or cleanup symptoms.
+A generated Python class is an extension class produced by x2py and imported
+from the generated module. You construct and pass it like a normal Python
+object, but internally it controls one native instance.
+
+For Fortran users, wrapper-owned is mostly visible with supported
+`type :: ...` derived types:
+
+```python
+point = geometry.points.point(x=np.float64(1.0), y=np.float64(2.0))
+made = geometry.points.make_point(np.float64(3.0), np.float64(4.0))
+```
+
+Here `point` and `made` are Python objects whose generated x2py deallocator is
+responsible for finalizing and releasing their native instances exactly once.
+
+Owned allocatable array results are another wrapper-owned case: their generated
+handle owns persistent descriptor storage and releases it on `close()` or
+finalization. Module allocatable handles are different because the Fortran
+module still owns their target allocation.
+
+Ordinary NumPy arrays, module variables, and borrowed components are not
+wrapper-owned.
+
+Nested derived-type components are different: `container.origin` may be a
+borrowed child wrapper. It gives Python a convenient object for the component,
+but the parent object still owns the native storage.
+
+### Native-owned
+
+Native-owned storage belongs to Fortran module state or another native owner.
+Python can read it, write it through supported setters, or view it through a
+handle, but Python is not responsible for releasing it.
+
+In short, plain and `Aliased` derived module variables remain live native-owned objects.
+An `Aliased` module object may use an address-backed borrow; a plain module
+object uses generated module-specific access. In both cases, the owning module
+state decides when the native storage is valid.
+
+### Borrowed views
+
+A borrowed view is a Python object that points at storage owned somewhere else.
+The view itself may keep the parent wrapper or module object alive when x2py can
+do so, but it cannot stop native code from reallocating or deallocating the
+target storage.
+
+```python
+view = api.values.to_numpy()
+snapshot = None if view is None else view.copy()
+
+api.resize_values()
+
+# view may now be stale; snapshot remains independent Python-owned data.
+```
+
+### Call-local
+
+Call-local storage is temporary workspace created only for one wrapped call.
+x2py may create a native scalar slot, a fixed-width string buffer, or a
+descriptor adapter, pass it to native code, and release it before returning to
+Python.
+
+If the contract says native changes should be returned to Python, policy
+completion must also say how that value is projected back. Otherwise, mutation
+of call-local storage is intentionally not a persistent Python-visible update.
+
+---
+
+## Handles And Target Storage
+
+`Allocatable[T[...]]` and `Pointer[T[...]]` handles are control objects. They
+tell Python whether native storage is allocated or associated, and they provide
+`.to_numpy()` when a live view is available.
+
+Owning a handle is not the same thing as owning the target array. A module
+allocatable handle can be a stable Python object while the Fortran module still
+owns the allocation behind it. A pointer handle can describe an association
+without owning the target at all.
+
+!!! warning "Views are live, not snapshots"
+    `handle.to_numpy()` returns a view of current native storage. It never
+    creates an automatic detached snapshot. If native code may reallocate or
+    deallocate that storage, copy the view first.
+
+---
+
+## Core Rules
+
+1. **Exactly one owner** is responsible for destroying each allocation.
+2. Passing an object to native code does not automatically transfer ownership of
+   the object or its target storage.
+3. **Borrowed views** can become stale if the owner reallocates or deallocates.
+4. **Copies** are safe but more expensive.
+5. Pointers **do not** imply ownership of their target.
+6. A view from `.to_numpy()` is live: changes affect the native storage.
+
+---
+
+## Views vs Copies
+
+```python
+view = handle.to_numpy()        # borrowed live view
+copy = view.copy()              # independent Python-owned copy
+```
+
+Use a **view** when performance matters and you know the owner will keep the
+storage valid. Use a **copy** when the data must survive later native
+reallocation, deallocation, or reassociation.
+
+| Need | Use |
+| --- | --- |
+| Fast access to current native storage | `view = handle.to_numpy()` |
+| Data that survives native changes | `copy = view.copy()` |
+| In-place mutation of Python input | Caller-owned boundary object; target owner depends on that object |
+| Native object lifetime managed by Python wrapper | Wrapper-owned generated class |
+
+---
+
+## Common Situations
+
+| Situation | Ownership shape |
+| --- | --- |
+| Ordinary NumPy array passed to a writable argument | Caller-owned boundary object with Python-owned array storage. |
+| Native-backed handle passed into a call | Caller-owned boundary object; target storage can remain native-owned. |
+| Function returning an ordinary array | Usually a Python-owned NumPy array. |
+| Derived-type constructor or derived-type function result | Wrapper-owned generated class instance. |
+| Nested derived-type component | Borrowed child wrapper retained through the parent. |
+| Module variable | Native-owned state exposed through a getter, setter, handle, or proxy. |
+| `Allocatable[T[...]]` handle | Control object for allocation state and live views; target ownership depends on origin. |
+| `Pointer[T[...]]` handle | Control object for association state; the pointer does not own the target. |
+| Call-local adapter | Internal temporary storage used only during one wrapped call. |
+
+---
+
+## Practical Guidelines
+
+- Always call `.copy()` on a view before a native operation that might reallocate storage.
+- Do not use `del` as a native deallocation API.
+- Check `.allocated` / `.associated` before using handles.
+- Review the generated `.pyi` contract to understand ownership.
+- When a value crosses a boundary, identify both the boundary object owner and
+  the target storage owner.
+
+---
+
+## Next
+
+- Use the [Semantic `.pyi` Format](../reference/semantic-pyi-format.md) for policy metadata details.
+- Review [Callbacks](callbacks.md) and [Error Handling](error-handling.md) when ownership affects callable lifetimes or cleanup after failures.

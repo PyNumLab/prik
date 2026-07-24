@@ -23,14 +23,16 @@ contains only pages explicitly marked as reviewed.
    lane: a draft lane index prevents every page below that lane from entering
    the production site, even when an individual child page is marked reviewed.
 3. Implemented behavior is documented as supported only when current code and
-   tests prove it.
+   tests prove it. Public user pages describe behavior and limits without
+   exposing internal test-evidence ledgers.
 4. Planned behavior is marked explicitly and never presented as an implemented
    user contract.
 5. Maintainer policy and volatile internals do not appear in user workflows.
 6. Historical material remains under `old_docs/` and outside active navigation.
 7. User-facing source-driven examples show the complete input source before the
    command that consumes it. Generated paths must come from an immediately
-   preceding command, and commands show their expected result.
+   preceding command, and commands show their expected result. Fixture-backed
+   examples stay synchronized with their checked source.
 8. The website keeps its documentation navigation expanded and renders an
    accessible copy control on every code block, including command-output and
    result blocks.
@@ -66,8 +68,14 @@ the reader is leaving the current lane.
 The `nav` sequence in `mkdocs.yml` is the canonical reading order. Sequential
 User documentation pages may link back to pages the reader has already
 completed. They must not link from instructional prose to a later page in that
-sequence. Name the later topic in plain text and say that it is covered later
-instead of asking the reader to leave the current task.
+sequence. Explicit terminal navigation blocks headed `Next` may link forward
+because choosing a next destination is their purpose. Outside those blocks,
+name the later topic in plain text and say that it is covered later instead of
+asking the reader to leave the current task.
+`Next` blocks list destinations as bullets, and each bullet includes at least
+one Markdown link. If an intended destination page does not exist yet, either
+remove the destination until it is useful or create the draft page with
+metadata and a TODO section.
 
 Each page includes the behavior, warning, ownership fact, or limitation needed
 for its current task. A forward reference never defers a fact needed now.
@@ -104,14 +112,13 @@ as `draft`. Production builds include a Markdown page only when:
 
 The publication hook removes every other Markdown page from the MkDocs file
 collection and navigation before rendering, so drafts do not enter generated
-HTML, search, or the sitemap. When a reviewed index or overview mentions a
-draft page, the production build renders that page name as plain text until the
-target becomes publishable. Links to existing repository evidence outside the
-`docs/` tree are rewritten to the matching file or directory on GitHub; links
-to missing targets remain unchanged so the strict build can reject them. Links
-to another active documentation page or directory must stay relative to
-`docs/` and resolve inside the website. The hook never rewrites a target inside
-`docs/` to GitHub.
+HTML, search, or the sitemap. When a reviewed page mentions an unpublished
+documentation page, the production build keeps the link visible with its
+expected website route even though the target page itself is not published.
+Links to existing repository evidence outside the `docs/` tree are rewritten to
+the matching file or directory on GitHub; links to missing targets remain
+unchanged so the strict build can reject them. Links to another active
+documentation page or directory must stay relative to `docs/`.
 
 Use the normal local server to preview exactly what GitHub Pages will publish:
 

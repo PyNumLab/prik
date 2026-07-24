@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Arg, Float64, Int32, Return, Returns, String, Value, native_call, prototype
+from x2py.contracts import Addr, Arg, Float64, Int32, Return, Returns, String, native_call, prototype
 
 class point_t:
     def __init__(
@@ -13,19 +13,19 @@ class point_t:
 
 @prototype
 def value_callback(
-    value: Value(Int32)
+    value: Int32
 ) -> Int32: ...
 
 @prototype
 def scalar_storage_callback(
-    value: Float64,
-    output: Float64,
-    missing: Float64
+    value: Addr(Float64),
+    output: Addr(Float64),
+    missing: Addr(Float64)
 ) -> None: ...
 
 @prototype
 def array_storage_callback(
-    count: Int32,
+    count: Addr(Int32),
     values: Float64[count],
     output: Float64[count]
 ) -> None: ...

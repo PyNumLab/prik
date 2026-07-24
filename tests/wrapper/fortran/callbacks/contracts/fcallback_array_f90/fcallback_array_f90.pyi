@@ -2,13 +2,13 @@ from x2py.contracts import Addr, Arg, Float64, Int32, Returns, native_call, prot
 
 @prototype
 def reduce_callback(
-    count: Int32,
+    count: Addr(Int32),
     values: Float64[count]
 ) -> Float64: ...
 
 @prototype
 def transform_callback(
-    count: Int32,
+    count: Addr(Int32),
     values: Float64[count]
 ) -> Float64[count]: ...
 

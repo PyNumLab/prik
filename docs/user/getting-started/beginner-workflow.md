@@ -1,5 +1,6 @@
 ---
 title: Common Beginner Workflow
+description: Recommended development loop — edit, review contract, build, test, and rebuild
 audience: users
 prerequisites: first wrapped module
 related: ../tutorials/basic-wrapper.md, ../examples/verified-cookbook.md, ../reference/cli-commands.md
@@ -9,169 +10,121 @@ publication: reviewed
 
 # Common Beginner Workflow
 
-You have already built and called the `scale.f90` example. This page turns that
-same file into a repeatable project workflow: keep source under `src/`, build
-into `build/`, run a small Python check, and cleanly rebuild when the native
-contract changes.
+Now that you have built individual examples, here is a clean, repeatable workflow you can use for your own projects.
+The example project continues to use `scale.f90`.
 
-Use the `scale.f90` input from the
-[homepage example](../../index.md#try-x2py). Keep the same filename when
-you move it into a project layout.
+---
 
-## 1. Create A Small Project Layout
+## Recommended Project Layout
 
-Keep native sources under `src/` and Python tests under `tests/`. Treat every
-file under `build/` as generated output that the next build may replace.
-
-Start with this layout:
-
-```text
-scale-project/
-  src/
-    scale.f90
-  build/
-  tests/
-    test_scale.py
+```
+my-project/
+├── src/
+│   └── scale.f90
+├── build/              # ← Generated, do not commit
+├── tests/
+│   └── test_scale.py
+└── contracts/          # Optional: edited semantic contracts
 ```
 
-Run the remaining commands from `scale-project/`. Keep `src/` and `tests/`
-under version control. Do not commit `build/`.
+Keep `src/` and `tests/` under version control. Never commit the `build/` folder.
 
-<!-- X2PY_C_DOCS_START
-Keep native sources under `src/` and Python tests under `tests/`. Do not edit
-generated bridge, C binding, object, module, native-support, or shared-library
-files under `build/`; the next build can replace them.
-X2PY_C_DOCS_END -->
+---
 
-## 2. Review The Contract Before Compiling
+## 1. Review the Contract First
 
-Before building, print the semantic `.pyi` contract for the same source:
+Before building, always inspect the generated contract:
 
 ```bash
 python3 -m x2py generate --pyi src/scale.f90
 ```
 
-The output should match the wrapper contract from the
-[First Wrapped Function](first-wrapped-function.md) page:
+This shows you exactly what Python signatures and dtypes x2py expects.
 
-```python
-from x2py.contracts import Addr, Arg, Float64, external, native_call
+---
 
-@external
-@native_call([Addr(Arg(0)), Addr(Arg(1))])
-def scale(
-    value: Float64,
-    factor: Float64
-) -> Float64: ...
-```
-
-This confirms the Python-facing dtype contract and the native scalar-address
-projection that code generation will follow. It does not prove that the
-compiler, linker, native dependency set, or runtime environment is valid; the
-build and smoke test still need to run.
-
-## 3. Build Into An Explicit Directory
+## 2. Build the Extension
 
 ```bash
-python3 -m x2py src/scale.f90 \
-  --out-dir build/scale
+python3 -m x2py src/scale.f90 --out-dir build/scale
 ```
 
-Build output goes under `build/scale`, leaving `src/scale.f90` untouched. Use
-`--verbose` when you need exact compiler and linker commands in build logs.
+Use `--verbose` if you want to see the exact compiler and linker commands.
 
-## 4. Run A Python Smoke Test
+---
 
-Put this in `tests/test_scale.py`, or run it directly while learning the flow:
+## 3. Write a Small Smoke Test
+
+Create `tests/test_scale.py`:
 
 ```python
 import sys
-
 import numpy as np
 
 sys.path.insert(0, "build/scale")
 import scale
 
-result = scale.scale(np.float64(3.0), np.float64(2.5))
-assert result == np.float64(7.5)
+def test_scale_function():
+    result = scale.scale(np.float64(3.0), np.float64(2.5))
+    assert result == 7.5
+    assert isinstance(result, float)
+
+if __name__ == "__main__":
+    test_scale_function()
+    print("✅ Test passed")
 ```
 
-Do not stop at “the extension imports.” For each wrapped routine, keep at least
-one asserted result. For real projects, also add failure checks that matter to
-the contract: wrong dtype, wrong rank or shape, non-writable outputs, or
-unsupported optional arguments. The generated `.pyi` defines the current call
-contract; the language feature matrix later collects support boundaries and
-their focused evidence.
+Run it with:
 
-## 5. Review Generated Artifacts
+```bash
+python3 -m pytest tests/test_scale.py -q
+# or simply:
+python3 tests/test_scale.py
+```
 
-You normally do not need to open generated files. When debugging, expect
-`build/scale` to contain:
+---
 
-| Artifact | Purpose |
-| --- | --- |
-| `binding_support/` | header-only native binding support |
-| `.o` and `.mod` files | native intermediates |
-| `<name>.<extension-suffix>` | importable extension |
+## 4. Clean Rebuild When Needed
 
-<!-- X2PY_C_DOCS_START
-| `bind_c_<name>_wrapper.f90` | Fortran-to-C ABI bridge |
-| `<name>_wrapper.c` and `.h` | CPython binding |
-X2PY_C_DOCS_END -->
-
-Treat these as diagnostic evidence, not editable API definitions. Change the
-native source or an intentional semantic `.pyi` contract instead.
-
-## 6. Rebuild Cleanly When The Contract Changes
-
-For a normal rerun, execute the same build command. After changing source order,
-compiler flags, native dependencies, or the wrapper contract, remove the
-selected output directory first:
+When you change the Fortran source or want a completely clean build:
 
 ```bash
 rm -rf build/scale
 python3 -m x2py src/scale.f90 --out-dir build/scale
 ```
 
-The advanced Makefile workflow is available when you intentionally want
-inspectable commands and manual rebuild control. Makefile generation and
-`--verbose` are separate modes and cannot be combined.
+---
 
-## Advanced Next Step: Edit The Semantic Contract
+## 5. Advanced: Editing the Semantic Contract (Optional)
 
-Stay with source-driven builds until the normal loop is clear. When you need to
-review or intentionally edit the semantic `.pyi` contract, generate it
-separately:
+Only do this after you are comfortable with the basic workflow:
 
 ```bash
 python3 -m x2py generate --pyi src/scale.f90 --out contracts
 ```
 
-Do not treat this as the beginner default. A runtime build from an edited `.pyi`
-must also receive the native implementation explicitly through options such as
-`--native-fortran-sources`, `--native-objects`, or native libraries. Editing
-Semantic `.pyi` Contracts later provides the complete workflow; do not use that
-path until its ownership and native-artifact requirements are understood.
+Editing contracts is powerful but adds complexity. See **Editing Semantic .pyi Contracts** in the User Guide when you're ready.
 
-## Failure Routing
+---
 
-1. If `.pyi` generation fails, fix preprocessing, parsing, or semantic diagnostics.
-2. If compilation or linking fails, rebuild with `--verbose` and inspect
-   the emitted native commands. Build Issues is covered later.
-3. If import or runtime behavior fails, compare the artifact and call with the
-   generated contract. Runtime Issues is covered later.
-4. If a documented supported behavior fails, reproduce it with the focused
-   wrapper test linked by the feature matrix before escalating to full CI.
+## Summary of the Workflow
 
-Support boundaries are collected later in the language feature matrix. Platform
-and toolchain requirements are established in [Installation](installation.md),
-and Distribution later explains artifact portability.
+1. Edit Fortran source in `src/`
+2. Review contract with `generate --pyi`
+3. Build with explicit `--out-dir`
+4. Test with a Python smoke test
+5. Clean rebuild when necessary (`rm -rf build/...`)
 
-## Evidence
+---
 
-CLI build modes, output placement, and clean artifact expectations are checked
-by [`test_build_modes.py`](../../../tests/wrapper/fortran/build_from_source/test_build_modes.py).
-The source-driven runtime call is checked by
-[`test_runtime_abi.py`](../../../tests/wrapper/fortran/build_from_source/test_runtime_abi.py),
-and semantic `.pyi` build requirements by
-[`test_pyi_wrapper_builds.py`](../../../tests/wrapper/fortran/build_from_pyi/test_pyi_wrapper_builds.py).
+## Next
+
+- Explore the full [User Guide](../guide/index.md)
+- Check the [Language Feature Matrix](../language-support/feature-matrix.md)
+- Look at the [Verified Cookbook](../examples/verified-cookbook.md) for more examples
+
+---
+
+**Troubleshooting**
+Use `--verbose` on build failures.
+Always compare failing calls with the generated contract.

@@ -22,7 +22,7 @@ def test_cli_help_documents_exact_compiler_and_preprocessing_examples():
     assert "Compiler used for preprocessing" in res.stdout
     assert "default: gfortran; cc with --language c" in " ".join(res.stdout.split())
     assert "--compile-commands PATH" in res.stdout
-    assert "-D NAME[=VALUE]" in res.stdout
+    assert "-D, --define NAME[=VALUE]" in res.stdout
 
 
 def test_cli_c_default_compiler_mode_accepts_include_dirs(tmp_path: Path):

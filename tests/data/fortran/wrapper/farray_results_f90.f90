@@ -177,4 +177,28 @@ contains
       end do
     end if
   end function maybe_alloc_vector
+
+  function zero_alloc_matrix(cols) result(values)
+    integer, intent(in) :: cols
+    real(8), allocatable :: values(:, :)
+
+    allocate(values(0, cols))
+  end function zero_alloc_matrix
+
+  function maybe_alloc_matrix(rows, cols) result(values)
+    integer, intent(in) :: rows
+    integer, intent(in) :: cols
+    real(8), allocatable :: values(:, :)
+    integer :: i
+    integer :: j
+
+    if (rows > 0 .and. cols > 0) then
+      allocate(values(rows, cols))
+      do j = 1, cols
+        do i = 1, rows
+          values(i, j) = real(100 * i + 10 * j, 8)
+        end do
+      end do
+    end if
+  end function maybe_alloc_matrix
 end module farray_results_f90

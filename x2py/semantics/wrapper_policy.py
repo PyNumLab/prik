@@ -13,6 +13,7 @@ from x2py.semantics.metadata import (
     ADDRESS_ROLE_METADATA,
     ADDRESS_ROLE_RAW,
     BIND_TARGET_METADATA,
+    SCALAR_STORAGE_CATEGORY,
     SUPPRESS_DEFAULT_CONSTRUCTOR_METADATA,
 )
 from x2py.semantics.native_array_handles import (
@@ -2165,6 +2166,13 @@ def _callback_transfer_blockers(
     """Reject callback forms whose typed adapter ABI is incomplete."""
     semantic_type = argument.semantic_type
     blockers = list(_runtime_semantic_validation_blockers(semantic_type, f"callback argument {argument.name!r}"))
+    if argument.optional:
+        blockers.append(f"callback argument {argument.name!r} cannot be optional")
+    if _uses_unsupported_callback_descriptor(semantic_type):
+        blockers.append(
+            f"callback argument {argument.name!r} uses unsupported allocatable, pointer, "
+            "polymorphic, or assumed-type storage"
+        )
     if transfer.passed_by_value and transfer.rank > 0:
         blockers.append(f"callback argument {argument.name!r} cannot pass an array by value")
     if semantic_type.name == "String":
@@ -2175,13 +2183,7 @@ def _callback_transfer_blockers(
             blockers.append(f"callback argument {argument.name!r} has incomplete array shape")
         if semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES:
             blockers.append(f"callback argument {argument.name!r} is an unsupported array of derived values")
-    elif transfer.derived_type_identity is not None:
-        if any(
-            semantic_type.metadata.get(name)
-            for name in ("fortran_allocatable", "fortran_pointer", "fortran_polymorphic")
-        ):
-            blockers.append(f"callback argument {argument.name!r} uses unsupported derived descriptor storage")
-    elif semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES:
+    elif transfer.derived_type_identity is None and semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES:
         blockers.append(f"callback argument {argument.name!r} has unsupported type {semantic_type.name!r}")
     return tuple(blockers)
 
@@ -2240,6 +2242,8 @@ def _callback_result_blockers(
         return ("callback result is missing a completed semantic type",)
     transfer = result.transfer
     blockers = list(_runtime_semantic_validation_blockers(return_type, "callback result"))
+    if _uses_unsupported_callback_descriptor(return_type):
+        blockers.append("callback result uses unsupported allocatable, pointer, polymorphic, or assumed-type storage")
     if result.action is CallbackResultAction.REJECT_RESULT:
         blockers.append(f"callback result type {return_type.name!r} is unsupported")
     if result.action is CallbackResultAction.RETURN_ARRAY_ADDRESS:
@@ -2247,11 +2251,20 @@ def _callback_result_blockers(
             blockers.append("callback array result requires a complete fixed shape")
         if return_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES:
             blockers.append("callback array result must contain a primitive scalar type")
-    if result.action is CallbackResultAction.RETURN_DERIVED_ADDRESS and any(
-        return_type.metadata.get(name) for name in ("fortran_allocatable", "fortran_pointer", "fortran_polymorphic")
-    ):
-        blockers.append("callback derived result uses unsupported descriptor storage")
     return tuple(blockers)
+
+
+def _uses_unsupported_callback_descriptor(semantic_type: models.SemanticType) -> bool:
+    """Return whether callback lowering lacks the native descriptor ABI."""
+    return any(
+        semantic_type.metadata.get(name)
+        for name in (
+            "fortran_allocatable",
+            "fortran_pointer",
+            "fortran_polymorphic",
+            "fortran_assumed_type",
+        )
+    )
 
 
 def build_function_wrapper_policy(
@@ -2751,6 +2764,11 @@ def _result_policies(
     )
     scalar_descriptor = _scalar_descriptor_result_policy(function.return_type, decision)
     blockers = list(_result_blockers(function.return_type, decision))
+    if scalar_descriptor is not None and scalar_descriptor.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE:
+        blockers.append(
+            "direct allocatable scalar function results cannot preserve unallocated state; "
+            "use an allocatable hidden output projection"
+        )
     bridge_data_action, bridge_copy_reason = _result_bridge_data_action(function.return_type)
     if bridge_data_action is BridgeDataAction.BLOCKED and decision.kind is not ObjectKind.SCALAR:
         blockers.append("result has no completed bridge data action")
@@ -3775,7 +3793,7 @@ def _argument_shape_blockers(
     """Dispatch one argument to its scalar/string or array policy family."""
     if decision.kind is ObjectKind.DERIVED_TYPE:
         return _derived_argument_shape_blockers(argument, decision, polymorphic)
-    if int(argument.semantic_type.rank or 0) > 0:
+    if decision.kind is ObjectKind.NUMPY_ARRAY:
         return _array_argument_shape_blockers(argument, decision)
     return _scalar_or_string_argument_shape_blockers(argument, decision)
 
@@ -3970,6 +3988,8 @@ def _array_boundary_blockers(
 ) -> tuple[str, ...]:
     """Dispatch one completed array boundary without backend inference."""
     action = decision.python_barrier_action
+    if action is PythonBarrierAction.SCALAR_STORAGE:
+        return _scalar_storage_array_boundary_blockers(argument, decision)
     if action is PythonBarrierAction.ARRAY_STORAGE:
         return _array_storage_boundary_blockers(argument, decision)
     if action is PythonBarrierAction.RAW_ADDRESS:
@@ -3977,6 +3997,51 @@ def _array_boundary_blockers(
     if action is PythonBarrierAction.WRAPPER_INSTANCE:
         return _native_array_handle_boundary_blockers(argument, decision)
     return (f"argument {argument.name!r} has unsupported array Python action {action.value}",)
+
+
+def _scalar_storage_array_boundary_blockers(
+    argument: models.SemanticArgument,
+    decision: OwnershipDecision,
+) -> tuple[str, ...]:
+    """Require one rank-zero NumPy storage handoff to a scalar native dummy."""
+    blockers = []
+    if decision.owner is not OwnershipOwner.CALLER:
+        blockers.append(f"argument {argument.name!r} scalar-storage owner is {decision.owner.value}, not caller")
+    expected_transfer = TransferMode.IN_PLACE if decision.mutates_native else TransferMode.CALL_LOCAL
+    if decision.transfer is not expected_transfer:
+        blockers.append(
+            f"argument {argument.name!r} scalar-storage transfer is "
+            f"{decision.transfer.value}, not {expected_transfer.value}"
+        )
+    expected_destruction = DestructionPolicy.CALLER if decision.mutates_native else DestructionPolicy.NONE
+    if decision.destruction is not expected_destruction:
+        blockers.append(
+            f"argument {argument.name!r} scalar-storage destruction is "
+            f"{decision.destruction.value}, not {expected_destruction.value}"
+        )
+    if decision.storage_mode is not StorageMode.STACK:
+        blockers.append(
+            f"argument {argument.name!r} scalar-storage storage is {decision.storage_mode.value}, not stack"
+        )
+    if (decision.boundary_storage_mode or decision.storage_mode) is not StorageMode.STACK:
+        blockers.append(f"argument {argument.name!r} scalar-storage boundary storage is not stack")
+    if decision.native_barrier_action is not NativeBarrierAction.PASS_STORAGE_ADDRESS:
+        blockers.append(f"argument {argument.name!r} scalar storage does not use its storage address")
+    if decision.codegen_action not in {
+        CodegenAction.CALL_LOCAL_INPUT,
+        CodegenAction.IN_PLACE_ARGUMENT,
+        CodegenAction.IDENTITY_OUTPUT,
+    }:
+        blockers.append(
+            f"argument {argument.name!r} scalar-storage action is "
+            f"{decision.codegen_action.value}, not a storage-address action"
+        )
+    if decision.descriptor_boundary:
+        blockers.append(f"argument {argument.name!r} scalar storage must be non-descriptor storage")
+    array_policy = _array_handoff_policy(argument.semantic_type)
+    if not _is_scalar_storage_array_policy(array_policy):
+        blockers.append(f"argument {argument.name!r} is not rank-zero scalar storage")
+    return tuple(blockers)
 
 
 def _array_storage_boundary_blockers(
@@ -4607,8 +4672,13 @@ def _ordinary_array_hidden_result_blockers(
     label = f"hidden result {argument.name!r}"
     blockers = list(_ordinary_array_result_blockers(argument.semantic_type, decision, label))
     blockers = [item for item in blockers if " native action is " not in item]
-    if decision.native_barrier_action is not NativeBarrierAction.PASS_ARRAY_BUFFER:
-        blockers.append(f"{label} native action is {decision.native_barrier_action.value}, not array buffer")
+    expected_native = (
+        NativeBarrierAction.PASS_STORAGE_ADDRESS
+        if _is_scalar_storage_array_policy(_array_handoff_policy(argument.semantic_type))
+        else NativeBarrierAction.PASS_ARRAY_BUFFER
+    )
+    if decision.native_barrier_action is not expected_native:
+        blockers.append(f"{label} native action is {decision.native_barrier_action.value}, not {expected_native.value}")
     if decision.python_visible or not decision.projects_result:
         blockers.append(f"{label} projection visibility is inconsistent")
     if not isinstance(mapping.native_position, int):
@@ -4865,9 +4935,16 @@ def _is_first_lane_scalar_type(semantic_type: models.SemanticType) -> bool:
     scalar_name = semantic_type.dtype or semantic_type.name
     return bool(
         int(semantic_type.rank or 0) == 0
+        and not _is_scalar_storage_type(semantic_type)
         and semantic_type.name != "String"
         and scalar_name in _PLAN_PRIMITIVE_SCALAR_TYPES
     )
+
+
+def _is_scalar_storage_type(semantic_type: models.SemanticType) -> bool:
+    storage = semantic_type.storage
+    array = storage.array if storage is not None else None
+    return bool(array is not None and array.category == SCALAR_STORAGE_CATEGORY)
 
 
 def _is_plan_string_value_type(semantic_type: models.SemanticType) -> bool:
@@ -5587,6 +5664,18 @@ def _array_argument_bridge_data_action(
 ) -> tuple[BridgeDataAction, str | None]:
     """Complete one buffer, raw-address, or native-descriptor bridge view."""
     if (
+        optional_mode in {OptionalMode.REQUIRED, OptionalMode.NULLABLE_VALUE}
+        and decision.python_barrier_action is PythonBarrierAction.SCALAR_STORAGE
+        and decision.native_barrier_action is NativeBarrierAction.PASS_STORAGE_ADDRESS
+        and decision.codegen_action
+        in {
+            CodegenAction.CALL_LOCAL_INPUT,
+            CodegenAction.IN_PLACE_ARGUMENT,
+            CodegenAction.IDENTITY_OUTPUT,
+        }
+    ):
+        return BridgeDataAction.ASSOCIATE_VIEW, None
+    if (
         optional_mode is OptionalMode.REQUIRED
         and decision.python_barrier_action is PythonBarrierAction.ARRAY_STORAGE
         and decision.native_barrier_action is NativeBarrierAction.PASS_ARRAY_BUFFER
@@ -5773,6 +5862,8 @@ def _argument_handoff_mode(decision: OwnershipDecision) -> ArgumentHandoffMode:
         return ArgumentHandoffMode.OPAQUE_ADDRESS
     if decision.python_barrier_action is PythonBarrierAction.RAW_ADDRESS:
         return ArgumentHandoffMode.OPAQUE_ADDRESS
+    if decision.python_barrier_action is PythonBarrierAction.SCALAR_STORAGE:
+        return ArgumentHandoffMode.OPAQUE_ADDRESS
     if decision.native_barrier_action is NativeBarrierAction.PASS_NATIVE_DESCRIPTOR:
         return ArgumentHandoffMode.NATIVE_DESCRIPTOR
     if decision.kind is ObjectKind.NUMPY_ARRAY:
@@ -5803,9 +5894,11 @@ def _array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandoffPol
     array = storage.array if storage is not None else None
     if array is None:
         return None
+    if semantic_type.name == "String" and array.category == SCALAR_STORAGE_CATEGORY:
+        return None
     assumed_rank = array.category == "assumed_rank"
     rank = _array_handoff_rank(semantic_type, array.rank, assumed_rank)
-    if rank is not None and rank <= 0:
+    if rank is not None and rank <= 0 and not (rank == 0 and array.category == SCALAR_STORAGE_CATEGORY):
         return None
     shape = tuple(str(item) for item in (array.shape or semantic_type.shape))
     axes = tuple(str(item) for item in array.axes)
@@ -5815,7 +5908,7 @@ def _array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandoffPol
         axes=axes,
         order=_array_handoff_order(array.order, assumed_rank),
         native_order=_array_handoff_native_order(array.order, array.copy_order, assumed_rank),
-        contiguous=_array_handoff_contiguous(array.contiguous, assumed_rank),
+        contiguous=_array_handoff_contiguous(array.contiguous, assumed_rank, array.category),
         itemsize=_array_handoff_itemsize(semantic_type),
         category=array.category,
         extent_references=tuple(_array_extent_references(item) for item in shape),
@@ -5851,8 +5944,10 @@ def _array_handoff_native_order(
     return copy_order if copy_order is not None else order
 
 
-def _array_handoff_contiguous(contiguous: bool | None, assumed_rank: bool) -> bool | None:
+def _array_handoff_contiguous(contiguous: bool | None, assumed_rank: bool, category: str | None) -> bool | None:
     """Default assumed-rank handoff to one contiguous native buffer."""
+    if category == SCALAR_STORAGE_CATEGORY and contiguous is None:
+        return True
     if assumed_rank and contiguous is None:
         return True
     return contiguous
@@ -5874,17 +5969,25 @@ def _is_phase6_ordinary_array_type(semantic_type: models.SemanticType) -> bool:
         return False
     storage = semantic_type.storage
     array = storage.array if storage is not None else None
+    scalar_storage = _is_scalar_storage_array_policy(array_policy)
+    supported_element = semantic_type.name in _PLAN_PRIMITIVE_SCALAR_TYPES or (
+        semantic_type.name == "String" and array_policy.itemsize is not None and not scalar_storage
+    )
+    supported_rank = array_policy.rank is None or 1 <= array_policy.rank <= 15 or scalar_storage
     return bool(
         array is not None
-        and (
-            semantic_type.name in _PLAN_PRIMITIVE_SCALAR_TYPES
-            or (semantic_type.name == "String" and array_policy.itemsize is not None)
-        )
-        and (array_policy.rank is None or 1 <= array_policy.rank <= 15)
+        and supported_element
+        and supported_rank
         and (array_policy.rank is None or len(array_policy.shape) == array_policy.rank)
         and (array_policy.rank is None or len(array_policy.axes) == array_policy.rank)
         and not array.allocatable
         and not array.pointer
+    )
+
+
+def _is_scalar_storage_array_policy(array_policy: ArrayHandoffPolicy | None) -> bool:
+    return bool(
+        array_policy is not None and array_policy.rank == 0 and array_policy.category == SCALAR_STORAGE_CATEGORY
     )
 
 

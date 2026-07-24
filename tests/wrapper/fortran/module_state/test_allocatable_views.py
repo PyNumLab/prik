@@ -148,15 +148,15 @@ contains
     value => target_scale
   end subroutine create_pointer
 
-  function maybe_allocatable(flag) result(value)
+  subroutine maybe_allocatable(flag, value)
     integer(4), intent(in) :: flag
-    real(8), allocatable :: value
+    real(8), allocatable, intent(out) :: value
 
     if (flag /= 0) then
       allocate(value)
       value = 3.5_8
     end if
-  end function maybe_allocatable
+  end subroutine maybe_allocatable
 
   function maybe_pointer(flag) result(value)
     integer(4), intent(in) :: flag

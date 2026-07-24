@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from tests._shared.ownership_policy_support import parse_pyi_text
 from tests.wrapper.fortran._support import wrapper_source
 from x2py.parsers.fortran.parser import parse_fortran_project
 from x2py.pipeline.build import _apply_source_python_exports, _fortran_source_for_pipeline, _merge_wrapper_modules
@@ -24,12 +25,14 @@ from x2py.semantics.ownership import (
     ObjectKind,
     OwnershipOwner,
     PythonBarrierAction,
-    StorageMode,
     SetterAction,
+    StorageMode,
     TransferMode,
 )
 from x2py.semantics.policy_completion import complete_semantic_policies
 from x2py.semantics.wrapper_policy import (
+    RAW_STRING_ADDRESS_COPY_REASON,
+    STRING_STORAGE_COPY_REASON,
     ArgumentHandoffMode,
     BridgeDataAction,
     CallbackABIKind,
@@ -38,17 +41,14 @@ from x2py.semantics.wrapper_policy import (
     FunctionWrapperPolicy,
     ModuleGetterAction,
     ModuleVariablePolicy,
+    NativeArrayDescriptorKind,
+    NativeDescriptorHandoffABI,
     NativeStatusErrorPolicy,
     OptionalMode,
     PythonExceptionKind,
-    RAW_STRING_ADDRESS_COPY_REASON,
-    STRING_STORAGE_COPY_REASON,
     WritebackPhase,
     completed_function_wrapper_policy,
 )
-
-from tests._shared.ownership_policy_support import parse_pyi_text
-
 
 FMATH_CONTRACT = Path("tests/wrapper/fortran/scalars/contracts/fmath/__init__.pyi")
 
@@ -218,8 +218,42 @@ def with_scalar(n: Int32) -> tuple[Int32, Int32]: ...
     hidden = policy.results[1]
     assert hidden.native_barrier_action is NativeBarrierAction.PASS_CALL_LOCAL_ADDRESS
     assert policy.native_call_slots[1].owner_path == hidden.owner_path
-    assert policy.native_call_slots[1].result_position == hidden.result_position
-    assert policy.native_call_slots[1].native_barrier_action is hidden.native_barrier_action
+
+
+def test_rank_zero_scalar_storage_results_complete_as_numpy_array_policies():
+    module = parse_pyi_text(
+        """
+def direct_storage_result() -> Float64[()]: ...
+
+@native_call([Return("out", 0)])
+def hidden_storage_result() -> Float64[()]: ...
+""",
+        module_name="rank_zero_storage_results",
+    )
+    complete_semantic_policies(module)
+
+    policies = {function.name: completed_function_wrapper_policy(function) for function in module.functions}
+    direct_policy = policies["direct_storage_result"]
+    hidden_policy = policies["hidden_storage_result"]
+    direct = direct_policy.results[0]
+    hidden = hidden_policy.results[0]
+
+    assert direct_policy.supported is True
+    assert hidden_policy.supported is True
+    assert direct.ownership.kind is ObjectKind.NUMPY_ARRAY
+    assert direct.array.rank == 0
+    assert direct.array.category == "scalar_storage"
+    assert direct.codegen_action is CodegenAction.COPY_OUT
+    assert direct.native_barrier_action is NativeBarrierAction.NONE
+    assert direct.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION
+    assert hidden.ownership.kind is ObjectKind.NUMPY_ARRAY
+    assert hidden.array.rank == 0
+    assert hidden.array.category == "scalar_storage"
+    assert hidden.codegen_action is CodegenAction.COPY_OUT
+    assert hidden.native_barrier_action is NativeBarrierAction.PASS_STORAGE_ADDRESS
+    assert hidden.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION
+    assert hidden_policy.native_call_slots[0].result_position == hidden.result_position
+    assert hidden_policy.native_call_slots[0].native_barrier_action is hidden.native_barrier_action
 
 
 def test_source_hidden_scalar_output_completes_call_local_address_before_planning():
@@ -233,7 +267,7 @@ def test_source_hidden_scalar_output_completes_call_local_address_before_plannin
     assert policy.native_call_slots[1].native_barrier_action is hidden.native_barrier_action
 
 
-def test_source_callback_value_override_and_reference_default_are_completed():
+def test_source_callback_value_default_and_explicit_reference_are_completed():
     module = _source_semantic_module("fcallback_all_f90.f90", module_name="fcallback_all_f90")
     function = next(item for item in module.functions if item.name == "apply_value_callback")
     policy = completed_function_wrapper_policy(function)
@@ -249,6 +283,42 @@ def test_source_callback_value_override_and_reference_default_are_completed():
     assert extent.abi is CallbackABIKind.REFERENCE
     assert extent.passed_by_value is False
     assert extent.adapter_action is CallbackTransferAction.COPY_IN
+
+
+@pytest.mark.parametrize(
+    ("prototype", "blocker"),
+    [
+        (
+            "def callback_shape(value: Allocatable[Float64]) -> None: ...",
+            "callback argument 'value' uses unsupported allocatable, pointer, polymorphic, or assumed-type storage",
+        ),
+        (
+            "def callback_shape(value: Float64 = ...) -> None: ...",
+            "callback argument 'value' cannot be optional",
+        ),
+        (
+            "def callback_shape() -> Pointer[Float64]: ...",
+            "callback result uses unsupported allocatable, pointer, polymorphic, or assumed-type storage",
+        ),
+    ],
+)
+def test_callback_descriptor_and_optional_forms_are_blocked_before_codegen(prototype: str, blocker: str):
+    module = parse_pyi_text(
+        f"""
+@prototype
+{prototype}
+
+def apply(callback: callback_shape) -> None: ...
+""",
+        module_name="unsupported_callback_shape",
+    )
+
+    complete_semantic_policies(module)
+
+    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
+    assert isinstance(policy, FunctionWrapperPolicy)
+    assert policy.supported is False
+    assert blocker in policy.blockers
 
 
 def test_external_declaration_mode_is_completed_from_native_abi_requirements():
@@ -288,6 +358,48 @@ def create_allocatable() -> Float64 | None: ...
     assert result_argument.semantic_type.storage is None
     assert decision.descriptor_boundary is True
     assert decision.native_barrier_action is NativeBarrierAction.PASS_VALUE
+
+
+def test_direct_allocatable_scalar_function_result_is_blocked_before_codegen():
+    module = parse_pyi_text(
+        """
+@native_call([Arg(0)], result=Allocatable(Return(0)))
+def maybe_allocatable(flag: Int32) -> Float64 | None: ...
+""",
+        module_name="direct_descriptor_result",
+    )
+
+    complete_semantic_policies(module)
+
+    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
+    assert isinstance(policy, FunctionWrapperPolicy)
+    assert policy.supported is False
+    assert (
+        "direct allocatable scalar function results cannot preserve unallocated state; "
+        "use an allocatable hidden output projection"
+    ) in policy.blockers
+
+
+def test_direct_high_rank_allocatable_function_result_is_supported_before_codegen():
+    module = parse_pyi_text(
+        """
+@native_call([Addr(Arg(0)), Addr(Arg(1))])
+def make_matrix(n: Int32, m: Int32) -> Allocatable[Float64[:, :]]: ...
+""",
+        module_name="direct_allocatable_matrix_result",
+    )
+
+    complete_semantic_policies(module)
+
+    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
+    assert isinstance(policy, FunctionWrapperPolicy)
+    assert policy.supported is True
+    assert policy.blockers == ()
+    result = policy.results[0]
+    assert result.rank == 2
+    assert result.native_array_handle is not None
+    assert result.native_array_handle.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE
+    assert result.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
 
 
 def test_source_fmath_scalar_policy_accepts_storage_address_native_action():

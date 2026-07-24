@@ -594,7 +594,7 @@ summary, the exhaustive matrix, and the test tree disagree.
 
 | Status | Collected nodes |
 | --- | ---: |
-| `wrapper-plan` | 353 |
+| `wrapper-plan` | 357 |
 | `dual-route` | 0 |
 | `legacy` | 0 |
 | `not-applicable` | 76 |
@@ -2610,30 +2610,27 @@ Legacy oracle:
 
 ### Phase 7E — Owned Allocatable Results And Hidden Outputs
 
-Included: rank-positive allocatable direct function results and hidden output
-descriptors whose completed policy selects `owned_result_descriptor`. A valid
-allocatable function result is allocated when returned; an unallocated
-nonpointer function result is a nonconforming native procedure and the wrapper
-does not compensate for it. An allocatable output dummy may validly remain
-unallocated and still returns a present `AllocatableArray` handle whose state
-lives inside that handle. Pointer handle results remain blocked until stable
-owner storage and target lifetime are explicit.
+Included: allocatable array direct function results and hidden output
+descriptors whose completed policy selects `owned_result_descriptor`.
+Direct array results preserve allocated, zero-sized, and unallocated state,
+including matrices and higher-rank arrays. An allocatable output dummy may
+validly remain unallocated and still returns a present `AllocatableArray` handle
+whose state lives inside that handle. Pointer handle results remain blocked
+until stable owner storage and target lifetime are
+explicit.
 
-For a numeric direct allocatable function result, the bridge assigns the native
-function expression once into a procedure-local allocatable and then uses
-`move_alloc` to transfer that allocation into the allocatable `intent(out)`
-dummy backed by persistent wrapper-owned `CFI_CDESC_T(rank)` storage. The move
-does not copy the array payload. Do not insert a collector helper, an
-`allocated(...)` guard, or a second intrinsic assignment. The native function
-must return an allocated, defined result; an unallocated result is a
-nonconforming native procedure and remains the user's responsibility rather
-than a wrapper fallback. Other procedure-local storage remains permitted only
-when representation conversion genuinely requires it, such as
-deferred-character byte materialization. The binding constructs the complete
-generated operation table and Python handle only after owner storage is valid.
-Ownership transfers to the handle exactly once; every earlier failure path
-releases the persistent allocation and any genuinely required bridge-local
-allocation.
+For a supported numeric direct allocatable function result, the bridge assigns
+the native function expression once into a procedure-local allocatable and then
+uses `move_alloc` to transfer its state into the allocatable `intent(out)` dummy
+backed by persistent wrapper-owned `CFI_CDESC_T(rank)` storage. The move does
+not copy the array payload and preserves an unallocated rank-one result. Do not
+insert a collector helper or a second intrinsic assignment. Other
+procedure-local storage remains permitted only when representation conversion
+genuinely requires it, such as deferred-character byte materialization. The
+binding constructs the complete generated operation table and Python handle
+only after owner storage is valid. Ownership transfers to the handle exactly
+once; every earlier failure path releases persistent storage and any genuinely
+required bridge-local allocation.
 
 Character-element handles carry runtime `elem_len` and declared element-length
 policy in the same descriptor record. Because a deferred character width is
@@ -4431,8 +4428,8 @@ existing source/generated-`.pyi` runtime assertions are the behavioral oracle.
 | `callbacks/test_array_callbacks.py::test_immediate_dummy_procedure_converts_array_arguments_and_results[*]` | writable array view, shaped array result, outer-output identity, and reference writeback | array argument/result slice |
 | `callbacks/test_all_callback_shapes.py::test_immediate_callbacks_cover_all_supported_argument_shapes[*]` | scalar values, fixed strings, arrays, derived values, non-scalar reference writeback, and one combined call envelope | cross-kind closure slice |
 | `callbacks/test_derived_callbacks.py::test_immediate_dummy_procedure_converts_derived_arguments_and_results[*]` | callback-local borrowed derived input plus wrapper-owned derived result conversion | derived slice after Phase 9 construction |
-| `callbacks/test_callback_generated_pyi_contracts.py` | named prototypes, reference-default and `Value(T)` transport, shape, character storage, cross-module identity, and result annotations round-trip exactly | semantic-contract parity slice |
-| `semantics/conversion/pyi/test_types_and_values.py` callback cases | prototype declarations and references, `Value(T)`, exact argument names used by shapes, and unnecessary `Addr(...)` prototype forms | policy completion before planner work |
+| `callbacks/test_callback_generated_pyi_contracts.py` | named prototypes, primitive value defaults, explicit primitive `Addr(T)` references, non-primitive `Value(T)` transport, shape, character storage, cross-module identity, and result annotations round-trip exactly | semantic-contract parity slice |
+| `semantics/conversion/pyi/test_types_and_values.py` callback cases | prototype declarations and references, primitive `Addr(T)`, non-primitive `Value(T)`, exact argument names used by shapes, and invalid prototype transport forms | policy completion before planner work |
 
 ### Phase 10 Plan Shape And Action Vocabulary
 
@@ -4504,12 +4501,13 @@ For every dependency-closed sub-lane:
   call scope, context lifetime, same-thread rule, GIL rule, cleanup, and
   fatal-error behavior.
 - [x] Preserve generated and edited named prototypes exactly. Reject an
-  incomplete prototype reference, unnecessary `Addr`, optional procedure,
+  incomplete prototype reference, invalid prototype `Addr`, optional procedure,
   stored/procedure-pointer lifetime, unavailable mandatory native interface,
   or unsupported result with the owner path and one exact reason.
 - [x] Complete callback signature/result/ownership policy before wrapper
   planning; lowering may only project the completed callback record.
-- [x] Add policy/planning tests for reference-default transport, `Value(T)`,
+- [x] Add policy/planning tests for primitive value defaults, explicit
+  primitive `Addr(T)` references, non-primitive `Value(T)`,
   and retained unsupported forms before planner changes.
 
 ### Phase 10B — Typed Callback Plan And Validation

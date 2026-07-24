@@ -131,14 +131,16 @@
             {
               "name": "same_name",
               "type": {
-                "model": "CBool",
+                "model": "CTypedef",
                 "qualifiers": [],
-                "source_text": "_Bool same_name"
+                "source_text": "bool same_name",
+                "name": "bool",
+                "type": null,
+                "source_location": null,
+                "declaration_locations": []
               },
               "declared_type": {
-                "model": "CBool",
-                "qualifiers": [],
-                "source_text": "_Bool same_name"
+                "reference": "bool"
               },
               "source_location": null,
               "callback_policy": null
@@ -220,13 +222,13 @@
             "filename": "general/name_reuse.h",
             "line": 18,
             "column": 1,
-            "source_line": "void do_work_l("
+            "source_line": "void do_work_l(bool same_name, struct same_name *shared);"
           },
           "start": {
             "filename": "general/name_reuse.h",
             "line": 18,
             "column": 1,
-            "source_line": "void do_work_l("
+            "source_line": "void do_work_l(bool same_name, struct same_name *shared);"
           },
           "end": null,
           "declaration_locations": []
@@ -365,9 +367,13 @@
         {
           "name": "convert_to_logical",
           "result_type": {
-            "model": "CBool",
+            "model": "CTypedef",
             "qualifiers": [],
-            "source_text": "_Bool"
+            "source_text": "bool",
+            "name": "bool",
+            "type": null,
+            "source_location": null,
+            "declaration_locations": []
           },
           "parameters": [
             {
@@ -423,13 +429,13 @@
             "filename": "general/name_reuse.h",
             "line": 21,
             "column": 1,
-            "source_line": "_Bool "
+            "source_line": "bool convert_to_logical(const char *same_name);"
           },
           "start": {
             "filename": "general/name_reuse.h",
             "line": 21,
             "column": 1,
-            "source_line": "_Bool "
+            "source_line": "bool convert_to_logical(const char *same_name);"
           },
           "end": null,
           "declaration_locations": []
@@ -485,9 +491,13 @@
         {
           "name": "same_name_l",
           "type": {
-            "model": "CBool",
+            "model": "CTypedef",
             "qualifiers": [],
-            "source_text": "extern _Bool same_name_l"
+            "source_text": "extern bool same_name_l",
+            "name": "bool",
+            "type": null,
+            "source_location": null,
+            "declaration_locations": []
           },
           "storage": [
             "extern"
@@ -498,7 +508,7 @@
             "filename": "general/name_reuse.h",
             "line": 12,
             "column": 1,
-            "source_line": "extern "
+            "source_line": "extern bool same_name_l;"
           },
           "callback_policy": null,
           "declaration_locations": []
@@ -693,14 +703,10 @@
         {
           "name": "same_name",
           "type": {
-            "model": "CBool",
-            "qualifiers": [],
-            "source_text": "_Bool same_name"
+            "reference": "bool"
           },
           "declared_type": {
-            "model": "CBool",
-            "qualifiers": [],
-            "source_text": "_Bool same_name"
+            "reference": "bool"
           },
           "source_location": null,
           "callback_policy": null
@@ -750,13 +756,13 @@
         "filename": "general/name_reuse.h",
         "line": 18,
         "column": 1,
-        "source_line": "void do_work_l("
+        "source_line": "void do_work_l(bool same_name, struct same_name *shared);"
       },
       "start": {
         "filename": "general/name_reuse.h",
         "line": 18,
         "column": 1,
-        "source_line": "void do_work_l("
+        "source_line": "void do_work_l(bool same_name, struct same_name *shared);"
       },
       "end": null,
       "declaration_locations": []
@@ -895,9 +901,7 @@
     "convert_to_logical": {
       "name": "convert_to_logical",
       "result_type": {
-        "model": "CBool",
-        "qualifiers": [],
-        "source_text": "_Bool"
+        "reference": "bool"
       },
       "parameters": [
         {
@@ -953,13 +957,13 @@
         "filename": "general/name_reuse.h",
         "line": 21,
         "column": 1,
-        "source_line": "_Bool "
+        "source_line": "bool convert_to_logical(const char *same_name);"
       },
       "start": {
         "filename": "general/name_reuse.h",
         "line": 21,
         "column": 1,
-        "source_line": "_Bool "
+        "source_line": "bool convert_to_logical(const char *same_name);"
       },
       "end": null,
       "declaration_locations": []
@@ -1015,9 +1019,7 @@
     "same_name_l": {
       "name": "same_name_l",
       "type": {
-        "model": "CBool",
-        "qualifiers": [],
-        "source_text": "extern _Bool same_name_l"
+        "reference": "bool"
       },
       "storage": [
         "extern"
@@ -1028,7 +1030,7 @@
         "filename": "general/name_reuse.h",
         "line": 12,
         "column": 1,
-        "source_line": "extern "
+        "source_line": "extern bool same_name_l;"
       },
       "callback_policy": null,
       "declaration_locations": []

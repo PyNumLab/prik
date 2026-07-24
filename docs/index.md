@@ -1,5 +1,6 @@
 ---
 title: x2py
+description: Turn Fortran into importable Python extensions with zero boilerplate
 audience: users
 prerequisites: none
 related: user/getting-started/index.md, user/getting-started/installation.md
@@ -9,14 +10,16 @@ publication: reviewed
 
 # x2py
 
-x2py turns supported Fortran source into an importable Python extension. It
-also exposes the parsed interface as language-neutral semantic IR and editable
-`.pyi` contracts, so unsupported boundaries are reported before wrapper code is
-compiled.
+**x2py turns supported Fortran source into fast, importable Python extensions.**
 
-## Try x2py
+It also generates a language-neutral semantic IR and editable `.pyi`
+contracts, so unsupported boundaries are reported before wrapper compilation.
 
-This first example wraps a scalar Fortran function. Create `scale.f90`:
+---
+
+## Try it in 30 seconds {#try-x2py}
+
+Create a file `scale.f90`:
 
 <!-- x2py-doc-source: tests/data/fortran/wrapper/scale.f90 -->
 ```fortran
@@ -27,40 +30,27 @@ real(8) function scale(value, factor) result(output)
 end function scale
 ```
 
-Build the Python extension from the directory containing that file:
+Build the Python extension:
 
 ```bash
 python3 -m x2py scale.f90
 ```
 
-The command creates an importable `scale` extension beside the source and keeps
-its generated wrapper and build artifacts under `__x2py__/`. Call the native
-function from Python with the exact NumPy scalar types required by its
-contract:
+Use it from Python:
 
 ```python
 import numpy as np
-
 import scale
 
 result = scale.scale(np.float64(3.0), np.float64(2.5))
-print(result)
+print(result)        # 7.5
 ```
 
-The call prints:
-
-```text
-7.5
-```
-
-The generated function is inspectable from Python:
+Inspect the generated contract:
 
 ```python
 print(scale.scale.__doc__)
 ```
-
-Its docstring describes the public signature, accepted dtypes, result, and
-call-time type error:
 
 ```text
 scale(value, factor) -> float64
@@ -80,12 +70,35 @@ TypeError
     If an argument has an incompatible Python type or dtype.
 ```
 
-That is the basic x2py workflow: provide native source, build an extension,
-import it, and call the generated Python surface.
+---
 
-## Continue With Getting Started
+## How it works
 
-This preview assumes x2py, NumPy, and a supported native compiler are already
-available. [Getting Started](user/getting-started/index.md) walks through
-installation and verification first, then rebuilds this function and explains
-its generated contract and artifacts.
+1. You write standard Fortran
+2. `x2py` parses the interface and generates a compact native wrapper
+3. It produces a Python extension module and editable semantic `.pyi` contracts
+4. You get full NumPy scalar dtype safety and clear error messages
+
+No manual `f2py` signatures. No low-level boilerplate.
+
+## Next steps
+
+[Getting Started](user/getting-started/index.md){ .md-button .md-button--primary }
+
+This guide walks you through installation, compiler setup, and a deeper look at the generated artifacts.
+
+---
+
+## Features
+
+- Automatic generation of Python extensions from Fortran
+- Language-neutral semantic IR
+- Editable `.pyi` type stubs
+- Strict NumPy dtype checking at call time
+- Clean, readable `__doc__` strings
+- Build artifacts isolated in `__x2py__/`
+
+---
+
+**Ready to wrap your Fortran code?**
+Start with the [Getting Started](user/getting-started/index.md) guide.

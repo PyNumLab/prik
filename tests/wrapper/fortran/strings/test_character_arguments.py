@@ -223,14 +223,14 @@ contains
     names = [character(kind=c_char, len=4) :: "gold", "blue"]
   end function make_names_function
 
-  function maybe_name(flag) result(name)
+  subroutine maybe_name(flag, name)
     integer(kind=4), intent(in) :: flag
-    character(kind=c_char, len=:), allocatable :: name
+    character(kind=c_char, len=:), allocatable, intent(out) :: name
     if (flag /= 0) then
       allocate(character(kind=c_char, len=4) :: name)
       name = "blue"
     end if
-  end function maybe_name
+  end subroutine maybe_name
 
   subroutine replace_names(names)
     character(kind=c_char, len=:), allocatable, intent(inout) :: names(:)
@@ -257,7 +257,7 @@ def make_names() -> Allocatable[String[:][:]]: ...
 
 def make_names_function() -> Allocatable[String[:][:]]: ...
 
-@native_call([Arg(0)], result=Allocatable(Return(0)))
+@native_call([Arg(0), Allocatable(Return("name", 0))])
 def maybe_name(flag: Int32) -> String | None: ...
 
 def replace_names(
