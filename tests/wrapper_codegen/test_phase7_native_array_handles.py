@@ -261,6 +261,7 @@ def test_phase7_generated_artifacts_follow_one_typed_action_vocabulary():
     assert "bound_values = (CFI_cdesc_t *)&bound_values_storage;" in optional_binding
     assert "result_value = native_make(n)" in bridge_source
     assert "result_value = native_make_matrix(n, m)" in bridge_source
+    assert "if (allocated(result_value)) then" in bridge_source
     assert "call move_alloc(result_value, result)" in bridge_source
     assert "character(kind=c_char, len=:), allocatable :: value_value" in bridge_source
     assert "result_itemsize" in c_source
@@ -281,7 +282,10 @@ def test_phase7_numeric_owned_result_is_collected_before_persistent_descriptor_m
     assert "real(c_double), allocatable, dimension(:), intent(out) :: result" in procedure
     assert "real(c_double), allocatable, dimension(:) :: result_value" in procedure
     assert "result_value = native_make(n)" in procedure
+    assert "if (allocated(result_value)) then" in procedure
     assert "call move_alloc(result_value, result)" in procedure
+    assert "if (allocated(result)) then" in procedure
+    assert "deallocate(result)" in procedure
     assert "result = result_value" not in procedure
     assert "x2py_collect_make_allocatable_array_result" not in bridge_source
 

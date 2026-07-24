@@ -4352,9 +4352,20 @@ class FortranBridgeGenerator(ClassVisitor):
             if self._is_owned_deferred_character_result(result):
                 return self._owned_deferred_character_copy_nodes(result, "result", "result_value", "result_copy")
             return (
-                FortranCall(
-                    "move_alloc",
-                    (CodeExpression("result_value"), CodeExpression("result")),
+                FortranIf(
+                    CodeExpression("allocated(result_value)"),
+                    body=(
+                        FortranCall(
+                            "move_alloc",
+                            (CodeExpression("result_value"), CodeExpression("result")),
+                        ),
+                    ),
+                    else_body=(
+                        FortranIf(
+                            CodeExpression("allocated(result)"),
+                            body=(FortranDeallocate("result"),),
+                        ),
+                    ),
                 ),
             )
         if result.object_kind is ObjectKind.NUMPY_ARRAY:
