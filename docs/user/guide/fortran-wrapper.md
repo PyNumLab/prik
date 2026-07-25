@@ -936,6 +936,12 @@ use ordinary return annotations; hidden allocatable array outputs use
 `Allocatable[T[...]]` handles whose unallocated state remains inside the
 handle.
 
+Direct allocatable array function results are different: plain
+`Allocatable[T[...]]` means the native function must return an allocated
+descriptor, using a zero extent for empty data. Use
+`Annotated[Allocatable[T[...]], MaybeUnallocated]` only for a direct function
+result that may return an unallocated descriptor.
+
 ### Generated Docstrings
 
 Generated modules, functions, classes, constructors, methods, overloads, and
@@ -1041,18 +1047,19 @@ Allocatable behavior depends on where the allocation lives.
 
 Top-level allocatable array function results and non-optional hidden
 allocatable array outputs return wrapper-owned `AllocatableArray` objects.
-Allocated, zero-sized, and unallocated native states all return a present
-handle. The handle owns persistent descriptor storage and releases it on
-`close()` or finalization. Use a hidden allocatable output dummy when the native
-API already expresses the result as an `intent(out)` argument.
+The handle owns persistent descriptor storage and releases it on `close()` or
+finalization. Plain direct function results must be allocated; use a zero-sized
+allocation for empty data. Hidden `intent(out)` allocatable outputs can return
+unallocated state portably. A direct function result that may be unallocated
+must be annotated as `MaybeUnallocated` in the semantic `.pyi` contract.
 
 ```fortran
 function make_vector(n) result(values)
   integer, intent(in) :: n
   real(8), allocatable :: values(:)
 
+  allocate(values(max(n, 0)))
   if (n > 0) then
-    allocate(values(n))
     values = 3.0_8
   end if
 end function make_vector
@@ -1064,9 +1071,10 @@ assert values.allocated is True
 view = values.to_numpy()
 view[0] = 9.0
 
-missing = make_vector(0)
-assert missing.allocated is False
-assert missing.to_numpy() is None
+empty = make_vector(0)
+assert empty.allocated is True
+assert empty.shape == (0,)
+assert empty.to_numpy().shape == (0,)
 ```
 
 ### Allocatable `intent(inout)` Handle Mutation
@@ -1219,9 +1227,9 @@ np.testing.assert_array_equal(values, [1.0, 2.0, 3.0, 4.0])
 Ordinary returned arrays preserve dtype, rank, required extents, and Fortran
 ordering for multidimensional results. Numeric results
 support ranks 1 through 15 and zero-sized dimensions. An allocatable zero-sized
-result is a present handle with a zero extent; an unallocated result is a
-present handle whose `allocated` property is false and whose `to_numpy()`
-result is `None`.
+result is a present handle with a zero extent. An unallocated direct
+allocatable function result requires `MaybeUnallocated`; then the returned
+handle's `allocated` property is false and `to_numpy()` returns `None`.
 
 Arrays of derived types are blocked because their element layout,
 construction, destruction, aliasing, and copy policy are not defined.

@@ -82,12 +82,7 @@ def scalar_matrix(tmp_path_factory) -> MatrixBuild:
         native_fortran_sources=[SOURCE],
         output_dir=output_dir,
     )
-    try:
-        package = _import_from_build_dir(result.module_name, result.output_dir)
-    except ImportError as exc:
-        if "cannot enable executable stack" in str(exc):
-            pytest.skip("local platform refuses executable-stack wrapper trampolines")
-        raise
+    package = _import_from_build_dir(result.module_name, result.output_dir)
     return MatrixBuild(
         package.fscalar_derived_actual_dummy_matrix_f90,
         package.phase8_left_types,

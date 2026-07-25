@@ -594,7 +594,7 @@ summary, the exhaustive matrix, and the test tree disagree.
 
 | Status | Collected nodes |
 | --- | ---: |
-| `wrapper-plan` | 358 |
+| `wrapper-plan` | 359 |
 | `dual-route` | 0 |
 | `legacy` | 0 |
 | `not-applicable` | 76 |
@@ -651,6 +651,7 @@ already covered by the new generator.
 | `tests/wrapper/fortran/arrays/test_array_contracts.py::*` | source/generated-.pyi parity or parametrized route | ordinary arrays | `wrapper-plan` |
 | `tests/wrapper/fortran/arrays/test_array_generated_pyi_contracts.py::*` | non-generating: generated semantic .pyi fixture parity | semantic .pyi generation/parsing | `not-applicable` |
 | `tests/wrapper/fortran/arrays/test_array_results.py::test_array_results_follow_data_buffer_and_descriptor_handle_contracts[*]` | production plan route in source/generated-.pyi parity modes | fixed/runtime-shape ordinary array results; owned allocatable descriptor results; namespace preservation | `wrapper-plan` |
+| `tests/wrapper/fortran/arrays/test_array_results.py::test_maybe_unallocated_allocatable_result_preserves_absent_state` | edited semantic `.pyi` contract over the existing array-result native unit | `MaybeUnallocated` direct allocatable vector/matrix result annotations preserve allocated and unallocated result states without changing default always-allocated result handling | `wrapper-plan` |
 | `tests/wrapper/fortran/arrays/test_array_results.py::test_ordinary_array_results_use_canonical_plan` | canonical production output-only plan route | fixed/runtime-shape ordinary array results; ranks one through fifteen; Fortran order; zero-sized results; allocation/copy/release failure paths | `wrapper-plan` |
 | `tests/wrapper/fortran/arrays/test_array_results.py::test_owned_allocatable_results_preserve_handle_state` | canonical reduced owned-result contract | allocated and zero-sized wrapper-owned `CFI_CDESC_T` function-result handles; extraction and release | `wrapper-plan` |
 | `tests/wrapper/fortran/arrays/test_assumed_rank_arrays.py::test_assumed_rank_arguments_dispatch_to_runtime_rank[*]` | source/generated-.pyi parity | ordinary arrays; native-handle actuals deferred to Phase 7 | `wrapper-plan` |
