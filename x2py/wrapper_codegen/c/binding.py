@@ -88,6 +88,7 @@ from x2py.wrapper_codegen.plan import (
     ModulePlan,
     ModuleVariablePlan,
     NamespacePlan,
+    NativeArrayActualPlan,
     NativeCallSlotPlan,
     ResultPlan,
 )
@@ -6429,20 +6430,18 @@ class CBindingGenerator(ClassVisitor):
             ),
             CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_runtime)")),
             CExpressionStatement(CodeExpression(f"if ({prefix}_helper == NULL) return NULL")),
-            CExpressionStatement(CodeExpression(f"{prefix}_shape = PyTuple_New({actual.rank})")),
-            CExpressionStatement(
-                CodeExpression(f"if ({prefix}_shape == NULL) {{ Py_DECREF({prefix}_helper); return NULL; }}")
-            ),
+            *self._native_array_actual_shape_object_nodes(plan, names),
             *self._native_array_actual_shape_nodes(plan, context, names),
             *self._native_array_actual_layout_nodes(plan, names),
             CExpressionStatement(
                 CodeExpression(
-                    f'{prefix}_packed = PyObject_CallFunction({prefix}_helper, "OsiOOiiiiiii", '
-                    f'{names.object_name}, "{actual.dtype}", {actual.rank}, {prefix}_shape, {prefix}_layout, '
+                    f'{prefix}_packed = PyObject_CallFunction({prefix}_helper, "OsiOOiiiiiiii", '
+                    f'{names.object_name}, "{actual.dtype}", {self._native_array_actual_expected_rank(actual)}, '
+                    f"{prefix}_shape, {prefix}_layout, "
                     f"{int(actual.writable)}, {int(actual.require_native_byte_order)}, {int(actual.require_aligned)}, "
                     f"{int(plan.array.runtime_rank_role is not None)}, "
                     f"{int(plan.array.itemsize_role is not None)}, {int(bool(plan.array.stride_roles))}, "
-                    f"{int(actual.require_contiguous)})"
+                    f"{int(actual.require_contiguous)}, {int(actual.flatten_storage)})"
                 )
             ),
             CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_helper)")),
@@ -6451,6 +6450,33 @@ class CBindingGenerator(ClassVisitor):
             CExpressionStatement(CodeExpression(f"if ({prefix}_packed == NULL) return NULL")),
         ]
         return tuple(nodes)
+
+    def _native_array_actual_shape_object_nodes(
+        self,
+        plan: ArgumentTransferPlan,
+        names: _CArgumentNames,
+    ) -> tuple[CExpressionStatement, ...]:
+        """Create the expected-shape object consumed by the runtime helper."""
+        actual = plan.native_array_actual
+        if actual is None:
+            return ()
+        prefix = names.value_name
+        if actual.flatten_storage:
+            return (
+                CExpressionStatement(CodeExpression(f"{prefix}_shape = Py_None")),
+                CExpressionStatement(CodeExpression("Py_INCREF(Py_None)")),
+            )
+        return (
+            CExpressionStatement(CodeExpression(f"{prefix}_shape = PyTuple_New({actual.rank})")),
+            CExpressionStatement(
+                CodeExpression(f"if ({prefix}_shape == NULL) {{ Py_DECREF({prefix}_helper); return NULL; }}")
+            ),
+        )
+
+    @staticmethod
+    def _native_array_actual_expected_rank(actual: NativeArrayActualPlan) -> int:
+        """Return the runtime-helper rank selector selected by completed policy."""
+        return -1 if actual.flatten_storage else actual.rank
 
     def _native_array_actual_shape_nodes(
         self,
@@ -6461,7 +6487,7 @@ class CBindingGenerator(ClassVisitor):
         """Build the planned expected-shape tuple for runtime validation."""
         actual = plan.native_array_actual
         array = plan.array
-        if actual is None or array is None:
+        if actual is None or array is None or actual.flatten_storage:
             return ()
         prefix = names.value_name
         nodes = []
@@ -6589,11 +6615,7 @@ class CBindingGenerator(ClassVisitor):
                 raise ValueError(f"Unsupported array element type {plan.semantic_type_name!r}")
             numpy_type = scalar_type.numpy_type_macro
             python_type = scalar_type.python_type_name
-        rank_check = (
-            f"PyArray_NDIM({array}) < 1 || PyArray_NDIM({array}) > 15"
-            if handoff.rank is None
-            else f"PyArray_NDIM({array}) != {handoff.rank}"
-        )
+        rank_check = self._array_rank_check_expression(handoff, array)
         return CExpressionStatement(
             CodeExpression(
                 f"if (!PyArray_Check({names.object_name}) || PyArray_TYPE({array}) != {numpy_type} || "
@@ -6602,6 +6624,13 @@ class CBindingGenerator(ClassVisitor):
                 f"Py_TYPE({names.object_name})->tp_name); return NULL; }}"
             )
         )
+
+    @staticmethod
+    def _array_rank_check_expression(handoff, array: str) -> str:
+        """Render the Python-rank predicate selected by completed array policy."""
+        if handoff.rank is None or handoff.flatten_python_storage:
+            return f"PyArray_NDIM({array}) < 1 || PyArray_NDIM({array}) > 15"
+        return f"PyArray_NDIM({array}) != {handoff.rank}"
 
     def _array_access_checks(
         self,
@@ -6774,6 +6803,11 @@ class CBindingGenerator(ClassVisitor):
                     ),
                 )
             )
+        if handoff.flatten_python_storage:
+            nodes.append(
+                CExpressionStatement(CodeExpression(f"{names.extent_names[0]} = (int64_t)PyArray_SIZE({array})"))
+            )
+            return tuple(nodes)
         active_rank = 15 if handoff.rank is None else handoff.rank
         for axis in range(active_rank):
             guard = f"if (PyArray_NDIM({array}) > {axis}) " if handoff.rank is None else ""
@@ -10464,6 +10498,7 @@ class CBindingGenerator(ClassVisitor):
     def _module_init(self, plan: ModulePlan, needs_native_support: bool) -> CFunction:
         module_name = plan.binding.owner_path
         root_namespace = self._namespace(plan, ())
+        child_namespaces = self._ordered_child_namespaces(plan)
         return CFunction(
             f"PyInit_{module_name}",
             "PyMODINIT_FUNC",
@@ -10476,10 +10511,11 @@ class CBindingGenerator(ClassVisitor):
                 ),
                 CExpressionStatement(CodeExpression("if (mod == NULL) return NULL")),
                 *self._namespace_configuration_nodes(plan, root_namespace, "mod"),
+                *(node for namespace in child_namespaces for node in self._child_namespace_nodes(plan, namespace)),
                 *(
                     node
-                    for namespace in self._ordered_child_namespaces(plan)
-                    for node in self._child_namespace_nodes(plan, namespace)
+                    for namespace in child_namespaces
+                    for node in self._child_namespace_import_registration_nodes(plan, namespace)
                 ),
                 CReturn(CodeExpression("mod")),
             ),
@@ -10514,6 +10550,23 @@ class CBindingGenerator(ClassVisitor):
                 )
             ),
             *self._namespace_configuration_nodes(module, namespace, object_name),
+        )
+
+    def _child_namespace_import_registration_nodes(
+        self,
+        module: ModulePlan,
+        namespace: NamespacePlan,
+    ) -> tuple[CExpressionStatement, ...]:
+        """Register one generated child module under its qualified import name."""
+        module_name = self._c_string_literal(self._namespace_module_name(module, namespace))
+        object_name = self._namespace_object_name(namespace)
+        return (
+            CExpressionStatement(
+                CodeExpression(
+                    f"if (PyDict_SetItemString(PyImport_GetModuleDict(), {module_name}, {object_name}) < 0) "
+                    f"{{ Py_DECREF(mod); return NULL; }}"
+                )
+            ),
         )
 
     def _namespace_configuration_nodes(

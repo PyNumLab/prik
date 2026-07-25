@@ -70,14 +70,12 @@ import sys
 import numpy as np
 
 sys.path.insert(0, "build/numeric-types")
-import numeric_types
+from numeric_types.numeric_types import add_one, conjugate_value, double, invert
 
-api = numeric_types.numeric_types
-
-assert api.add_one(np.int32(4)) == np.int32(5)
-assert api.double(np.float64(1.5)) == np.float64(3.0)
-assert api.conjugate_value(np.complex128(1.0 + 2.0j)) == np.complex128(1.0 - 2.0j)
-assert bool(api.invert(True)) is False
+assert add_one(np.int32(4)) == np.int32(5)
+assert double(np.float64(1.5)) == np.float64(3.0)
+assert conjugate_value(np.complex128(1.0 + 2.0j)) == np.complex128(1.0 - 2.0j)
+assert bool(invert(True)) is False
 ```
 
 ---

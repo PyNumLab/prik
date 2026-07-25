@@ -10,15 +10,14 @@ publication: reviewed
 
 # Arrays
 
-x2py passes ordinary Fortran array arguments and array results as **NumPy
-arrays**. This page covers the everyday path: create an array with the exact
-dtype and layout the generated contract asks for, pass it to the wrapper, and
-let x2py validate it before native code runs.
+x2py passes ordinary Fortran array arguments and results as **NumPy arrays**.
+This page shows the everyday path: create arrays with the dtype, shape, layout,
+and writeability required by the generated contract, then let x2py validate
+those facts before native code runs.
 
-The contract records the important facts for each array: element dtype, rank,
-shape, layout, stride policy, and whether the routine may write to the array.
-The sections below start with the normal Fortran-layout path, then show how to
-accept common C-order Python arrays and selected strided views intentionally.
+The examples start with normal Fortran-layout arrays, then show the intentional
+cases: accepting C-order arrays, copying C-order arrays into Fortran order,
+passing flat assumed-size storage, and using selected strided views.
 
 ---
 
@@ -84,12 +83,11 @@ contains
 end module array_ops
 ```
 
-The first routines cover ordinary Fortran arrays. `sum_columns` makes layout
-visible by summing the first native axis of a square matrix, `sum_flat` covers
-assumed-size storage, and `scale_visible_rows` accepts an assumed-shape array
-that can be strided.
+`sum_columns` makes layout visible by summing the first native axis of a square
+matrix. `sum_flat` covers rank-one assumed-size storage. `scale_visible_rows`
+accepts an assumed-shape array that can be strided.
 
-Build it:
+Build:
 
 ```bash
 python3 -m x2py arrays.f90 --out-dir build/arrays
@@ -104,78 +102,76 @@ import sys
 import numpy as np
 
 sys.path.insert(0, "build/arrays")
-import arrays
+from arrays.array_ops import (
+    automatic_vector,
+    scale_matrix,
+    scale_visible_rows,
+    shift,
+    sum_columns,
+    sum_flat,
+)
 
-api = arrays.array_ops
-
-# Use Fortran order for a two-dimensional Fortran array.
+# Fortran-order matrix, mutated in place.
 matrix = np.ones((2, 3), dtype=np.float64, order="F")
-api.scale_matrix(np.int32(2), np.int32(3), matrix)
-np.testing.assert_array_equal(matrix, np.full((2, 3), 2.0, order="F"))
+scale_matrix(np.int32(2), np.int32(3), matrix)
+# matrix is now filled with 2.0
 
-# The Fortran routine uses a lower bound, but Python still sees an ordinary ndarray.
+# The Fortran routine uses a lower bound, but Python sees an ordinary ndarray.
 shifted = np.zeros(4, dtype=np.float64)
-api.shift(np.int32(4), shifted)
-np.testing.assert_array_equal(shifted, np.ones(4, dtype=np.float64))
+shift(np.int32(4), shifted)
+# shifted is now [1.0, 1.0, 1.0, 1.0]
 
-# Assumed-size arrays use flat contiguous storage.
-flat_values = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float64)
-assert api.sum_flat(np.int32(flat_values.size), flat_values) == np.float64(10.0)
+# Rank-one assumed-size dummies read the contiguous storage sequence.
+flat_matrix = np.asfortranarray(
+    np.array([[1.0, 2.0, 3.0], [10.0, 20.0, 30.0]], dtype=np.float64)
+)
+total = sum_flat(np.int32(flat_matrix.size), flat_matrix)
+# total is np.float64(66.0)
 
 # Array function results come back as NumPy arrays.
-result = api.automatic_vector(np.int32(4))
-np.testing.assert_array_equal(result, np.array([2.0, 4.0, 6.0, 8.0], dtype=np.float64))
+vec = automatic_vector(np.int32(4))
+# vec is [2.0, 4.0, 6.0, 8.0]
 ```
 
 ---
 
-## What x2py Checks
+## What x2py Validates
 
-- Use **exact NumPy dtypes** (`np.float64`, `np.int32`, etc.).
-- Rank must match the contract: a vector is not a matrix, even when the total
-  number of elements is the same.
-- Shape expressions must match the other arguments, such as `rows` and
-  `columns` in the example above.
-- Arrays written by Fortran must be writable.
-- Contiguous contracts reject strided views. Strided contracts accept only the
-  stride pattern they describe.
-- No silent casting, copying, transposing, or layout conversion happens by
-  default.
-
-That strictness is intentional. A bad array fails at the Python boundary instead
-of producing a confusing native-memory bug.
+- Exact NumPy dtype, such as `np.float64` or `np.int32`.
+- Rank and shape, including shape expressions such as `rows, columns`.
+- Required layout and contiguity.
+- Writeability for arrays exposed as `intent(out)` or `intent(inout)`.
+- The declared stride pattern for stride-aware contracts.
+- No silent casting, copying, transposing, or layout conversion by default.
 
 Contiguous means the elements are stored without gaps in the layout the
 contract names. Fortran-contiguous and C-contiguous arrays can print the same
 values but expose a different consecutive memory sequence to native code.
-Strided views are useful, but only when the contract and the native routine are
-prepared to receive stride metadata.
+
+That strictness is intentional. A bad array fails at the Python boundary instead
+of producing a confusing native-memory bug.
 
 ---
 
 ## Layout: Fortran First
 
-Fortran stores multidimensional arrays in column-major order. For a normal
-two-dimensional Fortran array contract, create the NumPy array with
-`order="F"` or convert with `np.asfortranarray()` before calling the wrapper:
+For normal Fortran multidimensional arrays, use Fortran order:
 
 ```python
-values = np.asfortranarray(values, dtype=np.float64)
-api.scale_matrix(np.int32(values.shape[0]), np.int32(values.shape[1]), values)
+values = np.asfortranarray(data, dtype=np.float64)
+# or
+values = np.ones(shape, dtype=np.float64, order="F")
 ```
 
-C-contiguous arrays are useful when a contract explicitly asks for C-order
-storage. In semantic `.pyi` contracts, that is normally an explicit layout
-annotation such as `ORDER_C`. x2py does not assume that a C-contiguous matrix is
-close enough for a Fortran-contiguous contract; it rejects the mismatch so the
-native routine sees the layout it was promised.
+x2py does not assume that a C-contiguous matrix is close enough for a
+Fortran-contiguous contract. If the contract asks for Fortran order and you pass
+C-order storage, the wrapper rejects the array before native code runs.
 
 ---
 
-## C-order, Zero Copy
+## Working With C-order Arrays
 
-Many Python users naturally create row-major arrays. Start with the generated
-Fortran-oriented contract for `sum_columns`:
+Start with the generated Fortran-oriented contract for `sum_columns`:
 
 ```python
 from x2py.contracts import Float64, Int32
@@ -197,9 +193,11 @@ values = np.array(
 )
 result = np.empty(values.shape[0], dtype=np.float64)
 
-api.sum_columns(np.int32(values.shape[0]), values, result)
-np.testing.assert_allclose(result, [111.0, 222.0, 333.0])
+sum_columns(np.int32(values.shape[0]), values, result)
+# result is [111.0, 222.0, 333.0]
 ```
+
+### Option 1: Zero Copy
 
 If you intentionally want the same routine to accept a C-contiguous square
 matrix without copying, edit the semantic `.pyi` contract to require `ORDER_C`:
@@ -225,21 +223,17 @@ values = np.array(
 )
 result = np.empty(values.shape[0], dtype=np.float64)
 
-api.sum_columns(np.int32(values.shape[0]), values, result)
-np.testing.assert_allclose(result, [6.0, 60.0, 600.0])
+sum_columns(np.int32(values.shape[0]), values, result)
+# result is [6.0, 60.0, 600.0]
 ```
 
-Here `ORDER_C` says the Python-visible array must be C-contiguous. No
-transposition happens. For the matrix above, the consecutive C-order storage
+No transposition happens. For the matrix above, the consecutive C-order storage
 sequence is `[1.0, 2.0, 3.0, 10.0, 20.0, 30.0, 100.0, 200.0, 300.0]`, so the
 native first-axis groups are Python rows. In Fortran order, the consecutive
 sequence is `[1.0, 10.0, 100.0, 2.0, 20.0, 200.0, 3.0, 30.0, 300.0]`, so the
-same routine returns column sums instead. x2py treats layout as part of the
-contract and rejects the wrong order instead of guessing.
+same routine returns column sums instead.
 
----
-
-## C-order With COPY_F
+### Option 2: COPY_F
 
 Sometimes you want the Python API to accept C-order arrays, but you still want
 the native routine to behave exactly like the original Fortran-order call. Add
@@ -267,8 +261,8 @@ values = np.array(
 )
 result = np.empty(values.shape[0], dtype=np.float64)
 
-api.sum_columns(np.int32(values.shape[0]), values, result)
-np.testing.assert_allclose(result, [111.0, 222.0, 333.0])
+sum_columns(np.int32(values.shape[0]), values, result)
+# result is [111.0, 222.0, 333.0]
 ```
 
 `ORDER_C` says what layout Python may pass. `COPY_F` says x2py should create
@@ -280,10 +274,9 @@ Fortran-order result back into the caller's C-order storage after the call.
 
 ## Flat Storage
 
-Fortran assumed-size dummies, such as `values(*)`, do not carry their final
-extent in the dummy declaration. The caller supplies a real NumPy array, and a
-companion argument such as `count` tells the native routine how much of that
-storage to read.
+Fortran assumed-size dummies, such as `values(*)`, do not carry their extent in
+the dummy declaration. The caller supplies a real NumPy array, and a companion
+argument such as `count` tells the native routine how much storage to read.
 
 The generated contract for `sum_flat` uses `Flat`:
 
@@ -296,24 +289,31 @@ def sum_flat(
 ) -> Float64: ...
 ```
 
-The Python call is just a one-dimensional contiguous array plus the explicit
-count:
+The Python call may pass any contiguous NumPy rank. x2py flattens the storage
+sequence to the rank-one native view that `values(*)` expects:
 
 ```python
-values = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float64)
-total = api.sum_flat(np.int32(values.size), values)
-assert total == np.float64(10.0)
+values = np.asfortranarray(
+    np.array([[1.0, 2.0, 3.0], [10.0, 20.0, 30.0]], dtype=np.float64)
+)
+total = sum_flat(np.int32(values.size), values)
+# total is np.float64(66.0)
 ```
 
 Use `Flat` for native interfaces that consume contiguous storage without a full
 shape in the dummy declaration. It is not a shortcut for arbitrary reshaping or
-strided slicing. Multidimensional flat-edge forms exist for older storage
-interfaces, but the first rule stays the same: the semantic contract describes
-the storage the native routine actually consumes.
+strided slicing. `Float64[Flat]` accepts contiguous arrays of rank 1 through 15,
+then passes their element sequence as a rank-one native view. Storage order
+still matters: Fortran-contiguous arrays flatten in column-major order, and
+C-contiguous arrays flatten in row-major order.
+
+Multidimensional flat-edge forms are different. `Float64[rows, Flat]` is a
+rank-two contract: x2py validates rank two, dtype, Fortran contiguity, and the
+`rows` extent, while the final `Flat` axis remains unconstrained.
 
 ---
 
-## Strided Views Without Copies
+## Strided Views
 
 Some Fortran interfaces accept assumed-shape arrays that do not need contiguous
 storage. `scale_visible_rows` is one of those routines. x2py can keep that
@@ -340,11 +340,10 @@ visible_rows = base[::2, :]                         # shape (4, 3)
 out_storage = np.zeros((8, 3), dtype=np.float64, order="F")
 out = out_storage[::2, :]                           # matching strided output
 
-api.scale_visible_rows(visible_rows, out)
-np.testing.assert_allclose(out, 3.0 * visible_rows)
+scale_visible_rows(visible_rows, out)
+# out now contains 3.0 * visible_rows
 ```
 
-The important part is not the slice syntax itself. The important part is that
 x2py passes the base address, extents, and positive element strides that Fortran
 needs, while still rejecting layouts the contract did not allow. Reversed
 slices, broadcasted views, and C-order strided matrices are rejected for this
@@ -383,7 +382,8 @@ worth recognizing when you inspect generated contracts:
 | `Float64[::]` | One-dimensional strided array. |
 | `Float64[::, ::]` | Two-dimensional Fortran-oriented stride-aware array. |
 | `Float64[rows, columns]` | Shape depends on other arguments. |
-| `Float64[Flat]` | Assumed-size flat storage. |
+| `Float64[Flat]` | Assumed-size storage; accepts any contiguous rank and passes a rank-one native view. |
+| `Float64[rows, Flat]` | Rank-two Fortran-contiguous storage with a checked first axis and flat final axis. |
 | `Float64[...]` | Assumed-rank array, currently rank 1 through 15. |
 
 For most user code, the practical rule is simple: start from the generated

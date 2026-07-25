@@ -490,15 +490,19 @@ def DAXPY(
 ) -> None: ...
 ```
 
+`Float64[Flat]` maps to rank-one assumed-size storage such as `real :: a(*)`.
+The Python argument may be any contiguous NumPy array with rank 1 through 15;
+the wrapper passes the contiguous element sequence as a rank-one native view.
+
 `Float64[3, Flat]` maps to `real :: a(3, *)`, and
-`Float64[3, 4, Flat]` maps to `real :: a(3, 4, *)`. `Flat` is an axis marker,
-not a request to collapse the whole array to rank one: `Float64[:, Flat]`
-remains a rank-two Python and bridge contract. Because `real :: a(:, *)` is not
-a legal Fortran assumed-size declaration, an external interface whose prefix
-extent is known only at runtime uses the sequence-associated `a(*)` spelling
-when that procedure requires an explicit interface;
-the bridge view still has rank two and receives both runtime extents. The
-Python-visible flat dimension remains unconstrained.
+`Float64[3, 4, Flat]` maps to `real :: a(3, 4, *)`. Those multidimensional
+forms are rank-preserving contracts: `Float64[:, Flat]` remains rank two at the
+Python and bridge boundary, with only the flat edge unconstrained. Because
+`real :: a(:, *)` is not a legal Fortran assumed-size declaration, an external
+interface whose prefix extent is known only at runtime uses the
+sequence-associated `a(*)` spelling when that procedure requires an explicit
+interface; the bridge view still has rank two and receives both runtime
+extents. The Python-visible flat dimension remains unconstrained.
 
 <!-- X2PY_C_DOCS_START
 C-order flat storage can be expressed for native routines that consume a raw
@@ -1067,10 +1071,13 @@ intrinsics such as `size(v)` are recognized only after visible symbols are
 resolved; the referenced value `v` must still be visible in the interface.
 
 <!-- X2PY_C_DOCS_START
-`Flat` must appear exactly once at either edge of a concrete-rank array. Final
-`Flat` is Fortran-oriented flat storage: `Float64[3, Flat]` corresponds to
-`real :: a(3, *)`. Leading `Flat` is C-oriented flat storage and should be
-spelled with explicit `ORDER_C` in Fortran-facing contracts:
+`Flat` must appear exactly once at either edge of a concrete-rank array.
+`Float64[Flat]` is the rank-one assumed-size storage contract: the Python side
+accepts any contiguous rank from 1 through 15 and flattens that storage sequence
+to the rank-one native view. Final `Flat` in a multidimensional contract is
+Fortran-oriented flat storage: `Float64[3, Flat]` corresponds to `real ::
+a(3, *)`. Leading `Flat` is C-oriented flat storage and should be spelled with
+explicit `ORDER_C` in Fortran-facing contracts:
 `Annotated[Float64[Flat, 3], ORDER_C]`. It validates a C-contiguous Python
 view, constructs a rank-preserving bridge view over the same storage, and passes
 that view to the native assumed-size dummy. It does not imply an invalid

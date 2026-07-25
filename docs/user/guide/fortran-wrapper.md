@@ -1299,12 +1299,13 @@ caller must provide enough storage for the native routine.
 Generated semantic `.pyi` contracts spell this final assumed-size dimension as
 `Flat`, for example `Float64[Flat]` for `real(8) :: values(*)`.
 
-`Flat` marks one storage axis rather than forcing rank one. For example,
-`Float64[:, Flat]` remains a rank-two Fortran-contiguous Python and bridge
-contract. An external interface uses `values(*)` when the preceding extent is
-available only from the Python array, because `values(:, *)` is not a legal
-Fortran assumed-size declaration; the bridge nevertheless associates the
-address with both runtime extents.
+`Float64[Flat]` accepts any contiguous NumPy rank from 1 through 15 and passes
+the element sequence as a rank-one native view. Multidimensional flat-edge forms
+are rank-preserving. `Float64[:, Flat]` remains a rank-two Fortran-contiguous
+Python and bridge contract. An external interface uses `values(*)` when the
+preceding extent is available only from the Python array because `values(:, *)`
+is not a legal Fortran assumed-size declaration; the bridge nevertheless
+associates the address with both runtime extents.
 
 <!-- X2PY_C_DOCS_START
 For handwritten contracts over native routines that consume a raw flat buffer,

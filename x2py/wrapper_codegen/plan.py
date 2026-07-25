@@ -286,6 +286,7 @@ class ArrayHandoffPlan(StageRecord):
     order: str | None
     native_order: str | None
     contiguous: bool | None
+    flatten_python_storage: bool
     itemsize: int | None
     category: str | None
     data_role: str
@@ -310,6 +311,7 @@ class NativeArrayActualPlan(StageRecord):
     require_native_byte_order: bool
     require_aligned: bool
     require_contiguous: bool
+    flatten_storage: bool = False
 
 
 @dataclass

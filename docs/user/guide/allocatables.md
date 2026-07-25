@@ -93,14 +93,12 @@ import sys
 import numpy as np
 
 sys.path.insert(0, "build/storage")
-import storage
+from storage.storage import make_values, replace_values
 
-api = storage.storage
-
-values = api.make_values(np.int32(3))
+values = make_values(np.int32(3))
 print(values.to_numpy())                    # [2. 4. 6.]
 
-returned = api.replace_values(values)
+returned = replace_values(values)
 assert returned is values                   # same handle
 print(values.to_numpy())                    # [10. 20.]
 ```

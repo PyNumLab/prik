@@ -22,9 +22,7 @@ After building `module_state.f90`:
 import sys
 
 sys.path.insert(0, "build/first-module")
-import module_state
-
-mod = module_state.module_state   # ← child module
+import module_state.module_state as mod
 ```
 
 See [First Wrapped Module](../getting-started/first-wrapped-module.md) for the full example.

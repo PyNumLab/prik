@@ -78,22 +78,20 @@ import sys
 import numpy as np
 
 sys.path.insert(0, "build/outputs")
-import outputs
-
-api = outputs.outputs
+from outputs.outputs import bounds, scale_in_place, scale_scalar
 
 # Hidden scalar outputs → returned as tuple
 data = np.array([4.0, -2.0, 7.0], dtype=np.float64)
-smallest, largest = api.bounds(data)
+smallest, largest = bounds(data)
 print(smallest, largest)   # -2.0  7.0
 
 # Scalar inout replacement
-updated = api.scale_scalar(np.float64(4.0), np.float64(2.5))
+updated = scale_scalar(np.float64(4.0), np.float64(2.5))
 print(updated)              # 10.0
 
 # In-place mutation
 arr = np.array([1.0, 2.0, 3.0], dtype=np.float64)
-api.scale_in_place(arr, np.float64(3.0))
+scale_in_place(arr, np.float64(3.0))
 print(arr)                 # [3. 6. 9.]
 
 # Caller-provided output array

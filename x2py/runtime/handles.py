@@ -957,6 +957,7 @@ def _native_array_actual_argument_for_binding_positional(
     include_itemsize: bool = False,
     include_strides: bool = False,
     require_contiguous: bool = False,
+    flatten_storage: bool = False,
 ) -> tuple[int, ...]:
     """Pack a normal array actual into generated Bind-C array descriptor fields."""
     strided_ndarray = include_strides and isinstance(value, np.ndarray)
@@ -965,8 +966,8 @@ def _native_array_actual_argument_for_binding_positional(
     actual = _native_array_actual_for_binding(
         value,
         expected_dtype=expected_dtype,
-        expected_rank=expected_rank,
-        expected_shape=expected_shape,
+        expected_rank=None if flatten_storage else expected_rank,
+        expected_shape=None if flatten_storage else expected_shape,
         # Positive-stride validation below is the exact Fortran-order contract
         # for a strided ndarray; NumPy's contiguous flag is intentionally false.
         expected_layout=None if strided_ndarray else expected_layout,
@@ -976,6 +977,8 @@ def _native_array_actual_argument_for_binding_positional(
         require_contiguous=bool(require_contiguous),
     )
     address, shape, itemsize = _normal_array_actual_abi_facts(value, actual, expected_dtype)
+    if flatten_storage:
+        shape = _flattened_storage_shape(shape)
     fields = [address]
     if include_rank:
         fields.append(len(shape))
@@ -988,6 +991,16 @@ def _native_array_actual_argument_for_binding_positional(
         fields.extend(upper_bounds)
         fields.extend(strides)
     return tuple(fields)
+
+
+def _flattened_storage_shape(shape: tuple[int, ...]) -> tuple[int]:
+    """Return the one-dimensional element sequence extent for a contiguous actual."""
+    if not 1 <= len(shape) <= 15:
+        raise TypeError(f"Flat storage expects NumPy array rank 1 through 15; received rank {len(shape)}")
+    size = 1
+    for extent in shape:
+        size *= int(extent)
+    return (size,)
 
 
 def _normal_array_actual_stride_facts(

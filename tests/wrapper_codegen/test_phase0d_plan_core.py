@@ -195,6 +195,28 @@ def right_value(x: Int32) -> Int32: ...
     assert plan.namespaces[2].functions[0].symbol_name == "right_shared_value"
 
 
+def test_binding_registers_child_namespaces_as_importable_submodules():
+    module = parse_pyi_text(
+        """
+def left_value(x: Int32) -> Int32: ...
+def right_value(x: Int32) -> Int32: ...
+""",
+        module_name="namespaced",
+    )
+    module.functions[0].metadata[PYTHON_EXPORTS_METADATA] = [{"namespace": ("left",), "name": "shared_value"}]
+    module.functions[1].metadata[PYTHON_EXPORTS_METADATA] = [{"namespace": ("right",), "name": "shared_value"}]
+    complete_semantic_policies(module)
+    artifacts = WrapperCodeGenerator().generate(WrapperPlanner().build(module))
+    c_source = next(source.text for source in artifacts.sources if source.path.name.endswith(".c"))
+
+    assert "PyModule_Create(&namespaced_left_module)" in c_source
+    assert "PyModule_Create(&namespaced_right_module)" in c_source
+    left_registration = 'PyDict_SetItemString(PyImport_GetModuleDict(), "namespaced.left", namespace_left) < 0'
+    assert left_registration in c_source
+    assert 'PyDict_SetItemString(PyImport_GetModuleDict(), "namespaced.right", namespace_right) < 0' in c_source
+    assert c_source.index(left_registration) > c_source.index("PyModule_Create(&namespaced_left_module)")
+
+
 def test_post_ir_export_policy_fixes_names_within_each_namespace():
     module = parse_pyi_text(
         """

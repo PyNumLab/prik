@@ -2012,7 +2012,12 @@ class WrapperCodeGenerator:
         """Validate handle-actual rank and shape against the shared array facet."""
         actual = plan.native_array_actual
         array = plan.array
-        if actual is None or (array is not None and actual.rank == array.rank and actual.shape == array.shape):
+        if actual is None or (
+            array is not None
+            and actual.rank == array.rank
+            and actual.shape == array.shape
+            and actual.flatten_storage == array.flatten_python_storage
+        ):
             return ()
         return (self._diagnostic(plan.owner_path, "inconsistent-array-actual-shape", actual.shape),)
 

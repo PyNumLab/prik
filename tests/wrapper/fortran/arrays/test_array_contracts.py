@@ -151,6 +151,17 @@ def test_remaining_array_contracts_are_validated_before_fortran_calls(
         with pytest.raises(TypeError, match="writeable"):
             module.sum_in(readonly)
 
+    fortran_storage = np.asfortranarray(np.array([[1.0, 2.0, 3.0], [10.0, 20.0, 30.0]], dtype=np.float64))
+    c_storage = np.array([[1.0, 2.0, 3.0], [10.0, 20.0, 30.0]], dtype=np.float64, order="C")
+    assert module.sum_assumed_size(np.int32(fortran_storage.size), fortran_storage) == np.float64(66.0)
+    assert module.sum_assumed_size(np.int32(c_storage.size), c_storage) == np.float64(66.0)
+    assert module.sum_assumed_size(np.int32(3), fortran_storage) == np.float64(13.0)
+    assert module.sum_assumed_size(np.int32(3), c_storage) == np.float64(6.0)
+
+    noncontiguous_flat = fortran_storage[:, ::2]
+    with pytest.raises(TypeError, match="contiguous"):
+        module.sum_assumed_size(np.int32(noncontiguous_flat.size), noncontiguous_flat)
+
     lower_bound_values = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float64)
     assert module.scale_lower(np.int32(4), lower_bound_values) is None
     np.testing.assert_allclose(lower_bound_values, np.array([2.0, 4.0, 6.0, 8.0], dtype=np.float64))

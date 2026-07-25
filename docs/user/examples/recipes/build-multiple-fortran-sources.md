@@ -33,10 +33,11 @@ import sys
 import numpy as np
 
 sys.path.insert(0, "build/multi_api")
-import first_api
+from first_api.first_api import add_one
+from first_api.second_api import double_value
 
-assert first_api.first_api.add_one(np.int32(4)) == np.int32(5)
-assert first_api.second_api.double_value(np.int32(4)) == np.int32(10)
+assert add_one(np.int32(4)) == np.int32(5)
+assert double_value(np.int32(4)) == np.int32(10)
 ```
 
 ## Ordering Rules

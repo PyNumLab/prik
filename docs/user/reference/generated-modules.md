@@ -28,13 +28,13 @@ directory name becomes the default extension identity.
 Contained Fortran modules become child Python modules:
 
 ```python
-import module_state
+from module_state.module_state import summarize
 
-api = module_state.module_state
-assert api.summarize() == np.int32(15)
+assert summarize() == np.int32(15)
 ```
 
-Module members are not automatically flattened onto the extension root. A
+Module members are importable through their child module; they are not
+automatically flattened onto the extension root. A
 root-level semantic `.pyi` entry may explicitly reshape the Python export tree
 with imports, aliases, or star imports. Duplicate root exports fail before
 code generation.

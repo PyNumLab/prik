@@ -72,9 +72,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, "build/first-module")
-import module_state
-
-mod = module_state.module_state
+import module_state.module_state as mod
 
 print(mod.nmax)           # 12
 print(mod.counter)        # 3

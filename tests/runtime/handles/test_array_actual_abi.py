@@ -418,6 +418,51 @@ def test_array_actual_argument_abi_packer_uses_ndarray_data_pointer_and_shape_fi
     ) == (values.ctypes.data, 2, values.dtype.itemsize, 2, 3, 1, 2, 1, 1)
 
 
+def test_array_actual_argument_abi_packer_flattens_contiguous_storage_shape():
+    values = np.asfortranarray(np.arange(6, dtype=np.float64).reshape((2, 3), order="F"))
+
+    assert _native_array_actual_argument_for_binding_positional(
+        values,
+        expected_dtype=np.float64,
+        expected_rank=-1,
+        expected_shape=None,
+        require_native_byte_order=True,
+        require_aligned=True,
+        require_contiguous=True,
+        flatten_storage=True,
+    ) == (values.ctypes.data, values.size)
+
+
+def test_array_actual_argument_abi_packer_flattens_native_handle_shape():
+    actual = _handoff(252)
+    handle = AllocatableArray(
+        dtype=np.dtype(np.float64),
+        rank=2,
+        ops={
+            "descriptor": lambda _handle: _handoff(253),
+            "shape": lambda _handle: (2, 3),
+            "allocated": lambda _handle: True,
+            "layout": lambda _handle: "F",
+            "writeable": lambda _handle: True,
+            "native_byte_order": lambda _handle: True,
+            "aligned": lambda _handle: True,
+            "to_numpy": lambda _handle: pytest.fail("flat array-actual ABI packing must not call to_numpy"),
+            "array_actual": lambda _handle: actual,
+        },
+    )
+
+    assert _native_array_actual_argument_for_binding_positional(
+        handle,
+        expected_dtype=np.float64,
+        expected_rank=-1,
+        expected_shape=None,
+        require_native_byte_order=True,
+        require_aligned=True,
+        require_contiguous=True,
+        flatten_storage=True,
+    ) == (actual.address, 6)
+
+
 def test_array_actual_argument_abi_packer_uses_allocatable_native_array_actual_without_numpy_conversion():
     actual = _handoff(246)
     calls = []

@@ -853,6 +853,7 @@ class ArrayHandoffPolicy:
     order: str | None
     native_order: str | None
     contiguous: bool | None
+    flatten_python_storage: bool = False
     itemsize: int | None = None
     category: str | None = None
     extent_references: tuple[tuple[str, ...], ...] = ()
@@ -883,6 +884,7 @@ class NativeArrayActualPolicy:
     require_native_byte_order: bool
     require_aligned: bool
     require_contiguous: bool
+    flatten_storage: bool = False
 
 
 @dataclass(frozen=True)
@@ -5358,6 +5360,7 @@ def _native_array_actual_policy(
         require_native_byte_order=True,
         require_aligned=True,
         require_contiguous=array.contiguous is True,
+        flatten_storage=array.flatten_python_storage,
     )
 
 
@@ -5953,6 +5956,7 @@ def _array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandoffPol
         order=_array_handoff_order(array.order, assumed_rank),
         native_order=_array_handoff_native_order(array.order, array.copy_order, assumed_rank),
         contiguous=_array_handoff_contiguous(array.contiguous, assumed_rank, array.category),
+        flatten_python_storage=_array_handoff_flattens_python_storage(array),
         itemsize=_array_handoff_itemsize(semantic_type),
         category=array.category,
         extent_references=tuple(_array_extent_references(item) for item in shape),
@@ -5995,6 +5999,11 @@ def _array_handoff_contiguous(contiguous: bool | None, assumed_rank: bool, categ
     if assumed_rank and contiguous is None:
         return True
     return contiguous
+
+
+def _array_handoff_flattens_python_storage(array: models.SemanticArrayContract) -> bool:
+    """Return whether Python may pass any contiguous rank to a rank-one flat dummy."""
+    return bool(array.category == "assumed_size" and array.rank == 1)
 
 
 def _array_handoff_itemsize(semantic_type: models.SemanticType) -> int | None:

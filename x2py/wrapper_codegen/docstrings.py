@@ -572,13 +572,21 @@ class WrapperDocstringBuilder:
     def _array_lines(array: ArrayHandoffPlan | None) -> tuple[str, ...]:
         if array is None:
             return ()
-        lines = ["    Rank: 1..15" if array.rank is None else f"    Rank: {array.rank}"]
+        lines = [WrapperDocstringBuilder._array_rank_line(array)]
         if array.shape and all(str(extent) not in _UNKNOWN_EXTENTS for extent in array.shape):
             lines.append(f"    Shape: ({', '.join(map(str, array.shape))})")
         if (array.rank is None or array.rank > 1) and array.order in {"ORDER_C", "ORDER_F"}:
             layout = "C-contiguous" if array.order == "ORDER_C" else "F-contiguous"
             lines.append(f"    Layout: {layout}")
         return tuple(lines)
+
+    @staticmethod
+    def _array_rank_line(array: ArrayHandoffPlan) -> str:
+        if array.flatten_python_storage:
+            return "    Rank: 1..15, flattened to native rank 1"
+        if array.rank is None:
+            return "    Rank: 1..15"
+        return f"    Rank: {array.rank}"
 
     @staticmethod
     def _ownership_lines(owner: OwnershipOwner) -> tuple[str, ...]:

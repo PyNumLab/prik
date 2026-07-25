@@ -118,11 +118,9 @@ import sys
 import numpy as np
 
 sys.path.insert(0, "build/callbacks")
-import callbacks
+from callbacks.callbacks_api import apply
 
-api = callbacks.callbacks_api
-
-result = api.apply(
+result = apply(
     lambda value: np.float64(3.0 * value),
     np.float64(2.5)
 )

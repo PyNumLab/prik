@@ -59,12 +59,10 @@ import sys
 import numpy as np
 
 sys.path.insert(0, "build/generic")
-import generic
+from generic.conversions import convert
 
-api = generic.conversions
-
-assert api.convert(np.int32(4)) == np.int32(14)
-assert api.convert(np.float64(4.0)) == np.float64(4.5)
+assert convert(np.int32(4)) == np.int32(14)
+assert convert(np.float64(4.0)) == np.float64(4.5)
 ```
 
 The correct specific procedure is chosen automatically based on the argument type.

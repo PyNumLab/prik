@@ -75,23 +75,21 @@ import sys
 import numpy as np
 
 sys.path.insert(0, "build/geometry")
-import geometry
-
-p = geometry.points
+import geometry.points as points
 
 # Create new object
-item = p.point(x=np.float64(1.0), y=np.float64(2.0))
+item = points.point(x=np.float64(1.0), y=np.float64(2.0))
 
 # Call method (inout mutation)
-p.move(item, np.float64(3.0), np.float64(4.0))
+points.move(item, np.float64(3.0), np.float64(4.0))
 assert item.x == np.float64(4.0)
 assert item.y == np.float64(6.0)
 
 # Function returning derived type
-made = p.make_point(np.float64(8.0), np.float64(9.0))
+made = points.make_point(np.float64(8.0), np.float64(9.0))
 
 # Nested component
-container = p.holder()
+container = points.holder()
 p.set_origin(container, made)
 container.origin.x = np.float64(12.0)
 assert container.origin.x == np.float64(12.0)

@@ -757,6 +757,29 @@ def sum_values(values: Float64[:]) -> Float64: ...
     assert policy.native_call_slots[0].array == argument.array
 
 
+def test_wrapper_policy_flattens_python_rank_for_rank_one_assumed_size_storage():
+    module = parse_pyi_text(
+        """
+def sum_flat(n: Int32, values: Float64[Flat]) -> Float64: ...
+""",
+        module_name="flat_array_argument",
+    )
+    complete_semantic_policies(module)
+    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
+
+    argument = policy.arguments[1]
+    assert argument.array is not None
+    assert argument.array.rank == 1
+    assert argument.array.shape == (":",)
+    assert argument.array.category == "assumed_size"
+    assert argument.array.flatten_python_storage is True
+    assert argument.native_array_actual is not None
+    assert argument.native_array_actual.rank == 1
+    assert argument.native_array_actual.shape == (":",)
+    assert argument.native_array_actual.flatten_storage is True
+    assert policy.native_call_slots[1].array == argument.array
+
+
 def test_wrapper_policy_completes_required_raw_array_address_handoff():
     module = parse_pyi_text(
         """

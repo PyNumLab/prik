@@ -49,14 +49,12 @@ import sys
 import numpy as np
 
 sys.path.insert(0, "build/optional")
-import optional
+from optional.adjustments import adjust
 
-api = optional.adjustments
-
-assert api.adjust(np.int32(5)) == np.int32(5)                    # omitted
-assert api.adjust(np.int32(5), None) == np.int32(5)              # explicit None
-assert api.adjust(np.int32(5), np.int32(3)) == np.int32(8)       # provided
-assert api.adjust(np.int32(5), offset=np.int32(10)) == np.int32(15)  # keyword
+assert adjust(np.int32(5)) == np.int32(5)                    # omitted
+assert adjust(np.int32(5), None) == np.int32(5)              # explicit None
+assert adjust(np.int32(5), np.int32(3)) == np.int32(8)       # provided
+assert adjust(np.int32(5), offset=np.int32(10)) == np.int32(15)  # keyword
 ```
 
 ---

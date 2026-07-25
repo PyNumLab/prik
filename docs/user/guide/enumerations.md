@@ -54,17 +54,15 @@ import sys
 import numpy as np
 
 sys.path.insert(0, "build/colors")
-import colors
+from colors.colors_api import blue, green, red, round_trip_color, yellow
 
-api = colors.colors_api
-
-assert api.red == np.int32(-1)
-assert api.blue == np.int32(0)
-assert api.green == np.int32(10)
-assert api.yellow == np.int32(11)
+assert red == np.int32(-1)
+assert blue == np.int32(0)
+assert green == np.int32(10)
+assert yellow == np.int32(11)
 
 # Pass enumerator values to procedures
-result = api.round_trip_color(api.green)
+result = round_trip_color(green)
 assert result == np.int32(10)
 ```
 

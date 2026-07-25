@@ -81,17 +81,15 @@ import sys
 import numpy as np
 
 sys.path.insert(0, "build/pointers")
-import pointers
+import pointers.pointers_api as pointers_api
 
-api = pointers.pointers_api
-
-handle = api.values
+handle = pointers_api.values
 assert handle.associated is False
-assert api.sum_pointer(handle) == np.float64(-1.0)
+assert pointers_api.sum_pointer(handle) == np.float64(-1.0)
 
-api.associate_values()
+pointers_api.associate_values()
 assert handle.associated is True
-assert api.sum_pointer(handle) == np.float64(6.0)
+assert pointers_api.sum_pointer(handle) == np.float64(6.0)
 
 handle.nullify()
 assert handle.associated is False

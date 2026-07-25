@@ -85,10 +85,9 @@ import sys
 import numpy as np
 
 sys.path.insert(0, "build/function-results")
-import function_results
+from function_results.results import squares
 
-api = function_results.results
-result = api.squares(np.int32(4))
+result = squares(np.int32(4))
 np.testing.assert_array_equal(result, np.array([1.0, 4.0, 9.0, 16.0], dtype=np.float64))
 ```
 
