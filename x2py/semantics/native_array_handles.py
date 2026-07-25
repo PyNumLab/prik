@@ -7,6 +7,7 @@ from typing import Any
 
 from x2py.semantics.ownership import OWNERSHIP_POLICY_METADATA, POINTER_POLICY_METADATA
 from x2py.semantics.metadata import (
+    MAYBE_UNALLOCATED_METADATA,
     NATIVE_ARRAY_DESCRIPTOR_METADATA,
     NATIVE_ARRAY_HANDLE_POLICY_METADATA,
     OPTIONAL_ABSENT_HANDLE_METADATA,
@@ -29,6 +30,7 @@ NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER = "ISO_Fortran_binding.h"
 _HANDLE_ONLY_METADATA = (
     NATIVE_ARRAY_DESCRIPTOR_METADATA,
     NATIVE_ARRAY_HANDLE_POLICY_METADATA,
+    MAYBE_UNALLOCATED_METADATA,
     OPTIONAL_ABSENT_HANDLE_METADATA,
     OWNERSHIP_POLICY_METADATA,
     POINTER_POLICY_METADATA,
@@ -55,6 +57,7 @@ class NativeArrayHandlePolicy:
     python_setter: str
     native_setter: str
     output_projection: str
+    result_allocation: str
     release: str
     target_lifetime: str
     destroy_behavior: str

@@ -186,6 +186,7 @@ def _native_array_policy(
         python_setter="none",
         native_setter="none",
         output_projection="none",
+        result_allocation="not_applicable",
         release="native_owner",
         target_lifetime="module",
         destroy_behavior="none",

@@ -1454,6 +1454,7 @@ class WrapperPlanner(ClassVisitor):
             setter_action=policy.setter_action,
             native_assignment=policy.native_assignment,
             output_projection=policy.output_projection,
+            result_allocation=policy.result_allocation,
             release=policy.release,
             target_lifetime=policy.target_lifetime,
             destroy_behavior=policy.destroy_behavior,

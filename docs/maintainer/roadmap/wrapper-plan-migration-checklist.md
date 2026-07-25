@@ -594,7 +594,7 @@ summary, the exhaustive matrix, and the test tree disagree.
 
 | Status | Collected nodes |
 | --- | ---: |
-| `wrapper-plan` | 357 |
+| `wrapper-plan` | 358 |
 | `dual-route` | 0 |
 | `legacy` | 0 |
 | `not-applicable` | 76 |
@@ -767,6 +767,7 @@ already covered by the new generator.
 | `tests/wrapper/fortran/module_state/test_allocatable_replacement.py::test_allocatable_replacement_has_no_native_memory_errors[*]` | source/generated-.pyi parity route | module variables/state; native handles/descriptors | `wrapper-plan` |
 | `tests/wrapper/fortran/module_state/test_allocatable_replacement.py::test_projected_allocatable_descriptor_preserves_same_handle_identity` | canonical reduced owned-result plus projected-descriptor contract | direct persistent descriptor mutation; allocation/reallocation/deallocation; same-handle result identity | `wrapper-plan` |
 | `tests/wrapper/fortran/module_state/test_allocatable_views.py::test_allocatable_module_fields_and_results_expose_lifetime_safe_handles[*]` | source/generated-.pyi parity with one mixed generation unit | derived class/field handles and parent retention remain Phase 8/9 blockers | `wrapper-plan` |
+| `tests/wrapper/fortran/module_state/test_allocatable_views.py::test_maybe_unallocated_direct_allocatable_results_preserve_unallocated_state` | edited semantic `.pyi` contract over the existing allocatable module unit | `MaybeUnallocated` direct allocatable result annotation preserves the unallocated result state without changing default always-allocated result handling | `wrapper-plan` |
 | `tests/wrapper/fortran/module_state/test_allocatable_views.py::test_scalar_descriptor_module_variables_return_copied_optional_values[*]` | production plan route in source/generated-.pyi parity modes | rank-zero allocatable/pointer arguments, writeback, results, and copied nullable module values | `wrapper-plan` |
 | `tests/wrapper/fortran/module_state/test_allocatable_views.py::test_plain_allocatable_module_array_exposes_current_live_view[*]` | production plan route after the Phase 7 contract correction | plain and `Aliased` module handles return a current live view or `None`; explicit `.copy()` is independent and a fresh extraction follows current native state | `wrapper-plan` |
 | `tests/wrapper/fortran/module_state/test_common_blocks.py::*` | source/generated-.pyi parity or parametrized route | scalar calls with internal common-block storage | `wrapper-plan` |

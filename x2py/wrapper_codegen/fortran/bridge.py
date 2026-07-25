@@ -34,6 +34,7 @@ from x2py.semantics.wrapper_policy import (
     NativeArrayDescriptorKind,
     NativeArrayDescriptorInterop,
     NativeArrayOperation,
+    NativeArrayResultAllocation,
     NativeDescriptorHandoffABI,
     NativeInvocationKind,
     OptionalMode,
@@ -83,6 +84,10 @@ from x2py.wrapper_codegen.visitor import ClassVisitor
 
 class FortranBridgeGenerator(ClassVisitor):
     """Recursively lower bridge plan views directly into Fortran nodes."""
+
+    def __init__(self, *, method_prefix: str | None = None):
+        super().__init__(method_prefix=method_prefix)
+        self._active_scoped_type_identities: frozenset[tuple[str, str]] = frozenset()
 
     def require_supported(self, plan: ModulePlan) -> None:
         """Reject unsupported Fortran ABI actions and scalar types."""
@@ -605,45 +610,50 @@ class FortranBridgeGenerator(ClassVisitor):
 
     def _visit_ModulePlan(self, plan: ModulePlan) -> FortranModule:
         """Return one complete Fortran bridge module."""
-        return FortranModule(
-            name=f"bind_c_{plan.bridge.owner_path}_wrapper",
-            uses=(
-                FortranUse("iso_c_binding", self._iso_c_symbols(plan)),
-                *self._native_module_uses(plan),
-            ),
-            type_definitions=self._derived_holder_definitions(plan),
-            interfaces=(
-                *self._derived_call_interfaces(plan),
-                *self._external_interfaces(plan),
-                *self._module_descriptor_callback_interfaces(plan),
-                *self._derived_array_callback_interfaces(plan),
-                *self._allocator_interfaces(plan),
-            ),
-            procedures=(
-                *(procedure for namespace in plan.namespaces for procedure in self.visit(namespace)),
-                # Typed derived-field access remains separate from class orchestration.
-                *self._derived_field_procedures(plan),
-                # Native-aware opaque-owner destruction is Phase 8 substrate, not class orchestration.
-                *self._class_constructor_procedures(plan),
-                *(self._derived_destroy_procedure(derived) for derived in self._owned_derived_types(plan)),
-                *(
-                    self._allocatable_holder_destroy_procedure(derived)
-                    for derived in self._allocatable_holder_types(plan)
+        previous_scoped = self._active_scoped_type_identities
+        self._active_scoped_type_identities = self._scoped_origin_type_identities(plan)
+        try:
+            return FortranModule(
+                name=f"bind_c_{plan.bridge.owner_path}_wrapper",
+                uses=(
+                    FortranUse("iso_c_binding", self._iso_c_symbols(plan)),
+                    *self._native_module_uses(plan),
                 ),
-                *(
-                    self._allocatable_holder_presence_procedure(derived)
-                    for derived in self._allocatable_holder_types(plan)
+                type_definitions=self._derived_holder_definitions(plan),
+                interfaces=(
+                    *self._derived_call_interfaces(plan),
+                    *self._external_interfaces(plan),
+                    *self._module_descriptor_callback_interfaces(plan),
+                    *self._derived_array_callback_interfaces(plan),
+                    *self._allocator_interfaces(plan),
                 ),
-                *(self._pointer_holder_destroy_procedure(derived) for derived in self._pointer_holder_types(plan)),
-                *(self._pointer_holder_presence_procedure(derived) for derived in self._pointer_holder_types(plan)),
-                *(
-                    procedure
-                    for variable in self._derived_origin_variables(plan)
-                    for procedure in self._derived_origin_procedures(variable)
+                procedures=(
+                    *(procedure for namespace in plan.namespaces for procedure in self.visit(namespace)),
+                    # Typed derived-field access remains separate from class orchestration.
+                    *self._derived_field_procedures(plan),
+                    # Native-aware opaque-owner destruction is Phase 8 substrate, not class orchestration.
+                    *self._class_constructor_procedures(plan),
+                    *(self._derived_destroy_procedure(derived) for derived in self._owned_derived_types(plan)),
+                    *(
+                        self._allocatable_holder_destroy_procedure(derived)
+                        for derived in self._allocatable_holder_types(plan)
+                    ),
+                    *(
+                        self._allocatable_holder_presence_procedure(derived)
+                        for derived in self._allocatable_holder_types(plan)
+                    ),
+                    *(self._pointer_holder_destroy_procedure(derived) for derived in self._pointer_holder_types(plan)),
+                    *(self._pointer_holder_presence_procedure(derived) for derived in self._pointer_holder_types(plan)),
+                    *(
+                        procedure
+                        for variable in self._derived_origin_variables(plan)
+                        for procedure in self._derived_origin_procedures(variable)
+                    ),
                 ),
-            ),
-            external_procedures=self._callback_external_adapter_procedures(plan),
-        )
+                external_procedures=self._callback_external_adapter_procedures(plan),
+            )
+        finally:
+            self._active_scoped_type_identities = previous_scoped
 
     def _callback_external_adapter_procedures(self, plan: ModulePlan) -> tuple[FortranFunction, ...]:
         """Return separately linked callback adapters in stable site order."""
@@ -755,6 +765,7 @@ class FortranBridgeGenerator(ClassVisitor):
             is_subroutine=is_subroutine,
             internal_procedures=(
                 *optional_procedures,
+                *self._direct_result_internal_procedures(plan),
                 *internal_procedures,
             ),
         )
@@ -1197,6 +1208,7 @@ class FortranBridgeGenerator(ClassVisitor):
             argument
             for argument in arguments
             if self._derived_argument_uses_access(argument, DerivedActualAccess.SCOPED_ADDRESS)
+            and self._has_scoped_origin_for_argument(argument)
         )
 
     @staticmethod
@@ -1257,7 +1269,11 @@ class FortranBridgeGenerator(ClassVisitor):
             5: self._derived_allocatable_transaction_preparation,
             6: self._derived_pointer_transaction_preparation,
         }
-        cases.extend(FortranCase(code, builders[code](argument)) for code in sorted(compatible) if code in builders)
+        cases.extend(
+            FortranCase(code, builders[code](argument))
+            for code in sorted(compatible)
+            if code in builders and (code != 2 or self._has_scoped_origin_for_argument(argument))
+        )
         cases.append(
             FortranCase(
                 None,
@@ -2032,6 +2048,18 @@ class FortranBridgeGenerator(ClassVisitor):
     # Runtime-selected scalar-derived module origins.
     def _derived_origin_variables(self, plan: ModulePlan) -> tuple[ModuleVariablePlan, ...]:
         return tuple(variable for variable in self._variables(plan) if variable.derived is not None)
+
+    def _scoped_origin_type_identities(self, plan: ModulePlan) -> frozenset[tuple[str, str]]:
+        """Return derived identities with at least one scoped module-origin producer."""
+        return frozenset(
+            variable.derived.handoff.type_identity
+            for variable in self._derived_origin_variables(plan)
+            if self._derived_origin_supports(variable, "scoped")
+        )
+
+    def _has_scoped_origin_for_argument(self, argument: ArgumentTransferPlan) -> bool:
+        """Return whether this bridge module can produce a scoped origin for the argument type."""
+        return argument.derived is not None and argument.derived.type_identity in self._active_scoped_type_identities
 
     def _derived_origin_procedures(self, variable: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
         """Emit only the typed leaves supported by one completed module storage."""
@@ -3339,6 +3367,11 @@ class FortranBridgeGenerator(ClassVisitor):
     ) -> FortranAssignment | FortranCall | FortranPointerAssignment:
         """Store one completed native result expression through its handoff leaf."""
         direct_result = self._direct_result(plan)
+        if self._uses_owned_direct_array_result_collector(plan):
+            return FortranCall(
+                self._owned_direct_array_result_collector_name(),
+                (CodeExpression(expression), CodeExpression("result")),
+            )
         if self._uses_pointer_result_assignment(direct_result):
             return FortranPointerAssignment(result_name, CodeExpression(expression))
         return FortranAssignment(result_name, CodeExpression(expression))
@@ -4274,6 +4307,8 @@ class FortranBridgeGenerator(ClassVisitor):
         if result.scalar_descriptor is not None:
             return self._scalar_descriptor_copy_declarations(result, "result")
         if self._is_owned_native_array_result(result):
+            if self._uses_owned_direct_array_result_collector(plan):
+                return ()
             return self._owned_array_result_declarations(result)
         if result.object_kind is ObjectKind.NUMPY_ARRAY:
             return self._direct_array_result_declarations(plan, result)
@@ -4471,6 +4506,8 @@ class FortranBridgeGenerator(ClassVisitor):
         if result.scalar_descriptor is not None:
             return self._scalar_descriptor_copy_nodes(result, "result")
         if self._is_owned_native_array_result(result):
+            if self._uses_owned_direct_array_result_collector(plan):
+                return ()
             if self._is_owned_deferred_character_result(result):
                 return self._owned_deferred_character_copy_nodes(result, "result", "result_value", "result_copy")
             return (
@@ -4510,6 +4547,46 @@ class FortranBridgeGenerator(ClassVisitor):
             target_name="result",
             value_name="result_value",
             copy_name="result_copy",
+        )
+
+    def _direct_result_internal_procedures(self, plan: FunctionPlan) -> tuple[FortranFunction, ...]:
+        """Return helper procedures needed by direct-result lowering."""
+        result = self._direct_result(plan)
+        if result is None or not self._uses_owned_direct_array_result_collector(plan):
+            return ()
+        return (self._owned_direct_array_result_collector(result),)
+
+    def _owned_direct_array_result_collector(self, result: ResultPlan) -> FortranFunction:
+        """Move a GNU allocatable function result without the crashing assignment path."""
+        handle = result.native_array_handle
+        if handle is None or handle.array.rank is None:
+            raise ValueError(f"Owned result {result.owner_path!r} has no descriptor rank")
+        element_type = self._array_result_element_type(result)
+        dimension = self._array_dimension_attribute(handle.array.rank)
+        return FortranFunction(
+            name=self._owned_direct_array_result_collector_name(),
+            parameters=(
+                FortranParameter("value", element_type, ("allocatable", dimension)),
+                FortranParameter("result", element_type, ("allocatable", dimension, "intent(out)")),
+            ),
+            body=(
+                FortranIf(
+                    CodeExpression("allocated(value)"),
+                    body=(
+                        FortranCall(
+                            "move_alloc",
+                            (CodeExpression("value"), CodeExpression("result")),
+                        ),
+                    ),
+                    else_body=(
+                        FortranIf(
+                            CodeExpression("allocated(result)"),
+                            body=(FortranDeallocate("result"),),
+                        ),
+                    ),
+                ),
+            ),
+            is_subroutine=True,
         )
 
     @staticmethod
@@ -5047,6 +5124,21 @@ class FortranBridgeGenerator(ClassVisitor):
         """Return the direct result that uses persistent descriptor output storage."""
         result = self._direct_result(plan)
         return result if result is not None and self._is_owned_native_array_result(result) else None
+
+    def _uses_owned_direct_array_result_collector(self, plan: FunctionPlan) -> bool:
+        """Return whether a direct function result may be returned unallocated."""
+        result = self._direct_result(plan)
+        return bool(
+            result is not None
+            and self._is_owned_native_array_result(result)
+            and not self._is_owned_deferred_character_result(result)
+            and result.native_array_handle is not None
+            and result.native_array_handle.result_allocation is NativeArrayResultAllocation.MAYBE_UNALLOCATED
+        )
+
+    @staticmethod
+    def _owned_direct_array_result_collector_name() -> str:
+        return "x2py_collect_allocatable_array_result"
 
     @staticmethod
     def _is_owned_native_array_result(result: ResultPlan) -> bool:

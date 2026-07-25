@@ -16,6 +16,7 @@ from x2py.semantics.metadata import (
     ADDRESS_ROLE_PROJECTION,
     ADDRESS_ROLE_RAW,
     BIND_TARGET_METADATA,
+    MAYBE_UNALLOCATED_METADATA,
     NATIVE_PROJECTION_METADATA,
     OPTIONAL_ABSENT_HANDLE_METADATA,
     SCALAR_STORAGE_CATEGORY,
@@ -514,6 +515,8 @@ class PyiPrinter(ClassVisitor):
             metadata.append(self._contract("Aliased"))
         if semantic_type.metadata.get(PYTHON_VALUE_MUTABILITY_METADATA) == PYTHON_VALUE_IMMUTABLE:
             metadata.append(self._contract("Immutable"))
+        if semantic_type.metadata.get(MAYBE_UNALLOCATED_METADATA):
+            metadata.append(self._contract("MaybeUnallocated"))
         pointer_association = semantic_type.metadata.get("fortran_pointer_association")
         if pointer_association is not None and not self._is_scalar_pointer_descriptor(semantic_type):
             metadata.append(f"{self._contract('PointerAssociation')}({json.dumps(str(pointer_association))})")

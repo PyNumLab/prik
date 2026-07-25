@@ -63,8 +63,8 @@ contains
     integer(4), intent(in) :: n
     integer(4) :: i
     real(8), allocatable :: arr(:)
+    allocate(arr(max(n, 0)))
     if (n > 0) then
-      allocate(arr(n))
       arr = [(real(i, 8)*2, i = 1, n)]
     end if
   end function make_values
@@ -113,7 +113,28 @@ print(values.to_numpy())                    # [10. 20.]
 - Use normal `T[...]` when you just want to pass array **data**.
 - Call `.to_numpy()` to get a view; the handle itself is not an array.
 - Copy data (`view.copy()`) if you need it to survive possible reallocation/deallocation.
-- Direct allocatable array function results preserve allocated, zero-sized, and
-  unallocated handle state. This includes matrices and higher-rank arrays.
+- Direct allocatable array function results are treated as always allocated by
+  default. Empty results should allocate zero extent, such as `allocate(arr(0))`.
+  The generated bridge can then use the normal fast assignment-plus-`move_alloc`
+  path.
+- Use `Annotated[Allocatable[T[...]], MaybeUnallocated]` only when a direct
+  allocatable array function result may return unallocated. The Python result is
+  still an `Allocatable[...]` handle; `handle.allocated` may be `False`, and
+  `handle.to_numpy()` may return `None`.
+- `MaybeUnallocated` uses a GNU-verified helper path that avoids assigning an
+  unallocated direct function result before `allocated(...)` can be checked.
+  A native subroutine with an allocatable `intent(out)` output remains the
+  portable zero-copy spelling for unallocated result state on stricter
+  compilers.
+
+```python
+from x2py.contracts import Allocatable, Annotated, Float64, Int32, MaybeUnallocated
+
+def make_values(n: Int32) -> Allocatable[Float64[:]]: ...
+
+def maybe_values(
+    n: Int32,
+) -> Annotated[Allocatable[Float64[:]], MaybeUnallocated]: ...
+```
 
 ---

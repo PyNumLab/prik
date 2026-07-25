@@ -24,6 +24,7 @@ from x2py.semantics.metadata import (
     ADDRESS_ROLE_PROJECTION,
     ADDRESS_ROLE_RAW,
     BIND_TARGET_METADATA,
+    MAYBE_UNALLOCATED_METADATA,
     OPTIONAL_ABSENT_HANDLE_METADATA,
     PROJECTED_OUTPUT_METADATA,
     SCALAR_STORAGE_CATEGORY,
@@ -859,6 +860,7 @@ def _complete_function(
             owner_path=f"{owner_path}.{argument.name}",
         )
     if function.return_type is not None:
+        _validate_maybe_unallocated_return(function, owner_path)
         decision = default_ownership_policy.decide_semantic_type(function.return_type, OwnershipContext.result())
         function.metadata[models.RESOLVED_RETURN_OWNERSHIP_POLICY_METADATA] = decision
         _complete_native_array_handle_result_policy(function, decision)
@@ -1014,6 +1016,15 @@ def _complete_native_array_handle_result_policy(
     function.metadata[models.RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA] = policy
 
 
+def _validate_maybe_unallocated_return(function: models.SemanticFunction, owner_path: str) -> None:
+    """Require MaybeUnallocated only on direct allocatable array function results."""
+    return_type = function.return_type
+    if return_type is None or not return_type.metadata.get(MAYBE_UNALLOCATED_METADATA):
+        return
+    if native_array_descriptor_kind(return_type) != "allocatable" or int(return_type.rank or 0) <= 0:
+        raise ValueError(f"MaybeUnallocated metadata on {owner_path}.return requires an Allocatable[...] array result")
+
+
 def _complete_native_array_handle_variable_policy(
     variable: models.SemanticVariable,
     context: OwnershipContext,
@@ -1060,6 +1071,7 @@ def _native_array_handle_policy(
         python_setter=_native_array_python_setter(variable),
         native_setter=_native_array_native_setter(variable),
         output_projection=_native_array_output_projection(descriptor_kind, handle_kind, context),
+        result_allocation=_native_array_result_allocation(descriptor_kind, handle_kind, context, semantic_type),
         release=_native_array_release_responsibility(handle_kind),
         target_lifetime=_native_array_target_lifetime(descriptor_kind, handle_kind, semantic_type, blocker),
         destroy_behavior=_native_array_destroy_behavior(handle_kind, blocker),
@@ -1178,6 +1190,19 @@ def _native_array_output_projection(
     if context.is_argument and context.projects_result:
         return "projected_handle"
     return "none"
+
+
+def _native_array_result_allocation(
+    descriptor_kind: str,
+    handle_kind: str,
+    context: OwnershipContext,
+    semantic_type: models.SemanticType,
+) -> str:
+    if context.is_result and descriptor_kind == "allocatable" and handle_kind == "owned_result_descriptor":
+        if semantic_type.metadata.get(MAYBE_UNALLOCATED_METADATA):
+            return "maybe_unallocated"
+        return "always_allocated"
+    return "not_applicable"
 
 
 def _native_array_release_responsibility(handle_kind: str) -> str:
@@ -1530,6 +1555,10 @@ def _complete_variable(
     *,
     owner_path: str | None = None,
 ) -> None:
+    if variable.semantic_type.metadata.get(MAYBE_UNALLOCATED_METADATA):
+        raise ValueError(
+            f"MaybeUnallocated metadata on {owner_path or variable.name!r} is only valid on function return types"
+        )
     decision = default_ownership_policy.decide_semantic_variable(variable, context)
     variable.metadata[models.RESOLVED_OWNERSHIP_POLICY_METADATA] = decision
     _complete_prototype_reference_policy(variable.semantic_type, owner_path=owner_path or variable.name)

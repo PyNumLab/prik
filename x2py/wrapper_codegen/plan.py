@@ -59,6 +59,7 @@ from x2py.semantics.wrapper_policy import (
     NativeArrayHandleOrigin,
     NativeArrayOperation,
     NativeArrayOutputProjection,
+    NativeArrayResultAllocation,
     NativeArrayOwnerRetention,
     NativeArrayRelease,
     NativeArraySourceKind,
@@ -343,6 +344,7 @@ class NativeArrayHandlePlan(StageRecord):
     setter_action: SetterAction
     native_assignment: AssignmentMode
     output_projection: NativeArrayOutputProjection
+    result_allocation: NativeArrayResultAllocation
     release: NativeArrayRelease
     target_lifetime: str
     destroy_behavior: NativeArrayDestroyBehavior

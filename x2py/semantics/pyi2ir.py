@@ -13,6 +13,7 @@ from x2py.semantics.metadata import (
     ADDRESS_ROLE_PROJECTION,
     ADDRESS_ROLE_RAW,
     BIND_TARGET_METADATA,
+    MAYBE_UNALLOCATED_METADATA,
     NATIVE_PROJECTION_METADATA,
     OPTIONAL_ABSENT_HANDLE_METADATA,
     PROJECTED_OUTPUT_METADATA,
@@ -1739,6 +1740,9 @@ class _PyiAstParser:
             return True
         if name == "Immutable":
             semantic_type.metadata[PYTHON_VALUE_MUTABILITY_METADATA] = PYTHON_VALUE_IMMUTABLE
+            return True
+        if name == "MaybeUnallocated":
+            semantic_type.metadata[MAYBE_UNALLOCATED_METADATA] = True
             return True
         if name == "FortranAllocatable":
             semantic_type.metadata["fortran_allocatable"] = True

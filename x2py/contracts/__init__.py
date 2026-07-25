@@ -90,6 +90,7 @@ COPY_F = _ContractExpression()
 Flat = _ContractExpression()
 FortranAllocatable = _ContractExpression()
 Immutable = _ContractExpression()
+MaybeUnallocated = _ContractExpression()
 ORDER_ANY = _ContractExpression()
 ORDER_C = _ContractExpression()
 ORDER_F = _ContractExpression()
@@ -175,6 +176,7 @@ CONTRACT_SYMBOLS = frozenset(
         "IsPresent",
         "Len",
         "Matrix",
+        "MaybeUnallocated",
         "Opaque",
         "OpaqueHandle",
         "ORDER_ANY",

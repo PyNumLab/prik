@@ -268,6 +268,29 @@ def _scalar_descriptor_module(build_mode: str, tmp_path: Path):
     return _sole_native_module(_import_from_build_dir(result.module_name, result.output_dir))
 
 
+def _maybe_unallocated_direct_result_module(tmp_path: Path):
+    native_object = _compile_native_object(ALLOCATABLE_VIEW_F90_SOURCE, tmp_path / "native")
+    contract_dir = tmp_path / "contracts" / "fallocatable_views_f90"
+    contract_dir.mkdir(parents=True)
+    (contract_dir / "__init__.pyi").write_text("from . import fallocatable_views_f90\n", encoding="utf-8")
+    contract_text = (CONTRACT_FIXTURES / "fallocatable_views_f90" / "fallocatable_views_f90.pyi").read_text(
+        encoding="utf-8"
+    )
+    contract_text = contract_text.replace("Int32, Pass", "Int32, MaybeUnallocated, Pass")
+    contract_text = contract_text.replace(
+        "def make_values(\n    n: Int32\n) -> Allocatable[Float64[:]]: ...",
+        "def make_values(\n    n: Int32\n) -> Annotated[Allocatable[Float64[:]], MaybeUnallocated]: ...",
+    )
+    (contract_dir / "fallocatable_views_f90.pyi").write_text(contract_text, encoding="utf-8")
+    result = build_pyi_extension(
+        contract_dir / "__init__.pyi",
+        native_objects=[native_object],
+        native_include_dirs=[native_object.parent],
+        output_dir=tmp_path / "pyi_build",
+    )
+    return _sole_native_module(_import_from_build_dir(result.module_name, result.output_dir))
+
+
 def test_allocatable_module_fields_and_results_expose_lifetime_safe_handles(
     pyi_parity_build_mode: str,
     tmp_path: Path,
@@ -340,14 +363,12 @@ def test_allocatable_module_fields_and_results_expose_lifetime_safe_handles(
 
     made_values = module.make_values(np.int32(3))
     np.testing.assert_allclose(made_values.to_numpy(), np.array([3.0, 6.0, 9.0], dtype=np.float64))
-    assert module.make_values(np.int32(0)).allocated is False
 
     made_matrix = module.make_matrix(np.int32(2), np.int32(2))
     np.testing.assert_allclose(
         made_matrix.to_numpy(),
         np.array([[111.0, 121.0], [112.0, 122.0]], dtype=np.float64),
     )
-    assert module.make_matrix(np.int32(2), np.int32(0)).allocated is False
 
     retained_result_view = made_values.to_numpy()
     del made_values
@@ -383,6 +404,20 @@ def test_allocatable_module_fields_and_results_expose_lifetime_safe_handles(
     assert built_values.closed is True
     with pytest.raises(ReferenceError, match="closed"):
         _ = built_values.allocated
+
+
+def test_maybe_unallocated_direct_allocatable_results_preserve_unallocated_state(tmp_path: Path):
+    module = _maybe_unallocated_direct_result_module(tmp_path)
+
+    made_values = module.make_values(np.int32(3))
+    np.testing.assert_allclose(made_values.to_numpy(), np.array([3.0, 6.0, 9.0], dtype=np.float64))
+    assert module.make_values(np.int32(0)).allocated is False
+
+    made_matrix = module.make_matrix(np.int32(2), np.int32(2))
+    np.testing.assert_allclose(
+        made_matrix.to_numpy(),
+        np.array([[111.0, 121.0], [112.0, 122.0]], dtype=np.float64),
+    )
 
 
 def test_scalar_descriptor_module_variables_return_copied_optional_values(

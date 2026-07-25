@@ -709,6 +709,14 @@ class NativeArrayOutputProjection(str, Enum):
     HANDLE_RESULT = "handle_result"
 
 
+class NativeArrayResultAllocation(str, Enum):
+    """Direct native allocatable function result allocation contract."""
+
+    NOT_APPLICABLE = "not_applicable"
+    ALWAYS_ALLOCATED = "always_allocated"
+    MAYBE_UNALLOCATED = "maybe_unallocated"
+
+
 class NativeArrayRelease(str, Enum):
     """Completed release owner for descriptor storage."""
 
@@ -901,6 +909,7 @@ class NativeArrayHandleWrapperPolicy:
     setter_action: SetterAction
     native_assignment: AssignmentMode
     output_projection: NativeArrayOutputProjection
+    result_allocation: NativeArrayResultAllocation
     release: NativeArrayRelease
     target_lifetime: str
     destroy_behavior: NativeArrayDestroyBehavior
@@ -5114,6 +5123,12 @@ def _native_array_handle_wrapper_policy(
         setter_action=_native_array_setter_action(completed.python_setter, owner_path),
         native_assignment=_native_array_assignment(completed.native_setter, owner_path),
         output_projection=output_projection,
+        result_allocation=_native_array_enum(
+            NativeArrayResultAllocation,
+            completed.result_allocation,
+            owner_path,
+            "result allocation",
+        ),
         release=_native_array_enum(NativeArrayRelease, completed.release, owner_path, "release"),
         target_lifetime=completed.target_lifetime,
         destroy_behavior=_native_array_enum(

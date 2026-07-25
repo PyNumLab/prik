@@ -27,6 +27,7 @@ from tests.wrapper_codegen.printers._support import (
     pytest,
     rendered_source,
 )
+from x2py.semantics.metadata import MAYBE_UNALLOCATED_METADATA
 
 
 def test_emit_optional_scalar_output_as_visible_scalar_storage():
@@ -388,6 +389,15 @@ def test_printer_emits_extended_storage_and_callable_forms():
             array=SemanticArrayContract(rank=1, shape=["1"], allocatable=True),
         ),
     )
+    maybe_unallocated_handle = SemanticType(
+        "Float64",
+        rank=1,
+        metadata={MAYBE_UNALLOCATED_METADATA: True},
+        storage=SemanticStorageContract(
+            kind="array",
+            array=SemanticArrayContract(rank=1, shape=[":"], allocatable=True),
+        ),
+    )
     pointer_handle = SemanticType(
         "Float64",
         rank=1,
@@ -448,6 +458,7 @@ def test_printer_emits_extended_storage_and_callable_forms():
     assert printer.emit(inferred_array) == "Float64[:, :]"
     assert printer.emit(allocatable_handle) == "Allocatable[Annotated[Float64[:, :], ORDER_F]]"
     assert printer.emit(constrained_allocatable_handle) == "Allocatable[Annotated[Bool[1], Finite]]"
+    assert printer.emit(maybe_unallocated_handle) == "Annotated[Allocatable[Float64[:]], MaybeUnallocated]"
     assert printer.emit(pointer_handle) == 'Annotated[Pointer[Float64[:]], PointerAssociation("runtime")]'
     assert printer.emit(string_pointer_handle) == "Pointer[String[8][:]]"
     assert printer.emit(annotated_array) == "Annotated[Float64[:, :], ORDER_ANY, Finite, Range(1, 3)]"

@@ -14,6 +14,7 @@ from x2py.semantics.wrapper_policy import (
     NativeArrayDescriptorOwnership,
     NativeArrayOperation,
     NativeArrayOutputProjection,
+    NativeArrayResultAllocation,
     NativeArraySourceKind,
     NativeDescriptorHandoffABI,
 )
@@ -23,7 +24,20 @@ from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 def _phase7_plan():
     module = parse_pyi_text(
         """
-from x2py.contracts import Addr, Allocatable, Arg, Float64, Int32, Pointer, Return, Returns, String, native_call
+from x2py.contracts import (
+    Addr,
+    Allocatable,
+    Annotated,
+    Arg,
+    Float64,
+    Int32,
+    MaybeUnallocated,
+    Pointer,
+    Return,
+    Returns,
+    String,
+    native_call,
+)
 
 def normal(values: Float64[:]) -> Float64: ...
 def alloc(values: Allocatable[Float64[:]]) -> Float64: ...
@@ -38,6 +52,9 @@ def replace(
 
 @native_call([Addr(Arg(0))])
 def make(n: Int32) -> Allocatable[Float64[:]]: ...
+
+@native_call([Addr(Arg(0))])
+def maybe_make(n: Int32) -> Annotated[Allocatable[Float64[:]], MaybeUnallocated]: ...
 
 @native_call([Addr(Arg(0)), Addr(Arg(1))])
 def make_matrix(n: Int32, m: Int32) -> Allocatable[Float64[:, :]]: ...
@@ -142,8 +159,13 @@ def test_phase7_keeps_datatype_specific_state_under_argument_and_result_plans():
     assert owned.native_array_handle is not None
     assert owned.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
     assert owned.native_array_handle.descriptor_ownership is NativeArrayDescriptorOwnership.OWNED
+    assert owned.native_array_handle.result_allocation is NativeArrayResultAllocation.ALWAYS_ALLOCATED
     assert owned.native_array_handle.handoff.owner_storage_role is not None
     assert NativeArrayOperation.DESTROY in owned.native_array_handle.operations
+
+    maybe_owned = functions["maybe_make"].results[0]
+    assert maybe_owned.native_array_handle is not None
+    assert maybe_owned.native_array_handle.result_allocation is NativeArrayResultAllocation.MAYBE_UNALLOCATED
 
     owned_matrix = functions["make_matrix"].results[0]
     assert owned_matrix.native_array_handle is not None
@@ -261,8 +283,9 @@ def test_phase7_generated_artifacts_follow_one_typed_action_vocabulary():
     assert "bound_values = (CFI_cdesc_t *)&bound_values_storage;" in optional_binding
     assert "result_value = native_make(n)" in bridge_source
     assert "result_value = native_make_matrix(n, m)" in bridge_source
-    assert "if (allocated(result_value)) then" in bridge_source
-    assert "call move_alloc(result_value, result)" in bridge_source
+    assert "call x2py_collect_allocatable_array_result(native_maybe_make(n), result)" in bridge_source
+    assert "if (allocated(value)) then" in bridge_source
+    assert "call move_alloc(value, result)" in bridge_source
     assert "bool bind_c_owned_result_73146804_allocated(CFI_cdesc_t * result);" in c_source
     assert "return PyBool_FromLong(bind_c_owned_result_73146804_allocated(owner_descriptor));" in c_source
     assert "bind_c_owned_result_73146804_deallocate(owner_descriptor);" in c_source
@@ -274,7 +297,7 @@ def test_phase7_generated_artifacts_follow_one_typed_action_vocabulary():
     assert "character(kind=c_char, len=:), allocatable, dimension(:) :: names" in bridge_source
 
 
-def test_phase7_numeric_owned_result_is_collected_before_persistent_descriptor_move():
+def test_phase7_numeric_owned_result_defaults_to_assignment_then_move_alloc():
     bridge_source = next(
         source.text
         for source in WrapperCodeGenerator().generate(_phase7_plan()).sources
@@ -291,14 +314,51 @@ def test_phase7_numeric_owned_result_is_collected_before_persistent_descriptor_m
     assert "call move_alloc(result_value, result)" in procedure
     assert "if (allocated(result)) then" in procedure
     assert "deallocate(result)" in procedure
+    assert "call x2py_collect_allocatable_array_result(native_make(n), result)" not in procedure
     assert "result = result_value" not in procedure
-    assert "x2py_collect_make_allocatable_array_result" not in bridge_source
     assert "function bind_c_owned_result_73146804_allocated(" in bridge_source
     assert "real(c_double), allocatable, dimension(:), intent(in) :: result" in bridge_source
     assert "state = allocated(result)" in bridge_source
     assert "subroutine bind_c_owned_result_73146804_deallocate(" in bridge_source
     assert "real(c_double), allocatable, dimension(:), intent(inout) :: result" in bridge_source
     assert "subroutine bind_c_owned_result_73146804_destroy(" in bridge_source
+
+
+def test_phase7_maybe_unallocated_owned_result_uses_collector_without_local_assignment():
+    bridge_source = next(
+        source.text
+        for source in WrapperCodeGenerator().generate(_phase7_plan()).sources
+        if source.path.suffix == ".f90"
+    )
+    start = bridge_source.index("subroutine bind_c_maybe_make(")
+    end = bridge_source.index("end subroutine", start)
+    procedure = bridge_source[start:end]
+
+    assert "real(c_double), allocatable, dimension(:), intent(out) :: result" in procedure
+    assert "call x2py_collect_allocatable_array_result(native_maybe_make(n), result)" in procedure
+    assert "real(c_double), allocatable, dimension(:) :: value" in procedure
+    assert "if (allocated(value)) then" in procedure
+    assert "call move_alloc(value, result)" in procedure
+    assert "if (allocated(result)) then" in procedure
+    assert "deallocate(result)" in procedure
+    assert "result_value = native_make(n)" not in procedure
+    assert "call move_alloc(result_value, result)" not in procedure
+    assert "result = result_value" not in procedure
+    assert "subroutine x2py_collect_allocatable_array_result(" in procedure
+
+
+def test_phase7_maybe_unallocated_is_only_valid_on_direct_allocatable_array_results():
+    module = parse_pyi_text(
+        """
+from x2py.contracts import Allocatable, Annotated, Float64, MaybeUnallocated
+
+def invalid_argument(values: Annotated[Allocatable[Float64[:]], MaybeUnallocated]) -> Float64: ...
+""",
+        module_name="invalid_maybe_unallocated",
+    )
+
+    with pytest.raises(ValueError, match="MaybeUnallocated metadata"):
+        complete_semantic_policies(module)
 
 
 @pytest.mark.parametrize(
