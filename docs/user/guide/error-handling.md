@@ -1,5 +1,5 @@
 ---
-title: Error Handling
+title: Error Handling & Diagnostics
 description: How x2py reports errors at different stages and how to diagnose them
 audience: users, advanced users
 prerequisites: common beginner workflow, data types
@@ -8,7 +8,7 @@ status: maintained
 publication: reviewed
 ---
 
-# Error Handling
+# Error Handling & Diagnostics
 
 x2py reports failures at several distinct stages. Understanding which stage failed helps you know where to look and what to fix.
 

@@ -99,36 +99,43 @@ def accumulator_add_real(
     value: Float64
 ) -> None: ...
 
+@bind("convert")
 @overload("convert_integer")
 def convert(
     value: Int32
 ) -> Int32: ...
 
+@bind("convert")
 @overload("convert_real")
 def convert(
     value: Float64
 ) -> Float64: ...
 
+@bind("convert")
 @overload("convert_complex")
 def convert(
     value: Complex128
 ) -> Complex128: ...
 
+@bind("summarize")
 @overload("summarize_scalar")
 def summarize(
     value: Float64
 ) -> Float64: ...
 
+@bind("summarize")
 @overload("summarize_vector")
 def summarize(
     values: Float64[::]
 ) -> Float64: ...
 
+@bind("inspect")
 @overload("inspect_accumulator")
 def inspect(
     value: accumulator
 ) -> Float64: ...
 
+@bind("inspect")
 @overload("inspect_sample")
 def inspect(
     value: sample

@@ -60,3 +60,18 @@ def test_editable_contract_adds_renamed_binding_and_overload_group(tmp_path: Pat
     assert module.convert_number(np.float64(6.0)) == np.float64(6.5)
     with pytest.raises(TypeError):
         module.convert_number(np.complex128(1.0 + 0.0j))
+
+
+def test_private_native_specific_without_overload_bind_fails_fortran_accessibility(tmp_path: Path):
+    native_object = _compile_native_object(NATIVE_SOURCE, tmp_path / "native")
+
+    with pytest.raises(RuntimeError) as exc_info:
+        _build_contract(
+            "foverloads_private_specific_without_bind",
+            native_object,
+            tmp_path / "inaccessible",
+        )
+
+    error = str(exc_info.value).casefold()
+    assert "convert_integer" in error
+    assert "not found in module" in error

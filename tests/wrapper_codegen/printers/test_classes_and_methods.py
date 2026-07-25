@@ -247,6 +247,39 @@ end module generic_mod
     ]
 
 
+def test_private_module_generic_specifics_bind_overload_candidates_to_public_generic():
+    source = """
+module generic_mod
+  implicit none
+  private
+  public :: convert
+  interface convert
+    module procedure convert_integer, convert_real
+  end interface convert
+contains
+  integer function convert_integer(value)
+    integer :: value
+    convert_integer = value
+  end function convert_integer
+  real function convert_real(value)
+    real :: value
+    convert_real = value
+  end function convert_real
+end module generic_mod
+"""
+
+    code = generate_pyi(source)
+
+    assert code.count('@bind("convert")\n@overload("convert_integer")') == 1
+    assert code.count('@bind("convert")\n@overload("convert_real")') == 1
+    loaded = parse_pyi_text(code, module_name="generic_mod")
+    assert [procedure.native_name for procedure in loaded.overload_sets[0].procedures] == [
+        "convert",
+        "convert",
+    ]
+    assert emit_module(loaded) == code
+
+
 def test_emit_and_load_allocatable_module_variable_declaration():
     source = """
 module alloc_view_mod

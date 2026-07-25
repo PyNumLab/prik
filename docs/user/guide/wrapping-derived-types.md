@@ -108,6 +108,145 @@ print(container.origin.x)  # 12.0
 
 ---
 
+## Type-Bound Methods
+
+A public type-bound procedure becomes a method on the generated class. The
+passed object becomes `self` and is not repeated in the Python call.
+
+```fortran
+type :: counter
+  integer(4) :: value = 0
+contains
+  procedure :: increment
+end type counter
+
+contains
+
+subroutine increment(self, amount)
+  class(counter), intent(inout) :: self
+  integer(4), intent(in) :: amount
+  self%value = self%value + amount
+end subroutine increment
+```
+
+```python
+item = counters.counter(value=np.int32(4))
+item.increment(np.int32(3))
+print(item.value)  # 7
+```
+
+The method mutates the existing `counter`; it does not replace the Python
+object.
+
+---
+
+## Type-Bound Generics
+
+A type-bound generic groups several concrete methods under one Python method.
+For example, `add` can accept exact integer or real amounts:
+
+```fortran
+type :: counter
+  integer(4) :: value = 0
+contains
+  procedure :: add_integer
+  procedure :: add_real
+  generic :: add => add_integer, add_real
+end type counter
+```
+
+The generated contract uses the same explicit overload links as a module-level
+generic:
+
+```python
+from x2py.contracts import Float64, Int32, overload, private
+
+class counter:
+    @private
+    def add_integer(self, amount: Int32) -> Int32: ...
+
+    @private
+    def add_real(self, amount: Float64) -> Float64: ...
+
+    @overload("add_integer")
+    def add(self, amount: Int32) -> Int32: ...
+
+    @overload("add_real")
+    def add(self, amount: Float64) -> Float64: ...
+```
+
+```python
+print(item.add(np.int32(2)))       # exact Int32 candidate
+print(item.add(np.float64(0.5)))   # exact Float64 candidate
+```
+
+The passed object participates in native dispatch but is already fixed by the
+generated class. The remaining arguments must still match one candidate
+exactly.
+
+---
+
+## Defined Operators
+
+A defined operator with a wrapped derived-type operand becomes a Python magic
+method. Its overload candidates are attached to the generated class.
+
+```fortran
+interface operator(+)
+  module procedure add_points
+end interface operator(+)
+
+contains
+
+function add_points(left, right) result(output)
+  type(point), intent(in) :: left, right
+  type(point) :: output
+  output%x = left%x + right%x
+  output%y = left%y + right%y
+end function add_points
+```
+
+The generated contract exposes `operator(+)` as `__add__`:
+
+```python
+from x2py.contracts import overload, private
+
+class point:
+    @overload("add_points")
+    def __add__(self, right: point) -> point: ...
+
+@private
+def add_points(left: point, right: point) -> point: ...
+```
+
+Python uses the normal operator:
+
+```python
+left = points.point(x=np.float64(1.0), y=np.float64(2.0))
+right = points.point(x=np.float64(3.0), y=np.float64(4.0))
+total = left + right
+print(total.x, total.y)  # 4.0 6.0
+```
+
+| Fortran generic | Python method | Python syntax |
+|-----------------|---------------|---------------|
+| Binary `+`, `-`, `*`, `/`, `**` | Direct and reflected magic methods | `left + right` |
+| Unary `+`, `-` | `__pos__`, `__neg__` | `+value`, `-value` |
+| Relational operators | `__eq__`, `__lt__`, and related methods | `left == right` |
+| `.and.`, `.or.`, `.not.` | `__and__`, `__or__`, `__invert__` | `left & right`, `~value` |
+| Named operator `.name.` | `operator_name` or `r_operator_name` | Explicit method call |
+| `assignment(=)` | `assign` | `target.assign(value)` |
+
+Python `and`, `or`, and `not` cannot be overloaded, so logical operator
+generics use `&`, `|`, and `~`. Python assignment only rebinds a name, so
+defined assignment uses `.assign(...)`.
+
+At least one operand must be a wrapped derived type. Other operands can be
+supported primitive scalars, arrays, or generated classes. Their dispatch is
+exact.
+
+---
+
 ## Scalar Actuals And Native Dummies
 
 The generated class can represent several native origins. Compatibility depends

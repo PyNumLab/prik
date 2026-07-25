@@ -465,10 +465,10 @@ X2PY_C_DOCS_END -->
   `tests/wrapper/fortran/edit_pyi_contracts/modified_contracts/foverloads_without_constructor_member/`,
   and
   `tests/wrapper/fortran/edit_pyi_contracts/modified_contracts/foverloads_added_bindings/`.
-- [x] Module overload groups can be renamed while preserving the native generic
-  name with `@overload("specific", generic="native_generic")`, and the printer
-  round-trips that metadata. Evidence:
-  `tests/semantics/conversion/pyi/test_classes_and_overloads.py::test_convert_pyi_to_ir_renames_module_generic_and_round_trips_native_name`
+- [x] Module overload candidates can override the linked specific's native call
+  with `@bind("native_generic")`, and the printer round-trips that metadata.
+  Evidence:
+  `tests/semantics/conversion/pyi/test_classes_and_overloads.py::test_convert_pyi_to_ir_applies_module_overload_bind_and_round_trips_native_name`
   and `docs/user/reference/semantic-pyi-format.md`.
 - [x] Explicit owner, transfer, and destruction triples are validated as a
   complete lifetime policy instead of independent switches. Supported triples

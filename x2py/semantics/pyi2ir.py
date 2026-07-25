@@ -488,8 +488,8 @@ class _PyiAstParser:
         parsed = _Decorators()
         for node in nodes:
             self._apply_decorator(parsed, node, context=context)
-        if parsed.overload_target is not None and parsed.bind_target is not None:
-            raise ValueError("bind cannot be combined with overload")
+        if context == "class body" and parsed.overload_target is not None and parsed.bind_target is not None:
+            raise ValueError("bind cannot be combined with a class overload")
         if parsed.overload_target is not None and parsed.has_native_call:
             raise ValueError("overload cannot be combined with native_call; put native_call on the specific procedure")
         if parsed.prototype and len(nodes) != 1:
@@ -767,8 +767,12 @@ class _PyiAstParser:
                 candidate.metadata[key] = deepcopy(declaration.metadata[key])
 
         if isinstance(owner, SemanticModule):
+            if generic_name is not None:
+                raise ValueError("generic is only valid for class overloads; use bind on a module overload")
             self._validate_overload_signature(declaration, candidate, list(candidate.arguments))
-            candidate.metadata[FORTRAN_GENERIC_NAME_METADATA] = generic_name or declaration.name
+            if bind_target := declaration.metadata.get(BIND_TARGET_METADATA):
+                candidate.native_name = str(bind_target)
+                candidate.metadata[BIND_TARGET_METADATA] = str(bind_target)
             candidate.metadata[OVERLOAD_KIND_METADATA] = "generic"
             return candidate
 

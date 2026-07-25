@@ -1737,7 +1737,7 @@ decorator is x2py metadata; it is not `typing.overload` and must not be imported
 from `typing`.
 
 ```python
-from x2py.contracts import Addr, Arg, Float64, Int32, Pass, native_call, overload, private
+from x2py.contracts import Addr, Arg, Float64, Int32, Pass, bind, native_call, overload, private
 
 @private
 @native_call([Addr(Arg(0))])
@@ -1747,9 +1747,11 @@ def convert_integer(value: Int32) -> Int32: ...
 @native_call([Addr(Arg(0))])
 def convert_real(value: Float64) -> Float64: ...
 
+@bind("convert")
 @overload("convert_integer")
 def convert(value: Int32) -> Int32: ...
 
+@bind("convert")
 @overload("convert_real")
 def convert(value: Float64) -> Float64: ...
 
@@ -1769,9 +1771,10 @@ when it is needed to resolve a public overload declaration from the standalone
 that is otherwise part of the wrapper input.
 `@native_call` is not emitted merely to restate an unchanged native function
 name.
-An overload declaration is only a Python dispatch link. It must not also carry
-`@native_call`; the linked concrete procedure owns any native projection,
-including argument reordering, `Pass()`, hidden values, and projected returns.
+An overload declaration is a Python dispatch link. It must not also carry
+`@native_call`; the linked concrete procedure owns argument reordering,
+`Pass()`, hidden values, and projected returns. An overload-level `@bind`
+changes only the final native call target.
 
 The loader resolves only the decorator string. It never guesses a target by
 signature. The target must exist exactly once, each target may occur only once
@@ -1779,15 +1782,25 @@ in one overload set, and the public declaration must agree with the concrete
 call signature and return type. Missing, duplicate, ambiguous, and incompatible
 links are deterministic errors.
 
-When a module-level Python overload group is renamed, `generic=` preserves the
-native Fortran generic name:
+Without overload-level `@bind`, a module candidate calls the linked procedure's
+resolved native name. With `@bind`, it calls the named native symbol instead.
+This is required when a public generic is the only native entry point for a
+private specific:
 
 ```python
-from x2py.contracts import Int32, overload
+from x2py.contracts import Int32, bind, overload, private
 
-@overload("convert_integer", generic="convert")
+@private
+def convert_integer(value: Int32) -> Int32: ...
+
+@bind("convert")
+@overload("convert_integer")
 def convert_number(value: Int32) -> Int32: ...
 ```
+
+`@private` controls Python visibility only. For edited standalone contracts,
+x2py cannot infer whether the linked native procedure is accessible. A direct
+call to a Fortran-private specific therefore fails during the native build.
 
 Python method names recover the native generic for ordinary operators. When
 two distinct Fortran generics share one Python method, the decorator also
@@ -1800,11 +1813,9 @@ from x2py.contracts import Bool, overload
 def __eq__(self, other: value) -> Bool: ...
 ```
 
-For module overloads, the optional `generic=` argument names the native generic
-when it differs from the Python overload-set name. For class methods it is
-restricted to a compatible operator or assignment generic. It is emitted for
-`.eqv.` and `.neqv.`, which would otherwise be indistinguishable from
-`operator(==)` and `operator(/=)`.
+For class methods, `generic=` is restricted to a compatible operator or
+assignment generic. It is emitted for `.eqv.` and `.neqv.`, which would
+otherwise be indistinguishable from `operator(==)` and `operator(/=)`.
 
 <!-- X2PY_C_DOCS_START
 The generated C extension exposes one callable for each generic name. It
@@ -2376,7 +2387,7 @@ ambiguous, unsafe, or stale before wrapper lowering:
 - ordinary function bodies instead of `...`.
 - unsupported decorators other than `@private`, `@bind`, `@external`,
   `@native_call`, `@native_type`,
-  `@overload("specific")`, its documented `generic=` form, `@raises`,
+  `@overload("specific")`, the class-operator `generic=` form, `@raises`,
   `@hold_gil`, and `@staticmethod`.
 - bare `@overload` or `typing.overload`; overload links require one concrete
   procedure name.

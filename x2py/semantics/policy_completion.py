@@ -192,21 +192,12 @@ def _complete_ownership_policies(
             polymorphic_variants=polymorphic_variants,
         )
     for overload_set in module.overload_sets:
-        native_dispatch_name = next(
-            (
-                str(procedure.metadata[models.FORTRAN_GENERIC_NAME_METADATA])
-                for procedure in overload_set.procedures
-                if procedure.metadata.get(models.FORTRAN_GENERIC_NAME_METADATA)
-            ),
-            overload_set.name,
-        )
         for procedure in overload_set.procedures:
             procedure_scope = str(procedure.origin.native_scope or module.name)
             _complete_function(
                 procedure,
                 f"{procedure_scope}.{overload_set.name}.{procedure.name}",
                 derived_types=derived_types,
-                native_dispatch_name=native_dispatch_name,
             )
     overload_functions = {
         f"{(procedure.origin.native_scope or module.name)!s}.{overload_set.name}.{procedure.name}": procedure

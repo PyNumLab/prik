@@ -97,13 +97,21 @@ contract keeps one public name and links each public implementation back to a
 specific native procedure:
 
 ```python
-from x2py.contracts import Float64, Int32, overload
+from x2py.contracts import Float64, Int32, bind, overload, private
 
+@private
+def convert_integer(value: Int32) -> Int32: ...
+
+@private
+def convert_real(value: Float64) -> Float64: ...
+
+@bind("convert")
 @overload("convert_integer")
 def convert(
     value: Int32
 ) -> Int32: ...
 
+@bind("convert")
 @overload("convert_real")
 def convert(
     value: Float64
@@ -113,7 +121,8 @@ def convert(
 Dispatch is exact. Indistinguishable overloads block generation instead of
 choosing by declaration order. `@overload(...)` and `@native_call(...)` do not
 coexist on one declaration; native projection metadata belongs to the linked
-specific procedure.
+specific procedure. An overload-level `@bind(...)` overrides the native call
+target without replacing that linked contract.
 
 ## Evidence And Maintenance
 

@@ -291,6 +291,7 @@ def hidden() -> None: ...
 def test_convert_pyi_to_ir_resolves_x2py_overload_by_explicit_specific_name():
     module = parse_pyi_text(
         """
+@bind("convert_integer_native")
 def convert_integer(value: Int32) -> Int32: ...
 
 @overload("convert_integer")
@@ -304,15 +305,16 @@ def convert(value: Int32) -> Int32: ...
         ("convert", ["convert_integer"])
     ]
     assert module.overload_sets[0].procedures[0].metadata["overload_target"] == "convert_integer"
+    assert module.overload_sets[0].procedures[0].native_name == "convert_integer_native"
 
 
-def test_convert_pyi_to_ir_renames_module_generic_and_round_trips_native_name():
+def test_convert_pyi_to_ir_applies_module_overload_bind_and_round_trips_native_name():
     module = parse_pyi_text(
         """
-@bind("convert")
 def convert_integer(value: Int32) -> Int32: ...
 
-@overload("convert_integer", generic="convert")
+@bind("convert")
+@overload("convert_integer")
 def convert_number(value: Int32) -> Int32: ...
 """,
         module_name="generic_mod",
@@ -320,9 +322,10 @@ def convert_number(value: Int32) -> Int32: ...
 
     overload = module.overload_sets[0]
     assert overload.name == "convert_number"
-    assert overload.procedures[0].metadata["fortran_generic_name"] == "convert"
+    assert overload.procedures[0].native_name == "convert"
+    assert overload.procedures[0].metadata[BIND_TARGET_METADATA] == "convert"
     emitted = emit_module(module)
-    assert '@overload("convert_integer", generic="convert")' in emitted
+    assert '@bind("convert")\n@overload("convert_integer")' in emitted
 
 
 @pytest.mark.parametrize(
@@ -335,6 +338,15 @@ def convert_number(value: Int32) -> Int32: ...
         (
             "from typing import overload\n",
             "typing.overload is not supported",
+        ),
+        (
+            """
+def convert_integer(value: Int32) -> Int32: ...
+
+@overload("convert_integer", generic="convert")
+def convert_number(value: Int32) -> Int32: ...
+""",
+            "generic is only valid for class overloads; use bind on a module overload",
         ),
         (
             """

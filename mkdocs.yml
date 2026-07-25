@@ -45,14 +45,14 @@ nav:
           - Wrapping Subroutines: user/guide/wrapping-subroutines.md
           - Wrapping Modules: user/guide/wrapping-modules.md
           - Optional Arguments: user/guide/optional-arguments.md
-          - Generic Interfaces: user/guide/generic-interfaces.md
+          - Generic Interfaces (Overloading): user/guide/generic-interfaces.md
           - Wrapping Derived Types: user/guide/wrapping-derived-types.md
           - Allocatables: user/guide/allocatables.md
           - Pointers: user/guide/pointers.md
           - Memory Management: user/guide/memory-management.md
           - Callbacks: user/guide/callbacks.md
           - Enumerations: user/guide/enumerations.md
-          - Error Handling: user/guide/error-handling.md
+          - Error Handling & Diagnostics: user/guide/error-handling.md
           - Packaging: user/guide/packaging.md
           - Distribution: user/guide/distribution.md
           - Fortran Wrapper Guide: user/guide/fortran-wrapper.md

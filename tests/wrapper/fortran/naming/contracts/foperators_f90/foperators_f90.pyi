@@ -434,11 +434,13 @@ def counter_add_integer(
     right: Int32
 ) -> counter: ...
 
+@bind("convert")
 @overload("convert_integer")
 def convert(
     value: Int32
 ) -> Int32: ...
 
+@bind("convert")
 @overload("convert_real")
 def convert(
     value: Float64

@@ -1,6 +1,6 @@
 # Intentional difference: remove class sample, remove accumulator.add, and
 # remove the complex overload candidate while leaving the integer/real generic.
-from x2py.contracts import Addr, Arg, Float64, Int32, native_call, overload, private
+from x2py.contracts import Addr, Arg, Float64, Int32, bind, native_call, overload, private
 
 class accumulator:
     def __init__(
@@ -23,11 +23,13 @@ def convert_real(
     value: Float64
 ) -> Float64: ...
 
+@bind("convert")
 @overload("convert_integer")
 def convert(
     value: Int32
 ) -> Int32: ...
 
+@bind("convert")
 @overload("convert_real")
 def convert(
     value: Float64

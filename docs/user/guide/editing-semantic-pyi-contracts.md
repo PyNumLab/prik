@@ -176,11 +176,12 @@ Each candidate is an independent declaration. Removing one candidate narrows
 runtime dispatch without removing the generic name:
 
 ```python
-from x2py.contracts import Float64, Int32, overload, private
+from x2py.contracts import Float64, Int32, bind, overload, private
 
 @private
 def convert_integer(value: Int32) -> Int32: ...
 
+@bind("convert")
 @overload("convert_integer")
 def convert(value: Int32) -> Int32: ...
 
@@ -261,12 +262,10 @@ def norm2(values: Float64[:]) -> Float64: ...
 Link every Python overload to one concrete native specific:
 
 ```python
-from x2py.contracts import Float64, Int32, overload, private
+from x2py.contracts import Float64, Int32, overload
 
-@private
 def scale_integer(value: Int32) -> Int32: ...
 
-@private
 def scale_real(value: Float64) -> Float64: ...
 
 @overload("scale_integer")
@@ -276,18 +275,30 @@ def scale(value: Int32) -> Int32: ...
 def scale(value: Float64) -> Float64: ...
 ```
 
-To rename the Python overload group while calling an existing native generic,
-preserve the native generic explicitly:
+Without `@bind`, each candidate calls its linked native specific. The specific
+may still use `@private` when it should be hidden from Python.
+
+Contract `@private` does not prove native visibility. If the linked procedure
+is Fortran-private, a direct call fails during the native build. Source-based
+generation uses the public generic as the bind target in that case.
+
+Use `@bind` on an overload declaration when the bridge must call a native
+generic instead:
 
 ```python
-from x2py.contracts import Int32, overload, private
+from x2py.contracts import Int32, bind, overload, private
 
 @private
 def convert_integer(value: Int32) -> Int32: ...
 
-@overload("convert_integer", generic="convert")
+@bind("convert")
+@overload("convert_integer")
 def convert_number(value: Int32) -> Int32: ...
 ```
+
+The overload string still links the concrete contract. `@bind("convert")`
+overrides only the native call target. It takes precedence over the linked
+procedure's native name.
 
 Candidates must be distinguishable by the implemented runtime dispatcher.
 Duplicate dtype/rank signatures are rejected because declaration order must not

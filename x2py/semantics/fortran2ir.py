@@ -23,7 +23,7 @@ from x2py.parsers.fortran.models import (
     FortranVariable,
 )
 from x2py.semantics.ownership import set_ownership_metadata
-from x2py.semantics.metadata import PROJECTED_OUTPUT_METADATA, SCALAR_STORAGE_CATEGORY
+from x2py.semantics.metadata import BIND_TARGET_METADATA, PROJECTED_OUTPUT_METADATA, SCALAR_STORAGE_CATEGORY
 from x2py.types.numpy import SEMANTIC_SCALAR_TYPE_NAMES
 from x2py.utilities.visitor import ClassVisitor
 
@@ -1569,7 +1569,13 @@ class FortranToIRConverter(ClassVisitor):
                         f"Fortran semantic conversion cannot represent generic constructor "
                         f"{module.name}.{interface.name!s}; constructor projection is not implemented"
                     )
-                overload_sets.append(self._normal_overload_set(interface.name, procedures))
+                overload_set = self._normal_overload_set(interface.name, procedures)
+                target_lookup = procedure_lookup | inline_lookup
+                for target_name, candidate in zip(target_names, overload_set.procedures, strict=True):
+                    if target_lookup[target_name.casefold()].visibility == "private":
+                        candidate.native_name = interface.name
+                        candidate.metadata[BIND_TARGET_METADATA] = interface.name
+                overload_sets.append(overload_set)
                 continue
             defined_sets = self._defined_overload_sets(
                 interface.name,

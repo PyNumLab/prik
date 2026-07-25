@@ -1,6 +1,6 @@
 ---
-title: Generic Interfaces
-description: How x2py supports Fortran named generics, type-bound generics, operators, and defined assignment
+title: Generic Interfaces (Overloading)
+description: How x2py supports Fortran named generic interfaces and exact overload dispatch
 audience: users, advanced users
 prerequisites: wrapping functions, wrapping subroutines, data types
 related: optional-arguments.md, wrapping-derived-types.md, error-handling.md
@@ -8,9 +8,11 @@ status: maintained
 publication: reviewed
 ---
 
-# Generic Interfaces
+# Generic Interfaces (Overloading)
 
-x2py turns Fortran named generic interfaces (and type-bound generics) into a single Python callable backed by an overload set. Dispatch is based on **exact** dtype, rank, and generated class — no implicit numeric coercion is performed.
+x2py turns a Fortran generic interface into one Python callable. The callable
+dispatches to a concrete native procedure by exact dtype, rank, and generated
+class. It does not apply implicit numeric coercion.
 
 ---
 
@@ -47,8 +49,39 @@ end module conversions
 Build it:
 
 ```bash
+python3 -m x2py generate --pyi generic.f90
 python3 -m x2py generic.f90 --out-dir build/generic
 ```
+
+---
+
+## Generated Contract
+
+The semantic `.pyi` keeps the concrete procedures as private link targets.
+Each public declaration adds one candidate to `convert`:
+
+```python
+from x2py.contracts import Float64, Int32, bind, overload, private
+
+@private
+def convert_integer(value: Int32) -> Int32: ...
+
+@private
+def convert_real(value: Float64) -> Float64: ...
+
+@bind("convert")
+@overload("convert_integer")
+def convert(value: Int32) -> Int32: ...
+
+@bind("convert")
+@overload("convert_real")
+def convert(value: Float64) -> Float64: ...
+```
+
+The concrete procedures are private because the source exports `convert`, not
+`convert_integer` or `convert_real`. Each `@overload` links the candidate to
+its concrete contract. `@bind("convert")` tells the bridge to call the public
+native generic.
 
 ---
 
@@ -65,7 +98,40 @@ print(convert(np.int32(4)))      # 14
 print(convert(np.float64(4.0)))  # 4.5
 ```
 
-The correct specific procedure is chosen automatically based on the argument type.
+The argument type selects the concrete procedure. `np.int32` calls
+`convert_integer`; `np.float64` calls `convert_real`.
+
+---
+
+## Extending an Overload Set
+
+An edited contract can add an existing native procedure to a Python overload
+set, even when it was not in the original Fortran interface.
+
+Suppose the contract already declares `convert_logical`. Add a public overload
+declaration that links to it:
+
+```python
+from x2py.contracts import Bool, Int32, overload
+
+def convert_logical(value: Bool) -> Int32: ...
+
+@overload("convert_logical")
+def convert(value: Bool) -> Int32: ...
+```
+
+The decorator adds dispatch. It does not create a native implementation. The
+target procedure must already exist in the contract and have a compatible call
+shape.
+
+Leave `convert_logical` public to expose both names. Mark it `@private` when it
+should only be available through `convert`. This changes Python visibility,
+not the native call. The overload still calls the public native specific
+directly.
+
+If that native specific is actually Fortran-private, the bridge cannot call it
+directly. Keep `@bind("convert")` on the overload candidate. Source-based
+generation adds this bind automatically.
 
 ---
 
@@ -73,15 +139,15 @@ The correct specific procedure is chosen automatically based on the argument typ
 
 - Dispatch uses **exact** match on dtype, rank, and generated class.
 - If no overload matches, a `TypeError` is raised.
-- If two specifics collapse to the same Python signature, wrapper generation fails (ambiguity is rejected).
-- Type-bound generics also work and dispatch after accounting for the passed object.
+- If two candidates have the same runtime signature, wrapper generation fails.
+- Each `@overload` declaration links to exactly one concrete procedure.
+- Without `@bind`, a candidate calls its linked procedure.
+- With `@bind`, the candidate calls the named native generic instead.
+- `@private` controls Python visibility only.
 
----
-
-## Defined Operators and Assignment
-
-- Supported operators (`+`, `-`, `*`, `==`, etc.) can be used with normal Python syntax when the native generic defines them.
-- Defined assignment (`=`) is exposed as an explicit `.assign(...)` method because Python `=` only rebinds names.
+Type-bound generics, defined operators, and defined assignment become methods
+on generated derived-type classes. They are introduced after ordinary methods
+in Wrapping Derived Types.
 
 ---
 
@@ -95,6 +161,7 @@ The correct specific procedure is chosen automatically based on the argument typ
 
 ## Next
 
-- Continue with [Wrapping Derived Types](wrapping-derived-types.md)
+- Continue with [Wrapping Derived Types](wrapping-derived-types.md) for
+  type-bound generics and operators
 - See [Error Handling](error-handling.md) for dispatch errors
 - For current generic and operator support, refer to the [Language Feature Matrix](../language-support/feature-matrix.md).

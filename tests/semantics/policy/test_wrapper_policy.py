@@ -78,6 +78,34 @@ def test_fmath_fixture_gets_completed_function_wrapper_policy():
     assert all(policy.release_actions == () for policy in policies)
 
 
+def test_module_overload_bind_takes_precedence_per_candidate():
+    module = parse_pyi_text(
+        """
+def convert_integer(value: Int32) -> Int32: ...
+
+@private
+@bind("convert_real_specific")
+def convert_real(value: Float64) -> Float64: ...
+
+@overload("convert_integer")
+def convert(value: Int32) -> Int32: ...
+
+@bind("convert")
+@overload("convert_real")
+def convert(value: Float64) -> Float64: ...
+""",
+        module_name="conversions",
+    )
+
+    complete_semantic_policies(module)
+
+    policies = [
+        procedure.metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
+        for procedure in module.overload_sets[0].procedures
+    ]
+    assert [policy.native_name for policy in policies] == ["convert_integer", "convert"]
+
+
 def test_optional_scalar_policy_completes_nullable_value_presence_before_planning():
     module = pyi_file_to_semantic_module(
         Path("tests/wrapper/fortran/function_calls/contracts/foptional_fixed/__init__.pyi"),
