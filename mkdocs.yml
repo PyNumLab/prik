@@ -40,15 +40,15 @@ nav:
       - User Guide:
           - Overview: user/guide/index.md
           - Data Types: user/guide/data-types.md
+          - Arrays: user/guide/arrays.md
           - Wrapping Functions: user/guide/wrapping-functions.md
           - Wrapping Subroutines: user/guide/wrapping-subroutines.md
           - Wrapping Modules: user/guide/wrapping-modules.md
-          - Arrays: user/guide/arrays.md
           - Optional Arguments: user/guide/optional-arguments.md
           - Generic Interfaces: user/guide/generic-interfaces.md
+          - Wrapping Derived Types: user/guide/wrapping-derived-types.md
           - Allocatables: user/guide/allocatables.md
           - Pointers: user/guide/pointers.md
-          - Wrapping Derived Types: user/guide/wrapping-derived-types.md
           - Memory Management: user/guide/memory-management.md
           - Callbacks: user/guide/callbacks.md
           - Enumerations: user/guide/enumerations.md

@@ -114,7 +114,7 @@ assert bool(api.invert(True)) is False
 A bare primitive type is a Python-visible value:
 
 ```python
-def scale(value: Float64) -> Float64: ...
+def double(value: Float64) -> Float64: ...
 ```
 
 If the native routine expects that scalar by reference, the generated
@@ -122,7 +122,7 @@ If the native routine expects that scalar by reference, the generated
 
 ```python
 @native_call([Addr(Arg(0))])
-def scale(value: Float64) -> Float64: ...
+def double(value: Float64) -> Float64: ...
 ```
 
 Use `T[()]` when the Python boundary is rank-zero NumPy storage. Arguments

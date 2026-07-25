@@ -292,24 +292,25 @@ primary placeholder queue.
   mapping through calls, storage, runtime behavior, and deployment.
 - [x] `docs/user/guide/data-types.md`: maintained Fortran storage, semantic
   `.pyi`, Python value, and NumPy dtype mapping with compiler-probed limits.
+- [x] `docs/user/guide/arrays.md`: maintained dtype, rank, shape, layout,
+  C-order zero-copy and `COPY_F`, stride-aware view, lower-bound, assumed-rank,
+  zero-size, result, and validation guide.
 - [x] `docs/user/guide/wrapping-functions.md`: maintained scalar, array-result,
   mixed-output, signature, native-call-limit, and evidence guide.
 - [x] `docs/user/guide/wrapping-subroutines.md`: maintained input, output,
   inout, hidden/visible storage, tuple-order, and scalar-replacement guide.
 - [x] `docs/user/guide/wrapping-modules.md`: maintained module namespace,
   procedure, constant, variable, saved-state, module-array, and common-block guide.
-- [x] `docs/user/guide/arrays.md`: maintained dtype, rank, shape, layout,
-  stride, lower-bound, assumed-rank, zero-size, result, and validation guide.
 - [x] `docs/user/guide/optional-arguments.md`: maintained omission, `None`,
   keyword, input/output, default, limitation, and diagnostic guide.
 - [x] `docs/user/guide/generic-interfaces.md`: maintained named, type-bound,
   operator, assignment, exact-dispatch, ambiguity, and overload guide.
+- [x] `docs/user/guide/wrapping-derived-types.md`: maintained class, field,
+  method, constructor, finalizer, nested borrow, layout, and polymorphism guide.
 - [x] `docs/user/guide/allocatables.md`: maintained scalar projection, copy, replacement,
   borrowed module/component view, unallocated, lifetime, and limitation guide.
 - [x] `docs/user/guide/pointers.md`: maintained scalar projection, call-local
   input, detached result, nullability, target policy, and blocked-reassociation guide.
-- [x] `docs/user/guide/wrapping-derived-types.md`: maintained class, field,
-  method, constructor, finalizer, nested borrow, layout, and polymorphism guide.
 - [x] `docs/user/guide/memory-management.md`: maintained ownership, transfer,
   destruction, mutability, release, borrowing, and policy-completion guide.
 - [x] `docs/user/guide/callbacks.md`: maintained immediate callback contract,

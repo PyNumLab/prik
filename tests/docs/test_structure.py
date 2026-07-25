@@ -44,7 +44,7 @@ VISIBLE_C_DOCUMENTATION_EXCEPTIONS = {
     "docs/user/reference/cli-commands.md": ("C INCLUDE OPTIONS", "{fortran,c}"),
     "docs/user/guide/enumerations.md": ("bind(C)",),
     "docs/user/guide/wrapping-derived-types.md": ("bind(C)",),
-    "docs/user/guide/arrays.md": ("ORDER_C", "C-contiguous", "C-order", "C-oriented"),
+    "docs/user/guide/arrays.md": ("ORDER_C", "C-contiguous", "C-order", "C-oriented", 'order="C"'),
     "docs/user/reference/semantic-pyi-format.md": (
         "ORDER_C",
         "C-contiguous",
@@ -135,15 +135,15 @@ REQUIRED_GETTING_STARTED_PAGES = [
 REQUIRED_USER_GUIDE_PAGES = [
     "user/guide/index.md",
     "user/guide/data-types.md",
+    "user/guide/arrays.md",
     "user/guide/wrapping-functions.md",
     "user/guide/wrapping-subroutines.md",
     "user/guide/wrapping-modules.md",
-    "user/guide/arrays.md",
     "user/guide/optional-arguments.md",
     "user/guide/generic-interfaces.md",
+    "user/guide/wrapping-derived-types.md",
     "user/guide/allocatables.md",
     "user/guide/pointers.md",
-    "user/guide/wrapping-derived-types.md",
     "user/guide/memory-management.md",
     "user/guide/callbacks.md",
     "user/guide/enumerations.md",
@@ -551,6 +551,20 @@ def _site_navigation_positions() -> dict[str, int]:
     return {path: index for index, path in enumerate(paths)}
 
 
+def _user_guide_index_order() -> list[str]:
+    _, body = _front_matter(DOCS_ROOT / "user/guide/index.md")
+    guide_root = (DOCS_ROOT / "user/guide").resolve()
+    paths: list[str] = []
+    for target in MARKDOWN_LINK.findall(body):
+        resolved = (guide_root / target).resolve()
+        if resolved.parent != guide_root or resolved.name == "index.md":
+            continue
+        relative_path = resolved.relative_to(DOCS_ROOT).as_posix()
+        if relative_path not in paths:
+            paths.append(relative_path)
+    return paths
+
+
 @cache
 def _x2py_cli_help() -> str:
     commands = [
@@ -866,6 +880,17 @@ def test_site_navigation_includes_all_publishable_lanes_and_excludes_archive() -
     assert "user/index.md" in positions
     assert "developer/index.md" in positions
     assert "maintainer/README.md" in positions
+
+
+def test_user_guide_navigation_follows_index_reading_order() -> None:
+    positions = _site_navigation_positions()
+    navigation_order = [
+        path
+        for path, _ in sorted(positions.items(), key=lambda item: item[1])
+        if path.startswith("user/guide/") and path != "user/guide/index.md"
+    ]
+
+    assert navigation_order == _user_guide_index_order()
 
 
 @pytest.mark.parametrize("relative_path", REQUIRED_GETTING_STARTED_PAGES)

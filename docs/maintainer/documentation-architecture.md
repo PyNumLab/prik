@@ -72,6 +72,9 @@ sequence. Explicit terminal navigation blocks headed `Next` may link forward
 because choosing a next destination is their purpose. Outside those blocks,
 name the later topic in plain text and say that it is covered later instead of
 asking the reader to leave the current task.
+When a section index presents an ordered reading list of pages in that same
+section, keep the list and the matching `mkdocs.yml` subsection in the same
+order so sidebar next/previous navigation follows the advertised route.
 `Next` blocks list destinations as bullets, and each bullet includes at least
 one Markdown link. If an intended destination page does not exist yet, either
 remove the destination until it is useful or create the draft page with
