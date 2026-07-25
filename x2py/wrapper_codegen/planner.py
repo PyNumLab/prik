@@ -1428,6 +1428,7 @@ class WrapperPlanner(ClassVisitor):
             require_aligned=policy.require_aligned,
             require_contiguous=policy.require_contiguous,
             flatten_storage=policy.flatten_storage,
+            flat_axis=policy.flat_axis,
         )
 
     def _native_array_handle_plan(
@@ -1562,6 +1563,7 @@ class WrapperPlanner(ClassVisitor):
             native_order=policy.native_order,
             contiguous=policy.contiguous,
             flatten_python_storage=policy.flatten_python_storage,
+            flat_axis=policy.flat_axis,
             itemsize=policy.itemsize,
             category=policy.category,
             data_role=self._value_role(owner_path),

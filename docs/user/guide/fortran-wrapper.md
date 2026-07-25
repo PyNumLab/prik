@@ -1301,11 +1301,16 @@ Generated semantic `.pyi` contracts spell this final assumed-size dimension as
 
 `Float64[Flat]` accepts any contiguous NumPy rank from 1 through 15 and passes
 the element sequence as a rank-one native view. Multidimensional flat-edge forms
-are rank-preserving. `Float64[:, Flat]` remains a rank-two Fortran-contiguous
-Python and bridge contract. An external interface uses `values(*)` when the
-preceding extent is available only from the Python array because `values(:, *)`
-is not a legal Fortran assumed-size declaration; the bridge nevertheless
-associates the address with both runtime extents.
+preserve the checked non-flat axes and collapse the remaining contiguous Python
+axes into the flat native extent. `Float64[rows, Flat]` accepts a
+Fortran-contiguous actual of rank 2 through 15, checks `rows` against the first
+Python axis, and passes native extents `[rows, product(rest)]`.
+
+Source-generated contracts use the extents that Fortran can declare, such as
+`values(rows, *)` becoming `Float64[rows, Flat]`. A handwritten
+`Float64[:, Flat]` contract follows the same flattening rule but reads the
+prefix extent from the Python actual. It is not a literal Fortran declaration:
+`values(:, *)` is not legal Fortran assumed-size syntax.
 
 <!-- X2PY_C_DOCS_START
 For handwritten contracts over native routines that consume a raw flat buffer,
@@ -1313,14 +1318,12 @@ For handwritten contracts over native routines that consume a raw flat buffer,
 spelled with `ORDER_C`, for example
 `Annotated[Float64[Flat, 3], ORDER_C]`. That form is a Python storage contract,
 not a literal Fortran dummy declaration: the generated wrapper validates a
-C-contiguous `(n, 3)` view, constructs the corresponding rank-2 bridge view over
-the same storage, and passes that view to the native assumed-size dummy. The
-native routine's `values(*)` dummy receives the flattened element sequence.
-Dimensions stay in Python logical order, so the symmetric fixed-prefix forms
-are `Float64[rows, Flat]` for Fortran order and
-`Annotated[Float64[Flat, columns], ORDER_C]` for C order. The latter becomes a
-Fortran bridge view with reversed extents `(columns, rows)` without changing
-the Python contract's rank.
+C-contiguous actual whose final Python axis is `3`, flattens the leading Python
+axes, and passes binding extents `[product(leading), 3]`. Dimensions stay in
+Python logical order, so the symmetric
+forms are `Float64[rows, Flat]` for Fortran order and
+`Annotated[Float64[Flat, columns], ORDER_C]` for C order. The bridge reverses
+the C-oriented extents when it builds the Fortran storage view.
 X2PY_C_DOCS_END -->
 
 Non-default lower bounds are preserved when computing shape constraints; they

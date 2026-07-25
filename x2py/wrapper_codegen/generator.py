@@ -2017,6 +2017,7 @@ class WrapperCodeGenerator:
             and actual.rank == array.rank
             and actual.shape == array.shape
             and actual.flatten_storage == array.flatten_python_storage
+            and actual.flat_axis == array.flat_axis
         ):
             return ()
         return (self._diagnostic(plan.owner_path, "inconsistent-array-actual-shape", actual.shape),)

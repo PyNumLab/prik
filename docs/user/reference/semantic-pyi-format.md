@@ -496,13 +496,13 @@ the wrapper passes the contiguous element sequence as a rank-one native view.
 
 `Float64[3, Flat]` maps to `real :: a(3, *)`, and
 `Float64[3, 4, Flat]` maps to `real :: a(3, 4, *)`. Those multidimensional
-forms are rank-preserving contracts: `Float64[:, Flat]` remains rank two at the
-Python and bridge boundary, with only the flat edge unconstrained. Because
-`real :: a(:, *)` is not a legal Fortran assumed-size declaration, an external
-interface whose prefix extent is known only at runtime uses the
-sequence-associated `a(*)` spelling when that procedure requires an explicit
-interface; the bridge view still has rank two and receives both runtime
-extents. The Python-visible flat dimension remains unconstrained.
+forms are flat-edge contracts: the wrapper validates the fixed prefix axes, then
+collapses all remaining contiguous Python axes into the final native assumed-size
+extent. `Float64[:, Flat]` follows the same rule but reads the prefix extent
+from the Python actual. Because `real :: a(:, *)` is not a legal Fortran
+assumed-size declaration, source-generated contracts use declared prefix
+extents such as `Float64[n, Flat]`; edited contracts may use `:` when the Python
+actual should provide that prefix extent.
 
 <!-- X2PY_C_DOCS_START
 C-order flat storage can be expressed for native routines that consume a raw
@@ -1076,19 +1076,21 @@ resolved; the referenced value `v` must still be visible in the interface.
 accepts any contiguous rank from 1 through 15 and flattens that storage sequence
 to the rank-one native view. Final `Flat` in a multidimensional contract is
 Fortran-oriented flat storage: `Float64[3, Flat]` corresponds to `real ::
-a(3, *)`. Leading `Flat` is C-oriented flat storage and should be spelled with
-explicit `ORDER_C` in Fortran-facing contracts:
-`Annotated[Float64[Flat, 3], ORDER_C]`. It validates a C-contiguous Python
-view, constructs a rank-preserving bridge view over the same storage, and passes
-that view to the native assumed-size dummy. It does not imply an invalid
-Fortran declaration such as `real :: a(*, 3)`.
+a(3, *)`, accepts any Fortran-contiguous Python rank from 2 through 15 with
+first extent `3`, and passes native extents `[3, product(rest)]`.
+
+Leading `Flat` is C-oriented flat storage and should be spelled with explicit
+`ORDER_C` in Fortran-facing contracts:
+`Annotated[Float64[Flat, 3], ORDER_C]`. It validates any C-contiguous Python
+rank from 2 through 15 with final extent `3`, flattens the leading Python axes,
+and passes binding extents `[product(leading), 3]`. It does not imply an
+invalid Fortran declaration such as `real :: a(*, 3)`.
 
 Array dimensions are always written in Python logical-axis order. Consequently
 the symmetric multidimensional forms are `Float64[rows, Flat]` for
 Fortran-contiguous storage and
 `Annotated[Float64[Flat, columns], ORDER_C]` for C-contiguous storage. The
 bridge reverses the latter's extents to construct its Fortran storage view.
-Only the bridge orientation changes; neither form loses its logical rank.
 X2PY_C_DOCS_END -->
 
 The Python argument may provide more storage than the declared explicit

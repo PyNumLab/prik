@@ -433,6 +433,40 @@ def test_array_actual_argument_abi_packer_flattens_contiguous_storage_shape():
     ) == (values.ctypes.data, values.size)
 
 
+def test_array_actual_argument_abi_packer_flattens_final_edge_after_checked_prefix():
+    values = np.asfortranarray(np.arange(24, dtype=np.float64).reshape((2, 3, 4), order="F"))
+
+    assert _native_array_actual_argument_for_binding_positional(
+        values,
+        expected_dtype=np.float64,
+        expected_rank=2,
+        expected_shape=(2, None),
+        expected_layout="F",
+        require_native_byte_order=True,
+        require_aligned=True,
+        require_contiguous=True,
+        flatten_storage=True,
+        flat_axis=1,
+    ) == (values.ctypes.data, 2, 12)
+
+
+def test_array_actual_argument_abi_packer_flattens_leading_edge_before_checked_suffix():
+    values = np.arange(24, dtype=np.float64).reshape((2, 3, 4), order="C")
+
+    assert _native_array_actual_argument_for_binding_positional(
+        values,
+        expected_dtype=np.float64,
+        expected_rank=2,
+        expected_shape=(None, 4),
+        expected_layout="C",
+        require_native_byte_order=True,
+        require_aligned=True,
+        require_contiguous=True,
+        flatten_storage=True,
+        flat_axis=0,
+    ) == (values.ctypes.data, 6, 4)
+
+
 def test_array_actual_argument_abi_packer_flattens_native_handle_shape():
     actual = _handoff(252)
     handle = AllocatableArray(

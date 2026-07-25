@@ -773,11 +773,57 @@ def sum_flat(n: Int32, values: Float64[Flat]) -> Float64: ...
     assert argument.array.shape == (":",)
     assert argument.array.category == "assumed_size"
     assert argument.array.flatten_python_storage is True
+    assert argument.array.flat_axis == 0
     assert argument.native_array_actual is not None
     assert argument.native_array_actual.rank == 1
     assert argument.native_array_actual.shape == (":",)
     assert argument.native_array_actual.flatten_storage is True
+    assert argument.native_array_actual.flat_axis == 0
     assert policy.native_call_slots[1].array == argument.array
+
+
+def test_wrapper_policy_flattens_remaining_axes_for_multidimensional_assumed_size_storage():
+    module = parse_pyi_text(
+        """
+from x2py.contracts import Annotated, Flat, Float64, Int32, ORDER_C
+
+def sum_fortran(rows: Int32, values: Float64[rows, Flat]) -> Float64: ...
+def sum_c(columns: Int32, values: Annotated[Float64[Flat, columns], ORDER_C]) -> Float64: ...
+""",
+        module_name="flat_matrix_argument",
+    )
+    complete_semantic_policies(module)
+    policies = {
+        function.name: function.metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA] for function in module.functions
+    }
+
+    fortran_argument = policies["sum_fortran"].arguments[1]
+    assert fortran_argument.array is not None
+    assert fortran_argument.array.rank == 2
+    assert fortran_argument.array.shape == ("rows", ":")
+    assert fortran_argument.array.order == "ORDER_F"
+    assert fortran_argument.array.category == "assumed_size"
+    assert fortran_argument.array.flatten_python_storage is True
+    assert fortran_argument.array.flat_axis == 1
+    assert fortran_argument.native_array_actual is not None
+    assert fortran_argument.native_array_actual.rank == 2
+    assert fortran_argument.native_array_actual.shape == ("rows", ":")
+    assert fortran_argument.native_array_actual.flatten_storage is True
+    assert fortran_argument.native_array_actual.flat_axis == 1
+
+    c_argument = policies["sum_c"].arguments[1]
+    assert c_argument.array is not None
+    assert c_argument.array.rank == 2
+    assert c_argument.array.shape == (":", "columns")
+    assert c_argument.array.order == "ORDER_C"
+    assert c_argument.array.category == "assumed_size"
+    assert c_argument.array.flatten_python_storage is True
+    assert c_argument.array.flat_axis == 0
+    assert c_argument.native_array_actual is not None
+    assert c_argument.native_array_actual.rank == 2
+    assert c_argument.native_array_actual.shape == (":", "columns")
+    assert c_argument.native_array_actual.flatten_storage is True
+    assert c_argument.native_array_actual.flat_axis == 0
 
 
 def test_wrapper_policy_completes_required_raw_array_address_handoff():

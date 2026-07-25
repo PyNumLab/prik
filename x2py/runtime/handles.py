@@ -958,6 +958,7 @@ def _native_array_actual_argument_for_binding_positional(
     include_strides: bool = False,
     require_contiguous: bool = False,
     flatten_storage: bool = False,
+    flat_axis: int | None = None,
 ) -> tuple[int, ...]:
     """Pack a normal array actual into generated Bind-C array descriptor fields."""
     strided_ndarray = include_strides and isinstance(value, np.ndarray)
@@ -978,7 +979,7 @@ def _native_array_actual_argument_for_binding_positional(
     )
     address, shape, itemsize = _normal_array_actual_abi_facts(value, actual, expected_dtype)
     if flatten_storage:
-        shape = _flattened_storage_shape(shape)
+        shape = _flattened_storage_shape(shape, expected_shape, flat_axis)
     fields = [address]
     if include_rank:
         fields.append(len(shape))
@@ -993,14 +994,63 @@ def _native_array_actual_argument_for_binding_positional(
     return tuple(fields)
 
 
-def _flattened_storage_shape(shape: tuple[int, ...]) -> tuple[int]:
-    """Return the one-dimensional element sequence extent for a contiguous actual."""
+def _flattened_storage_shape(
+    shape: tuple[int, ...],
+    expected_shape: Sequence[int | None] | int | None,
+    flat_axis: int | None,
+) -> tuple[int, ...]:
+    """Return native extents for a contiguous actual with one flat edge."""
     if not 1 <= len(shape) <= 15:
         raise TypeError(f"Flat storage expects NumPy array rank 1 through 15; received rank {len(shape)}")
+    expected = (
+        NativeArrayHandleBase._normalize_expected_shape(expected_shape) if expected_shape is not None else (None,)
+    )
+    if len(shape) < len(expected):
+        raise TypeError(f"Flat storage expects NumPy array rank at least {len(expected)}; received rank {len(shape)}")
+    axis = 0 if flat_axis is None or int(flat_axis) < 0 else int(flat_axis)
+    if axis not in {0, len(expected) - 1}:
+        raise ValueError("Flat storage axis must be the first or final contract dimension")
+    if axis == 0:
+        return _leading_flattened_storage_shape(shape, expected)
+    return _final_flattened_storage_shape(shape, expected)
+
+
+def _final_flattened_storage_shape(shape: tuple[int, ...], expected: tuple[int | None, ...]) -> tuple[int, ...]:
+    """Keep prefix extents and flatten all remaining axes into the final extent."""
+    prefix_count = len(expected) - 1
+    _validate_flat_expected_shape(shape[:prefix_count], expected[:prefix_count], offset=0)
+    return (*shape[:prefix_count], _extent_product(shape[prefix_count:]))
+
+
+def _leading_flattened_storage_shape(shape: tuple[int, ...], expected: tuple[int | None, ...]) -> tuple[int, ...]:
+    """Flatten leading axes and keep suffix extents at the Python edge."""
+    suffix_count = len(expected) - 1
+    suffix_shape = shape[len(shape) - suffix_count :] if suffix_count else ()
+    _validate_flat_expected_shape(suffix_shape, expected[1:], offset=len(shape) - suffix_count)
+    return (_extent_product(shape[: len(shape) - suffix_count]), *suffix_shape)
+
+
+def _extent_product(shape: tuple[int, ...]) -> int:
+    """Return the element count covered by a flattened extent segment."""
     size = 1
     for extent in shape:
         size *= int(extent)
-    return (size,)
+    return size
+
+
+def _validate_flat_expected_shape(
+    actual: tuple[int, ...],
+    expected: tuple[int | None, ...],
+    *,
+    offset: int,
+) -> None:
+    """Validate fixed non-flat dimensions for a flattened storage contract."""
+    for axis, (actual_extent, wanted) in enumerate(zip(actual, expected, strict=True)):
+        if wanted is not None and actual_extent != wanted:
+            raise TypeError(
+                f"NumPy array has incompatible shape at axis {offset + axis}: "
+                f"received {actual!r}, expected {expected!r}"
+            )
 
 
 def _normal_array_actual_stride_facts(

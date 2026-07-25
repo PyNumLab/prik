@@ -65,6 +65,20 @@ contains
     end do
   end function sum_flat
 
+  function sum_flat_columns(rows, columns, values) result(total)
+    integer(4), intent(in) :: rows, columns
+    real(8), intent(in) :: values(rows, *)
+    real(8) :: total
+    integer(4) :: row, column
+
+    total = 0.0_8
+    do column = 1, columns
+      do row = 1, rows
+        total = total + values(row, column)
+      end do
+    end do
+  end function sum_flat_columns
+
   subroutine scale_visible_rows(values, out)
     real(8), intent(in) :: values(:, :)
     real(8), intent(out) :: out(:, :)
@@ -84,8 +98,9 @@ end module array_ops
 ```
 
 `sum_columns` makes layout visible by summing the first native axis of a square
-matrix. `sum_flat` covers rank-one assumed-size storage. `scale_visible_rows`
-accepts an assumed-shape array that can be strided.
+matrix. `sum_flat` covers rank-one assumed-size storage, and
+`sum_flat_columns` covers an assumed-size final axis after a checked row count.
+`scale_visible_rows` accepts an assumed-shape array that can be strided.
 
 Build:
 
@@ -102,14 +117,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, "build/arrays")
-from arrays.array_ops import (
-    automatic_vector,
-    scale_matrix,
-    scale_visible_rows,
-    shift,
-    sum_columns,
-    sum_flat,
-)
+from arrays.array_ops import *
 
 # Fortran-order matrix, mutated in place.
 matrix = np.ones((2, 3), dtype=np.float64, order="F")
@@ -127,6 +135,13 @@ flat_matrix = np.asfortranarray(
 )
 total = sum_flat(np.int32(flat_matrix.size), flat_matrix)
 # total is np.float64(66.0)
+
+# Multidimensional assumed-size dummies keep the checked prefix and flatten the rest.
+panels = np.asfortranarray(
+    np.arange(1, 25, dtype=np.float64).reshape((2, 3, 4), order="F")
+)
+panel_total = sum_flat_columns(np.int32(2), np.int32(12), panels)
+# panel_total is np.float64(300.0)
 
 # Array function results come back as NumPy arrays.
 vec = automatic_vector(np.int32(4))
@@ -302,14 +317,46 @@ total = sum_flat(np.int32(values.size), values)
 
 Use `Flat` for native interfaces that consume contiguous storage without a full
 shape in the dummy declaration. It is not a shortcut for arbitrary reshaping or
-strided slicing. `Float64[Flat]` accepts contiguous arrays of rank 1 through 15,
-then passes their element sequence as a rank-one native view. Storage order
-still matters: Fortran-contiguous arrays flatten in column-major order, and
+strided slicing.
+
+`Float64[Flat]` accepts any contiguous NumPy array with rank 1 through 15, then
+passes its storage sequence as a rank-one native view. Storage order still
+matters: Fortran-contiguous arrays flatten in column-major order, and
 C-contiguous arrays flatten in row-major order.
 
-Multidimensional flat-edge forms are different. `Float64[rows, Flat]` is a
-rank-two contract: x2py validates rank two, dtype, Fortran contiguity, and the
-`rows` extent, while the final `Flat` axis remains unconstrained.
+Flat can also appear at one edge of a multidimensional contract. The checked
+axes stay visible, and x2py collapses all remaining Python axes into the flat
+native extent. For a Fortran assumed-size dummy such as
+`real(8) :: values(rows, *)`, the generated contract is:
+
+```python
+from x2py.contracts import Flat, Float64, Int32
+
+def sum_flat_columns(
+    rows: Int32,
+    columns: Int32,
+    values: Float64[rows, Flat],
+) -> Float64: ...
+```
+
+That contract accepts a Fortran-contiguous actual of rank 2 or higher. A Python
+array with shape `(2, 3, 4)` is passed to native code as a rank-two view with
+shape `(2, 12)`:
+
+```python
+panels = np.asfortranarray(
+    np.arange(1, 25, dtype=np.float64).reshape((2, 3, 4), order="F")
+)
+
+total = sum_flat_columns(np.int32(2), np.int32(12), panels)
+# total is np.float64(300.0)
+```
+
+The `rows` axis is checked against the first Python axis. The `Flat` axis means
+"use the rest of the contiguous storage here"; it does not relax dtype, layout,
+or contiguity checks. An edited `Float64[:, Flat]` contract follows the same
+rule but reads the first extent from the actual array instead of another
+argument.
 
 ---
 
@@ -383,7 +430,7 @@ worth recognizing when you inspect generated contracts:
 | `Float64[::, ::]` | Two-dimensional Fortran-oriented stride-aware array. |
 | `Float64[rows, columns]` | Shape depends on other arguments. |
 | `Float64[Flat]` | Assumed-size storage; accepts any contiguous rank and passes a rank-one native view. |
-| `Float64[rows, Flat]` | Rank-two Fortran-contiguous storage with a checked first axis and flat final axis. |
+| `Float64[rows, Flat]` | Fortran-contiguous storage with checked leading axes and remaining axes flattened into the final native extent. |
 | `Float64[...]` | Assumed-rank array, currently rank 1 through 15. |
 
 For most user code, the practical rule is simple: start from the generated

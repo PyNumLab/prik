@@ -6435,13 +6435,14 @@ class CBindingGenerator(ClassVisitor):
             *self._native_array_actual_layout_nodes(plan, names),
             CExpressionStatement(
                 CodeExpression(
-                    f'{prefix}_packed = PyObject_CallFunction({prefix}_helper, "OsiOOiiiiiiii", '
+                    f'{prefix}_packed = PyObject_CallFunction({prefix}_helper, "OsiOOiiiiiiiii", '
                     f'{names.object_name}, "{actual.dtype}", {self._native_array_actual_expected_rank(actual)}, '
                     f"{prefix}_shape, {prefix}_layout, "
                     f"{int(actual.writable)}, {int(actual.require_native_byte_order)}, {int(actual.require_aligned)}, "
                     f"{int(plan.array.runtime_rank_role is not None)}, "
                     f"{int(plan.array.itemsize_role is not None)}, {int(bool(plan.array.stride_roles))}, "
-                    f"{int(actual.require_contiguous)}, {int(actual.flatten_storage)})"
+                    f"{int(actual.require_contiguous)}, {int(actual.flatten_storage)}, "
+                    f"{self._native_array_actual_flat_axis(actual)})"
                 )
             ),
             CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_helper)")),
@@ -6461,11 +6462,6 @@ class CBindingGenerator(ClassVisitor):
         if actual is None:
             return ()
         prefix = names.value_name
-        if actual.flatten_storage:
-            return (
-                CExpressionStatement(CodeExpression(f"{prefix}_shape = Py_None")),
-                CExpressionStatement(CodeExpression("Py_INCREF(Py_None)")),
-            )
         return (
             CExpressionStatement(CodeExpression(f"{prefix}_shape = PyTuple_New({actual.rank})")),
             CExpressionStatement(
@@ -6476,7 +6472,12 @@ class CBindingGenerator(ClassVisitor):
     @staticmethod
     def _native_array_actual_expected_rank(actual: NativeArrayActualPlan) -> int:
         """Return the runtime-helper rank selector selected by completed policy."""
-        return -1 if actual.flatten_storage else actual.rank
+        return actual.rank
+
+    @staticmethod
+    def _native_array_actual_flat_axis(actual: NativeArrayActualPlan) -> int:
+        """Return the flattened contract axis marker consumed by the runtime helper."""
+        return -1 if actual.flat_axis is None else actual.flat_axis
 
     def _native_array_actual_shape_nodes(
         self,
@@ -6487,12 +6488,12 @@ class CBindingGenerator(ClassVisitor):
         """Build the planned expected-shape tuple for runtime validation."""
         actual = plan.native_array_actual
         array = plan.array
-        if actual is None or array is None or actual.flatten_storage:
+        if actual is None or array is None:
             return ()
         prefix = names.value_name
         nodes = []
         for axis, expression in enumerate(actual.shape):
-            if expression in {":", "::Strided", "Flat"}:
+            if expression in {":", "::Strided", "Flat"} or (actual.flatten_storage and axis == actual.flat_axis):
                 nodes.append(CExpressionStatement(CodeExpression("Py_INCREF(Py_None)")))
                 item = "Py_None"
             else:
@@ -6628,8 +6629,10 @@ class CBindingGenerator(ClassVisitor):
     @staticmethod
     def _array_rank_check_expression(handoff, array: str) -> str:
         """Render the Python-rank predicate selected by completed array policy."""
-        if handoff.rank is None or handoff.flatten_python_storage:
+        if handoff.rank is None:
             return f"PyArray_NDIM({array}) < 1 || PyArray_NDIM({array}) > 15"
+        if handoff.flatten_python_storage:
+            return f"PyArray_NDIM({array}) < {handoff.rank} || PyArray_NDIM({array}) > 15"
         return f"PyArray_NDIM({array}) != {handoff.rank}"
 
     def _array_access_checks(
@@ -6746,16 +6749,28 @@ class CBindingGenerator(ClassVisitor):
             if expression in runtime_markers:
                 continue
             expected = self._array_extent_expression(handoff, axis, expression, context)
+            actual_axis = self._array_actual_axis_expression(handoff, array, axis)
             checks.append(
                 CExpressionStatement(
                     CodeExpression(
-                        f"if (PyArray_DIM({array}, {axis}) != (npy_intp)({expected})) {{ "
+                        f"if (PyArray_DIM({array}, {actual_axis}) != (npy_intp)({expected})) {{ "
                         f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} has incompatible '
                         f'shape at axis {axis}"); return NULL; }}'
                     )
                 )
             )
         return tuple(checks)
+
+    @staticmethod
+    def _array_actual_axis_expression(handoff, array: str, axis: int) -> str:
+        """Map one contract axis to the runtime ndarray axis selected by the plan."""
+        if not handoff.flatten_python_storage or handoff.flat_axis is None:
+            return str(axis)
+        if handoff.flat_axis == 0 and axis > 0:
+            suffix_count = handoff.rank - 1
+            suffix_offset = axis - 1
+            return f"(PyArray_NDIM({array}) - {suffix_count} + {suffix_offset})"
+        return str(axis)
 
     def _array_extent_expression(
         self,
@@ -6804,9 +6819,7 @@ class CBindingGenerator(ClassVisitor):
                 )
             )
         if handoff.flatten_python_storage:
-            nodes.append(
-                CExpressionStatement(CodeExpression(f"{names.extent_names[0]} = (int64_t)PyArray_SIZE({array})"))
-            )
+            nodes.extend(self._flat_array_extraction_nodes(handoff, names, array))
             return tuple(nodes)
         active_rank = 15 if handoff.rank is None else handoff.rank
         for axis in range(active_rank):
@@ -6818,6 +6831,80 @@ class CBindingGenerator(ClassVisitor):
             )
         if handoff.contiguous is False:
             nodes.extend(self._strided_array_extraction_nodes(handoff.rank, names, array))
+        return tuple(nodes)
+
+    def _flat_array_extraction_nodes(
+        self,
+        handoff,
+        names: _CArgumentNames,
+        array: str,
+    ) -> tuple[CExpressionStatement | CFor, ...]:
+        """Compute native extents for a contiguous Python array with one flat edge."""
+        if handoff.rank is None or handoff.flat_axis is None:
+            raise ValueError("Flat array extraction requires a completed concrete flat axis")
+        if handoff.flat_axis == 0:
+            return self._leading_flat_array_extraction_nodes(handoff, names, array)
+        return self._final_flat_array_extraction_nodes(handoff, names, array)
+
+    def _final_flat_array_extraction_nodes(
+        self,
+        handoff,
+        names: _CArgumentNames,
+        array: str,
+    ) -> tuple[CExpressionStatement | CFor, ...]:
+        """Keep prefix extents and flatten all runtime axes at the final flat edge."""
+        flat_axis = handoff.flat_axis
+        nodes: list[CExpressionStatement | CFor] = [
+            *(
+                CExpressionStatement(
+                    CodeExpression(f"{names.extent_names[axis]} = (int64_t)PyArray_DIM({array}, {axis})")
+                )
+                for axis in range(flat_axis)
+            ),
+            CExpressionStatement(CodeExpression(f"{names.extent_names[flat_axis]} = 1")),
+            CFor(
+                f"int axis = {flat_axis}",
+                CodeExpression(f"axis < PyArray_NDIM({array})"),
+                CodeExpression("++axis"),
+                body=(
+                    CExpressionStatement(
+                        CodeExpression(f"{names.extent_names[flat_axis]} *= (int64_t)PyArray_DIM({array}, axis)")
+                    ),
+                ),
+            ),
+        ]
+        return tuple(nodes)
+
+    def _leading_flat_array_extraction_nodes(
+        self,
+        handoff,
+        names: _CArgumentNames,
+        array: str,
+    ) -> tuple[CExpressionStatement | CFor, ...]:
+        """Flatten leading runtime axes and keep suffix extents at the Python edge."""
+        suffix_count = handoff.rank - 1
+        nodes: list[CExpressionStatement | CFor] = [
+            CExpressionStatement(CodeExpression(f"{names.extent_names[0]} = 1")),
+            CFor(
+                "int axis = 0",
+                CodeExpression(f"axis < PyArray_NDIM({array}) - {suffix_count}"),
+                CodeExpression("++axis"),
+                body=(
+                    CExpressionStatement(
+                        CodeExpression(f"{names.extent_names[0]} *= (int64_t)PyArray_DIM({array}, axis)")
+                    ),
+                ),
+            ),
+        ]
+        nodes.extend(
+            CExpressionStatement(
+                CodeExpression(
+                    f"{names.extent_names[axis]} = (int64_t)PyArray_DIM({array}, "
+                    f"PyArray_NDIM({array}) - {suffix_count} + {axis - 1})"
+                )
+            )
+            for axis in range(1, handoff.rank)
+        )
         return tuple(nodes)
 
     def _strided_array_extraction_nodes(

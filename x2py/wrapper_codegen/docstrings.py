@@ -583,7 +583,11 @@ class WrapperDocstringBuilder:
     @staticmethod
     def _array_rank_line(array: ArrayHandoffPlan) -> str:
         if array.flatten_python_storage:
-            return "    Rank: 1..15, flattened to native rank 1"
+            native_rank = 1 if array.rank is None else array.rank
+            if native_rank == 1:
+                return "    Rank: 1..15, flattened to native rank 1"
+            edge = "leading" if array.flat_axis == 0 else "final"
+            return f"    Rank: {native_rank}..15, flattened at {edge} Flat axis to native rank {native_rank}"
         if array.rank is None:
             return "    Rank: 1..15"
         return f"    Rank: {array.rank}"

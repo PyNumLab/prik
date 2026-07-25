@@ -854,6 +854,7 @@ class ArrayHandoffPolicy:
     native_order: str | None
     contiguous: bool | None
     flatten_python_storage: bool = False
+    flat_axis: int | None = None
     itemsize: int | None = None
     category: str | None = None
     extent_references: tuple[tuple[str, ...], ...] = ()
@@ -885,6 +886,7 @@ class NativeArrayActualPolicy:
     require_aligned: bool
     require_contiguous: bool
     flatten_storage: bool = False
+    flat_axis: int | None = None
 
 
 @dataclass(frozen=True)
@@ -5361,6 +5363,7 @@ def _native_array_actual_policy(
         require_aligned=True,
         require_contiguous=array.contiguous is True,
         flatten_storage=array.flatten_python_storage,
+        flat_axis=array.flat_axis,
     )
 
 
@@ -5957,6 +5960,7 @@ def _array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandoffPol
         native_order=_array_handoff_native_order(array.order, array.copy_order, assumed_rank),
         contiguous=_array_handoff_contiguous(array.contiguous, assumed_rank, array.category),
         flatten_python_storage=_array_handoff_flattens_python_storage(array),
+        flat_axis=_array_handoff_flat_axis(array),
         itemsize=_array_handoff_itemsize(semantic_type),
         category=array.category,
         extent_references=tuple(_array_extent_references(item) for item in shape),
@@ -6002,8 +6006,18 @@ def _array_handoff_contiguous(contiguous: bool | None, assumed_rank: bool, categ
 
 
 def _array_handoff_flattens_python_storage(array: models.SemanticArrayContract) -> bool:
-    """Return whether Python may pass any contiguous rank to a rank-one flat dummy."""
-    return bool(array.category == "assumed_size" and array.rank == 1)
+    """Return whether Python may flatten a contiguous actual through one flat edge."""
+    return bool(array.category == "assumed_size" and _array_handoff_flat_axis(array) is not None)
+
+
+def _array_handoff_flat_axis(array: models.SemanticArrayContract) -> int | None:
+    """Return the concrete flat-edge axis completed by semantic conversion."""
+    if array.category != "assumed_size":
+        return None
+    for axis, dimension in enumerate(array.source_shape):
+        if "*" in str(dimension):
+            return axis
+    return None
 
 
 def _array_handoff_itemsize(semantic_type: models.SemanticType) -> int | None:
