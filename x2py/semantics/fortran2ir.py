@@ -2027,19 +2027,14 @@ class FortranToIRConverter(ClassVisitor):
             arg = by_name[native_arg.name]
             reads_argument, writes_argument = FortranToIRConverter._argument_access(native_arg, arg.semantic_type)
             is_output = writes_argument and not reads_argument
-            is_allocatable_replacement = (
-                reads_argument and writes_argument and FortranToIRConverter._is_allocatable_array(arg.semantic_type)
+            is_replacement = reads_argument and writes_argument
+            is_allocatable_replacement = is_replacement and FortranToIRConverter._is_allocatable_array(
+                arg.semantic_type
             )
-            is_character_replacement = (
-                reads_argument and writes_argument and FortranToIRConverter._is_scalar_character(arg.semantic_type)
-            )
-            is_descriptor_replacement = (
-                reads_argument and writes_argument and FortranToIRConverter._is_scalar_descriptor(arg.semantic_type)
-            )
-            is_primitive_scalar_replacement = (
-                reads_argument
-                and writes_argument
-                and FortranToIRConverter._is_primitive_scalar_replacement(arg.semantic_type)
+            is_character_replacement = is_replacement and FortranToIRConverter._is_scalar_character(arg.semantic_type)
+            is_descriptor_replacement = is_replacement and FortranToIRConverter._is_scalar_descriptor(arg.semantic_type)
+            is_primitive_scalar_replacement = is_replacement and FortranToIRConverter._is_primitive_scalar_replacement(
+                arg.semantic_type
             )
             is_returned_output = FortranToIRConverter._is_returned_output_argument(
                 is_output=is_output,
