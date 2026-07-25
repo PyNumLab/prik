@@ -726,6 +726,15 @@ class OwnershipPolicyResolver:
                 reason="scalar output is returned as a Python value",
             )
         if context.writes_argument and context.reads_argument:
+            if context.projects_result:
+                return OwnershipDecision(
+                    ObjectKind.SCALAR,
+                    OwnershipOwner.PYTHON,
+                    TransferMode.COPY_RETURN,
+                    DestructionPolicy.PYTHON_REFCOUNT,
+                    mutates_native=True,
+                    reason="projected scalar update uses call-local native storage and returns a replacement value",
+                )
             return OwnershipDecision(
                 ObjectKind.SCALAR,
                 OwnershipOwner.CALLER,

@@ -1445,7 +1445,7 @@ class PyiPrinter(ClassVisitor):
             else:
                 parts.append(self._visit(self._visible_wrapped_callable_type(func.return_type)))
         parts.extend(
-            self._projected_argument_return(arg, visible=visible)
+            self._projected_argument_return(func, arg, visible=visible)
             for _, arg, visible in sorted(
                 self._projected_return_arguments(func),
                 key=lambda item: item[0],
@@ -1488,15 +1488,32 @@ class PyiPrinter(ClassVisitor):
             return False
         return mapping.python_position is not None
 
-    def _projected_argument_return(self, arg: SemanticArgument, *, visible: bool) -> str:
+    def _projected_argument_return(
+        self,
+        func_or_arg: SemanticFunction | SemanticArgument,
+        arg: SemanticArgument | None = None,
+        *,
+        visible: bool,
+    ) -> str:
         """Handle projected argument return for the current generation context."""
+        if isinstance(func_or_arg, SemanticFunction):
+            if arg is None:
+                raise TypeError("Function projection return emission requires an argument")
+            func = func_or_arg
+            projected_arg = arg
+        else:
+            func = None
+            projected_arg = func_or_arg
         if visible:
-            return self._named_return(arg)
-        return self._plain_projected_return(arg)
+            return self._named_return(projected_arg, func=func)
+        return self._plain_projected_return(projected_arg)
 
-    def _named_return(self, arg: SemanticArgument) -> str:
+    def _named_return(self, arg: SemanticArgument, *, func: SemanticFunction | None = None) -> str:
         """Handle named return for the current generation context."""
-        semantic_type = self._visible_projected_type(arg.semantic_type)
+        semantic_type = self._visible_projected_type(
+            arg.semantic_type,
+            unwrap_address_projection=func is not None and self._uses_address_projection(func, arg),
+        )
         descriptor_kind = self._scalar_descriptor_kind(semantic_type)
         if descriptor_kind is not None:
             semantic_type = self._visible_scalar_descriptor_type(semantic_type)
@@ -1506,13 +1523,23 @@ class PyiPrinter(ClassVisitor):
         return return_text
 
     @staticmethod
-    def _visible_projected_type(semantic_type: SemanticType) -> SemanticType:
+    def _visible_projected_type(
+        semantic_type: SemanticType,
+        *,
+        unwrap_address_projection: bool = False,
+    ) -> SemanticType:
         """Return the Python-visible type for address-projected scalars."""
         wrapped = PyiPrinter._visible_wrapped_callable_type(semantic_type)
         if wrapped is not semantic_type:
             return wrapped
         storage = semantic_type.storage
         if (
+            unwrap_address_projection
+            and semantic_type.rank == 0
+            and storage is not None
+            and storage.kind in {"address", "reference"}
+            and storage.pointer_depth == 1
+        ) or (
             semantic_type.rank == 0
             and storage is not None
             and storage.kind == "address"

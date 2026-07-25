@@ -414,6 +414,9 @@ For `__init__.pyi`, the package directory name supplies the extension name
 unless wrapper `--out NAME` is provided. The runtime follows the entry's import
 policy: `from . import m1` exposes `basic_subroutine.m1`, while
 `from .m1 import *` explicitly flattens `m1` into the extension root.
+Passing a leaf such as `m1.pyi` directly builds a flat extension named `m1`
+unless `--out NAME` overrides it, so the same declaration is exposed as
+`m1.update(...)` instead of under a package child namespace.
 
 A mixed source keeps standalone procedures in the entry contract and marks each
 one with `@external`:

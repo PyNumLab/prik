@@ -22,6 +22,7 @@ from tests.semantics.conversion.fortran._support import (
     pytest,
     semantic_models,
 )
+from x2py.semantics.metadata import PROJECTED_OUTPUT_METADATA
 
 
 def test_bind_c_name_and_value_calling_convention_reach_semantic_ir():
@@ -377,6 +378,39 @@ end module scalar_descriptor_mod
             value_kind="pointer",
             value={"kind": "return", "name": "value", "position": 0},
         )
+    ]
+
+
+def test_primitive_scalar_inout_stays_visible_and_projects_replacement_return():
+    source = """
+module outputs
+contains
+subroutine scale_in_place(value, factor)
+    real(8), intent(inout) :: value
+    real(8), intent(in) :: factor
+    value = factor * value
+end subroutine scale_in_place
+end module outputs
+"""
+
+    smod = fortran_module_to_semantic_module(parse_fortran_source(source))
+    scale = get_function(smod, "scale_in_place")
+
+    assert scale.arguments[0].metadata[PROJECTED_OUTPUT_METADATA] is True
+    assert scale.projection == [
+        ProjectionMapping(
+            python_name="value",
+            native_name="value",
+            native_position=0,
+            python_position=0,
+            result_position=0,
+        ),
+        ProjectionMapping(
+            python_name="factor",
+            native_name="factor",
+            native_position=1,
+            python_position=1,
+        ),
     ]
 
 

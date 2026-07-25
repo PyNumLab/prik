@@ -726,8 +726,10 @@ assert square(3.0) == 9.0
 ```
 
 Python immutable scalars cannot expose native in-place mutation. Scalar
-`intent(out)` values are hidden and returned as new Python values, while mutable
-semantics for strings use replacement projection as described below.
+`intent(out)` values are hidden and returned as new Python values. Source-built
+primitive scalar `intent(inout)` arguments remain visible inputs and are
+returned as replacement values; the original Python scalar object is unchanged.
+Mutable semantics for strings use replacement projection as described below.
 
 Editable semantic contracts distinguish three numeric scalar boundaries:
 

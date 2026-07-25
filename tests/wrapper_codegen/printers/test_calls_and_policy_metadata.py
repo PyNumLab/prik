@@ -82,6 +82,25 @@ end module
     assert f') -> Returns["name", {annotation}]: ...' in code
 
 
+def test_emit_primitive_scalar_inout_as_visible_replacement_return():
+    source = """
+module outputs
+contains
+subroutine scale_in_place(value, factor)
+    real(8), intent(inout) :: value
+    real(8), intent(in) :: factor
+end subroutine scale_in_place
+end module outputs
+"""
+
+    code = generate_pyi(source)
+
+    assert "@native_call([Addr(Arg(0)), Addr(Arg(1))])" in code
+    assert "value: Float64" in code
+    assert "factor: Float64" in code
+    assert ') -> Returns["value", Float64]: ...' in code
+
+
 def test_emit_exact_output():
     source = """
 module simple_mod
