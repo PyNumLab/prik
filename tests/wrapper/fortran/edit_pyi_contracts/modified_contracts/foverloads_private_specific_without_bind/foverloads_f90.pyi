@@ -1,4 +1,4 @@
-# Intentional error: @private controls Python visibility, while the missing
+# Intentional difference: @private controls Python visibility, while the missing
 # overload-level @bind attempts to call each native specific directly.
 from x2py.contracts import Addr, Arg, Float64, Int32, native_call, overload, private
 

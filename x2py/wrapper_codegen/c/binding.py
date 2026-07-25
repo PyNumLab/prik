@@ -13,6 +13,7 @@ from x2py.semantics.ownership import (
 )
 from x2py.semantics.metadata import SCALAR_STORAGE_CATEGORY
 from x2py.semantics.wrapper_policy import (
+    ArgumentConversionPhase,
     ArgumentHandoffMode,
     BridgeDataAction,
     CallbackABIKind,
@@ -5742,12 +5743,12 @@ class CBindingGenerator(ClassVisitor):
         )
 
     def _binding_conversion_order(self, plan: FunctionPlan) -> tuple[ArgumentTransferPlan, ...]:
-        """Convert non-owning inputs before allocating the sole replacement buffer."""
+        """Apply the completed argument conversion schedule."""
         return tuple(
             sorted(
                 plan.arguments,
                 key=lambda argument: (
-                    argument.binding.codegen_action is CodegenAction.COPY_IN_OUT,
+                    argument.binding.conversion_phase is ArgumentConversionPhase.DEFERRED_REPLACEMENT,
                     argument.python_position,
                 ),
             )

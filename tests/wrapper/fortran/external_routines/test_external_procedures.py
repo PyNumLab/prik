@@ -178,7 +178,7 @@ def bundled_external_module(pyi_parity_build_mode: str, tmp_path: Path):
 
 
 def test_fixed_form_standalone_external_runtime_parity(fixed_external_module):
-    assert fixed_external_module.fixed_add(np.int32(4)) == np.int32(5)
+    assert fixed_external_module.fixed_add(np.int32(4)) == (np.int32(5), np.int32(4))
 
 
 def test_free_form_standalone_external_runtime_parity(free_external_module):

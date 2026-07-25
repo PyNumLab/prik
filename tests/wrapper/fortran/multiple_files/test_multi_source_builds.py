@@ -244,8 +244,8 @@ def test_multi_file_standalone_procedures_build_one_merged_extension(tmp_path: P
     )
 
     assert payload["module_name"] == "standalone_api"
-    assert module.add_one(np.int32(4)) == 5
-    assert module.double_value(np.int32(4)) == 8
+    assert module.add_one(np.int32(4)) == (5, 4)
+    assert module.double_value(np.int32(4)) == (8, 4)
 
 
 def test_multi_source_pyi_out_writes_one_flat_combined_package(tmp_path: Path):

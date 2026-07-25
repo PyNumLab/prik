@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Arg, Bool, Complex64, Float32, Int32, String, native_call, overload
+from x2py.contracts import Addr, Arg, Bool, Complex64, Float32, Int32, Returns, String, native_call, overload
 
 class same_name:
     def __init__(
@@ -22,7 +22,7 @@ same_name_s: String[8]
 @native_call([Addr(Arg(0))])
 def do_work_i(
     same_name: Int32
-) -> None: ...
+) -> Returns["same_name", Int32]: ...
 
 @native_call([Addr(Arg(0))])
 def do_work_r(
@@ -37,12 +37,12 @@ def do_work_l(
 @native_call([Addr(Arg(0))])
 def host_one(
     same_name: Int32
-) -> None: ...
+) -> Returns["same_name", Int32]: ...
 
 @native_call([Addr(Arg(0))])
 def host_two(
     same_name: Float32
-) -> None: ...
+) -> Returns["same_name", Float32]: ...
 
 @native_call([Addr(Arg(0))])
 def convert_to_complex(
@@ -61,7 +61,7 @@ def convert_to_logical(
 @overload("do_work_i")
 def do_work(
     same_name: Int32
-) -> None: ...
+) -> Returns["same_name", Int32]: ...
 
 @overload("do_work_r")
 def do_work(

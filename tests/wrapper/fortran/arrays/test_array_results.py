@@ -11,6 +11,7 @@ from tests.wrapper.fortran._support import (
     _build_source_or_generated_pyi_and_import,
     _compile_native_object,
     _import_from_build_dir,
+    _require_maybe_unallocated_function_result_support,
     _sole_native_module,
     wrapper_source,
 )
@@ -202,6 +203,7 @@ def test_owned_allocatable_results_preserve_handle_state(tmp_path: Path):
 
 def test_maybe_unallocated_allocatable_result_preserves_absent_state(tmp_path: Path):
     """Use an edited contract for direct allocatable results that may be unallocated."""
+    _require_maybe_unallocated_function_result_support()
     native_object = _compile_native_object(ARRAY_RESULTS_F90_SOURCE, tmp_path / "native")
     contract_package = tmp_path / "maybe_unallocated_results"
     shutil.copytree(CONTRACT_FIXTURES / "farray_results_f90", contract_package)

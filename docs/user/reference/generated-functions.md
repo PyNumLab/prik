@@ -42,6 +42,11 @@ scalar, replacement, or native-created outputs follow in native argument
 order. Caller-provided ordinary arrays mutate in place and are not projected by
 default. A subroutine with no projected outputs returns `None`.
 
+A dummy argument without `intent` uses conservative `intent(inout)` behavior.
+Primitive scalars remain visible and their replacement values are projected
+into the Python result. For a known input-only dummy, remove that projected
+result from the generated contract.
+
 Scalar derived-type `intent(out)` and `intent(inout)` arguments follow the same
 rule as arrays: the caller supplies a generated mutable object, native code
 updates it, and the object is not repeated in the return value.

@@ -26,6 +26,11 @@ A Fortran `subroutine` has no direct return value. Instead, its `intent(out)` an
 | Derived `intent(out/inout)` | Visible generated object     | Mutated in place; not returned    |
 | `intent(out)` allocatable   | Hidden (or optional)         | `Allocatable[...]` handle         |
 
+Without `intent`, x2py uses the conservative `intent(inout)` behavior. A
+primitive scalar stays visible and its replacement value is returned. If the
+dummy is known to be input-only, remove that projected result from the
+generated contract.
+
 ---
 
 ## Complete Example

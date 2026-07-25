@@ -6,6 +6,7 @@ import subprocess
 import sys
 from functools import cache
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import ModuleType
 
 import numpy as np
@@ -52,7 +53,10 @@ def _assert_fmath_examples(module):
 
     for name, args, expected in cases:
         public_name = name.lower()
-        actual = getattr(module, public_name)(*args)
+        actual, *replacements = getattr(module, public_name)(*args)
+        assert len(replacements) == len(args), public_name
+        for replacement, argument in zip(replacements, args, strict=True):
+            np.testing.assert_equal(replacement, argument, err_msg=public_name)
         if isinstance(expected, bool):
             assert bool(actual) is expected, public_name
         elif isinstance(expected, int):
@@ -108,6 +112,39 @@ def _compiler() -> str:
     if compiler is None:
         pytest.skip("gfortran is required for Fortran wrapper runtime tests")
     return compiler
+
+
+@cache
+def _supports_maybe_unallocated_function_result() -> bool:
+    """Check the GNU extension used to inspect an allocatable function result."""
+    source = """
+module probe
+contains
+  function make_value() result(value)
+    real, allocatable :: value(:)
+  end function make_value
+  subroutine collect(value)
+    real, allocatable :: value(:)
+  end subroutine collect
+  subroutine call_collect()
+    call collect(make_value())
+  end subroutine call_collect
+end module probe
+"""
+    with TemporaryDirectory() as directory:
+        result = subprocess.run(
+            [_compiler(), "-x", "f95", "-c", "-o", str(Path(directory) / "probe.o"), "-"],
+            input=source,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    return result.returncode == 0
+
+
+def _require_maybe_unallocated_function_result_support() -> None:
+    if not _supports_maybe_unallocated_function_result():
+        pytest.skip("gfortran rejects allocatable function results as allocatable helper arguments")
 
 
 def _compile_native_object(source: Path, native_dir: Path) -> Path:
@@ -382,8 +419,9 @@ def _assert_fmath_array_examples(module, *, suffix="", strided=False):
         array_args = [_array_argument(scalar_arg, size, strided=strided) for scalar_arg in scalar_args]
         result = _array_result(expected, size, strided=strided)
 
-        getattr(module, wrapped_name)(np.int32(size), *array_args, result)
+        replacement_size = getattr(module, wrapped_name)(np.int32(size), *array_args, result)
 
+        assert replacement_size == np.int32(size), wrapped_name
         _assert_array_result(wrapped_name, result, expected, size)
 
 

@@ -414,6 +414,30 @@ end module outputs
     ]
 
 
+def test_missing_intent_scalar_uses_conservative_replacement_projection():
+    source = """
+real(4) function square(value) result(output)
+    real(4) :: value
+    output = value * value
+end function square
+"""
+
+    smod = fortran_file_to_semantic_modules(parse_fortran_source(source))[0]
+    square = get_function(smod, "square")
+
+    assert square.arguments[0].semantic_type.storage.mutable is True
+    assert square.arguments[0].metadata[PROJECTED_OUTPUT_METADATA] is True
+    assert square.projection == [
+        ProjectionMapping(
+            python_name="value",
+            native_name="value",
+            native_position=0,
+            python_position=0,
+            result_position=1,
+        )
+    ]
+
+
 def test_ordinary_array_output_stays_visible_without_result_projection():
     source = """
 module outputs

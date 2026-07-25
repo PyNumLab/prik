@@ -19,6 +19,7 @@ from x2py.semantics.ownership import (
     TransferMode,
 )
 from x2py.semantics.wrapper_policy import (
+    ArgumentConversionPhase,
     ArgumentHandoffMode,
     BridgeDataAction,
     CallbackABIKind,
@@ -492,6 +493,7 @@ class BindingArgumentPlan(StageRecord):
     python_name: str
     python_action: PythonBarrierAction
     codegen_action: CodegenAction
+    conversion_phase: ArgumentConversionPhase
     handoff_role: str
     optional_mode: OptionalMode
     nullable: bool

@@ -33,6 +33,7 @@ from x2py.semantics.policy_completion import complete_semantic_policies
 from x2py.semantics.wrapper_policy import (
     RAW_STRING_ADDRESS_COPY_REASON,
     STRING_STORAGE_COPY_REASON,
+    ArgumentConversionPhase,
     ArgumentHandoffMode,
     BridgeDataAction,
     CallbackABIKind,
@@ -73,7 +74,12 @@ def test_fmath_fixture_gets_completed_function_wrapper_policy():
     assert all(isinstance(policy, FunctionWrapperPolicy) for policy in policies)
     assert all(policy.supported for policy in policies)
     assert all(policy.blockers == () for policy in policies)
-    assert all(policy.writeback_actions == () for policy in policies)
+    assert all(policy.writeback_actions for policy in policies)
+    assert all(
+        argument.conversion_phase is ArgumentConversionPhase.IMMEDIATE
+        for policy in policies
+        for argument in policy.arguments
+    )
     assert all(policy.cleanup_actions == () for policy in policies)
     assert all(policy.release_actions == () for policy in policies)
 
@@ -200,6 +206,7 @@ def test_scalar_copy_in_out_policy_completes_writeback_before_planning():
     assert policy.supported is True
     assert policy.results == ()
     assert policy.native_is_subroutine is True
+    assert policy.arguments[0].conversion_phase is ArgumentConversionPhase.IMMEDIATE
     assert tuple(action.phase for action in policy.writeback_actions) == tuple(WritebackPhase)
     assert {action.source_role for action in policy.writeback_actions} == {"scalar_writeback.bump.value:value"}
     assert {action.result_position for action in policy.writeback_actions} == {0}
@@ -430,7 +437,7 @@ def make_matrix(n: Int32, m: Int32) -> Allocatable[Float64[:, :]]: ...
     assert result.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
 
 
-def test_source_fmath_scalar_policy_accepts_storage_address_native_action():
+def test_source_fmath_scalar_policy_projects_conservative_replacements():
     module = _source_semantic_module("fmath.f", module_name="fmath")
     function = next(item for item in module.functions if item.name == "ADD_R8")
     policies = [item.metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA] for item in module.functions]
@@ -445,19 +452,20 @@ def test_source_fmath_scalar_policy_accepts_storage_address_native_action():
     assert policy.external is True
     assert [argument.name for argument in policy.arguments] == ["X", "Y"]
     assert [argument.codegen_action for argument in policy.arguments] == [
-        CodegenAction.IN_PLACE_ARGUMENT,
-        CodegenAction.IN_PLACE_ARGUMENT,
+        CodegenAction.COPY_IN_OUT,
+        CodegenAction.COPY_IN_OUT,
     ]
+    assert all(argument.conversion_phase is ArgumentConversionPhase.IMMEDIATE for argument in policy.arguments)
     assert [argument.python_barrier_action for argument in policy.arguments] == [
         PythonBarrierAction.SCALAR_VALUE,
         PythonBarrierAction.SCALAR_VALUE,
     ]
     assert [argument.native_barrier_action for argument in policy.arguments] == [
-        NativeBarrierAction.PASS_STORAGE_ADDRESS,
-        NativeBarrierAction.PASS_STORAGE_ADDRESS,
+        NativeBarrierAction.PASS_CALL_LOCAL_ADDRESS,
+        NativeBarrierAction.PASS_CALL_LOCAL_ADDRESS,
     ]
     assert [argument.storage_mode for argument in policy.arguments] == [StorageMode.STACK, StorageMode.STACK]
-    assert all(policy.writeback_actions == () for policy in policies)
+    assert all(policy.writeback_actions for policy in policies)
     assert all(policy.cleanup_actions == () for policy in policies)
     assert all(policy.release_actions == () for policy in policies)
     assert [
@@ -467,14 +475,14 @@ def test_source_fmath_scalar_policy_accepts_storage_address_native_action():
         (
             "projection",
             "arg",
-            NativeBarrierAction.PASS_STORAGE_ADDRESS,
-            CodegenAction.IN_PLACE_ARGUMENT,
+            NativeBarrierAction.PASS_CALL_LOCAL_ADDRESS,
+            CodegenAction.COPY_IN_OUT,
         ),
         (
             "projection",
             "arg",
-            NativeBarrierAction.PASS_STORAGE_ADDRESS,
-            CodegenAction.IN_PLACE_ARGUMENT,
+            NativeBarrierAction.PASS_CALL_LOCAL_ADDRESS,
+            CodegenAction.COPY_IN_OUT,
         ),
     ]
 
@@ -520,12 +528,13 @@ def test_fmath_scalar_policy_records_address_projected_call_slots():
         assert argument.rank == 0
         assert argument.optional is False
         assert argument.ownership.kind is ObjectKind.SCALAR
-        assert argument.codegen_action is CodegenAction.CALL_LOCAL_INPUT
+        assert argument.codegen_action is CodegenAction.COPY_IN_OUT
+        assert argument.conversion_phase is ArgumentConversionPhase.IMMEDIATE
         assert argument.python_barrier_action is PythonBarrierAction.SCALAR_VALUE
         assert argument.native_barrier_action is NativeBarrierAction.PASS_CALL_LOCAL_ADDRESS
-        assert argument.storage_mode is StorageMode.ALIAS
-        assert argument.boundary_storage_mode is StorageMode.ALIAS
-        assert argument.projects_result is False
+        assert argument.storage_mode is StorageMode.STACK
+        assert argument.boundary_storage_mode is StorageMode.STACK
+        assert argument.projects_result is True
         assert argument.python_visible is True
 
     assert [(slot.native_position, slot.python_position) for slot in policy.native_call_slots] == [
@@ -991,6 +1000,7 @@ def discard_name(name: String[8]) -> None: ...
     assert argument.ownership.transfer is TransferMode.COPY_RETURN
     assert argument.ownership.destruction is DestructionPolicy.PYTHON_REFCOUNT
     assert argument.codegen_action is CodegenAction.COPY_IN_OUT
+    assert argument.conversion_phase is ArgumentConversionPhase.DEFERRED_REPLACEMENT
     assert argument.character_length == 8
     assert argument.projects_result is True
     # The native call mutates a binding-owned replacement, not the immutable

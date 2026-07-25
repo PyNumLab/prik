@@ -119,11 +119,10 @@ print(values.to_numpy())                    # [10. 20.]
   allocatable array function result may return unallocated. The Python result is
   still an `Allocatable[...]` handle; `handle.allocated` may be `False`, and
   `handle.to_numpy()` may return `None`.
-- `MaybeUnallocated` uses a GNU-verified helper path that avoids assigning an
-  unallocated direct function result before `allocated(...)` can be checked.
-  A native subroutine with an allocatable `intent(out)` output remains the
-  portable zero-copy spelling for unallocated result state on stricter
-  compilers.
+- `MaybeUnallocated` uses a GNU helper extension that checks allocation before
+  assignment. Some compiler versions reject allocatable function expressions
+  as helper arguments. A native subroutine with an allocatable `intent(out)`
+  output is the portable zero-copy spelling for unallocated result state.
 
 ```python
 from x2py.contracts import Allocatable, Annotated, Float64, Int32, MaybeUnallocated

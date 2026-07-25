@@ -104,6 +104,13 @@ class ArgumentHandoffMode(str, Enum):
     NATIVE_DESCRIPTOR = "native_descriptor"
 
 
+class ArgumentConversionPhase(str, Enum):
+    """Completed binding conversion schedule for one Python argument."""
+
+    IMMEDIATE = "immediate"
+    DEFERRED_REPLACEMENT = "deferred_replacement"
+
+
 class BridgeDataAction(str, Enum):
     """Completed bridge-side data movement for one boundary value."""
 
@@ -1005,6 +1012,7 @@ class ArgumentPolicy:
     rank: int
     optional: bool
     optional_mode: OptionalMode
+    conversion_phase: ArgumentConversionPhase
     handoff_mode: ArgumentHandoffMode
     bridge_data_action: BridgeDataAction
     bridge_copy_reason: str | None
@@ -1036,6 +1044,7 @@ class _ArgumentBoundaryPolicy:
     """Normalized wrapper-boundary fields for one ordinary or callback input."""
 
     optional_mode: OptionalMode
+    conversion_phase: ArgumentConversionPhase
     handoff_mode: ArgumentHandoffMode
     nullable: bool
     writable: bool
@@ -2556,6 +2565,7 @@ def _argument_policy(
             rank=int(argument.semantic_type.rank or 0),
             optional=argument.optional,
             optional_mode=boundary.optional_mode,
+            conversion_phase=boundary.conversion_phase,
             handoff_mode=boundary.handoff_mode,
             bridge_data_action=bridge_data_action,
             bridge_copy_reason=bridge_copy_reason,
@@ -2665,6 +2675,7 @@ def _argument_boundary_policy(
     if callback is not None:
         return _ArgumentBoundaryPolicy(
             optional_mode=OptionalMode.REQUIRED,
+            conversion_phase=ArgumentConversionPhase.IMMEDIATE,
             handoff_mode=ArgumentHandoffMode.VALUE,
             nullable=False,
             writable=False,
@@ -2679,6 +2690,7 @@ def _argument_boundary_policy(
         )
     return _ArgumentBoundaryPolicy(
         optional_mode=_optional_mode(argument, decision),
+        conversion_phase=_argument_conversion_phase(decision),
         handoff_mode=_argument_handoff_mode(decision),
         nullable=decision.nullable,
         # COPY_RETURN mutates a binding-owned replacement rather than the
@@ -2693,6 +2705,16 @@ def _argument_boundary_policy(
         projects_result=decision.projects_result,
         result_position=_argument_result_position(function, python_position),
     )
+
+
+def _argument_conversion_phase(decision: OwnershipDecision) -> ArgumentConversionPhase:
+    """Schedule stack scalar replacements before allocated replacements."""
+    if (
+        decision.codegen_action is CodegenAction.COPY_IN_OUT
+        and decision.python_barrier_action is not PythonBarrierAction.SCALAR_VALUE
+    ):
+        return ArgumentConversionPhase.DEFERRED_REPLACEMENT
+    return ArgumentConversionPhase.IMMEDIATE
 
 
 def _completed_argument_blockers(

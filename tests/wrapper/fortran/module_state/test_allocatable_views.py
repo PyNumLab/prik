@@ -13,6 +13,7 @@ from tests.wrapper.fortran._support import (
     _build_text_and_import,
     _compile_native_object,
     _import_from_build_dir,
+    _require_maybe_unallocated_function_result_support,
     _sole_native_module,
     wrapper_source,
 )
@@ -407,6 +408,7 @@ def test_allocatable_module_fields_and_results_expose_lifetime_safe_handles(
 
 
 def test_maybe_unallocated_direct_allocatable_results_preserve_unallocated_state(tmp_path: Path):
+    _require_maybe_unallocated_function_result_support()
     module = _maybe_unallocated_direct_result_module(tmp_path)
 
     made_values = module.make_values(np.int32(3))

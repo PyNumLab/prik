@@ -1118,6 +1118,7 @@ class WrapperPlanner(ClassVisitor):
             python_name=policy.python_name,
             python_action=policy.python_barrier_action,
             codegen_action=policy.codegen_action,
+            conversion_phase=policy.conversion_phase,
             handoff_role=role,
             optional_mode=policy.optional_mode,
             nullable=policy.nullable,
