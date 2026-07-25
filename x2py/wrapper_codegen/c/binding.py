@@ -2135,6 +2135,7 @@ class CBindingGenerator(ClassVisitor):
                 )
                 for derived in self._pointer_holder_types(plan)
             ),
+            *self._owned_native_array_bridge_prototypes(plan),
             *self._derived_field_bridge_prototypes(plan),
             *self._derived_private_method_prototypes(plan),
             *self._derived_handle_operation_declarations(plan),
@@ -4853,7 +4854,7 @@ class CBindingGenerator(ClassVisitor):
     def _owned_native_array_operation_handler(self, operation: NativeArrayOperation):
         """Return one directly named operation lowerer."""
         handlers = {
-            NativeArrayOperation.SHAPE: self._owned_native_array_descriptor_record_body,
+            NativeArrayOperation.SHAPE: self._owned_native_array_shape_body,
             NativeArrayOperation.TO_NUMPY: self._owned_native_array_descriptor_record_body,
             NativeArrayOperation.ELEMENT_LENGTH: self._owned_native_array_element_length_body,
             NativeArrayOperation.ARRAY_ACTUAL: self._owned_native_array_actual_body,
@@ -4881,6 +4882,28 @@ class CBindingGenerator(ClassVisitor):
             raise ValueError(f"Owned result {result.owner_path!r} has no descriptor rank")
         return self._native_array_descriptor_record_nodes(handle.array.rank, "owner_descriptor")
 
+    def _owned_native_array_shape_body(
+        self,
+        result: ResultPlan,
+    ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
+        """Expose extents using the typed compiler descriptor inquiry."""
+        if self._is_owned_deferred_character_result(result):
+            return self._owned_native_array_descriptor_record_body(result)
+        handle = result.native_array_handle
+        if handle is None or handle.array.rank is None:
+            raise ValueError(f"Owned result {result.owner_path!r} has no shape rank")
+        dimensions = tuple(f"extent_{axis}" for axis in range(handle.array.rank))
+        return (
+            *(CDeclaration(name, "int64_t", CodeExpression("0")) for name in dimensions),
+            CExpressionStatement(
+                CodeExpression(
+                    f"{self._owned_native_array_bridge_operation_name(result, NativeArrayOperation.SHAPE)}"
+                    f"(owner_descriptor, {', '.join(f'&{name}' for name in dimensions)})"
+                )
+            ),
+            CReturn(CodeExpression(f'Py_BuildValue("({",".join("L" for _ in dimensions)})", {", ".join(dimensions)})')),
+        )
+
     def _owned_native_array_actual_body(self, _result: ResultPlan) -> tuple[CReturn, ...]:
         """Expose the current owned allocation data address."""
         return (CReturn(CodeExpression("PyLong_FromVoidPtr(owner_descriptor->base_addr)")),)
@@ -4895,7 +4918,16 @@ class CBindingGenerator(ClassVisitor):
 
     def _owned_native_array_allocated_body(self, _result: ResultPlan) -> tuple[CReturn, ...]:
         """Report the current allocation state."""
-        return (CReturn(CodeExpression("PyBool_FromLong(owner_descriptor->base_addr != NULL)")),)
+        if self._is_owned_deferred_character_result(_result):
+            return (CReturn(CodeExpression("PyBool_FromLong(owner_descriptor->base_addr != NULL)")),)
+        return (
+            CReturn(
+                CodeExpression(
+                    f"PyBool_FromLong({self._owned_native_array_bridge_operation_name(_result, NativeArrayOperation.ALLOCATED)}"
+                    "(owner_descriptor))"
+                )
+            ),
+        )
 
     def _owned_native_array_true_body(self, _result: ResultPlan) -> tuple[CReturn, ...]:
         """Return one invariant true array capability."""
@@ -4907,17 +4939,17 @@ class CBindingGenerator(ClassVisitor):
 
     def _owned_native_array_deallocate_body(
         self,
-        _result: ResultPlan,
+        result: ResultPlan,
     ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
         """Deallocate payload while retaining owner storage."""
-        return self._owned_native_array_deallocate_nodes(free_owner=False)
+        return self._owned_native_array_deallocate_nodes(result, NativeArrayOperation.DEALLOCATE, free_owner=False)
 
     def _owned_native_array_destroy_body(
         self,
-        _result: ResultPlan,
+        result: ResultPlan,
     ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
         """Destroy payload and persistent owner storage."""
-        return self._owned_native_array_deallocate_nodes(free_owner=True)
+        return self._owned_native_array_deallocate_nodes(result, NativeArrayOperation.DESTROY, free_owner=True)
 
     def _owned_native_array_owner_nodes(
         self,
@@ -5001,10 +5033,24 @@ class CBindingGenerator(ClassVisitor):
 
     def _owned_native_array_deallocate_nodes(
         self,
+        result: ResultPlan,
+        operation: NativeArrayOperation,
         *,
         free_owner: bool,
     ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
         """Release payload and optionally persistent descriptor storage."""
+        if not self._is_owned_deferred_character_result(result):
+            nodes: list[CExpressionStatement | CReturn] = [
+                CExpressionStatement(
+                    CodeExpression(
+                        f"{self._owned_native_array_bridge_operation_name(result, operation)}(owner_descriptor)"
+                    )
+                ),
+            ]
+            if free_owner:
+                nodes.append(CExpressionStatement(CodeExpression("free(owner_descriptor)")))
+            nodes.append(CExpressionStatement(CodeExpression("Py_RETURN_NONE")))
+            return tuple(nodes)
         nodes: list[CDeclaration | CExpressionStatement | CIf | CReturn] = [
             CDeclaration("status", "int", CodeExpression("CFI_SUCCESS")),
             CIf(
@@ -5070,20 +5116,10 @@ class CBindingGenerator(ClassVisitor):
                     CExpressionStatement(CodeExpression(f"lower_bounds[{axis}] = 0")),
                 )
             )
+        release_nodes = self._owned_native_array_resize_release_nodes(result)
         nodes.extend(
             (
-                CIf(
-                    CodeExpression("owner_descriptor->base_addr != NULL"),
-                    body=(
-                        CExpressionStatement(CodeExpression("status = CFI_deallocate(owner_descriptor)")),
-                        CExpressionStatement(
-                            CodeExpression(
-                                "if (status != CFI_SUCCESS) { PyErr_SetString(PyExc_RuntimeError, "
-                                '"failed to release owned native array before resize"); return NULL; }'
-                            )
-                        ),
-                    ),
-                ),
+                *release_nodes,
                 CExpressionStatement(
                     CodeExpression(
                         "status = CFI_allocate(owner_descriptor, lower_bounds, upper_bounds, "
@@ -5101,6 +5137,35 @@ class CBindingGenerator(ClassVisitor):
         )
         return tuple(nodes)
 
+    def _owned_native_array_resize_release_nodes(
+        self,
+        result: ResultPlan,
+    ) -> tuple[CExpressionStatement | CIf, ...]:
+        """Release existing owned payload before resize through the selected descriptor path."""
+        if not self._is_owned_deferred_character_result(result):
+            return (
+                CExpressionStatement(
+                    CodeExpression(
+                        f"{self._owned_native_array_bridge_operation_name(result, NativeArrayOperation.DEALLOCATE)}"
+                        "(owner_descriptor)"
+                    )
+                ),
+            )
+        return (
+            CIf(
+                CodeExpression("owner_descriptor->base_addr != NULL"),
+                body=(
+                    CExpressionStatement(CodeExpression("status = CFI_deallocate(owner_descriptor)")),
+                    CExpressionStatement(
+                        CodeExpression(
+                            "if (status != CFI_SUCCESS) { PyErr_SetString(PyExc_RuntimeError, "
+                            '"failed to release owned native array before resize"); return NULL; }'
+                        )
+                    ),
+                ),
+            ),
+        )
+
     def _owned_native_array_operation_name(
         self,
         _function: FunctionPlan | None,
@@ -5110,6 +5175,16 @@ class CBindingGenerator(ClassVisitor):
         """Return one stable private operation symbol."""
         owner = re.sub(r"\W", "_", result.owner_path).casefold()
         return f"x2py_owned_{owner}_{operation.value}"
+
+    def _owned_native_array_bridge_operation_name(
+        self,
+        result: ResultPlan,
+        operation: NativeArrayOperation,
+    ) -> str:
+        """Return the C-visible typed bridge operation symbol."""
+        preferred = result.bridge.native_name or "result"
+        owner = NativeSymbolNames.compact(result.owner_path, preferred, limit=38)
+        return f"bind_c_owned_{owner}_{operation.value}"
 
     def _owned_native_array_operation_def_name(
         self,
@@ -9538,6 +9613,48 @@ class CBindingGenerator(ClassVisitor):
             self._bridge_return_type(plan),
             (*argument_parameters, *result_parameters, *direct_parameters),
         )
+
+    def _owned_native_array_bridge_prototypes(self, plan: ModulePlan) -> tuple[CFunctionPrototype, ...]:
+        """Declare typed Fortran operations over binding-owned result descriptors."""
+        return tuple(
+            prototype
+            for _function, result in self._owned_native_array_results(plan)
+            if not self._is_owned_deferred_character_result(result)
+            for operation in result.native_array_handle.operations
+            if (prototype := self._owned_native_array_bridge_prototype(result, operation)) is not None
+        )
+
+    def _owned_native_array_bridge_prototype(
+        self,
+        result: ResultPlan,
+        operation: NativeArrayOperation,
+    ) -> CFunctionPrototype | None:
+        """Return one compiler-backed owned-result operation prototype."""
+        if operation is NativeArrayOperation.ALLOCATED:
+            return CFunctionPrototype(
+                self._owned_native_array_bridge_operation_name(result, operation),
+                "bool",
+                (CParameter("result", "CFI_cdesc_t *"),),
+            )
+        if operation is NativeArrayOperation.SHAPE:
+            handle = result.native_array_handle
+            if handle is None or handle.array.rank is None:
+                raise ValueError(f"Owned result {result.owner_path!r} has no shape rank")
+            return CFunctionPrototype(
+                self._owned_native_array_bridge_operation_name(result, operation),
+                "void",
+                (
+                    CParameter("result", "CFI_cdesc_t *"),
+                    *(CParameter(f"extent_{axis}", "int64_t *") for axis in range(handle.array.rank)),
+                ),
+            )
+        if operation in {NativeArrayOperation.DEALLOCATE, NativeArrayOperation.DESTROY}:
+            return CFunctionPrototype(
+                self._owned_native_array_bridge_operation_name(result, operation),
+                "void",
+                (CParameter("result", "CFI_cdesc_t *"),),
+            )
+        return None
 
     def _bridge_return_type(self, plan: FunctionPlan) -> str:
         """Return the direct bridge result type, or void for subroutines."""

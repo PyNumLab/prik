@@ -684,7 +684,11 @@ class FortranBridgeGenerator(ClassVisitor):
     def _visit_NamespacePlan(self, plan: NamespacePlan) -> tuple[FortranFunction, ...]:
         """Return bridge procedures directly owned by one Python namespace."""
         return (
-            *(self.visit(function) for function in plan.functions),
+            *(
+                procedure
+                for function in plan.functions
+                for procedure in (self.visit(function), *self._owned_native_array_result_operations(function))
+            ),
             *(procedure for variable in plan.variables for procedure in self.visit(variable)),
         )
 
@@ -1829,6 +1833,124 @@ class FortranBridgeGenerator(ClassVisitor):
         if result.scalar_descriptor.runtime_length:
             parameters.append(FortranParameter("result_length", "integer(c_int64_t)"))
         return tuple(parameters)
+
+    # Owned native-array result operations.
+    def _owned_native_array_result_operations(self, function: FunctionPlan) -> tuple[FortranFunction, ...]:
+        """Lower typed operations over binding-owned result descriptors."""
+        procedures = []
+        for result in function.results:
+            if not self._supports_owned_native_array_result_operations(result):
+                continue
+            handle = result.native_array_handle
+            if handle is None:
+                continue
+            for operation in handle.operations:
+                procedure = self._owned_native_array_result_operation(result, operation)
+                if procedure is not None:
+                    procedures.append(procedure)
+        return tuple(procedures)
+
+    def _supports_owned_native_array_result_operations(self, result: ResultPlan) -> bool:
+        """Return whether typed helper operations use a Fortran descriptor dummy."""
+        return self._is_owned_native_array_result(result) and not self._is_owned_deferred_character_result(result)
+
+    def _owned_native_array_result_operation(
+        self,
+        result: ResultPlan,
+        operation: NativeArrayOperation,
+    ) -> FortranFunction | None:
+        """Dispatch one generated operation selected by completed handle policy."""
+        if operation is NativeArrayOperation.ALLOCATED:
+            return self._owned_native_array_result_allocated_operation(result)
+        if operation is NativeArrayOperation.SHAPE:
+            return self._owned_native_array_result_shape_operation(result)
+        if operation in {NativeArrayOperation.DEALLOCATE, NativeArrayOperation.DESTROY}:
+            return self._owned_native_array_result_deallocate_operation(result, operation)
+        return None
+
+    def _owned_native_array_result_allocated_operation(self, result: ResultPlan) -> FortranFunction:
+        """Return allocation state using the compiler's descriptor inquiry."""
+        name = self._owned_native_array_result_operation_name(result, NativeArrayOperation.ALLOCATED)
+        return FortranFunction(
+            name=name,
+            parameters=(self._owned_native_array_result_parameter(result, intent="in"),),
+            result_name="state",
+            result_type="logical(c_bool)",
+            bind_name=name,
+            body=(FortranAssignment("state", CodeExpression("allocated(result)")),),
+        )
+
+    def _owned_native_array_result_shape_operation(self, result: ResultPlan) -> FortranFunction:
+        """Return shape through Fortran when the owned descriptor is allocated."""
+        handle = result.native_array_handle
+        if handle is None or handle.array.rank is None:
+            raise ValueError(f"Owned result {result.owner_path!r} has no shape rank")
+        name = self._owned_native_array_result_operation_name(result, NativeArrayOperation.SHAPE)
+        extents = tuple(FortranParameter(f"extent_{axis}", "integer(c_int64_t)") for axis in range(handle.array.rank))
+        present = tuple(
+            FortranAssignment(
+                f"extent_{axis}",
+                CodeExpression(f"size(result, {axis + 1}, kind=c_int64_t)"),
+            )
+            for axis in range(handle.array.rank)
+        )
+        absent = tuple(
+            FortranAssignment(f"extent_{axis}", CodeExpression("0_c_int64_t")) for axis in range(handle.array.rank)
+        )
+        return FortranFunction(
+            name=name,
+            parameters=(self._owned_native_array_result_parameter(result, intent="in"), *extents),
+            bind_name=name,
+            body=(
+                FortranIf(
+                    CodeExpression("allocated(result)"),
+                    body=present,
+                    else_body=absent,
+                ),
+            ),
+            is_subroutine=True,
+        )
+
+    def _owned_native_array_result_deallocate_operation(
+        self,
+        result: ResultPlan,
+        operation: NativeArrayOperation,
+    ) -> FortranFunction:
+        """Release owned payload through the compiler's descriptor machinery."""
+        name = self._owned_native_array_result_operation_name(result, operation)
+        return FortranFunction(
+            name=name,
+            parameters=(self._owned_native_array_result_parameter(result, intent="inout"),),
+            bind_name=name,
+            body=(
+                FortranIf(
+                    CodeExpression("allocated(result)"),
+                    body=(FortranDeallocate("result"),),
+                ),
+            ),
+            is_subroutine=True,
+        )
+
+    def _owned_native_array_result_parameter(self, result: ResultPlan, *, intent: str) -> FortranParameter:
+        """Return the typed descriptor dummy used by owned-result operations."""
+        handle = result.native_array_handle
+        if handle is None or handle.array.rank is None:
+            raise ValueError(f"Owned result {result.owner_path!r} has no descriptor rank")
+        return FortranParameter(
+            "result",
+            self._array_result_element_type(result),
+            ("allocatable", self._array_dimension_attribute(handle.array.rank), f"intent({intent})"),
+        )
+
+    def _owned_native_array_result_operation_name(
+        self,
+        result: ResultPlan,
+        operation: NativeArrayOperation,
+    ) -> str:
+        """Return the C-visible typed operation name for one owned result."""
+        preferred = result.bridge.native_name or "result"
+        owner = NativeSymbolNames.compact(result.owner_path, preferred, limit=38)
+        return f"bind_c_owned_{owner}_{operation.value}"
 
     def _visit_ModuleVariablePlan(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
         """Lower bridge-owned getter and setter actions into procedures."""

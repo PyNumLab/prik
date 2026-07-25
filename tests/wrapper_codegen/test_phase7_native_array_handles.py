@@ -263,6 +263,11 @@ def test_phase7_generated_artifacts_follow_one_typed_action_vocabulary():
     assert "result_value = native_make_matrix(n, m)" in bridge_source
     assert "if (allocated(result_value)) then" in bridge_source
     assert "call move_alloc(result_value, result)" in bridge_source
+    assert "bool bind_c_owned_result_73146804_allocated(CFI_cdesc_t * result);" in c_source
+    assert "return PyBool_FromLong(bind_c_owned_result_73146804_allocated(owner_descriptor));" in c_source
+    assert "bind_c_owned_result_73146804_deallocate(owner_descriptor);" in c_source
+    assert "bind_c_owned_result_73146804_destroy(owner_descriptor);" in c_source
+    assert "bind_c_owned_result_73146804_shape(owner_descriptor, &extent_0);" in c_source
     assert "character(kind=c_char, len=:), allocatable :: value_value" in bridge_source
     assert "result_itemsize" in c_source
     assert "CFI_type_char" in c_source
@@ -288,6 +293,12 @@ def test_phase7_numeric_owned_result_is_collected_before_persistent_descriptor_m
     assert "deallocate(result)" in procedure
     assert "result = result_value" not in procedure
     assert "x2py_collect_make_allocatable_array_result" not in bridge_source
+    assert "function bind_c_owned_result_73146804_allocated(" in bridge_source
+    assert "real(c_double), allocatable, dimension(:), intent(in) :: result" in bridge_source
+    assert "state = allocated(result)" in bridge_source
+    assert "subroutine bind_c_owned_result_73146804_deallocate(" in bridge_source
+    assert "real(c_double), allocatable, dimension(:), intent(inout) :: result" in bridge_source
+    assert "subroutine bind_c_owned_result_73146804_destroy(" in bridge_source
 
 
 @pytest.mark.parametrize(
