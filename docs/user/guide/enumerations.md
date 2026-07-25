@@ -51,19 +51,15 @@ python3 -m x2py colors.f90 --out-dir build/colors
 
 ```python
 import sys
-import numpy as np
 
 sys.path.insert(0, "build/colors")
 from colors.colors_api import blue, green, red, round_trip_color, yellow
 
-assert red == np.int32(-1)
-assert blue == np.int32(0)
-assert green == np.int32(10)
-assert yellow == np.int32(11)
+print(red, blue, green, yellow)  # -1 0 10 11
 
 # Pass enumerator values to procedures
 result = round_trip_color(green)
-assert result == np.int32(10)
+print(result)                    # 10
 ```
 
 ---

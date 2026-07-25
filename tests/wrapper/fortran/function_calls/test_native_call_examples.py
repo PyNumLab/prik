@@ -29,14 +29,12 @@ def _assert_native_call_examples(module) -> None:
     assert module.scalar_status(np.int32(4)) == np.int32(15)
 
     vector = np.empty(4, dtype=np.float64)
-    returned_vector = module.fill_vector(np.int32(4), vector)
-    assert returned_vector is vector
+    assert module.fill_vector(np.int32(4), vector) is None
     np.testing.assert_allclose(vector, np.array([1.5, 3.0, 4.5, 6.0], dtype=np.float64))
 
     matrix = np.array([[1.0, 3.0, 5.0], [2.0, 4.0, 6.0]], dtype=np.float64, order="F")
     shifted = np.empty((2, 3), dtype=np.float64, order="F")
-    returned_matrix = module.shift_matrix(np.int32(2), np.int32(3), matrix, shifted)
-    assert returned_matrix is shifted
+    assert module.shift_matrix(np.int32(2), np.int32(3), matrix, shifted) is None
     np.testing.assert_allclose(shifted, matrix + 10.0)
 
     inout = np.array([2.0, 5.0, 7.0], dtype=np.float64)
@@ -49,15 +47,14 @@ def _assert_native_call_examples(module) -> None:
     assert module.make_label() == "done  "
 
     mixed_values = np.empty(3, dtype=np.float64)
-    total, returned_values, status, label = module.summarize_mixed(np.int32(3), mixed_values)
+    total, status, label = module.summarize_mixed(np.int32(3), mixed_values)
     assert total == np.float64(3.75)
-    assert returned_values is mixed_values
     assert status == np.int32(23)
     assert label == "mix   "
     np.testing.assert_allclose(mixed_values, np.array([11.0, 12.0, 13.0], dtype=np.float64))
 
-    point = module.make_point(np.int32(7))
-    assert isinstance(point, module.summary_point)
+    point = module.summary_point()
+    assert module.make_point(np.int32(7), point) is None
     assert point.total == np.float64(7.5)
     assert point.code == np.int32(107)
 

@@ -42,8 +42,8 @@ def test_scalar_derived_types_cross_procedure_boundaries(
     assert point.x == np.float64(5.0)
     assert point.y == np.float64(7.0)
 
-    out_point = module.make_point_out(np.float64(8.0), np.float64(9.0))
-    assert isinstance(out_point, module.point)
+    out_point = module.point()
+    assert module.make_point_out(out_point, np.float64(8.0), np.float64(9.0)) is None
     assert out_point.x == np.float64(8.0)
     assert out_point.y == np.float64(9.0)
 

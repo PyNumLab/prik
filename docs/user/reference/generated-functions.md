@@ -37,36 +37,34 @@ callbacks keep their explicit semantic annotations.
 
 ## Return Projection
 
-A Fortran function's direct result is the first Python return value. Native
-output or replacement arguments follow in native argument order. A subroutine
-with no visible outputs returns `None`.
+A Fortran function's direct result is the first Python return value. Projected
+scalar, replacement, or native-created outputs follow in native argument
+order. Caller-provided ordinary arrays mutate in place and are not projected by
+default. A subroutine with no projected outputs returns `None`.
+
+Scalar derived-type `intent(out)` and `intent(inout)` arguments follow the same
+rule as arrays: the caller supplies a generated mutable object, native code
+updates it, and the object is not repeated in the return value.
 
 When the Python-visible signature hides or reorders native arguments, the
 contract uses `@native_call(...)` and `Returns[...]` to preserve the native call
 shape:
 
 ```python
-from x2py.contracts import Addr, Arg, Float64, Int32, Returns, native_call
+from x2py.contracts import Addr, Arg, Float64, Int32, Return, native_call
+
+@native_call([Addr(Arg(0)), Return("status", 0)])
+def check_status(n: Int32) -> Int32: ...
 
 @native_call([Addr(Arg(0)), Arg(1)])
-def fill_vector(
-    n: Int32,
-    values: Float64[n]
-) -> Returns["values", Float64[n]]: ...
-
-@native_call([Addr(Arg(0)), Addr(Arg(1)), Arg(2), Arg(3)])
-def shift_matrix(
-    n: Int32,
-    m: Int32,
-    values: Float64[n, m],
-    out: Float64[n, m]
-) -> Returns["out", Float64[n, m]]: ...
+def fill_vector(n: Int32, values: Float64[n]) -> None: ...
 ```
 
-`Returns["name", Type]` names a projected Python return. `tuple[...]` is used
-when a callable has more than one Python return value. `@native_call` entries
-such as `Arg(0)`, `Addr(Arg(0))`, `Return("status", 0)`, `Len(...)`,
-`IsPresent(...)`, and `Work(...)` are described in
+`Returns["name", Type]` names an explicit replacement return for a value that
+also remains visible as an argument. `tuple[...]` is used when a callable has
+more than one Python return value. `@native_call` entries such as `Arg(0)`,
+`Addr(Arg(0))`, `Return("status", 0)`, `Len(...)`, `IsPresent(...)`, and
+`Work(...)` are described in
 [Semantic `.pyi` Format](semantic-pyi-format.md#misuse-diagnostics-and-risk).
 
 Edited native-order contracts may omit `@native_call` only when every native

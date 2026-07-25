@@ -10,7 +10,9 @@ publication: reviewed
 
 # Wrapping Functions
 
-A Fortran `function` becomes a Python callable. The function’s return value becomes the first item in Python, followed by any `intent(out)` or `intent(inout)` arguments (if present).
+A Fortran `function` becomes a Python callable. Its direct result is the first
+Python return value. Other outputs follow only when their contract projects
+them as results.
 
 ---
 
@@ -46,7 +48,7 @@ sys.path.insert(0, "build/scale")
 import scale
 
 result = scale.scale(np.float64(3.0), np.float64(2.5))
-assert result == 7.5
+print(result)  # 7.5
 ```
 
 ---
@@ -88,16 +90,20 @@ sys.path.insert(0, "build/function-results")
 from function_results.results import squares
 
 result = squares(np.int32(4))
-np.testing.assert_array_equal(result, np.array([1.0, 4.0, 9.0, 16.0], dtype=np.float64))
+print(result)  # [ 1.  4.  9. 16.]
 ```
 
 ---
 
 ## Functions with Output Arguments
 
-When a function has `intent(out)` or `intent(inout)` arguments, Python returns a **tuple**:
+When a function has projected scalar or native-created outputs, Python returns
+a **tuple**:
 
 > `(function_result, out_arg1, out_arg2, ...)`
+
+Caller-provided ordinary arrays are mutated in place and are not added to this
+tuple.
 
 **Example:**
 
@@ -114,7 +120,7 @@ end function
 **Python call:**
 
 ```python
-total, count = api.sum_with_count(data_array)
+total, count = sum_with_count(data_array)
 ```
 
 ---

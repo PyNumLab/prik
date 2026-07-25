@@ -173,7 +173,8 @@ import numpy as np
 sys.path.insert(0, "build/fruntime_abi")
 import fruntime_abi_f90
 
-assert fruntime_abi_f90.scale(np.float64(3.0), np.float64(2.5)) == np.float64(7.5)
+result = fruntime_abi_f90.scale(np.float64(3.0), np.float64(2.5))
+print(result)  # 7.5
 ```
 
 Native scalar arguments use their exact NumPy dtype. x2py rejects a Python
@@ -482,8 +483,6 @@ Example 2: a `.pyi` build from a native object keeps semantic contracts and
 native artifacts separate.
 
 ```python
-from pathlib import Path
-
 from x2py import build_pyi_extension
 
 result = build_pyi_extension(
@@ -493,8 +492,8 @@ result = build_pyi_extension(
     output_dir="build/solver",
 )
 
-assert result.sources[0] == Path("contracts/solver/__init__.pyi")
-assert result.native_build_plan.prebuilt_artifacts[0].kind == "object"
+print(result.sources[0])  # contracts/solver/__init__.pyi
+print(result.native_build_plan.prebuilt_artifacts[0].kind)  # object
 ```
 
 Example 3: an object followed by a static archive remains ordered in the link
@@ -517,8 +516,6 @@ print([item.to_dict() for item in result.native_build_plan.link_items])
 Example 4: a direct shared-library path is distinct from a named library.
 
 ```python
-from pathlib import Path
-
 from x2py import build_pyi_extension
 
 result = build_pyi_extension(
@@ -529,8 +526,8 @@ result = build_pyi_extension(
 )
 
 artifact = result.native_build_plan.prebuilt_artifacts[0]
-assert artifact.kind == "shared_library"
-assert result.native_build_plan.library_dirs == (Path("vendor"),)
+print(artifact.kind)  # shared_library
+print([str(path) for path in result.native_build_plan.library_dirs])  # ['vendor']
 ```
 
 Example 5: the ordered representation can express linker control arguments for
@@ -672,7 +669,7 @@ view[0] = 9.0          # mutates b%values
 independent = view.copy()
 
 del b                  # handle and view retain the wrapper owner chain
-print(view[0])
+print(view[0])         # 9.0
 ```
 
 If a later method reallocates `values`, an older borrowed view is not
@@ -722,7 +719,7 @@ end function square
 ```
 
 ```python
-assert square(3.0) == 9.0
+print(square(3.0))  # 9.0
 ```
 
 Python immutable scalars cannot expose native in-place mutation. Scalar
@@ -852,15 +849,17 @@ end subroutine bounds
 smallest, largest = bounds(values)
 ```
 
-Scalar character and scalar derived-type outputs follow the same hidden-output
-shape and return a new `str` or wrapper-owned instance.
+Scalar character outputs follow the same hidden-output shape and return a new
+`str`. Scalar derived-type objects use caller-provided mutable wrappers, as
+described below.
 
 ### Caller-Provided Array Outputs
 
 A non-allocatable array `intent(out)` remains visible because the caller must
 provide storage. The wrapper validates dtype, rank, shape, layout, alignment,
 native byte order, and writeability. Fortran writes into the object and the same
-object is returned.
+object exposes the result. The wrapper returns `None` unless another output
+requires a Python return value.
 
 ```fortran
 subroutine fill(values)
@@ -871,15 +870,15 @@ end subroutine fill
 
 ```python
 values = np.empty(4, dtype=np.float64)
-returned = fill(values)
-
-assert returned is values
-np.testing.assert_allclose(values, np.ones(4))
+fill(values)
+print(values)  # [1. 1. 1. 1.]
 ```
 
 The initial contents of an `intent(out)` array are ignored. An `intent(inout)`
-array also remains visible and is mutated in place, but it is not duplicated in
-the return value unless other outputs require a tuple.
+array also remains visible and is mutated in place. Neither ordinary array is
+duplicated in the return value. Array function results and hidden allocatable
+outputs still return Python-visible objects because the caller did not provide
+their storage.
 
 ### Allocatable Outputs
 
@@ -901,12 +900,12 @@ end subroutine build_values
 
 ```python
 values = build_values(3)
-assert values.allocated is True
-np.testing.assert_allclose(values.to_numpy(), np.full(3, 2.0))
+print(values.allocated)   # True
+print(values.to_numpy())  # [2. 2. 2.]
 
 missing = build_values(0)
-assert missing.allocated is False
-assert missing.to_numpy() is None
+print(missing.allocated)   # False
+print(missing.to_numpy())  # None
 ```
 
 Failure to allocate owned descriptor storage after Fortran produced a result
@@ -932,9 +931,10 @@ value, status, message = analyze(2.0)
 ```
 
 Generated `.pyi` signatures and NumPy-style docstrings use the same projection.
-`Returns["name", T]` is reserved for a returned value that also remains a
-Python-visible argument, such as caller-provided output storage. Hidden outputs
-use ordinary return annotations; hidden allocatable array outputs use
+`Returns["name", T]` is reserved for an explicit replacement projection that
+also remains a Python-visible argument. Generated ordinary writable arrays use
+in-place mutation without this projection. Hidden outputs use ordinary return
+annotations; hidden allocatable array outputs use
 `Allocatable[T[...]]` handles whose unallocated state remains inside the
 handle.
 
@@ -1021,7 +1021,7 @@ X2PY_C_DOCS_END -->
 
 <!-- X2PY_C_DOCS_START
 ```python
-assert add_one(np.int32(4)) == 5
+print(add_one(np.int32(4)))  # 5
 ```
 X2PY_C_DOCS_END -->
 
@@ -1069,14 +1069,14 @@ end function make_vector
 
 ```python
 values = make_vector(4)
-assert values.allocated is True
+print(values.allocated)  # True
 view = values.to_numpy()
 view[0] = 9.0
 
 empty = make_vector(0)
-assert empty.allocated is True
-assert empty.shape == (0,)
-assert empty.to_numpy().shape == (0,)
+print(empty.allocated)         # True
+print(empty.shape)             # (0,)
+print(empty.to_numpy().shape)  # (0,)
 ```
 
 ### Allocatable `intent(inout)` Handle Mutation
@@ -1101,7 +1101,7 @@ values = make_vector(2)
 returned = replace_values(values)
 
 assert returned is values
-np.testing.assert_array_equal(values.to_numpy(), [10.0, 20.0])
+print(values.to_numpy())  # [10. 20.]
 ```
 
 ### Allocatable Fields And Module Arrays
@@ -1162,7 +1162,7 @@ end function total
 ```
 
 ```python
-assert total(pointer_handle) == 6.0
+print(total(pointer_handle))  # 6.0
 ```
 
 The pointer-descriptor signature requires a `Pointer[T[...]]` handle; a plain
@@ -1222,8 +1222,9 @@ end function spectrum
 
 ```python
 values = spectrum(4)
+# The array owns its data or retains the Python owner through its base.
 assert values.flags.owndata or values.base is not None
-np.testing.assert_array_equal(values, [1.0, 2.0, 3.0, 4.0])
+print(values)  # [1. 2. 3. 4.]
 ```
 
 Ordinary returned arrays preserve dtype, rank, required extents, and Fortran
@@ -1340,7 +1341,7 @@ end subroutine shift
 ```python
 values = np.zeros(4, dtype=np.float64)
 shift(4, values)
-np.testing.assert_array_equal(values, np.ones(4))
+print(values)  # [1. 1. 1. 1.]
 ```
 
 ### Assumed Rank
@@ -1385,7 +1386,8 @@ X2PY_C_DOCS_END -->
 - `intent(in)` passes the existing native instance by address without
   transferring ownership;
 - `intent(inout)` mutates that existing instance;
-- hidden `intent(out)` produces a new wrapper-owned object; and
+- `intent(out)` fills a caller-provided instance without returning it again;
+  and
 - a function result is copied into a new wrapper-owned native instance before
   the Fortran temporary expires.
 
@@ -1405,7 +1407,7 @@ end subroutine move_point
 ```python
 p = point(x=1.0, y=2.0)
 move_point(p, 3.0, 4.0)
-assert (p.x, p.y) == (4.0, 6.0)
+print(p.x, p.y)  # 4.0 6.0
 ```
 
 ### Nested Components
@@ -1460,7 +1462,7 @@ end type circle
 ```python
 c = circle(radius=2.0)
 assert isinstance(c, shape)
-assert c.area() == pytest.approx(12.566370614359172)
+print(c.area())  # 12.566370614359172
 ```
 
 A scalar `class(base), intent(in)` dummy dispatches over the closed set of
@@ -1573,12 +1575,12 @@ end module state
 ```
 
 ```python
-assert counter == 0
+print(counter)  # 0
 counter = np.int32(4)
 advance()
-assert counter == 5
+print(counter)  # 5
 
-assert max_count == 100
+print(max_count)  # 100
 ```
 
 Parameters become `Final[...]` constants when their value is representable as
@@ -1592,7 +1594,7 @@ Allocatable module arrays are attributes returning persistent
 ```python
 allocate_values(3)
 handle = values
-assert handle.allocated is True
+print(handle.allocated)  # True
 view = handle.to_numpy()
 view[0] = 5.0            # writes native module storage
 
@@ -1621,7 +1623,7 @@ end subroutine write_shared
 
 ```python
 write_shared(np.int32(17))
-assert read_shared() == 17
+print(read_shared())  # 17
 ```
 
 x2py adds no independent lock for module or object state. Concurrency rules are
@@ -1689,8 +1691,8 @@ end subroutine edit_name
 original = "alpha   "
 replacement = edit_name(original)
 
-assert original == "alpha   "    # Python str is immutable
-assert replacement.startswith("X")
+print(repr(original))     # 'alpha   ' (unchanged)
+print(repr(replacement))  # 'Xlpha   '
 ```
 
 The wrapper copies the input into mutable native storage, calls Fortran, and
@@ -1714,7 +1716,7 @@ end function label
 ```
 
 ```python
-assert label() == "ready   "
+print(repr(label()))  # 'ready   '
 ```
 
 <!-- X2PY_C_DOCS_START
@@ -1768,7 +1770,7 @@ end module kinds_api
 
 ```python
 result = combine(np.int64(3), np.complex128(1.0 + 2.0j))
-assert result == np.complex128(3.0 + 6.0j)
+print(result)  # (3+6j)
 ```
 
 Target mappings are validated before wrapper compilation. Real storage wider
@@ -1798,8 +1800,8 @@ X2PY_C_DOCS_END -->
 <!-- X2PY_C_DOCS_START
 ```python
 p = point_c(x=np.float64(1.5), tag=np.int32(4))
-assert p.x == 1.5
-p.tag = np.int32(8)       # generated accessor writes the native component
+print(p.x)          # 1.5
+p.tag = np.int32(8)  # generated accessor writes the native component
 ```
 X2PY_C_DOCS_END -->
 
@@ -2066,7 +2068,8 @@ end function apply
 ```
 
 ```python
-assert apply(lambda value: 3.0 * value, np.float64(2.5)) == 7.5
+result = apply(lambda value: 3.0 * value, np.float64(2.5))
+print(result)  # 7.5
 ```
 
 The generated wrapper keeps a strong reference to the callback only until the
@@ -2107,7 +2110,7 @@ def double(array):
     array *= 2.0
 
 transform(double, values)
-np.testing.assert_array_equal(values, [2.0, 2.0, 2.0])
+print(values)  # [2. 2. 2.]
 ```
 
 ### GIL, Threads, And Exceptions
@@ -2198,7 +2201,7 @@ make -f build/Makefile.x2py \
 
 ```python
 values = np.arange(1, 33, dtype=np.float64)
-assert parallel_sum(values) == np.sum(values)
+print(parallel_sum(values))  # 528.0
 ```
 
 x2py does not infer host-memory synchronization. Callers must protect arrays,

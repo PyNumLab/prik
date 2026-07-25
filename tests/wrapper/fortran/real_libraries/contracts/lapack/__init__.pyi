@@ -401,7 +401,7 @@ def cgecon(
 
 @bind("CGEDMD")
 @external
-@native_call([Arg(0), Arg(1), Arg(2), Arg(3), Addr(Arg(4)), Addr(Arg(5)), Addr(Arg(6)), Arg(7), Addr(Arg(8)), Arg(9), Addr(Arg(10)), Addr(Arg(11)), Addr(Arg(12)), Return('K', 0), Arg(13), Arg(14), Addr(Arg(15)), Arg(16), Arg(17), Addr(Arg(18)), Arg(19), Addr(Arg(20)), Arg(21), Addr(Arg(22)), Arg(23), Addr(Arg(24)), Arg(25), Addr(Arg(26)), Arg(27), Addr(Arg(28)), Return('INFO', 10)])
+@native_call([Arg(0), Arg(1), Arg(2), Arg(3), Addr(Arg(4)), Addr(Arg(5)), Addr(Arg(6)), Arg(7), Addr(Arg(8)), Arg(9), Addr(Arg(10)), Addr(Arg(11)), Addr(Arg(12)), Return('K', 0), Arg(13), Arg(14), Addr(Arg(15)), Arg(16), Arg(17), Addr(Arg(18)), Arg(19), Addr(Arg(20)), Arg(21), Addr(Arg(22)), Arg(23), Addr(Arg(24)), Arg(25), Addr(Arg(26)), Arg(27), Addr(Arg(28)), Return('INFO', 1)])
 def cgedmd(
     JOBS: String[1],
     JOBZ: String[1],
@@ -432,11 +432,11 @@ def cgedmd(
     LRWORK: Int32,
     IWORK: Int32[Flat],
     LIWORK: Int32
-) -> tuple[Int32, Returns["EIGS", Complex64[Flat]], Returns["Z", Complex64[LDZ, Flat]], Returns["RES", Float32[Flat]], Returns["B", Complex64[LDB, Flat]], Returns["W", Complex64[LDW, Flat]], Returns["S", Complex64[LDS, Flat]], Returns["ZWORK", Complex64[Flat]], Returns["RWORK", Float32[Flat]], Returns["IWORK", Int32[Flat]], Int32]: ...
+) -> tuple[Int32, Int32]: ...
 
 @bind("CGEDMDQ")
 @external
-@native_call([Arg(0), Arg(1), Arg(2), Arg(3), Arg(4), Arg(5), Addr(Arg(6)), Addr(Arg(7)), Addr(Arg(8)), Arg(9), Addr(Arg(10)), Arg(11), Addr(Arg(12)), Arg(13), Addr(Arg(14)), Addr(Arg(15)), Addr(Arg(16)), Return('K', 2), Arg(17), Arg(18), Addr(Arg(19)), Arg(20), Arg(21), Addr(Arg(22)), Arg(23), Addr(Arg(24)), Arg(25), Addr(Arg(26)), Arg(27), Addr(Arg(28)), Arg(29), Addr(Arg(30)), Arg(31), Addr(Arg(32)), Return('INFO', 12)])
+@native_call([Arg(0), Arg(1), Arg(2), Arg(3), Arg(4), Arg(5), Addr(Arg(6)), Addr(Arg(7)), Addr(Arg(8)), Arg(9), Addr(Arg(10)), Arg(11), Addr(Arg(12)), Arg(13), Addr(Arg(14)), Addr(Arg(15)), Addr(Arg(16)), Return('K', 0), Arg(17), Arg(18), Addr(Arg(19)), Arg(20), Arg(21), Addr(Arg(22)), Arg(23), Addr(Arg(24)), Arg(25), Addr(Arg(26)), Arg(27), Addr(Arg(28)), Arg(29), Addr(Arg(30)), Arg(31), Addr(Arg(32)), Return('INFO', 1)])
 def cgedmdq(
     JOBS: String[1],
     JOBZ: String[1],
@@ -471,7 +471,7 @@ def cgedmdq(
     LWORK: Int32,
     IWORK: Int32[Flat],
     LIWORK: Int32
-) -> tuple[Returns["X", Complex64[LDX, Flat]], Returns["Y", Complex64[LDY, Flat]], Int32, Returns["EIGS", Complex64[Flat]], Returns["Z", Complex64[LDZ, Flat]], Returns["RES", Float32[Flat]], Returns["B", Complex64[LDB, Flat]], Returns["V", Complex64[LDV, Flat]], Returns["S", Complex64[LDS, Flat]], Returns["ZWORK", Complex64[Flat]], Returns["WORK", Float32[Flat]], Returns["IWORK", Int32[Flat]], Int32]: ...
+) -> tuple[Int32, Int32]: ...
 
 @bind("CGEEQU")
 @external
@@ -5227,7 +5227,7 @@ def claqsy(
 
 @bind("CLAQZ0")
 @external
-@native_call([Arg(0), Arg(1), Arg(2), Addr(Arg(3)), Addr(Arg(4)), Addr(Arg(5)), Arg(6), Addr(Arg(7)), Arg(8), Addr(Arg(9)), Arg(10), Arg(11), Arg(12), Addr(Arg(13)), Arg(14), Addr(Arg(15)), Arg(16), Addr(Arg(17)), Arg(18), Addr(Arg(19)), Return('INFO', 1)])
+@native_call([Arg(0), Arg(1), Arg(2), Addr(Arg(3)), Addr(Arg(4)), Addr(Arg(5)), Arg(6), Addr(Arg(7)), Arg(8), Addr(Arg(9)), Arg(10), Arg(11), Arg(12), Addr(Arg(13)), Arg(14), Addr(Arg(15)), Arg(16), Addr(Arg(17)), Arg(18), Addr(Arg(19)), Return('INFO', 0)])
 def claqz0(
     WANTS: String[1],
     WANTQ: String[1],
@@ -5249,7 +5249,7 @@ def claqz0(
     LWORK: Int32,
     RWORK: Float32[Flat],
     REC: Int32
-) -> tuple[Returns["RWORK", Float32[Flat]], Int32]: ...
+) -> Int32: ...
 
 @bind("CLAQZ1")
 @external
@@ -9584,7 +9584,7 @@ def dgecon(
 
 @bind("DGEDMD")
 @external
-@native_call([Arg(0), Arg(1), Arg(2), Arg(3), Addr(Arg(4)), Addr(Arg(5)), Addr(Arg(6)), Arg(7), Addr(Arg(8)), Arg(9), Addr(Arg(10)), Addr(Arg(11)), Addr(Arg(12)), Return('K', 0), Arg(13), Arg(14), Arg(15), Addr(Arg(16)), Arg(17), Arg(18), Addr(Arg(19)), Arg(20), Addr(Arg(21)), Arg(22), Addr(Arg(23)), Arg(24), Addr(Arg(25)), Arg(26), Addr(Arg(27)), Return('INFO', 10)])
+@native_call([Arg(0), Arg(1), Arg(2), Arg(3), Addr(Arg(4)), Addr(Arg(5)), Addr(Arg(6)), Arg(7), Addr(Arg(8)), Arg(9), Addr(Arg(10)), Addr(Arg(11)), Addr(Arg(12)), Return('K', 0), Arg(13), Arg(14), Arg(15), Addr(Arg(16)), Arg(17), Arg(18), Addr(Arg(19)), Arg(20), Addr(Arg(21)), Arg(22), Addr(Arg(23)), Arg(24), Addr(Arg(25)), Arg(26), Addr(Arg(27)), Return('INFO', 1)])
 def dgedmd(
     JOBS: String[1],
     JOBZ: String[1],
@@ -9614,11 +9614,11 @@ def dgedmd(
     LWORK: Int32,
     IWORK: Int32[Flat],
     LIWORK: Int32
-) -> tuple[Int32, Returns["REIG", Float64[Flat]], Returns["IMEIG", Float64[Flat]], Returns["Z", Float64[LDZ, Flat]], Returns["RES", Float64[Flat]], Returns["B", Float64[LDB, Flat]], Returns["W", Float64[LDW, Flat]], Returns["S", Float64[LDS, Flat]], Returns["WORK", Float64[Flat]], Returns["IWORK", Int32[Flat]], Int32]: ...
+) -> tuple[Int32, Int32]: ...
 
 @bind("DGEDMDQ")
 @external
-@native_call([Arg(0), Arg(1), Arg(2), Arg(3), Arg(4), Arg(5), Addr(Arg(6)), Addr(Arg(7)), Addr(Arg(8)), Arg(9), Addr(Arg(10)), Arg(11), Addr(Arg(12)), Arg(13), Addr(Arg(14)), Addr(Arg(15)), Addr(Arg(16)), Return('K', 2), Arg(17), Arg(18), Arg(19), Addr(Arg(20)), Arg(21), Arg(22), Addr(Arg(23)), Arg(24), Addr(Arg(25)), Arg(26), Addr(Arg(27)), Arg(28), Addr(Arg(29)), Arg(30), Addr(Arg(31)), Return('INFO', 12)])
+@native_call([Arg(0), Arg(1), Arg(2), Arg(3), Arg(4), Arg(5), Addr(Arg(6)), Addr(Arg(7)), Addr(Arg(8)), Arg(9), Addr(Arg(10)), Arg(11), Addr(Arg(12)), Arg(13), Addr(Arg(14)), Addr(Arg(15)), Addr(Arg(16)), Return('K', 0), Arg(17), Arg(18), Arg(19), Addr(Arg(20)), Arg(21), Arg(22), Addr(Arg(23)), Arg(24), Addr(Arg(25)), Arg(26), Addr(Arg(27)), Arg(28), Addr(Arg(29)), Arg(30), Addr(Arg(31)), Return('INFO', 1)])
 def dgedmdq(
     JOBS: String[1],
     JOBZ: String[1],
@@ -9652,7 +9652,7 @@ def dgedmdq(
     LWORK: Int32,
     IWORK: Int32[Flat],
     LIWORK: Int32
-) -> tuple[Returns["X", Float64[LDX, Flat]], Returns["Y", Float64[LDY, Flat]], Int32, Returns["REIG", Float64[Flat]], Returns["IMEIG", Float64[Flat]], Returns["Z", Float64[LDZ, Flat]], Returns["RES", Float64[Flat]], Returns["B", Float64[LDB, Flat]], Returns["V", Float64[LDV, Flat]], Returns["S", Float64[LDS, Flat]], Returns["WORK", Float64[Flat]], Returns["IWORK", Int32[Flat]], Int32]: ...
+) -> tuple[Int32, Int32]: ...
 
 @bind("DGEEQU")
 @external
@@ -12990,7 +12990,7 @@ def dlaqz1(
     BETA1: Float64,
     BETA2: Float64,
     V: Float64[Flat]
-) -> Returns["V", Float64[Flat]]: ...
+) -> None: ...
 
 @bind("DLAQZ2")
 @external
@@ -19039,7 +19039,7 @@ def sgecon(
 
 @bind("SGEDMD")
 @external
-@native_call([Arg(0), Arg(1), Arg(2), Arg(3), Addr(Arg(4)), Addr(Arg(5)), Addr(Arg(6)), Arg(7), Addr(Arg(8)), Arg(9), Addr(Arg(10)), Addr(Arg(11)), Addr(Arg(12)), Return('K', 0), Arg(13), Arg(14), Arg(15), Addr(Arg(16)), Arg(17), Arg(18), Addr(Arg(19)), Arg(20), Addr(Arg(21)), Arg(22), Addr(Arg(23)), Arg(24), Addr(Arg(25)), Arg(26), Addr(Arg(27)), Return('INFO', 10)])
+@native_call([Arg(0), Arg(1), Arg(2), Arg(3), Addr(Arg(4)), Addr(Arg(5)), Addr(Arg(6)), Arg(7), Addr(Arg(8)), Arg(9), Addr(Arg(10)), Addr(Arg(11)), Addr(Arg(12)), Return('K', 0), Arg(13), Arg(14), Arg(15), Addr(Arg(16)), Arg(17), Arg(18), Addr(Arg(19)), Arg(20), Addr(Arg(21)), Arg(22), Addr(Arg(23)), Arg(24), Addr(Arg(25)), Arg(26), Addr(Arg(27)), Return('INFO', 1)])
 def sgedmd(
     JOBS: String[1],
     JOBZ: String[1],
@@ -19069,11 +19069,11 @@ def sgedmd(
     LWORK: Int32,
     IWORK: Int32[Flat],
     LIWORK: Int32
-) -> tuple[Int32, Returns["REIG", Float32[Flat]], Returns["IMEIG", Float32[Flat]], Returns["Z", Float32[LDZ, Flat]], Returns["RES", Float32[Flat]], Returns["B", Float32[LDB, Flat]], Returns["W", Float32[LDW, Flat]], Returns["S", Float32[LDS, Flat]], Returns["WORK", Float32[Flat]], Returns["IWORK", Int32[Flat]], Int32]: ...
+) -> tuple[Int32, Int32]: ...
 
 @bind("SGEDMDQ")
 @external
-@native_call([Arg(0), Arg(1), Arg(2), Arg(3), Arg(4), Arg(5), Addr(Arg(6)), Addr(Arg(7)), Addr(Arg(8)), Arg(9), Addr(Arg(10)), Arg(11), Addr(Arg(12)), Arg(13), Addr(Arg(14)), Addr(Arg(15)), Addr(Arg(16)), Return('K', 2), Arg(17), Arg(18), Arg(19), Addr(Arg(20)), Arg(21), Arg(22), Addr(Arg(23)), Arg(24), Addr(Arg(25)), Arg(26), Addr(Arg(27)), Arg(28), Addr(Arg(29)), Arg(30), Addr(Arg(31)), Return('INFO', 12)])
+@native_call([Arg(0), Arg(1), Arg(2), Arg(3), Arg(4), Arg(5), Addr(Arg(6)), Addr(Arg(7)), Addr(Arg(8)), Arg(9), Addr(Arg(10)), Arg(11), Addr(Arg(12)), Arg(13), Addr(Arg(14)), Addr(Arg(15)), Addr(Arg(16)), Return('K', 0), Arg(17), Arg(18), Arg(19), Addr(Arg(20)), Arg(21), Arg(22), Addr(Arg(23)), Arg(24), Addr(Arg(25)), Arg(26), Addr(Arg(27)), Arg(28), Addr(Arg(29)), Arg(30), Addr(Arg(31)), Return('INFO', 1)])
 def sgedmdq(
     JOBS: String[1],
     JOBZ: String[1],
@@ -19107,7 +19107,7 @@ def sgedmdq(
     LWORK: Int32,
     IWORK: Int32[Flat],
     LIWORK: Int32
-) -> tuple[Returns["X", Float32[LDX, Flat]], Returns["Y", Float32[LDY, Flat]], Int32, Returns["REIG", Float32[Flat]], Returns["IMEIG", Float32[Flat]], Returns["Z", Float32[LDZ, Flat]], Returns["RES", Float32[Flat]], Returns["B", Float32[LDB, Flat]], Returns["V", Float32[LDV, Flat]], Returns["S", Float32[LDS, Flat]], Returns["WORK", Float32[Flat]], Returns["IWORK", Int32[Flat]], Int32]: ...
+) -> tuple[Int32, Int32]: ...
 
 @bind("SGEEQU")
 @external
@@ -22445,7 +22445,7 @@ def slaqz1(
     BETA1: Float32,
     BETA2: Float32,
     V: Float32[Flat]
-) -> Returns["V", Float32[Flat]]: ...
+) -> None: ...
 
 @bind("SLAQZ2")
 @external
@@ -28246,7 +28246,7 @@ def zgecon(
 
 @bind("ZGEDMD")
 @external
-@native_call([Arg(0), Arg(1), Arg(2), Arg(3), Addr(Arg(4)), Addr(Arg(5)), Addr(Arg(6)), Arg(7), Addr(Arg(8)), Arg(9), Addr(Arg(10)), Addr(Arg(11)), Addr(Arg(12)), Return('K', 0), Arg(13), Arg(14), Addr(Arg(15)), Arg(16), Arg(17), Addr(Arg(18)), Arg(19), Addr(Arg(20)), Arg(21), Addr(Arg(22)), Arg(23), Addr(Arg(24)), Arg(25), Addr(Arg(26)), Arg(27), Addr(Arg(28)), Return('INFO', 10)])
+@native_call([Arg(0), Arg(1), Arg(2), Arg(3), Addr(Arg(4)), Addr(Arg(5)), Addr(Arg(6)), Arg(7), Addr(Arg(8)), Arg(9), Addr(Arg(10)), Addr(Arg(11)), Addr(Arg(12)), Return('K', 0), Arg(13), Arg(14), Addr(Arg(15)), Arg(16), Arg(17), Addr(Arg(18)), Arg(19), Addr(Arg(20)), Arg(21), Addr(Arg(22)), Arg(23), Addr(Arg(24)), Arg(25), Addr(Arg(26)), Arg(27), Addr(Arg(28)), Return('INFO', 1)])
 def zgedmd(
     JOBS: String[1],
     JOBZ: String[1],
@@ -28277,11 +28277,11 @@ def zgedmd(
     LRWORK: Int32,
     IWORK: Int32[Flat],
     LIWORK: Int32
-) -> tuple[Int32, Returns["EIGS", Complex128[Flat]], Returns["Z", Complex128[LDZ, Flat]], Returns["RES", Float64[Flat]], Returns["B", Complex128[LDB, Flat]], Returns["W", Complex128[LDW, Flat]], Returns["S", Complex128[LDS, Flat]], Returns["ZWORK", Complex128[Flat]], Returns["RWORK", Float64[Flat]], Returns["IWORK", Int32[Flat]], Int32]: ...
+) -> tuple[Int32, Int32]: ...
 
 @bind("ZGEDMDQ")
 @external
-@native_call([Arg(0), Arg(1), Arg(2), Arg(3), Arg(4), Arg(5), Addr(Arg(6)), Addr(Arg(7)), Addr(Arg(8)), Arg(9), Addr(Arg(10)), Arg(11), Addr(Arg(12)), Arg(13), Addr(Arg(14)), Addr(Arg(15)), Addr(Arg(16)), Return('K', 2), Arg(17), Arg(18), Addr(Arg(19)), Arg(20), Arg(21), Addr(Arg(22)), Arg(23), Addr(Arg(24)), Arg(25), Addr(Arg(26)), Arg(27), Addr(Arg(28)), Arg(29), Addr(Arg(30)), Arg(31), Addr(Arg(32)), Return('INFO', 12)])
+@native_call([Arg(0), Arg(1), Arg(2), Arg(3), Arg(4), Arg(5), Addr(Arg(6)), Addr(Arg(7)), Addr(Arg(8)), Arg(9), Addr(Arg(10)), Arg(11), Addr(Arg(12)), Arg(13), Addr(Arg(14)), Addr(Arg(15)), Addr(Arg(16)), Return('K', 0), Arg(17), Arg(18), Addr(Arg(19)), Arg(20), Arg(21), Addr(Arg(22)), Arg(23), Addr(Arg(24)), Arg(25), Addr(Arg(26)), Arg(27), Addr(Arg(28)), Arg(29), Addr(Arg(30)), Arg(31), Addr(Arg(32)), Return('INFO', 1)])
 def zgedmdq(
     JOBS: String[1],
     JOBZ: String[1],
@@ -28316,7 +28316,7 @@ def zgedmdq(
     LWORK: Int32,
     IWORK: Int32[Flat],
     LIWORK: Int32
-) -> tuple[Returns["X", Complex128[LDX, Flat]], Returns["Y", Complex128[LDY, Flat]], Int32, Returns["EIGS", Complex128[Flat]], Returns["Z", Complex128[LDZ, Flat]], Returns["RES", Float64[Flat]], Returns["B", Complex128[LDB, Flat]], Returns["V", Complex128[LDV, Flat]], Returns["S", Complex128[LDS, Flat]], Returns["ZWORK", Complex128[Flat]], Returns["WORK", Float64[Flat]], Returns["IWORK", Int32[Flat]], Int32]: ...
+) -> tuple[Int32, Int32]: ...
 
 @bind("ZGEEQU")
 @external
@@ -33065,7 +33065,7 @@ def zlaqsy(
 
 @bind("ZLAQZ0")
 @external
-@native_call([Arg(0), Arg(1), Arg(2), Addr(Arg(3)), Addr(Arg(4)), Addr(Arg(5)), Arg(6), Addr(Arg(7)), Arg(8), Addr(Arg(9)), Arg(10), Arg(11), Arg(12), Addr(Arg(13)), Arg(14), Addr(Arg(15)), Arg(16), Addr(Arg(17)), Arg(18), Addr(Arg(19)), Return('INFO', 1)])
+@native_call([Arg(0), Arg(1), Arg(2), Addr(Arg(3)), Addr(Arg(4)), Addr(Arg(5)), Arg(6), Addr(Arg(7)), Arg(8), Addr(Arg(9)), Arg(10), Arg(11), Arg(12), Addr(Arg(13)), Arg(14), Addr(Arg(15)), Arg(16), Addr(Arg(17)), Arg(18), Addr(Arg(19)), Return('INFO', 0)])
 def zlaqz0(
     WANTS: String[1],
     WANTQ: String[1],
@@ -33087,7 +33087,7 @@ def zlaqz0(
     LWORK: Int32,
     RWORK: Float64[Flat],
     REC: Int32
-) -> tuple[Returns["RWORK", Float64[Flat]], Int32]: ...
+) -> Int32: ...
 
 @bind("ZLAQZ1")
 @external

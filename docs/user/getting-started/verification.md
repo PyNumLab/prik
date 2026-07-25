@@ -68,7 +68,7 @@ sys.path.insert(0, "build/verify")
 import scale
 
 result = scale.scale(np.float64(3.0), np.float64(2.5))
-print(result)        # Should print 7.5
+print(result)        # 7.5
 ```
 
 ---

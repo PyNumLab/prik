@@ -17,6 +17,10 @@ writeability, and strides. x2py validates these rules before native code runs.
 This page starts with normal Fortran-order arrays. It then covers C-order
 arrays, `COPY_F`, `Flat` storage, and strided views.
 
+Small `intent` note for this page: `intent(in)` reads an array,
+`intent(inout)` mutates it, and `intent(out)` fills caller-provided storage.
+The subroutines page covers the full return rules.
+
 ---
 
 ## Complete Example
@@ -125,12 +129,14 @@ from arrays.array_ops import *
 # Fortran-order matrix, mutated in place.
 matrix = np.ones((2, 3), dtype=np.float64, order="F")
 scale_matrix(np.int32(2), np.int32(3), matrix)
-# matrix is now filled with 2.0
+print(matrix)
+# [[2. 2. 2.]
+#  [2. 2. 2.]]
 
 # The Fortran routine uses a lower bound, but Python sees an ordinary ndarray.
 shifted = np.zeros(4, dtype=np.float64)
 shift(np.int32(4), shifted)
-# shifted is now [1.0, 1.0, 1.0, 1.0]
+print(shifted)  # [1. 1. 1. 1.]
 
 # A flat argument can read any contiguous rank.
 flat_matrix = np.array(
@@ -142,18 +148,18 @@ flat_matrix = np.array(
     order="F",
 )
 total = sum_flat(np.int32(flat_matrix.size), flat_matrix)
-# total is np.float64(66.0)
+print(total)  # 66.0
 
 # A flat final axis keeps the prefix and flattens the rest.
 panels = np.asfortranarray(
     np.arange(1, 25, dtype=np.float64).reshape((2, 3, 4), order="F")
 )
 panel_total = sum_flat_columns(np.int32(2), np.int32(12), panels)
-# panel_total is np.float64(300.0)
+print(panel_total)  # 300.0
 
 # Array function results come back as NumPy arrays.
 vec = automatic_vector(np.int32(4))
-# vec is [2.0, 4.0, 6.0, 8.0]
+print(vec)  # [2. 4. 6. 8.]
 ```
 
 ---
@@ -218,7 +224,7 @@ values = np.array(
 result = np.empty(values.shape[0], dtype=np.float64)
 
 sum_columns(np.int32(values.shape[0]), values, result)
-# result is [111.0, 222.0, 333.0]
+print(result)  # [111. 222. 333.]
 ```
 
 ### Option 1: Accept C-order Without Copy
@@ -251,7 +257,7 @@ values = np.array(
 result = np.empty(values.shape[0], dtype=np.float64)
 
 sum_columns(np.int32(values.shape[0]), values, result)
-# result is [6.0, 60.0, 600.0]
+print(result)  # [  6.  60. 600.]
 ```
 
 No transposition happens. Native code reads the existing storage directly.
@@ -291,7 +297,7 @@ values = np.array(
 result = np.empty(values.shape[0], dtype=np.float64)
 
 sum_columns(np.int32(values.shape[0]), values, result)
-# result is [111.0, 222.0, 333.0]
+print(result)  # [111. 222. 333.]
 ```
 
 `ORDER_C` validates the caller's layout.
@@ -328,7 +334,7 @@ values = np.array(
     dtype=np.float64,
 )
 total = sum_flat(np.int32(values.size), values)
-# total is np.float64(66.0)
+print(total)  # 66.0
 ```
 
 Storage order controls flattening:
@@ -363,7 +369,7 @@ panels = np.asfortranarray(
 )
 
 total = sum_flat_columns(np.int32(2), np.int32(12), panels)
-# total is np.float64(300.0)
+print(total)  # 300.0
 ```
 
 `Float64[:, Flat]` reads the leading extent from the array itself.
@@ -399,7 +405,11 @@ out_storage = np.zeros((8, 3), dtype=np.float64, order="F")
 out = out_storage[::2, :]  # matching strided output
 
 scale_visible_rows(visible_rows, out)
-# out now contains 3.0 * visible_rows
+print(out)
+# [[ 3. 27. 51.]
+#  [ 9. 33. 57.]
+#  [15. 39. 63.]
+#  [21. 45. 69.]]
 ```
 
 x2py passes the base address, extents, and positive element strides. Reversed
@@ -413,8 +423,8 @@ Fortran-oriented contract. Strides are not an order workaround.
 | Fortran intent / result      | Python behavior                              |
 |-----------------------------|----------------------------------------------|
 | `intent(in)` array          | NumPy array read by native code              |
-| `intent(inout)` array       | Writable NumPy array mutated in place        |
-| `intent(out)` array         | Preallocated writable storage                |
+| `intent(inout)` array       | Mutated in place; no Python return            |
+| `intent(out)` array         | Filled in place; no Python return             |
 | Function returning array    | New NumPy array result                       |
 
 ---

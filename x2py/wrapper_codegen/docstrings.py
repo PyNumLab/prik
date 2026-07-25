@@ -435,6 +435,8 @@ class WrapperDocstringBuilder:
         lines.extend(self._array_lines(argument.array))
         lines.extend(self._optional_lines(argument))
         lines.extend(self._mutation_lines(argument))
+        if argument.datatype_family is DatatypeFamily.DERIVED or argument.array is not None:
+            lines.extend(self._ownership_lines(argument.ownership_owner))
         if argument.native_array_handle is not None:
             lines.append(f"    Descriptor ownership: {argument.native_array_handle.descriptor_ownership.value}.")
         return tuple(lines)

@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Arg, Float64, Int32, Returns, native_call, prototype
+from x2py.contracts import Addr, Arg, Float64, Int32, native_call, prototype
 
 @prototype
 def reduce_callback(
@@ -25,4 +25,4 @@ def apply_transform(
     count: Int32,
     values: Float64[count],
     output: Float64[count]
-) -> Returns["output", Float64[count]]: ...
+) -> None: ...

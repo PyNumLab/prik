@@ -1988,7 +1988,9 @@ class FortranToIRConverter(ClassVisitor):
             return True
         if not is_output or semantic_type is None:
             return False
-        return FortranToIRConverter._is_scalar_copy_return(semantic_type) or semantic_type.rank > 0
+        return FortranToIRConverter._is_python_value_scalar_output(
+            semantic_type
+        ) or FortranToIRConverter._is_native_descriptor_output(semantic_type)
 
     @staticmethod
     def _is_hidden_output_argument(
@@ -2000,7 +2002,7 @@ class FortranToIRConverter(ClassVisitor):
         if not is_output or getattr(native_arg, "optional", False):
             return False
         return (
-            FortranToIRConverter._is_scalar_copy_return(semantic_type)
+            FortranToIRConverter._is_python_value_scalar_output(semantic_type)
             or FortranToIRConverter._is_allocatable_array(semantic_type)
             or FortranToIRConverter._is_scalar_descriptor(semantic_type)
         )
@@ -2088,6 +2090,16 @@ class FortranToIRConverter(ClassVisitor):
         )
 
     @staticmethod
+    def _is_native_descriptor_output(semantic_type: SemanticType | None) -> bool:
+        if semantic_type is None:
+            return False
+        if FortranToIRConverter._is_scalar_descriptor(semantic_type):
+            return True
+        storage = semantic_type.storage
+        array = storage.array if storage is not None else None
+        return bool(array is not None and (array.allocatable or array.pointer))
+
+    @staticmethod
     def _is_scalar_descriptor(semantic_type: SemanticType | None) -> bool:
         return bool(
             semantic_type is not None
@@ -2138,8 +2150,13 @@ class FortranToIRConverter(ClassVisitor):
         raise ValueError(f"Scalar descriptor {name!r} has no Python argument or result projection")
 
     @staticmethod
-    def _is_scalar_copy_return(semantic_type: SemanticType | None) -> bool:
-        return bool(semantic_type is not None and semantic_type.rank == 0)
+    def _is_python_value_scalar_output(semantic_type: SemanticType | None) -> bool:
+        return bool(
+            semantic_type is not None
+            and semantic_type.rank == 0
+            and not FortranToIRConverter._is_scalar_descriptor(semantic_type)
+            and (semantic_type.name == "String" or semantic_type.name in SEMANTIC_SCALAR_TYPE_NAMES)
+        )
 
     @staticmethod
     def _is_scalar_character(semantic_type: SemanticType | None) -> bool:

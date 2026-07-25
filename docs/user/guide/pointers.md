@@ -78,21 +78,20 @@ Use the generated module:
 
 ```python
 import sys
-import numpy as np
 
 sys.path.insert(0, "build/pointers")
 import pointers.pointers_api as pointers_api
 
 handle = pointers_api.values
-assert handle.associated is False
-assert pointers_api.sum_pointer(handle) == np.float64(-1.0)
+print(handle.associated)                 # False
+print(pointers_api.sum_pointer(handle))  # -1.0
 
 pointers_api.associate_values()
-assert handle.associated is True
-assert pointers_api.sum_pointer(handle) == np.float64(6.0)
+print(handle.associated)                 # True
+print(pointers_api.sum_pointer(handle))  # 6.0
 
 handle.nullify()
-assert handle.associated is False
+print(handle.associated)                 # False
 ```
 
 ---

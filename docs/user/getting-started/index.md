@@ -38,7 +38,7 @@ import numpy as np
 import scale
 
 result = scale.scale(np.float64(3.0), np.float64(2.5))
-print(result)        # → 7.5
+print(result)        # 7.5
 ```
 
 The first example exposes a standalone Fortran function directly on the extension.  

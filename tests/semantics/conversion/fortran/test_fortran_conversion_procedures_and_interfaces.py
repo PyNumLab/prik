@@ -414,6 +414,84 @@ end module outputs
     ]
 
 
+def test_ordinary_array_output_stays_visible_without_result_projection():
+    source = """
+module outputs
+contains
+subroutine fill(values)
+    real(8), intent(out) :: values(:)
+end subroutine fill
+end module outputs
+"""
+
+    smod = fortran_module_to_semantic_module(parse_fortran_source(source))
+    fill = get_function(smod, "fill")
+
+    assert PROJECTED_OUTPUT_METADATA not in fill.arguments[0].metadata
+    assert fill.projection == [
+        ProjectionMapping(
+            python_name="values",
+            native_name="values",
+            native_position=0,
+            python_position=0,
+        )
+    ]
+
+
+def test_scalar_derived_output_stays_visible_without_result_projection():
+    source = """
+module outputs
+type :: point
+    real(8) :: x
+end type point
+contains
+subroutine fill(value)
+    type(point), intent(out) :: value
+end subroutine fill
+end module outputs
+"""
+
+    smod = fortran_module_to_semantic_module(parse_fortran_source(source))
+    fill = get_function(smod, "fill")
+
+    assert PROJECTED_OUTPUT_METADATA not in fill.arguments[0].metadata
+    assert fill.projection == [
+        ProjectionMapping(
+            python_name="value",
+            native_name="value",
+            native_position=0,
+            python_position=0,
+        )
+    ]
+
+
+def test_optional_scalar_derived_output_stays_visible_without_result_projection():
+    source = """
+module outputs
+type :: point
+    real(8) :: x
+end type point
+contains
+subroutine fill(value)
+    type(point), intent(out), optional :: value
+end subroutine fill
+end module outputs
+"""
+
+    smod = fortran_module_to_semantic_module(parse_fortran_source(source))
+    fill = get_function(smod, "fill")
+
+    assert PROJECTED_OUTPUT_METADATA not in fill.arguments[0].metadata
+    assert fill.projection == [
+        ProjectionMapping(
+            python_name="value",
+            native_name="value",
+            native_position=0,
+            python_position=0,
+        )
+    ]
+
+
 def test_function_result():
     source = """
 module func_mod

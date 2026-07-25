@@ -124,7 +124,7 @@ result = apply(
     lambda value: np.float64(3.0 * value),
     np.float64(2.5)
 )
-assert result == np.float64(7.5)
+print(result)  # 7.5
 ```
 
 ---

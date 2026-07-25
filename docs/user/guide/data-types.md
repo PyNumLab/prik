@@ -72,10 +72,10 @@ import numpy as np
 sys.path.insert(0, "build/numeric-types")
 from numeric_types.numeric_types import add_one, conjugate_value, double, invert
 
-assert add_one(np.int32(4)) == np.int32(5)
-assert double(np.float64(1.5)) == np.float64(3.0)
-assert conjugate_value(np.complex128(1.0 + 2.0j)) == np.complex128(1.0 - 2.0j)
-assert bool(invert(True)) is False
+print(add_one(np.int32(4)))                        # 5
+print(double(np.float64(1.5)))                     # 3.0
+print(conjugate_value(np.complex128(1.0 + 2.0j)))  # (1-2j)
+print(bool(invert(True)))                          # False
 ```
 
 ---

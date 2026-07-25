@@ -154,7 +154,7 @@ end module
     assert "x: Float64[::]" in code
     assert "y: Float64[::]" in code
     assert "Annotated[Float64[::]" not in code
-    assert 'Returns["y", Float64[::]]' in code
+    assert "y: Float64[::]\n) -> None: ..." in code
 
 
 def test_emit_explicit_bound_ranges_as_extents_without_source_dimension_metadata():
@@ -372,7 +372,7 @@ end module
     # --------------------------------------------------------
 
     assert "K: Float64[::, ::]" in code
-    assert 'Returns["K", Float64[::, ::]]' in code
+    assert "connectivity: Int32[::, ::]\n) -> None: ..." in code
 
     assert "coords: Float64[::, ::]" in code
 

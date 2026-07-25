@@ -334,8 +334,9 @@ The caller supplies scalar storage objects for the visible native scalar slots:
 ```python
 base = np.array(4, dtype=np.int32)
 status = np.empty((), dtype=np.int32)
-assert module.scalar_status(base, status) is None
-assert status[()] == np.int32(15)
+returned = module.scalar_status(base, status)
+print(returned)    # None
+print(status[()])  # 15
 ```
 
 This style covers scalar, array, matrix, string, mixed-result, and derived-type

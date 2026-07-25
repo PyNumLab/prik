@@ -21,8 +21,9 @@ A Fortran `subroutine` has no direct return value. Instead, its `intent(out)` an
 | `intent(in)` scalar/array   | Visible argument             | Not returned                      |
 | `intent(out)` scalar        | Hidden                       | Returned as value                 |
 | `intent(inout)` scalar      | Visible argument             | Returned as replacement value     |
-| `intent(out)` array         | Visible writable NumPy array | Same array, filled and returned   |
-| `intent(inout)` array       | Visible writable NumPy array | Mutated in place; normally no extra result |
+| `intent(out)` array         | Visible writable NumPy array | Filled in place; not returned     |
+| `intent(inout)` array       | Visible writable NumPy array | Mutated in place; not returned    |
+| Derived `intent(out/inout)` | Visible generated object     | Mutated in place; not returned    |
 | `intent(out)` allocatable   | Hidden (or optional)         | `Allocatable[...]` handle         |
 
 ---
@@ -78,7 +79,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, "build/outputs")
-from outputs.outputs import bounds, scale_in_place, scale_scalar
+from outputs.outputs import bounds, fill, scale_in_place, scale_scalar
 
 # Hidden scalar outputs → returned as tuple
 data = np.array([4.0, -2.0, 7.0], dtype=np.float64)
@@ -96,8 +97,7 @@ print(arr)                 # [3. 6. 9.]
 
 # Caller-provided output array
 target = np.empty(4, dtype=np.float64)
-returned = api.fill(target)
-assert returned is target
+fill(target)
 print(target)              # [1. 1. 1. 1.]
 ```
 
@@ -110,8 +110,10 @@ print(target)              # [1. 1. 1. 1.]
   replacement values; the original Python scalar object is unchanged.
 - Array `intent(out/inout)` arguments must be pre-allocated by the caller and
   are mutated in place.
-- Source-generated `intent(out)` arrays return the same supplied array;
-  `intent(inout)` arrays normally communicate through in-place mutation only.
+- Ordinary `intent(out/inout)` arrays are not added to the Python result.
+- Scalar derived-type objects follow the same in-place rule as arrays.
+- Array function results and hidden allocatable outputs still return new
+  Python-visible objects because the caller did not supply their storage.
 - The generated `.pyi` contract is the source of truth for what is returned.
 - For functions with both a return value **and** outputs, the function result comes first in the tuple.
 

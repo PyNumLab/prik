@@ -10,7 +10,7 @@ publication: reviewed
 
 # Wrapping Modules
 
-A Fortran `module` becomes a **child Python module** (namespace) inside the generated extension. This preserves the original structure instead of flattening everything to the extension root.
+A Fortran `module` becomes a **child Python module** (namespace) inside the generated extension.
 
 ---
 
@@ -20,64 +20,73 @@ After building `module_state.f90`:
 
 ```python
 import sys
+import numpy as np
 
 sys.path.insert(0, "build/first-module")
-import module_state.module_state as mod
+import module_state
+
+mod = module_state.module_state   # child namespace
 ```
 
-See [First Wrapped Module](../getting-started/first-wrapped-module.md) for the full example.
+See [First Wrapped Module](../getting-started/first-wrapped-module.md) for the complete source, build command, and usage examples.
 
 ---
 
 ## Procedures
 
-Module procedures become methods on the child module:
+Module functions and subroutines become attributes of the child module:
 
 ```python
-print(mod.summarize())        # 15
-print(mod.scaled_counter())   # 4.5
+print(mod.summarize())       # 15
+print(mod.scaled_counter())  # 4.5
 ```
 
-Standalone procedures (not inside any module) remain at the extension root.
+Standalone procedures (outside any module) remain at the extension root.
+
+When compiling multiple source files, each Fortran module becomes its own child namespace, while standalone procedures stay on the extension root. The first source file usually determines the extension name (you can override with `--out`).
 
 ---
 
-## Public Variables & Constants
+## Public Variables and Constants
 
-Supported public scalar variables are exposed as direct attributes:
+Supported public scalar variables are exposed as direct Python attributes:
 
 ```python
 mod.counter = np.int32(9)
-assert mod.counter == np.int32(9)
+print(mod.counter)      # 9
+print(mod.summarize())  # 21
 
-assert mod.nmax == np.int32(12)   # parameters are read-only
+print(mod.nmax)         # 12 (read-only parameter)
 ```
 
-- `parameter` declarations become `Final[...]` constants.
-- Writing to a constant in Python only shadows the attribute locally — it does **not** change native storage.
+- `parameter` declarations become `Final[...]` constants in the generated contract.
+- Assigning to a constant in Python only creates a local shadow — it does **not** mutate the native value.
 
 ---
 
-## Module Arrays & State
+## Module Arrays & Saved State
 
-- Allocatable module arrays appear as `Allocatable[T[...]]` handles.
-- You can read the current state with `.to_numpy()` and mutate through the view.
-- `save` variables (including procedure-local `save`) persist across calls.
+- Allocatable module arrays use the `Allocatable[T[...]]` API.
+- Allocation, lifetime, NumPy views, and mutation rules are covered in
+  the storage and objects section.
+- `save` attributes (including procedure-local `save` variables) persist across calls.
 - Multiple Python imports of the same extension share the same native module state.
 
 ---
 
-## Important Notes
+## Important Rules
 
-- Private declarations are hidden.
-- Common blocks are **not** exposed as Python variables (only through procedures that access them).
-- Module state is **shared** — changes are visible across all references to the same extension.
+- Private declarations are hidden from the Python API.
+- Common blocks are **not** exposed as Python variables (only indirectly through procedures that access them).
+- Module state is **shared** native storage — changes made through one reference are visible to all others.
+- The extension name is derived from the source filename unless overridden.
 
 ---
 
 ## Next
 
-- Learn about [Memory Management](memory-management.md)
+- Learn about [Memory Management](memory-management.md) — especially important when working with module state
 - See [Optional Arguments](optional-arguments.md)
 - Explore [Packaging](packaging.md) for distribution
-- For supported module features, check the [Language Feature Matrix](../language-support/feature-matrix.md).
+- Check the [Language Feature Matrix](../language-support/feature-matrix.md)
+  for supported module features and limitations

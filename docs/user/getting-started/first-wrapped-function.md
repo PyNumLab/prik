@@ -50,10 +50,10 @@ sys.path.insert(0, "build/first-function")
 import scale
 
 result = scale.scale(np.float64(3.0), np.float64(2.5))
-print(result)          # → 7.5
+print(result)          # 7.5
 
+# The generated Float64 result becomes a Python float.
 assert isinstance(result, float)
-assert result == 7.5
 ```
 
 ---

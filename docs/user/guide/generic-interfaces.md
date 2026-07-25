@@ -61,8 +61,8 @@ import numpy as np
 sys.path.insert(0, "build/generic")
 from generic.conversions import convert
 
-assert convert(np.int32(4)) == np.int32(14)
-assert convert(np.float64(4.0)) == np.float64(4.5)
+print(convert(np.int32(4)))      # 14
+print(convert(np.float64(4.0)))  # 4.5
 ```
 
 The correct specific procedure is chosen automatically based on the argument type.

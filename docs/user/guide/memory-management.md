@@ -95,7 +95,7 @@ values = np.ones(4, dtype=np.float64)
 api.scale(values)
 
 # Same array object, possibly mutated in place.
-assert values[0] == 2.0
+print(values[0])  # 2.0
 ```
 
 The wrapper may mutate through a caller-owned object when the contract allows

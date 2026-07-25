@@ -82,17 +82,16 @@ item = points.point(x=np.float64(1.0), y=np.float64(2.0))
 
 # Call method (inout mutation)
 points.move(item, np.float64(3.0), np.float64(4.0))
-assert item.x == np.float64(4.0)
-assert item.y == np.float64(6.0)
+print(item.x, item.y)  # 4.0 6.0
 
 # Function returning derived type
 made = points.make_point(np.float64(8.0), np.float64(9.0))
 
 # Nested component
 container = points.holder()
-p.set_origin(container, made)
+points.set_origin(container, made)
 container.origin.x = np.float64(12.0)
-assert container.origin.x == np.float64(12.0)
+print(container.origin.x)  # 12.0
 ```
 
 ---
@@ -100,9 +99,11 @@ assert container.origin.x == np.float64(12.0)
 ## Key Concepts
 
 - **Ownership**: Wrapper-owned objects are finalized when the Python object is garbage-collected.
-- **Mutation**: `intent(inout)` modifies the same native instance.
+- **Mutation**: `intent(out)` and `intent(inout)` modify a caller-provided
+  instance and do not return it again.
 - **Fields**: Public scalar numeric/logical/complex fields become Python attributes.
 - **Nested types**: Appear as borrowed child wrappers (they don’t own the memory).
+- **Results**: Derived-type function results create new wrapper-owned objects.
 - **Constructors**: Generated for public scalar fields (keyword-only).
 
 ---

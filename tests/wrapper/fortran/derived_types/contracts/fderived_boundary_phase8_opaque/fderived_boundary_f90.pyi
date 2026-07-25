@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Arg, Float64, Return, native_call
+from x2py.contracts import Addr, Arg, Float64, native_call
 
 class point:
     x: Float64
@@ -15,11 +15,12 @@ def move_point(
     dy: Float64
 ) -> None: ...
 
-@native_call([Return('p', 0), Addr(Arg(0)), Addr(Arg(1))])
+@native_call([Arg(0), Addr(Arg(1)), Addr(Arg(2))])
 def make_point_out(
+    p: point,
     x: Float64,
     y: Float64
-) -> point: ...
+) -> None: ...
 
 @native_call([Addr(Arg(0)), Addr(Arg(1))])
 def make_point(

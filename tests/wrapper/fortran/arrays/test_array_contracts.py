@@ -191,7 +191,7 @@ def test_remaining_array_contracts_are_validated_before_fortran_calls(
 
     empty_rank4 = np.empty((0, 1, 1, 1), dtype=np.float64, order="F")
     empty_rank4_out = np.empty_like(empty_rank4, order="F")
-    assert module.shift4(empty_rank4, empty_rank4_out) is empty_rank4_out
+    assert module.shift4(empty_rank4, empty_rank4_out) is None
     assert empty_rank4_out.shape == empty_rank4.shape
 
     zero_stride_empty = as_strided(
@@ -206,12 +206,12 @@ def test_remaining_array_contracts_are_validated_before_fortran_calls(
     )
     assert zero_stride_empty.flags.f_contiguous
     assert zero_stride_empty_out.flags.f_contiguous
-    assert module.shift4(zero_stride_empty, zero_stride_empty_out) is zero_stride_empty_out
+    assert module.shift4(zero_stride_empty, zero_stride_empty_out) is None
 
     for rank in range(1, _MAX_WRAPPER_TEST_RANK + 1):
         shape = (2, *([1] * (rank - 1)))
         source = np.asfortranarray(np.arange(np.prod(shape), dtype=np.float64).reshape(shape, order="F"))
         out = np.empty(shape, dtype=np.float64, order="F")
 
-        assert getattr(module, f"shift{rank}")(source, out) is out
+        assert getattr(module, f"shift{rank}")(source, out) is None
         np.testing.assert_allclose(out, source + rank)

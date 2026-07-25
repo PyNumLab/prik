@@ -43,7 +43,7 @@ def test_immediate_callbacks_cover_all_supported_argument_shapes(
         output_values[:count] = input_values[:count] + 1.5
 
     result = module.apply_array_storage_callback(array_callback, np.int32(3), values, output)
-    assert result is output
+    assert result is None
     np.testing.assert_allclose(output, np.array([2.5, 3.5, 4.5], dtype=np.float64))
 
     def string_callback(read_label, write_label, update_label):
@@ -61,10 +61,14 @@ def test_immediate_callbacks_cover_all_supported_argument_shapes(
     assert module.apply_string_storage_callback(string_callback, "OLD     ") == ("UPDATED!", "WRITTEN!")
 
     point = module.point_t(x=np.float64(2.0), y=np.float64(5.0))
-    shifted = module.apply_point_callback(
-        lambda value: module.point_t(x=value.x + 1.0, y=value.y * 2.0),
-        point,
+    shifted = module.point_t()
+    assert (
+        module.apply_point_callback(
+            lambda value: module.point_t(x=value.x + 1.0, y=value.y * 2.0),
+            point,
+            shifted,
+        )
+        is None
     )
-    assert isinstance(shifted, module.point_t)
     assert shifted.x == np.float64(3.0)
     assert shifted.y == np.float64(10.0)
