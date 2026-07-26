@@ -467,8 +467,6 @@ class _PyiAstParser:
         parsed = _Decorators()
         for node in nodes:
             self._apply_decorator(parsed, node, context=context)
-        if context == "class body" and parsed.overload_target is not None and parsed.bind_target is not None:
-            raise ValueError("bind cannot be combined with a class overload")
         if parsed.overload_target is not None and parsed.has_native_call:
             raise ValueError("overload cannot be combined with native_call; put native_call on the specific procedure")
         if parsed.prototype and len(nodes) != 1:
@@ -746,6 +744,9 @@ class _PyiAstParser:
         candidate.metadata[FORTRAN_GENERIC_NAME_METADATA] = native_name
         candidate.metadata[OVERLOAD_KIND_METADATA] = kind
         candidate.metadata[PYTHON_METHOD_NAME_METADATA] = declaration.name
+        if bind_target := declaration.metadata.get(BIND_TARGET_METADATA):
+            candidate.native_name = str(bind_target)
+            candidate.metadata[BIND_TARGET_METADATA] = str(bind_target)
         if bound_position is not None:
             candidate.metadata[PYTHON_BOUND_POSITION_METADATA] = bound_position
         if isinstance(declaration, SemanticMethod) and declaration.is_static:
@@ -2656,7 +2657,7 @@ class _ClassBodyVisitor(ClassVisitor):
             hold_gil=decorators.hold_gil,
             error_status_policy=decorators.error_status_policy,
         )
-        if node.name == "__init__" and decorators.bind_target is not None:
+        if node.name == "__init__" and decorators.bind_target is not None and decorators.overload_target is None:
             self.has_bound_constructor = True
         if decorators.overload_target is not None:
             self.pending_overloads.append((method, decorators.overload_target, decorators.overload_generic))

@@ -325,6 +325,44 @@ def convert_number(value: Int32) -> Int32: ...
     assert '@bind("convert")\n@overload("convert_integer")' in emitted
 
 
+def test_convert_pyi_to_ir_applies_class_overload_bind_and_round_trips_native_name():
+    module = parse_pyi_text(
+        """
+def set_integer(self: item, value: Int32) -> None: ...
+
+class item:
+    @bind("set")
+    @overload("set_integer")
+    def set(self, value: Int32) -> None: ...
+""",
+        module_name="generic_mod",
+    )
+
+    candidate = module.classes[0].overload_sets[0].procedures[0]
+    assert candidate.native_name == "set"
+    assert candidate.metadata[BIND_TARGET_METADATA] == "set"
+    emitted = emit_module(module)
+    assert '    @bind("set")\n    @overload("set_integer")' in emitted
+
+
+def test_convert_pyi_to_ir_applies_constructor_overload_bind():
+    module = parse_pyi_text(
+        """
+def set_integer(self: item, value: Int32) -> None: ...
+
+class item:
+    @bind("set")
+    @overload("set_integer")
+    def __init__(self, value: Int32) -> None: ...
+""",
+        module_name="generic_mod",
+    )
+
+    candidate = module.classes[0].overload_sets[0].procedures[0]
+    assert candidate.native_name == "set"
+    assert candidate.metadata[BIND_TARGET_METADATA] == "set"
+
+
 @pytest.mark.parametrize(
     ("source", "message"),
     [

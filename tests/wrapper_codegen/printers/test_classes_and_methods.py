@@ -201,9 +201,9 @@ module generic_mod
   end interface convert
   type :: box
   contains
-    procedure :: set_integer
-    procedure :: set_real
-    generic :: set => set_integer, set_real
+    procedure, private :: set_integer
+    procedure, private :: set_real
+    generic, public :: set => set_integer, set_real
   end type box
 contains
   integer function convert_integer(value)
@@ -229,8 +229,8 @@ end module generic_mod
     assert "from typing import overload" not in code
     assert code.count('@overload("convert_integer")\ndef convert(') == 1
     assert code.count('@overload("convert_real")\ndef convert(') == 1
-    assert code.count('    @overload("set_integer")\n    def set(') == 1
-    assert code.count('    @overload("set_real")\n    def set(') == 1
+    assert code.count('    @bind("set")\n    @overload("set_integer")\n    def set(') == 1
+    assert code.count('    @bind("set")\n    @overload("set_real")\n    def set(') == 1
     assert '@overload("convert_integer")\n@native_call' not in code
     assert '    @overload("set_integer")\n    @native_call' not in code
 
@@ -246,6 +246,7 @@ end module generic_mod
         "set_integer",
         "set_real",
     ]
+    assert {procedure.native_name for procedure in loaded.classes[0].overload_sets[0].procedures} == {"set"}
 
 
 def test_private_module_generic_specifics_bind_overload_candidates_to_public_generic():
@@ -279,6 +280,39 @@ end module generic_mod
         "convert",
     ]
     assert emit_module(loaded) == code
+
+
+def test_public_type_bound_generic_specifics_do_not_emit_bind():
+    source = """
+module generic_mod
+  type :: box
+  contains
+    procedure :: set_integer
+    procedure :: set_real
+    generic :: set => set_integer, set_real
+  end type box
+contains
+  subroutine set_integer(self, value)
+    class(box) :: self
+    integer :: value
+  end subroutine set_integer
+  subroutine set_real(self, value)
+    class(box) :: self
+    real :: value
+  end subroutine set_real
+end module generic_mod
+"""
+
+    code = generate_pyi(source)
+
+    assert '    @bind("set")' not in code
+    assert code.count('    @overload("set_integer")\n    def set(') == 1
+    assert code.count('    @overload("set_real")\n    def set(') == 1
+    loaded = parse_pyi_text(code, module_name="generic_mod")
+    assert [procedure.native_name for procedure in loaded.classes[0].overload_sets[0].procedures] == [
+        "set_integer",
+        "set_real",
+    ]
 
 
 def test_emit_and_load_allocatable_module_variable_declaration():

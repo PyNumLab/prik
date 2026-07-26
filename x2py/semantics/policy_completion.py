@@ -534,7 +534,7 @@ def _complete_class_overload_methods(
 ) -> None:
     """Complete every concrete overload through one typed call leaf."""
     generic_bindings = {
-        str(procedure.native_name or procedure.name): overload.name
+        _class_overload_native_target(procedure): overload.name
         for overload in semantic_class.overload_sets
         if overload.name != "__init__"
         for procedure in overload.procedures
@@ -565,7 +565,8 @@ def _complete_one_class_overload_method(
 ) -> None:
     """Complete one overload candidate and its native dispatch spelling."""
     owner_path = f"{derived.owner_path}.{overload.name}.{procedure.name}"
-    native_name = str(procedure.native_name or procedure.name)
+    native_name = _class_overload_native_target(procedure)
+    bind_target = procedure.metadata.get(BIND_TARGET_METADATA)
     passed_position = _class_overload_passed_object_position(procedure)
     type_bound = native_name in type_bound_targets or (
         passed_position is not None and native_name not in module_targets
@@ -575,13 +576,19 @@ def _complete_one_class_overload_method(
         procedure,
         owner_path,
         type_bound=type_bound,
-        type_bound_name=generic_bindings.get(native_name) if type_bound else None,
+        type_bound_name=(str(bind_target) if bind_target else generic_bindings.get(native_name))
+        if type_bound
+        else None,
     )
     overload_kind = str(procedure.metadata.get(models.OVERLOAD_KIND_METADATA, "generic"))
     native_dispatch_name = (
-        str(procedure.metadata.get(models.FORTRAN_GENERIC_NAME_METADATA, overload.name))
-        if overload_kind != "generic"
-        else None
+        str(bind_target)
+        if bind_target
+        else (
+            str(procedure.metadata.get(models.FORTRAN_GENERIC_NAME_METADATA, overload.name))
+            if overload_kind != "generic"
+            else None
+        )
     )
     _complete_function(
         procedure,
@@ -591,6 +598,11 @@ def _complete_one_class_overload_method(
         polymorphic_variants=polymorphic_variants,
         native_dispatch_name=native_dispatch_name,
     )
+
+
+def _class_overload_native_target(procedure: models.SemanticFunction) -> str:
+    """Return the completed native target selected by an overload contract."""
+    return str(procedure.metadata.get(BIND_TARGET_METADATA) or procedure.native_name or procedure.name)
 
 
 def _uses_type_bound_invocation(

@@ -1763,9 +1763,11 @@ def convert(value: Int32) -> Int32: ...
 def convert(value: Float64) -> Float64: ...
 
 class accumulator:
+    @bind("add")
     @overload("accumulator_add_integer")
     def add(self, value: Int32) -> None: ...
 
+    @bind("add")
     @overload("accumulator_add_real")
     def add(self, value: Float64) -> None: ...
 ```
@@ -1782,6 +1784,10 @@ An overload declaration is a Python dispatch link. It must not also carry
 `@native_call`; the linked concrete procedure owns argument reordering,
 `Pass()`, hidden values, and projected returns. An overload-level `@bind`
 changes only the final native call target.
+
+The same rule applies to class overloads. Their concrete link may describe a
+private specific while `@bind("public_generic")` selects the callable
+type-bound generic.
 
 The loader resolves only the decorator string. It never guesses a target by
 signature. The target must exist exactly once, each target may occur only once
@@ -2046,6 +2052,18 @@ overload set linked to concrete same-class targets. The direct wrapper allocates
 one native owner, dispatches without candidate trial calls, and releases an
 uncommitted owner on failure. Missing, incompatible, or indistinguishable
 candidates are rejected before source emission.
+
+A constructor overload may also route through a public type-bound generic:
+
+```python
+class accumulator:
+    @bind("add")
+    @overload("accumulator_add_integer")
+    def __init__(self, value: Int32) -> None: ...
+```
+
+The wrapper allocates `self` first. The overload link supplies the concrete
+argument contract; `@bind("add")` supplies the native call target.
 
 Module variables are declarations in the semantic contract. Allocatable array
 module variables expose handles; unallocated state is represented by the handle,

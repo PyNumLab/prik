@@ -35,7 +35,7 @@ def cbbcsd(
     RWORK: Float32[Flat],
     LRWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDU1", Int32], Returns["LDU2", Int32], Returns["LDV1T", Int32], Returns["LDV2T", Int32], Returns["LRWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CBDSQR")
 @external
@@ -56,7 +56,7 @@ def cbdsqr(
     LDC: Int32,
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NCVT", Int32], Returns["NRU", Int32], Returns["NCC", Int32], Returns["LDVT", Int32], Returns["LDU", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGBBRD")
 @external
@@ -81,7 +81,7 @@ def cgbbrd(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NCC", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["LDQ", Int32], Returns["LDPT", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGBCON")
 @external
@@ -99,7 +99,7 @@ def cgbcon(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CGBEQU")
 @external
@@ -117,7 +117,7 @@ def cgbequ(
     COLCND: Float32,
     AMAX: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["ROWCND", Float32], Returns["COLCND", Float32], Returns["AMAX", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CGBEQUB")
 @external
@@ -135,7 +135,7 @@ def cgbequb(
     COLCND: Float32,
     AMAX: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["ROWCND", Float32], Returns["COLCND", Float32], Returns["AMAX", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CGBRFS")
 @external
@@ -160,7 +160,7 @@ def cgbrfs(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGBRFSX")
 @external
@@ -193,7 +193,7 @@ def cgbrfsx(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGBSV")
 @external
@@ -209,7 +209,7 @@ def cgbsv(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGBSVX")
 @external
@@ -239,7 +239,7 @@ def cgbsvx(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CGBSVXX")
 @external
@@ -274,7 +274,7 @@ def cgbsvxx(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["RPVGRW", Float32], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGBTF2")
 @external
@@ -288,7 +288,7 @@ def cgbtf2(
     LDAB: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGBTRF")
 @external
@@ -302,7 +302,7 @@ def cgbtrf(
     LDAB: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGBTRS")
 @external
@@ -319,7 +319,7 @@ def cgbtrs(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEBAK")
 @external
@@ -335,7 +335,7 @@ def cgebak(
     V: Complex64[LDV, Flat],
     LDV: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["M", Int32], Returns["LDV", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEBAL")
 @external
@@ -349,7 +349,7 @@ def cgebal(
     IHI: Int32,
     SCALE: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEBD2")
 @external
@@ -365,7 +365,7 @@ def cgebd2(
     TAUP: Complex64[Flat],
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEBRD")
 @external
@@ -382,7 +382,7 @@ def cgebrd(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGECON")
 @external
@@ -397,7 +397,7 @@ def cgecon(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CGEDMD")
 @external
@@ -487,7 +487,7 @@ def cgeequ(
     COLCND: Float32,
     AMAX: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["ROWCND", Float32], Returns["COLCND", Float32], Returns["AMAX", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CGEEQUB")
 @external
@@ -503,7 +503,7 @@ def cgeequb(
     COLCND: Float32,
     AMAX: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["ROWCND", Float32], Returns["COLCND", Float32], Returns["AMAX", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CGEES")
 @external
@@ -524,7 +524,7 @@ def cgees(
     RWORK: Float32[Flat],
     BWORK: Bool[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SELECT", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["SDIM", Int32], Returns["LDVS", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEESX")
 @external
@@ -548,7 +548,7 @@ def cgeesx(
     RWORK: Float32[Flat],
     BWORK: Bool[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SELECT", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["SDIM", Int32], Returns["LDVS", Int32], Returns["RCONDE", Float32], Returns["RCONDV", Float32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEEV")
 @external
@@ -568,7 +568,7 @@ def cgeev(
     LWORK: Int32,
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEEVX")
 @external
@@ -596,7 +596,7 @@ def cgeevx(
     LWORK: Int32,
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["ABNRM", Float32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEHD2")
 @external
@@ -610,7 +610,7 @@ def cgehd2(
     TAU: Complex64[Flat],
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEHRD")
 @external
@@ -625,7 +625,7 @@ def cgehrd(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEJSV")
 @external
@@ -652,7 +652,7 @@ def cgejsv(
     LRWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDU", Int32], Returns["LDV", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGELQ")
 @external
@@ -667,7 +667,7 @@ def cgelq(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["TSIZE", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGELQ2")
 @external
@@ -680,7 +680,7 @@ def cgelq2(
     TAU: Complex64[Flat],
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGELQF")
 @external
@@ -694,7 +694,7 @@ def cgelqf(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGELQT")
 @external
@@ -709,7 +709,7 @@ def cgelqt(
     LDT: Int32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["MB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGELQT3")
 @external
@@ -722,7 +722,7 @@ def cgelqt3(
     T: Complex64[LDT, Flat],
     LDT: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGELS")
 @external
@@ -739,7 +739,7 @@ def cgels(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGELSD")
 @external
@@ -760,7 +760,7 @@ def cgelsd(
     RWORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["RCOND", Float32], Returns["RANK", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGELSS")
 @external
@@ -780,7 +780,7 @@ def cgelss(
     LWORK: Int32,
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["RCOND", Float32], Returns["RANK", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGELST")
 @external
@@ -797,7 +797,7 @@ def cgelst(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGELSY")
 @external
@@ -817,7 +817,7 @@ def cgelsy(
     LWORK: Int32,
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["RCOND", Float32], Returns["RANK", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEMLQ")
 @external
@@ -837,7 +837,7 @@ def cgemlq(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["TSIZE", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEMLQT")
 @external
@@ -857,7 +857,7 @@ def cgemlqt(
     LDC: Int32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["MB", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEMQR")
 @external
@@ -877,7 +877,7 @@ def cgemqr(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["TSIZE", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEMQRT")
 @external
@@ -897,7 +897,7 @@ def cgemqrt(
     LDC: Int32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["NB", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEQL2")
 @external
@@ -910,7 +910,7 @@ def cgeql2(
     TAU: Complex64[Flat],
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEQLF")
 @external
@@ -924,7 +924,7 @@ def cgeqlf(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEQP3")
 @external
@@ -940,7 +940,7 @@ def cgeqp3(
     LWORK: Int32,
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEQP3RK")
 @external
@@ -964,7 +964,7 @@ def cgeqp3rk(
     RWORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["KMAX", Int32], Returns["ABSTOL", Float32], Returns["RELTOL", Float32], Returns["LDA", Int32], Returns["K", Int32], Returns["MAXC2NRMK", Float32], Returns["RELMAXC2NRMK", Float32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEQR")
 @external
@@ -979,7 +979,7 @@ def cgeqr(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["TSIZE", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEQR2")
 @external
@@ -992,7 +992,7 @@ def cgeqr2(
     TAU: Complex64[Flat],
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEQR2P")
 @external
@@ -1005,7 +1005,7 @@ def cgeqr2p(
     TAU: Complex64[Flat],
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEQRF")
 @external
@@ -1019,7 +1019,7 @@ def cgeqrf(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEQRFP")
 @external
@@ -1033,7 +1033,7 @@ def cgeqrfp(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEQRT")
 @external
@@ -1048,7 +1048,7 @@ def cgeqrt(
     LDT: Int32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEQRT2")
 @external
@@ -1061,7 +1061,7 @@ def cgeqrt2(
     T: Complex64[LDT, Flat],
     LDT: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGEQRT3")
 @external
@@ -1074,7 +1074,7 @@ def cgeqrt3(
     T: Complex64[LDT, Flat],
     LDT: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGERFS")
 @external
@@ -1097,7 +1097,7 @@ def cgerfs(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGERFSX")
 @external
@@ -1128,7 +1128,7 @@ def cgerfsx(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGERQ2")
 @external
@@ -1141,7 +1141,7 @@ def cgerq2(
     TAU: Complex64[Flat],
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGERQF")
 @external
@@ -1155,7 +1155,7 @@ def cgerqf(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGESC2")
 @external
@@ -1168,7 +1168,7 @@ def cgesc2(
     IPIV: Int32[Flat],
     JPIV: Int32[Flat],
     SCALE: Float32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCALE", Float32]]: ...
 
 @bind("CGESDD")
 @external
@@ -1189,7 +1189,7 @@ def cgesdd(
     RWORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDU", Int32], Returns["LDVT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGESV")
 @external
@@ -1203,7 +1203,7 @@ def cgesv(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGESVD")
 @external
@@ -1224,7 +1224,7 @@ def cgesvd(
     LWORK: Int32,
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDU", Int32], Returns["LDVT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGESVDQ")
 @external
@@ -1252,7 +1252,7 @@ def cgesvdq(
     RWORK: Float32[Flat],
     LRWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDU", Int32], Returns["LDV", Int32], Returns["NUMRANK", Int32], Returns["LIWORK", Int32], Returns["LCWORK", Int32], Returns["LRWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGESVDX")
 @external
@@ -1280,7 +1280,7 @@ def cgesvdx(
     RWORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["NS", Int32], Returns["LDU", Int32], Returns["LDVT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGESVJ")
 @external
@@ -1302,7 +1302,7 @@ def cgesvj(
     RWORK: Float32[LRWORK],
     LRWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["MV", Int32], Returns["LDV", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGESVX")
 @external
@@ -1330,7 +1330,7 @@ def cgesvx(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CGESVXX")
 @external
@@ -1363,7 +1363,7 @@ def cgesvxx(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["RPVGRW", Float32], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGETC2")
 @external
@@ -1375,7 +1375,7 @@ def cgetc2(
     IPIV: Int32[Flat],
     JPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGETF2")
 @external
@@ -1387,7 +1387,7 @@ def cgetf2(
     LDA: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGETRF")
 @external
@@ -1399,7 +1399,7 @@ def cgetrf(
     LDA: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGETRF2")
 @external
@@ -1411,7 +1411,7 @@ def cgetrf2(
     LDA: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGETRI")
 @external
@@ -1424,7 +1424,7 @@ def cgetri(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGETRS")
 @external
@@ -1439,7 +1439,7 @@ def cgetrs(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGETSLS")
 @external
@@ -1456,7 +1456,7 @@ def cgetsls(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGETSQRHRT")
 @external
@@ -1474,7 +1474,7 @@ def cgetsqrhrt(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["MB1", Int32], Returns["NB1", Int32], Returns["NB2", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGGBAK")
 @external
@@ -1491,7 +1491,7 @@ def cggbak(
     V: Complex64[LDV, Flat],
     LDV: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["M", Int32], Returns["LDV", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGGBAL")
 @external
@@ -1509,7 +1509,7 @@ def cggbal(
     RSCALE: Float32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGGES")
 @external
@@ -1536,7 +1536,7 @@ def cgges(
     RWORK: Float32[Flat],
     BWORK: Bool[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SELCTG", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["SDIM", Int32], Returns["LDVSL", Int32], Returns["LDVSR", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGGES3")
 @external
@@ -1563,7 +1563,7 @@ def cgges3(
     RWORK: Float32[Flat],
     BWORK: Bool[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SELCTG", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["SDIM", Int32], Returns["LDVSL", Int32], Returns["LDVSR", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGGESX")
 @external
@@ -1595,7 +1595,7 @@ def cggesx(
     LIWORK: Int32,
     BWORK: Bool[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SELCTG", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["SDIM", Int32], Returns["LDVSL", Int32], Returns["LDVSR", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGGEV")
 @external
@@ -1618,7 +1618,7 @@ def cggev(
     LWORK: Int32,
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGGEV3")
 @external
@@ -1641,7 +1641,7 @@ def cggev3(
     LWORK: Int32,
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGGEVX")
 @external
@@ -1676,7 +1676,7 @@ def cggevx(
     IWORK: Int32[Flat],
     BWORK: Bool[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["ABNRM", Float32], Returns["BBNRM", Float32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGGGLM")
 @external
@@ -1695,7 +1695,7 @@ def cggglm(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["M", Int32], Returns["P", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGGHD3")
 @external
@@ -1717,7 +1717,7 @@ def cgghd3(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDQ", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGGHRD")
 @external
@@ -1737,7 +1737,7 @@ def cgghrd(
     Z: Complex64[LDZ, Flat],
     LDZ: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDQ", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGGLSE")
 @external
@@ -1756,7 +1756,7 @@ def cgglse(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["P", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGGQRF")
 @external
@@ -1774,7 +1774,7 @@ def cggqrf(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["M", Int32], Returns["P", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGGRQF")
 @external
@@ -1792,7 +1792,7 @@ def cggrqf(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGGSVD3")
 @external
@@ -1823,7 +1823,7 @@ def cggsvd3(
     RWORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["P", Int32], Returns["K", Int32], Returns["L", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDU", Int32], Returns["LDV", Int32], Returns["LDQ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGGSVP3")
 @external
@@ -1855,7 +1855,7 @@ def cggsvp3(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["TOLA", Float32], Returns["TOLB", Float32], Returns["K", Int32], Returns["L", Int32], Returns["LDU", Int32], Returns["LDV", Int32], Returns["LDQ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGSVJ0")
 @external
@@ -1878,7 +1878,7 @@ def cgsvj0(
     WORK: Complex64[LWORK],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["MV", Int32], Returns["LDV", Int32], Returns["EPS", Float32], Returns["SFMIN", Float32], Returns["TOL", Float32], Returns["NSWEEP", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGSVJ1")
 @external
@@ -1902,7 +1902,7 @@ def cgsvj1(
     WORK: Complex64[LWORK],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["N1", Int32], Returns["LDA", Int32], Returns["MV", Int32], Returns["LDV", Int32], Returns["EPS", Float32], Returns["SFMIN", Float32], Returns["TOL", Float32], Returns["NSWEEP", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGTCON")
 @external
@@ -1919,7 +1919,7 @@ def cgtcon(
     RCOND: Float32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CGTRFS")
 @external
@@ -1945,7 +1945,7 @@ def cgtrfs(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGTSV")
 @external
@@ -1959,7 +1959,7 @@ def cgtsv(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGTSVX")
 @external
@@ -1987,7 +1987,7 @@ def cgtsvx(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CGTTRF")
 @external
@@ -2000,7 +2000,7 @@ def cgttrf(
     DU2: Complex64[Flat],
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGTTRS")
 @external
@@ -2017,7 +2017,7 @@ def cgttrs(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CGTTS2")
 @external
@@ -2033,7 +2033,7 @@ def cgtts2(
     IPIV: Int32[Flat],
     B: Complex64[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["ITRANS", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32]]: ...
 
 @bind("CHB2ST_KERNELS")
 @external
@@ -2054,7 +2054,7 @@ def chb2st_kernels(
     TAU: Complex64[Flat],
     LDVT: Int32,
     WORK: Complex64[Flat]
-) -> None: ...
+) -> tuple[Returns["WANTZ", Bool], Returns["TTYPE", Int32], Returns["ST", Int32], Returns["ED", Int32], Returns["SWEEP", Int32], Returns["N", Int32], Returns["NB", Int32], Returns["IB", Int32], Returns["LDA", Int32], Returns["LDVT", Int32]]: ...
 
 @bind("CHBEV")
 @external
@@ -2072,7 +2072,7 @@ def chbev(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHBEV_2STAGE")
 @external
@@ -2091,7 +2091,7 @@ def chbev_2stage(
     LWORK: Int32,
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHBEVD")
 @external
@@ -2113,7 +2113,7 @@ def chbevd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHBEVD_2STAGE")
 @external
@@ -2135,7 +2135,7 @@ def chbevd_2stage(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHBEVX")
 @external
@@ -2164,7 +2164,7 @@ def chbevx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDQ", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHBEVX_2STAGE")
 @external
@@ -2194,7 +2194,7 @@ def chbevx_2stage(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDQ", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHBGST")
 @external
@@ -2214,7 +2214,7 @@ def chbgst(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KA", Int32], Returns["KB", Int32], Returns["LDAB", Int32], Returns["LDBB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHBGV")
 @external
@@ -2235,7 +2235,7 @@ def chbgv(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KA", Int32], Returns["KB", Int32], Returns["LDAB", Int32], Returns["LDBB", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHBGVD")
 @external
@@ -2260,7 +2260,7 @@ def chbgvd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KA", Int32], Returns["KB", Int32], Returns["LDAB", Int32], Returns["LDBB", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHBGVX")
 @external
@@ -2292,7 +2292,7 @@ def chbgvx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KA", Int32], Returns["KB", Int32], Returns["LDAB", Int32], Returns["LDBB", Int32], Returns["LDQ", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHBTRD")
 @external
@@ -2310,7 +2310,7 @@ def chbtrd(
     LDQ: Int32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDQ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHECON")
 @external
@@ -2325,7 +2325,7 @@ def checon(
     RCOND: Float32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CHECON_3")
 @external
@@ -2341,7 +2341,7 @@ def checon_3(
     RCOND: Float32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CHECON_ROOK")
 @external
@@ -2356,7 +2356,7 @@ def checon_rook(
     RCOND: Float32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CHEEQUB")
 @external
@@ -2371,7 +2371,7 @@ def cheequb(
     AMAX: Float32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCOND", Float32], Returns["AMAX", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CHEEV")
 @external
@@ -2387,7 +2387,7 @@ def cheev(
     LWORK: Int32,
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHEEV_2STAGE")
 @external
@@ -2403,7 +2403,7 @@ def cheev_2stage(
     LWORK: Int32,
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHEEVD")
 @external
@@ -2422,7 +2422,7 @@ def cheevd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHEEVD_2STAGE")
 @external
@@ -2441,7 +2441,7 @@ def cheevd_2stage(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHEEVR")
 @external
@@ -2470,7 +2470,7 @@ def cheevr(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHEEVR_2STAGE")
 @external
@@ -2499,7 +2499,7 @@ def cheevr_2stage(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHEEVX")
 @external
@@ -2526,7 +2526,7 @@ def cheevx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHEEVX_2STAGE")
 @external
@@ -2553,7 +2553,7 @@ def cheevx_2stage(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHEGS2")
 @external
@@ -2567,7 +2567,7 @@ def chegs2(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHEGST")
 @external
@@ -2581,7 +2581,7 @@ def chegst(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHEGV")
 @external
@@ -2600,7 +2600,7 @@ def chegv(
     LWORK: Int32,
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHEGV_2STAGE")
 @external
@@ -2619,7 +2619,7 @@ def chegv_2stage(
     LWORK: Int32,
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHEGVD")
 @external
@@ -2641,7 +2641,7 @@ def chegvd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHEGVX")
 @external
@@ -2671,7 +2671,7 @@ def chegvx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHERFS")
 @external
@@ -2694,7 +2694,7 @@ def cherfs(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHERFSX")
 @external
@@ -2724,7 +2724,7 @@ def cherfsx(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHESV")
 @external
@@ -2741,7 +2741,7 @@ def chesv(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHESV_AA")
 @external
@@ -2758,7 +2758,7 @@ def chesv_aa(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHESV_AA_2STAGE")
 @external
@@ -2778,7 +2778,7 @@ def chesv_aa_2stage(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LTB", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHESV_RK")
 @external
@@ -2796,7 +2796,7 @@ def chesv_rk(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHESV_ROOK")
 @external
@@ -2813,7 +2813,7 @@ def chesv_rook(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHESVX")
 @external
@@ -2839,7 +2839,7 @@ def chesvx(
     LWORK: Int32,
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHESVXX")
 @external
@@ -2871,7 +2871,7 @@ def chesvxx(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["RPVGRW", Float32], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHESWAPR")
 @external
@@ -2883,7 +2883,7 @@ def cheswapr(
     LDA: Int32,
     I1: Int32,
     I2: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["I1", Int32], Returns["I2", Int32]]: ...
 
 @bind("CHETD2")
 @external
@@ -2897,7 +2897,7 @@ def chetd2(
     E: Float32[Flat],
     TAU: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHETF2")
 @external
@@ -2909,7 +2909,7 @@ def chetf2(
     LDA: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHETF2_RK")
 @external
@@ -2922,7 +2922,7 @@ def chetf2_rk(
     E: Complex64[Flat],
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHETF2_ROOK")
 @external
@@ -2934,7 +2934,7 @@ def chetf2_rook(
     LDA: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHETRD")
 @external
@@ -2950,7 +2950,7 @@ def chetrd(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHETRD_2STAGE")
 @external
@@ -2969,7 +2969,7 @@ def chetrd_2stage(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LHOUS2", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHETRD_HB2ST")
 @external
@@ -2989,7 +2989,7 @@ def chetrd_hb2st(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LHOUS", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHETRD_HE2HB")
 @external
@@ -3006,7 +3006,7 @@ def chetrd_he2hb(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDA", Int32], Returns["LDAB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHETRF")
 @external
@@ -3020,7 +3020,7 @@ def chetrf(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHETRF_AA")
 @external
@@ -3034,7 +3034,7 @@ def chetrf_aa(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHETRF_AA_2STAGE")
 @external
@@ -3051,7 +3051,7 @@ def chetrf_aa_2stage(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LTB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHETRF_RK")
 @external
@@ -3066,7 +3066,7 @@ def chetrf_rk(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHETRF_ROOK")
 @external
@@ -3080,7 +3080,7 @@ def chetrf_rook(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHETRI")
 @external
@@ -3093,7 +3093,7 @@ def chetri(
     IPIV: Int32[Flat],
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHETRI2")
 @external
@@ -3107,7 +3107,7 @@ def chetri2(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHETRI2X")
 @external
@@ -3121,7 +3121,7 @@ def chetri2x(
     WORK: Complex64[N + NB + 1, Flat],
     NB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["NB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHETRI_3")
 @external
@@ -3136,7 +3136,7 @@ def chetri_3(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHETRI_3X")
 @external
@@ -3151,7 +3151,7 @@ def chetri_3x(
     WORK: Complex64[N + NB + 1, Flat],
     NB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["NB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHETRI_ROOK")
 @external
@@ -3164,7 +3164,7 @@ def chetri_rook(
     IPIV: Int32[Flat],
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHETRS")
 @external
@@ -3179,7 +3179,7 @@ def chetrs(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHETRS2")
 @external
@@ -3195,7 +3195,7 @@ def chetrs2(
     LDB: Int32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHETRS_3")
 @external
@@ -3211,7 +3211,7 @@ def chetrs_3(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHETRS_AA")
 @external
@@ -3228,7 +3228,7 @@ def chetrs_aa(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHETRS_AA_2STAGE")
 @external
@@ -3246,7 +3246,7 @@ def chetrs_aa_2stage(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LTB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHETRS_ROOK")
 @external
@@ -3261,7 +3261,7 @@ def chetrs_rook(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHFRK")
 @external
@@ -3277,7 +3277,7 @@ def chfrk(
     LDA: Int32,
     BETA: Float32,
     C: Complex64[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Float32], Returns["LDA", Int32], Returns["BETA", Float32]]: ...
 
 @bind("CHGEQZ")
 @external
@@ -3303,14 +3303,14 @@ def chgeqz(
     LWORK: Int32,
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDH", Int32], Returns["LDT", Int32], Returns["LDQ", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHLA_TRANSTYPE")
 @external
 @native_call([Addr(Arg(0))])
 def chla_transtype(
     TRANS: Int32
-) -> String[1]: ...
+) -> tuple[String[1], Returns["TRANS", Int32]]: ...
 
 @bind("CHPCON")
 @external
@@ -3324,7 +3324,7 @@ def chpcon(
     RCOND: Float32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CHPEV")
 @external
@@ -3340,7 +3340,7 @@ def chpev(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHPEVD")
 @external
@@ -3360,7 +3360,7 @@ def chpevd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHPEVX")
 @external
@@ -3385,7 +3385,7 @@ def chpevx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHPGST")
 @external
@@ -3397,7 +3397,7 @@ def chpgst(
     AP: Complex64[Flat],
     BP: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHPGV")
 @external
@@ -3415,7 +3415,7 @@ def chpgv(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHPGVD")
 @external
@@ -3437,7 +3437,7 @@ def chpgvd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHPGVX")
 @external
@@ -3464,7 +3464,7 @@ def chpgvx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHPRFS")
 @external
@@ -3485,7 +3485,7 @@ def chprfs(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHPSV")
 @external
@@ -3499,7 +3499,7 @@ def chpsv(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHPSVX")
 @external
@@ -3522,7 +3522,7 @@ def chpsvx(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CHPTRD")
 @external
@@ -3535,7 +3535,7 @@ def chptrd(
     E: Float32[Flat],
     TAU: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHPTRF")
 @external
@@ -3546,7 +3546,7 @@ def chptrf(
     AP: Complex64[Flat],
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHPTRI")
 @external
@@ -3558,7 +3558,7 @@ def chptri(
     IPIV: Int32[Flat],
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHPTRS")
 @external
@@ -3572,7 +3572,7 @@ def chptrs(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHSEIN")
 @external
@@ -3597,7 +3597,7 @@ def chsein(
     IFAILL: Int32[Flat],
     IFAILR: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDH", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["MM", Int32], Returns["M", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CHSEQR")
 @external
@@ -3616,7 +3616,7 @@ def chseqr(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDH", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLA_GBAMV")
 @external
@@ -3635,7 +3635,7 @@ def cla_gbamv(
     BETA: Float32,
     Y: Float32[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["TRANS", Int32], Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["ALPHA", Float32], Returns["LDAB", Int32], Returns["INCX", Int32], Returns["BETA", Float32], Returns["INCY", Int32]]: ...
 
 @bind("CLA_GBRCOND_C")
 @external
@@ -3655,7 +3655,7 @@ def cla_gbrcond_c(
     INFO: Int32,
     WORK: Complex64[Flat],
     RWORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["CAPPLY", Bool], Returns["INFO", Int32]]: ...
 
 @bind("CLA_GBRCOND_X")
 @external
@@ -3674,7 +3674,7 @@ def cla_gbrcond_x(
     INFO: Int32,
     WORK: Complex64[Flat],
     RWORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLA_GBRFSX_EXTENDED")
 @external
@@ -3711,7 +3711,7 @@ def cla_gbrfsx_extended(
     DZ_UB: Float32,
     IGNORE_CWISE: Bool,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["PREC_TYPE", Int32], Returns["TRANS_TYPE", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["COLEQU", Bool], Returns["LDB", Int32], Returns["LDY", Int32], Returns["N_NORMS", Int32], Returns["RCOND", Float32], Returns["ITHRESH", Int32], Returns["RTHRESH", Float32], Returns["DZ_UB", Float32], Returns["IGNORE_CWISE", Bool], Returns["INFO", Int32]]: ...
 
 @bind("CLA_GBRPVGRW")
 @external
@@ -3725,7 +3725,7 @@ def cla_gbrpvgrw(
     LDAB: Int32,
     AFB: Complex64[LDAFB, Flat],
     LDAFB: Int32
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NCOLS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32]]: ...
 
 @bind("CLA_GEAMV")
 @external
@@ -3742,7 +3742,7 @@ def cla_geamv(
     BETA: Float32,
     Y: Float32[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["TRANS", Int32], Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Float32], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Float32], Returns["INCY", Int32]]: ...
 
 @bind("CLA_GERCOND_C")
 @external
@@ -3760,7 +3760,7 @@ def cla_gercond_c(
     INFO: Int32,
     WORK: Complex64[Flat],
     RWORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["CAPPLY", Bool], Returns["INFO", Int32]]: ...
 
 @bind("CLA_GERCOND_X")
 @external
@@ -3777,7 +3777,7 @@ def cla_gercond_x(
     INFO: Int32,
     WORK: Complex64[Flat],
     RWORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLA_GERFSX_EXTENDED")
 @external
@@ -3812,7 +3812,7 @@ def cla_gerfsx_extended(
     DZ_UB: Float32,
     IGNORE_CWISE: Bool,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["PREC_TYPE", Int32], Returns["TRANS_TYPE", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["COLEQU", Bool], Returns["LDB", Int32], Returns["LDY", Int32], Returns["N_NORMS", Int32], Returns["RCOND", Float32], Returns["ITHRESH", Int32], Returns["RTHRESH", Float32], Returns["DZ_UB", Float32], Returns["IGNORE_CWISE", Bool], Returns["INFO", Int32]]: ...
 
 @bind("CLA_GERPVGRW")
 @external
@@ -3824,7 +3824,7 @@ def cla_gerpvgrw(
     LDA: Int32,
     AF: Complex64[LDAF, Flat],
     LDAF: Int32
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["NCOLS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32]]: ...
 
 @bind("CLA_HEAMV")
 @external
@@ -3840,7 +3840,7 @@ def cla_heamv(
     BETA: Float32,
     Y: Float32[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["UPLO", Int32], Returns["N", Int32], Returns["ALPHA", Float32], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Float32], Returns["INCY", Int32]]: ...
 
 @bind("CLA_HERCOND_C")
 @external
@@ -3858,7 +3858,7 @@ def cla_hercond_c(
     INFO: Int32,
     WORK: Complex64[Flat],
     RWORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["CAPPLY", Bool], Returns["INFO", Int32]]: ...
 
 @bind("CLA_HERCOND_X")
 @external
@@ -3875,7 +3875,7 @@ def cla_hercond_x(
     INFO: Int32,
     WORK: Complex64[Flat],
     RWORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLA_HERFSX_EXTENDED")
 @external
@@ -3910,7 +3910,7 @@ def cla_herfsx_extended(
     DZ_UB: Float32,
     IGNORE_CWISE: Bool,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["PREC_TYPE", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["COLEQU", Bool], Returns["LDB", Int32], Returns["LDY", Int32], Returns["N_NORMS", Int32], Returns["RCOND", Float32], Returns["ITHRESH", Int32], Returns["RTHRESH", Float32], Returns["DZ_UB", Float32], Returns["IGNORE_CWISE", Bool], Returns["INFO", Int32]]: ...
 
 @bind("CLA_HERPVGRW")
 @external
@@ -3925,7 +3925,7 @@ def cla_herpvgrw(
     LDAF: Int32,
     IPIV: Int32[Flat],
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["INFO", Int32], Returns["LDA", Int32], Returns["LDAF", Int32]]: ...
 
 @bind("CLA_LIN_BERR")
 @external
@@ -3937,7 +3937,7 @@ def cla_lin_berr(
     RES: Complex64[N, NRHS],
     AYB: Float32[N, NRHS],
     BERR: Float32[NRHS]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NZ", Int32], Returns["NRHS", Int32]]: ...
 
 @bind("CLA_PORCOND_C")
 @external
@@ -3954,7 +3954,7 @@ def cla_porcond_c(
     INFO: Int32,
     WORK: Complex64[Flat],
     RWORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["CAPPLY", Bool], Returns["INFO", Int32]]: ...
 
 @bind("CLA_PORCOND_X")
 @external
@@ -3970,7 +3970,7 @@ def cla_porcond_x(
     INFO: Int32,
     WORK: Complex64[Flat],
     RWORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLA_PORFSX_EXTENDED")
 @external
@@ -4004,7 +4004,7 @@ def cla_porfsx_extended(
     DZ_UB: Float32,
     IGNORE_CWISE: Bool,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["PREC_TYPE", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["COLEQU", Bool], Returns["LDB", Int32], Returns["LDY", Int32], Returns["N_NORMS", Int32], Returns["RCOND", Float32], Returns["ITHRESH", Int32], Returns["RTHRESH", Float32], Returns["DZ_UB", Float32], Returns["IGNORE_CWISE", Bool], Returns["INFO", Int32]]: ...
 
 @bind("CLA_PORPVGRW")
 @external
@@ -4017,7 +4017,7 @@ def cla_porpvgrw(
     AF: Complex64[LDAF, Flat],
     LDAF: Int32,
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["NCOLS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32]]: ...
 
 @bind("CLA_SYAMV")
 @external
@@ -4033,7 +4033,7 @@ def cla_syamv(
     BETA: Float32,
     Y: Float32[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["UPLO", Int32], Returns["N", Int32], Returns["ALPHA", Float32], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Float32], Returns["INCY", Int32]]: ...
 
 @bind("CLA_SYRCOND_C")
 @external
@@ -4051,7 +4051,7 @@ def cla_syrcond_c(
     INFO: Int32,
     WORK: Complex64[Flat],
     RWORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["CAPPLY", Bool], Returns["INFO", Int32]]: ...
 
 @bind("CLA_SYRCOND_X")
 @external
@@ -4068,7 +4068,7 @@ def cla_syrcond_x(
     INFO: Int32,
     WORK: Complex64[Flat],
     RWORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLA_SYRFSX_EXTENDED")
 @external
@@ -4103,7 +4103,7 @@ def cla_syrfsx_extended(
     DZ_UB: Float32,
     IGNORE_CWISE: Bool,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["PREC_TYPE", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["COLEQU", Bool], Returns["LDB", Int32], Returns["LDY", Int32], Returns["N_NORMS", Int32], Returns["RCOND", Float32], Returns["ITHRESH", Int32], Returns["RTHRESH", Float32], Returns["DZ_UB", Float32], Returns["IGNORE_CWISE", Bool], Returns["INFO", Int32]]: ...
 
 @bind("CLA_SYRPVGRW")
 @external
@@ -4118,7 +4118,7 @@ def cla_syrpvgrw(
     LDAF: Int32,
     IPIV: Int32[Flat],
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["INFO", Int32], Returns["LDA", Int32], Returns["LDAF", Int32]]: ...
 
 @bind("CLA_WWADDW")
 @external
@@ -4128,7 +4128,7 @@ def cla_wwaddw(
     X: Complex64[Flat],
     Y: Complex64[Flat],
     W: Complex64[Flat]
-) -> None: ...
+) -> Returns["N", Int32]: ...
 
 @bind("CLABRD")
 @external
@@ -4147,7 +4147,7 @@ def clabrd(
     LDX: Int32,
     Y: Complex64[LDY, Flat],
     LDY: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDX", Int32], Returns["LDY", Int32]]: ...
 
 @bind("CLACGV")
 @external
@@ -4156,7 +4156,7 @@ def clacgv(
     N: Int32,
     X: Complex64[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32]]: ...
 
 @bind("CLACN2")
 @external
@@ -4168,7 +4168,7 @@ def clacn2(
     EST: Float32,
     KASE: Int32,
     ISAVE: Int32[3]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["EST", Float32], Returns["KASE", Int32]]: ...
 
 @bind("CLACON")
 @external
@@ -4179,7 +4179,7 @@ def clacon(
     X: Complex64[N],
     EST: Float32,
     KASE: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["EST", Float32], Returns["KASE", Int32]]: ...
 
 @bind("CLACP2")
 @external
@@ -4192,7 +4192,7 @@ def clacp2(
     LDA: Int32,
     B: Complex64[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32]]: ...
 
 @bind("CLACPY")
 @external
@@ -4205,7 +4205,7 @@ def clacpy(
     LDA: Int32,
     B: Complex64[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32]]: ...
 
 @bind("CLACRM")
 @external
@@ -4220,7 +4220,7 @@ def clacrm(
     C: Complex64[LDC, Flat],
     LDC: Int32,
     RWORK: Float32[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDC", Int32]]: ...
 
 @bind("CLACRT")
 @external
@@ -4233,7 +4233,7 @@ def clacrt(
     INCY: Int32,
     C: Complex64,
     S: Complex64
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32], Returns["C", Complex64], Returns["S", Complex64]]: ...
 
 @bind("CLADIV")
 @external
@@ -4241,7 +4241,7 @@ def clacrt(
 def cladiv(
     X: Complex64,
     Y: Complex64
-) -> Complex64: ...
+) -> tuple[Complex64, Returns["X", Complex64], Returns["Y", Complex64]]: ...
 
 @bind("CLAED0")
 @external
@@ -4258,7 +4258,7 @@ def claed0(
     RWORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["QSIZ", Int32], Returns["N", Int32], Returns["LDQ", Int32], Returns["LDQS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLAED7")
 @external
@@ -4286,7 +4286,7 @@ def claed7(
     RWORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["CUTPNT", Int32], Returns["QSIZ", Int32], Returns["TLVLS", Int32], Returns["CURLVL", Int32], Returns["CURPBM", Int32], Returns["LDQ", Int32], Returns["RHO", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CLAED8")
 @external
@@ -4313,7 +4313,7 @@ def claed8(
     GIVCOL: Int32[2, Flat],
     GIVNUM: Float32[2, Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["K", Int32], Returns["N", Int32], Returns["QSIZ", Int32], Returns["LDQ", Int32], Returns["RHO", Float32], Returns["CUTPNT", Int32], Returns["LDQ2", Int32], Returns["GIVPTR", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLAEIN")
 @external
@@ -4332,7 +4332,7 @@ def claein(
     EPS3: Float32,
     SMLNUM: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["RIGHTV", Bool], Returns["NOINIT", Bool], Returns["N", Int32], Returns["LDH", Int32], Returns["W", Complex64], Returns["LDB", Int32], Returns["EPS3", Float32], Returns["SMLNUM", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CLAESY")
 @external
@@ -4346,7 +4346,7 @@ def claesy(
     EVSCAL: Complex64,
     CS1: Complex64,
     SN1: Complex64
-) -> None: ...
+) -> tuple[Returns["A", Complex64], Returns["B", Complex64], Returns["C", Complex64], Returns["RT1", Complex64], Returns["RT2", Complex64], Returns["EVSCAL", Complex64], Returns["CS1", Complex64], Returns["SN1", Complex64]]: ...
 
 @bind("CLAEV2")
 @external
@@ -4359,7 +4359,7 @@ def claev2(
     RT2: Float32,
     CS1: Float32,
     SN1: Complex64
-) -> None: ...
+) -> tuple[Returns["A", Complex64], Returns["B", Complex64], Returns["C", Complex64], Returns["RT1", Float32], Returns["RT2", Float32], Returns["CS1", Float32], Returns["SN1", Complex64]]: ...
 
 @bind("CLAG2Z")
 @external
@@ -4372,7 +4372,7 @@ def clag2z(
     A: Complex128[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDSA", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLAGS2")
 @external
@@ -4391,7 +4391,7 @@ def clags2(
     SNV: Complex64,
     CSQ: Float32,
     SNQ: Complex64
-) -> None: ...
+) -> tuple[Returns["UPPER", Bool], Returns["A1", Float32], Returns["A2", Complex64], Returns["A3", Float32], Returns["B1", Float32], Returns["B2", Complex64], Returns["B3", Float32], Returns["CSU", Float32], Returns["SNU", Complex64], Returns["CSV", Float32], Returns["SNV", Complex64], Returns["CSQ", Float32], Returns["SNQ", Complex64]]: ...
 
 @bind("CLAGTM")
 @external
@@ -4409,7 +4409,7 @@ def clagtm(
     BETA: Float32,
     B: Complex64[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["ALPHA", Float32], Returns["LDX", Int32], Returns["BETA", Float32], Returns["LDB", Int32]]: ...
 
 @bind("CLAHEF")
 @external
@@ -4425,7 +4425,7 @@ def clahef(
     W: Complex64[LDW, Flat],
     LDW: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NB", Int32], Returns["KB", Int32], Returns["LDA", Int32], Returns["LDW", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLAHEF_AA")
 @external
@@ -4441,7 +4441,7 @@ def clahef_aa(
     H: Complex64[LDH, Flat],
     LDH: Int32,
     WORK: Complex64[Flat]
-) -> None: ...
+) -> tuple[Returns["J1", Int32], Returns["M", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDH", Int32]]: ...
 
 @bind("CLAHEF_RK")
 @external
@@ -4458,7 +4458,7 @@ def clahef_rk(
     W: Complex64[LDW, Flat],
     LDW: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NB", Int32], Returns["KB", Int32], Returns["LDA", Int32], Returns["LDW", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLAHEF_ROOK")
 @external
@@ -4474,7 +4474,7 @@ def clahef_rook(
     W: Complex64[LDW, Flat],
     LDW: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NB", Int32], Returns["KB", Int32], Returns["LDA", Int32], Returns["LDW", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLAHQR")
 @external
@@ -4493,7 +4493,7 @@ def clahqr(
     Z: Complex64[LDZ, Flat],
     LDZ: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["WANTT", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDH", Int32], Returns["ILOZ", Int32], Returns["IHIZ", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLAHR2")
 @external
@@ -4509,7 +4509,7 @@ def clahr2(
     LDT: Int32,
     Y: Complex64[LDY, NB],
     LDY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LDY", Int32]]: ...
 
 @bind("CLAIC1")
 @external
@@ -4524,7 +4524,7 @@ def claic1(
     SESTPR: Float32,
     S: Complex64,
     C: Complex64
-) -> None: ...
+) -> tuple[Returns["JOB", Int32], Returns["J", Int32], Returns["SEST", Float32], Returns["GAMMA", Complex64], Returns["SESTPR", Float32], Returns["S", Complex64], Returns["C", Complex64]]: ...
 
 @bind("CLALS0")
 @external
@@ -4554,7 +4554,7 @@ def clals0(
     S: Float32,
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ICOMPQ", Int32], Returns["NL", Int32], Returns["NR", Int32], Returns["SQRE", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDBX", Int32], Returns["GIVPTR", Int32], Returns["LDGCOL", Int32], Returns["LDGNUM", Int32], Returns["K", Int32], Returns["C", Float32], Returns["S", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CLALSA")
 @external
@@ -4586,7 +4586,7 @@ def clalsa(
     RWORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ICOMPQ", Int32], Returns["SMLSIZ", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDBX", Int32], Returns["LDU", Int32], Returns["LDGCOL", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLALSD")
 @external
@@ -4606,7 +4606,7 @@ def clalsd(
     RWORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SMLSIZ", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["RCOND", Float32], Returns["RANK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLAMSWLQ")
 @external
@@ -4628,7 +4628,7 @@ def clamswlq(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["MB", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLAMTSQR")
 @external
@@ -4650,7 +4650,7 @@ def clamtsqr(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["MB", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLANGB")
 @external
@@ -4663,7 +4663,7 @@ def clangb(
     AB: Complex64[LDAB, Flat],
     LDAB: Int32,
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32]]: ...
 
 @bind("CLANGE")
 @external
@@ -4675,7 +4675,7 @@ def clange(
     A: Complex64[LDA, Flat],
     LDA: Int32,
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("CLANGT")
 @external
@@ -4686,7 +4686,7 @@ def clangt(
     DL: Complex64[Flat],
     D: Complex64[Flat],
     DU: Complex64[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32]]: ...
 
 @bind("CLANHB")
 @external
@@ -4699,7 +4699,7 @@ def clanhb(
     AB: Complex64[LDAB, Flat],
     LDAB: Int32,
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["K", Int32], Returns["LDAB", Int32]]: ...
 
 @bind("CLANHE")
 @external
@@ -4711,7 +4711,7 @@ def clanhe(
     A: Complex64[LDA, Flat],
     LDA: Int32,
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("CLANHF")
 @external
@@ -4723,7 +4723,7 @@ def clanhf(
     N: Int32,
     A: Complex64[Flat],
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32]]: ...
 
 @bind("CLANHP")
 @external
@@ -4734,7 +4734,7 @@ def clanhp(
     N: Int32,
     AP: Complex64[Flat],
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32]]: ...
 
 @bind("CLANHS")
 @external
@@ -4745,7 +4745,7 @@ def clanhs(
     A: Complex64[LDA, Flat],
     LDA: Int32,
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("CLANHT")
 @external
@@ -4755,7 +4755,7 @@ def clanht(
     N: Int32,
     D: Float32[Flat],
     E: Complex64[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32]]: ...
 
 @bind("CLANSB")
 @external
@@ -4768,7 +4768,7 @@ def clansb(
     AB: Complex64[LDAB, Flat],
     LDAB: Int32,
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["K", Int32], Returns["LDAB", Int32]]: ...
 
 @bind("CLANSP")
 @external
@@ -4779,7 +4779,7 @@ def clansp(
     N: Int32,
     AP: Complex64[Flat],
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32]]: ...
 
 @bind("CLANSY")
 @external
@@ -4791,7 +4791,7 @@ def clansy(
     A: Complex64[LDA, Flat],
     LDA: Int32,
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("CLANTB")
 @external
@@ -4805,7 +4805,7 @@ def clantb(
     AB: Complex64[LDAB, Flat],
     LDAB: Int32,
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["K", Int32], Returns["LDAB", Int32]]: ...
 
 @bind("CLANTP")
 @external
@@ -4817,7 +4817,7 @@ def clantp(
     N: Int32,
     AP: Complex64[Flat],
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32]]: ...
 
 @bind("CLANTR")
 @external
@@ -4831,7 +4831,7 @@ def clantr(
     A: Complex64[LDA, Flat],
     LDA: Int32,
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("CLAPLL")
 @external
@@ -4843,7 +4843,7 @@ def clapll(
     Y: Complex64[Flat],
     INCY: Int32,
     SSMIN: Float32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32], Returns["SSMIN", Float32]]: ...
 
 @bind("CLAPMR")
 @external
@@ -4855,7 +4855,7 @@ def clapmr(
     X: Complex64[LDX, Flat],
     LDX: Int32,
     K: Int32[Flat]
-) -> None: ...
+) -> tuple[Returns["FORWRD", Bool], Returns["M", Int32], Returns["N", Int32], Returns["LDX", Int32]]: ...
 
 @bind("CLAPMT")
 @external
@@ -4867,7 +4867,7 @@ def clapmt(
     X: Complex64[LDX, Flat],
     LDX: Int32,
     K: Int32[Flat]
-) -> None: ...
+) -> tuple[Returns["FORWRD", Bool], Returns["M", Int32], Returns["N", Int32], Returns["LDX", Int32]]: ...
 
 @bind("CLAQGB")
 @external
@@ -4885,7 +4885,7 @@ def claqgb(
     COLCND: Float32,
     AMAX: Float32,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["ROWCND", Float32], Returns["COLCND", Float32], Returns["AMAX", Float32]]: ...
 
 @bind("CLAQGE")
 @external
@@ -4901,7 +4901,7 @@ def claqge(
     COLCND: Float32,
     AMAX: Float32,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["ROWCND", Float32], Returns["COLCND", Float32], Returns["AMAX", Float32]]: ...
 
 @bind("CLAQHB")
 @external
@@ -4916,7 +4916,7 @@ def claqhb(
     SCOND: Float32,
     AMAX: Float32,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["SCOND", Float32], Returns["AMAX", Float32]]: ...
 
 @bind("CLAQHE")
 @external
@@ -4930,7 +4930,7 @@ def claqhe(
     SCOND: Float32,
     AMAX: Float32,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCOND", Float32], Returns["AMAX", Float32]]: ...
 
 @bind("CLAQHP")
 @external
@@ -4943,7 +4943,7 @@ def claqhp(
     SCOND: Float32,
     AMAX: Float32,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SCOND", Float32], Returns["AMAX", Float32]]: ...
 
 @bind("CLAQP2")
 @external
@@ -4959,7 +4959,7 @@ def claqp2(
     VN1: Float32[Flat],
     VN2: Float32[Flat],
     WORK: Complex64[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["OFFSET", Int32], Returns["LDA", Int32]]: ...
 
 @bind("CLAQP2RK")
 @external
@@ -4985,7 +4985,7 @@ def claqp2rk(
     VN2: Float32[Flat],
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["IOFFSET", Int32], Returns["KMAX", Int32], Returns["ABSTOL", Float32], Returns["RELTOL", Float32], Returns["KP1", Int32], Returns["MAXC2NRM", Float32], Returns["LDA", Int32], Returns["K", Int32], Returns["MAXC2NRMK", Float32], Returns["RELMAXC2NRMK", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CLAQP3RK")
 @external
@@ -5015,7 +5015,7 @@ def claqp3rk(
     LDF: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["IOFFSET", Int32], Returns["NB", Int32], Returns["ABSTOL", Float32], Returns["RELTOL", Float32], Returns["KP1", Int32], Returns["MAXC2NRM", Float32], Returns["LDA", Int32], Returns["DONE", Bool], Returns["KB", Int32], Returns["MAXC2NRMK", Float32], Returns["RELMAXC2NRMK", Float32], Returns["LDF", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLAQPS")
 @external
@@ -5035,7 +5035,7 @@ def claqps(
     AUXV: Complex64[Flat],
     F: Complex64[LDF, Flat],
     LDF: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["OFFSET", Int32], Returns["NB", Int32], Returns["KB", Int32], Returns["LDA", Int32], Returns["LDF", Int32]]: ...
 
 @bind("CLAQR0")
 @external
@@ -5056,7 +5056,7 @@ def claqr0(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["WANTT", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDH", Int32], Returns["ILOZ", Int32], Returns["IHIZ", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLAQR1")
 @external
@@ -5068,7 +5068,7 @@ def claqr1(
     S1: Complex64,
     S2: Complex64,
     V: Complex64[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDH", Int32], Returns["S1", Complex64], Returns["S2", Complex64]]: ...
 
 @bind("CLAQR2")
 @external
@@ -5099,7 +5099,7 @@ def claqr2(
     LDWV: Int32,
     WORK: Complex64[Flat],
     LWORK: Int32
-) -> None: ...
+) -> tuple[Returns["WANTT", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["KTOP", Int32], Returns["KBOT", Int32], Returns["NW", Int32], Returns["LDH", Int32], Returns["ILOZ", Int32], Returns["IHIZ", Int32], Returns["LDZ", Int32], Returns["NS", Int32], Returns["ND", Int32], Returns["LDV", Int32], Returns["NH", Int32], Returns["LDT", Int32], Returns["NV", Int32], Returns["LDWV", Int32], Returns["LWORK", Int32]]: ...
 
 @bind("CLAQR3")
 @external
@@ -5130,7 +5130,7 @@ def claqr3(
     LDWV: Int32,
     WORK: Complex64[Flat],
     LWORK: Int32
-) -> None: ...
+) -> tuple[Returns["WANTT", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["KTOP", Int32], Returns["KBOT", Int32], Returns["NW", Int32], Returns["LDH", Int32], Returns["ILOZ", Int32], Returns["IHIZ", Int32], Returns["LDZ", Int32], Returns["NS", Int32], Returns["ND", Int32], Returns["LDV", Int32], Returns["NH", Int32], Returns["LDT", Int32], Returns["NV", Int32], Returns["LDWV", Int32], Returns["LWORK", Int32]]: ...
 
 @bind("CLAQR4")
 @external
@@ -5151,7 +5151,7 @@ def claqr4(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["WANTT", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDH", Int32], Returns["ILOZ", Int32], Returns["IHIZ", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLAQR5")
 @external
@@ -5181,7 +5181,7 @@ def claqr5(
     NH: Int32,
     WH: Complex64[LDWH, Flat],
     LDWH: Int32
-) -> None: ...
+) -> tuple[Returns["WANTT", Bool], Returns["WANTZ", Bool], Returns["KACC22", Int32], Returns["N", Int32], Returns["KTOP", Int32], Returns["KBOT", Int32], Returns["NSHFTS", Int32], Returns["LDH", Int32], Returns["ILOZ", Int32], Returns["IHIZ", Int32], Returns["LDZ", Int32], Returns["LDV", Int32], Returns["LDU", Int32], Returns["NV", Int32], Returns["LDWV", Int32], Returns["NH", Int32], Returns["LDWH", Int32]]: ...
 
 @bind("CLAQSB")
 @external
@@ -5196,7 +5196,7 @@ def claqsb(
     SCOND: Float32,
     AMAX: Float32,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["SCOND", Float32], Returns["AMAX", Float32]]: ...
 
 @bind("CLAQSP")
 @external
@@ -5209,7 +5209,7 @@ def claqsp(
     SCOND: Float32,
     AMAX: Float32,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SCOND", Float32], Returns["AMAX", Float32]]: ...
 
 @bind("CLAQSY")
 @external
@@ -5223,7 +5223,7 @@ def claqsy(
     SCOND: Float32,
     AMAX: Float32,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCOND", Float32], Returns["AMAX", Float32]]: ...
 
 @bind("CLAQZ0")
 @external
@@ -5361,7 +5361,7 @@ def clar1v(
     RESID: Float32,
     RQCORR: Float32,
     WORK: Float32[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["B1", Int32], Returns["BN", Int32], Returns["LAMBDA", Float32], Returns["PIVMIN", Float32], Returns["GAPTOL", Float32], Returns["WANTNC", Bool], Returns["NEGCNT", Int32], Returns["ZTZ", Float32], Returns["MINGMA", Float32], Returns["R", Int32], Returns["NRMINV", Float32], Returns["RESID", Float32], Returns["RQCORR", Float32]]: ...
 
 @bind("CLAR2V")
 @external
@@ -5375,7 +5375,7 @@ def clar2v(
     C: Float32[Flat],
     S: Complex64[Flat],
     INCC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCC", Int32]]: ...
 
 @bind("CLARCM")
 @external
@@ -5390,7 +5390,7 @@ def clarcm(
     C: Complex64[LDC, Flat],
     LDC: Int32,
     RWORK: Float32[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDC", Int32]]: ...
 
 @bind("CLARF")
 @external
@@ -5405,7 +5405,7 @@ def clarf(
     C: Complex64[LDC, Flat],
     LDC: Int32,
     WORK: Complex64[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["INCV", Int32], Returns["TAU", Complex64], Returns["LDC", Int32]]: ...
 
 @bind("CLARF1F")
 @external
@@ -5420,7 +5420,7 @@ def clarf1f(
     C: Complex64[LDC, Flat],
     LDC: Int32,
     WORK: Complex64[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["INCV", Int32], Returns["TAU", Complex64], Returns["LDC", Int32]]: ...
 
 @bind("CLARF1L")
 @external
@@ -5435,7 +5435,7 @@ def clarf1l(
     C: Complex64[LDC, Flat],
     LDC: Int32,
     WORK: Complex64[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["INCV", Int32], Returns["TAU", Complex64], Returns["LDC", Int32]]: ...
 
 @bind("CLARFB")
 @external
@@ -5456,7 +5456,7 @@ def clarfb(
     LDC: Int32,
     WORK: Complex64[LDWORK, Flat],
     LDWORK: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDC", Int32], Returns["LDWORK", Int32]]: ...
 
 @bind("CLARFB_GETT")
 @external
@@ -5474,7 +5474,7 @@ def clarfb_gett(
     LDB: Int32,
     WORK: Complex64[LDWORK, Flat],
     LDWORK: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDT", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDWORK", Int32]]: ...
 
 @bind("CLARFG")
 @external
@@ -5485,7 +5485,7 @@ def clarfg(
     X: Complex64[Flat],
     INCX: Int32,
     TAU: Complex64
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Complex64], Returns["INCX", Int32], Returns["TAU", Complex64]]: ...
 
 @bind("CLARFGP")
 @external
@@ -5496,7 +5496,7 @@ def clarfgp(
     X: Complex64[Flat],
     INCX: Int32,
     TAU: Complex64
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Complex64], Returns["INCX", Int32], Returns["TAU", Complex64]]: ...
 
 @bind("CLARFT")
 @external
@@ -5511,7 +5511,7 @@ def clarft(
     TAU: Complex64[Flat],
     T: Complex64[LDT, Flat],
     LDT: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["LDV", Int32], Returns["LDT", Int32]]: ...
 
 @bind("CLARFX")
 @external
@@ -5525,7 +5525,7 @@ def clarfx(
     C: Complex64[LDC, Flat],
     LDC: Int32,
     WORK: Complex64[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["TAU", Complex64], Returns["LDC", Int32]]: ...
 
 @bind("CLARFY")
 @external
@@ -5539,7 +5539,7 @@ def clarfy(
     C: Complex64[LDC, Flat],
     LDC: Int32,
     WORK: Complex64[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCV", Int32], Returns["TAU", Complex64], Returns["LDC", Int32]]: ...
 
 @bind("CLARGV")
 @external
@@ -5552,7 +5552,7 @@ def clargv(
     INCY: Int32,
     C: Float32[Flat],
     INCC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32], Returns["INCC", Int32]]: ...
 
 @bind("CLARNV")
 @external
@@ -5562,7 +5562,7 @@ def clarnv(
     ISEED: Int32[4],
     N: Int32,
     X: Complex64[Flat]
-) -> None: ...
+) -> tuple[Returns["IDIST", Int32], Returns["N", Int32]]: ...
 
 @bind("CLARRV")
 @external
@@ -5593,7 +5593,7 @@ def clarrv(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["PIVMIN", Float32], Returns["M", Int32], Returns["DOL", Int32], Returns["DOU", Int32], Returns["MINRGP", Float32], Returns["RTOL1", Float32], Returns["RTOL2", Float32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLARSCL2")
 @external
@@ -5604,7 +5604,7 @@ def clarscl2(
     D: Float32[Flat],
     X: Complex64[LDX, Flat],
     LDX: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDX", Int32]]: ...
 
 @bind("CLARTG")
 @external
@@ -5615,7 +5615,7 @@ def clartg(
     c: Float32,
     s: Complex64,
     r: Complex64
-) -> None: ...
+) -> tuple[Returns["f", Complex64], Returns["g", Complex64], Returns["c", Float32], Returns["s", Complex64], Returns["r", Complex64]]: ...
 
 @bind("CLARTV")
 @external
@@ -5629,7 +5629,7 @@ def clartv(
     C: Float32[Flat],
     S: Complex64[Flat],
     INCC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32], Returns["INCC", Int32]]: ...
 
 @bind("CLARZ")
 @external
@@ -5645,7 +5645,7 @@ def clarz(
     C: Complex64[LDC, Flat],
     LDC: Int32,
     WORK: Complex64[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["L", Int32], Returns["INCV", Int32], Returns["TAU", Complex64], Returns["LDC", Int32]]: ...
 
 @bind("CLARZB")
 @external
@@ -5667,7 +5667,7 @@ def clarzb(
     LDC: Int32,
     WORK: Complex64[LDWORK, Flat],
     LDWORK: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDC", Int32], Returns["LDWORK", Int32]]: ...
 
 @bind("CLARZT")
 @external
@@ -5682,7 +5682,7 @@ def clarzt(
     TAU: Complex64[Flat],
     T: Complex64[LDT, Flat],
     LDT: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["LDV", Int32], Returns["LDT", Int32]]: ...
 
 @bind("CLASCL")
 @external
@@ -5698,7 +5698,7 @@ def clascl(
     A: Complex64[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["KL", Int32], Returns["KU", Int32], Returns["CFROM", Float32], Returns["CTO", Float32], Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLASCL2")
 @external
@@ -5709,7 +5709,7 @@ def clascl2(
     D: Float32[Flat],
     X: Complex64[LDX, Flat],
     LDX: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDX", Int32]]: ...
 
 @bind("CLASET")
 @external
@@ -5722,7 +5722,7 @@ def claset(
     BETA: Complex64,
     A: Complex64[LDA, Flat],
     LDA: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Complex64], Returns["BETA", Complex64], Returns["LDA", Int32]]: ...
 
 @bind("CLASR")
 @external
@@ -5737,7 +5737,7 @@ def clasr(
     S: Float32[Flat],
     A: Complex64[LDA, Flat],
     LDA: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("CLASSQ")
 @external
@@ -5748,7 +5748,7 @@ def classq(
     incx: Int32,
     scale: Float32,
     sumsq: Float32
-) -> None: ...
+) -> tuple[Returns["n", Int32], Returns["incx", Int32], Returns["scale", Float32], Returns["sumsq", Float32]]: ...
 
 @bind("CLASWLQ")
 @external
@@ -5765,7 +5765,7 @@ def claswlq(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["MB", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLASWP")
 @external
@@ -5778,7 +5778,7 @@ def claswp(
     K2: Int32,
     IPIV: Int32[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["K1", Int32], Returns["K2", Int32], Returns["INCX", Int32]]: ...
 
 @bind("CLASYF")
 @external
@@ -5794,7 +5794,7 @@ def clasyf(
     W: Complex64[LDW, Flat],
     LDW: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NB", Int32], Returns["KB", Int32], Returns["LDA", Int32], Returns["LDW", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLASYF_AA")
 @external
@@ -5810,7 +5810,7 @@ def clasyf_aa(
     H: Complex64[LDH, Flat],
     LDH: Int32,
     WORK: Complex64[Flat]
-) -> None: ...
+) -> tuple[Returns["J1", Int32], Returns["M", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDH", Int32]]: ...
 
 @bind("CLASYF_RK")
 @external
@@ -5827,7 +5827,7 @@ def clasyf_rk(
     W: Complex64[LDW, Flat],
     LDW: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NB", Int32], Returns["KB", Int32], Returns["LDA", Int32], Returns["LDW", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLASYF_ROOK")
 @external
@@ -5843,7 +5843,7 @@ def clasyf_rook(
     W: Complex64[LDW, Flat],
     LDW: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NB", Int32], Returns["KB", Int32], Returns["LDA", Int32], Returns["LDW", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLATBS")
 @external
@@ -5861,7 +5861,7 @@ def clatbs(
     SCALE: Float32,
     CNORM: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["SCALE", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CLATDF")
 @external
@@ -5876,7 +5876,7 @@ def clatdf(
     RDSCAL: Float32,
     IPIV: Int32[Flat],
     JPIV: Int32[Flat]
-) -> None: ...
+) -> tuple[Returns["IJOB", Int32], Returns["N", Int32], Returns["LDZ", Int32], Returns["RDSUM", Float32], Returns["RDSCAL", Float32]]: ...
 
 @bind("CLATPS")
 @external
@@ -5892,7 +5892,7 @@ def clatps(
     SCALE: Float32,
     CNORM: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SCALE", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CLATRD")
 @external
@@ -5907,7 +5907,7 @@ def clatrd(
     TAU: Complex64[Flat],
     W: Complex64[LDW, Flat],
     LDW: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDW", Int32]]: ...
 
 @bind("CLATRS")
 @external
@@ -5924,7 +5924,7 @@ def clatrs(
     SCALE: Float32,
     CNORM: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCALE", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CLATRS3")
 @external
@@ -5945,7 +5945,7 @@ def clatrs3(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDX", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLATRZ")
 @external
@@ -5958,7 +5958,7 @@ def clatrz(
     LDA: Int32,
     TAU: Complex64[Flat],
     WORK: Complex64[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["L", Int32], Returns["LDA", Int32]]: ...
 
 @bind("CLATSQR")
 @external
@@ -5975,7 +5975,7 @@ def clatsqr(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["MB", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLAUNHR_COL_GETRFNP")
 @external
@@ -5987,7 +5987,7 @@ def claunhr_col_getrfnp(
     LDA: Int32,
     D: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLAUNHR_COL_GETRFNP2")
 @external
@@ -5999,7 +5999,7 @@ def claunhr_col_getrfnp2(
     LDA: Int32,
     D: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLAUU2")
 @external
@@ -6010,7 +6010,7 @@ def clauu2(
     A: Complex64[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CLAUUM")
 @external
@@ -6021,7 +6021,7 @@ def clauum(
     A: Complex64[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPBCON")
 @external
@@ -6037,7 +6037,7 @@ def cpbcon(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CPBEQU")
 @external
@@ -6052,7 +6052,7 @@ def cpbequ(
     SCOND: Float32,
     AMAX: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["SCOND", Float32], Returns["AMAX", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CPBRFS")
 @external
@@ -6075,7 +6075,7 @@ def cpbrfs(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPBSTF")
 @external
@@ -6087,7 +6087,7 @@ def cpbstf(
     AB: Complex64[LDAB, Flat],
     LDAB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPBSV")
 @external
@@ -6102,7 +6102,7 @@ def cpbsv(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPBSVX")
 @external
@@ -6129,7 +6129,7 @@ def cpbsvx(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CPBTF2")
 @external
@@ -6141,7 +6141,7 @@ def cpbtf2(
     AB: Complex64[LDAB, Flat],
     LDAB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPBTRF")
 @external
@@ -6153,7 +6153,7 @@ def cpbtrf(
     AB: Complex64[LDAB, Flat],
     LDAB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPBTRS")
 @external
@@ -6168,7 +6168,7 @@ def cpbtrs(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPFTRF")
 @external
@@ -6179,7 +6179,7 @@ def cpftrf(
     N: Int32,
     A: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPFTRI")
 @external
@@ -6190,7 +6190,7 @@ def cpftri(
     N: Int32,
     A: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPFTRS")
 @external
@@ -6204,7 +6204,7 @@ def cpftrs(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPOCON")
 @external
@@ -6219,7 +6219,7 @@ def cpocon(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CPOEQU")
 @external
@@ -6232,7 +6232,7 @@ def cpoequ(
     SCOND: Float32,
     AMAX: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCOND", Float32], Returns["AMAX", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CPOEQUB")
 @external
@@ -6245,7 +6245,7 @@ def cpoequb(
     SCOND: Float32,
     AMAX: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCOND", Float32], Returns["AMAX", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CPORFS")
 @external
@@ -6267,7 +6267,7 @@ def cporfs(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPORFSX")
 @external
@@ -6296,7 +6296,7 @@ def cporfsx(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPOSV")
 @external
@@ -6310,7 +6310,7 @@ def cposv(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPOSVX")
 @external
@@ -6336,7 +6336,7 @@ def cposvx(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CPOSVXX")
 @external
@@ -6367,7 +6367,7 @@ def cposvxx(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["RPVGRW", Float32], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPOTF2")
 @external
@@ -6378,7 +6378,7 @@ def cpotf2(
     A: Complex64[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPOTRF")
 @external
@@ -6389,7 +6389,7 @@ def cpotrf(
     A: Complex64[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPOTRF2")
 @external
@@ -6400,7 +6400,7 @@ def cpotrf2(
     A: Complex64[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPOTRI")
 @external
@@ -6411,7 +6411,7 @@ def cpotri(
     A: Complex64[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPOTRS")
 @external
@@ -6425,7 +6425,7 @@ def cpotrs(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPPCON")
 @external
@@ -6439,7 +6439,7 @@ def cppcon(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CPPEQU")
 @external
@@ -6452,7 +6452,7 @@ def cppequ(
     SCOND: Float32,
     AMAX: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SCOND", Float32], Returns["AMAX", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CPPRFS")
 @external
@@ -6472,7 +6472,7 @@ def cpprfs(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPPSV")
 @external
@@ -6485,7 +6485,7 @@ def cppsv(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPPSVX")
 @external
@@ -6509,7 +6509,7 @@ def cppsvx(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CPPTRF")
 @external
@@ -6519,7 +6519,7 @@ def cpptrf(
     N: Int32,
     AP: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPPTRI")
 @external
@@ -6529,7 +6529,7 @@ def cpptri(
     N: Int32,
     AP: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPPTRS")
 @external
@@ -6542,7 +6542,7 @@ def cpptrs(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPSTF2")
 @external
@@ -6557,7 +6557,7 @@ def cpstf2(
     TOL: Float32,
     WORK: Float32[2 * N],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["RANK", Int32], Returns["TOL", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CPSTRF")
 @external
@@ -6572,7 +6572,7 @@ def cpstrf(
     TOL: Float32,
     WORK: Float32[2 * N],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["RANK", Int32], Returns["TOL", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CPTCON")
 @external
@@ -6585,7 +6585,7 @@ def cptcon(
     RCOND: Float32,
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CPTEQR")
 @external
@@ -6599,7 +6599,7 @@ def cpteqr(
     LDZ: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPTRFS")
 @external
@@ -6621,7 +6621,7 @@ def cptrfs(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPTSV")
 @external
@@ -6634,7 +6634,7 @@ def cptsv(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPTSVX")
 @external
@@ -6657,7 +6657,7 @@ def cptsvx(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CPTTRF")
 @external
@@ -6667,7 +6667,7 @@ def cpttrf(
     D: Float32[Flat],
     E: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPTTRS")
 @external
@@ -6681,7 +6681,7 @@ def cpttrs(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CPTTS2")
 @external
@@ -6694,7 +6694,7 @@ def cptts2(
     E: Complex64[Flat],
     B: Complex64[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["IUPLO", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32]]: ...
 
 @bind("CROT")
 @external
@@ -6707,7 +6707,7 @@ def crot(
     INCY: Int32,
     C: Float32,
     S: Complex64
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32], Returns["C", Float32], Returns["S", Complex64]]: ...
 
 @bind("CRSCL")
 @external
@@ -6717,7 +6717,7 @@ def crscl(
     A: Complex64,
     X: Complex64[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["A", Complex64], Returns["INCX", Int32]]: ...
 
 @bind("CSPCON")
 @external
@@ -6731,7 +6731,7 @@ def cspcon(
     RCOND: Float32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CSPMV")
 @external
@@ -6746,7 +6746,7 @@ def cspmv(
     BETA: Complex64,
     Y: Complex64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Complex64], Returns["INCX", Int32], Returns["BETA", Complex64], Returns["INCY", Int32]]: ...
 
 @bind("CSPR")
 @external
@@ -6758,7 +6758,7 @@ def cspr(
     X: Complex64[Flat],
     INCX: Int32,
     AP: Complex64[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Complex64], Returns["INCX", Int32]]: ...
 
 @bind("CSPRFS")
 @external
@@ -6779,7 +6779,7 @@ def csprfs(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSPSV")
 @external
@@ -6793,7 +6793,7 @@ def cspsv(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSPSVX")
 @external
@@ -6816,7 +6816,7 @@ def cspsvx(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CSPTRF")
 @external
@@ -6827,7 +6827,7 @@ def csptrf(
     AP: Complex64[Flat],
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSPTRI")
 @external
@@ -6839,7 +6839,7 @@ def csptri(
     IPIV: Int32[Flat],
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSPTRS")
 @external
@@ -6853,7 +6853,7 @@ def csptrs(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSRSCL")
 @external
@@ -6863,7 +6863,7 @@ def csrscl(
     SA: Float32,
     SX: Complex64[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SA", Float32], Returns["INCX", Int32]]: ...
 
 @bind("CSTEDC")
 @external
@@ -6882,7 +6882,7 @@ def cstedc(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSTEGR")
 @external
@@ -6908,7 +6908,7 @@ def cstegr(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSTEIN")
 @external
@@ -6927,7 +6927,7 @@ def cstein(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["M", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSTEMR")
 @external
@@ -6954,7 +6954,7 @@ def cstemr(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["M", Int32], Returns["LDZ", Int32], Returns["NZC", Int32], Returns["TRYRAC", Bool], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSTEQR")
 @external
@@ -6968,7 +6968,7 @@ def csteqr(
     LDZ: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYCON")
 @external
@@ -6983,7 +6983,7 @@ def csycon(
     RCOND: Float32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CSYCON_3")
 @external
@@ -6999,7 +6999,7 @@ def csycon_3(
     RCOND: Float32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CSYCON_ROOK")
 @external
@@ -7014,7 +7014,7 @@ def csycon_rook(
     RCOND: Float32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CSYCONV")
 @external
@@ -7028,7 +7028,7 @@ def csyconv(
     IPIV: Int32[Flat],
     E: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYCONVF")
 @external
@@ -7042,7 +7042,7 @@ def csyconvf(
     E: Complex64[Flat],
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYCONVF_ROOK")
 @external
@@ -7056,7 +7056,7 @@ def csyconvf_rook(
     E: Complex64[Flat],
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYEQUB")
 @external
@@ -7071,7 +7071,7 @@ def csyequb(
     AMAX: Float32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCOND", Float32], Returns["AMAX", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CSYMV")
 @external
@@ -7087,7 +7087,7 @@ def csymv(
     BETA: Complex64,
     Y: Complex64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Complex64], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Complex64], Returns["INCY", Int32]]: ...
 
 @bind("CSYR")
 @external
@@ -7100,7 +7100,7 @@ def csyr(
     INCX: Int32,
     A: Complex64[LDA, Flat],
     LDA: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Complex64], Returns["INCX", Int32], Returns["LDA", Int32]]: ...
 
 @bind("CSYRFS")
 @external
@@ -7123,7 +7123,7 @@ def csyrfs(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYRFSX")
 @external
@@ -7153,7 +7153,7 @@ def csyrfsx(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYSV")
 @external
@@ -7170,7 +7170,7 @@ def csysv(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYSV_AA")
 @external
@@ -7187,7 +7187,7 @@ def csysv_aa(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYSV_AA_2STAGE")
 @external
@@ -7207,7 +7207,7 @@ def csysv_aa_2stage(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LTB", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYSV_RK")
 @external
@@ -7225,7 +7225,7 @@ def csysv_rk(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYSV_ROOK")
 @external
@@ -7242,7 +7242,7 @@ def csysv_rook(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYSVX")
 @external
@@ -7268,7 +7268,7 @@ def csysvx(
     LWORK: Int32,
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYSVXX")
 @external
@@ -7300,7 +7300,7 @@ def csysvxx(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["RPVGRW", Float32], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYSWAPR")
 @external
@@ -7312,7 +7312,7 @@ def csyswapr(
     LDA: Int32,
     I1: Int32,
     I2: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["I1", Int32], Returns["I2", Int32]]: ...
 
 @bind("CSYTF2")
 @external
@@ -7324,7 +7324,7 @@ def csytf2(
     LDA: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYTF2_RK")
 @external
@@ -7337,7 +7337,7 @@ def csytf2_rk(
     E: Complex64[Flat],
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYTF2_ROOK")
 @external
@@ -7349,7 +7349,7 @@ def csytf2_rook(
     LDA: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYTRF")
 @external
@@ -7363,7 +7363,7 @@ def csytrf(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYTRF_AA")
 @external
@@ -7377,7 +7377,7 @@ def csytrf_aa(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYTRF_AA_2STAGE")
 @external
@@ -7394,7 +7394,7 @@ def csytrf_aa_2stage(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LTB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYTRF_RK")
 @external
@@ -7409,7 +7409,7 @@ def csytrf_rk(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYTRF_ROOK")
 @external
@@ -7423,7 +7423,7 @@ def csytrf_rook(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYTRI")
 @external
@@ -7436,7 +7436,7 @@ def csytri(
     IPIV: Int32[Flat],
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYTRI2")
 @external
@@ -7450,7 +7450,7 @@ def csytri2(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYTRI2X")
 @external
@@ -7464,7 +7464,7 @@ def csytri2x(
     WORK: Complex64[N + NB + 1, Flat],
     NB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["NB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYTRI_3")
 @external
@@ -7479,7 +7479,7 @@ def csytri_3(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYTRI_3X")
 @external
@@ -7494,7 +7494,7 @@ def csytri_3x(
     WORK: Complex64[N + NB + 1, Flat],
     NB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["NB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYTRI_ROOK")
 @external
@@ -7507,7 +7507,7 @@ def csytri_rook(
     IPIV: Int32[Flat],
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYTRS")
 @external
@@ -7522,7 +7522,7 @@ def csytrs(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYTRS2")
 @external
@@ -7538,7 +7538,7 @@ def csytrs2(
     LDB: Int32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYTRS_3")
 @external
@@ -7554,7 +7554,7 @@ def csytrs_3(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYTRS_AA")
 @external
@@ -7571,7 +7571,7 @@ def csytrs_aa(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYTRS_AA_2STAGE")
 @external
@@ -7589,7 +7589,7 @@ def csytrs_aa_2stage(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LTB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CSYTRS_ROOK")
 @external
@@ -7604,7 +7604,7 @@ def csytrs_rook(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTBCON")
 @external
@@ -7621,7 +7621,7 @@ def ctbcon(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CTBRFS")
 @external
@@ -7644,7 +7644,7 @@ def ctbrfs(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTBTRS")
 @external
@@ -7661,7 +7661,7 @@ def ctbtrs(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTFSM")
 @external
@@ -7678,7 +7678,7 @@ def ctfsm(
     A: Complex64[Flat],
     B: Complex64[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Complex64], Returns["LDB", Int32]]: ...
 
 @bind("CTFTRI")
 @external
@@ -7690,7 +7690,7 @@ def ctftri(
     N: Int32,
     A: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTFTTP")
 @external
@@ -7702,7 +7702,7 @@ def ctfttp(
     ARF: Complex64[Flat],
     AP: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTFTTR")
 @external
@@ -7715,7 +7715,7 @@ def ctfttr(
     A: Complex64[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTGEVC")
 @external
@@ -7738,7 +7738,7 @@ def ctgevc(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDS", Int32], Returns["LDP", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["MM", Int32], Returns["M", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTGEX2")
 @external
@@ -7757,7 +7757,7 @@ def ctgex2(
     LDZ: Int32,
     J1: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["WANTQ", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDQ", Int32], Returns["LDZ", Int32], Returns["J1", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTGEXC")
 @external
@@ -7777,7 +7777,7 @@ def ctgexc(
     IFST: Int32,
     ILST: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["WANTQ", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDQ", Int32], Returns["LDZ", Int32], Returns["IFST", Int32], Returns["ILST", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTGSEN")
 @external
@@ -7807,7 +7807,7 @@ def ctgsen(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["IJOB", Int32], Returns["WANTQ", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDQ", Int32], Returns["LDZ", Int32], Returns["M", Int32], Returns["PL", Float32], Returns["PR", Float32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTGSJA")
 @external
@@ -7838,7 +7838,7 @@ def ctgsja(
     WORK: Complex64[Flat],
     NCYCLE: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["TOLA", Float32], Returns["TOLB", Float32], Returns["LDU", Int32], Returns["LDV", Int32], Returns["LDQ", Int32], Returns["NCYCLE", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTGSNA")
 @external
@@ -7864,7 +7864,7 @@ def ctgsna(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["MM", Int32], Returns["M", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTGSY2")
 @external
@@ -7890,7 +7890,7 @@ def ctgsy2(
     RDSUM: Float32,
     RDSCAL: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["IJOB", Int32], Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDC", Int32], Returns["LDD", Int32], Returns["LDE", Int32], Returns["LDF", Int32], Returns["SCALE", Float32], Returns["RDSUM", Float32], Returns["RDSCAL", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CTGSYL")
 @external
@@ -7918,7 +7918,7 @@ def ctgsyl(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["IJOB", Int32], Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDC", Int32], Returns["LDD", Int32], Returns["LDE", Int32], Returns["LDF", Int32], Returns["SCALE", Float32], Returns["DIF", Float32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTPCON")
 @external
@@ -7933,7 +7933,7 @@ def ctpcon(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CTPLQT")
 @external
@@ -7951,7 +7951,7 @@ def ctplqt(
     LDT: Int32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["L", Int32], Returns["MB", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTPLQT2")
 @external
@@ -7967,7 +7967,7 @@ def ctplqt2(
     T: Complex64[LDT, Flat],
     LDT: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["L", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTPMLQT")
 @external
@@ -7990,7 +7990,7 @@ def ctpmlqt(
     LDB: Int32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["MB", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTPMQRT")
 @external
@@ -8013,7 +8013,7 @@ def ctpmqrt(
     LDB: Int32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["NB", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTPQRT")
 @external
@@ -8031,7 +8031,7 @@ def ctpqrt(
     LDT: Int32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["L", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTPQRT2")
 @external
@@ -8047,7 +8047,7 @@ def ctpqrt2(
     T: Complex64[LDT, Flat],
     LDT: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["L", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTPRFB")
 @external
@@ -8071,7 +8071,7 @@ def ctprfb(
     LDB: Int32,
     WORK: Complex64[LDWORK, Flat],
     LDWORK: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDWORK", Int32]]: ...
 
 @bind("CTPRFS")
 @external
@@ -8092,7 +8092,7 @@ def ctprfs(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTPTRI")
 @external
@@ -8103,7 +8103,7 @@ def ctptri(
     N: Int32,
     AP: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTPTRS")
 @external
@@ -8118,7 +8118,7 @@ def ctptrs(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTPTTF")
 @external
@@ -8130,7 +8130,7 @@ def ctpttf(
     AP: Complex64[Flat],
     ARF: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTPTTR")
 @external
@@ -8142,7 +8142,7 @@ def ctpttr(
     A: Complex64[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTRCON")
 @external
@@ -8158,7 +8158,7 @@ def ctrcon(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CTREVC")
 @external
@@ -8179,7 +8179,7 @@ def ctrevc(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDT", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["MM", Int32], Returns["M", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTREVC3")
 @external
@@ -8202,7 +8202,7 @@ def ctrevc3(
     RWORK: Float32[Flat],
     LRWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDT", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["MM", Int32], Returns["M", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTREXC")
 @external
@@ -8217,7 +8217,7 @@ def ctrexc(
     IFST: Int32,
     ILST: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDT", Int32], Returns["LDQ", Int32], Returns["IFST", Int32], Returns["ILST", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTRRFS")
 @external
@@ -8239,7 +8239,7 @@ def ctrrfs(
     WORK: Complex64[Flat],
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTRSEN")
 @external
@@ -8260,7 +8260,7 @@ def ctrsen(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDT", Int32], Returns["LDQ", Int32], Returns["M", Int32], Returns["S", Float32], Returns["SEP", Float32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTRSNA")
 @external
@@ -8284,7 +8284,7 @@ def ctrsna(
     LDWORK: Int32,
     RWORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDT", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["MM", Int32], Returns["M", Int32], Returns["LDWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTRSYL")
 @external
@@ -8303,7 +8303,7 @@ def ctrsyl(
     LDC: Int32,
     SCALE: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ISGN", Int32], Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDC", Int32], Returns["SCALE", Float32], Returns["INFO", Int32]]: ...
 
 @bind("CTRSYL3")
 @external
@@ -8324,7 +8324,7 @@ def ctrsyl3(
     SWORK: Float32[LDSWORK, Flat],
     LDSWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ISGN", Int32], Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDC", Int32], Returns["SCALE", Float32], Returns["LDSWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTRTI2")
 @external
@@ -8336,7 +8336,7 @@ def ctrti2(
     A: Complex64[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTRTRI")
 @external
@@ -8348,7 +8348,7 @@ def ctrtri(
     A: Complex64[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTRTRS")
 @external
@@ -8364,7 +8364,7 @@ def ctrtrs(
     B: Complex64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTRTTF")
 @external
@@ -8377,7 +8377,7 @@ def ctrttf(
     LDA: Int32,
     ARF: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTRTTP")
 @external
@@ -8389,7 +8389,7 @@ def ctrttp(
     LDA: Int32,
     AP: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CTZRZF")
 @external
@@ -8403,7 +8403,7 @@ def ctzrzf(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNBDB")
 @external
@@ -8431,7 +8431,7 @@ def cunbdb(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX12", Int32], Returns["LDX21", Int32], Returns["LDX22", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNBDB1")
 @external
@@ -8452,7 +8452,7 @@ def cunbdb1(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX21", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNBDB2")
 @external
@@ -8473,7 +8473,7 @@ def cunbdb2(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX21", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNBDB3")
 @external
@@ -8494,7 +8494,7 @@ def cunbdb3(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX21", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNBDB4")
 @external
@@ -8516,7 +8516,7 @@ def cunbdb4(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX21", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNBDB5")
 @external
@@ -8536,7 +8536,7 @@ def cunbdb5(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M1", Int32], Returns["M2", Int32], Returns["N", Int32], Returns["INCX1", Int32], Returns["INCX2", Int32], Returns["LDQ1", Int32], Returns["LDQ2", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNBDB6")
 @external
@@ -8556,7 +8556,7 @@ def cunbdb6(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M1", Int32], Returns["M2", Int32], Returns["N", Int32], Returns["INCX1", Int32], Returns["INCX2", Int32], Returns["LDQ1", Int32], Returns["LDQ2", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNCSD")
 @external
@@ -8594,7 +8594,7 @@ def cuncsd(
     LRWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX12", Int32], Returns["LDX21", Int32], Returns["LDX22", Int32], Returns["LDU1", Int32], Returns["LDU2", Int32], Returns["LDV1T", Int32], Returns["LDV2T", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNCSD2BY1")
 @external
@@ -8623,7 +8623,7 @@ def cuncsd2by1(
     LRWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX21", Int32], Returns["LDU1", Int32], Returns["LDU2", Int32], Returns["LDV1T", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNG2L")
 @external
@@ -8637,7 +8637,7 @@ def cung2l(
     TAU: Complex64[Flat],
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNG2R")
 @external
@@ -8651,7 +8651,7 @@ def cung2r(
     TAU: Complex64[Flat],
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNGBR")
 @external
@@ -8667,7 +8667,7 @@ def cungbr(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNGHR")
 @external
@@ -8682,7 +8682,7 @@ def cunghr(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNGL2")
 @external
@@ -8696,7 +8696,7 @@ def cungl2(
     TAU: Complex64[Flat],
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNGLQ")
 @external
@@ -8711,7 +8711,7 @@ def cunglq(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNGQL")
 @external
@@ -8726,7 +8726,7 @@ def cungql(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNGQR")
 @external
@@ -8741,7 +8741,7 @@ def cungqr(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNGR2")
 @external
@@ -8755,7 +8755,7 @@ def cungr2(
     TAU: Complex64[Flat],
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNGRQ")
 @external
@@ -8770,7 +8770,7 @@ def cungrq(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNGTR")
 @external
@@ -8784,7 +8784,7 @@ def cungtr(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNGTSQR")
 @external
@@ -8801,7 +8801,7 @@ def cungtsqr(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["MB", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNGTSQR_ROW")
 @external
@@ -8818,7 +8818,7 @@ def cungtsqr_row(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["MB", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNHR_COL")
 @external
@@ -8833,7 +8833,7 @@ def cunhr_col(
     LDT: Int32,
     D: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNM22")
 @external
@@ -8852,7 +8852,7 @@ def cunm22(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["N1", Int32], Returns["N2", Int32], Returns["LDQ", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNM2L")
 @external
@@ -8870,7 +8870,7 @@ def cunm2l(
     LDC: Int32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNM2R")
 @external
@@ -8888,7 +8888,7 @@ def cunm2r(
     LDC: Int32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNMBR")
 @external
@@ -8908,7 +8908,7 @@ def cunmbr(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNMHR")
 @external
@@ -8928,7 +8928,7 @@ def cunmhr(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNML2")
 @external
@@ -8946,7 +8946,7 @@ def cunml2(
     LDC: Int32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNMLQ")
 @external
@@ -8965,7 +8965,7 @@ def cunmlq(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNMQL")
 @external
@@ -8984,7 +8984,7 @@ def cunmql(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNMQR")
 @external
@@ -9003,7 +9003,7 @@ def cunmqr(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNMR2")
 @external
@@ -9021,7 +9021,7 @@ def cunmr2(
     LDC: Int32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNMR3")
 @external
@@ -9040,7 +9040,7 @@ def cunmr3(
     LDC: Int32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNMRQ")
 @external
@@ -9059,7 +9059,7 @@ def cunmrq(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNMRZ")
 @external
@@ -9079,7 +9079,7 @@ def cunmrz(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUNMTR")
 @external
@@ -9098,7 +9098,7 @@ def cunmtr(
     WORK: Complex64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUPGTR")
 @external
@@ -9112,7 +9112,7 @@ def cupgtr(
     LDQ: Int32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDQ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("CUPMTR")
 @external
@@ -9129,7 +9129,7 @@ def cupmtr(
     LDC: Int32,
     WORK: Complex64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DBBCSD")
 @external
@@ -9164,7 +9164,7 @@ def dbbcsd(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDU1", Int32], Returns["LDU2", Int32], Returns["LDV1T", Int32], Returns["LDV2T", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DBDSDC")
 @external
@@ -9184,7 +9184,7 @@ def dbdsdc(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDU", Int32], Returns["LDVT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DBDSQR")
 @external
@@ -9205,7 +9205,7 @@ def dbdsqr(
     LDC: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NCVT", Int32], Returns["NRU", Int32], Returns["NCC", Int32], Returns["LDVT", Int32], Returns["LDU", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DBDSVDX")
 @external
@@ -9228,7 +9228,7 @@ def dbdsvdx(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["NS", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DDISNA")
 @external
@@ -9240,7 +9240,7 @@ def ddisna(
     D: Float64[Flat],
     SEP: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGBBRD")
 @external
@@ -9264,7 +9264,7 @@ def dgbbrd(
     LDC: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NCC", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["LDQ", Int32], Returns["LDPT", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGBCON")
 @external
@@ -9282,7 +9282,7 @@ def dgbcon(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DGBEQU")
 @external
@@ -9300,7 +9300,7 @@ def dgbequ(
     COLCND: Float64,
     AMAX: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["ROWCND", Float64], Returns["COLCND", Float64], Returns["AMAX", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DGBEQUB")
 @external
@@ -9318,7 +9318,7 @@ def dgbequb(
     COLCND: Float64,
     AMAX: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["ROWCND", Float64], Returns["COLCND", Float64], Returns["AMAX", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DGBRFS")
 @external
@@ -9343,7 +9343,7 @@ def dgbrfs(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGBRFSX")
 @external
@@ -9376,7 +9376,7 @@ def dgbrfsx(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGBSV")
 @external
@@ -9392,7 +9392,7 @@ def dgbsv(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGBSVX")
 @external
@@ -9422,7 +9422,7 @@ def dgbsvx(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DGBSVXX")
 @external
@@ -9457,7 +9457,7 @@ def dgbsvxx(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["RPVGRW", Float64], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGBTF2")
 @external
@@ -9471,7 +9471,7 @@ def dgbtf2(
     LDAB: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGBTRF")
 @external
@@ -9485,7 +9485,7 @@ def dgbtrf(
     LDAB: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGBTRS")
 @external
@@ -9502,7 +9502,7 @@ def dgbtrs(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEBAK")
 @external
@@ -9518,7 +9518,7 @@ def dgebak(
     V: Float64[LDV, Flat],
     LDV: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["M", Int32], Returns["LDV", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEBAL")
 @external
@@ -9532,7 +9532,7 @@ def dgebal(
     IHI: Int32,
     SCALE: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEBD2")
 @external
@@ -9548,7 +9548,7 @@ def dgebd2(
     TAUP: Float64[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEBRD")
 @external
@@ -9565,7 +9565,7 @@ def dgebrd(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGECON")
 @external
@@ -9580,7 +9580,7 @@ def dgecon(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DGEDMD")
 @external
@@ -9668,7 +9668,7 @@ def dgeequ(
     COLCND: Float64,
     AMAX: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["ROWCND", Float64], Returns["COLCND", Float64], Returns["AMAX", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DGEEQUB")
 @external
@@ -9684,7 +9684,7 @@ def dgeequb(
     COLCND: Float64,
     AMAX: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["ROWCND", Float64], Returns["COLCND", Float64], Returns["AMAX", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DGEES")
 @external
@@ -9705,7 +9705,7 @@ def dgees(
     LWORK: Int32,
     BWORK: Bool[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SELECT", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["SDIM", Int32], Returns["LDVS", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEESX")
 @external
@@ -9731,7 +9731,7 @@ def dgeesx(
     LIWORK: Int32,
     BWORK: Bool[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SELECT", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["SDIM", Int32], Returns["LDVS", Int32], Returns["RCONDE", Float64], Returns["RCONDV", Float64], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEEV")
 @external
@@ -9751,7 +9751,7 @@ def dgeev(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEEVX")
 @external
@@ -9780,7 +9780,7 @@ def dgeevx(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["ABNRM", Float64], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEHD2")
 @external
@@ -9794,7 +9794,7 @@ def dgehd2(
     TAU: Float64[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEHRD")
 @external
@@ -9809,7 +9809,7 @@ def dgehrd(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEJSV")
 @external
@@ -9834,7 +9834,7 @@ def dgejsv(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDU", Int32], Returns["LDV", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGELQ")
 @external
@@ -9849,7 +9849,7 @@ def dgelq(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["TSIZE", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGELQ2")
 @external
@@ -9862,7 +9862,7 @@ def dgelq2(
     TAU: Float64[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGELQF")
 @external
@@ -9876,7 +9876,7 @@ def dgelqf(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGELQT")
 @external
@@ -9891,7 +9891,7 @@ def dgelqt(
     LDT: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["MB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGELQT3")
 @external
@@ -9904,7 +9904,7 @@ def dgelqt3(
     T: Float64[LDT, Flat],
     LDT: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGELS")
 @external
@@ -9921,7 +9921,7 @@ def dgels(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGELSD")
 @external
@@ -9941,7 +9941,7 @@ def dgelsd(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["RCOND", Float64], Returns["RANK", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGELSS")
 @external
@@ -9960,7 +9960,7 @@ def dgelss(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["RCOND", Float64], Returns["RANK", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGELST")
 @external
@@ -9977,7 +9977,7 @@ def dgelst(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGELSY")
 @external
@@ -9996,7 +9996,7 @@ def dgelsy(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["RCOND", Float64], Returns["RANK", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEMLQ")
 @external
@@ -10016,7 +10016,7 @@ def dgemlq(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["TSIZE", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEMLQT")
 @external
@@ -10036,7 +10036,7 @@ def dgemlqt(
     LDC: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["MB", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEMQR")
 @external
@@ -10056,7 +10056,7 @@ def dgemqr(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["TSIZE", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEMQRT")
 @external
@@ -10076,7 +10076,7 @@ def dgemqrt(
     LDC: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["NB", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEQL2")
 @external
@@ -10089,7 +10089,7 @@ def dgeql2(
     TAU: Float64[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEQLF")
 @external
@@ -10103,7 +10103,7 @@ def dgeqlf(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEQP3")
 @external
@@ -10118,7 +10118,7 @@ def dgeqp3(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEQP3RK")
 @external
@@ -10141,7 +10141,7 @@ def dgeqp3rk(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["KMAX", Int32], Returns["ABSTOL", Float64], Returns["RELTOL", Float64], Returns["LDA", Int32], Returns["K", Int32], Returns["MAXC2NRMK", Float64], Returns["RELMAXC2NRMK", Float64], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEQR")
 @external
@@ -10156,7 +10156,7 @@ def dgeqr(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["TSIZE", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEQR2")
 @external
@@ -10169,7 +10169,7 @@ def dgeqr2(
     TAU: Float64[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEQR2P")
 @external
@@ -10182,7 +10182,7 @@ def dgeqr2p(
     TAU: Float64[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEQRF")
 @external
@@ -10196,7 +10196,7 @@ def dgeqrf(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEQRFP")
 @external
@@ -10210,7 +10210,7 @@ def dgeqrfp(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEQRT")
 @external
@@ -10225,7 +10225,7 @@ def dgeqrt(
     LDT: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEQRT2")
 @external
@@ -10238,7 +10238,7 @@ def dgeqrt2(
     T: Float64[LDT, Flat],
     LDT: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGEQRT3")
 @external
@@ -10251,7 +10251,7 @@ def dgeqrt3(
     T: Float64[LDT, Flat],
     LDT: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGERFS")
 @external
@@ -10274,7 +10274,7 @@ def dgerfs(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGERFSX")
 @external
@@ -10305,7 +10305,7 @@ def dgerfsx(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGERQ2")
 @external
@@ -10318,7 +10318,7 @@ def dgerq2(
     TAU: Float64[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGERQF")
 @external
@@ -10332,7 +10332,7 @@ def dgerqf(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGESC2")
 @external
@@ -10345,7 +10345,7 @@ def dgesc2(
     IPIV: Int32[Flat],
     JPIV: Int32[Flat],
     SCALE: Float64
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCALE", Float64]]: ...
 
 @bind("DGESDD")
 @external
@@ -10365,7 +10365,7 @@ def dgesdd(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDU", Int32], Returns["LDVT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGESV")
 @external
@@ -10379,7 +10379,7 @@ def dgesv(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGESVD")
 @external
@@ -10399,7 +10399,7 @@ def dgesvd(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDU", Int32], Returns["LDVT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGESVDQ")
 @external
@@ -10427,7 +10427,7 @@ def dgesvdq(
     RWORK: Float64[Flat],
     LRWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDU", Int32], Returns["LDV", Int32], Returns["NUMRANK", Int32], Returns["LIWORK", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGESVDX")
 @external
@@ -10454,7 +10454,7 @@ def dgesvdx(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["NS", Int32], Returns["LDU", Int32], Returns["LDVT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGESVJ")
 @external
@@ -10474,7 +10474,7 @@ def dgesvj(
     WORK: Float64[LWORK],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["MV", Int32], Returns["LDV", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGESVX")
 @external
@@ -10502,7 +10502,7 @@ def dgesvx(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DGESVXX")
 @external
@@ -10535,7 +10535,7 @@ def dgesvxx(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["RPVGRW", Float64], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGETC2")
 @external
@@ -10547,7 +10547,7 @@ def dgetc2(
     IPIV: Int32[Flat],
     JPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGETF2")
 @external
@@ -10559,7 +10559,7 @@ def dgetf2(
     LDA: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGETRF")
 @external
@@ -10571,7 +10571,7 @@ def dgetrf(
     LDA: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGETRF2")
 @external
@@ -10583,7 +10583,7 @@ def dgetrf2(
     LDA: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGETRI")
 @external
@@ -10596,7 +10596,7 @@ def dgetri(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGETRS")
 @external
@@ -10611,7 +10611,7 @@ def dgetrs(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGETSLS")
 @external
@@ -10628,7 +10628,7 @@ def dgetsls(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGETSQRHRT")
 @external
@@ -10646,7 +10646,7 @@ def dgetsqrhrt(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["MB1", Int32], Returns["NB1", Int32], Returns["NB2", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGGBAK")
 @external
@@ -10663,7 +10663,7 @@ def dggbak(
     V: Float64[LDV, Flat],
     LDV: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["M", Int32], Returns["LDV", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGGBAL")
 @external
@@ -10681,7 +10681,7 @@ def dggbal(
     RSCALE: Float64[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGGES")
 @external
@@ -10708,7 +10708,7 @@ def dgges(
     LWORK: Int32,
     BWORK: Bool[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SELCTG", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["SDIM", Int32], Returns["LDVSL", Int32], Returns["LDVSR", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGGES3")
 @external
@@ -10735,7 +10735,7 @@ def dgges3(
     LWORK: Int32,
     BWORK: Bool[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SELCTG", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["SDIM", Int32], Returns["LDVSL", Int32], Returns["LDVSR", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGGESX")
 @external
@@ -10767,7 +10767,7 @@ def dggesx(
     LIWORK: Int32,
     BWORK: Bool[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SELCTG", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["SDIM", Int32], Returns["LDVSL", Int32], Returns["LDVSR", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGGEV")
 @external
@@ -10790,7 +10790,7 @@ def dggev(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGGEV3")
 @external
@@ -10813,7 +10813,7 @@ def dggev3(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGGEVX")
 @external
@@ -10848,7 +10848,7 @@ def dggevx(
     IWORK: Int32[Flat],
     BWORK: Bool[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["ABNRM", Float64], Returns["BBNRM", Float64], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGGGLM")
 @external
@@ -10867,7 +10867,7 @@ def dggglm(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["M", Int32], Returns["P", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGGHD3")
 @external
@@ -10889,7 +10889,7 @@ def dgghd3(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDQ", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGGHRD")
 @external
@@ -10909,7 +10909,7 @@ def dgghrd(
     Z: Float64[LDZ, Flat],
     LDZ: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDQ", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGGLSE")
 @external
@@ -10928,7 +10928,7 @@ def dgglse(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["P", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGGQRF")
 @external
@@ -10946,7 +10946,7 @@ def dggqrf(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["M", Int32], Returns["P", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGGRQF")
 @external
@@ -10964,7 +10964,7 @@ def dggrqf(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGGSVD3")
 @external
@@ -10994,7 +10994,7 @@ def dggsvd3(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["P", Int32], Returns["K", Int32], Returns["L", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDU", Int32], Returns["LDV", Int32], Returns["LDQ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGGSVP3")
 @external
@@ -11025,7 +11025,7 @@ def dggsvp3(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["TOLA", Float64], Returns["TOLB", Float64], Returns["K", Int32], Returns["L", Int32], Returns["LDU", Int32], Returns["LDV", Int32], Returns["LDQ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGSVJ0")
 @external
@@ -11048,7 +11048,7 @@ def dgsvj0(
     WORK: Float64[LWORK],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["MV", Int32], Returns["LDV", Int32], Returns["EPS", Float64], Returns["SFMIN", Float64], Returns["TOL", Float64], Returns["NSWEEP", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGSVJ1")
 @external
@@ -11072,7 +11072,7 @@ def dgsvj1(
     WORK: Float64[LWORK],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["N1", Int32], Returns["LDA", Int32], Returns["MV", Int32], Returns["LDV", Int32], Returns["EPS", Float64], Returns["SFMIN", Float64], Returns["TOL", Float64], Returns["NSWEEP", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGTCON")
 @external
@@ -11090,7 +11090,7 @@ def dgtcon(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DGTRFS")
 @external
@@ -11116,7 +11116,7 @@ def dgtrfs(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGTSV")
 @external
@@ -11130,7 +11130,7 @@ def dgtsv(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGTSVX")
 @external
@@ -11158,7 +11158,7 @@ def dgtsvx(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DGTTRF")
 @external
@@ -11171,7 +11171,7 @@ def dgttrf(
     DU2: Float64[Flat],
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGTTRS")
 @external
@@ -11188,7 +11188,7 @@ def dgttrs(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DGTTS2")
 @external
@@ -11204,7 +11204,7 @@ def dgtts2(
     IPIV: Int32[Flat],
     B: Float64[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["ITRANS", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32]]: ...
 
 @bind("DHGEQZ")
 @external
@@ -11230,7 +11230,7 @@ def dhgeqz(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDH", Int32], Returns["LDT", Int32], Returns["LDQ", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DHSEIN")
 @external
@@ -11255,7 +11255,7 @@ def dhsein(
     IFAILL: Int32[Flat],
     IFAILR: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDH", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["MM", Int32], Returns["M", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DHSEQR")
 @external
@@ -11275,7 +11275,7 @@ def dhseqr(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDH", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DISNAN")
 @external
@@ -11301,7 +11301,7 @@ def dla_gbamv(
     BETA: Float64,
     Y: Float64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["TRANS", Int32], Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["ALPHA", Float64], Returns["LDAB", Int32], Returns["INCX", Int32], Returns["BETA", Float64], Returns["INCY", Int32]]: ...
 
 @bind("DLA_GBRCOND")
 @external
@@ -11321,7 +11321,7 @@ def dla_gbrcond(
     INFO: Int32,
     WORK: Float64[Flat],
     IWORK: Int32[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["CMODE", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLA_GBRFSX_EXTENDED")
 @external
@@ -11358,7 +11358,7 @@ def dla_gbrfsx_extended(
     DZ_UB: Float64,
     IGNORE_CWISE: Bool,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["PREC_TYPE", Int32], Returns["TRANS_TYPE", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["COLEQU", Bool], Returns["LDB", Int32], Returns["LDY", Int32], Returns["N_NORMS", Int32], Returns["RCOND", Float64], Returns["ITHRESH", Int32], Returns["RTHRESH", Float64], Returns["DZ_UB", Float64], Returns["IGNORE_CWISE", Bool], Returns["INFO", Int32]]: ...
 
 @bind("DLA_GBRPVGRW")
 @external
@@ -11372,7 +11372,7 @@ def dla_gbrpvgrw(
     LDAB: Int32,
     AFB: Float64[LDAFB, Flat],
     LDAFB: Int32
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NCOLS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32]]: ...
 
 @bind("DLA_GEAMV")
 @external
@@ -11389,7 +11389,7 @@ def dla_geamv(
     BETA: Float64,
     Y: Float64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["TRANS", Int32], Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Float64], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Float64], Returns["INCY", Int32]]: ...
 
 @bind("DLA_GERCOND")
 @external
@@ -11407,7 +11407,7 @@ def dla_gercond(
     INFO: Int32,
     WORK: Float64[Flat],
     IWORK: Int32[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["CMODE", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLA_GERFSX_EXTENDED")
 @external
@@ -11442,7 +11442,7 @@ def dla_gerfsx_extended(
     DZ_UB: Float64,
     IGNORE_CWISE: Bool,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["PREC_TYPE", Int32], Returns["TRANS_TYPE", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["COLEQU", Bool], Returns["LDB", Int32], Returns["LDY", Int32], Returns["N_NORMS", Int32], Returns["RCOND", Float64], Returns["ITHRESH", Int32], Returns["RTHRESH", Float64], Returns["DZ_UB", Float64], Returns["IGNORE_CWISE", Bool], Returns["INFO", Int32]]: ...
 
 @bind("DLA_GERPVGRW")
 @external
@@ -11454,7 +11454,7 @@ def dla_gerpvgrw(
     LDA: Int32,
     AF: Float64[LDAF, Flat],
     LDAF: Int32
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["NCOLS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32]]: ...
 
 @bind("DLA_LIN_BERR")
 @external
@@ -11466,7 +11466,7 @@ def dla_lin_berr(
     RES: Float64[N, NRHS],
     AYB: Float64[N, NRHS],
     BERR: Float64[NRHS]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NZ", Int32], Returns["NRHS", Int32]]: ...
 
 @bind("DLA_PORCOND")
 @external
@@ -11483,7 +11483,7 @@ def dla_porcond(
     INFO: Int32,
     WORK: Float64[Flat],
     IWORK: Int32[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["CMODE", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLA_PORFSX_EXTENDED")
 @external
@@ -11517,7 +11517,7 @@ def dla_porfsx_extended(
     DZ_UB: Float64,
     IGNORE_CWISE: Bool,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["PREC_TYPE", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["COLEQU", Bool], Returns["LDB", Int32], Returns["LDY", Int32], Returns["N_NORMS", Int32], Returns["RCOND", Float64], Returns["ITHRESH", Int32], Returns["RTHRESH", Float64], Returns["DZ_UB", Float64], Returns["IGNORE_CWISE", Bool], Returns["INFO", Int32]]: ...
 
 @bind("DLA_PORPVGRW")
 @external
@@ -11530,7 +11530,7 @@ def dla_porpvgrw(
     AF: Float64[LDAF, Flat],
     LDAF: Int32,
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["NCOLS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32]]: ...
 
 @bind("DLA_SYAMV")
 @external
@@ -11546,7 +11546,7 @@ def dla_syamv(
     BETA: Float64,
     Y: Float64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["UPLO", Int32], Returns["N", Int32], Returns["ALPHA", Float64], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Float64], Returns["INCY", Int32]]: ...
 
 @bind("DLA_SYRCOND")
 @external
@@ -11564,7 +11564,7 @@ def dla_syrcond(
     INFO: Int32,
     WORK: Float64[Flat],
     IWORK: Int32[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["CMODE", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLA_SYRFSX_EXTENDED")
 @external
@@ -11599,7 +11599,7 @@ def dla_syrfsx_extended(
     DZ_UB: Float64,
     IGNORE_CWISE: Bool,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["PREC_TYPE", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["COLEQU", Bool], Returns["LDB", Int32], Returns["LDY", Int32], Returns["N_NORMS", Int32], Returns["RCOND", Float64], Returns["ITHRESH", Int32], Returns["RTHRESH", Float64], Returns["DZ_UB", Float64], Returns["IGNORE_CWISE", Bool], Returns["INFO", Int32]]: ...
 
 @bind("DLA_SYRPVGRW")
 @external
@@ -11614,7 +11614,7 @@ def dla_syrpvgrw(
     LDAF: Int32,
     IPIV: Int32[Flat],
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["INFO", Int32], Returns["LDA", Int32], Returns["LDAF", Int32]]: ...
 
 @bind("DLA_WWADDW")
 @external
@@ -11624,7 +11624,7 @@ def dla_wwaddw(
     X: Float64[Flat],
     Y: Float64[Flat],
     W: Float64[Flat]
-) -> None: ...
+) -> Returns["N", Int32]: ...
 
 @bind("DLABAD")
 @external
@@ -11632,7 +11632,7 @@ def dla_wwaddw(
 def dlabad(
     SMALL: Float64,
     LARGE: Float64
-) -> None: ...
+) -> tuple[Returns["SMALL", Float64], Returns["LARGE", Float64]]: ...
 
 @bind("DLABRD")
 @external
@@ -11651,7 +11651,7 @@ def dlabrd(
     LDX: Int32,
     Y: Float64[LDY, Flat],
     LDY: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDX", Int32], Returns["LDY", Int32]]: ...
 
 @bind("DLACN2")
 @external
@@ -11664,7 +11664,7 @@ def dlacn2(
     EST: Float64,
     KASE: Int32,
     ISAVE: Int32[3]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["EST", Float64], Returns["KASE", Int32]]: ...
 
 @bind("DLACON")
 @external
@@ -11676,7 +11676,7 @@ def dlacon(
     ISGN: Int32[Flat],
     EST: Float64,
     KASE: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["EST", Float64], Returns["KASE", Int32]]: ...
 
 @bind("DLACPY")
 @external
@@ -11689,7 +11689,7 @@ def dlacpy(
     LDA: Int32,
     B: Float64[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32]]: ...
 
 @bind("DLADIV")
 @external
@@ -11701,7 +11701,7 @@ def dladiv(
     D: Float64,
     P: Float64,
     Q: Float64
-) -> None: ...
+) -> tuple[Returns["A", Float64], Returns["B", Float64], Returns["C", Float64], Returns["D", Float64], Returns["P", Float64], Returns["Q", Float64]]: ...
 
 @bind("DLADIV1")
 @external
@@ -11713,7 +11713,7 @@ def dladiv1(
     D: Float64,
     P: Float64,
     Q: Float64
-) -> None: ...
+) -> tuple[Returns["A", Float64], Returns["B", Float64], Returns["C", Float64], Returns["D", Float64], Returns["P", Float64], Returns["Q", Float64]]: ...
 
 @bind("DLADIV2")
 @external
@@ -11725,7 +11725,7 @@ def dladiv2(
     D: Float64,
     R: Float64,
     T: Float64
-) -> Float64: ...
+) -> tuple[Float64, Returns["A", Float64], Returns["B", Float64], Returns["C", Float64], Returns["D", Float64], Returns["R", Float64], Returns["T", Float64]]: ...
 
 @bind("DLAE2")
 @external
@@ -11736,7 +11736,7 @@ def dlae2(
     C: Float64,
     RT1: Float64,
     RT2: Float64
-) -> None: ...
+) -> tuple[Returns["A", Float64], Returns["B", Float64], Returns["C", Float64], Returns["RT1", Float64], Returns["RT2", Float64]]: ...
 
 @bind("DLAEBZ")
 @external
@@ -11762,7 +11762,7 @@ def dlaebz(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["IJOB", Int32], Returns["NITMAX", Int32], Returns["N", Int32], Returns["MMAX", Int32], Returns["MINP", Int32], Returns["NBMIN", Int32], Returns["ABSTOL", Float64], Returns["RELTOL", Float64], Returns["PIVMIN", Float64], Returns["MOUT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLAED0")
 @external
@@ -11780,7 +11780,7 @@ def dlaed0(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ICOMPQ", Int32], Returns["QSIZ", Int32], Returns["N", Int32], Returns["LDQ", Int32], Returns["LDQS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLAED1")
 @external
@@ -11796,7 +11796,7 @@ def dlaed1(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDQ", Int32], Returns["RHO", Float64], Returns["CUTPNT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLAED2")
 @external
@@ -11819,7 +11819,7 @@ def dlaed2(
     INDXP: Int32[Flat],
     COLTYP: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["K", Int32], Returns["N", Int32], Returns["N1", Int32], Returns["LDQ", Int32], Returns["RHO", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DLAED3")
 @external
@@ -11839,7 +11839,7 @@ def dlaed3(
     W: Float64[Flat],
     S: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["K", Int32], Returns["N", Int32], Returns["N1", Int32], Returns["LDQ", Int32], Returns["RHO", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DLAED4")
 @external
@@ -11853,7 +11853,7 @@ def dlaed4(
     RHO: Float64,
     DLAM: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["I", Int32], Returns["RHO", Float64], Returns["DLAM", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DLAED5")
 @external
@@ -11865,7 +11865,7 @@ def dlaed5(
     DELTA: Float64[2],
     RHO: Float64,
     DLAM: Float64
-) -> None: ...
+) -> tuple[Returns["I", Int32], Returns["RHO", Float64], Returns["DLAM", Float64]]: ...
 
 @bind("DLAED6")
 @external
@@ -11879,7 +11879,7 @@ def dlaed6(
     FINIT: Float64,
     TAU: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["KNITER", Int32], Returns["ORGATI", Bool], Returns["RHO", Float64], Returns["FINIT", Float64], Returns["TAU", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DLAED7")
 @external
@@ -11907,7 +11907,7 @@ def dlaed7(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ICOMPQ", Int32], Returns["N", Int32], Returns["QSIZ", Int32], Returns["TLVLS", Int32], Returns["CURLVL", Int32], Returns["CURPBM", Int32], Returns["LDQ", Int32], Returns["RHO", Float64], Returns["CUTPNT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLAED8")
 @external
@@ -11935,7 +11935,7 @@ def dlaed8(
     INDXP: Int32[Flat],
     INDX: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ICOMPQ", Int32], Returns["K", Int32], Returns["N", Int32], Returns["QSIZ", Int32], Returns["LDQ", Int32], Returns["RHO", Float64], Returns["CUTPNT", Int32], Returns["LDQ2", Int32], Returns["GIVPTR", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLAED9")
 @external
@@ -11954,7 +11954,7 @@ def dlaed9(
     S: Float64[LDS, Flat],
     LDS: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["K", Int32], Returns["KSTART", Int32], Returns["KSTOP", Int32], Returns["N", Int32], Returns["LDQ", Int32], Returns["RHO", Float64], Returns["LDS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLAEDA")
 @external
@@ -11974,7 +11974,7 @@ def dlaeda(
     Z: Float64[Flat],
     ZTEMP: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["TLVLS", Int32], Returns["CURLVL", Int32], Returns["CURPBM", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLAEIN")
 @external
@@ -11996,7 +11996,7 @@ def dlaein(
     SMLNUM: Float64,
     BIGNUM: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["RIGHTV", Bool], Returns["NOINIT", Bool], Returns["N", Int32], Returns["LDH", Int32], Returns["WR", Float64], Returns["WI", Float64], Returns["LDB", Int32], Returns["EPS3", Float64], Returns["SMLNUM", Float64], Returns["BIGNUM", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DLAEV2")
 @external
@@ -12009,7 +12009,7 @@ def dlaev2(
     RT2: Float64,
     CS1: Float64,
     SN1: Float64
-) -> None: ...
+) -> tuple[Returns["A", Float64], Returns["B", Float64], Returns["C", Float64], Returns["RT1", Float64], Returns["RT2", Float64], Returns["CS1", Float64], Returns["SN1", Float64]]: ...
 
 @bind("DLAEXC")
 @external
@@ -12026,7 +12026,7 @@ def dlaexc(
     N2: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["WANTQ", Bool], Returns["N", Int32], Returns["LDT", Int32], Returns["LDQ", Int32], Returns["J1", Int32], Returns["N1", Int32], Returns["N2", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLAG2")
 @external
@@ -12042,7 +12042,7 @@ def dlag2(
     WR1: Float64,
     WR2: Float64,
     WI: Float64
-) -> None: ...
+) -> tuple[Returns["LDA", Int32], Returns["LDB", Int32], Returns["SAFMIN", Float64], Returns["SCALE1", Float64], Returns["SCALE2", Float64], Returns["WR1", Float64], Returns["WR2", Float64], Returns["WI", Float64]]: ...
 
 @bind("DLAG2S")
 @external
@@ -12055,7 +12055,7 @@ def dlag2s(
     SA: Float32[LDSA, Flat],
     LDSA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDSA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLAGS2")
 @external
@@ -12074,7 +12074,7 @@ def dlags2(
     SNV: Float64,
     CSQ: Float64,
     SNQ: Float64
-) -> None: ...
+) -> tuple[Returns["UPPER", Bool], Returns["A1", Float64], Returns["A2", Float64], Returns["A3", Float64], Returns["B1", Float64], Returns["B2", Float64], Returns["B3", Float64], Returns["CSU", Float64], Returns["SNU", Float64], Returns["CSV", Float64], Returns["SNV", Float64], Returns["CSQ", Float64], Returns["SNQ", Float64]]: ...
 
 @bind("DLAGTF")
 @external
@@ -12089,7 +12089,7 @@ def dlagtf(
     D: Float64[Flat],
     IN: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LAMBDA", Float64], Returns["TOL", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DLAGTM")
 @external
@@ -12107,7 +12107,7 @@ def dlagtm(
     BETA: Float64,
     B: Float64[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["ALPHA", Float64], Returns["LDX", Int32], Returns["BETA", Float64], Returns["LDB", Int32]]: ...
 
 @bind("DLAGTS")
 @external
@@ -12123,7 +12123,7 @@ def dlagts(
     Y: Float64[Flat],
     TOL: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["JOB", Int32], Returns["N", Int32], Returns["TOL", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DLAGV2")
 @external
@@ -12140,7 +12140,7 @@ def dlagv2(
     SNL: Float64,
     CSR: Float64,
     SNR: Float64
-) -> None: ...
+) -> tuple[Returns["LDA", Int32], Returns["LDB", Int32], Returns["CSL", Float64], Returns["SNL", Float64], Returns["CSR", Float64], Returns["SNR", Float64]]: ...
 
 @bind("DLAHQR")
 @external
@@ -12160,7 +12160,7 @@ def dlahqr(
     Z: Float64[LDZ, Flat],
     LDZ: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["WANTT", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDH", Int32], Returns["ILOZ", Int32], Returns["IHIZ", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLAHR2")
 @external
@@ -12176,7 +12176,7 @@ def dlahr2(
     LDT: Int32,
     Y: Float64[LDY, NB],
     LDY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LDY", Int32]]: ...
 
 @bind("DLAIC1")
 @external
@@ -12191,7 +12191,7 @@ def dlaic1(
     SESTPR: Float64,
     S: Float64,
     C: Float64
-) -> None: ...
+) -> tuple[Returns["JOB", Int32], Returns["J", Int32], Returns["SEST", Float64], Returns["GAMMA", Float64], Returns["SESTPR", Float64], Returns["S", Float64], Returns["C", Float64]]: ...
 
 @bind("DLAISNAN")
 @external
@@ -12223,7 +12223,7 @@ def dlaln2(
     SCALE: Float64,
     XNORM: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["LTRANS", Bool], Returns["NA", Int32], Returns["NW", Int32], Returns["SMIN", Float64], Returns["CA", Float64], Returns["LDA", Int32], Returns["D1", Float64], Returns["D2", Float64], Returns["LDB", Int32], Returns["WR", Float64], Returns["WI", Float64], Returns["LDX", Int32], Returns["SCALE", Float64], Returns["XNORM", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DLALS0")
 @external
@@ -12253,7 +12253,7 @@ def dlals0(
     S: Float64,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ICOMPQ", Int32], Returns["NL", Int32], Returns["NR", Int32], Returns["SQRE", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDBX", Int32], Returns["GIVPTR", Int32], Returns["LDGCOL", Int32], Returns["LDGNUM", Int32], Returns["K", Int32], Returns["C", Float64], Returns["S", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DLALSA")
 @external
@@ -12285,7 +12285,7 @@ def dlalsa(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ICOMPQ", Int32], Returns["SMLSIZ", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDBX", Int32], Returns["LDU", Int32], Returns["LDGCOL", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLALSD")
 @external
@@ -12304,7 +12304,7 @@ def dlalsd(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SMLSIZ", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["RCOND", Float64], Returns["RANK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLAMRG")
 @external
@@ -12316,7 +12316,7 @@ def dlamrg(
     DTRD1: Int32,
     DTRD2: Int32,
     INDEX: Int32[Flat]
-) -> None: ...
+) -> tuple[Returns["N1", Int32], Returns["N2", Int32], Returns["DTRD1", Int32], Returns["DTRD2", Int32]]: ...
 
 @bind("DLAMSWLQ")
 @external
@@ -12338,7 +12338,7 @@ def dlamswlq(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["MB", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLAMTSQR")
 @external
@@ -12360,7 +12360,7 @@ def dlamtsqr(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["MB", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLANEG")
 @external
@@ -12372,7 +12372,7 @@ def dlaneg(
     SIGMA: Float64,
     PIVMIN: Float64,
     R: Int32
-) -> Int32: ...
+) -> tuple[Int32, Returns["N", Int32], Returns["SIGMA", Float64], Returns["PIVMIN", Float64], Returns["R", Int32]]: ...
 
 @bind("DLANGB")
 @external
@@ -12385,7 +12385,7 @@ def dlangb(
     AB: Float64[LDAB, Flat],
     LDAB: Int32,
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32]]: ...
 
 @bind("DLANGE")
 @external
@@ -12397,7 +12397,7 @@ def dlange(
     A: Float64[LDA, Flat],
     LDA: Int32,
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("DLANGT")
 @external
@@ -12408,7 +12408,7 @@ def dlangt(
     DL: Float64[Flat],
     D: Float64[Flat],
     DU: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32]]: ...
 
 @bind("DLANHS")
 @external
@@ -12419,7 +12419,7 @@ def dlanhs(
     A: Float64[LDA, Flat],
     LDA: Int32,
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("DLANSB")
 @external
@@ -12432,7 +12432,7 @@ def dlansb(
     AB: Float64[LDAB, Flat],
     LDAB: Int32,
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["K", Int32], Returns["LDAB", Int32]]: ...
 
 @bind("DLANSF")
 @external
@@ -12444,7 +12444,7 @@ def dlansf(
     N: Int32,
     A: Float64[Flat],
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32]]: ...
 
 @bind("DLANSP")
 @external
@@ -12455,7 +12455,7 @@ def dlansp(
     N: Int32,
     AP: Float64[Flat],
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32]]: ...
 
 @bind("DLANST")
 @external
@@ -12465,7 +12465,7 @@ def dlanst(
     N: Int32,
     D: Float64[Flat],
     E: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32]]: ...
 
 @bind("DLANSY")
 @external
@@ -12477,7 +12477,7 @@ def dlansy(
     A: Float64[LDA, Flat],
     LDA: Int32,
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("DLANTB")
 @external
@@ -12491,7 +12491,7 @@ def dlantb(
     AB: Float64[LDAB, Flat],
     LDAB: Int32,
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["K", Int32], Returns["LDAB", Int32]]: ...
 
 @bind("DLANTP")
 @external
@@ -12503,7 +12503,7 @@ def dlantp(
     N: Int32,
     AP: Float64[Flat],
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32]]: ...
 
 @bind("DLANTR")
 @external
@@ -12517,7 +12517,7 @@ def dlantr(
     A: Float64[LDA, Flat],
     LDA: Int32,
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("DLANV2")
 @external
@@ -12533,7 +12533,7 @@ def dlanv2(
     RT2I: Float64,
     CS: Float64,
     SN: Float64
-) -> None: ...
+) -> tuple[Returns["A", Float64], Returns["B", Float64], Returns["C", Float64], Returns["D", Float64], Returns["RT1R", Float64], Returns["RT1I", Float64], Returns["RT2R", Float64], Returns["RT2I", Float64], Returns["CS", Float64], Returns["SN", Float64]]: ...
 
 @bind("DLAORHR_COL_GETRFNP")
 @external
@@ -12545,7 +12545,7 @@ def dlaorhr_col_getrfnp(
     LDA: Int32,
     D: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLAORHR_COL_GETRFNP2")
 @external
@@ -12557,7 +12557,7 @@ def dlaorhr_col_getrfnp2(
     LDA: Int32,
     D: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLAPLL")
 @external
@@ -12569,7 +12569,7 @@ def dlapll(
     Y: Float64[Flat],
     INCY: Int32,
     SSMIN: Float64
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32], Returns["SSMIN", Float64]]: ...
 
 @bind("DLAPMR")
 @external
@@ -12581,7 +12581,7 @@ def dlapmr(
     X: Float64[LDX, Flat],
     LDX: Int32,
     K: Int32[Flat]
-) -> None: ...
+) -> tuple[Returns["FORWRD", Bool], Returns["M", Int32], Returns["N", Int32], Returns["LDX", Int32]]: ...
 
 @bind("DLAPMT")
 @external
@@ -12593,7 +12593,7 @@ def dlapmt(
     X: Float64[LDX, Flat],
     LDX: Int32,
     K: Int32[Flat]
-) -> None: ...
+) -> tuple[Returns["FORWRD", Bool], Returns["M", Int32], Returns["N", Int32], Returns["LDX", Int32]]: ...
 
 @bind("DLAPY2")
 @external
@@ -12601,7 +12601,7 @@ def dlapmt(
 def dlapy2(
     X: Float64,
     Y: Float64
-) -> Float64: ...
+) -> tuple[Float64, Returns["X", Float64], Returns["Y", Float64]]: ...
 
 @bind("DLAPY3")
 @external
@@ -12610,7 +12610,7 @@ def dlapy3(
     X: Float64,
     Y: Float64,
     Z: Float64
-) -> Float64: ...
+) -> tuple[Float64, Returns["X", Float64], Returns["Y", Float64], Returns["Z", Float64]]: ...
 
 @bind("DLAQGB")
 @external
@@ -12628,7 +12628,7 @@ def dlaqgb(
     COLCND: Float64,
     AMAX: Float64,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["ROWCND", Float64], Returns["COLCND", Float64], Returns["AMAX", Float64]]: ...
 
 @bind("DLAQGE")
 @external
@@ -12644,7 +12644,7 @@ def dlaqge(
     COLCND: Float64,
     AMAX: Float64,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["ROWCND", Float64], Returns["COLCND", Float64], Returns["AMAX", Float64]]: ...
 
 @bind("DLAQP2")
 @external
@@ -12660,7 +12660,7 @@ def dlaqp2(
     VN1: Float64[Flat],
     VN2: Float64[Flat],
     WORK: Float64[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["OFFSET", Int32], Returns["LDA", Int32]]: ...
 
 @bind("DLAQP2RK")
 @external
@@ -12686,7 +12686,7 @@ def dlaqp2rk(
     VN2: Float64[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["IOFFSET", Int32], Returns["KMAX", Int32], Returns["ABSTOL", Float64], Returns["RELTOL", Float64], Returns["KP1", Int32], Returns["MAXC2NRM", Float64], Returns["LDA", Int32], Returns["K", Int32], Returns["MAXC2NRMK", Float64], Returns["RELMAXC2NRMK", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DLAQP3RK")
 @external
@@ -12716,7 +12716,7 @@ def dlaqp3rk(
     LDF: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["IOFFSET", Int32], Returns["NB", Int32], Returns["ABSTOL", Float64], Returns["RELTOL", Float64], Returns["KP1", Int32], Returns["MAXC2NRM", Float64], Returns["LDA", Int32], Returns["DONE", Bool], Returns["KB", Int32], Returns["MAXC2NRMK", Float64], Returns["RELMAXC2NRMK", Float64], Returns["LDF", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLAQPS")
 @external
@@ -12736,7 +12736,7 @@ def dlaqps(
     AUXV: Float64[Flat],
     F: Float64[LDF, Flat],
     LDF: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["OFFSET", Int32], Returns["NB", Int32], Returns["KB", Int32], Returns["LDA", Int32], Returns["LDF", Int32]]: ...
 
 @bind("DLAQR0")
 @external
@@ -12758,7 +12758,7 @@ def dlaqr0(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["WANTT", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDH", Int32], Returns["ILOZ", Int32], Returns["IHIZ", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLAQR1")
 @external
@@ -12772,7 +12772,7 @@ def dlaqr1(
     SR2: Float64,
     SI2: Float64,
     V: Float64[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDH", Int32], Returns["SR1", Float64], Returns["SI1", Float64], Returns["SR2", Float64], Returns["SI2", Float64]]: ...
 
 @bind("DLAQR2")
 @external
@@ -12804,7 +12804,7 @@ def dlaqr2(
     LDWV: Int32,
     WORK: Float64[Flat],
     LWORK: Int32
-) -> None: ...
+) -> tuple[Returns["WANTT", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["KTOP", Int32], Returns["KBOT", Int32], Returns["NW", Int32], Returns["LDH", Int32], Returns["ILOZ", Int32], Returns["IHIZ", Int32], Returns["LDZ", Int32], Returns["NS", Int32], Returns["ND", Int32], Returns["LDV", Int32], Returns["NH", Int32], Returns["LDT", Int32], Returns["NV", Int32], Returns["LDWV", Int32], Returns["LWORK", Int32]]: ...
 
 @bind("DLAQR3")
 @external
@@ -12836,7 +12836,7 @@ def dlaqr3(
     LDWV: Int32,
     WORK: Float64[Flat],
     LWORK: Int32
-) -> None: ...
+) -> tuple[Returns["WANTT", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["KTOP", Int32], Returns["KBOT", Int32], Returns["NW", Int32], Returns["LDH", Int32], Returns["ILOZ", Int32], Returns["IHIZ", Int32], Returns["LDZ", Int32], Returns["NS", Int32], Returns["ND", Int32], Returns["LDV", Int32], Returns["NH", Int32], Returns["LDT", Int32], Returns["NV", Int32], Returns["LDWV", Int32], Returns["LWORK", Int32]]: ...
 
 @bind("DLAQR4")
 @external
@@ -12858,7 +12858,7 @@ def dlaqr4(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["WANTT", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDH", Int32], Returns["ILOZ", Int32], Returns["IHIZ", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLAQR5")
 @external
@@ -12889,7 +12889,7 @@ def dlaqr5(
     NH: Int32,
     WH: Float64[LDWH, Flat],
     LDWH: Int32
-) -> None: ...
+) -> tuple[Returns["WANTT", Bool], Returns["WANTZ", Bool], Returns["KACC22", Int32], Returns["N", Int32], Returns["KTOP", Int32], Returns["KBOT", Int32], Returns["NSHFTS", Int32], Returns["LDH", Int32], Returns["ILOZ", Int32], Returns["IHIZ", Int32], Returns["LDZ", Int32], Returns["LDV", Int32], Returns["LDU", Int32], Returns["NV", Int32], Returns["LDWV", Int32], Returns["NH", Int32], Returns["LDWH", Int32]]: ...
 
 @bind("DLAQSB")
 @external
@@ -12904,7 +12904,7 @@ def dlaqsb(
     SCOND: Float64,
     AMAX: Float64,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["SCOND", Float64], Returns["AMAX", Float64]]: ...
 
 @bind("DLAQSP")
 @external
@@ -12917,7 +12917,7 @@ def dlaqsp(
     SCOND: Float64,
     AMAX: Float64,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SCOND", Float64], Returns["AMAX", Float64]]: ...
 
 @bind("DLAQSY")
 @external
@@ -12931,7 +12931,7 @@ def dlaqsy(
     SCOND: Float64,
     AMAX: Float64,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCOND", Float64], Returns["AMAX", Float64]]: ...
 
 @bind("DLAQTR")
 @external
@@ -12948,7 +12948,7 @@ def dlaqtr(
     X: Float64[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["LTRAN", Bool], Returns["LREAL", Bool], Returns["N", Int32], Returns["LDT", Int32], Returns["W", Float64], Returns["SCALE", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DLAQZ0")
 @external
@@ -13103,7 +13103,7 @@ def dlar1v(
     RESID: Float64,
     RQCORR: Float64,
     WORK: Float64[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["B1", Int32], Returns["BN", Int32], Returns["LAMBDA", Float64], Returns["PIVMIN", Float64], Returns["GAPTOL", Float64], Returns["WANTNC", Bool], Returns["NEGCNT", Int32], Returns["ZTZ", Float64], Returns["MINGMA", Float64], Returns["R", Int32], Returns["NRMINV", Float64], Returns["RESID", Float64], Returns["RQCORR", Float64]]: ...
 
 @bind("DLAR2V")
 @external
@@ -13117,7 +13117,7 @@ def dlar2v(
     C: Float64[Flat],
     S: Float64[Flat],
     INCC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCC", Int32]]: ...
 
 @bind("DLARF")
 @external
@@ -13132,7 +13132,7 @@ def dlarf(
     C: Float64[LDC, Flat],
     LDC: Int32,
     WORK: Float64[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["INCV", Int32], Returns["TAU", Float64], Returns["LDC", Int32]]: ...
 
 @bind("DLARF1F")
 @external
@@ -13147,7 +13147,7 @@ def dlarf1f(
     C: Float64[LDC, Flat],
     LDC: Int32,
     WORK: Float64[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["INCV", Int32], Returns["TAU", Float64], Returns["LDC", Int32]]: ...
 
 @bind("DLARF1L")
 @external
@@ -13162,7 +13162,7 @@ def dlarf1l(
     C: Float64[LDC, Flat],
     LDC: Int32,
     WORK: Float64[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["INCV", Int32], Returns["TAU", Float64], Returns["LDC", Int32]]: ...
 
 @bind("DLARFB")
 @external
@@ -13183,7 +13183,7 @@ def dlarfb(
     LDC: Int32,
     WORK: Float64[LDWORK, Flat],
     LDWORK: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDC", Int32], Returns["LDWORK", Int32]]: ...
 
 @bind("DLARFB_GETT")
 @external
@@ -13201,7 +13201,7 @@ def dlarfb_gett(
     LDB: Int32,
     WORK: Float64[LDWORK, Flat],
     LDWORK: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDT", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDWORK", Int32]]: ...
 
 @bind("DLARFG")
 @external
@@ -13212,7 +13212,7 @@ def dlarfg(
     X: Float64[Flat],
     INCX: Int32,
     TAU: Float64
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Float64], Returns["INCX", Int32], Returns["TAU", Float64]]: ...
 
 @bind("DLARFGP")
 @external
@@ -13223,7 +13223,7 @@ def dlarfgp(
     X: Float64[Flat],
     INCX: Int32,
     TAU: Float64
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Float64], Returns["INCX", Int32], Returns["TAU", Float64]]: ...
 
 @bind("DLARFT")
 @external
@@ -13238,7 +13238,7 @@ def dlarft(
     TAU: Float64[Flat],
     T: Float64[LDT, Flat],
     LDT: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["LDV", Int32], Returns["LDT", Int32]]: ...
 
 @bind("DLARFX")
 @external
@@ -13252,7 +13252,7 @@ def dlarfx(
     C: Float64[LDC, Flat],
     LDC: Int32,
     WORK: Float64[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["TAU", Float64], Returns["LDC", Int32]]: ...
 
 @bind("DLARFY")
 @external
@@ -13266,7 +13266,7 @@ def dlarfy(
     C: Float64[LDC, Flat],
     LDC: Int32,
     WORK: Float64[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCV", Int32], Returns["TAU", Float64], Returns["LDC", Int32]]: ...
 
 @bind("DLARGV")
 @external
@@ -13279,7 +13279,7 @@ def dlargv(
     INCY: Int32,
     C: Float64[Flat],
     INCC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32], Returns["INCC", Int32]]: ...
 
 @bind("DLARMM")
 @external
@@ -13288,7 +13288,7 @@ def dlarmm(
     ANORM: Float64,
     BNORM: Float64,
     CNORM: Float64
-) -> Float64: ...
+) -> tuple[Float64, Returns["ANORM", Float64], Returns["BNORM", Float64], Returns["CNORM", Float64]]: ...
 
 @bind("DLARNV")
 @external
@@ -13298,7 +13298,7 @@ def dlarnv(
     ISEED: Int32[4],
     N: Int32,
     X: Float64[Flat]
-) -> None: ...
+) -> tuple[Returns["IDIST", Int32], Returns["N", Int32]]: ...
 
 @bind("DLARRA")
 @external
@@ -13313,7 +13313,7 @@ def dlarra(
     NSPLIT: Int32,
     ISPLIT: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SPLTOL", Float64], Returns["TNRM", Float64], Returns["NSPLIT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLARRB")
 @external
@@ -13336,7 +13336,7 @@ def dlarrb(
     SPDIAM: Float64,
     TWIST: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["IFIRST", Int32], Returns["ILAST", Int32], Returns["RTOL1", Float64], Returns["RTOL2", Float64], Returns["OFFSET", Int32], Returns["PIVMIN", Float64], Returns["SPDIAM", Float64], Returns["TWIST", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLARRC")
 @external
@@ -13353,7 +13353,7 @@ def dlarrc(
     LCNT: Int32,
     RCNT: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["PIVMIN", Float64], Returns["EIGCNT", Int32], Returns["LCNT", Int32], Returns["RCNT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLARRD")
 @external
@@ -13384,7 +13384,7 @@ def dlarrd(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["RELTOL", Float64], Returns["PIVMIN", Float64], Returns["NSPLIT", Int32], Returns["M", Int32], Returns["WL", Float64], Returns["WU", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DLARRE")
 @external
@@ -13415,7 +13415,7 @@ def dlarre(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["RTOL1", Float64], Returns["RTOL2", Float64], Returns["SPLTOL", Float64], Returns["NSPLIT", Int32], Returns["M", Int32], Returns["PIVMIN", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DLARRF")
 @external
@@ -13439,7 +13439,7 @@ def dlarrf(
     LPLUS: Float64[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["CLSTRT", Int32], Returns["CLEND", Int32], Returns["SPDIAM", Float64], Returns["CLGAPL", Float64], Returns["CLGAPR", Float64], Returns["PIVMIN", Float64], Returns["SIGMA", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DLARRJ")
 @external
@@ -13459,7 +13459,7 @@ def dlarrj(
     PIVMIN: Float64,
     SPDIAM: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["IFIRST", Int32], Returns["ILAST", Int32], Returns["RTOL", Float64], Returns["OFFSET", Int32], Returns["PIVMIN", Float64], Returns["SPDIAM", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DLARRK")
 @external
@@ -13476,7 +13476,7 @@ def dlarrk(
     W: Float64,
     WERR: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["IW", Int32], Returns["GL", Float64], Returns["GU", Float64], Returns["PIVMIN", Float64], Returns["RELTOL", Float64], Returns["W", Float64], Returns["WERR", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DLARRR")
 @external
@@ -13486,7 +13486,7 @@ def dlarrr(
     D: Float64[Flat],
     E: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLARRV")
 @external
@@ -13517,7 +13517,7 @@ def dlarrv(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["PIVMIN", Float64], Returns["M", Int32], Returns["DOL", Int32], Returns["DOU", Int32], Returns["MINRGP", Float64], Returns["RTOL1", Float64], Returns["RTOL2", Float64], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLARSCL2")
 @external
@@ -13528,7 +13528,7 @@ def dlarscl2(
     D: Float64[Flat],
     X: Float64[LDX, Flat],
     LDX: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDX", Int32]]: ...
 
 @bind("DLARTG")
 @external
@@ -13539,7 +13539,7 @@ def dlartg(
     c: Float64,
     s: Float64,
     r: Float64
-) -> None: ...
+) -> tuple[Returns["f", Float64], Returns["g", Float64], Returns["c", Float64], Returns["s", Float64], Returns["r", Float64]]: ...
 
 @bind("DLARTGP")
 @external
@@ -13550,7 +13550,7 @@ def dlartgp(
     CS: Float64,
     SN: Float64,
     R: Float64
-) -> None: ...
+) -> tuple[Returns["F", Float64], Returns["G", Float64], Returns["CS", Float64], Returns["SN", Float64], Returns["R", Float64]]: ...
 
 @bind("DLARTGS")
 @external
@@ -13561,7 +13561,7 @@ def dlartgs(
     SIGMA: Float64,
     CS: Float64,
     SN: Float64
-) -> None: ...
+) -> tuple[Returns["X", Float64], Returns["Y", Float64], Returns["SIGMA", Float64], Returns["CS", Float64], Returns["SN", Float64]]: ...
 
 @bind("DLARTV")
 @external
@@ -13575,7 +13575,7 @@ def dlartv(
     C: Float64[Flat],
     S: Float64[Flat],
     INCC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32], Returns["INCC", Int32]]: ...
 
 @bind("DLARUV")
 @external
@@ -13584,7 +13584,7 @@ def dlaruv(
     ISEED: Int32[4],
     N: Int32,
     X: Float64[N]
-) -> None: ...
+) -> Returns["N", Int32]: ...
 
 @bind("DLARZ")
 @external
@@ -13600,7 +13600,7 @@ def dlarz(
     C: Float64[LDC, Flat],
     LDC: Int32,
     WORK: Float64[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["L", Int32], Returns["INCV", Int32], Returns["TAU", Float64], Returns["LDC", Int32]]: ...
 
 @bind("DLARZB")
 @external
@@ -13622,7 +13622,7 @@ def dlarzb(
     LDC: Int32,
     WORK: Float64[LDWORK, Flat],
     LDWORK: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDC", Int32], Returns["LDWORK", Int32]]: ...
 
 @bind("DLARZT")
 @external
@@ -13637,7 +13637,7 @@ def dlarzt(
     TAU: Float64[Flat],
     T: Float64[LDT, Flat],
     LDT: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["LDV", Int32], Returns["LDT", Int32]]: ...
 
 @bind("DLAS2")
 @external
@@ -13648,7 +13648,7 @@ def dlas2(
     H: Float64,
     SSMIN: Float64,
     SSMAX: Float64
-) -> None: ...
+) -> tuple[Returns["F", Float64], Returns["G", Float64], Returns["H", Float64], Returns["SSMIN", Float64], Returns["SSMAX", Float64]]: ...
 
 @bind("DLASCL")
 @external
@@ -13664,7 +13664,7 @@ def dlascl(
     A: Float64[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["KL", Int32], Returns["KU", Int32], Returns["CFROM", Float64], Returns["CTO", Float64], Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLASCL2")
 @external
@@ -13675,7 +13675,7 @@ def dlascl2(
     D: Float64[Flat],
     X: Float64[LDX, Flat],
     LDX: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDX", Int32]]: ...
 
 @bind("DLASD0")
 @external
@@ -13693,7 +13693,7 @@ def dlasd0(
     IWORK: Int32[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SQRE", Int32], Returns["LDU", Int32], Returns["LDVT", Int32], Returns["SMLSIZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLASD1")
 @external
@@ -13713,7 +13713,7 @@ def dlasd1(
     IWORK: Int32[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["NL", Int32], Returns["NR", Int32], Returns["SQRE", Int32], Returns["ALPHA", Float64], Returns["BETA", Float64], Returns["LDU", Int32], Returns["LDVT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLASD2")
 @external
@@ -13742,7 +13742,7 @@ def dlasd2(
     IDXQ: Int32[Flat],
     COLTYP: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["NL", Int32], Returns["NR", Int32], Returns["SQRE", Int32], Returns["K", Int32], Returns["ALPHA", Float64], Returns["BETA", Float64], Returns["LDU", Int32], Returns["LDVT", Int32], Returns["LDU2", Int32], Returns["LDVT2", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLASD3")
 @external
@@ -13768,7 +13768,7 @@ def dlasd3(
     CTOT: Int32[Flat],
     Z: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["NL", Int32], Returns["NR", Int32], Returns["SQRE", Int32], Returns["K", Int32], Returns["LDQ", Int32], Returns["LDU", Int32], Returns["LDU2", Int32], Returns["LDVT", Int32], Returns["LDVT2", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLASD4")
 @external
@@ -13783,7 +13783,7 @@ def dlasd4(
     SIGMA: Float64,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["I", Int32], Returns["RHO", Float64], Returns["SIGMA", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DLASD5")
 @external
@@ -13796,7 +13796,7 @@ def dlasd5(
     RHO: Float64,
     DSIGMA: Float64,
     WORK: Float64[2]
-) -> None: ...
+) -> tuple[Returns["I", Int32], Returns["RHO", Float64], Returns["DSIGMA", Float64]]: ...
 
 @bind("DLASD6")
 @external
@@ -13828,7 +13828,7 @@ def dlasd6(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ICOMPQ", Int32], Returns["NL", Int32], Returns["NR", Int32], Returns["SQRE", Int32], Returns["ALPHA", Float64], Returns["BETA", Float64], Returns["GIVPTR", Int32], Returns["LDGCOL", Int32], Returns["LDGNUM", Int32], Returns["K", Int32], Returns["C", Float64], Returns["S", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DLASD7")
 @external
@@ -13861,7 +13861,7 @@ def dlasd7(
     C: Float64,
     S: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ICOMPQ", Int32], Returns["NL", Int32], Returns["NR", Int32], Returns["SQRE", Int32], Returns["K", Int32], Returns["ALPHA", Float64], Returns["BETA", Float64], Returns["GIVPTR", Int32], Returns["LDGCOL", Int32], Returns["LDGNUM", Int32], Returns["C", Float64], Returns["S", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DLASD8")
 @external
@@ -13879,7 +13879,7 @@ def dlasd8(
     DSIGMA: Float64[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ICOMPQ", Int32], Returns["K", Int32], Returns["LDDIFR", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLASDA")
 @external
@@ -13909,7 +13909,7 @@ def dlasda(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ICOMPQ", Int32], Returns["SMLSIZ", Int32], Returns["N", Int32], Returns["SQRE", Int32], Returns["LDU", Int32], Returns["LDGCOL", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLASDQ")
 @external
@@ -13931,7 +13931,7 @@ def dlasdq(
     LDC: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SQRE", Int32], Returns["N", Int32], Returns["NCVT", Int32], Returns["NRU", Int32], Returns["NCC", Int32], Returns["LDVT", Int32], Returns["LDU", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLASDT")
 @external
@@ -13944,7 +13944,7 @@ def dlasdt(
     NDIML: Int32[Flat],
     NDIMR: Int32[Flat],
     MSUB: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LVL", Int32], Returns["ND", Int32], Returns["MSUB", Int32]]: ...
 
 @bind("DLASET")
 @external
@@ -13957,7 +13957,7 @@ def dlaset(
     BETA: Float64,
     A: Float64[LDA, Flat],
     LDA: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Float64], Returns["BETA", Float64], Returns["LDA", Int32]]: ...
 
 @bind("DLASQ1")
 @external
@@ -13968,7 +13968,7 @@ def dlasq1(
     E: Float64[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLASQ2")
 @external
@@ -13977,7 +13977,7 @@ def dlasq2(
     N: Int32,
     Z: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLASQ3")
 @external
@@ -14003,7 +14003,7 @@ def dlasq3(
     DN2: Float64,
     G: Float64,
     TAU: Float64
-) -> None: ...
+) -> tuple[Returns["I0", Int32], Returns["N0", Int32], Returns["PP", Int32], Returns["DMIN", Float64], Returns["SIGMA", Float64], Returns["DESIG", Float64], Returns["QMAX", Float64], Returns["NFAIL", Int32], Returns["ITER", Int32], Returns["NDIV", Int32], Returns["IEEE", Bool], Returns["TTYPE", Int32], Returns["DMIN1", Float64], Returns["DMIN2", Float64], Returns["DN", Float64], Returns["DN1", Float64], Returns["DN2", Float64], Returns["G", Float64], Returns["TAU", Float64]]: ...
 
 @bind("DLASQ4")
 @external
@@ -14023,7 +14023,7 @@ def dlasq4(
     TAU: Float64,
     TTYPE: Int32,
     G: Float64
-) -> None: ...
+) -> tuple[Returns["I0", Int32], Returns["N0", Int32], Returns["PP", Int32], Returns["N0IN", Int32], Returns["DMIN", Float64], Returns["DMIN1", Float64], Returns["DMIN2", Float64], Returns["DN", Float64], Returns["DN1", Float64], Returns["DN2", Float64], Returns["TAU", Float64], Returns["TTYPE", Int32], Returns["G", Float64]]: ...
 
 @bind("DLASQ5")
 @external
@@ -14043,7 +14043,7 @@ def dlasq5(
     DNM2: Float64,
     IEEE: Bool,
     EPS: Float64
-) -> None: ...
+) -> tuple[Returns["I0", Int32], Returns["N0", Int32], Returns["PP", Int32], Returns["TAU", Float64], Returns["SIGMA", Float64], Returns["DMIN", Float64], Returns["DMIN1", Float64], Returns["DMIN2", Float64], Returns["DN", Float64], Returns["DNM1", Float64], Returns["DNM2", Float64], Returns["IEEE", Bool], Returns["EPS", Float64]]: ...
 
 @bind("DLASQ6")
 @external
@@ -14059,7 +14059,7 @@ def dlasq6(
     DN: Float64,
     DNM1: Float64,
     DNM2: Float64
-) -> None: ...
+) -> tuple[Returns["I0", Int32], Returns["N0", Int32], Returns["PP", Int32], Returns["DMIN", Float64], Returns["DMIN1", Float64], Returns["DMIN2", Float64], Returns["DN", Float64], Returns["DNM1", Float64], Returns["DNM2", Float64]]: ...
 
 @bind("DLASR")
 @external
@@ -14074,7 +14074,7 @@ def dlasr(
     S: Float64[Flat],
     A: Float64[LDA, Flat],
     LDA: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("DLASRT")
 @external
@@ -14084,7 +14084,7 @@ def dlasrt(
     N: Int32,
     D: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLASSQ")
 @external
@@ -14095,7 +14095,7 @@ def dlassq(
     incx: Int32,
     scale: Float64,
     sumsq: Float64
-) -> None: ...
+) -> tuple[Returns["n", Int32], Returns["incx", Int32], Returns["scale", Float64], Returns["sumsq", Float64]]: ...
 
 @bind("DLASV2")
 @external
@@ -14110,7 +14110,7 @@ def dlasv2(
     CSR: Float64,
     SNL: Float64,
     CSL: Float64
-) -> None: ...
+) -> tuple[Returns["F", Float64], Returns["G", Float64], Returns["H", Float64], Returns["SSMIN", Float64], Returns["SSMAX", Float64], Returns["SNR", Float64], Returns["CSR", Float64], Returns["SNL", Float64], Returns["CSL", Float64]]: ...
 
 @bind("DLASWLQ")
 @external
@@ -14127,7 +14127,7 @@ def dlaswlq(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["MB", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLASWP")
 @external
@@ -14140,7 +14140,7 @@ def dlaswp(
     K2: Int32,
     IPIV: Int32[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["K1", Int32], Returns["K2", Int32], Returns["INCX", Int32]]: ...
 
 @bind("DLASY2")
 @external
@@ -14162,7 +14162,7 @@ def dlasy2(
     LDX: Int32,
     XNORM: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["LTRANL", Bool], Returns["LTRANR", Bool], Returns["ISGN", Int32], Returns["N1", Int32], Returns["N2", Int32], Returns["LDTL", Int32], Returns["LDTR", Int32], Returns["LDB", Int32], Returns["SCALE", Float64], Returns["LDX", Int32], Returns["XNORM", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DLASYF")
 @external
@@ -14178,7 +14178,7 @@ def dlasyf(
     W: Float64[LDW, Flat],
     LDW: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NB", Int32], Returns["KB", Int32], Returns["LDA", Int32], Returns["LDW", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLASYF_AA")
 @external
@@ -14194,7 +14194,7 @@ def dlasyf_aa(
     H: Float64[LDH, Flat],
     LDH: Int32,
     WORK: Float64[Flat]
-) -> None: ...
+) -> tuple[Returns["J1", Int32], Returns["M", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDH", Int32]]: ...
 
 @bind("DLASYF_RK")
 @external
@@ -14211,7 +14211,7 @@ def dlasyf_rk(
     W: Float64[LDW, Flat],
     LDW: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NB", Int32], Returns["KB", Int32], Returns["LDA", Int32], Returns["LDW", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLASYF_ROOK")
 @external
@@ -14227,7 +14227,7 @@ def dlasyf_rook(
     W: Float64[LDW, Flat],
     LDW: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NB", Int32], Returns["KB", Int32], Returns["LDA", Int32], Returns["LDW", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLAT2S")
 @external
@@ -14240,7 +14240,7 @@ def dlat2s(
     SA: Float32[LDSA, Flat],
     LDSA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDSA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLATBS")
 @external
@@ -14258,7 +14258,7 @@ def dlatbs(
     SCALE: Float64,
     CNORM: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["SCALE", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DLATDF")
 @external
@@ -14273,7 +14273,7 @@ def dlatdf(
     RDSCAL: Float64,
     IPIV: Int32[Flat],
     JPIV: Int32[Flat]
-) -> None: ...
+) -> tuple[Returns["IJOB", Int32], Returns["N", Int32], Returns["LDZ", Int32], Returns["RDSUM", Float64], Returns["RDSCAL", Float64]]: ...
 
 @bind("DLATPS")
 @external
@@ -14289,7 +14289,7 @@ def dlatps(
     SCALE: Float64,
     CNORM: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SCALE", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DLATRD")
 @external
@@ -14304,7 +14304,7 @@ def dlatrd(
     TAU: Float64[Flat],
     W: Float64[LDW, Flat],
     LDW: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDW", Int32]]: ...
 
 @bind("DLATRS")
 @external
@@ -14321,7 +14321,7 @@ def dlatrs(
     SCALE: Float64,
     CNORM: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCALE", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DLATRS3")
 @external
@@ -14342,7 +14342,7 @@ def dlatrs3(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDX", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLATRZ")
 @external
@@ -14355,7 +14355,7 @@ def dlatrz(
     LDA: Int32,
     TAU: Float64[Flat],
     WORK: Float64[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["L", Int32], Returns["LDA", Int32]]: ...
 
 @bind("DLATSQR")
 @external
@@ -14372,7 +14372,7 @@ def dlatsqr(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["MB", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLAUU2")
 @external
@@ -14383,7 +14383,7 @@ def dlauu2(
     A: Float64[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DLAUUM")
 @external
@@ -14394,7 +14394,7 @@ def dlauum(
     A: Float64[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DOPGTR")
 @external
@@ -14408,7 +14408,7 @@ def dopgtr(
     LDQ: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDQ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DOPMTR")
 @external
@@ -14425,7 +14425,7 @@ def dopmtr(
     LDC: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORBDB")
 @external
@@ -14453,7 +14453,7 @@ def dorbdb(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX12", Int32], Returns["LDX21", Int32], Returns["LDX22", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORBDB1")
 @external
@@ -14474,7 +14474,7 @@ def dorbdb1(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX21", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORBDB2")
 @external
@@ -14495,7 +14495,7 @@ def dorbdb2(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX21", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORBDB3")
 @external
@@ -14516,7 +14516,7 @@ def dorbdb3(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX21", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORBDB4")
 @external
@@ -14538,7 +14538,7 @@ def dorbdb4(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX21", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORBDB5")
 @external
@@ -14558,7 +14558,7 @@ def dorbdb5(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M1", Int32], Returns["M2", Int32], Returns["N", Int32], Returns["INCX1", Int32], Returns["INCX2", Int32], Returns["LDQ1", Int32], Returns["LDQ2", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORBDB6")
 @external
@@ -14578,7 +14578,7 @@ def dorbdb6(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M1", Int32], Returns["M2", Int32], Returns["N", Int32], Returns["INCX1", Int32], Returns["INCX2", Int32], Returns["LDQ1", Int32], Returns["LDQ2", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORCSD")
 @external
@@ -14614,7 +14614,7 @@ def dorcsd(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX12", Int32], Returns["LDX21", Int32], Returns["LDX22", Int32], Returns["LDU1", Int32], Returns["LDU2", Int32], Returns["LDV1T", Int32], Returns["LDV2T", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORCSD2BY1")
 @external
@@ -14641,7 +14641,7 @@ def dorcsd2by1(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX21", Int32], Returns["LDU1", Int32], Returns["LDU2", Int32], Returns["LDV1T", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORG2L")
 @external
@@ -14655,7 +14655,7 @@ def dorg2l(
     TAU: Float64[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORG2R")
 @external
@@ -14669,7 +14669,7 @@ def dorg2r(
     TAU: Float64[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORGBR")
 @external
@@ -14685,7 +14685,7 @@ def dorgbr(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORGHR")
 @external
@@ -14700,7 +14700,7 @@ def dorghr(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORGL2")
 @external
@@ -14714,7 +14714,7 @@ def dorgl2(
     TAU: Float64[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORGLQ")
 @external
@@ -14729,7 +14729,7 @@ def dorglq(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORGQL")
 @external
@@ -14744,7 +14744,7 @@ def dorgql(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORGQR")
 @external
@@ -14759,7 +14759,7 @@ def dorgqr(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORGR2")
 @external
@@ -14773,7 +14773,7 @@ def dorgr2(
     TAU: Float64[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORGRQ")
 @external
@@ -14788,7 +14788,7 @@ def dorgrq(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORGTR")
 @external
@@ -14802,7 +14802,7 @@ def dorgtr(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORGTSQR")
 @external
@@ -14819,7 +14819,7 @@ def dorgtsqr(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["MB", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORGTSQR_ROW")
 @external
@@ -14836,7 +14836,7 @@ def dorgtsqr_row(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["MB", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORHR_COL")
 @external
@@ -14851,7 +14851,7 @@ def dorhr_col(
     LDT: Int32,
     D: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORM22")
 @external
@@ -14870,7 +14870,7 @@ def dorm22(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["N1", Int32], Returns["N2", Int32], Returns["LDQ", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORM2L")
 @external
@@ -14888,7 +14888,7 @@ def dorm2l(
     LDC: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORM2R")
 @external
@@ -14906,7 +14906,7 @@ def dorm2r(
     LDC: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORMBR")
 @external
@@ -14926,7 +14926,7 @@ def dormbr(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORMHR")
 @external
@@ -14946,7 +14946,7 @@ def dormhr(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORML2")
 @external
@@ -14964,7 +14964,7 @@ def dorml2(
     LDC: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORMLQ")
 @external
@@ -14983,7 +14983,7 @@ def dormlq(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORMQL")
 @external
@@ -15002,7 +15002,7 @@ def dormql(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORMQR")
 @external
@@ -15021,7 +15021,7 @@ def dormqr(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORMR2")
 @external
@@ -15039,7 +15039,7 @@ def dormr2(
     LDC: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORMR3")
 @external
@@ -15058,7 +15058,7 @@ def dormr3(
     LDC: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORMRQ")
 @external
@@ -15077,7 +15077,7 @@ def dormrq(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORMRZ")
 @external
@@ -15097,7 +15097,7 @@ def dormrz(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DORMTR")
 @external
@@ -15116,7 +15116,7 @@ def dormtr(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPBCON")
 @external
@@ -15132,7 +15132,7 @@ def dpbcon(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DPBEQU")
 @external
@@ -15147,7 +15147,7 @@ def dpbequ(
     SCOND: Float64,
     AMAX: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["SCOND", Float64], Returns["AMAX", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DPBRFS")
 @external
@@ -15170,7 +15170,7 @@ def dpbrfs(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPBSTF")
 @external
@@ -15182,7 +15182,7 @@ def dpbstf(
     AB: Float64[LDAB, Flat],
     LDAB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPBSV")
 @external
@@ -15197,7 +15197,7 @@ def dpbsv(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPBSVX")
 @external
@@ -15224,7 +15224,7 @@ def dpbsvx(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DPBTF2")
 @external
@@ -15236,7 +15236,7 @@ def dpbtf2(
     AB: Float64[LDAB, Flat],
     LDAB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPBTRF")
 @external
@@ -15248,7 +15248,7 @@ def dpbtrf(
     AB: Float64[LDAB, Flat],
     LDAB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPBTRS")
 @external
@@ -15263,7 +15263,7 @@ def dpbtrs(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPFTRF")
 @external
@@ -15274,7 +15274,7 @@ def dpftrf(
     N: Int32,
     A: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPFTRI")
 @external
@@ -15285,7 +15285,7 @@ def dpftri(
     N: Int32,
     A: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPFTRS")
 @external
@@ -15299,7 +15299,7 @@ def dpftrs(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPOCON")
 @external
@@ -15314,7 +15314,7 @@ def dpocon(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DPOEQU")
 @external
@@ -15327,7 +15327,7 @@ def dpoequ(
     SCOND: Float64,
     AMAX: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCOND", Float64], Returns["AMAX", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DPOEQUB")
 @external
@@ -15340,7 +15340,7 @@ def dpoequb(
     SCOND: Float64,
     AMAX: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCOND", Float64], Returns["AMAX", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DPORFS")
 @external
@@ -15362,7 +15362,7 @@ def dporfs(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPORFSX")
 @external
@@ -15391,7 +15391,7 @@ def dporfsx(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPOSV")
 @external
@@ -15405,7 +15405,7 @@ def dposv(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPOSVX")
 @external
@@ -15431,7 +15431,7 @@ def dposvx(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DPOSVXX")
 @external
@@ -15462,7 +15462,7 @@ def dposvxx(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["RPVGRW", Float64], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPOTF2")
 @external
@@ -15473,7 +15473,7 @@ def dpotf2(
     A: Float64[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPOTRF")
 @external
@@ -15484,7 +15484,7 @@ def dpotrf(
     A: Float64[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPOTRF2")
 @external
@@ -15495,7 +15495,7 @@ def dpotrf2(
     A: Float64[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPOTRI")
 @external
@@ -15506,7 +15506,7 @@ def dpotri(
     A: Float64[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPOTRS")
 @external
@@ -15520,7 +15520,7 @@ def dpotrs(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPPCON")
 @external
@@ -15534,7 +15534,7 @@ def dppcon(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DPPEQU")
 @external
@@ -15547,7 +15547,7 @@ def dppequ(
     SCOND: Float64,
     AMAX: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SCOND", Float64], Returns["AMAX", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DPPRFS")
 @external
@@ -15567,7 +15567,7 @@ def dpprfs(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPPSV")
 @external
@@ -15580,7 +15580,7 @@ def dppsv(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPPSVX")
 @external
@@ -15604,7 +15604,7 @@ def dppsvx(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DPPTRF")
 @external
@@ -15614,7 +15614,7 @@ def dpptrf(
     N: Int32,
     AP: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPPTRI")
 @external
@@ -15624,7 +15624,7 @@ def dpptri(
     N: Int32,
     AP: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPPTRS")
 @external
@@ -15637,7 +15637,7 @@ def dpptrs(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPSTF2")
 @external
@@ -15652,7 +15652,7 @@ def dpstf2(
     TOL: Float64,
     WORK: Float64[2 * N],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["RANK", Int32], Returns["TOL", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DPSTRF")
 @external
@@ -15667,7 +15667,7 @@ def dpstrf(
     TOL: Float64,
     WORK: Float64[2 * N],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["RANK", Int32], Returns["TOL", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DPTCON")
 @external
@@ -15680,7 +15680,7 @@ def dptcon(
     RCOND: Float64,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DPTEQR")
 @external
@@ -15694,7 +15694,7 @@ def dpteqr(
     LDZ: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPTRFS")
 @external
@@ -15714,7 +15714,7 @@ def dptrfs(
     BERR: Float64[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPTSV")
 @external
@@ -15727,7 +15727,7 @@ def dptsv(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPTSVX")
 @external
@@ -15749,7 +15749,7 @@ def dptsvx(
     BERR: Float64[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DPTTRF")
 @external
@@ -15759,7 +15759,7 @@ def dpttrf(
     D: Float64[Flat],
     E: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPTTRS")
 @external
@@ -15772,7 +15772,7 @@ def dpttrs(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DPTTS2")
 @external
@@ -15784,7 +15784,7 @@ def dptts2(
     E: Float64[Flat],
     B: Float64[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32]]: ...
 
 @bind("DRSCL")
 @external
@@ -15794,7 +15794,7 @@ def drscl(
     SA: Float64,
     SX: Float64[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SA", Float64], Returns["INCX", Int32]]: ...
 
 @bind("DSB2ST_KERNELS")
 @external
@@ -15815,7 +15815,7 @@ def dsb2st_kernels(
     TAU: Float64[Flat],
     LDVT: Int32,
     WORK: Float64[Flat]
-) -> None: ...
+) -> tuple[Returns["WANTZ", Bool], Returns["TTYPE", Int32], Returns["ST", Int32], Returns["ED", Int32], Returns["SWEEP", Int32], Returns["N", Int32], Returns["NB", Int32], Returns["IB", Int32], Returns["LDA", Int32], Returns["LDVT", Int32]]: ...
 
 @bind("DSBEV")
 @external
@@ -15832,7 +15832,7 @@ def dsbev(
     LDZ: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSBEV_2STAGE")
 @external
@@ -15850,7 +15850,7 @@ def dsbev_2stage(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSBEVD")
 @external
@@ -15870,7 +15870,7 @@ def dsbevd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSBEVD_2STAGE")
 @external
@@ -15890,7 +15890,7 @@ def dsbevd_2stage(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSBEVX")
 @external
@@ -15918,7 +15918,7 @@ def dsbevx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDQ", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSBEVX_2STAGE")
 @external
@@ -15947,7 +15947,7 @@ def dsbevx_2stage(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDQ", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSBGST")
 @external
@@ -15966,7 +15966,7 @@ def dsbgst(
     LDX: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KA", Int32], Returns["KB", Int32], Returns["LDAB", Int32], Returns["LDBB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSBGV")
 @external
@@ -15986,7 +15986,7 @@ def dsbgv(
     LDZ: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KA", Int32], Returns["KB", Int32], Returns["LDAB", Int32], Returns["LDBB", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSBGVD")
 @external
@@ -16009,7 +16009,7 @@ def dsbgvd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KA", Int32], Returns["KB", Int32], Returns["LDAB", Int32], Returns["LDBB", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSBGVX")
 @external
@@ -16040,7 +16040,7 @@ def dsbgvx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KA", Int32], Returns["KB", Int32], Returns["LDAB", Int32], Returns["LDBB", Int32], Returns["LDQ", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSBTRD")
 @external
@@ -16058,7 +16058,7 @@ def dsbtrd(
     LDQ: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDQ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSFRK")
 @external
@@ -16074,7 +16074,7 @@ def dsfrk(
     LDA: Int32,
     BETA: Float64,
     C: Float64[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Float64], Returns["LDA", Int32], Returns["BETA", Float64]]: ...
 
 @bind("DSGESV")
 @external
@@ -16093,7 +16093,7 @@ def dsgesv(
     SWORK: Float32[Flat],
     ITER: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["ITER", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSPCON")
 @external
@@ -16108,7 +16108,7 @@ def dspcon(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DSPEV")
 @external
@@ -16123,7 +16123,7 @@ def dspev(
     LDZ: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSPEVD")
 @external
@@ -16141,7 +16141,7 @@ def dspevd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSPEVX")
 @external
@@ -16165,7 +16165,7 @@ def dspevx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSPGST")
 @external
@@ -16177,7 +16177,7 @@ def dspgst(
     AP: Float64[Flat],
     BP: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSPGV")
 @external
@@ -16194,7 +16194,7 @@ def dspgv(
     LDZ: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSPGVD")
 @external
@@ -16214,7 +16214,7 @@ def dspgvd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSPGVX")
 @external
@@ -16240,7 +16240,7 @@ def dspgvx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSPOSV")
 @external
@@ -16259,7 +16259,7 @@ def dsposv(
     SWORK: Float32[Flat],
     ITER: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["ITER", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSPRFS")
 @external
@@ -16280,7 +16280,7 @@ def dsprfs(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSPSV")
 @external
@@ -16294,7 +16294,7 @@ def dspsv(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSPSVX")
 @external
@@ -16317,7 +16317,7 @@ def dspsvx(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DSPTRD")
 @external
@@ -16330,7 +16330,7 @@ def dsptrd(
     E: Float64[Flat],
     TAU: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSPTRF")
 @external
@@ -16341,7 +16341,7 @@ def dsptrf(
     AP: Float64[Flat],
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSPTRI")
 @external
@@ -16353,7 +16353,7 @@ def dsptri(
     IPIV: Int32[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSPTRS")
 @external
@@ -16367,7 +16367,7 @@ def dsptrs(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSTEBZ")
 @external
@@ -16391,7 +16391,7 @@ def dstebz(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["NSPLIT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSTEDC")
 @external
@@ -16408,7 +16408,7 @@ def dstedc(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSTEGR")
 @external
@@ -16434,7 +16434,7 @@ def dstegr(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSTEIN")
 @external
@@ -16453,7 +16453,7 @@ def dstein(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["M", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSTEMR")
 @external
@@ -16480,7 +16480,7 @@ def dstemr(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["M", Int32], Returns["LDZ", Int32], Returns["NZC", Int32], Returns["TRYRAC", Bool], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSTEQR")
 @external
@@ -16494,7 +16494,7 @@ def dsteqr(
     LDZ: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSTERF")
 @external
@@ -16504,7 +16504,7 @@ def dsterf(
     D: Float64[Flat],
     E: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSTEV")
 @external
@@ -16518,7 +16518,7 @@ def dstev(
     LDZ: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSTEVD")
 @external
@@ -16535,7 +16535,7 @@ def dstevd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSTEVR")
 @external
@@ -16561,7 +16561,7 @@ def dstevr(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSTEVX")
 @external
@@ -16585,7 +16585,7 @@ def dstevx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYCON")
 @external
@@ -16601,7 +16601,7 @@ def dsycon(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DSYCON_3")
 @external
@@ -16618,7 +16618,7 @@ def dsycon_3(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DSYCON_ROOK")
 @external
@@ -16634,7 +16634,7 @@ def dsycon_rook(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DSYCONV")
 @external
@@ -16648,7 +16648,7 @@ def dsyconv(
     IPIV: Int32[Flat],
     E: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYCONVF")
 @external
@@ -16662,7 +16662,7 @@ def dsyconvf(
     E: Float64[Flat],
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYCONVF_ROOK")
 @external
@@ -16676,7 +16676,7 @@ def dsyconvf_rook(
     E: Float64[Flat],
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYEQUB")
 @external
@@ -16691,7 +16691,7 @@ def dsyequb(
     AMAX: Float64,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCOND", Float64], Returns["AMAX", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DSYEV")
 @external
@@ -16706,7 +16706,7 @@ def dsyev(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYEV_2STAGE")
 @external
@@ -16721,7 +16721,7 @@ def dsyev_2stage(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYEVD")
 @external
@@ -16738,7 +16738,7 @@ def dsyevd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYEVD_2STAGE")
 @external
@@ -16755,7 +16755,7 @@ def dsyevd_2stage(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYEVR")
 @external
@@ -16782,7 +16782,7 @@ def dsyevr(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYEVR_2STAGE")
 @external
@@ -16809,7 +16809,7 @@ def dsyevr_2stage(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYEVX")
 @external
@@ -16835,7 +16835,7 @@ def dsyevx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYEVX_2STAGE")
 @external
@@ -16861,7 +16861,7 @@ def dsyevx_2stage(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYGS2")
 @external
@@ -16875,7 +16875,7 @@ def dsygs2(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYGST")
 @external
@@ -16889,7 +16889,7 @@ def dsygst(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYGV")
 @external
@@ -16907,7 +16907,7 @@ def dsygv(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYGV_2STAGE")
 @external
@@ -16925,7 +16925,7 @@ def dsygv_2stage(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYGVD")
 @external
@@ -16945,7 +16945,7 @@ def dsygvd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYGVX")
 @external
@@ -16974,7 +16974,7 @@ def dsygvx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYRFS")
 @external
@@ -16997,7 +16997,7 @@ def dsyrfs(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYRFSX")
 @external
@@ -17027,7 +17027,7 @@ def dsyrfsx(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYSV")
 @external
@@ -17044,7 +17044,7 @@ def dsysv(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYSV_AA")
 @external
@@ -17061,7 +17061,7 @@ def dsysv_aa(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYSV_AA_2STAGE")
 @external
@@ -17081,7 +17081,7 @@ def dsysv_aa_2stage(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LTB", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYSV_RK")
 @external
@@ -17099,7 +17099,7 @@ def dsysv_rk(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYSV_ROOK")
 @external
@@ -17116,7 +17116,7 @@ def dsysv_rook(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYSVX")
 @external
@@ -17142,7 +17142,7 @@ def dsysvx(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYSVXX")
 @external
@@ -17174,7 +17174,7 @@ def dsysvxx(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["RPVGRW", Float64], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYSWAPR")
 @external
@@ -17186,7 +17186,7 @@ def dsyswapr(
     LDA: Int32,
     I1: Int32,
     I2: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["I1", Int32], Returns["I2", Int32]]: ...
 
 @bind("DSYTD2")
 @external
@@ -17200,7 +17200,7 @@ def dsytd2(
     E: Float64[Flat],
     TAU: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYTF2")
 @external
@@ -17212,7 +17212,7 @@ def dsytf2(
     LDA: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYTF2_RK")
 @external
@@ -17225,7 +17225,7 @@ def dsytf2_rk(
     E: Float64[Flat],
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYTF2_ROOK")
 @external
@@ -17237,7 +17237,7 @@ def dsytf2_rook(
     LDA: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYTRD")
 @external
@@ -17253,7 +17253,7 @@ def dsytrd(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYTRD_2STAGE")
 @external
@@ -17272,7 +17272,7 @@ def dsytrd_2stage(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LHOUS2", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYTRD_SB2ST")
 @external
@@ -17292,7 +17292,7 @@ def dsytrd_sb2st(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LHOUS", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYTRD_SY2SB")
 @external
@@ -17309,7 +17309,7 @@ def dsytrd_sy2sb(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDA", Int32], Returns["LDAB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYTRF")
 @external
@@ -17323,7 +17323,7 @@ def dsytrf(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYTRF_AA")
 @external
@@ -17337,7 +17337,7 @@ def dsytrf_aa(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYTRF_AA_2STAGE")
 @external
@@ -17354,7 +17354,7 @@ def dsytrf_aa_2stage(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LTB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYTRF_RK")
 @external
@@ -17369,7 +17369,7 @@ def dsytrf_rk(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYTRF_ROOK")
 @external
@@ -17383,7 +17383,7 @@ def dsytrf_rook(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYTRI")
 @external
@@ -17396,7 +17396,7 @@ def dsytri(
     IPIV: Int32[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYTRI2")
 @external
@@ -17410,7 +17410,7 @@ def dsytri2(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYTRI2X")
 @external
@@ -17424,7 +17424,7 @@ def dsytri2x(
     WORK: Float64[N + NB + 1, Flat],
     NB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["NB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYTRI_3")
 @external
@@ -17439,7 +17439,7 @@ def dsytri_3(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYTRI_3X")
 @external
@@ -17454,7 +17454,7 @@ def dsytri_3x(
     WORK: Float64[N + NB + 1, Flat],
     NB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["NB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYTRI_ROOK")
 @external
@@ -17467,7 +17467,7 @@ def dsytri_rook(
     IPIV: Int32[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYTRS")
 @external
@@ -17482,7 +17482,7 @@ def dsytrs(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYTRS2")
 @external
@@ -17498,7 +17498,7 @@ def dsytrs2(
     LDB: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYTRS_3")
 @external
@@ -17514,7 +17514,7 @@ def dsytrs_3(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYTRS_AA")
 @external
@@ -17531,7 +17531,7 @@ def dsytrs_aa(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYTRS_AA_2STAGE")
 @external
@@ -17549,7 +17549,7 @@ def dsytrs_aa_2stage(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LTB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DSYTRS_ROOK")
 @external
@@ -17564,7 +17564,7 @@ def dsytrs_rook(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTBCON")
 @external
@@ -17581,7 +17581,7 @@ def dtbcon(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DTBRFS")
 @external
@@ -17604,7 +17604,7 @@ def dtbrfs(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTBTRS")
 @external
@@ -17621,7 +17621,7 @@ def dtbtrs(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTFSM")
 @external
@@ -17638,7 +17638,7 @@ def dtfsm(
     A: Float64[Flat],
     B: Float64[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Float64], Returns["LDB", Int32]]: ...
 
 @bind("DTFTRI")
 @external
@@ -17650,7 +17650,7 @@ def dtftri(
     N: Int32,
     A: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTFTTP")
 @external
@@ -17662,7 +17662,7 @@ def dtfttp(
     ARF: Float64[Flat],
     AP: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTFTTR")
 @external
@@ -17675,7 +17675,7 @@ def dtfttr(
     A: Float64[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTGEVC")
 @external
@@ -17697,7 +17697,7 @@ def dtgevc(
     M: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDS", Int32], Returns["LDP", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["MM", Int32], Returns["M", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTGEX2")
 @external
@@ -17720,7 +17720,7 @@ def dtgex2(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["WANTQ", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDQ", Int32], Returns["LDZ", Int32], Returns["J1", Int32], Returns["N1", Int32], Returns["N2", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTGEXC")
 @external
@@ -17742,7 +17742,7 @@ def dtgexc(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["WANTQ", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDQ", Int32], Returns["LDZ", Int32], Returns["IFST", Int32], Returns["ILST", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTGSEN")
 @external
@@ -17773,7 +17773,7 @@ def dtgsen(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["IJOB", Int32], Returns["WANTQ", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDQ", Int32], Returns["LDZ", Int32], Returns["M", Int32], Returns["PL", Float64], Returns["PR", Float64], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTGSJA")
 @external
@@ -17804,7 +17804,7 @@ def dtgsja(
     WORK: Float64[Flat],
     NCYCLE: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["TOLA", Float64], Returns["TOLB", Float64], Returns["LDU", Int32], Returns["LDV", Int32], Returns["LDQ", Int32], Returns["NCYCLE", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTGSNA")
 @external
@@ -17830,7 +17830,7 @@ def dtgsna(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["MM", Int32], Returns["M", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTGSY2")
 @external
@@ -17858,7 +17858,7 @@ def dtgsy2(
     IWORK: Int32[Flat],
     PQ: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["IJOB", Int32], Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDC", Int32], Returns["LDD", Int32], Returns["LDE", Int32], Returns["LDF", Int32], Returns["SCALE", Float64], Returns["RDSUM", Float64], Returns["RDSCAL", Float64], Returns["PQ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTGSYL")
 @external
@@ -17886,7 +17886,7 @@ def dtgsyl(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["IJOB", Int32], Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDC", Int32], Returns["LDD", Int32], Returns["LDE", Int32], Returns["LDF", Int32], Returns["SCALE", Float64], Returns["DIF", Float64], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTPCON")
 @external
@@ -17901,7 +17901,7 @@ def dtpcon(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DTPLQT")
 @external
@@ -17919,7 +17919,7 @@ def dtplqt(
     LDT: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["L", Int32], Returns["MB", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTPLQT2")
 @external
@@ -17935,7 +17935,7 @@ def dtplqt2(
     T: Float64[LDT, Flat],
     LDT: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["L", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTPMLQT")
 @external
@@ -17958,7 +17958,7 @@ def dtpmlqt(
     LDB: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["MB", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTPMQRT")
 @external
@@ -17981,7 +17981,7 @@ def dtpmqrt(
     LDB: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["NB", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTPQRT")
 @external
@@ -17999,7 +17999,7 @@ def dtpqrt(
     LDT: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["L", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTPQRT2")
 @external
@@ -18015,7 +18015,7 @@ def dtpqrt2(
     T: Float64[LDT, Flat],
     LDT: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["L", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTPRFB")
 @external
@@ -18039,7 +18039,7 @@ def dtprfb(
     LDB: Int32,
     WORK: Float64[LDWORK, Flat],
     LDWORK: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDWORK", Int32]]: ...
 
 @bind("DTPRFS")
 @external
@@ -18060,7 +18060,7 @@ def dtprfs(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTPTRI")
 @external
@@ -18071,7 +18071,7 @@ def dtptri(
     N: Int32,
     AP: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTPTRS")
 @external
@@ -18086,7 +18086,7 @@ def dtptrs(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTPTTF")
 @external
@@ -18098,7 +18098,7 @@ def dtpttf(
     AP: Float64[Flat],
     ARF: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTPTTR")
 @external
@@ -18110,7 +18110,7 @@ def dtpttr(
     A: Float64[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTRCON")
 @external
@@ -18126,7 +18126,7 @@ def dtrcon(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DTREVC")
 @external
@@ -18146,7 +18146,7 @@ def dtrevc(
     M: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDT", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["MM", Int32], Returns["M", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTREVC3")
 @external
@@ -18167,7 +18167,7 @@ def dtrevc3(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDT", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["MM", Int32], Returns["M", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTREXC")
 @external
@@ -18183,7 +18183,7 @@ def dtrexc(
     ILST: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDT", Int32], Returns["LDQ", Int32], Returns["IFST", Int32], Returns["ILST", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTRRFS")
 @external
@@ -18205,7 +18205,7 @@ def dtrrfs(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTRSEN")
 @external
@@ -18229,7 +18229,7 @@ def dtrsen(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDT", Int32], Returns["LDQ", Int32], Returns["M", Int32], Returns["S", Float64], Returns["SEP", Float64], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTRSNA")
 @external
@@ -18253,7 +18253,7 @@ def dtrsna(
     LDWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDT", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["MM", Int32], Returns["M", Int32], Returns["LDWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTRSYL")
 @external
@@ -18272,7 +18272,7 @@ def dtrsyl(
     LDC: Int32,
     SCALE: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ISGN", Int32], Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDC", Int32], Returns["SCALE", Float64], Returns["INFO", Int32]]: ...
 
 @bind("DTRSYL3")
 @external
@@ -18295,7 +18295,7 @@ def dtrsyl3(
     SWORK: Float64[LDSWORK, Flat],
     LDSWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ISGN", Int32], Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDC", Int32], Returns["SCALE", Float64], Returns["LIWORK", Int32], Returns["LDSWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTRTI2")
 @external
@@ -18307,7 +18307,7 @@ def dtrti2(
     A: Float64[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTRTRI")
 @external
@@ -18319,7 +18319,7 @@ def dtrtri(
     A: Float64[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTRTRS")
 @external
@@ -18335,7 +18335,7 @@ def dtrtrs(
     B: Float64[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTRTTF")
 @external
@@ -18348,7 +18348,7 @@ def dtrttf(
     LDA: Int32,
     ARF: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTRTTP")
 @external
@@ -18360,7 +18360,7 @@ def dtrttp(
     LDA: Int32,
     AP: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DTZRZF")
 @external
@@ -18374,7 +18374,7 @@ def dtzrzf(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("DZSUM1")
 @external
@@ -18383,7 +18383,7 @@ def dzsum1(
     N: Int32,
     CX: Complex128[Flat],
     INCX: Int32
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["INCX", Int32]]: ...
 
 @bind("ICMAX1")
 @external
@@ -18392,7 +18392,7 @@ def icmax1(
     N: Int32,
     CX: Complex64[Flat],
     INCX: Int32
-) -> Int32: ...
+) -> tuple[Int32, Returns["N", Int32], Returns["INCX", Int32]]: ...
 
 @bind("IEEECK")
 @external
@@ -18401,7 +18401,7 @@ def ieeeck(
     ISPEC: Int32,
     ZERO: Float32,
     ONE: Float32
-) -> Int32: ...
+) -> tuple[Int32, Returns["ISPEC", Int32], Returns["ZERO", Float32], Returns["ONE", Float32]]: ...
 
 @bind("ILACLC")
 @external
@@ -18411,7 +18411,7 @@ def ilaclc(
     N: Int32,
     A: Complex64[LDA, Flat],
     LDA: Int32
-) -> Int32: ...
+) -> tuple[Int32, Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("ILACLR")
 @external
@@ -18421,7 +18421,7 @@ def ilaclr(
     N: Int32,
     A: Complex64[LDA, Flat],
     LDA: Int32
-) -> Int32: ...
+) -> tuple[Int32, Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("ILADIAG")
 @external
@@ -18437,7 +18437,7 @@ def iladlc(
     N: Int32,
     A: Float64[LDA, Flat],
     LDA: Int32
-) -> Int32: ...
+) -> tuple[Int32, Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("ILADLR")
 @external
@@ -18447,7 +18447,7 @@ def iladlr(
     N: Int32,
     A: Float64[LDA, Flat],
     LDA: Int32
-) -> Int32: ...
+) -> tuple[Int32, Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("ILAENV")
 @external
@@ -18460,7 +18460,7 @@ def ilaenv(
     N2: Int32,
     N3: Int32,
     N4: Int32
-) -> Int32: ...
+) -> tuple[Int32, Returns["ISPEC", Int32], Returns["N1", Int32], Returns["N2", Int32], Returns["N3", Int32], Returns["N4", Int32]]: ...
 
 @bind("ILAENV2STAGE")
 @external
@@ -18473,7 +18473,7 @@ def ilaenv2stage(
     N2: Int32,
     N3: Int32,
     N4: Int32
-) -> Int32: ...
+) -> tuple[Int32, Returns["ISPEC", Int32], Returns["N1", Int32], Returns["N2", Int32], Returns["N3", Int32], Returns["N4", Int32]]: ...
 
 @bind("ILAPREC")
 @external
@@ -18489,7 +18489,7 @@ def ilaslc(
     N: Int32,
     A: Float32[LDA, Flat],
     LDA: Int32
-) -> Int32: ...
+) -> tuple[Int32, Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("ILASLR")
 @external
@@ -18499,7 +18499,7 @@ def ilaslr(
     N: Int32,
     A: Float32[LDA, Flat],
     LDA: Int32
-) -> Int32: ...
+) -> tuple[Int32, Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("ILATRANS")
 @external
@@ -18521,7 +18521,7 @@ def ilazlc(
     N: Int32,
     A: Complex128[LDA, Flat],
     LDA: Int32
-) -> Int32: ...
+) -> tuple[Int32, Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("ILAZLR")
 @external
@@ -18531,7 +18531,7 @@ def ilazlr(
     N: Int32,
     A: Complex128[LDA, Flat],
     LDA: Int32
-) -> Int32: ...
+) -> tuple[Int32, Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("IPARAM2STAGE")
 @external
@@ -18544,7 +18544,7 @@ def iparam2stage(
     NBI: Int32,
     IBI: Int32,
     NXI: Int32
-) -> Int32: ...
+) -> tuple[Int32, Returns["ISPEC", Int32], Returns["NI", Int32], Returns["NBI", Int32], Returns["IBI", Int32], Returns["NXI", Int32]]: ...
 
 @bind("IPARMQ")
 @external
@@ -18557,7 +18557,7 @@ def iparmq(
     ILO: Int32,
     IHI: Int32,
     LWORK: Int32
-) -> Int32: ...
+) -> tuple[Int32, Returns["ISPEC", Int32], Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LWORK", Int32]]: ...
 
 @bind("IZMAX1")
 @external
@@ -18566,7 +18566,7 @@ def izmax1(
     N: Int32,
     ZX: Complex128[Flat],
     INCX: Int32
-) -> Int32: ...
+) -> tuple[Int32, Returns["N", Int32], Returns["INCX", Int32]]: ...
 
 @bind("LSAMEN")
 @external
@@ -18575,7 +18575,7 @@ def lsamen(
     N: Int32,
     CA: String,
     CB: String
-) -> Bool: ...
+) -> tuple[Bool, Returns["N", Int32]]: ...
 
 @bind("SBBCSD")
 @external
@@ -18610,7 +18610,7 @@ def sbbcsd(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDU1", Int32], Returns["LDU2", Int32], Returns["LDV1T", Int32], Returns["LDV2T", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SBDSDC")
 @external
@@ -18630,7 +18630,7 @@ def sbdsdc(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDU", Int32], Returns["LDVT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SBDSQR")
 @external
@@ -18651,7 +18651,7 @@ def sbdsqr(
     LDC: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NCVT", Int32], Returns["NRU", Int32], Returns["NCC", Int32], Returns["LDVT", Int32], Returns["LDU", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SBDSVDX")
 @external
@@ -18674,7 +18674,7 @@ def sbdsvdx(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["NS", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SCSUM1")
 @external
@@ -18683,7 +18683,7 @@ def scsum1(
     N: Int32,
     CX: Complex64[Flat],
     INCX: Int32
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["INCX", Int32]]: ...
 
 @bind("SDISNA")
 @external
@@ -18695,7 +18695,7 @@ def sdisna(
     D: Float32[Flat],
     SEP: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGBBRD")
 @external
@@ -18719,7 +18719,7 @@ def sgbbrd(
     LDC: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NCC", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["LDQ", Int32], Returns["LDPT", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGBCON")
 @external
@@ -18737,7 +18737,7 @@ def sgbcon(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SGBEQU")
 @external
@@ -18755,7 +18755,7 @@ def sgbequ(
     COLCND: Float32,
     AMAX: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["ROWCND", Float32], Returns["COLCND", Float32], Returns["AMAX", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SGBEQUB")
 @external
@@ -18773,7 +18773,7 @@ def sgbequb(
     COLCND: Float32,
     AMAX: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["ROWCND", Float32], Returns["COLCND", Float32], Returns["AMAX", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SGBRFS")
 @external
@@ -18798,7 +18798,7 @@ def sgbrfs(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGBRFSX")
 @external
@@ -18831,7 +18831,7 @@ def sgbrfsx(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGBSV")
 @external
@@ -18847,7 +18847,7 @@ def sgbsv(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGBSVX")
 @external
@@ -18877,7 +18877,7 @@ def sgbsvx(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SGBSVXX")
 @external
@@ -18912,7 +18912,7 @@ def sgbsvxx(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["RPVGRW", Float32], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGBTF2")
 @external
@@ -18926,7 +18926,7 @@ def sgbtf2(
     LDAB: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGBTRF")
 @external
@@ -18940,7 +18940,7 @@ def sgbtrf(
     LDAB: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGBTRS")
 @external
@@ -18957,7 +18957,7 @@ def sgbtrs(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEBAK")
 @external
@@ -18973,7 +18973,7 @@ def sgebak(
     V: Float32[LDV, Flat],
     LDV: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["M", Int32], Returns["LDV", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEBAL")
 @external
@@ -18987,7 +18987,7 @@ def sgebal(
     IHI: Int32,
     SCALE: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEBD2")
 @external
@@ -19003,7 +19003,7 @@ def sgebd2(
     TAUP: Float32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEBRD")
 @external
@@ -19020,7 +19020,7 @@ def sgebrd(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGECON")
 @external
@@ -19035,7 +19035,7 @@ def sgecon(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SGEDMD")
 @external
@@ -19123,7 +19123,7 @@ def sgeequ(
     COLCND: Float32,
     AMAX: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["ROWCND", Float32], Returns["COLCND", Float32], Returns["AMAX", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SGEEQUB")
 @external
@@ -19139,7 +19139,7 @@ def sgeequb(
     COLCND: Float32,
     AMAX: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["ROWCND", Float32], Returns["COLCND", Float32], Returns["AMAX", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SGEES")
 @external
@@ -19160,7 +19160,7 @@ def sgees(
     LWORK: Int32,
     BWORK: Bool[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SELECT", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["SDIM", Int32], Returns["LDVS", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEESX")
 @external
@@ -19186,7 +19186,7 @@ def sgeesx(
     LIWORK: Int32,
     BWORK: Bool[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SELECT", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["SDIM", Int32], Returns["LDVS", Int32], Returns["RCONDE", Float32], Returns["RCONDV", Float32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEEV")
 @external
@@ -19206,7 +19206,7 @@ def sgeev(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEEVX")
 @external
@@ -19235,7 +19235,7 @@ def sgeevx(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["ABNRM", Float32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEHD2")
 @external
@@ -19249,7 +19249,7 @@ def sgehd2(
     TAU: Float32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEHRD")
 @external
@@ -19264,7 +19264,7 @@ def sgehrd(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEJSV")
 @external
@@ -19289,7 +19289,7 @@ def sgejsv(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDU", Int32], Returns["LDV", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGELQ")
 @external
@@ -19304,7 +19304,7 @@ def sgelq(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["TSIZE", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGELQ2")
 @external
@@ -19317,7 +19317,7 @@ def sgelq2(
     TAU: Float32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGELQF")
 @external
@@ -19331,7 +19331,7 @@ def sgelqf(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGELQT")
 @external
@@ -19346,7 +19346,7 @@ def sgelqt(
     LDT: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["MB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGELQT3")
 @external
@@ -19359,7 +19359,7 @@ def sgelqt3(
     T: Float32[LDT, Flat],
     LDT: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGELS")
 @external
@@ -19376,7 +19376,7 @@ def sgels(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGELSD")
 @external
@@ -19396,7 +19396,7 @@ def sgelsd(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["RCOND", Float32], Returns["RANK", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGELSS")
 @external
@@ -19415,7 +19415,7 @@ def sgelss(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["RCOND", Float32], Returns["RANK", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGELST")
 @external
@@ -19432,7 +19432,7 @@ def sgelst(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGELSY")
 @external
@@ -19451,7 +19451,7 @@ def sgelsy(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["RCOND", Float32], Returns["RANK", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEMLQ")
 @external
@@ -19471,7 +19471,7 @@ def sgemlq(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["TSIZE", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEMLQT")
 @external
@@ -19491,7 +19491,7 @@ def sgemlqt(
     LDC: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["MB", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEMQR")
 @external
@@ -19511,7 +19511,7 @@ def sgemqr(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["TSIZE", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEMQRT")
 @external
@@ -19531,7 +19531,7 @@ def sgemqrt(
     LDC: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["NB", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEQL2")
 @external
@@ -19544,7 +19544,7 @@ def sgeql2(
     TAU: Float32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEQLF")
 @external
@@ -19558,7 +19558,7 @@ def sgeqlf(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEQP3")
 @external
@@ -19573,7 +19573,7 @@ def sgeqp3(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEQP3RK")
 @external
@@ -19596,7 +19596,7 @@ def sgeqp3rk(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["KMAX", Int32], Returns["ABSTOL", Float32], Returns["RELTOL", Float32], Returns["LDA", Int32], Returns["K", Int32], Returns["MAXC2NRMK", Float32], Returns["RELMAXC2NRMK", Float32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEQR")
 @external
@@ -19611,7 +19611,7 @@ def sgeqr(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["TSIZE", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEQR2")
 @external
@@ -19624,7 +19624,7 @@ def sgeqr2(
     TAU: Float32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEQR2P")
 @external
@@ -19637,7 +19637,7 @@ def sgeqr2p(
     TAU: Float32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEQRF")
 @external
@@ -19651,7 +19651,7 @@ def sgeqrf(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEQRFP")
 @external
@@ -19665,7 +19665,7 @@ def sgeqrfp(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEQRT")
 @external
@@ -19680,7 +19680,7 @@ def sgeqrt(
     LDT: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEQRT2")
 @external
@@ -19693,7 +19693,7 @@ def sgeqrt2(
     T: Float32[LDT, Flat],
     LDT: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGEQRT3")
 @external
@@ -19706,7 +19706,7 @@ def sgeqrt3(
     T: Float32[LDT, Flat],
     LDT: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGERFS")
 @external
@@ -19729,7 +19729,7 @@ def sgerfs(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGERFSX")
 @external
@@ -19760,7 +19760,7 @@ def sgerfsx(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGERQ2")
 @external
@@ -19773,7 +19773,7 @@ def sgerq2(
     TAU: Float32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGERQF")
 @external
@@ -19787,7 +19787,7 @@ def sgerqf(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGESC2")
 @external
@@ -19800,7 +19800,7 @@ def sgesc2(
     IPIV: Int32[Flat],
     JPIV: Int32[Flat],
     SCALE: Float32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCALE", Float32]]: ...
 
 @bind("SGESDD")
 @external
@@ -19820,7 +19820,7 @@ def sgesdd(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDU", Int32], Returns["LDVT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGESV")
 @external
@@ -19834,7 +19834,7 @@ def sgesv(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGESVD")
 @external
@@ -19854,7 +19854,7 @@ def sgesvd(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDU", Int32], Returns["LDVT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGESVDQ")
 @external
@@ -19882,7 +19882,7 @@ def sgesvdq(
     RWORK: Float32[Flat],
     LRWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDU", Int32], Returns["LDV", Int32], Returns["NUMRANK", Int32], Returns["LIWORK", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGESVDX")
 @external
@@ -19909,7 +19909,7 @@ def sgesvdx(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["NS", Int32], Returns["LDU", Int32], Returns["LDVT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGESVJ")
 @external
@@ -19929,7 +19929,7 @@ def sgesvj(
     WORK: Float32[LWORK],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["MV", Int32], Returns["LDV", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGESVX")
 @external
@@ -19957,7 +19957,7 @@ def sgesvx(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SGESVXX")
 @external
@@ -19990,7 +19990,7 @@ def sgesvxx(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["RPVGRW", Float32], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGETC2")
 @external
@@ -20002,7 +20002,7 @@ def sgetc2(
     IPIV: Int32[Flat],
     JPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGETF2")
 @external
@@ -20014,7 +20014,7 @@ def sgetf2(
     LDA: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGETRF")
 @external
@@ -20026,7 +20026,7 @@ def sgetrf(
     LDA: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGETRF2")
 @external
@@ -20038,7 +20038,7 @@ def sgetrf2(
     LDA: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGETRI")
 @external
@@ -20051,7 +20051,7 @@ def sgetri(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGETRS")
 @external
@@ -20066,7 +20066,7 @@ def sgetrs(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGETSLS")
 @external
@@ -20083,7 +20083,7 @@ def sgetsls(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGETSQRHRT")
 @external
@@ -20101,7 +20101,7 @@ def sgetsqrhrt(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["MB1", Int32], Returns["NB1", Int32], Returns["NB2", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGGBAK")
 @external
@@ -20118,7 +20118,7 @@ def sggbak(
     V: Float32[LDV, Flat],
     LDV: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["M", Int32], Returns["LDV", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGGBAL")
 @external
@@ -20136,7 +20136,7 @@ def sggbal(
     RSCALE: Float32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGGES")
 @external
@@ -20163,7 +20163,7 @@ def sgges(
     LWORK: Int32,
     BWORK: Bool[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SELCTG", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["SDIM", Int32], Returns["LDVSL", Int32], Returns["LDVSR", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGGES3")
 @external
@@ -20190,7 +20190,7 @@ def sgges3(
     LWORK: Int32,
     BWORK: Bool[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SELCTG", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["SDIM", Int32], Returns["LDVSL", Int32], Returns["LDVSR", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGGESX")
 @external
@@ -20222,7 +20222,7 @@ def sggesx(
     LIWORK: Int32,
     BWORK: Bool[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SELCTG", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["SDIM", Int32], Returns["LDVSL", Int32], Returns["LDVSR", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGGEV")
 @external
@@ -20245,7 +20245,7 @@ def sggev(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGGEV3")
 @external
@@ -20268,7 +20268,7 @@ def sggev3(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGGEVX")
 @external
@@ -20303,7 +20303,7 @@ def sggevx(
     IWORK: Int32[Flat],
     BWORK: Bool[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["ABNRM", Float32], Returns["BBNRM", Float32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGGGLM")
 @external
@@ -20322,7 +20322,7 @@ def sggglm(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["M", Int32], Returns["P", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGGHD3")
 @external
@@ -20344,7 +20344,7 @@ def sgghd3(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDQ", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGGHRD")
 @external
@@ -20364,7 +20364,7 @@ def sgghrd(
     Z: Float32[LDZ, Flat],
     LDZ: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDQ", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGGLSE")
 @external
@@ -20383,7 +20383,7 @@ def sgglse(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["P", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGGQRF")
 @external
@@ -20401,7 +20401,7 @@ def sggqrf(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["M", Int32], Returns["P", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGGRQF")
 @external
@@ -20419,7 +20419,7 @@ def sggrqf(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGGSVD3")
 @external
@@ -20449,7 +20449,7 @@ def sggsvd3(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["P", Int32], Returns["K", Int32], Returns["L", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDU", Int32], Returns["LDV", Int32], Returns["LDQ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGGSVP3")
 @external
@@ -20480,7 +20480,7 @@ def sggsvp3(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["TOLA", Float32], Returns["TOLB", Float32], Returns["K", Int32], Returns["L", Int32], Returns["LDU", Int32], Returns["LDV", Int32], Returns["LDQ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGSVJ0")
 @external
@@ -20503,7 +20503,7 @@ def sgsvj0(
     WORK: Float32[LWORK],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["MV", Int32], Returns["LDV", Int32], Returns["EPS", Float32], Returns["SFMIN", Float32], Returns["TOL", Float32], Returns["NSWEEP", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGSVJ1")
 @external
@@ -20527,7 +20527,7 @@ def sgsvj1(
     WORK: Float32[LWORK],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["N1", Int32], Returns["LDA", Int32], Returns["MV", Int32], Returns["LDV", Int32], Returns["EPS", Float32], Returns["SFMIN", Float32], Returns["TOL", Float32], Returns["NSWEEP", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGTCON")
 @external
@@ -20545,7 +20545,7 @@ def sgtcon(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SGTRFS")
 @external
@@ -20571,7 +20571,7 @@ def sgtrfs(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGTSV")
 @external
@@ -20585,7 +20585,7 @@ def sgtsv(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGTSVX")
 @external
@@ -20613,7 +20613,7 @@ def sgtsvx(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SGTTRF")
 @external
@@ -20626,7 +20626,7 @@ def sgttrf(
     DU2: Float32[Flat],
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGTTRS")
 @external
@@ -20643,7 +20643,7 @@ def sgttrs(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SGTTS2")
 @external
@@ -20659,7 +20659,7 @@ def sgtts2(
     IPIV: Int32[Flat],
     B: Float32[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["ITRANS", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32]]: ...
 
 @bind("SHGEQZ")
 @external
@@ -20685,7 +20685,7 @@ def shgeqz(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDH", Int32], Returns["LDT", Int32], Returns["LDQ", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SHSEIN")
 @external
@@ -20710,7 +20710,7 @@ def shsein(
     IFAILL: Int32[Flat],
     IFAILR: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDH", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["MM", Int32], Returns["M", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SHSEQR")
 @external
@@ -20730,7 +20730,7 @@ def shseqr(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDH", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SISNAN")
 @external
@@ -20756,7 +20756,7 @@ def sla_gbamv(
     BETA: Float32,
     Y: Float32[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["TRANS", Int32], Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["ALPHA", Float32], Returns["LDAB", Int32], Returns["INCX", Int32], Returns["BETA", Float32], Returns["INCY", Int32]]: ...
 
 @bind("SLA_GBRCOND")
 @external
@@ -20776,7 +20776,7 @@ def sla_gbrcond(
     INFO: Int32,
     WORK: Float32[Flat],
     IWORK: Int32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["CMODE", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLA_GBRFSX_EXTENDED")
 @external
@@ -20813,7 +20813,7 @@ def sla_gbrfsx_extended(
     DZ_UB: Float32,
     IGNORE_CWISE: Bool,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["PREC_TYPE", Int32], Returns["TRANS_TYPE", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["COLEQU", Bool], Returns["LDB", Int32], Returns["LDY", Int32], Returns["N_NORMS", Int32], Returns["RCOND", Float32], Returns["ITHRESH", Int32], Returns["RTHRESH", Float32], Returns["DZ_UB", Float32], Returns["IGNORE_CWISE", Bool], Returns["INFO", Int32]]: ...
 
 @bind("SLA_GBRPVGRW")
 @external
@@ -20827,7 +20827,7 @@ def sla_gbrpvgrw(
     LDAB: Int32,
     AFB: Float32[LDAFB, Flat],
     LDAFB: Int32
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NCOLS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32]]: ...
 
 @bind("SLA_GEAMV")
 @external
@@ -20844,7 +20844,7 @@ def sla_geamv(
     BETA: Float32,
     Y: Float32[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["TRANS", Int32], Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Float32], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Float32], Returns["INCY", Int32]]: ...
 
 @bind("SLA_GERCOND")
 @external
@@ -20862,7 +20862,7 @@ def sla_gercond(
     INFO: Int32,
     WORK: Float32[Flat],
     IWORK: Int32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["CMODE", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLA_GERFSX_EXTENDED")
 @external
@@ -20897,7 +20897,7 @@ def sla_gerfsx_extended(
     DZ_UB: Float32,
     IGNORE_CWISE: Bool,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["PREC_TYPE", Int32], Returns["TRANS_TYPE", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["COLEQU", Bool], Returns["LDB", Int32], Returns["LDY", Int32], Returns["N_NORMS", Int32], Returns["RCOND", Float32], Returns["ITHRESH", Int32], Returns["RTHRESH", Float32], Returns["DZ_UB", Float32], Returns["IGNORE_CWISE", Bool], Returns["INFO", Int32]]: ...
 
 @bind("SLA_GERPVGRW")
 @external
@@ -20909,7 +20909,7 @@ def sla_gerpvgrw(
     LDA: Int32,
     AF: Float32[LDAF, Flat],
     LDAF: Int32
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["NCOLS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32]]: ...
 
 @bind("SLA_LIN_BERR")
 @external
@@ -20921,7 +20921,7 @@ def sla_lin_berr(
     RES: Float32[N, NRHS],
     AYB: Float32[N, NRHS],
     BERR: Float32[NRHS]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NZ", Int32], Returns["NRHS", Int32]]: ...
 
 @bind("SLA_PORCOND")
 @external
@@ -20938,7 +20938,7 @@ def sla_porcond(
     INFO: Int32,
     WORK: Float32[Flat],
     IWORK: Int32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["CMODE", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLA_PORFSX_EXTENDED")
 @external
@@ -20972,7 +20972,7 @@ def sla_porfsx_extended(
     DZ_UB: Float32,
     IGNORE_CWISE: Bool,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["PREC_TYPE", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["COLEQU", Bool], Returns["LDB", Int32], Returns["LDY", Int32], Returns["N_NORMS", Int32], Returns["RCOND", Float32], Returns["ITHRESH", Int32], Returns["RTHRESH", Float32], Returns["DZ_UB", Float32], Returns["IGNORE_CWISE", Bool], Returns["INFO", Int32]]: ...
 
 @bind("SLA_PORPVGRW")
 @external
@@ -20985,7 +20985,7 @@ def sla_porpvgrw(
     AF: Float32[LDAF, Flat],
     LDAF: Int32,
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["NCOLS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32]]: ...
 
 @bind("SLA_SYAMV")
 @external
@@ -21001,7 +21001,7 @@ def sla_syamv(
     BETA: Float32,
     Y: Float32[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["UPLO", Int32], Returns["N", Int32], Returns["ALPHA", Float32], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Float32], Returns["INCY", Int32]]: ...
 
 @bind("SLA_SYRCOND")
 @external
@@ -21019,7 +21019,7 @@ def sla_syrcond(
     INFO: Int32,
     WORK: Float32[Flat],
     IWORK: Int32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["CMODE", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLA_SYRFSX_EXTENDED")
 @external
@@ -21054,7 +21054,7 @@ def sla_syrfsx_extended(
     DZ_UB: Float32,
     IGNORE_CWISE: Bool,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["PREC_TYPE", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["COLEQU", Bool], Returns["LDB", Int32], Returns["LDY", Int32], Returns["N_NORMS", Int32], Returns["RCOND", Float32], Returns["ITHRESH", Int32], Returns["RTHRESH", Float32], Returns["DZ_UB", Float32], Returns["IGNORE_CWISE", Bool], Returns["INFO", Int32]]: ...
 
 @bind("SLA_SYRPVGRW")
 @external
@@ -21069,7 +21069,7 @@ def sla_syrpvgrw(
     LDAF: Int32,
     IPIV: Int32[Flat],
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["INFO", Int32], Returns["LDA", Int32], Returns["LDAF", Int32]]: ...
 
 @bind("SLA_WWADDW")
 @external
@@ -21079,7 +21079,7 @@ def sla_wwaddw(
     X: Float32[Flat],
     Y: Float32[Flat],
     W: Float32[Flat]
-) -> None: ...
+) -> Returns["N", Int32]: ...
 
 @bind("SLABAD")
 @external
@@ -21087,7 +21087,7 @@ def sla_wwaddw(
 def slabad(
     SMALL: Float32,
     LARGE: Float32
-) -> None: ...
+) -> tuple[Returns["SMALL", Float32], Returns["LARGE", Float32]]: ...
 
 @bind("SLABRD")
 @external
@@ -21106,7 +21106,7 @@ def slabrd(
     LDX: Int32,
     Y: Float32[LDY, Flat],
     LDY: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDX", Int32], Returns["LDY", Int32]]: ...
 
 @bind("SLACN2")
 @external
@@ -21119,7 +21119,7 @@ def slacn2(
     EST: Float32,
     KASE: Int32,
     ISAVE: Int32[3]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["EST", Float32], Returns["KASE", Int32]]: ...
 
 @bind("SLACON")
 @external
@@ -21131,7 +21131,7 @@ def slacon(
     ISGN: Int32[Flat],
     EST: Float32,
     KASE: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["EST", Float32], Returns["KASE", Int32]]: ...
 
 @bind("SLACPY")
 @external
@@ -21144,7 +21144,7 @@ def slacpy(
     LDA: Int32,
     B: Float32[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32]]: ...
 
 @bind("SLADIV")
 @external
@@ -21156,7 +21156,7 @@ def sladiv(
     D: Float32,
     P: Float32,
     Q: Float32
-) -> None: ...
+) -> tuple[Returns["A", Float32], Returns["B", Float32], Returns["C", Float32], Returns["D", Float32], Returns["P", Float32], Returns["Q", Float32]]: ...
 
 @bind("SLADIV1")
 @external
@@ -21168,7 +21168,7 @@ def sladiv1(
     D: Float32,
     P: Float32,
     Q: Float32
-) -> None: ...
+) -> tuple[Returns["A", Float32], Returns["B", Float32], Returns["C", Float32], Returns["D", Float32], Returns["P", Float32], Returns["Q", Float32]]: ...
 
 @bind("SLADIV2")
 @external
@@ -21180,7 +21180,7 @@ def sladiv2(
     D: Float32,
     R: Float32,
     T: Float32
-) -> Float32: ...
+) -> tuple[Float32, Returns["A", Float32], Returns["B", Float32], Returns["C", Float32], Returns["D", Float32], Returns["R", Float32], Returns["T", Float32]]: ...
 
 @bind("SLAE2")
 @external
@@ -21191,7 +21191,7 @@ def slae2(
     C: Float32,
     RT1: Float32,
     RT2: Float32
-) -> None: ...
+) -> tuple[Returns["A", Float32], Returns["B", Float32], Returns["C", Float32], Returns["RT1", Float32], Returns["RT2", Float32]]: ...
 
 @bind("SLAEBZ")
 @external
@@ -21217,7 +21217,7 @@ def slaebz(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["IJOB", Int32], Returns["NITMAX", Int32], Returns["N", Int32], Returns["MMAX", Int32], Returns["MINP", Int32], Returns["NBMIN", Int32], Returns["ABSTOL", Float32], Returns["RELTOL", Float32], Returns["PIVMIN", Float32], Returns["MOUT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLAED0")
 @external
@@ -21235,7 +21235,7 @@ def slaed0(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ICOMPQ", Int32], Returns["QSIZ", Int32], Returns["N", Int32], Returns["LDQ", Int32], Returns["LDQS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLAED1")
 @external
@@ -21251,7 +21251,7 @@ def slaed1(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDQ", Int32], Returns["RHO", Float32], Returns["CUTPNT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLAED2")
 @external
@@ -21274,7 +21274,7 @@ def slaed2(
     INDXP: Int32[Flat],
     COLTYP: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["K", Int32], Returns["N", Int32], Returns["N1", Int32], Returns["LDQ", Int32], Returns["RHO", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SLAED3")
 @external
@@ -21294,7 +21294,7 @@ def slaed3(
     W: Float32[Flat],
     S: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["K", Int32], Returns["N", Int32], Returns["N1", Int32], Returns["LDQ", Int32], Returns["RHO", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SLAED4")
 @external
@@ -21308,7 +21308,7 @@ def slaed4(
     RHO: Float32,
     DLAM: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["I", Int32], Returns["RHO", Float32], Returns["DLAM", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SLAED5")
 @external
@@ -21320,7 +21320,7 @@ def slaed5(
     DELTA: Float32[2],
     RHO: Float32,
     DLAM: Float32
-) -> None: ...
+) -> tuple[Returns["I", Int32], Returns["RHO", Float32], Returns["DLAM", Float32]]: ...
 
 @bind("SLAED6")
 @external
@@ -21334,7 +21334,7 @@ def slaed6(
     FINIT: Float32,
     TAU: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["KNITER", Int32], Returns["ORGATI", Bool], Returns["RHO", Float32], Returns["FINIT", Float32], Returns["TAU", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SLAED7")
 @external
@@ -21362,7 +21362,7 @@ def slaed7(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ICOMPQ", Int32], Returns["N", Int32], Returns["QSIZ", Int32], Returns["TLVLS", Int32], Returns["CURLVL", Int32], Returns["CURPBM", Int32], Returns["LDQ", Int32], Returns["RHO", Float32], Returns["CUTPNT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLAED8")
 @external
@@ -21390,7 +21390,7 @@ def slaed8(
     INDXP: Int32[Flat],
     INDX: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ICOMPQ", Int32], Returns["K", Int32], Returns["N", Int32], Returns["QSIZ", Int32], Returns["LDQ", Int32], Returns["RHO", Float32], Returns["CUTPNT", Int32], Returns["LDQ2", Int32], Returns["GIVPTR", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLAED9")
 @external
@@ -21409,7 +21409,7 @@ def slaed9(
     S: Float32[LDS, Flat],
     LDS: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["K", Int32], Returns["KSTART", Int32], Returns["KSTOP", Int32], Returns["N", Int32], Returns["LDQ", Int32], Returns["RHO", Float32], Returns["LDS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLAEDA")
 @external
@@ -21429,7 +21429,7 @@ def slaeda(
     Z: Float32[Flat],
     ZTEMP: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["TLVLS", Int32], Returns["CURLVL", Int32], Returns["CURPBM", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLAEIN")
 @external
@@ -21451,7 +21451,7 @@ def slaein(
     SMLNUM: Float32,
     BIGNUM: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["RIGHTV", Bool], Returns["NOINIT", Bool], Returns["N", Int32], Returns["LDH", Int32], Returns["WR", Float32], Returns["WI", Float32], Returns["LDB", Int32], Returns["EPS3", Float32], Returns["SMLNUM", Float32], Returns["BIGNUM", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SLAEV2")
 @external
@@ -21464,7 +21464,7 @@ def slaev2(
     RT2: Float32,
     CS1: Float32,
     SN1: Float32
-) -> None: ...
+) -> tuple[Returns["A", Float32], Returns["B", Float32], Returns["C", Float32], Returns["RT1", Float32], Returns["RT2", Float32], Returns["CS1", Float32], Returns["SN1", Float32]]: ...
 
 @bind("SLAEXC")
 @external
@@ -21481,7 +21481,7 @@ def slaexc(
     N2: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["WANTQ", Bool], Returns["N", Int32], Returns["LDT", Int32], Returns["LDQ", Int32], Returns["J1", Int32], Returns["N1", Int32], Returns["N2", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLAG2")
 @external
@@ -21497,7 +21497,7 @@ def slag2(
     WR1: Float32,
     WR2: Float32,
     WI: Float32
-) -> None: ...
+) -> tuple[Returns["LDA", Int32], Returns["LDB", Int32], Returns["SAFMIN", Float32], Returns["SCALE1", Float32], Returns["SCALE2", Float32], Returns["WR1", Float32], Returns["WR2", Float32], Returns["WI", Float32]]: ...
 
 @bind("SLAG2D")
 @external
@@ -21510,7 +21510,7 @@ def slag2d(
     A: Float64[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDSA", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLAGS2")
 @external
@@ -21529,7 +21529,7 @@ def slags2(
     SNV: Float32,
     CSQ: Float32,
     SNQ: Float32
-) -> None: ...
+) -> tuple[Returns["UPPER", Bool], Returns["A1", Float32], Returns["A2", Float32], Returns["A3", Float32], Returns["B1", Float32], Returns["B2", Float32], Returns["B3", Float32], Returns["CSU", Float32], Returns["SNU", Float32], Returns["CSV", Float32], Returns["SNV", Float32], Returns["CSQ", Float32], Returns["SNQ", Float32]]: ...
 
 @bind("SLAGTF")
 @external
@@ -21544,7 +21544,7 @@ def slagtf(
     D: Float32[Flat],
     IN: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LAMBDA", Float32], Returns["TOL", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SLAGTM")
 @external
@@ -21562,7 +21562,7 @@ def slagtm(
     BETA: Float32,
     B: Float32[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["ALPHA", Float32], Returns["LDX", Int32], Returns["BETA", Float32], Returns["LDB", Int32]]: ...
 
 @bind("SLAGTS")
 @external
@@ -21578,7 +21578,7 @@ def slagts(
     Y: Float32[Flat],
     TOL: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["JOB", Int32], Returns["N", Int32], Returns["TOL", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SLAGV2")
 @external
@@ -21595,7 +21595,7 @@ def slagv2(
     SNL: Float32,
     CSR: Float32,
     SNR: Float32
-) -> None: ...
+) -> tuple[Returns["LDA", Int32], Returns["LDB", Int32], Returns["CSL", Float32], Returns["SNL", Float32], Returns["CSR", Float32], Returns["SNR", Float32]]: ...
 
 @bind("SLAHQR")
 @external
@@ -21615,7 +21615,7 @@ def slahqr(
     Z: Float32[LDZ, Flat],
     LDZ: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["WANTT", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDH", Int32], Returns["ILOZ", Int32], Returns["IHIZ", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLAHR2")
 @external
@@ -21631,7 +21631,7 @@ def slahr2(
     LDT: Int32,
     Y: Float32[LDY, NB],
     LDY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LDY", Int32]]: ...
 
 @bind("SLAIC1")
 @external
@@ -21646,7 +21646,7 @@ def slaic1(
     SESTPR: Float32,
     S: Float32,
     C: Float32
-) -> None: ...
+) -> tuple[Returns["JOB", Int32], Returns["J", Int32], Returns["SEST", Float32], Returns["GAMMA", Float32], Returns["SESTPR", Float32], Returns["S", Float32], Returns["C", Float32]]: ...
 
 @bind("SLAISNAN")
 @external
@@ -21678,7 +21678,7 @@ def slaln2(
     SCALE: Float32,
     XNORM: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["LTRANS", Bool], Returns["NA", Int32], Returns["NW", Int32], Returns["SMIN", Float32], Returns["CA", Float32], Returns["LDA", Int32], Returns["D1", Float32], Returns["D2", Float32], Returns["LDB", Int32], Returns["WR", Float32], Returns["WI", Float32], Returns["LDX", Int32], Returns["SCALE", Float32], Returns["XNORM", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SLALS0")
 @external
@@ -21708,7 +21708,7 @@ def slals0(
     S: Float32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ICOMPQ", Int32], Returns["NL", Int32], Returns["NR", Int32], Returns["SQRE", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDBX", Int32], Returns["GIVPTR", Int32], Returns["LDGCOL", Int32], Returns["LDGNUM", Int32], Returns["K", Int32], Returns["C", Float32], Returns["S", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SLALSA")
 @external
@@ -21740,7 +21740,7 @@ def slalsa(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ICOMPQ", Int32], Returns["SMLSIZ", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDBX", Int32], Returns["LDU", Int32], Returns["LDGCOL", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLALSD")
 @external
@@ -21759,7 +21759,7 @@ def slalsd(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SMLSIZ", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["RCOND", Float32], Returns["RANK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLAMRG")
 @external
@@ -21771,7 +21771,7 @@ def slamrg(
     STRD1: Int32,
     STRD2: Int32,
     INDEX: Int32[Flat]
-) -> None: ...
+) -> tuple[Returns["N1", Int32], Returns["N2", Int32], Returns["STRD1", Int32], Returns["STRD2", Int32]]: ...
 
 @bind("SLAMSWLQ")
 @external
@@ -21793,7 +21793,7 @@ def slamswlq(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["MB", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLAMTSQR")
 @external
@@ -21815,7 +21815,7 @@ def slamtsqr(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["MB", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLANEG")
 @external
@@ -21827,7 +21827,7 @@ def slaneg(
     SIGMA: Float32,
     PIVMIN: Float32,
     R: Int32
-) -> Int32: ...
+) -> tuple[Int32, Returns["N", Int32], Returns["SIGMA", Float32], Returns["PIVMIN", Float32], Returns["R", Int32]]: ...
 
 @bind("SLANGB")
 @external
@@ -21840,7 +21840,7 @@ def slangb(
     AB: Float32[LDAB, Flat],
     LDAB: Int32,
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32]]: ...
 
 @bind("SLANGE")
 @external
@@ -21852,7 +21852,7 @@ def slange(
     A: Float32[LDA, Flat],
     LDA: Int32,
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("SLANGT")
 @external
@@ -21863,7 +21863,7 @@ def slangt(
     DL: Float32[Flat],
     D: Float32[Flat],
     DU: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32]]: ...
 
 @bind("SLANHS")
 @external
@@ -21874,7 +21874,7 @@ def slanhs(
     A: Float32[LDA, Flat],
     LDA: Int32,
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("SLANSB")
 @external
@@ -21887,7 +21887,7 @@ def slansb(
     AB: Float32[LDAB, Flat],
     LDAB: Int32,
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["K", Int32], Returns["LDAB", Int32]]: ...
 
 @bind("SLANSF")
 @external
@@ -21899,7 +21899,7 @@ def slansf(
     N: Int32,
     A: Float32[Flat],
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32]]: ...
 
 @bind("SLANSP")
 @external
@@ -21910,7 +21910,7 @@ def slansp(
     N: Int32,
     AP: Float32[Flat],
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32]]: ...
 
 @bind("SLANST")
 @external
@@ -21920,7 +21920,7 @@ def slanst(
     N: Int32,
     D: Float32[Flat],
     E: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32]]: ...
 
 @bind("SLANSY")
 @external
@@ -21932,7 +21932,7 @@ def slansy(
     A: Float32[LDA, Flat],
     LDA: Int32,
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("SLANTB")
 @external
@@ -21946,7 +21946,7 @@ def slantb(
     AB: Float32[LDAB, Flat],
     LDAB: Int32,
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["K", Int32], Returns["LDAB", Int32]]: ...
 
 @bind("SLANTP")
 @external
@@ -21958,7 +21958,7 @@ def slantp(
     N: Int32,
     AP: Float32[Flat],
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32]]: ...
 
 @bind("SLANTR")
 @external
@@ -21972,7 +21972,7 @@ def slantr(
     A: Float32[LDA, Flat],
     LDA: Int32,
     WORK: Float32[Flat]
-) -> Float32: ...
+) -> tuple[Float32, Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("SLANV2")
 @external
@@ -21988,7 +21988,7 @@ def slanv2(
     RT2I: Float32,
     CS: Float32,
     SN: Float32
-) -> None: ...
+) -> tuple[Returns["A", Float32], Returns["B", Float32], Returns["C", Float32], Returns["D", Float32], Returns["RT1R", Float32], Returns["RT1I", Float32], Returns["RT2R", Float32], Returns["RT2I", Float32], Returns["CS", Float32], Returns["SN", Float32]]: ...
 
 @bind("SLAORHR_COL_GETRFNP")
 @external
@@ -22000,7 +22000,7 @@ def slaorhr_col_getrfnp(
     LDA: Int32,
     D: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLAORHR_COL_GETRFNP2")
 @external
@@ -22012,7 +22012,7 @@ def slaorhr_col_getrfnp2(
     LDA: Int32,
     D: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLAPLL")
 @external
@@ -22024,7 +22024,7 @@ def slapll(
     Y: Float32[Flat],
     INCY: Int32,
     SSMIN: Float32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32], Returns["SSMIN", Float32]]: ...
 
 @bind("SLAPMR")
 @external
@@ -22036,7 +22036,7 @@ def slapmr(
     X: Float32[LDX, Flat],
     LDX: Int32,
     K: Int32[Flat]
-) -> None: ...
+) -> tuple[Returns["FORWRD", Bool], Returns["M", Int32], Returns["N", Int32], Returns["LDX", Int32]]: ...
 
 @bind("SLAPMT")
 @external
@@ -22048,7 +22048,7 @@ def slapmt(
     X: Float32[LDX, Flat],
     LDX: Int32,
     K: Int32[Flat]
-) -> None: ...
+) -> tuple[Returns["FORWRD", Bool], Returns["M", Int32], Returns["N", Int32], Returns["LDX", Int32]]: ...
 
 @bind("SLAPY2")
 @external
@@ -22056,7 +22056,7 @@ def slapmt(
 def slapy2(
     X: Float32,
     Y: Float32
-) -> Float32: ...
+) -> tuple[Float32, Returns["X", Float32], Returns["Y", Float32]]: ...
 
 @bind("SLAPY3")
 @external
@@ -22065,7 +22065,7 @@ def slapy3(
     X: Float32,
     Y: Float32,
     Z: Float32
-) -> Float32: ...
+) -> tuple[Float32, Returns["X", Float32], Returns["Y", Float32], Returns["Z", Float32]]: ...
 
 @bind("SLAQGB")
 @external
@@ -22083,7 +22083,7 @@ def slaqgb(
     COLCND: Float32,
     AMAX: Float32,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["ROWCND", Float32], Returns["COLCND", Float32], Returns["AMAX", Float32]]: ...
 
 @bind("SLAQGE")
 @external
@@ -22099,7 +22099,7 @@ def slaqge(
     COLCND: Float32,
     AMAX: Float32,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["ROWCND", Float32], Returns["COLCND", Float32], Returns["AMAX", Float32]]: ...
 
 @bind("SLAQP2")
 @external
@@ -22115,7 +22115,7 @@ def slaqp2(
     VN1: Float32[Flat],
     VN2: Float32[Flat],
     WORK: Float32[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["OFFSET", Int32], Returns["LDA", Int32]]: ...
 
 @bind("SLAQP2RK")
 @external
@@ -22141,7 +22141,7 @@ def slaqp2rk(
     VN2: Float32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["IOFFSET", Int32], Returns["KMAX", Int32], Returns["ABSTOL", Float32], Returns["RELTOL", Float32], Returns["KP1", Int32], Returns["MAXC2NRM", Float32], Returns["LDA", Int32], Returns["K", Int32], Returns["MAXC2NRMK", Float32], Returns["RELMAXC2NRMK", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SLAQP3RK")
 @external
@@ -22171,7 +22171,7 @@ def slaqp3rk(
     LDF: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["IOFFSET", Int32], Returns["NB", Int32], Returns["ABSTOL", Float32], Returns["RELTOL", Float32], Returns["KP1", Int32], Returns["MAXC2NRM", Float32], Returns["LDA", Int32], Returns["DONE", Bool], Returns["KB", Int32], Returns["MAXC2NRMK", Float32], Returns["RELMAXC2NRMK", Float32], Returns["LDF", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLAQPS")
 @external
@@ -22191,7 +22191,7 @@ def slaqps(
     AUXV: Float32[Flat],
     F: Float32[LDF, Flat],
     LDF: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["OFFSET", Int32], Returns["NB", Int32], Returns["KB", Int32], Returns["LDA", Int32], Returns["LDF", Int32]]: ...
 
 @bind("SLAQR0")
 @external
@@ -22213,7 +22213,7 @@ def slaqr0(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["WANTT", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDH", Int32], Returns["ILOZ", Int32], Returns["IHIZ", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLAQR1")
 @external
@@ -22227,7 +22227,7 @@ def slaqr1(
     SR2: Float32,
     SI2: Float32,
     V: Float32[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDH", Int32], Returns["SR1", Float32], Returns["SI1", Float32], Returns["SR2", Float32], Returns["SI2", Float32]]: ...
 
 @bind("SLAQR2")
 @external
@@ -22259,7 +22259,7 @@ def slaqr2(
     LDWV: Int32,
     WORK: Float32[Flat],
     LWORK: Int32
-) -> None: ...
+) -> tuple[Returns["WANTT", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["KTOP", Int32], Returns["KBOT", Int32], Returns["NW", Int32], Returns["LDH", Int32], Returns["ILOZ", Int32], Returns["IHIZ", Int32], Returns["LDZ", Int32], Returns["NS", Int32], Returns["ND", Int32], Returns["LDV", Int32], Returns["NH", Int32], Returns["LDT", Int32], Returns["NV", Int32], Returns["LDWV", Int32], Returns["LWORK", Int32]]: ...
 
 @bind("SLAQR3")
 @external
@@ -22291,7 +22291,7 @@ def slaqr3(
     LDWV: Int32,
     WORK: Float32[Flat],
     LWORK: Int32
-) -> None: ...
+) -> tuple[Returns["WANTT", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["KTOP", Int32], Returns["KBOT", Int32], Returns["NW", Int32], Returns["LDH", Int32], Returns["ILOZ", Int32], Returns["IHIZ", Int32], Returns["LDZ", Int32], Returns["NS", Int32], Returns["ND", Int32], Returns["LDV", Int32], Returns["NH", Int32], Returns["LDT", Int32], Returns["NV", Int32], Returns["LDWV", Int32], Returns["LWORK", Int32]]: ...
 
 @bind("SLAQR4")
 @external
@@ -22313,7 +22313,7 @@ def slaqr4(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["WANTT", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDH", Int32], Returns["ILOZ", Int32], Returns["IHIZ", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLAQR5")
 @external
@@ -22344,7 +22344,7 @@ def slaqr5(
     NH: Int32,
     WH: Float32[LDWH, Flat],
     LDWH: Int32
-) -> None: ...
+) -> tuple[Returns["WANTT", Bool], Returns["WANTZ", Bool], Returns["KACC22", Int32], Returns["N", Int32], Returns["KTOP", Int32], Returns["KBOT", Int32], Returns["NSHFTS", Int32], Returns["LDH", Int32], Returns["ILOZ", Int32], Returns["IHIZ", Int32], Returns["LDZ", Int32], Returns["LDV", Int32], Returns["LDU", Int32], Returns["NV", Int32], Returns["LDWV", Int32], Returns["NH", Int32], Returns["LDWH", Int32]]: ...
 
 @bind("SLAQSB")
 @external
@@ -22359,7 +22359,7 @@ def slaqsb(
     SCOND: Float32,
     AMAX: Float32,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["SCOND", Float32], Returns["AMAX", Float32]]: ...
 
 @bind("SLAQSP")
 @external
@@ -22372,7 +22372,7 @@ def slaqsp(
     SCOND: Float32,
     AMAX: Float32,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SCOND", Float32], Returns["AMAX", Float32]]: ...
 
 @bind("SLAQSY")
 @external
@@ -22386,7 +22386,7 @@ def slaqsy(
     SCOND: Float32,
     AMAX: Float32,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCOND", Float32], Returns["AMAX", Float32]]: ...
 
 @bind("SLAQTR")
 @external
@@ -22403,7 +22403,7 @@ def slaqtr(
     X: Float32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["LTRAN", Bool], Returns["LREAL", Bool], Returns["N", Int32], Returns["LDT", Int32], Returns["W", Float32], Returns["SCALE", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SLAQZ0")
 @external
@@ -22558,7 +22558,7 @@ def slar1v(
     RESID: Float32,
     RQCORR: Float32,
     WORK: Float32[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["B1", Int32], Returns["BN", Int32], Returns["LAMBDA", Float32], Returns["PIVMIN", Float32], Returns["GAPTOL", Float32], Returns["WANTNC", Bool], Returns["NEGCNT", Int32], Returns["ZTZ", Float32], Returns["MINGMA", Float32], Returns["R", Int32], Returns["NRMINV", Float32], Returns["RESID", Float32], Returns["RQCORR", Float32]]: ...
 
 @bind("SLAR2V")
 @external
@@ -22572,7 +22572,7 @@ def slar2v(
     C: Float32[Flat],
     S: Float32[Flat],
     INCC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCC", Int32]]: ...
 
 @bind("SLARF")
 @external
@@ -22587,7 +22587,7 @@ def slarf(
     C: Float32[LDC, Flat],
     LDC: Int32,
     WORK: Float32[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["INCV", Int32], Returns["TAU", Float32], Returns["LDC", Int32]]: ...
 
 @bind("SLARF1F")
 @external
@@ -22602,7 +22602,7 @@ def slarf1f(
     C: Float32[LDC, Flat],
     LDC: Int32,
     WORK: Float32[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["INCV", Int32], Returns["TAU", Float32], Returns["LDC", Int32]]: ...
 
 @bind("SLARF1L")
 @external
@@ -22617,7 +22617,7 @@ def slarf1l(
     C: Float32[LDC, Flat],
     LDC: Int32,
     WORK: Float32[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["INCV", Int32], Returns["TAU", Float32], Returns["LDC", Int32]]: ...
 
 @bind("SLARFB")
 @external
@@ -22638,7 +22638,7 @@ def slarfb(
     LDC: Int32,
     WORK: Float32[LDWORK, Flat],
     LDWORK: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDC", Int32], Returns["LDWORK", Int32]]: ...
 
 @bind("SLARFB_GETT")
 @external
@@ -22656,7 +22656,7 @@ def slarfb_gett(
     LDB: Int32,
     WORK: Float32[LDWORK, Flat],
     LDWORK: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDT", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDWORK", Int32]]: ...
 
 @bind("SLARFG")
 @external
@@ -22667,7 +22667,7 @@ def slarfg(
     X: Float32[Flat],
     INCX: Int32,
     TAU: Float32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Float32], Returns["INCX", Int32], Returns["TAU", Float32]]: ...
 
 @bind("SLARFGP")
 @external
@@ -22678,7 +22678,7 @@ def slarfgp(
     X: Float32[Flat],
     INCX: Int32,
     TAU: Float32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Float32], Returns["INCX", Int32], Returns["TAU", Float32]]: ...
 
 @bind("SLARFT")
 @external
@@ -22693,7 +22693,7 @@ def slarft(
     TAU: Float32[Flat],
     T: Float32[LDT, Flat],
     LDT: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["LDV", Int32], Returns["LDT", Int32]]: ...
 
 @bind("SLARFX")
 @external
@@ -22707,7 +22707,7 @@ def slarfx(
     C: Float32[LDC, Flat],
     LDC: Int32,
     WORK: Float32[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["TAU", Float32], Returns["LDC", Int32]]: ...
 
 @bind("SLARFY")
 @external
@@ -22721,7 +22721,7 @@ def slarfy(
     C: Float32[LDC, Flat],
     LDC: Int32,
     WORK: Float32[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCV", Int32], Returns["TAU", Float32], Returns["LDC", Int32]]: ...
 
 @bind("SLARGV")
 @external
@@ -22734,7 +22734,7 @@ def slargv(
     INCY: Int32,
     C: Float32[Flat],
     INCC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32], Returns["INCC", Int32]]: ...
 
 @bind("SLARMM")
 @external
@@ -22743,7 +22743,7 @@ def slarmm(
     ANORM: Float32,
     BNORM: Float32,
     CNORM: Float32
-) -> Float32: ...
+) -> tuple[Float32, Returns["ANORM", Float32], Returns["BNORM", Float32], Returns["CNORM", Float32]]: ...
 
 @bind("SLARNV")
 @external
@@ -22753,7 +22753,7 @@ def slarnv(
     ISEED: Int32[4],
     N: Int32,
     X: Float32[Flat]
-) -> None: ...
+) -> tuple[Returns["IDIST", Int32], Returns["N", Int32]]: ...
 
 @bind("SLARRA")
 @external
@@ -22768,7 +22768,7 @@ def slarra(
     NSPLIT: Int32,
     ISPLIT: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SPLTOL", Float32], Returns["TNRM", Float32], Returns["NSPLIT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLARRB")
 @external
@@ -22791,7 +22791,7 @@ def slarrb(
     SPDIAM: Float32,
     TWIST: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["IFIRST", Int32], Returns["ILAST", Int32], Returns["RTOL1", Float32], Returns["RTOL2", Float32], Returns["OFFSET", Int32], Returns["PIVMIN", Float32], Returns["SPDIAM", Float32], Returns["TWIST", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLARRC")
 @external
@@ -22808,7 +22808,7 @@ def slarrc(
     LCNT: Int32,
     RCNT: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["PIVMIN", Float32], Returns["EIGCNT", Int32], Returns["LCNT", Int32], Returns["RCNT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLARRD")
 @external
@@ -22839,7 +22839,7 @@ def slarrd(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["RELTOL", Float32], Returns["PIVMIN", Float32], Returns["NSPLIT", Int32], Returns["M", Int32], Returns["WL", Float32], Returns["WU", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SLARRE")
 @external
@@ -22870,7 +22870,7 @@ def slarre(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["RTOL1", Float32], Returns["RTOL2", Float32], Returns["SPLTOL", Float32], Returns["NSPLIT", Int32], Returns["M", Int32], Returns["PIVMIN", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SLARRF")
 @external
@@ -22894,7 +22894,7 @@ def slarrf(
     LPLUS: Float32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["CLSTRT", Int32], Returns["CLEND", Int32], Returns["SPDIAM", Float32], Returns["CLGAPL", Float32], Returns["CLGAPR", Float32], Returns["PIVMIN", Float32], Returns["SIGMA", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SLARRJ")
 @external
@@ -22914,7 +22914,7 @@ def slarrj(
     PIVMIN: Float32,
     SPDIAM: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["IFIRST", Int32], Returns["ILAST", Int32], Returns["RTOL", Float32], Returns["OFFSET", Int32], Returns["PIVMIN", Float32], Returns["SPDIAM", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SLARRK")
 @external
@@ -22931,7 +22931,7 @@ def slarrk(
     W: Float32,
     WERR: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["IW", Int32], Returns["GL", Float32], Returns["GU", Float32], Returns["PIVMIN", Float32], Returns["RELTOL", Float32], Returns["W", Float32], Returns["WERR", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SLARRR")
 @external
@@ -22941,7 +22941,7 @@ def slarrr(
     D: Float32[Flat],
     E: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLARRV")
 @external
@@ -22972,7 +22972,7 @@ def slarrv(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["PIVMIN", Float32], Returns["M", Int32], Returns["DOL", Int32], Returns["DOU", Int32], Returns["MINRGP", Float32], Returns["RTOL1", Float32], Returns["RTOL2", Float32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLARSCL2")
 @external
@@ -22983,7 +22983,7 @@ def slarscl2(
     D: Float32[Flat],
     X: Float32[LDX, Flat],
     LDX: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDX", Int32]]: ...
 
 @bind("SLARTG")
 @external
@@ -22994,7 +22994,7 @@ def slartg(
     c: Float32,
     s: Float32,
     r: Float32
-) -> None: ...
+) -> tuple[Returns["f", Float32], Returns["g", Float32], Returns["c", Float32], Returns["s", Float32], Returns["r", Float32]]: ...
 
 @bind("SLARTGP")
 @external
@@ -23005,7 +23005,7 @@ def slartgp(
     CS: Float32,
     SN: Float32,
     R: Float32
-) -> None: ...
+) -> tuple[Returns["F", Float32], Returns["G", Float32], Returns["CS", Float32], Returns["SN", Float32], Returns["R", Float32]]: ...
 
 @bind("SLARTGS")
 @external
@@ -23016,7 +23016,7 @@ def slartgs(
     SIGMA: Float32,
     CS: Float32,
     SN: Float32
-) -> None: ...
+) -> tuple[Returns["X", Float32], Returns["Y", Float32], Returns["SIGMA", Float32], Returns["CS", Float32], Returns["SN", Float32]]: ...
 
 @bind("SLARTV")
 @external
@@ -23030,7 +23030,7 @@ def slartv(
     C: Float32[Flat],
     S: Float32[Flat],
     INCC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32], Returns["INCC", Int32]]: ...
 
 @bind("SLARUV")
 @external
@@ -23039,7 +23039,7 @@ def slaruv(
     ISEED: Int32[4],
     N: Int32,
     X: Float32[N]
-) -> None: ...
+) -> Returns["N", Int32]: ...
 
 @bind("SLARZ")
 @external
@@ -23055,7 +23055,7 @@ def slarz(
     C: Float32[LDC, Flat],
     LDC: Int32,
     WORK: Float32[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["L", Int32], Returns["INCV", Int32], Returns["TAU", Float32], Returns["LDC", Int32]]: ...
 
 @bind("SLARZB")
 @external
@@ -23077,7 +23077,7 @@ def slarzb(
     LDC: Int32,
     WORK: Float32[LDWORK, Flat],
     LDWORK: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDC", Int32], Returns["LDWORK", Int32]]: ...
 
 @bind("SLARZT")
 @external
@@ -23092,7 +23092,7 @@ def slarzt(
     TAU: Float32[Flat],
     T: Float32[LDT, Flat],
     LDT: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["LDV", Int32], Returns["LDT", Int32]]: ...
 
 @bind("SLAS2")
 @external
@@ -23103,7 +23103,7 @@ def slas2(
     H: Float32,
     SSMIN: Float32,
     SSMAX: Float32
-) -> None: ...
+) -> tuple[Returns["F", Float32], Returns["G", Float32], Returns["H", Float32], Returns["SSMIN", Float32], Returns["SSMAX", Float32]]: ...
 
 @bind("SLASCL")
 @external
@@ -23119,7 +23119,7 @@ def slascl(
     A: Float32[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["KL", Int32], Returns["KU", Int32], Returns["CFROM", Float32], Returns["CTO", Float32], Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLASCL2")
 @external
@@ -23130,7 +23130,7 @@ def slascl2(
     D: Float32[Flat],
     X: Float32[LDX, Flat],
     LDX: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDX", Int32]]: ...
 
 @bind("SLASD0")
 @external
@@ -23148,7 +23148,7 @@ def slasd0(
     IWORK: Int32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SQRE", Int32], Returns["LDU", Int32], Returns["LDVT", Int32], Returns["SMLSIZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLASD1")
 @external
@@ -23168,7 +23168,7 @@ def slasd1(
     IWORK: Int32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["NL", Int32], Returns["NR", Int32], Returns["SQRE", Int32], Returns["ALPHA", Float32], Returns["BETA", Float32], Returns["LDU", Int32], Returns["LDVT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLASD2")
 @external
@@ -23197,7 +23197,7 @@ def slasd2(
     IDXQ: Int32[Flat],
     COLTYP: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["NL", Int32], Returns["NR", Int32], Returns["SQRE", Int32], Returns["K", Int32], Returns["ALPHA", Float32], Returns["BETA", Float32], Returns["LDU", Int32], Returns["LDVT", Int32], Returns["LDU2", Int32], Returns["LDVT2", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLASD3")
 @external
@@ -23223,7 +23223,7 @@ def slasd3(
     CTOT: Int32[Flat],
     Z: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["NL", Int32], Returns["NR", Int32], Returns["SQRE", Int32], Returns["K", Int32], Returns["LDQ", Int32], Returns["LDU", Int32], Returns["LDU2", Int32], Returns["LDVT", Int32], Returns["LDVT2", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLASD4")
 @external
@@ -23238,7 +23238,7 @@ def slasd4(
     SIGMA: Float32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["I", Int32], Returns["RHO", Float32], Returns["SIGMA", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SLASD5")
 @external
@@ -23251,7 +23251,7 @@ def slasd5(
     RHO: Float32,
     DSIGMA: Float32,
     WORK: Float32[2]
-) -> None: ...
+) -> tuple[Returns["I", Int32], Returns["RHO", Float32], Returns["DSIGMA", Float32]]: ...
 
 @bind("SLASD6")
 @external
@@ -23283,7 +23283,7 @@ def slasd6(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ICOMPQ", Int32], Returns["NL", Int32], Returns["NR", Int32], Returns["SQRE", Int32], Returns["ALPHA", Float32], Returns["BETA", Float32], Returns["GIVPTR", Int32], Returns["LDGCOL", Int32], Returns["LDGNUM", Int32], Returns["K", Int32], Returns["C", Float32], Returns["S", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SLASD7")
 @external
@@ -23316,7 +23316,7 @@ def slasd7(
     C: Float32,
     S: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ICOMPQ", Int32], Returns["NL", Int32], Returns["NR", Int32], Returns["SQRE", Int32], Returns["K", Int32], Returns["ALPHA", Float32], Returns["BETA", Float32], Returns["GIVPTR", Int32], Returns["LDGCOL", Int32], Returns["LDGNUM", Int32], Returns["C", Float32], Returns["S", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SLASD8")
 @external
@@ -23334,7 +23334,7 @@ def slasd8(
     DSIGMA: Float32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ICOMPQ", Int32], Returns["K", Int32], Returns["LDDIFR", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLASDA")
 @external
@@ -23364,7 +23364,7 @@ def slasda(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ICOMPQ", Int32], Returns["SMLSIZ", Int32], Returns["N", Int32], Returns["SQRE", Int32], Returns["LDU", Int32], Returns["LDGCOL", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLASDQ")
 @external
@@ -23386,7 +23386,7 @@ def slasdq(
     LDC: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SQRE", Int32], Returns["N", Int32], Returns["NCVT", Int32], Returns["NRU", Int32], Returns["NCC", Int32], Returns["LDVT", Int32], Returns["LDU", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLASDT")
 @external
@@ -23399,7 +23399,7 @@ def slasdt(
     NDIML: Int32[Flat],
     NDIMR: Int32[Flat],
     MSUB: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LVL", Int32], Returns["ND", Int32], Returns["MSUB", Int32]]: ...
 
 @bind("SLASET")
 @external
@@ -23412,7 +23412,7 @@ def slaset(
     BETA: Float32,
     A: Float32[LDA, Flat],
     LDA: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Float32], Returns["BETA", Float32], Returns["LDA", Int32]]: ...
 
 @bind("SLASQ1")
 @external
@@ -23423,7 +23423,7 @@ def slasq1(
     E: Float32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLASQ2")
 @external
@@ -23432,7 +23432,7 @@ def slasq2(
     N: Int32,
     Z: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLASQ3")
 @external
@@ -23458,7 +23458,7 @@ def slasq3(
     DN2: Float32,
     G: Float32,
     TAU: Float32
-) -> None: ...
+) -> tuple[Returns["I0", Int32], Returns["N0", Int32], Returns["PP", Int32], Returns["DMIN", Float32], Returns["SIGMA", Float32], Returns["DESIG", Float32], Returns["QMAX", Float32], Returns["NFAIL", Int32], Returns["ITER", Int32], Returns["NDIV", Int32], Returns["IEEE", Bool], Returns["TTYPE", Int32], Returns["DMIN1", Float32], Returns["DMIN2", Float32], Returns["DN", Float32], Returns["DN1", Float32], Returns["DN2", Float32], Returns["G", Float32], Returns["TAU", Float32]]: ...
 
 @bind("SLASQ4")
 @external
@@ -23478,7 +23478,7 @@ def slasq4(
     TAU: Float32,
     TTYPE: Int32,
     G: Float32
-) -> None: ...
+) -> tuple[Returns["I0", Int32], Returns["N0", Int32], Returns["PP", Int32], Returns["N0IN", Int32], Returns["DMIN", Float32], Returns["DMIN1", Float32], Returns["DMIN2", Float32], Returns["DN", Float32], Returns["DN1", Float32], Returns["DN2", Float32], Returns["TAU", Float32], Returns["TTYPE", Int32], Returns["G", Float32]]: ...
 
 @bind("SLASQ5")
 @external
@@ -23498,7 +23498,7 @@ def slasq5(
     DNM2: Float32,
     IEEE: Bool,
     EPS: Float32
-) -> None: ...
+) -> tuple[Returns["I0", Int32], Returns["N0", Int32], Returns["PP", Int32], Returns["TAU", Float32], Returns["SIGMA", Float32], Returns["DMIN", Float32], Returns["DMIN1", Float32], Returns["DMIN2", Float32], Returns["DN", Float32], Returns["DNM1", Float32], Returns["DNM2", Float32], Returns["IEEE", Bool], Returns["EPS", Float32]]: ...
 
 @bind("SLASQ6")
 @external
@@ -23514,7 +23514,7 @@ def slasq6(
     DN: Float32,
     DNM1: Float32,
     DNM2: Float32
-) -> None: ...
+) -> tuple[Returns["I0", Int32], Returns["N0", Int32], Returns["PP", Int32], Returns["DMIN", Float32], Returns["DMIN1", Float32], Returns["DMIN2", Float32], Returns["DN", Float32], Returns["DNM1", Float32], Returns["DNM2", Float32]]: ...
 
 @bind("SLASR")
 @external
@@ -23529,7 +23529,7 @@ def slasr(
     S: Float32[Flat],
     A: Float32[LDA, Flat],
     LDA: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("SLASRT")
 @external
@@ -23539,7 +23539,7 @@ def slasrt(
     N: Int32,
     D: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLASSQ")
 @external
@@ -23550,7 +23550,7 @@ def slassq(
     incx: Int32,
     scale: Float32,
     sumsq: Float32
-) -> None: ...
+) -> tuple[Returns["n", Int32], Returns["incx", Int32], Returns["scale", Float32], Returns["sumsq", Float32]]: ...
 
 @bind("SLASV2")
 @external
@@ -23565,7 +23565,7 @@ def slasv2(
     CSR: Float32,
     SNL: Float32,
     CSL: Float32
-) -> None: ...
+) -> tuple[Returns["F", Float32], Returns["G", Float32], Returns["H", Float32], Returns["SSMIN", Float32], Returns["SSMAX", Float32], Returns["SNR", Float32], Returns["CSR", Float32], Returns["SNL", Float32], Returns["CSL", Float32]]: ...
 
 @bind("SLASWLQ")
 @external
@@ -23582,7 +23582,7 @@ def slaswlq(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["MB", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLASWP")
 @external
@@ -23595,7 +23595,7 @@ def slaswp(
     K2: Int32,
     IPIV: Int32[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["K1", Int32], Returns["K2", Int32], Returns["INCX", Int32]]: ...
 
 @bind("SLASY2")
 @external
@@ -23617,7 +23617,7 @@ def slasy2(
     LDX: Int32,
     XNORM: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["LTRANL", Bool], Returns["LTRANR", Bool], Returns["ISGN", Int32], Returns["N1", Int32], Returns["N2", Int32], Returns["LDTL", Int32], Returns["LDTR", Int32], Returns["LDB", Int32], Returns["SCALE", Float32], Returns["LDX", Int32], Returns["XNORM", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SLASYF")
 @external
@@ -23633,7 +23633,7 @@ def slasyf(
     W: Float32[LDW, Flat],
     LDW: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NB", Int32], Returns["KB", Int32], Returns["LDA", Int32], Returns["LDW", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLASYF_AA")
 @external
@@ -23649,7 +23649,7 @@ def slasyf_aa(
     H: Float32[LDH, Flat],
     LDH: Int32,
     WORK: Float32[Flat]
-) -> None: ...
+) -> tuple[Returns["J1", Int32], Returns["M", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDH", Int32]]: ...
 
 @bind("SLASYF_RK")
 @external
@@ -23666,7 +23666,7 @@ def slasyf_rk(
     W: Float32[LDW, Flat],
     LDW: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NB", Int32], Returns["KB", Int32], Returns["LDA", Int32], Returns["LDW", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLASYF_ROOK")
 @external
@@ -23682,7 +23682,7 @@ def slasyf_rook(
     W: Float32[LDW, Flat],
     LDW: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NB", Int32], Returns["KB", Int32], Returns["LDA", Int32], Returns["LDW", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLATBS")
 @external
@@ -23700,7 +23700,7 @@ def slatbs(
     SCALE: Float32,
     CNORM: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["SCALE", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SLATDF")
 @external
@@ -23715,7 +23715,7 @@ def slatdf(
     RDSCAL: Float32,
     IPIV: Int32[Flat],
     JPIV: Int32[Flat]
-) -> None: ...
+) -> tuple[Returns["IJOB", Int32], Returns["N", Int32], Returns["LDZ", Int32], Returns["RDSUM", Float32], Returns["RDSCAL", Float32]]: ...
 
 @bind("SLATPS")
 @external
@@ -23731,7 +23731,7 @@ def slatps(
     SCALE: Float32,
     CNORM: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SCALE", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SLATRD")
 @external
@@ -23746,7 +23746,7 @@ def slatrd(
     TAU: Float32[Flat],
     W: Float32[LDW, Flat],
     LDW: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDW", Int32]]: ...
 
 @bind("SLATRS")
 @external
@@ -23763,7 +23763,7 @@ def slatrs(
     SCALE: Float32,
     CNORM: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCALE", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SLATRS3")
 @external
@@ -23784,7 +23784,7 @@ def slatrs3(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDX", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLATRZ")
 @external
@@ -23797,7 +23797,7 @@ def slatrz(
     LDA: Int32,
     TAU: Float32[Flat],
     WORK: Float32[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["L", Int32], Returns["LDA", Int32]]: ...
 
 @bind("SLATSQR")
 @external
@@ -23814,7 +23814,7 @@ def slatsqr(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["MB", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLAUU2")
 @external
@@ -23825,7 +23825,7 @@ def slauu2(
     A: Float32[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SLAUUM")
 @external
@@ -23836,7 +23836,7 @@ def slauum(
     A: Float32[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SOPGTR")
 @external
@@ -23850,7 +23850,7 @@ def sopgtr(
     LDQ: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDQ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SOPMTR")
 @external
@@ -23867,7 +23867,7 @@ def sopmtr(
     LDC: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORBDB")
 @external
@@ -23895,7 +23895,7 @@ def sorbdb(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX12", Int32], Returns["LDX21", Int32], Returns["LDX22", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORBDB1")
 @external
@@ -23916,7 +23916,7 @@ def sorbdb1(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX21", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORBDB2")
 @external
@@ -23937,7 +23937,7 @@ def sorbdb2(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX21", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORBDB3")
 @external
@@ -23958,7 +23958,7 @@ def sorbdb3(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX21", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORBDB4")
 @external
@@ -23980,7 +23980,7 @@ def sorbdb4(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX21", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORBDB5")
 @external
@@ -24000,7 +24000,7 @@ def sorbdb5(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M1", Int32], Returns["M2", Int32], Returns["N", Int32], Returns["INCX1", Int32], Returns["INCX2", Int32], Returns["LDQ1", Int32], Returns["LDQ2", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORBDB6")
 @external
@@ -24020,7 +24020,7 @@ def sorbdb6(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M1", Int32], Returns["M2", Int32], Returns["N", Int32], Returns["INCX1", Int32], Returns["INCX2", Int32], Returns["LDQ1", Int32], Returns["LDQ2", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORCSD")
 @external
@@ -24056,7 +24056,7 @@ def sorcsd(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX12", Int32], Returns["LDX21", Int32], Returns["LDX22", Int32], Returns["LDU1", Int32], Returns["LDU2", Int32], Returns["LDV1T", Int32], Returns["LDV2T", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORCSD2BY1")
 @external
@@ -24083,7 +24083,7 @@ def sorcsd2by1(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX21", Int32], Returns["LDU1", Int32], Returns["LDU2", Int32], Returns["LDV1T", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORG2L")
 @external
@@ -24097,7 +24097,7 @@ def sorg2l(
     TAU: Float32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORG2R")
 @external
@@ -24111,7 +24111,7 @@ def sorg2r(
     TAU: Float32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORGBR")
 @external
@@ -24127,7 +24127,7 @@ def sorgbr(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORGHR")
 @external
@@ -24142,7 +24142,7 @@ def sorghr(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORGL2")
 @external
@@ -24156,7 +24156,7 @@ def sorgl2(
     TAU: Float32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORGLQ")
 @external
@@ -24171,7 +24171,7 @@ def sorglq(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORGQL")
 @external
@@ -24186,7 +24186,7 @@ def sorgql(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORGQR")
 @external
@@ -24201,7 +24201,7 @@ def sorgqr(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORGR2")
 @external
@@ -24215,7 +24215,7 @@ def sorgr2(
     TAU: Float32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORGRQ")
 @external
@@ -24230,7 +24230,7 @@ def sorgrq(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORGTR")
 @external
@@ -24244,7 +24244,7 @@ def sorgtr(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORGTSQR")
 @external
@@ -24261,7 +24261,7 @@ def sorgtsqr(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["MB", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORGTSQR_ROW")
 @external
@@ -24278,7 +24278,7 @@ def sorgtsqr_row(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["MB", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORHR_COL")
 @external
@@ -24293,7 +24293,7 @@ def sorhr_col(
     LDT: Int32,
     D: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORM22")
 @external
@@ -24312,7 +24312,7 @@ def sorm22(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["N1", Int32], Returns["N2", Int32], Returns["LDQ", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORM2L")
 @external
@@ -24330,7 +24330,7 @@ def sorm2l(
     LDC: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORM2R")
 @external
@@ -24348,7 +24348,7 @@ def sorm2r(
     LDC: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORMBR")
 @external
@@ -24368,7 +24368,7 @@ def sormbr(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORMHR")
 @external
@@ -24388,7 +24388,7 @@ def sormhr(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORML2")
 @external
@@ -24406,7 +24406,7 @@ def sorml2(
     LDC: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORMLQ")
 @external
@@ -24425,7 +24425,7 @@ def sormlq(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORMQL")
 @external
@@ -24444,7 +24444,7 @@ def sormql(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORMQR")
 @external
@@ -24463,7 +24463,7 @@ def sormqr(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORMR2")
 @external
@@ -24481,7 +24481,7 @@ def sormr2(
     LDC: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORMR3")
 @external
@@ -24500,7 +24500,7 @@ def sormr3(
     LDC: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORMRQ")
 @external
@@ -24519,7 +24519,7 @@ def sormrq(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORMRZ")
 @external
@@ -24539,7 +24539,7 @@ def sormrz(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SORMTR")
 @external
@@ -24558,7 +24558,7 @@ def sormtr(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPBCON")
 @external
@@ -24574,7 +24574,7 @@ def spbcon(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SPBEQU")
 @external
@@ -24589,7 +24589,7 @@ def spbequ(
     SCOND: Float32,
     AMAX: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["SCOND", Float32], Returns["AMAX", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SPBRFS")
 @external
@@ -24612,7 +24612,7 @@ def spbrfs(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPBSTF")
 @external
@@ -24624,7 +24624,7 @@ def spbstf(
     AB: Float32[LDAB, Flat],
     LDAB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPBSV")
 @external
@@ -24639,7 +24639,7 @@ def spbsv(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPBSVX")
 @external
@@ -24666,7 +24666,7 @@ def spbsvx(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SPBTF2")
 @external
@@ -24678,7 +24678,7 @@ def spbtf2(
     AB: Float32[LDAB, Flat],
     LDAB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPBTRF")
 @external
@@ -24690,7 +24690,7 @@ def spbtrf(
     AB: Float32[LDAB, Flat],
     LDAB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPBTRS")
 @external
@@ -24705,7 +24705,7 @@ def spbtrs(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPFTRF")
 @external
@@ -24716,7 +24716,7 @@ def spftrf(
     N: Int32,
     A: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPFTRI")
 @external
@@ -24727,7 +24727,7 @@ def spftri(
     N: Int32,
     A: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPFTRS")
 @external
@@ -24741,7 +24741,7 @@ def spftrs(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPOCON")
 @external
@@ -24756,7 +24756,7 @@ def spocon(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SPOEQU")
 @external
@@ -24769,7 +24769,7 @@ def spoequ(
     SCOND: Float32,
     AMAX: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCOND", Float32], Returns["AMAX", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SPOEQUB")
 @external
@@ -24782,7 +24782,7 @@ def spoequb(
     SCOND: Float32,
     AMAX: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCOND", Float32], Returns["AMAX", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SPORFS")
 @external
@@ -24804,7 +24804,7 @@ def sporfs(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPORFSX")
 @external
@@ -24833,7 +24833,7 @@ def sporfsx(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPOSV")
 @external
@@ -24847,7 +24847,7 @@ def sposv(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPOSVX")
 @external
@@ -24873,7 +24873,7 @@ def sposvx(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SPOSVXX")
 @external
@@ -24904,7 +24904,7 @@ def sposvxx(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["RPVGRW", Float32], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPOTF2")
 @external
@@ -24915,7 +24915,7 @@ def spotf2(
     A: Float32[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPOTRF")
 @external
@@ -24926,7 +24926,7 @@ def spotrf(
     A: Float32[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPOTRF2")
 @external
@@ -24937,7 +24937,7 @@ def spotrf2(
     A: Float32[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPOTRI")
 @external
@@ -24948,7 +24948,7 @@ def spotri(
     A: Float32[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPOTRS")
 @external
@@ -24962,7 +24962,7 @@ def spotrs(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPPCON")
 @external
@@ -24976,7 +24976,7 @@ def sppcon(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SPPEQU")
 @external
@@ -24989,7 +24989,7 @@ def sppequ(
     SCOND: Float32,
     AMAX: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SCOND", Float32], Returns["AMAX", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SPPRFS")
 @external
@@ -25009,7 +25009,7 @@ def spprfs(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPPSV")
 @external
@@ -25022,7 +25022,7 @@ def sppsv(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPPSVX")
 @external
@@ -25046,7 +25046,7 @@ def sppsvx(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SPPTRF")
 @external
@@ -25056,7 +25056,7 @@ def spptrf(
     N: Int32,
     AP: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPPTRI")
 @external
@@ -25066,7 +25066,7 @@ def spptri(
     N: Int32,
     AP: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPPTRS")
 @external
@@ -25079,7 +25079,7 @@ def spptrs(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPSTF2")
 @external
@@ -25094,7 +25094,7 @@ def spstf2(
     TOL: Float32,
     WORK: Float32[2 * N],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["RANK", Int32], Returns["TOL", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SPSTRF")
 @external
@@ -25109,7 +25109,7 @@ def spstrf(
     TOL: Float32,
     WORK: Float32[2 * N],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["RANK", Int32], Returns["TOL", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SPTCON")
 @external
@@ -25122,7 +25122,7 @@ def sptcon(
     RCOND: Float32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SPTEQR")
 @external
@@ -25136,7 +25136,7 @@ def spteqr(
     LDZ: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPTRFS")
 @external
@@ -25156,7 +25156,7 @@ def sptrfs(
     BERR: Float32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPTSV")
 @external
@@ -25169,7 +25169,7 @@ def sptsv(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPTSVX")
 @external
@@ -25191,7 +25191,7 @@ def sptsvx(
     BERR: Float32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SPTTRF")
 @external
@@ -25201,7 +25201,7 @@ def spttrf(
     D: Float32[Flat],
     E: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPTTRS")
 @external
@@ -25214,7 +25214,7 @@ def spttrs(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SPTTS2")
 @external
@@ -25226,7 +25226,7 @@ def sptts2(
     E: Float32[Flat],
     B: Float32[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32]]: ...
 
 @bind("SRSCL")
 @external
@@ -25236,7 +25236,7 @@ def srscl(
     SA: Float32,
     SX: Float32[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SA", Float32], Returns["INCX", Int32]]: ...
 
 @bind("SSB2ST_KERNELS")
 @external
@@ -25257,7 +25257,7 @@ def ssb2st_kernels(
     TAU: Float32[Flat],
     LDVT: Int32,
     WORK: Float32[Flat]
-) -> None: ...
+) -> tuple[Returns["WANTZ", Bool], Returns["TTYPE", Int32], Returns["ST", Int32], Returns["ED", Int32], Returns["SWEEP", Int32], Returns["N", Int32], Returns["NB", Int32], Returns["IB", Int32], Returns["LDA", Int32], Returns["LDVT", Int32]]: ...
 
 @bind("SSBEV")
 @external
@@ -25274,7 +25274,7 @@ def ssbev(
     LDZ: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSBEV_2STAGE")
 @external
@@ -25292,7 +25292,7 @@ def ssbev_2stage(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSBEVD")
 @external
@@ -25312,7 +25312,7 @@ def ssbevd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSBEVD_2STAGE")
 @external
@@ -25332,7 +25332,7 @@ def ssbevd_2stage(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSBEVX")
 @external
@@ -25360,7 +25360,7 @@ def ssbevx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDQ", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSBEVX_2STAGE")
 @external
@@ -25389,7 +25389,7 @@ def ssbevx_2stage(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDQ", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSBGST")
 @external
@@ -25408,7 +25408,7 @@ def ssbgst(
     LDX: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KA", Int32], Returns["KB", Int32], Returns["LDAB", Int32], Returns["LDBB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSBGV")
 @external
@@ -25428,7 +25428,7 @@ def ssbgv(
     LDZ: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KA", Int32], Returns["KB", Int32], Returns["LDAB", Int32], Returns["LDBB", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSBGVD")
 @external
@@ -25451,7 +25451,7 @@ def ssbgvd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KA", Int32], Returns["KB", Int32], Returns["LDAB", Int32], Returns["LDBB", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSBGVX")
 @external
@@ -25482,7 +25482,7 @@ def ssbgvx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KA", Int32], Returns["KB", Int32], Returns["LDAB", Int32], Returns["LDBB", Int32], Returns["LDQ", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSBTRD")
 @external
@@ -25500,7 +25500,7 @@ def ssbtrd(
     LDQ: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDQ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSFRK")
 @external
@@ -25516,7 +25516,7 @@ def ssfrk(
     LDA: Int32,
     BETA: Float32,
     C: Float32[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Float32], Returns["LDA", Int32], Returns["BETA", Float32]]: ...
 
 @bind("SSPCON")
 @external
@@ -25531,7 +25531,7 @@ def sspcon(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SSPEV")
 @external
@@ -25546,7 +25546,7 @@ def sspev(
     LDZ: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSPEVD")
 @external
@@ -25564,7 +25564,7 @@ def sspevd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSPEVX")
 @external
@@ -25588,7 +25588,7 @@ def sspevx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSPGST")
 @external
@@ -25600,7 +25600,7 @@ def sspgst(
     AP: Float32[Flat],
     BP: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSPGV")
 @external
@@ -25617,7 +25617,7 @@ def sspgv(
     LDZ: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSPGVD")
 @external
@@ -25637,7 +25637,7 @@ def sspgvd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSPGVX")
 @external
@@ -25663,7 +25663,7 @@ def sspgvx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSPRFS")
 @external
@@ -25684,7 +25684,7 @@ def ssprfs(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSPSV")
 @external
@@ -25698,7 +25698,7 @@ def sspsv(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSPSVX")
 @external
@@ -25721,7 +25721,7 @@ def sspsvx(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SSPTRD")
 @external
@@ -25734,7 +25734,7 @@ def ssptrd(
     E: Float32[Flat],
     TAU: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSPTRF")
 @external
@@ -25745,7 +25745,7 @@ def ssptrf(
     AP: Float32[Flat],
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSPTRI")
 @external
@@ -25757,7 +25757,7 @@ def ssptri(
     IPIV: Int32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSPTRS")
 @external
@@ -25771,7 +25771,7 @@ def ssptrs(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSTEBZ")
 @external
@@ -25795,7 +25795,7 @@ def sstebz(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["NSPLIT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSTEDC")
 @external
@@ -25812,7 +25812,7 @@ def sstedc(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSTEGR")
 @external
@@ -25838,7 +25838,7 @@ def sstegr(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSTEIN")
 @external
@@ -25857,7 +25857,7 @@ def sstein(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["M", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSTEMR")
 @external
@@ -25884,7 +25884,7 @@ def sstemr(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["M", Int32], Returns["LDZ", Int32], Returns["NZC", Int32], Returns["TRYRAC", Bool], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSTEQR")
 @external
@@ -25898,7 +25898,7 @@ def ssteqr(
     LDZ: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSTERF")
 @external
@@ -25908,7 +25908,7 @@ def ssterf(
     D: Float32[Flat],
     E: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSTEV")
 @external
@@ -25922,7 +25922,7 @@ def sstev(
     LDZ: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSTEVD")
 @external
@@ -25939,7 +25939,7 @@ def sstevd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSTEVR")
 @external
@@ -25965,7 +25965,7 @@ def sstevr(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSTEVX")
 @external
@@ -25989,7 +25989,7 @@ def sstevx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYCON")
 @external
@@ -26005,7 +26005,7 @@ def ssycon(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SSYCON_3")
 @external
@@ -26022,7 +26022,7 @@ def ssycon_3(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SSYCON_ROOK")
 @external
@@ -26038,7 +26038,7 @@ def ssycon_rook(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SSYCONV")
 @external
@@ -26052,7 +26052,7 @@ def ssyconv(
     IPIV: Int32[Flat],
     E: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYCONVF")
 @external
@@ -26066,7 +26066,7 @@ def ssyconvf(
     E: Float32[Flat],
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYCONVF_ROOK")
 @external
@@ -26080,7 +26080,7 @@ def ssyconvf_rook(
     E: Float32[Flat],
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYEQUB")
 @external
@@ -26095,7 +26095,7 @@ def ssyequb(
     AMAX: Float32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCOND", Float32], Returns["AMAX", Float32], Returns["INFO", Int32]]: ...
 
 @bind("SSYEV")
 @external
@@ -26110,7 +26110,7 @@ def ssyev(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYEV_2STAGE")
 @external
@@ -26125,7 +26125,7 @@ def ssyev_2stage(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYEVD")
 @external
@@ -26142,7 +26142,7 @@ def ssyevd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYEVD_2STAGE")
 @external
@@ -26159,7 +26159,7 @@ def ssyevd_2stage(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYEVR")
 @external
@@ -26186,7 +26186,7 @@ def ssyevr(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYEVR_2STAGE")
 @external
@@ -26213,7 +26213,7 @@ def ssyevr_2stage(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYEVX")
 @external
@@ -26239,7 +26239,7 @@ def ssyevx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYEVX_2STAGE")
 @external
@@ -26265,7 +26265,7 @@ def ssyevx_2stage(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYGS2")
 @external
@@ -26279,7 +26279,7 @@ def ssygs2(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYGST")
 @external
@@ -26293,7 +26293,7 @@ def ssygst(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYGV")
 @external
@@ -26311,7 +26311,7 @@ def ssygv(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYGV_2STAGE")
 @external
@@ -26329,7 +26329,7 @@ def ssygv_2stage(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYGVD")
 @external
@@ -26349,7 +26349,7 @@ def ssygvd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYGVX")
 @external
@@ -26378,7 +26378,7 @@ def ssygvx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["VL", Float32], Returns["VU", Float32], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float32], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYRFS")
 @external
@@ -26401,7 +26401,7 @@ def ssyrfs(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYRFSX")
 @external
@@ -26431,7 +26431,7 @@ def ssyrfsx(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYSV")
 @external
@@ -26448,7 +26448,7 @@ def ssysv(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYSV_AA")
 @external
@@ -26465,7 +26465,7 @@ def ssysv_aa(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYSV_AA_2STAGE")
 @external
@@ -26485,7 +26485,7 @@ def ssysv_aa_2stage(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LTB", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYSV_RK")
 @external
@@ -26503,7 +26503,7 @@ def ssysv_rk(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYSV_ROOK")
 @external
@@ -26520,7 +26520,7 @@ def ssysv_rook(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYSVX")
 @external
@@ -26546,7 +26546,7 @@ def ssysvx(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYSVXX")
 @external
@@ -26578,7 +26578,7 @@ def ssysvxx(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float32], Returns["RPVGRW", Float32], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYSWAPR")
 @external
@@ -26590,7 +26590,7 @@ def ssyswapr(
     LDA: Int32,
     I1: Int32,
     I2: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["I1", Int32], Returns["I2", Int32]]: ...
 
 @bind("SSYTD2")
 @external
@@ -26604,7 +26604,7 @@ def ssytd2(
     E: Float32[Flat],
     TAU: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYTF2")
 @external
@@ -26616,7 +26616,7 @@ def ssytf2(
     LDA: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYTF2_RK")
 @external
@@ -26629,7 +26629,7 @@ def ssytf2_rk(
     E: Float32[Flat],
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYTF2_ROOK")
 @external
@@ -26641,7 +26641,7 @@ def ssytf2_rook(
     LDA: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYTRD")
 @external
@@ -26657,7 +26657,7 @@ def ssytrd(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYTRD_2STAGE")
 @external
@@ -26676,7 +26676,7 @@ def ssytrd_2stage(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LHOUS2", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYTRD_SB2ST")
 @external
@@ -26696,7 +26696,7 @@ def ssytrd_sb2st(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LHOUS", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYTRD_SY2SB")
 @external
@@ -26713,7 +26713,7 @@ def ssytrd_sy2sb(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDA", Int32], Returns["LDAB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYTRF")
 @external
@@ -26727,7 +26727,7 @@ def ssytrf(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYTRF_AA")
 @external
@@ -26741,7 +26741,7 @@ def ssytrf_aa(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYTRF_AA_2STAGE")
 @external
@@ -26758,7 +26758,7 @@ def ssytrf_aa_2stage(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LTB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYTRF_RK")
 @external
@@ -26773,7 +26773,7 @@ def ssytrf_rk(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYTRF_ROOK")
 @external
@@ -26787,7 +26787,7 @@ def ssytrf_rook(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYTRI")
 @external
@@ -26800,7 +26800,7 @@ def ssytri(
     IPIV: Int32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYTRI2")
 @external
@@ -26814,7 +26814,7 @@ def ssytri2(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYTRI2X")
 @external
@@ -26828,7 +26828,7 @@ def ssytri2x(
     WORK: Float32[N + NB + 1, Flat],
     NB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["NB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYTRI_3")
 @external
@@ -26843,7 +26843,7 @@ def ssytri_3(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYTRI_3X")
 @external
@@ -26858,7 +26858,7 @@ def ssytri_3x(
     WORK: Float32[N + NB + 1, Flat],
     NB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["NB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYTRI_ROOK")
 @external
@@ -26871,7 +26871,7 @@ def ssytri_rook(
     IPIV: Int32[Flat],
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYTRS")
 @external
@@ -26886,7 +26886,7 @@ def ssytrs(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYTRS2")
 @external
@@ -26902,7 +26902,7 @@ def ssytrs2(
     LDB: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYTRS_3")
 @external
@@ -26918,7 +26918,7 @@ def ssytrs_3(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYTRS_AA")
 @external
@@ -26935,7 +26935,7 @@ def ssytrs_aa(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYTRS_AA_2STAGE")
 @external
@@ -26953,7 +26953,7 @@ def ssytrs_aa_2stage(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LTB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("SSYTRS_ROOK")
 @external
@@ -26968,7 +26968,7 @@ def ssytrs_rook(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STBCON")
 @external
@@ -26985,7 +26985,7 @@ def stbcon(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("STBRFS")
 @external
@@ -27008,7 +27008,7 @@ def stbrfs(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STBTRS")
 @external
@@ -27025,7 +27025,7 @@ def stbtrs(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STFSM")
 @external
@@ -27042,7 +27042,7 @@ def stfsm(
     A: Float32[Flat],
     B: Float32[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Float32], Returns["LDB", Int32]]: ...
 
 @bind("STFTRI")
 @external
@@ -27054,7 +27054,7 @@ def stftri(
     N: Int32,
     A: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STFTTP")
 @external
@@ -27066,7 +27066,7 @@ def stfttp(
     ARF: Float32[Flat],
     AP: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STFTTR")
 @external
@@ -27079,7 +27079,7 @@ def stfttr(
     A: Float32[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STGEVC")
 @external
@@ -27101,7 +27101,7 @@ def stgevc(
     M: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDS", Int32], Returns["LDP", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["MM", Int32], Returns["M", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STGEX2")
 @external
@@ -27124,7 +27124,7 @@ def stgex2(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["WANTQ", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDQ", Int32], Returns["LDZ", Int32], Returns["J1", Int32], Returns["N1", Int32], Returns["N2", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STGEXC")
 @external
@@ -27146,7 +27146,7 @@ def stgexc(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["WANTQ", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDQ", Int32], Returns["LDZ", Int32], Returns["IFST", Int32], Returns["ILST", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STGSEN")
 @external
@@ -27177,7 +27177,7 @@ def stgsen(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["IJOB", Int32], Returns["WANTQ", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDQ", Int32], Returns["LDZ", Int32], Returns["M", Int32], Returns["PL", Float32], Returns["PR", Float32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STGSJA")
 @external
@@ -27208,7 +27208,7 @@ def stgsja(
     WORK: Float32[Flat],
     NCYCLE: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["TOLA", Float32], Returns["TOLB", Float32], Returns["LDU", Int32], Returns["LDV", Int32], Returns["LDQ", Int32], Returns["NCYCLE", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STGSNA")
 @external
@@ -27234,7 +27234,7 @@ def stgsna(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["MM", Int32], Returns["M", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STGSY2")
 @external
@@ -27262,7 +27262,7 @@ def stgsy2(
     IWORK: Int32[Flat],
     PQ: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["IJOB", Int32], Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDC", Int32], Returns["LDD", Int32], Returns["LDE", Int32], Returns["LDF", Int32], Returns["SCALE", Float32], Returns["RDSUM", Float32], Returns["RDSCAL", Float32], Returns["PQ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STGSYL")
 @external
@@ -27290,7 +27290,7 @@ def stgsyl(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["IJOB", Int32], Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDC", Int32], Returns["LDD", Int32], Returns["LDE", Int32], Returns["LDF", Int32], Returns["SCALE", Float32], Returns["DIF", Float32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STPCON")
 @external
@@ -27305,7 +27305,7 @@ def stpcon(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("STPLQT")
 @external
@@ -27323,7 +27323,7 @@ def stplqt(
     LDT: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["L", Int32], Returns["MB", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STPLQT2")
 @external
@@ -27339,7 +27339,7 @@ def stplqt2(
     T: Float32[LDT, Flat],
     LDT: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["L", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STPMLQT")
 @external
@@ -27362,7 +27362,7 @@ def stpmlqt(
     LDB: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["MB", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STPMQRT")
 @external
@@ -27385,7 +27385,7 @@ def stpmqrt(
     LDB: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["NB", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STPQRT")
 @external
@@ -27403,7 +27403,7 @@ def stpqrt(
     LDT: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["L", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STPQRT2")
 @external
@@ -27419,7 +27419,7 @@ def stpqrt2(
     T: Float32[LDT, Flat],
     LDT: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["L", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STPRFB")
 @external
@@ -27443,7 +27443,7 @@ def stprfb(
     LDB: Int32,
     WORK: Float32[LDWORK, Flat],
     LDWORK: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDWORK", Int32]]: ...
 
 @bind("STPRFS")
 @external
@@ -27464,7 +27464,7 @@ def stprfs(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STPTRI")
 @external
@@ -27475,7 +27475,7 @@ def stptri(
     N: Int32,
     AP: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STPTRS")
 @external
@@ -27490,7 +27490,7 @@ def stptrs(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STPTTF")
 @external
@@ -27502,7 +27502,7 @@ def stpttf(
     AP: Float32[Flat],
     ARF: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STPTTR")
 @external
@@ -27514,7 +27514,7 @@ def stpttr(
     A: Float32[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STRCON")
 @external
@@ -27530,7 +27530,7 @@ def strcon(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["RCOND", Float32], Returns["INFO", Int32]]: ...
 
 @bind("STREVC")
 @external
@@ -27550,7 +27550,7 @@ def strevc(
     M: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDT", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["MM", Int32], Returns["M", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STREVC3")
 @external
@@ -27571,7 +27571,7 @@ def strevc3(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDT", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["MM", Int32], Returns["M", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STREXC")
 @external
@@ -27587,7 +27587,7 @@ def strexc(
     ILST: Int32,
     WORK: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDT", Int32], Returns["LDQ", Int32], Returns["IFST", Int32], Returns["ILST", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STRRFS")
 @external
@@ -27609,7 +27609,7 @@ def strrfs(
     WORK: Float32[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STRSEN")
 @external
@@ -27633,7 +27633,7 @@ def strsen(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDT", Int32], Returns["LDQ", Int32], Returns["M", Int32], Returns["S", Float32], Returns["SEP", Float32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STRSNA")
 @external
@@ -27657,7 +27657,7 @@ def strsna(
     LDWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDT", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["MM", Int32], Returns["M", Int32], Returns["LDWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STRSYL")
 @external
@@ -27676,7 +27676,7 @@ def strsyl(
     LDC: Int32,
     SCALE: Float32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ISGN", Int32], Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDC", Int32], Returns["SCALE", Float32], Returns["INFO", Int32]]: ...
 
 @bind("STRSYL3")
 @external
@@ -27699,7 +27699,7 @@ def strsyl3(
     SWORK: Float32[LDSWORK, Flat],
     LDSWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ISGN", Int32], Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDC", Int32], Returns["SCALE", Float32], Returns["LIWORK", Int32], Returns["LDSWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STRTI2")
 @external
@@ -27711,7 +27711,7 @@ def strti2(
     A: Float32[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STRTRI")
 @external
@@ -27723,7 +27723,7 @@ def strtri(
     A: Float32[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STRTRS")
 @external
@@ -27739,7 +27739,7 @@ def strtrs(
     B: Float32[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STRTTF")
 @external
@@ -27752,7 +27752,7 @@ def strttf(
     LDA: Int32,
     ARF: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STRTTP")
 @external
@@ -27764,7 +27764,7 @@ def strttp(
     LDA: Int32,
     AP: Float32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("STZRZF")
 @external
@@ -27778,7 +27778,7 @@ def stzrzf(
     WORK: Float32[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("XERBLA")
 @external
@@ -27786,7 +27786,7 @@ def stzrzf(
 def xerbla(
     SRNAME: String,
     INFO: Int32
-) -> None: ...
+) -> Returns["INFO", Int32]: ...
 
 @bind("XERBLA_ARRAY")
 @external
@@ -27795,7 +27795,7 @@ def xerbla_array(
     SRNAME_ARRAY: String[1][SRNAME_LEN],
     SRNAME_LEN: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SRNAME_LEN", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZBBCSD")
 @external
@@ -27830,7 +27830,7 @@ def zbbcsd(
     RWORK: Float64[Flat],
     LRWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDU1", Int32], Returns["LDU2", Int32], Returns["LDV1T", Int32], Returns["LDV2T", Int32], Returns["LRWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZBDSQR")
 @external
@@ -27851,7 +27851,7 @@ def zbdsqr(
     LDC: Int32,
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NCVT", Int32], Returns["NRU", Int32], Returns["NCC", Int32], Returns["LDVT", Int32], Returns["LDU", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZCGESV")
 @external
@@ -27871,7 +27871,7 @@ def zcgesv(
     RWORK: Float64[Flat],
     ITER: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["ITER", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZCPOSV")
 @external
@@ -27891,7 +27891,7 @@ def zcposv(
     RWORK: Float64[Flat],
     ITER: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["ITER", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZDRSCL")
 @external
@@ -27901,7 +27901,7 @@ def zdrscl(
     SA: Float64,
     SX: Complex128[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SA", Float64], Returns["INCX", Int32]]: ...
 
 @bind("ZGBBRD")
 @external
@@ -27926,7 +27926,7 @@ def zgbbrd(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NCC", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["LDQ", Int32], Returns["LDPT", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGBCON")
 @external
@@ -27944,7 +27944,7 @@ def zgbcon(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZGBEQU")
 @external
@@ -27962,7 +27962,7 @@ def zgbequ(
     COLCND: Float64,
     AMAX: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["ROWCND", Float64], Returns["COLCND", Float64], Returns["AMAX", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZGBEQUB")
 @external
@@ -27980,7 +27980,7 @@ def zgbequb(
     COLCND: Float64,
     AMAX: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["ROWCND", Float64], Returns["COLCND", Float64], Returns["AMAX", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZGBRFS")
 @external
@@ -28005,7 +28005,7 @@ def zgbrfs(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGBRFSX")
 @external
@@ -28038,7 +28038,7 @@ def zgbrfsx(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGBSV")
 @external
@@ -28054,7 +28054,7 @@ def zgbsv(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGBSVX")
 @external
@@ -28084,7 +28084,7 @@ def zgbsvx(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZGBSVXX")
 @external
@@ -28119,7 +28119,7 @@ def zgbsvxx(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["RPVGRW", Float64], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGBTF2")
 @external
@@ -28133,7 +28133,7 @@ def zgbtf2(
     LDAB: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGBTRF")
 @external
@@ -28147,7 +28147,7 @@ def zgbtrf(
     LDAB: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGBTRS")
 @external
@@ -28164,7 +28164,7 @@ def zgbtrs(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEBAK")
 @external
@@ -28180,7 +28180,7 @@ def zgebak(
     V: Complex128[LDV, Flat],
     LDV: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["M", Int32], Returns["LDV", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEBAL")
 @external
@@ -28194,7 +28194,7 @@ def zgebal(
     IHI: Int32,
     SCALE: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEBD2")
 @external
@@ -28210,7 +28210,7 @@ def zgebd2(
     TAUP: Complex128[Flat],
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEBRD")
 @external
@@ -28227,7 +28227,7 @@ def zgebrd(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGECON")
 @external
@@ -28242,7 +28242,7 @@ def zgecon(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZGEDMD")
 @external
@@ -28332,7 +28332,7 @@ def zgeequ(
     COLCND: Float64,
     AMAX: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["ROWCND", Float64], Returns["COLCND", Float64], Returns["AMAX", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZGEEQUB")
 @external
@@ -28348,7 +28348,7 @@ def zgeequb(
     COLCND: Float64,
     AMAX: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["ROWCND", Float64], Returns["COLCND", Float64], Returns["AMAX", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZGEES")
 @external
@@ -28369,7 +28369,7 @@ def zgees(
     RWORK: Float64[Flat],
     BWORK: Bool[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SELECT", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["SDIM", Int32], Returns["LDVS", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEESX")
 @external
@@ -28393,7 +28393,7 @@ def zgeesx(
     RWORK: Float64[Flat],
     BWORK: Bool[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SELECT", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["SDIM", Int32], Returns["LDVS", Int32], Returns["RCONDE", Float64], Returns["RCONDV", Float64], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEEV")
 @external
@@ -28413,7 +28413,7 @@ def zgeev(
     LWORK: Int32,
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEEVX")
 @external
@@ -28441,7 +28441,7 @@ def zgeevx(
     LWORK: Int32,
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["ABNRM", Float64], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEHD2")
 @external
@@ -28455,7 +28455,7 @@ def zgehd2(
     TAU: Complex128[Flat],
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEHRD")
 @external
@@ -28470,7 +28470,7 @@ def zgehrd(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEJSV")
 @external
@@ -28497,7 +28497,7 @@ def zgejsv(
     LRWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDU", Int32], Returns["LDV", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGELQ")
 @external
@@ -28512,7 +28512,7 @@ def zgelq(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["TSIZE", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGELQ2")
 @external
@@ -28525,7 +28525,7 @@ def zgelq2(
     TAU: Complex128[Flat],
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGELQF")
 @external
@@ -28539,7 +28539,7 @@ def zgelqf(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGELQT")
 @external
@@ -28554,7 +28554,7 @@ def zgelqt(
     LDT: Int32,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["MB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGELQT3")
 @external
@@ -28567,7 +28567,7 @@ def zgelqt3(
     T: Complex128[LDT, Flat],
     LDT: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGELS")
 @external
@@ -28584,7 +28584,7 @@ def zgels(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGELSD")
 @external
@@ -28605,7 +28605,7 @@ def zgelsd(
     RWORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["RCOND", Float64], Returns["RANK", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGELSS")
 @external
@@ -28625,7 +28625,7 @@ def zgelss(
     LWORK: Int32,
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["RCOND", Float64], Returns["RANK", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGELST")
 @external
@@ -28642,7 +28642,7 @@ def zgelst(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGELSY")
 @external
@@ -28662,7 +28662,7 @@ def zgelsy(
     LWORK: Int32,
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["RCOND", Float64], Returns["RANK", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEMLQ")
 @external
@@ -28682,7 +28682,7 @@ def zgemlq(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["TSIZE", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEMLQT")
 @external
@@ -28702,7 +28702,7 @@ def zgemlqt(
     LDC: Int32,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["MB", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEMQR")
 @external
@@ -28722,7 +28722,7 @@ def zgemqr(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["TSIZE", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEMQRT")
 @external
@@ -28742,7 +28742,7 @@ def zgemqrt(
     LDC: Int32,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["NB", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEQL2")
 @external
@@ -28755,7 +28755,7 @@ def zgeql2(
     TAU: Complex128[Flat],
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEQLF")
 @external
@@ -28769,7 +28769,7 @@ def zgeqlf(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEQP3")
 @external
@@ -28785,7 +28785,7 @@ def zgeqp3(
     LWORK: Int32,
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEQP3RK")
 @external
@@ -28809,7 +28809,7 @@ def zgeqp3rk(
     RWORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["KMAX", Int32], Returns["ABSTOL", Float64], Returns["RELTOL", Float64], Returns["LDA", Int32], Returns["K", Int32], Returns["MAXC2NRMK", Float64], Returns["RELMAXC2NRMK", Float64], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEQR")
 @external
@@ -28824,7 +28824,7 @@ def zgeqr(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["TSIZE", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEQR2")
 @external
@@ -28837,7 +28837,7 @@ def zgeqr2(
     TAU: Complex128[Flat],
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEQR2P")
 @external
@@ -28850,7 +28850,7 @@ def zgeqr2p(
     TAU: Complex128[Flat],
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEQRF")
 @external
@@ -28864,7 +28864,7 @@ def zgeqrf(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEQRFP")
 @external
@@ -28878,7 +28878,7 @@ def zgeqrfp(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEQRT")
 @external
@@ -28893,7 +28893,7 @@ def zgeqrt(
     LDT: Int32,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEQRT2")
 @external
@@ -28906,7 +28906,7 @@ def zgeqrt2(
     T: Complex128[LDT, Flat],
     LDT: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGEQRT3")
 @external
@@ -28919,7 +28919,7 @@ def zgeqrt3(
     T: Complex128[LDT, Flat],
     LDT: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGERFS")
 @external
@@ -28942,7 +28942,7 @@ def zgerfs(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGERFSX")
 @external
@@ -28973,7 +28973,7 @@ def zgerfsx(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGERQ2")
 @external
@@ -28986,7 +28986,7 @@ def zgerq2(
     TAU: Complex128[Flat],
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGERQF")
 @external
@@ -29000,7 +29000,7 @@ def zgerqf(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGESC2")
 @external
@@ -29013,7 +29013,7 @@ def zgesc2(
     IPIV: Int32[Flat],
     JPIV: Int32[Flat],
     SCALE: Float64
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCALE", Float64]]: ...
 
 @bind("ZGESDD")
 @external
@@ -29034,7 +29034,7 @@ def zgesdd(
     RWORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDU", Int32], Returns["LDVT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGESV")
 @external
@@ -29048,7 +29048,7 @@ def zgesv(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGESVD")
 @external
@@ -29069,7 +29069,7 @@ def zgesvd(
     LWORK: Int32,
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDU", Int32], Returns["LDVT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGESVDQ")
 @external
@@ -29097,7 +29097,7 @@ def zgesvdq(
     RWORK: Float64[Flat],
     LRWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDU", Int32], Returns["LDV", Int32], Returns["NUMRANK", Int32], Returns["LIWORK", Int32], Returns["LCWORK", Int32], Returns["LRWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGESVDX")
 @external
@@ -29125,7 +29125,7 @@ def zgesvdx(
     RWORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["NS", Int32], Returns["LDU", Int32], Returns["LDVT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGESVJ")
 @external
@@ -29147,7 +29147,7 @@ def zgesvj(
     RWORK: Float64[LRWORK],
     LRWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["MV", Int32], Returns["LDV", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGESVX")
 @external
@@ -29175,7 +29175,7 @@ def zgesvx(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZGESVXX")
 @external
@@ -29208,7 +29208,7 @@ def zgesvxx(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["RPVGRW", Float64], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGETC2")
 @external
@@ -29220,7 +29220,7 @@ def zgetc2(
     IPIV: Int32[Flat],
     JPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGETF2")
 @external
@@ -29232,7 +29232,7 @@ def zgetf2(
     LDA: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGETRF")
 @external
@@ -29244,7 +29244,7 @@ def zgetrf(
     LDA: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGETRF2")
 @external
@@ -29256,7 +29256,7 @@ def zgetrf2(
     LDA: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGETRI")
 @external
@@ -29269,7 +29269,7 @@ def zgetri(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGETRS")
 @external
@@ -29284,7 +29284,7 @@ def zgetrs(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGETSLS")
 @external
@@ -29301,7 +29301,7 @@ def zgetsls(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGETSQRHRT")
 @external
@@ -29319,7 +29319,7 @@ def zgetsqrhrt(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["MB1", Int32], Returns["NB1", Int32], Returns["NB2", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGGBAK")
 @external
@@ -29336,7 +29336,7 @@ def zggbak(
     V: Complex128[LDV, Flat],
     LDV: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["M", Int32], Returns["LDV", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGGBAL")
 @external
@@ -29354,7 +29354,7 @@ def zggbal(
     RSCALE: Float64[Flat],
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGGES")
 @external
@@ -29381,7 +29381,7 @@ def zgges(
     RWORK: Float64[Flat],
     BWORK: Bool[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SELCTG", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["SDIM", Int32], Returns["LDVSL", Int32], Returns["LDVSR", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGGES3")
 @external
@@ -29408,7 +29408,7 @@ def zgges3(
     RWORK: Float64[Flat],
     BWORK: Bool[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SELCTG", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["SDIM", Int32], Returns["LDVSL", Int32], Returns["LDVSR", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGGESX")
 @external
@@ -29440,7 +29440,7 @@ def zggesx(
     LIWORK: Int32,
     BWORK: Bool[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SELCTG", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["SDIM", Int32], Returns["LDVSL", Int32], Returns["LDVSR", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGGEV")
 @external
@@ -29463,7 +29463,7 @@ def zggev(
     LWORK: Int32,
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGGEV3")
 @external
@@ -29486,7 +29486,7 @@ def zggev3(
     LWORK: Int32,
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGGEVX")
 @external
@@ -29521,7 +29521,7 @@ def zggevx(
     IWORK: Int32[Flat],
     BWORK: Bool[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["ABNRM", Float64], Returns["BBNRM", Float64], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGGGLM")
 @external
@@ -29540,7 +29540,7 @@ def zggglm(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["M", Int32], Returns["P", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGGHD3")
 @external
@@ -29562,7 +29562,7 @@ def zgghd3(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDQ", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGGHRD")
 @external
@@ -29582,7 +29582,7 @@ def zgghrd(
     Z: Complex128[LDZ, Flat],
     LDZ: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDQ", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGGLSE")
 @external
@@ -29601,7 +29601,7 @@ def zgglse(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["P", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGGQRF")
 @external
@@ -29619,7 +29619,7 @@ def zggqrf(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["M", Int32], Returns["P", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGGRQF")
 @external
@@ -29637,7 +29637,7 @@ def zggrqf(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGGSVD3")
 @external
@@ -29668,7 +29668,7 @@ def zggsvd3(
     RWORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["P", Int32], Returns["K", Int32], Returns["L", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDU", Int32], Returns["LDV", Int32], Returns["LDQ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGGSVP3")
 @external
@@ -29700,7 +29700,7 @@ def zggsvp3(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["TOLA", Float64], Returns["TOLB", Float64], Returns["K", Int32], Returns["L", Int32], Returns["LDU", Int32], Returns["LDV", Int32], Returns["LDQ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGSVJ0")
 @external
@@ -29723,7 +29723,7 @@ def zgsvj0(
     WORK: Complex128[LWORK],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["MV", Int32], Returns["LDV", Int32], Returns["EPS", Float64], Returns["SFMIN", Float64], Returns["TOL", Float64], Returns["NSWEEP", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGSVJ1")
 @external
@@ -29747,7 +29747,7 @@ def zgsvj1(
     WORK: Complex128[LWORK],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["N1", Int32], Returns["LDA", Int32], Returns["MV", Int32], Returns["LDV", Int32], Returns["EPS", Float64], Returns["SFMIN", Float64], Returns["TOL", Float64], Returns["NSWEEP", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGTCON")
 @external
@@ -29764,7 +29764,7 @@ def zgtcon(
     RCOND: Float64,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZGTRFS")
 @external
@@ -29790,7 +29790,7 @@ def zgtrfs(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGTSV")
 @external
@@ -29804,7 +29804,7 @@ def zgtsv(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGTSVX")
 @external
@@ -29832,7 +29832,7 @@ def zgtsvx(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZGTTRF")
 @external
@@ -29845,7 +29845,7 @@ def zgttrf(
     DU2: Complex128[Flat],
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGTTRS")
 @external
@@ -29862,7 +29862,7 @@ def zgttrs(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZGTTS2")
 @external
@@ -29878,7 +29878,7 @@ def zgtts2(
     IPIV: Int32[Flat],
     B: Complex128[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["ITRANS", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32]]: ...
 
 @bind("ZHB2ST_KERNELS")
 @external
@@ -29899,7 +29899,7 @@ def zhb2st_kernels(
     TAU: Complex128[Flat],
     LDVT: Int32,
     WORK: Complex128[Flat]
-) -> None: ...
+) -> tuple[Returns["WANTZ", Bool], Returns["TTYPE", Int32], Returns["ST", Int32], Returns["ED", Int32], Returns["SWEEP", Int32], Returns["N", Int32], Returns["NB", Int32], Returns["IB", Int32], Returns["LDA", Int32], Returns["LDVT", Int32]]: ...
 
 @bind("ZHBEV")
 @external
@@ -29917,7 +29917,7 @@ def zhbev(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHBEV_2STAGE")
 @external
@@ -29936,7 +29936,7 @@ def zhbev_2stage(
     LWORK: Int32,
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHBEVD")
 @external
@@ -29958,7 +29958,7 @@ def zhbevd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHBEVD_2STAGE")
 @external
@@ -29980,7 +29980,7 @@ def zhbevd_2stage(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHBEVX")
 @external
@@ -30009,7 +30009,7 @@ def zhbevx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDQ", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHBEVX_2STAGE")
 @external
@@ -30039,7 +30039,7 @@ def zhbevx_2stage(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDQ", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHBGST")
 @external
@@ -30059,7 +30059,7 @@ def zhbgst(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KA", Int32], Returns["KB", Int32], Returns["LDAB", Int32], Returns["LDBB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHBGV")
 @external
@@ -30080,7 +30080,7 @@ def zhbgv(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KA", Int32], Returns["KB", Int32], Returns["LDAB", Int32], Returns["LDBB", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHBGVD")
 @external
@@ -30105,7 +30105,7 @@ def zhbgvd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KA", Int32], Returns["KB", Int32], Returns["LDAB", Int32], Returns["LDBB", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHBGVX")
 @external
@@ -30137,7 +30137,7 @@ def zhbgvx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KA", Int32], Returns["KB", Int32], Returns["LDAB", Int32], Returns["LDBB", Int32], Returns["LDQ", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHBTRD")
 @external
@@ -30155,7 +30155,7 @@ def zhbtrd(
     LDQ: Int32,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LDQ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHECON")
 @external
@@ -30170,7 +30170,7 @@ def zhecon(
     RCOND: Float64,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZHECON_3")
 @external
@@ -30186,7 +30186,7 @@ def zhecon_3(
     RCOND: Float64,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZHECON_ROOK")
 @external
@@ -30201,7 +30201,7 @@ def zhecon_rook(
     RCOND: Float64,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZHEEQUB")
 @external
@@ -30216,7 +30216,7 @@ def zheequb(
     AMAX: Float64,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCOND", Float64], Returns["AMAX", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZHEEV")
 @external
@@ -30232,7 +30232,7 @@ def zheev(
     LWORK: Int32,
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHEEV_2STAGE")
 @external
@@ -30248,7 +30248,7 @@ def zheev_2stage(
     LWORK: Int32,
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHEEVD")
 @external
@@ -30267,7 +30267,7 @@ def zheevd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHEEVD_2STAGE")
 @external
@@ -30286,7 +30286,7 @@ def zheevd_2stage(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHEEVR")
 @external
@@ -30315,7 +30315,7 @@ def zheevr(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHEEVR_2STAGE")
 @external
@@ -30344,7 +30344,7 @@ def zheevr_2stage(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHEEVX")
 @external
@@ -30371,7 +30371,7 @@ def zheevx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHEEVX_2STAGE")
 @external
@@ -30398,7 +30398,7 @@ def zheevx_2stage(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHEGS2")
 @external
@@ -30412,7 +30412,7 @@ def zhegs2(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHEGST")
 @external
@@ -30426,7 +30426,7 @@ def zhegst(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHEGV")
 @external
@@ -30445,7 +30445,7 @@ def zhegv(
     LWORK: Int32,
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHEGV_2STAGE")
 @external
@@ -30464,7 +30464,7 @@ def zhegv_2stage(
     LWORK: Int32,
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHEGVD")
 @external
@@ -30486,7 +30486,7 @@ def zhegvd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHEGVX")
 @external
@@ -30516,7 +30516,7 @@ def zhegvx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHERFS")
 @external
@@ -30539,7 +30539,7 @@ def zherfs(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHERFSX")
 @external
@@ -30569,7 +30569,7 @@ def zherfsx(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHESV")
 @external
@@ -30586,7 +30586,7 @@ def zhesv(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHESV_AA")
 @external
@@ -30603,7 +30603,7 @@ def zhesv_aa(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHESV_AA_2STAGE")
 @external
@@ -30623,7 +30623,7 @@ def zhesv_aa_2stage(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LTB", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHESV_RK")
 @external
@@ -30641,7 +30641,7 @@ def zhesv_rk(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHESV_ROOK")
 @external
@@ -30658,7 +30658,7 @@ def zhesv_rook(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHESVX")
 @external
@@ -30684,7 +30684,7 @@ def zhesvx(
     LWORK: Int32,
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHESVXX")
 @external
@@ -30716,7 +30716,7 @@ def zhesvxx(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["RPVGRW", Float64], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHESWAPR")
 @external
@@ -30728,7 +30728,7 @@ def zheswapr(
     LDA: Int32,
     I1: Int32,
     I2: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["I1", Int32], Returns["I2", Int32]]: ...
 
 @bind("ZHETD2")
 @external
@@ -30742,7 +30742,7 @@ def zhetd2(
     E: Float64[Flat],
     TAU: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHETF2")
 @external
@@ -30754,7 +30754,7 @@ def zhetf2(
     LDA: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHETF2_RK")
 @external
@@ -30767,7 +30767,7 @@ def zhetf2_rk(
     E: Complex128[Flat],
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHETF2_ROOK")
 @external
@@ -30779,7 +30779,7 @@ def zhetf2_rook(
     LDA: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHETRD")
 @external
@@ -30795,7 +30795,7 @@ def zhetrd(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHETRD_2STAGE")
 @external
@@ -30814,7 +30814,7 @@ def zhetrd_2stage(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LHOUS2", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHETRD_HB2ST")
 @external
@@ -30834,7 +30834,7 @@ def zhetrd_hb2st(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["LHOUS", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHETRD_HE2HB")
 @external
@@ -30851,7 +30851,7 @@ def zhetrd_he2hb(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDA", Int32], Returns["LDAB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHETRF")
 @external
@@ -30865,7 +30865,7 @@ def zhetrf(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHETRF_AA")
 @external
@@ -30879,7 +30879,7 @@ def zhetrf_aa(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHETRF_AA_2STAGE")
 @external
@@ -30896,7 +30896,7 @@ def zhetrf_aa_2stage(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LTB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHETRF_RK")
 @external
@@ -30911,7 +30911,7 @@ def zhetrf_rk(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHETRF_ROOK")
 @external
@@ -30925,7 +30925,7 @@ def zhetrf_rook(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHETRI")
 @external
@@ -30938,7 +30938,7 @@ def zhetri(
     IPIV: Int32[Flat],
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHETRI2")
 @external
@@ -30952,7 +30952,7 @@ def zhetri2(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHETRI2X")
 @external
@@ -30966,7 +30966,7 @@ def zhetri2x(
     WORK: Complex128[N + NB + 1, Flat],
     NB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["NB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHETRI_3")
 @external
@@ -30981,7 +30981,7 @@ def zhetri_3(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHETRI_3X")
 @external
@@ -30996,7 +30996,7 @@ def zhetri_3x(
     WORK: Complex128[N + NB + 1, Flat],
     NB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["NB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHETRI_ROOK")
 @external
@@ -31009,7 +31009,7 @@ def zhetri_rook(
     IPIV: Int32[Flat],
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHETRS")
 @external
@@ -31024,7 +31024,7 @@ def zhetrs(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHETRS2")
 @external
@@ -31040,7 +31040,7 @@ def zhetrs2(
     LDB: Int32,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHETRS_3")
 @external
@@ -31056,7 +31056,7 @@ def zhetrs_3(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHETRS_AA")
 @external
@@ -31073,7 +31073,7 @@ def zhetrs_aa(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHETRS_AA_2STAGE")
 @external
@@ -31091,7 +31091,7 @@ def zhetrs_aa_2stage(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LTB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHETRS_ROOK")
 @external
@@ -31106,7 +31106,7 @@ def zhetrs_rook(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHFRK")
 @external
@@ -31122,7 +31122,7 @@ def zhfrk(
     LDA: Int32,
     BETA: Float64,
     C: Complex128[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Float64], Returns["LDA", Int32], Returns["BETA", Float64]]: ...
 
 @bind("ZHGEQZ")
 @external
@@ -31148,7 +31148,7 @@ def zhgeqz(
     LWORK: Int32,
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDH", Int32], Returns["LDT", Int32], Returns["LDQ", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHPCON")
 @external
@@ -31162,7 +31162,7 @@ def zhpcon(
     RCOND: Float64,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZHPEV")
 @external
@@ -31178,7 +31178,7 @@ def zhpev(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHPEVD")
 @external
@@ -31198,7 +31198,7 @@ def zhpevd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHPEVX")
 @external
@@ -31223,7 +31223,7 @@ def zhpevx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHPGST")
 @external
@@ -31235,7 +31235,7 @@ def zhpgst(
     AP: Complex128[Flat],
     BP: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHPGV")
 @external
@@ -31253,7 +31253,7 @@ def zhpgv(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHPGVD")
 @external
@@ -31275,7 +31275,7 @@ def zhpgvd(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHPGVX")
 @external
@@ -31302,7 +31302,7 @@ def zhpgvx(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ITYPE", Int32], Returns["N", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHPRFS")
 @external
@@ -31323,7 +31323,7 @@ def zhprfs(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHPSV")
 @external
@@ -31337,7 +31337,7 @@ def zhpsv(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHPSVX")
 @external
@@ -31360,7 +31360,7 @@ def zhpsvx(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZHPTRD")
 @external
@@ -31373,7 +31373,7 @@ def zhptrd(
     E: Float64[Flat],
     TAU: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHPTRF")
 @external
@@ -31384,7 +31384,7 @@ def zhptrf(
     AP: Complex128[Flat],
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHPTRI")
 @external
@@ -31396,7 +31396,7 @@ def zhptri(
     IPIV: Int32[Flat],
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHPTRS")
 @external
@@ -31410,7 +31410,7 @@ def zhptrs(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHSEIN")
 @external
@@ -31435,7 +31435,7 @@ def zhsein(
     IFAILL: Int32[Flat],
     IFAILR: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDH", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["MM", Int32], Returns["M", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZHSEQR")
 @external
@@ -31454,7 +31454,7 @@ def zhseqr(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDH", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLA_GBAMV")
 @external
@@ -31473,7 +31473,7 @@ def zla_gbamv(
     BETA: Float64,
     Y: Float64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["TRANS", Int32], Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["ALPHA", Float64], Returns["LDAB", Int32], Returns["INCX", Int32], Returns["BETA", Float64], Returns["INCY", Int32]]: ...
 
 @bind("ZLA_GBRCOND_C")
 @external
@@ -31493,7 +31493,7 @@ def zla_gbrcond_c(
     INFO: Int32,
     WORK: Complex128[Flat],
     RWORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["CAPPLY", Bool], Returns["INFO", Int32]]: ...
 
 @bind("ZLA_GBRCOND_X")
 @external
@@ -31512,7 +31512,7 @@ def zla_gbrcond_x(
     INFO: Int32,
     WORK: Complex128[Flat],
     RWORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLA_GBRFSX_EXTENDED")
 @external
@@ -31549,7 +31549,7 @@ def zla_gbrfsx_extended(
     DZ_UB: Float64,
     IGNORE_CWISE: Bool,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["PREC_TYPE", Int32], Returns["TRANS_TYPE", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["COLEQU", Bool], Returns["LDB", Int32], Returns["LDY", Int32], Returns["N_NORMS", Int32], Returns["RCOND", Float64], Returns["ITHRESH", Int32], Returns["RTHRESH", Float64], Returns["DZ_UB", Float64], Returns["IGNORE_CWISE", Bool], Returns["INFO", Int32]]: ...
 
 @bind("ZLA_GBRPVGRW")
 @external
@@ -31563,7 +31563,7 @@ def zla_gbrpvgrw(
     LDAB: Int32,
     AFB: Complex128[LDAFB, Flat],
     LDAFB: Int32
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["NCOLS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32]]: ...
 
 @bind("ZLA_GEAMV")
 @external
@@ -31580,7 +31580,7 @@ def zla_geamv(
     BETA: Float64,
     Y: Float64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["TRANS", Int32], Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Float64], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Float64], Returns["INCY", Int32]]: ...
 
 @bind("ZLA_GERCOND_C")
 @external
@@ -31598,7 +31598,7 @@ def zla_gercond_c(
     INFO: Int32,
     WORK: Complex128[Flat],
     RWORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["CAPPLY", Bool], Returns["INFO", Int32]]: ...
 
 @bind("ZLA_GERCOND_X")
 @external
@@ -31615,7 +31615,7 @@ def zla_gercond_x(
     INFO: Int32,
     WORK: Complex128[Flat],
     RWORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLA_GERFSX_EXTENDED")
 @external
@@ -31650,7 +31650,7 @@ def zla_gerfsx_extended(
     DZ_UB: Float64,
     IGNORE_CWISE: Bool,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["PREC_TYPE", Int32], Returns["TRANS_TYPE", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["COLEQU", Bool], Returns["LDB", Int32], Returns["LDY", Int32], Returns["N_NORMS", Int32], Returns["RCOND", Float64], Returns["ITHRESH", Int32], Returns["RTHRESH", Float64], Returns["DZ_UB", Float64], Returns["IGNORE_CWISE", Bool], Returns["INFO", Int32]]: ...
 
 @bind("ZLA_GERPVGRW")
 @external
@@ -31662,7 +31662,7 @@ def zla_gerpvgrw(
     LDA: Int32,
     AF: Complex128[LDAF, Flat],
     LDAF: Int32
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["NCOLS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32]]: ...
 
 @bind("ZLA_HEAMV")
 @external
@@ -31678,7 +31678,7 @@ def zla_heamv(
     BETA: Float64,
     Y: Float64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["UPLO", Int32], Returns["N", Int32], Returns["ALPHA", Float64], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Float64], Returns["INCY", Int32]]: ...
 
 @bind("ZLA_HERCOND_C")
 @external
@@ -31696,7 +31696,7 @@ def zla_hercond_c(
     INFO: Int32,
     WORK: Complex128[Flat],
     RWORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["CAPPLY", Bool], Returns["INFO", Int32]]: ...
 
 @bind("ZLA_HERCOND_X")
 @external
@@ -31713,7 +31713,7 @@ def zla_hercond_x(
     INFO: Int32,
     WORK: Complex128[Flat],
     RWORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLA_HERFSX_EXTENDED")
 @external
@@ -31748,7 +31748,7 @@ def zla_herfsx_extended(
     DZ_UB: Float64,
     IGNORE_CWISE: Bool,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["PREC_TYPE", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["COLEQU", Bool], Returns["LDB", Int32], Returns["LDY", Int32], Returns["N_NORMS", Int32], Returns["RCOND", Float64], Returns["ITHRESH", Int32], Returns["RTHRESH", Float64], Returns["DZ_UB", Float64], Returns["IGNORE_CWISE", Bool], Returns["INFO", Int32]]: ...
 
 @bind("ZLA_HERPVGRW")
 @external
@@ -31763,7 +31763,7 @@ def zla_herpvgrw(
     LDAF: Int32,
     IPIV: Int32[Flat],
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["INFO", Int32], Returns["LDA", Int32], Returns["LDAF", Int32]]: ...
 
 @bind("ZLA_LIN_BERR")
 @external
@@ -31775,7 +31775,7 @@ def zla_lin_berr(
     RES: Complex128[N, NRHS],
     AYB: Float64[N, NRHS],
     BERR: Float64[NRHS]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NZ", Int32], Returns["NRHS", Int32]]: ...
 
 @bind("ZLA_PORCOND_C")
 @external
@@ -31792,7 +31792,7 @@ def zla_porcond_c(
     INFO: Int32,
     WORK: Complex128[Flat],
     RWORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["CAPPLY", Bool], Returns["INFO", Int32]]: ...
 
 @bind("ZLA_PORCOND_X")
 @external
@@ -31808,7 +31808,7 @@ def zla_porcond_x(
     INFO: Int32,
     WORK: Complex128[Flat],
     RWORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLA_PORFSX_EXTENDED")
 @external
@@ -31842,7 +31842,7 @@ def zla_porfsx_extended(
     DZ_UB: Float64,
     IGNORE_CWISE: Bool,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["PREC_TYPE", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["COLEQU", Bool], Returns["LDB", Int32], Returns["LDY", Int32], Returns["N_NORMS", Int32], Returns["RCOND", Float64], Returns["ITHRESH", Int32], Returns["RTHRESH", Float64], Returns["DZ_UB", Float64], Returns["IGNORE_CWISE", Bool], Returns["INFO", Int32]]: ...
 
 @bind("ZLA_PORPVGRW")
 @external
@@ -31855,7 +31855,7 @@ def zla_porpvgrw(
     AF: Complex128[LDAF, Flat],
     LDAF: Int32,
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["NCOLS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32]]: ...
 
 @bind("ZLA_SYAMV")
 @external
@@ -31871,7 +31871,7 @@ def zla_syamv(
     BETA: Float64,
     Y: Float64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["UPLO", Int32], Returns["N", Int32], Returns["ALPHA", Float64], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Float64], Returns["INCY", Int32]]: ...
 
 @bind("ZLA_SYRCOND_C")
 @external
@@ -31889,7 +31889,7 @@ def zla_syrcond_c(
     INFO: Int32,
     WORK: Complex128[Flat],
     RWORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["CAPPLY", Bool], Returns["INFO", Int32]]: ...
 
 @bind("ZLA_SYRCOND_X")
 @external
@@ -31906,7 +31906,7 @@ def zla_syrcond_x(
     INFO: Int32,
     WORK: Complex128[Flat],
     RWORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLA_SYRFSX_EXTENDED")
 @external
@@ -31941,7 +31941,7 @@ def zla_syrfsx_extended(
     DZ_UB: Float64,
     IGNORE_CWISE: Bool,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["PREC_TYPE", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["COLEQU", Bool], Returns["LDB", Int32], Returns["LDY", Int32], Returns["N_NORMS", Int32], Returns["RCOND", Float64], Returns["ITHRESH", Int32], Returns["RTHRESH", Float64], Returns["DZ_UB", Float64], Returns["IGNORE_CWISE", Bool], Returns["INFO", Int32]]: ...
 
 @bind("ZLA_SYRPVGRW")
 @external
@@ -31956,7 +31956,7 @@ def zla_syrpvgrw(
     LDAF: Int32,
     IPIV: Int32[Flat],
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["INFO", Int32], Returns["LDA", Int32], Returns["LDAF", Int32]]: ...
 
 @bind("ZLA_WWADDW")
 @external
@@ -31966,7 +31966,7 @@ def zla_wwaddw(
     X: Complex128[Flat],
     Y: Complex128[Flat],
     W: Complex128[Flat]
-) -> None: ...
+) -> Returns["N", Int32]: ...
 
 @bind("ZLABRD")
 @external
@@ -31985,7 +31985,7 @@ def zlabrd(
     LDX: Int32,
     Y: Complex128[LDY, Flat],
     LDY: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDX", Int32], Returns["LDY", Int32]]: ...
 
 @bind("ZLACGV")
 @external
@@ -31994,7 +31994,7 @@ def zlacgv(
     N: Int32,
     X: Complex128[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32]]: ...
 
 @bind("ZLACN2")
 @external
@@ -32006,7 +32006,7 @@ def zlacn2(
     EST: Float64,
     KASE: Int32,
     ISAVE: Int32[3]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["EST", Float64], Returns["KASE", Int32]]: ...
 
 @bind("ZLACON")
 @external
@@ -32017,7 +32017,7 @@ def zlacon(
     X: Complex128[N],
     EST: Float64,
     KASE: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["EST", Float64], Returns["KASE", Int32]]: ...
 
 @bind("ZLACP2")
 @external
@@ -32030,7 +32030,7 @@ def zlacp2(
     LDA: Int32,
     B: Complex128[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32]]: ...
 
 @bind("ZLACPY")
 @external
@@ -32043,7 +32043,7 @@ def zlacpy(
     LDA: Int32,
     B: Complex128[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32]]: ...
 
 @bind("ZLACRM")
 @external
@@ -32058,7 +32058,7 @@ def zlacrm(
     C: Complex128[LDC, Flat],
     LDC: Int32,
     RWORK: Float64[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDC", Int32]]: ...
 
 @bind("ZLACRT")
 @external
@@ -32071,7 +32071,7 @@ def zlacrt(
     INCY: Int32,
     C: Complex128,
     S: Complex128
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32], Returns["C", Complex128], Returns["S", Complex128]]: ...
 
 @bind("ZLADIV")
 @external
@@ -32079,7 +32079,7 @@ def zlacrt(
 def zladiv(
     X: Complex128,
     Y: Complex128
-) -> Complex128: ...
+) -> tuple[Complex128, Returns["X", Complex128], Returns["Y", Complex128]]: ...
 
 @bind("ZLAED0")
 @external
@@ -32096,7 +32096,7 @@ def zlaed0(
     RWORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["QSIZ", Int32], Returns["N", Int32], Returns["LDQ", Int32], Returns["LDQS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLAED7")
 @external
@@ -32124,7 +32124,7 @@ def zlaed7(
     RWORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["CUTPNT", Int32], Returns["QSIZ", Int32], Returns["TLVLS", Int32], Returns["CURLVL", Int32], Returns["CURPBM", Int32], Returns["LDQ", Int32], Returns["RHO", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZLAED8")
 @external
@@ -32151,7 +32151,7 @@ def zlaed8(
     GIVCOL: Int32[2, Flat],
     GIVNUM: Float64[2, Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["K", Int32], Returns["N", Int32], Returns["QSIZ", Int32], Returns["LDQ", Int32], Returns["RHO", Float64], Returns["CUTPNT", Int32], Returns["LDQ2", Int32], Returns["GIVPTR", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLAEIN")
 @external
@@ -32170,7 +32170,7 @@ def zlaein(
     EPS3: Float64,
     SMLNUM: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["RIGHTV", Bool], Returns["NOINIT", Bool], Returns["N", Int32], Returns["LDH", Int32], Returns["W", Complex128], Returns["LDB", Int32], Returns["EPS3", Float64], Returns["SMLNUM", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZLAESY")
 @external
@@ -32184,7 +32184,7 @@ def zlaesy(
     EVSCAL: Complex128,
     CS1: Complex128,
     SN1: Complex128
-) -> None: ...
+) -> tuple[Returns["A", Complex128], Returns["B", Complex128], Returns["C", Complex128], Returns["RT1", Complex128], Returns["RT2", Complex128], Returns["EVSCAL", Complex128], Returns["CS1", Complex128], Returns["SN1", Complex128]]: ...
 
 @bind("ZLAEV2")
 @external
@@ -32197,7 +32197,7 @@ def zlaev2(
     RT2: Float64,
     CS1: Float64,
     SN1: Complex128
-) -> None: ...
+) -> tuple[Returns["A", Complex128], Returns["B", Complex128], Returns["C", Complex128], Returns["RT1", Float64], Returns["RT2", Float64], Returns["CS1", Float64], Returns["SN1", Complex128]]: ...
 
 @bind("ZLAG2C")
 @external
@@ -32210,7 +32210,7 @@ def zlag2c(
     SA: Complex64[LDSA, Flat],
     LDSA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDSA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLAGS2")
 @external
@@ -32229,7 +32229,7 @@ def zlags2(
     SNV: Complex128,
     CSQ: Float64,
     SNQ: Complex128
-) -> None: ...
+) -> tuple[Returns["UPPER", Bool], Returns["A1", Float64], Returns["A2", Complex128], Returns["A3", Float64], Returns["B1", Float64], Returns["B2", Complex128], Returns["B3", Float64], Returns["CSU", Float64], Returns["SNU", Complex128], Returns["CSV", Float64], Returns["SNV", Complex128], Returns["CSQ", Float64], Returns["SNQ", Complex128]]: ...
 
 @bind("ZLAGTM")
 @external
@@ -32247,7 +32247,7 @@ def zlagtm(
     BETA: Float64,
     B: Complex128[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["ALPHA", Float64], Returns["LDX", Int32], Returns["BETA", Float64], Returns["LDB", Int32]]: ...
 
 @bind("ZLAHEF")
 @external
@@ -32263,7 +32263,7 @@ def zlahef(
     W: Complex128[LDW, Flat],
     LDW: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NB", Int32], Returns["KB", Int32], Returns["LDA", Int32], Returns["LDW", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLAHEF_AA")
 @external
@@ -32279,7 +32279,7 @@ def zlahef_aa(
     H: Complex128[LDH, Flat],
     LDH: Int32,
     WORK: Complex128[Flat]
-) -> None: ...
+) -> tuple[Returns["J1", Int32], Returns["M", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDH", Int32]]: ...
 
 @bind("ZLAHEF_RK")
 @external
@@ -32296,7 +32296,7 @@ def zlahef_rk(
     W: Complex128[LDW, Flat],
     LDW: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NB", Int32], Returns["KB", Int32], Returns["LDA", Int32], Returns["LDW", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLAHEF_ROOK")
 @external
@@ -32312,7 +32312,7 @@ def zlahef_rook(
     W: Complex128[LDW, Flat],
     LDW: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NB", Int32], Returns["KB", Int32], Returns["LDA", Int32], Returns["LDW", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLAHQR")
 @external
@@ -32331,7 +32331,7 @@ def zlahqr(
     Z: Complex128[LDZ, Flat],
     LDZ: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["WANTT", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDH", Int32], Returns["ILOZ", Int32], Returns["IHIZ", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLAHR2")
 @external
@@ -32347,7 +32347,7 @@ def zlahr2(
     LDT: Int32,
     Y: Complex128[LDY, NB],
     LDY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LDY", Int32]]: ...
 
 @bind("ZLAIC1")
 @external
@@ -32362,7 +32362,7 @@ def zlaic1(
     SESTPR: Float64,
     S: Complex128,
     C: Complex128
-) -> None: ...
+) -> tuple[Returns["JOB", Int32], Returns["J", Int32], Returns["SEST", Float64], Returns["GAMMA", Complex128], Returns["SESTPR", Float64], Returns["S", Complex128], Returns["C", Complex128]]: ...
 
 @bind("ZLALS0")
 @external
@@ -32392,7 +32392,7 @@ def zlals0(
     S: Float64,
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ICOMPQ", Int32], Returns["NL", Int32], Returns["NR", Int32], Returns["SQRE", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDBX", Int32], Returns["GIVPTR", Int32], Returns["LDGCOL", Int32], Returns["LDGNUM", Int32], Returns["K", Int32], Returns["C", Float64], Returns["S", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZLALSA")
 @external
@@ -32424,7 +32424,7 @@ def zlalsa(
     RWORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ICOMPQ", Int32], Returns["SMLSIZ", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDBX", Int32], Returns["LDU", Int32], Returns["LDGCOL", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLALSD")
 @external
@@ -32444,7 +32444,7 @@ def zlalsd(
     RWORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SMLSIZ", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["RCOND", Float64], Returns["RANK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLAMSWLQ")
 @external
@@ -32466,7 +32466,7 @@ def zlamswlq(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["MB", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLAMTSQR")
 @external
@@ -32488,7 +32488,7 @@ def zlamtsqr(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["MB", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLANGB")
 @external
@@ -32501,7 +32501,7 @@ def zlangb(
     AB: Complex128[LDAB, Flat],
     LDAB: Int32,
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32]]: ...
 
 @bind("ZLANGE")
 @external
@@ -32513,7 +32513,7 @@ def zlange(
     A: Complex128[LDA, Flat],
     LDA: Int32,
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("ZLANGT")
 @external
@@ -32524,7 +32524,7 @@ def zlangt(
     DL: Complex128[Flat],
     D: Complex128[Flat],
     DU: Complex128[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32]]: ...
 
 @bind("ZLANHB")
 @external
@@ -32537,7 +32537,7 @@ def zlanhb(
     AB: Complex128[LDAB, Flat],
     LDAB: Int32,
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["K", Int32], Returns["LDAB", Int32]]: ...
 
 @bind("ZLANHE")
 @external
@@ -32549,7 +32549,7 @@ def zlanhe(
     A: Complex128[LDA, Flat],
     LDA: Int32,
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("ZLANHF")
 @external
@@ -32561,7 +32561,7 @@ def zlanhf(
     N: Int32,
     A: Complex128[Flat],
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32]]: ...
 
 @bind("ZLANHP")
 @external
@@ -32572,7 +32572,7 @@ def zlanhp(
     N: Int32,
     AP: Complex128[Flat],
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32]]: ...
 
 @bind("ZLANHS")
 @external
@@ -32583,7 +32583,7 @@ def zlanhs(
     A: Complex128[LDA, Flat],
     LDA: Int32,
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("ZLANHT")
 @external
@@ -32593,7 +32593,7 @@ def zlanht(
     N: Int32,
     D: Float64[Flat],
     E: Complex128[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32]]: ...
 
 @bind("ZLANSB")
 @external
@@ -32606,7 +32606,7 @@ def zlansb(
     AB: Complex128[LDAB, Flat],
     LDAB: Int32,
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["K", Int32], Returns["LDAB", Int32]]: ...
 
 @bind("ZLANSP")
 @external
@@ -32617,7 +32617,7 @@ def zlansp(
     N: Int32,
     AP: Complex128[Flat],
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32]]: ...
 
 @bind("ZLANSY")
 @external
@@ -32629,7 +32629,7 @@ def zlansy(
     A: Complex128[LDA, Flat],
     LDA: Int32,
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("ZLANTB")
 @external
@@ -32643,7 +32643,7 @@ def zlantb(
     AB: Complex128[LDAB, Flat],
     LDAB: Int32,
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["K", Int32], Returns["LDAB", Int32]]: ...
 
 @bind("ZLANTP")
 @external
@@ -32655,7 +32655,7 @@ def zlantp(
     N: Int32,
     AP: Complex128[Flat],
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32]]: ...
 
 @bind("ZLANTR")
 @external
@@ -32669,7 +32669,7 @@ def zlantr(
     A: Complex128[LDA, Flat],
     LDA: Int32,
     WORK: Float64[Flat]
-) -> Float64: ...
+) -> tuple[Float64, Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("ZLAPLL")
 @external
@@ -32681,7 +32681,7 @@ def zlapll(
     Y: Complex128[Flat],
     INCY: Int32,
     SSMIN: Float64
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32], Returns["SSMIN", Float64]]: ...
 
 @bind("ZLAPMR")
 @external
@@ -32693,7 +32693,7 @@ def zlapmr(
     X: Complex128[LDX, Flat],
     LDX: Int32,
     K: Int32[Flat]
-) -> None: ...
+) -> tuple[Returns["FORWRD", Bool], Returns["M", Int32], Returns["N", Int32], Returns["LDX", Int32]]: ...
 
 @bind("ZLAPMT")
 @external
@@ -32705,7 +32705,7 @@ def zlapmt(
     X: Complex128[LDX, Flat],
     LDX: Int32,
     K: Int32[Flat]
-) -> None: ...
+) -> tuple[Returns["FORWRD", Bool], Returns["M", Int32], Returns["N", Int32], Returns["LDX", Int32]]: ...
 
 @bind("ZLAQGB")
 @external
@@ -32723,7 +32723,7 @@ def zlaqgb(
     COLCND: Float64,
     AMAX: Float64,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["LDAB", Int32], Returns["ROWCND", Float64], Returns["COLCND", Float64], Returns["AMAX", Float64]]: ...
 
 @bind("ZLAQGE")
 @external
@@ -32739,7 +32739,7 @@ def zlaqge(
     COLCND: Float64,
     AMAX: Float64,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["ROWCND", Float64], Returns["COLCND", Float64], Returns["AMAX", Float64]]: ...
 
 @bind("ZLAQHB")
 @external
@@ -32754,7 +32754,7 @@ def zlaqhb(
     SCOND: Float64,
     AMAX: Float64,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["SCOND", Float64], Returns["AMAX", Float64]]: ...
 
 @bind("ZLAQHE")
 @external
@@ -32768,7 +32768,7 @@ def zlaqhe(
     SCOND: Float64,
     AMAX: Float64,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCOND", Float64], Returns["AMAX", Float64]]: ...
 
 @bind("ZLAQHP")
 @external
@@ -32781,7 +32781,7 @@ def zlaqhp(
     SCOND: Float64,
     AMAX: Float64,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SCOND", Float64], Returns["AMAX", Float64]]: ...
 
 @bind("ZLAQP2")
 @external
@@ -32797,7 +32797,7 @@ def zlaqp2(
     VN1: Float64[Flat],
     VN2: Float64[Flat],
     WORK: Complex128[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["OFFSET", Int32], Returns["LDA", Int32]]: ...
 
 @bind("ZLAQP2RK")
 @external
@@ -32823,7 +32823,7 @@ def zlaqp2rk(
     VN2: Float64[Flat],
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["IOFFSET", Int32], Returns["KMAX", Int32], Returns["ABSTOL", Float64], Returns["RELTOL", Float64], Returns["KP1", Int32], Returns["MAXC2NRM", Float64], Returns["LDA", Int32], Returns["K", Int32], Returns["MAXC2NRMK", Float64], Returns["RELMAXC2NRMK", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZLAQP3RK")
 @external
@@ -32853,7 +32853,7 @@ def zlaqp3rk(
     LDF: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["IOFFSET", Int32], Returns["NB", Int32], Returns["ABSTOL", Float64], Returns["RELTOL", Float64], Returns["KP1", Int32], Returns["MAXC2NRM", Float64], Returns["LDA", Int32], Returns["DONE", Bool], Returns["KB", Int32], Returns["MAXC2NRMK", Float64], Returns["RELMAXC2NRMK", Float64], Returns["LDF", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLAQPS")
 @external
@@ -32873,7 +32873,7 @@ def zlaqps(
     AUXV: Complex128[Flat],
     F: Complex128[LDF, Flat],
     LDF: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["OFFSET", Int32], Returns["NB", Int32], Returns["KB", Int32], Returns["LDA", Int32], Returns["LDF", Int32]]: ...
 
 @bind("ZLAQR0")
 @external
@@ -32894,7 +32894,7 @@ def zlaqr0(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["WANTT", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDH", Int32], Returns["ILOZ", Int32], Returns["IHIZ", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLAQR1")
 @external
@@ -32906,7 +32906,7 @@ def zlaqr1(
     S1: Complex128,
     S2: Complex128,
     V: Complex128[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDH", Int32], Returns["S1", Complex128], Returns["S2", Complex128]]: ...
 
 @bind("ZLAQR2")
 @external
@@ -32937,7 +32937,7 @@ def zlaqr2(
     LDWV: Int32,
     WORK: Complex128[Flat],
     LWORK: Int32
-) -> None: ...
+) -> tuple[Returns["WANTT", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["KTOP", Int32], Returns["KBOT", Int32], Returns["NW", Int32], Returns["LDH", Int32], Returns["ILOZ", Int32], Returns["IHIZ", Int32], Returns["LDZ", Int32], Returns["NS", Int32], Returns["ND", Int32], Returns["LDV", Int32], Returns["NH", Int32], Returns["LDT", Int32], Returns["NV", Int32], Returns["LDWV", Int32], Returns["LWORK", Int32]]: ...
 
 @bind("ZLAQR3")
 @external
@@ -32968,7 +32968,7 @@ def zlaqr3(
     LDWV: Int32,
     WORK: Complex128[Flat],
     LWORK: Int32
-) -> None: ...
+) -> tuple[Returns["WANTT", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["KTOP", Int32], Returns["KBOT", Int32], Returns["NW", Int32], Returns["LDH", Int32], Returns["ILOZ", Int32], Returns["IHIZ", Int32], Returns["LDZ", Int32], Returns["NS", Int32], Returns["ND", Int32], Returns["LDV", Int32], Returns["NH", Int32], Returns["LDT", Int32], Returns["NV", Int32], Returns["LDWV", Int32], Returns["LWORK", Int32]]: ...
 
 @bind("ZLAQR4")
 @external
@@ -32989,7 +32989,7 @@ def zlaqr4(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["WANTT", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDH", Int32], Returns["ILOZ", Int32], Returns["IHIZ", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLAQR5")
 @external
@@ -33019,7 +33019,7 @@ def zlaqr5(
     NH: Int32,
     WH: Complex128[LDWH, Flat],
     LDWH: Int32
-) -> None: ...
+) -> tuple[Returns["WANTT", Bool], Returns["WANTZ", Bool], Returns["KACC22", Int32], Returns["N", Int32], Returns["KTOP", Int32], Returns["KBOT", Int32], Returns["NSHFTS", Int32], Returns["LDH", Int32], Returns["ILOZ", Int32], Returns["IHIZ", Int32], Returns["LDZ", Int32], Returns["LDV", Int32], Returns["LDU", Int32], Returns["NV", Int32], Returns["LDWV", Int32], Returns["NH", Int32], Returns["LDWH", Int32]]: ...
 
 @bind("ZLAQSB")
 @external
@@ -33034,7 +33034,7 @@ def zlaqsb(
     SCOND: Float64,
     AMAX: Float64,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["SCOND", Float64], Returns["AMAX", Float64]]: ...
 
 @bind("ZLAQSP")
 @external
@@ -33047,7 +33047,7 @@ def zlaqsp(
     SCOND: Float64,
     AMAX: Float64,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SCOND", Float64], Returns["AMAX", Float64]]: ...
 
 @bind("ZLAQSY")
 @external
@@ -33061,7 +33061,7 @@ def zlaqsy(
     SCOND: Float64,
     AMAX: Float64,
     EQUED: String[1]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCOND", Float64], Returns["AMAX", Float64]]: ...
 
 @bind("ZLAQZ0")
 @external
@@ -33199,7 +33199,7 @@ def zlar1v(
     RESID: Float64,
     RQCORR: Float64,
     WORK: Float64[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["B1", Int32], Returns["BN", Int32], Returns["LAMBDA", Float64], Returns["PIVMIN", Float64], Returns["GAPTOL", Float64], Returns["WANTNC", Bool], Returns["NEGCNT", Int32], Returns["ZTZ", Float64], Returns["MINGMA", Float64], Returns["R", Int32], Returns["NRMINV", Float64], Returns["RESID", Float64], Returns["RQCORR", Float64]]: ...
 
 @bind("ZLAR2V")
 @external
@@ -33213,7 +33213,7 @@ def zlar2v(
     C: Float64[Flat],
     S: Complex128[Flat],
     INCC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCC", Int32]]: ...
 
 @bind("ZLARCM")
 @external
@@ -33228,7 +33228,7 @@ def zlarcm(
     C: Complex128[LDC, Flat],
     LDC: Int32,
     RWORK: Float64[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDC", Int32]]: ...
 
 @bind("ZLARF")
 @external
@@ -33243,7 +33243,7 @@ def zlarf(
     C: Complex128[LDC, Flat],
     LDC: Int32,
     WORK: Complex128[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["INCV", Int32], Returns["TAU", Complex128], Returns["LDC", Int32]]: ...
 
 @bind("ZLARF1F")
 @external
@@ -33258,7 +33258,7 @@ def zlarf1f(
     C: Complex128[LDC, Flat],
     LDC: Int32,
     WORK: Complex128[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["INCV", Int32], Returns["TAU", Complex128], Returns["LDC", Int32]]: ...
 
 @bind("ZLARF1L")
 @external
@@ -33273,7 +33273,7 @@ def zlarf1l(
     C: Complex128[LDC, Flat],
     LDC: Int32,
     WORK: Complex128[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["INCV", Int32], Returns["TAU", Complex128], Returns["LDC", Int32]]: ...
 
 @bind("ZLARFB")
 @external
@@ -33294,7 +33294,7 @@ def zlarfb(
     LDC: Int32,
     WORK: Complex128[LDWORK, Flat],
     LDWORK: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDC", Int32], Returns["LDWORK", Int32]]: ...
 
 @bind("ZLARFB_GETT")
 @external
@@ -33312,7 +33312,7 @@ def zlarfb_gett(
     LDB: Int32,
     WORK: Complex128[LDWORK, Flat],
     LDWORK: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDT", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDWORK", Int32]]: ...
 
 @bind("ZLARFG")
 @external
@@ -33323,7 +33323,7 @@ def zlarfg(
     X: Complex128[Flat],
     INCX: Int32,
     TAU: Complex128
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Complex128], Returns["INCX", Int32], Returns["TAU", Complex128]]: ...
 
 @bind("ZLARFGP")
 @external
@@ -33334,7 +33334,7 @@ def zlarfgp(
     X: Complex128[Flat],
     INCX: Int32,
     TAU: Complex128
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Complex128], Returns["INCX", Int32], Returns["TAU", Complex128]]: ...
 
 @bind("ZLARFT")
 @external
@@ -33349,7 +33349,7 @@ def zlarft(
     TAU: Complex128[Flat],
     T: Complex128[LDT, Flat],
     LDT: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["LDV", Int32], Returns["LDT", Int32]]: ...
 
 @bind("ZLARFX")
 @external
@@ -33363,7 +33363,7 @@ def zlarfx(
     C: Complex128[LDC, Flat],
     LDC: Int32,
     WORK: Complex128[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["TAU", Complex128], Returns["LDC", Int32]]: ...
 
 @bind("ZLARFY")
 @external
@@ -33377,7 +33377,7 @@ def zlarfy(
     C: Complex128[LDC, Flat],
     LDC: Int32,
     WORK: Complex128[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCV", Int32], Returns["TAU", Complex128], Returns["LDC", Int32]]: ...
 
 @bind("ZLARGV")
 @external
@@ -33390,7 +33390,7 @@ def zlargv(
     INCY: Int32,
     C: Float64[Flat],
     INCC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32], Returns["INCC", Int32]]: ...
 
 @bind("ZLARNV")
 @external
@@ -33400,7 +33400,7 @@ def zlarnv(
     ISEED: Int32[4],
     N: Int32,
     X: Complex128[Flat]
-) -> None: ...
+) -> tuple[Returns["IDIST", Int32], Returns["N", Int32]]: ...
 
 @bind("ZLARRV")
 @external
@@ -33431,7 +33431,7 @@ def zlarrv(
     WORK: Float64[Flat],
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["PIVMIN", Float64], Returns["M", Int32], Returns["DOL", Int32], Returns["DOU", Int32], Returns["MINRGP", Float64], Returns["RTOL1", Float64], Returns["RTOL2", Float64], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLARSCL2")
 @external
@@ -33442,7 +33442,7 @@ def zlarscl2(
     D: Float64[Flat],
     X: Complex128[LDX, Flat],
     LDX: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDX", Int32]]: ...
 
 @bind("ZLARTG")
 @external
@@ -33453,7 +33453,7 @@ def zlartg(
     c: Float64,
     s: Complex128,
     r: Complex128
-) -> None: ...
+) -> tuple[Returns["f", Complex128], Returns["g", Complex128], Returns["c", Float64], Returns["s", Complex128], Returns["r", Complex128]]: ...
 
 @bind("ZLARTV")
 @external
@@ -33467,7 +33467,7 @@ def zlartv(
     C: Float64[Flat],
     S: Complex128[Flat],
     INCC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32], Returns["INCC", Int32]]: ...
 
 @bind("ZLARZ")
 @external
@@ -33483,7 +33483,7 @@ def zlarz(
     C: Complex128[LDC, Flat],
     LDC: Int32,
     WORK: Complex128[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["L", Int32], Returns["INCV", Int32], Returns["TAU", Complex128], Returns["LDC", Int32]]: ...
 
 @bind("ZLARZB")
 @external
@@ -33505,7 +33505,7 @@ def zlarzb(
     LDC: Int32,
     WORK: Complex128[LDWORK, Flat],
     LDWORK: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDC", Int32], Returns["LDWORK", Int32]]: ...
 
 @bind("ZLARZT")
 @external
@@ -33520,7 +33520,7 @@ def zlarzt(
     TAU: Complex128[Flat],
     T: Complex128[LDT, Flat],
     LDT: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["LDV", Int32], Returns["LDT", Int32]]: ...
 
 @bind("ZLASCL")
 @external
@@ -33536,7 +33536,7 @@ def zlascl(
     A: Complex128[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["KL", Int32], Returns["KU", Int32], Returns["CFROM", Float64], Returns["CTO", Float64], Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLASCL2")
 @external
@@ -33547,7 +33547,7 @@ def zlascl2(
     D: Float64[Flat],
     X: Complex128[LDX, Flat],
     LDX: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDX", Int32]]: ...
 
 @bind("ZLASET")
 @external
@@ -33560,7 +33560,7 @@ def zlaset(
     BETA: Complex128,
     A: Complex128[LDA, Flat],
     LDA: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Complex128], Returns["BETA", Complex128], Returns["LDA", Int32]]: ...
 
 @bind("ZLASR")
 @external
@@ -33575,7 +33575,7 @@ def zlasr(
     S: Float64[Flat],
     A: Complex128[LDA, Flat],
     LDA: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32]]: ...
 
 @bind("ZLASSQ")
 @external
@@ -33586,7 +33586,7 @@ def zlassq(
     incx: Int32,
     scale: Float64,
     sumsq: Float64
-) -> None: ...
+) -> tuple[Returns["n", Int32], Returns["incx", Int32], Returns["scale", Float64], Returns["sumsq", Float64]]: ...
 
 @bind("ZLASWLQ")
 @external
@@ -33603,7 +33603,7 @@ def zlaswlq(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["MB", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLASWP")
 @external
@@ -33616,7 +33616,7 @@ def zlaswp(
     K2: Int32,
     IPIV: Int32[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["K1", Int32], Returns["K2", Int32], Returns["INCX", Int32]]: ...
 
 @bind("ZLASYF")
 @external
@@ -33632,7 +33632,7 @@ def zlasyf(
     W: Complex128[LDW, Flat],
     LDW: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NB", Int32], Returns["KB", Int32], Returns["LDA", Int32], Returns["LDW", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLASYF_AA")
 @external
@@ -33648,7 +33648,7 @@ def zlasyf_aa(
     H: Complex128[LDH, Flat],
     LDH: Int32,
     WORK: Complex128[Flat]
-) -> None: ...
+) -> tuple[Returns["J1", Int32], Returns["M", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDH", Int32]]: ...
 
 @bind("ZLASYF_RK")
 @external
@@ -33665,7 +33665,7 @@ def zlasyf_rk(
     W: Complex128[LDW, Flat],
     LDW: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NB", Int32], Returns["KB", Int32], Returns["LDA", Int32], Returns["LDW", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLASYF_ROOK")
 @external
@@ -33681,7 +33681,7 @@ def zlasyf_rook(
     W: Complex128[LDW, Flat],
     LDW: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NB", Int32], Returns["KB", Int32], Returns["LDA", Int32], Returns["LDW", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLAT2C")
 @external
@@ -33694,7 +33694,7 @@ def zlat2c(
     SA: Complex64[LDSA, Flat],
     LDSA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDSA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLATBS")
 @external
@@ -33712,7 +33712,7 @@ def zlatbs(
     SCALE: Float64,
     CNORM: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["SCALE", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZLATDF")
 @external
@@ -33727,7 +33727,7 @@ def zlatdf(
     RDSCAL: Float64,
     IPIV: Int32[Flat],
     JPIV: Int32[Flat]
-) -> None: ...
+) -> tuple[Returns["IJOB", Int32], Returns["N", Int32], Returns["LDZ", Int32], Returns["RDSUM", Float64], Returns["RDSCAL", Float64]]: ...
 
 @bind("ZLATPS")
 @external
@@ -33743,7 +33743,7 @@ def zlatps(
     SCALE: Float64,
     CNORM: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SCALE", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZLATRD")
 @external
@@ -33758,7 +33758,7 @@ def zlatrd(
     TAU: Complex128[Flat],
     W: Complex128[LDW, Flat],
     LDW: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDW", Int32]]: ...
 
 @bind("ZLATRS")
 @external
@@ -33775,7 +33775,7 @@ def zlatrs(
     SCALE: Float64,
     CNORM: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCALE", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZLATRS3")
 @external
@@ -33796,7 +33796,7 @@ def zlatrs3(
     WORK: Float64[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDX", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLATRZ")
 @external
@@ -33809,7 +33809,7 @@ def zlatrz(
     LDA: Int32,
     TAU: Complex128[Flat],
     WORK: Complex128[Flat]
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["L", Int32], Returns["LDA", Int32]]: ...
 
 @bind("ZLATSQR")
 @external
@@ -33826,7 +33826,7 @@ def zlatsqr(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["MB", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLAUNHR_COL_GETRFNP")
 @external
@@ -33838,7 +33838,7 @@ def zlaunhr_col_getrfnp(
     LDA: Int32,
     D: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLAUNHR_COL_GETRFNP2")
 @external
@@ -33850,7 +33850,7 @@ def zlaunhr_col_getrfnp2(
     LDA: Int32,
     D: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLAUU2")
 @external
@@ -33861,7 +33861,7 @@ def zlauu2(
     A: Complex128[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZLAUUM")
 @external
@@ -33872,7 +33872,7 @@ def zlauum(
     A: Complex128[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPBCON")
 @external
@@ -33888,7 +33888,7 @@ def zpbcon(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZPBEQU")
 @external
@@ -33903,7 +33903,7 @@ def zpbequ(
     SCOND: Float64,
     AMAX: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["SCOND", Float64], Returns["AMAX", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZPBRFS")
 @external
@@ -33926,7 +33926,7 @@ def zpbrfs(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPBSTF")
 @external
@@ -33938,7 +33938,7 @@ def zpbstf(
     AB: Complex128[LDAB, Flat],
     LDAB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPBSV")
 @external
@@ -33953,7 +33953,7 @@ def zpbsv(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPBSVX")
 @external
@@ -33980,7 +33980,7 @@ def zpbsvx(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDAFB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZPBTF2")
 @external
@@ -33992,7 +33992,7 @@ def zpbtf2(
     AB: Complex128[LDAB, Flat],
     LDAB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPBTRF")
 @external
@@ -34004,7 +34004,7 @@ def zpbtrf(
     AB: Complex128[LDAB, Flat],
     LDAB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPBTRS")
 @external
@@ -34019,7 +34019,7 @@ def zpbtrs(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPFTRF")
 @external
@@ -34030,7 +34030,7 @@ def zpftrf(
     N: Int32,
     A: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPFTRI")
 @external
@@ -34041,7 +34041,7 @@ def zpftri(
     N: Int32,
     A: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPFTRS")
 @external
@@ -34055,7 +34055,7 @@ def zpftrs(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPOCON")
 @external
@@ -34070,7 +34070,7 @@ def zpocon(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZPOEQU")
 @external
@@ -34083,7 +34083,7 @@ def zpoequ(
     SCOND: Float64,
     AMAX: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCOND", Float64], Returns["AMAX", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZPOEQUB")
 @external
@@ -34096,7 +34096,7 @@ def zpoequb(
     SCOND: Float64,
     AMAX: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCOND", Float64], Returns["AMAX", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZPORFS")
 @external
@@ -34118,7 +34118,7 @@ def zporfs(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPORFSX")
 @external
@@ -34147,7 +34147,7 @@ def zporfsx(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPOSV")
 @external
@@ -34161,7 +34161,7 @@ def zposv(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPOSVX")
 @external
@@ -34187,7 +34187,7 @@ def zposvx(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZPOSVXX")
 @external
@@ -34218,7 +34218,7 @@ def zposvxx(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["RPVGRW", Float64], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPOTF2")
 @external
@@ -34229,7 +34229,7 @@ def zpotf2(
     A: Complex128[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPOTRF")
 @external
@@ -34240,7 +34240,7 @@ def zpotrf(
     A: Complex128[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPOTRF2")
 @external
@@ -34251,7 +34251,7 @@ def zpotrf2(
     A: Complex128[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPOTRI")
 @external
@@ -34262,7 +34262,7 @@ def zpotri(
     A: Complex128[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPOTRS")
 @external
@@ -34276,7 +34276,7 @@ def zpotrs(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPPCON")
 @external
@@ -34290,7 +34290,7 @@ def zppcon(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZPPEQU")
 @external
@@ -34303,7 +34303,7 @@ def zppequ(
     SCOND: Float64,
     AMAX: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SCOND", Float64], Returns["AMAX", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZPPRFS")
 @external
@@ -34323,7 +34323,7 @@ def zpprfs(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPPSV")
 @external
@@ -34336,7 +34336,7 @@ def zppsv(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPPSVX")
 @external
@@ -34360,7 +34360,7 @@ def zppsvx(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZPPTRF")
 @external
@@ -34370,7 +34370,7 @@ def zpptrf(
     N: Int32,
     AP: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPPTRI")
 @external
@@ -34380,7 +34380,7 @@ def zpptri(
     N: Int32,
     AP: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPPTRS")
 @external
@@ -34393,7 +34393,7 @@ def zpptrs(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPSTF2")
 @external
@@ -34408,7 +34408,7 @@ def zpstf2(
     TOL: Float64,
     WORK: Float64[2 * N],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["RANK", Int32], Returns["TOL", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZPSTRF")
 @external
@@ -34423,7 +34423,7 @@ def zpstrf(
     TOL: Float64,
     WORK: Float64[2 * N],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["RANK", Int32], Returns["TOL", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZPTCON")
 @external
@@ -34436,7 +34436,7 @@ def zptcon(
     RCOND: Float64,
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZPTEQR")
 @external
@@ -34450,7 +34450,7 @@ def zpteqr(
     LDZ: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPTRFS")
 @external
@@ -34472,7 +34472,7 @@ def zptrfs(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPTSV")
 @external
@@ -34485,7 +34485,7 @@ def zptsv(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPTSVX")
 @external
@@ -34508,7 +34508,7 @@ def zptsvx(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZPTTRF")
 @external
@@ -34518,7 +34518,7 @@ def zpttrf(
     D: Float64[Flat],
     E: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPTTRS")
 @external
@@ -34532,7 +34532,7 @@ def zpttrs(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZPTTS2")
 @external
@@ -34545,7 +34545,7 @@ def zptts2(
     E: Complex128[Flat],
     B: Complex128[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["IUPLO", Int32], Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32]]: ...
 
 @bind("ZROT")
 @external
@@ -34558,7 +34558,7 @@ def zrot(
     INCY: Int32,
     C: Float64,
     S: Complex128
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32], Returns["C", Float64], Returns["S", Complex128]]: ...
 
 @bind("ZRSCL")
 @external
@@ -34568,7 +34568,7 @@ def zrscl(
     A: Complex128,
     X: Complex128[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["A", Complex128], Returns["INCX", Int32]]: ...
 
 @bind("ZSPCON")
 @external
@@ -34582,7 +34582,7 @@ def zspcon(
     RCOND: Float64,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZSPMV")
 @external
@@ -34597,7 +34597,7 @@ def zspmv(
     BETA: Complex128,
     Y: Complex128[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Complex128], Returns["INCX", Int32], Returns["BETA", Complex128], Returns["INCY", Int32]]: ...
 
 @bind("ZSPR")
 @external
@@ -34609,7 +34609,7 @@ def zspr(
     X: Complex128[Flat],
     INCX: Int32,
     AP: Complex128[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Complex128], Returns["INCX", Int32]]: ...
 
 @bind("ZSPRFS")
 @external
@@ -34630,7 +34630,7 @@ def zsprfs(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSPSV")
 @external
@@ -34644,7 +34644,7 @@ def zspsv(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSPSVX")
 @external
@@ -34667,7 +34667,7 @@ def zspsvx(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZSPTRF")
 @external
@@ -34678,7 +34678,7 @@ def zsptrf(
     AP: Complex128[Flat],
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSPTRI")
 @external
@@ -34690,7 +34690,7 @@ def zsptri(
     IPIV: Int32[Flat],
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSPTRS")
 @external
@@ -34704,7 +34704,7 @@ def zsptrs(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSTEDC")
 @external
@@ -34723,7 +34723,7 @@ def zstedc(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSTEGR")
 @external
@@ -34749,7 +34749,7 @@ def zstegr(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["ABSTOL", Float64], Returns["M", Int32], Returns["LDZ", Int32], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSTEIN")
 @external
@@ -34768,7 +34768,7 @@ def zstein(
     IWORK: Int32[Flat],
     IFAIL: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["M", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSTEMR")
 @external
@@ -34795,7 +34795,7 @@ def zstemr(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["VL", Float64], Returns["VU", Float64], Returns["IL", Int32], Returns["IU", Int32], Returns["M", Int32], Returns["LDZ", Int32], Returns["NZC", Int32], Returns["TRYRAC", Bool], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSTEQR")
 @external
@@ -34809,7 +34809,7 @@ def zsteqr(
     LDZ: Int32,
     WORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDZ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYCON")
 @external
@@ -34824,7 +34824,7 @@ def zsycon(
     RCOND: Float64,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZSYCON_3")
 @external
@@ -34840,7 +34840,7 @@ def zsycon_3(
     RCOND: Float64,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZSYCON_ROOK")
 @external
@@ -34855,7 +34855,7 @@ def zsycon_rook(
     RCOND: Float64,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["ANORM", Float64], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZSYCONV")
 @external
@@ -34869,7 +34869,7 @@ def zsyconv(
     IPIV: Int32[Flat],
     E: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYCONVF")
 @external
@@ -34883,7 +34883,7 @@ def zsyconvf(
     E: Complex128[Flat],
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYCONVF_ROOK")
 @external
@@ -34897,7 +34897,7 @@ def zsyconvf_rook(
     E: Complex128[Flat],
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYEQUB")
 @external
@@ -34912,7 +34912,7 @@ def zsyequb(
     AMAX: Float64,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["SCOND", Float64], Returns["AMAX", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZSYMV")
 @external
@@ -34928,7 +34928,7 @@ def zsymv(
     BETA: Complex128,
     Y: Complex128[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Complex128], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Complex128], Returns["INCY", Int32]]: ...
 
 @bind("ZSYR")
 @external
@@ -34941,7 +34941,7 @@ def zsyr(
     INCX: Int32,
     A: Complex128[LDA, Flat],
     LDA: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Complex128], Returns["INCX", Int32], Returns["LDA", Int32]]: ...
 
 @bind("ZSYRFS")
 @external
@@ -34964,7 +34964,7 @@ def zsyrfs(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYRFSX")
 @external
@@ -34994,7 +34994,7 @@ def zsyrfsx(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYSV")
 @external
@@ -35011,7 +35011,7 @@ def zsysv(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYSV_AA")
 @external
@@ -35028,7 +35028,7 @@ def zsysv_aa(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYSV_AA_2STAGE")
 @external
@@ -35048,7 +35048,7 @@ def zsysv_aa_2stage(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LTB", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYSV_RK")
 @external
@@ -35066,7 +35066,7 @@ def zsysv_rk(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYSV_ROOK")
 @external
@@ -35083,7 +35083,7 @@ def zsysv_rook(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYSVX")
 @external
@@ -35109,7 +35109,7 @@ def zsysvx(
     LWORK: Int32,
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYSVXX")
 @external
@@ -35141,7 +35141,7 @@ def zsysvxx(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDAF", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["RCOND", Float64], Returns["RPVGRW", Float64], Returns["N_ERR_BNDS", Int32], Returns["NPARAMS", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYSWAPR")
 @external
@@ -35153,7 +35153,7 @@ def zsyswapr(
     LDA: Int32,
     I1: Int32,
     I2: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["I1", Int32], Returns["I2", Int32]]: ...
 
 @bind("ZSYTF2")
 @external
@@ -35165,7 +35165,7 @@ def zsytf2(
     LDA: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYTF2_RK")
 @external
@@ -35178,7 +35178,7 @@ def zsytf2_rk(
     E: Complex128[Flat],
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYTF2_ROOK")
 @external
@@ -35190,7 +35190,7 @@ def zsytf2_rook(
     LDA: Int32,
     IPIV: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYTRF")
 @external
@@ -35204,7 +35204,7 @@ def zsytrf(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYTRF_AA")
 @external
@@ -35218,7 +35218,7 @@ def zsytrf_aa(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYTRF_AA_2STAGE")
 @external
@@ -35235,7 +35235,7 @@ def zsytrf_aa_2stage(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LTB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYTRF_RK")
 @external
@@ -35250,7 +35250,7 @@ def zsytrf_rk(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYTRF_ROOK")
 @external
@@ -35264,7 +35264,7 @@ def zsytrf_rook(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYTRI")
 @external
@@ -35277,7 +35277,7 @@ def zsytri(
     IPIV: Int32[Flat],
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYTRI2")
 @external
@@ -35291,7 +35291,7 @@ def zsytri2(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYTRI2X")
 @external
@@ -35305,7 +35305,7 @@ def zsytri2x(
     WORK: Complex128[N + NB + 1, Flat],
     NB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["NB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYTRI_3")
 @external
@@ -35320,7 +35320,7 @@ def zsytri_3(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYTRI_3X")
 @external
@@ -35335,7 +35335,7 @@ def zsytri_3x(
     WORK: Complex128[N + NB + 1, Flat],
     NB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["NB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYTRI_ROOK")
 @external
@@ -35348,7 +35348,7 @@ def zsytri_rook(
     IPIV: Int32[Flat],
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYTRS")
 @external
@@ -35363,7 +35363,7 @@ def zsytrs(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYTRS2")
 @external
@@ -35379,7 +35379,7 @@ def zsytrs2(
     LDB: Int32,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYTRS_3")
 @external
@@ -35395,7 +35395,7 @@ def zsytrs_3(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYTRS_AA")
 @external
@@ -35412,7 +35412,7 @@ def zsytrs_aa(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYTRS_AA_2STAGE")
 @external
@@ -35430,7 +35430,7 @@ def zsytrs_aa_2stage(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LTB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZSYTRS_ROOK")
 @external
@@ -35445,7 +35445,7 @@ def zsytrs_rook(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTBCON")
 @external
@@ -35462,7 +35462,7 @@ def ztbcon(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["LDAB", Int32], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZTBRFS")
 @external
@@ -35485,7 +35485,7 @@ def ztbrfs(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTBTRS")
 @external
@@ -35502,7 +35502,7 @@ def ztbtrs(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["KD", Int32], Returns["NRHS", Int32], Returns["LDAB", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTFSM")
 @external
@@ -35519,7 +35519,7 @@ def ztfsm(
     A: Complex128[Flat],
     B: Complex128[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Complex128], Returns["LDB", Int32]]: ...
 
 @bind("ZTFTRI")
 @external
@@ -35531,7 +35531,7 @@ def ztftri(
     N: Int32,
     A: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTFTTP")
 @external
@@ -35543,7 +35543,7 @@ def ztfttp(
     ARF: Complex128[Flat],
     AP: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTFTTR")
 @external
@@ -35556,7 +35556,7 @@ def ztfttr(
     A: Complex128[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTGEVC")
 @external
@@ -35579,7 +35579,7 @@ def ztgevc(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDS", Int32], Returns["LDP", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["MM", Int32], Returns["M", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTGEX2")
 @external
@@ -35598,7 +35598,7 @@ def ztgex2(
     LDZ: Int32,
     J1: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["WANTQ", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDQ", Int32], Returns["LDZ", Int32], Returns["J1", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTGEXC")
 @external
@@ -35618,7 +35618,7 @@ def ztgexc(
     IFST: Int32,
     ILST: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["WANTQ", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDQ", Int32], Returns["LDZ", Int32], Returns["IFST", Int32], Returns["ILST", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTGSEN")
 @external
@@ -35648,7 +35648,7 @@ def ztgsen(
     IWORK: Int32[Flat],
     LIWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["IJOB", Int32], Returns["WANTQ", Bool], Returns["WANTZ", Bool], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDQ", Int32], Returns["LDZ", Int32], Returns["M", Int32], Returns["PL", Float64], Returns["PR", Float64], Returns["LWORK", Int32], Returns["LIWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTGSJA")
 @external
@@ -35679,7 +35679,7 @@ def ztgsja(
     WORK: Complex128[Flat],
     NCYCLE: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["TOLA", Float64], Returns["TOLB", Float64], Returns["LDU", Int32], Returns["LDV", Int32], Returns["LDQ", Int32], Returns["NCYCLE", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTGSNA")
 @external
@@ -35705,7 +35705,7 @@ def ztgsna(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["MM", Int32], Returns["M", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTGSY2")
 @external
@@ -35731,7 +35731,7 @@ def ztgsy2(
     RDSUM: Float64,
     RDSCAL: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["IJOB", Int32], Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDC", Int32], Returns["LDD", Int32], Returns["LDE", Int32], Returns["LDF", Int32], Returns["SCALE", Float64], Returns["RDSUM", Float64], Returns["RDSCAL", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZTGSYL")
 @external
@@ -35759,7 +35759,7 @@ def ztgsyl(
     LWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["IJOB", Int32], Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDC", Int32], Returns["LDD", Int32], Returns["LDE", Int32], Returns["LDF", Int32], Returns["SCALE", Float64], Returns["DIF", Float64], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTPCON")
 @external
@@ -35774,7 +35774,7 @@ def ztpcon(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZTPLQT")
 @external
@@ -35792,7 +35792,7 @@ def ztplqt(
     LDT: Int32,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["L", Int32], Returns["MB", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTPLQT2")
 @external
@@ -35808,7 +35808,7 @@ def ztplqt2(
     T: Complex128[LDT, Flat],
     LDT: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["L", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTPMLQT")
 @external
@@ -35831,7 +35831,7 @@ def ztpmlqt(
     LDB: Int32,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["MB", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTPMQRT")
 @external
@@ -35854,7 +35854,7 @@ def ztpmqrt(
     LDB: Int32,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["NB", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTPQRT")
 @external
@@ -35872,7 +35872,7 @@ def ztpqrt(
     LDT: Int32,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["L", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTPQRT2")
 @external
@@ -35888,7 +35888,7 @@ def ztpqrt2(
     T: Complex128[LDT, Flat],
     LDT: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["L", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTPRFB")
 @external
@@ -35912,7 +35912,7 @@ def ztprfb(
     LDB: Int32,
     WORK: Complex128[LDWORK, Flat],
     LDWORK: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["LDV", Int32], Returns["LDT", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDWORK", Int32]]: ...
 
 @bind("ZTPRFS")
 @external
@@ -35933,7 +35933,7 @@ def ztprfs(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTPTRI")
 @external
@@ -35944,7 +35944,7 @@ def ztptri(
     N: Int32,
     AP: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTPTRS")
 @external
@@ -35959,7 +35959,7 @@ def ztptrs(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTPTTF")
 @external
@@ -35971,7 +35971,7 @@ def ztpttf(
     AP: Complex128[Flat],
     ARF: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTPTTR")
 @external
@@ -35983,7 +35983,7 @@ def ztpttr(
     A: Complex128[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTRCON")
 @external
@@ -35999,7 +35999,7 @@ def ztrcon(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["RCOND", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZTREVC")
 @external
@@ -36020,7 +36020,7 @@ def ztrevc(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDT", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["MM", Int32], Returns["M", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTREVC3")
 @external
@@ -36043,7 +36043,7 @@ def ztrevc3(
     RWORK: Float64[Flat],
     LRWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDT", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["MM", Int32], Returns["M", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTREXC")
 @external
@@ -36058,7 +36058,7 @@ def ztrexc(
     IFST: Int32,
     ILST: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDT", Int32], Returns["LDQ", Int32], Returns["IFST", Int32], Returns["ILST", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTRRFS")
 @external
@@ -36080,7 +36080,7 @@ def ztrrfs(
     WORK: Complex128[Flat],
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDX", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTRSEN")
 @external
@@ -36101,7 +36101,7 @@ def ztrsen(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDT", Int32], Returns["LDQ", Int32], Returns["M", Int32], Returns["S", Float64], Returns["SEP", Float64], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTRSNA")
 @external
@@ -36125,7 +36125,7 @@ def ztrsna(
     LDWORK: Int32,
     RWORK: Float64[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDT", Int32], Returns["LDVL", Int32], Returns["LDVR", Int32], Returns["MM", Int32], Returns["M", Int32], Returns["LDWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTRSYL")
 @external
@@ -36144,7 +36144,7 @@ def ztrsyl(
     LDC: Int32,
     SCALE: Float64,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ISGN", Int32], Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDC", Int32], Returns["SCALE", Float64], Returns["INFO", Int32]]: ...
 
 @bind("ZTRSYL3")
 @external
@@ -36165,7 +36165,7 @@ def ztrsyl3(
     SWORK: Float64[LDSWORK, Flat],
     LDSWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["ISGN", Int32], Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["LDC", Int32], Returns["SCALE", Float64], Returns["LDSWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTRTI2")
 @external
@@ -36177,7 +36177,7 @@ def ztrti2(
     A: Complex128[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTRTRI")
 @external
@@ -36189,7 +36189,7 @@ def ztrtri(
     A: Complex128[LDA, Flat],
     LDA: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTRTRS")
 @external
@@ -36205,7 +36205,7 @@ def ztrtrs(
     B: Complex128[LDB, Flat],
     LDB: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["NRHS", Int32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTRTTF")
 @external
@@ -36218,7 +36218,7 @@ def ztrttf(
     LDA: Int32,
     ARF: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTRTTP")
 @external
@@ -36230,7 +36230,7 @@ def ztrttp(
     LDA: Int32,
     AP: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZTZRZF")
 @external
@@ -36244,7 +36244,7 @@ def ztzrzf(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNBDB")
 @external
@@ -36272,7 +36272,7 @@ def zunbdb(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX12", Int32], Returns["LDX21", Int32], Returns["LDX22", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNBDB1")
 @external
@@ -36293,7 +36293,7 @@ def zunbdb1(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX21", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNBDB2")
 @external
@@ -36314,7 +36314,7 @@ def zunbdb2(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX21", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNBDB3")
 @external
@@ -36335,7 +36335,7 @@ def zunbdb3(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX21", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNBDB4")
 @external
@@ -36357,7 +36357,7 @@ def zunbdb4(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX21", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNBDB5")
 @external
@@ -36377,7 +36377,7 @@ def zunbdb5(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M1", Int32], Returns["M2", Int32], Returns["N", Int32], Returns["INCX1", Int32], Returns["INCX2", Int32], Returns["LDQ1", Int32], Returns["LDQ2", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNBDB6")
 @external
@@ -36397,7 +36397,7 @@ def zunbdb6(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M1", Int32], Returns["M2", Int32], Returns["N", Int32], Returns["INCX1", Int32], Returns["INCX2", Int32], Returns["LDQ1", Int32], Returns["LDQ2", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNCSD")
 @external
@@ -36435,7 +36435,7 @@ def zuncsd(
     LRWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX12", Int32], Returns["LDX21", Int32], Returns["LDX22", Int32], Returns["LDU1", Int32], Returns["LDU2", Int32], Returns["LDV1T", Int32], Returns["LDV2T", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNCSD2BY1")
 @external
@@ -36464,7 +36464,7 @@ def zuncsd2by1(
     LRWORK: Int32,
     IWORK: Int32[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["P", Int32], Returns["Q", Int32], Returns["LDX11", Int32], Returns["LDX21", Int32], Returns["LDU1", Int32], Returns["LDU2", Int32], Returns["LDV1T", Int32], Returns["LWORK", Int32], Returns["LRWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNG2L")
 @external
@@ -36478,7 +36478,7 @@ def zung2l(
     TAU: Complex128[Flat],
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNG2R")
 @external
@@ -36492,7 +36492,7 @@ def zung2r(
     TAU: Complex128[Flat],
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNGBR")
 @external
@@ -36508,7 +36508,7 @@ def zungbr(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNGHR")
 @external
@@ -36523,7 +36523,7 @@ def zunghr(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNGL2")
 @external
@@ -36537,7 +36537,7 @@ def zungl2(
     TAU: Complex128[Flat],
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNGLQ")
 @external
@@ -36552,7 +36552,7 @@ def zunglq(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNGQL")
 @external
@@ -36567,7 +36567,7 @@ def zungql(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNGQR")
 @external
@@ -36582,7 +36582,7 @@ def zungqr(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNGR2")
 @external
@@ -36596,7 +36596,7 @@ def zungr2(
     TAU: Complex128[Flat],
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNGRQ")
 @external
@@ -36611,7 +36611,7 @@ def zungrq(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNGTR")
 @external
@@ -36625,7 +36625,7 @@ def zungtr(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNGTSQR")
 @external
@@ -36642,7 +36642,7 @@ def zungtsqr(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["MB", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNGTSQR_ROW")
 @external
@@ -36659,7 +36659,7 @@ def zungtsqr_row(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["MB", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNHR_COL")
 @external
@@ -36674,7 +36674,7 @@ def zunhr_col(
     LDT: Int32,
     D: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["NB", Int32], Returns["LDA", Int32], Returns["LDT", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNM22")
 @external
@@ -36693,7 +36693,7 @@ def zunm22(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["N1", Int32], Returns["N2", Int32], Returns["LDQ", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNM2L")
 @external
@@ -36711,7 +36711,7 @@ def zunm2l(
     LDC: Int32,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNM2R")
 @external
@@ -36729,7 +36729,7 @@ def zunm2r(
     LDC: Int32,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNMBR")
 @external
@@ -36749,7 +36749,7 @@ def zunmbr(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNMHR")
 @external
@@ -36769,7 +36769,7 @@ def zunmhr(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ILO", Int32], Returns["IHI", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNML2")
 @external
@@ -36787,7 +36787,7 @@ def zunml2(
     LDC: Int32,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNMLQ")
 @external
@@ -36806,7 +36806,7 @@ def zunmlq(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNMQL")
 @external
@@ -36825,7 +36825,7 @@ def zunmql(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNMQR")
 @external
@@ -36844,7 +36844,7 @@ def zunmqr(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNMR2")
 @external
@@ -36862,7 +36862,7 @@ def zunmr2(
     LDC: Int32,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNMR3")
 @external
@@ -36881,7 +36881,7 @@ def zunmr3(
     LDC: Int32,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNMRQ")
 @external
@@ -36900,7 +36900,7 @@ def zunmrq(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNMRZ")
 @external
@@ -36920,7 +36920,7 @@ def zunmrz(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["L", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUNMTR")
 @external
@@ -36939,7 +36939,7 @@ def zunmtr(
     WORK: Complex128[Flat],
     LWORK: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDA", Int32], Returns["LDC", Int32], Returns["LWORK", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUPGTR")
 @external
@@ -36953,7 +36953,7 @@ def zupgtr(
     LDQ: Int32,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDQ", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZUPMTR")
 @external
@@ -36970,4 +36970,4 @@ def zupmtr(
     LDC: Int32,
     WORK: Complex128[Flat],
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["LDC", Int32], Returns["INFO", Int32]]: ...

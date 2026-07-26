@@ -60,7 +60,7 @@ def test_inheritance_and_polymorphism_are_completed_before_planning():
     )
 
 
-def test_class_overloads_project_exact_typed_matches_and_declared_module_calls():
+def test_class_overloads_project_exact_typed_matches_and_bound_generic_calls():
     plan = _plan(OVERLOADS)
     surface = _surface(plan, "accumulator")
     method = next(overload for overload in surface.overloads if overload.python_name == "add")
@@ -77,9 +77,10 @@ def test_class_overloads_project_exact_typed_matches_and_declared_module_calls()
             "Float64",
         )
         assert all(
-            candidate.class_call.invocation is ClassInvocationKind.MODULE_PROCEDURE for candidate in overload.candidates
+            candidate.class_call.invocation is ClassInvocationKind.TYPE_BOUND for candidate in overload.candidates
         )
-        assert all(candidate.class_call.type_bound_name is None for candidate in overload.candidates)
+        assert {candidate.class_call.type_bound_name for candidate in overload.candidates} == {"add"}
+        assert {candidate.bridge.native_name for candidate in overload.candidates} == {"add"}
 
 
 def test_same_named_module_procedure_and_method_are_both_public_without_bind():

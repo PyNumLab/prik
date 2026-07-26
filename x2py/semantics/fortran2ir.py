@@ -1608,7 +1608,12 @@ class FortranToIRConverter(ClassVisitor):
                     overload_sets.append(ProcedureOverloadSet(name))
                 continue
             if self._is_procedure_generic_name(name):
-                overload_sets.append(self._normal_overload_set(name, procedures))
+                overload_set = self._normal_overload_set(name, procedures)
+                for target_name, candidate in zip(binding.get("targets", ()), overload_set.procedures, strict=True):
+                    if lookup[target_name.casefold()].visibility == "private":
+                        candidate.native_name = name
+                        candidate.metadata[BIND_TARGET_METADATA] = name
+                overload_sets.append(overload_set)
                 continue
             placeholder = SemanticClass(dtype.name)
             defined_sets = self._defined_overload_sets(

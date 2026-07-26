@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Arg, Bool, Float64, Int32, Pass, Returns, bind, native_call, overload, private
+from x2py.contracts import Addr, Annotated, Arg, Bool, Float64, Int32, Pass, Polymorphic, Returns, bind, native_call, overload, private
 
 class vector:
     def __init__(
@@ -430,7 +430,7 @@ def assign_vector_real(
 @private
 @native_call([Arg(0), Addr(Arg(1))])
 def counter_add_integer(
-    self: counter,
+    self: Annotated[counter, Polymorphic],
     right: Int32
 ) -> counter: ...
 

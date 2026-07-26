@@ -153,7 +153,8 @@ in Wrapping Derived Types.
 
 ## Limitations
 
-- Generic constructors and initialization overloads are not yet supported.
+- Source generic interfaces are not inferred as constructors automatically.
+  Edited exact constructor overload sets are supported.
 - Polymorphic (`class(*)`) arguments and results are blocked.
 - Arrays of derived types and complex polymorphic cases are not supported yet.
 

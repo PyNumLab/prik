@@ -249,11 +249,7 @@ class PyiPrinter(ClassVisitor):
                 indent = ""
             generic = self._overload_generic_argument(candidate, overload_set.name) if in_class else ""
             bind_target = candidate.metadata.get(BIND_TARGET_METADATA)
-            bind = (
-                f"{indent}@{self._contract('bind')}({json.dumps(str(bind_target))})\n"
-                if bind_target and not in_class
-                else ""
-            )
+            bind = f"{indent}@{self._contract('bind')}({json.dumps(str(bind_target))})\n" if bind_target else ""
             definitions.append(f'{bind}{indent}@{self._contract("overload")}("{target}"{generic})\n{definition}')
         return "\n\n".join(definitions)
 

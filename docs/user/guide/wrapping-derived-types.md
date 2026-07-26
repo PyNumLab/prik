@@ -223,7 +223,7 @@ The generated contract uses the same explicit overload links as a module-level
 generic:
 
 ```python
-from x2py.contracts import Float64, Int32, overload, private
+from x2py.contracts import Float64, Int32, bind, overload, private
 
 class counter:
     @private
@@ -232,9 +232,11 @@ class counter:
     @private
     def add_real(self, amount: Float64) -> Float64: ...
 
+    @bind("add")
     @overload("add_integer")
     def add(self, amount: Int32) -> Int32: ...
 
+    @bind("add")
     @overload("add_real")
     def add(self, amount: Float64) -> Float64: ...
 ```
@@ -246,7 +248,9 @@ print(item.add(np.float64(0.5)))   # exact Float64 candidate
 
 The passed object participates in native dispatch but is already fixed by the
 generated class. The remaining arguments must still match one candidate
-exactly.
+exactly. Each `@overload` retains a concrete contract. `@bind("add")` routes
+the native call through the public type-bound generic because its specifics
+are private.
 
 ---
 
