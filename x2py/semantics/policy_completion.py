@@ -165,7 +165,6 @@ def _complete_ownership_policies(
         derived_types,
         strict_wrapper_names=strict_wrapper_names,
     )
-    class_targets = _class_root_target_names(module.classes)
     polymorphic_variants = _polymorphic_variant_map(module.classes)
     _complete_class_method_policies(
         module.classes,
@@ -183,12 +182,11 @@ def _complete_ownership_policies(
         )
     for function in module.functions:
         function_scope = str(function.origin.native_scope or module.name)
-        native_name = str(function.native_name or function.name)
         _complete_function(
             function,
             f"{function_scope}.{function.name}",
             derived_types=derived_types,
-            module_export=native_name not in class_targets,
+            module_export=True,
             polymorphic_variants=polymorphic_variants,
         )
     for overload_set in module.overload_sets:
@@ -501,6 +499,8 @@ def _complete_concrete_class_methods(
 ) -> None:
     """Attach completed function policy to constructors and ordinary methods."""
     calls = {method.owner_path: method for method in completed_methods}
+    surface = semantic_class.metadata.get(models.RESOLVED_CLASS_SURFACE_POLICY_METADATA)
+    constructor_call = surface.constructor.call if isinstance(surface, ClassSurfacePolicy) else None
     for method in semantic_class.methods:
         owner_path = f"{derived.owner_path}.{method.name}"
         if method.name == "__init__":
@@ -509,13 +509,15 @@ def _complete_concrete_class_methods(
                     method,
                     owner_path,
                     derived_types=derived_types,
+                    class_call=constructor_call,
                     module_export=False,
                     polymorphic_variants=polymorphic_variants,
                 )
             continue
+        function_owner_path = f"{derived.owner_path}.__method__.{method.name}"
         _complete_function(
             method,
-            owner_path,
+            function_owner_path,
             derived_types=derived_types,
             class_call=calls.get(owner_path),
             polymorphic_variants=polymorphic_variants,
@@ -771,17 +773,6 @@ def _iter_semantic_classes(classes: list[models.SemanticClass]):
     for semantic_class in classes:
         yield semantic_class
         yield from _iter_semantic_classes(semantic_class.classes)
-
-
-def _class_root_target_names(classes: list[models.SemanticClass]) -> frozenset[str]:
-    """Return native procedures consumed exclusively by completed class descriptors."""
-    targets = {
-        method.native_name or method.name
-        for semantic_class in _iter_semantic_classes(classes)
-        for method in semantic_class.methods
-        if method.name != "__init__" or method.metadata.get("bind_target")
-    }
-    return frozenset(str(target) for target in targets)
 
 
 def _polymorphic_variant_map(

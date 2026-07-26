@@ -1131,10 +1131,9 @@ reassociation, or
 nullification makes previously returned payload proxies stale; field access on
 such a proxy raises `ReferenceError`.
 
-The full five-actual by six-dummy matrix, including `TARGET`, `VALUE`, empty
-state, pointer `INTENT(IN)`, deliberate incompatibilities, and calls with many
-derived objects, is maintained in
-[Scalar Actuals And Native Dummies](wrapping-derived-types.md#scalar-actuals-and-native-dummies).
+The full compatibility matrix includes `TARGET`, `VALUE`, empty state, pointer
+`INTENT(IN)`, and deliberate incompatibilities. See
+[Derived Objects And Native Dummies](memory-management.md#derived-objects-and-native-dummies).
 
 
 ## Pointer Arguments, Results, And Association
@@ -1523,22 +1522,22 @@ derived components are not automatic constructor keywords.
 
 Removing either generated `__init__` form from an edited `.pyi` suppresses
 public construction; x2py does not regenerate it. To use one concrete native
-initializer, bind `__init__` to another same-class method:
+initializer, bind `__init__` to its native name and place the new object with
+`Pass()`:
 
 ```python
-from x2py.contracts import Float64, Int32, bind, private
+from x2py.contracts import Addr, Arg, Float64, Int32, Pass, bind, native_call
 
 class settings:
-    @bind("initialize")
+    @bind("initialize_settings")
+    @native_call([Pass(), Addr(Arg(0)), Addr(Arg(1))])
     def __init__(self, iterations: Int32, tolerance: Float64) -> None: ...
-
-    @private
-    def initialize(self, iterations: Int32, tolerance: Float64) -> None: ...
 ```
 
-The target method must have the same Python call shape and return type. A public
-target remains callable as a method; `@private` keeps the signature in the
-standalone `.pyi` but exposes only construction to users.
+Exactly one `Pass()` identifies the allocated `settings` object. Its native
+position may appear anywhere. Other `settings` arguments remain ordinary
+`Arg(...)` inputs. The original module-level declaration may remain public or
+be marked `@private` independently.
 
 An edited contract can instead declare multiple `__init__` overload links.
 The wrapper allocates the ordinary Phase 8 native owner once, selects an exact

@@ -569,6 +569,7 @@ class ConstructorPolicy:
     fields: tuple[ConstructorFieldPolicy, ...]
     target_owner_path: str | None
     overload_name: str | None
+    call: ClassMethodPolicy | None
     lifecycle: tuple[ConstructionLifecycleAction, ...]
     rejection_message: str | None = None
 
@@ -1464,19 +1465,24 @@ def _class_constructor_policy(
                 fields=(),
                 target_owner_path=None,
                 overload_name=overload.name,
+                call=None,
                 lifecycle=lifecycle,
             ),
             tuple(blockers),
         )
     if bound:
         method = bound[0]
-        target_name = str(method.metadata[BIND_TARGET_METADATA])
+        call = replace(_class_method_policy(owner_path, method), public=False)
+        blocker = _class_method_blockers(call)
+        if blocker:
+            blockers.append(blocker)
         return (
             ConstructorPolicy(
                 kind=ClassConstructorKind.BOUND_PROCEDURE,
                 fields=(),
-                target_owner_path=f"{owner_path}.{target_name}",
+                target_owner_path=call.owner_path,
                 overload_name=None,
+                call=call,
                 lifecycle=lifecycle,
             ),
             tuple(blockers),
@@ -1488,6 +1494,7 @@ def _class_constructor_policy(
                 fields=(),
                 target_owner_path=None,
                 overload_name=None,
+                call=None,
                 lifecycle=(),
                 rejection_message=(f"{semantic_class.name} has no public constructor in the edited .pyi contract"),
             ),
@@ -1512,6 +1519,7 @@ def _class_constructor_policy(
             fields=fields,
             target_owner_path=None,
             overload_name=None,
+            call=None,
             lifecycle=lifecycle,
         ),
         tuple(blockers),
@@ -2531,7 +2539,8 @@ def _argument_policy(
         derived,
         polymorphic_variants,
         owner_path=argument_path,
-        force=_is_passed_object_argument(class_call, native_position),
+        force=_is_passed_object_argument(class_call, native_position)
+        or _is_exported_passed_object_argument(function, native_position),
     )
     bridge_data_action, bridge_copy_reason = _completed_argument_bridge_action(
         decision,
@@ -2643,6 +2652,14 @@ def _is_passed_object_argument(class_call: ClassMethodPolicy | None, native_posi
         class_call is not None
         and class_call.kind is ClassMethodKind.INSTANCE
         and class_call.passed_object_position == native_position
+    )
+
+
+def _is_exported_passed_object_argument(function: models.SemanticFunction, native_position: int) -> bool:
+    """Reuse passed-object dispatch when its native procedure is also exported."""
+    return bool(
+        function.metadata.get("fortran_type_bound_target")
+        and function.metadata.get("fortran_passed_object_position") == native_position
     )
 
 

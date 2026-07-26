@@ -199,25 +199,12 @@ class PyiPrinter(ClassVisitor):
         decorator = self._decorators(func, emitted_name=name)
         return self._emit_callable(
             name=name,
-            arguments=[self._emit_contract_argument(func, arg) for arg in self._call_arguments(func)],
+            arguments=[self._emit_call_argument(func, arg) for arg in self._call_arguments(func)],
             return_type=return_type,
             decorator=decorator,
             def_indent="",
             parameter_indent="    ",
         )
-
-    def _emit_contract_argument(self, func: SemanticFunction, arg: SemanticArgument) -> str:
-        """Omit native facts already implied by the surrounding callable contract."""
-        passed_object_name = func.metadata.get("fortran_passed_object_name")
-        if (
-            func.metadata.get("fortran_type_bound_target")
-            and isinstance(passed_object_name, str)
-            and arg.name == passed_object_name
-            and arg.semantic_type.metadata.get("fortran_polymorphic")
-        ):
-            arg = deepcopy(arg)
-            arg.semantic_type.metadata.pop("fortran_polymorphic", None)
-        return self._emit_call_argument(func, arg)
 
     def _visit_SemanticMethod(self, method: SemanticMethod) -> str:
         """Emit method syntax."""
@@ -1925,6 +1912,8 @@ class PyiPrinter(ClassVisitor):
     @staticmethod
     def _requires_native_call(func: SemanticFunction) -> bool:
         """Return whether requires native call."""
+        if isinstance(func, SemanticMethod) and func.name == "__init__" and func.metadata.get(BIND_TARGET_METADATA):
+            return True
         if PyiPrinter._scalar_descriptor_kind(func.return_type) is not None:
             return True
         if any(PyiPrinter._scalar_descriptor_kind(argument.semantic_type) is not None for argument in func.arguments):

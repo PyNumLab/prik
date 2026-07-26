@@ -133,7 +133,6 @@ class _PyiAstParser:
     def parse(self, tree: ast.Module) -> SemanticModule:
         _ModuleVisitor(self)._visit(tree)
         self._resolve_overloads()
-        self._restore_type_bound_targets()
         self._resolve_local_prototype_references()
         return self.module
 
@@ -242,33 +241,11 @@ class _PyiAstParser:
             visibility=visibility,
             origin=origin,
         )
-        self._validate_bound_constructor_targets(semantic_class)
         self._pending_overloads.extend(
             _PendingOverload(semantic_class, declaration, target, generic_name)
             for declaration, target, generic_name in body.pending_overloads
         )
         return semantic_class
-
-    @staticmethod
-    def _validate_bound_constructor_targets(semantic_class: SemanticClass) -> None:
-        for constructor in semantic_class.methods:
-            target_name = constructor.metadata.get(BIND_TARGET_METADATA)
-            if constructor.name != "__init__" or not isinstance(target_name, str):
-                continue
-            candidates = [
-                method for method in semantic_class.methods if method is not constructor and method.name == target_name
-            ]
-            if not candidates:
-                raise ValueError(f"Bound constructor references missing class method {target_name!r}")
-            if len(candidates) > 1:
-                raise ValueError(f"Bound constructor target {target_name!r} is ambiguous")
-            target = candidates[0]
-            target_arguments = list(target.arguments)
-            if isinstance(target, SemanticMethod) and target.passed_object_position is not None:
-                target_arguments.pop(target.passed_object_position)
-            if constructor.arguments != target_arguments or constructor.return_type != target.return_type:
-                raise ValueError(f"Bound constructor declaration is incompatible with class method {target_name!r}")
-            constructor.native_name = target.native_name or target.name
 
     @staticmethod
     def _class_metadata(base_classes: list[str]) -> dict[str, object]:
@@ -403,8 +380,10 @@ class _PyiAstParser:
             metadata[NATIVE_PROJECTION_METADATA] = True
         passed_object_name = None
         passed_object_position = None
-        if infer_passed_object and not is_static and node.name != "__init__":
+        if infer_passed_object and not is_static:
             pass_mappings = [mapping for mapping in actual_projection if mapping.value_kind == "pass"]
+            if node.name == "__init__" and len(pass_mappings) != 1:
+                raise ValueError("Bound constructor native_call requires exactly one Pass() entry")
             if len(pass_mappings) > 1:
                 raise ValueError("native_call may contain at most one Pass() entry")
             passed_object_position = pass_mappings[0].native_position if pass_mappings else 0
@@ -690,30 +669,6 @@ class _PyiAstParser:
                     f"{pending.target!r} more than once"
                 )
             overload_set.procedures.append(candidate)
-
-    def _restore_type_bound_targets(self) -> None:
-        """Mark module procedures referenced by type-bound method declarations."""
-
-        by_name = {
-            target: function
-            for function in self.module.functions
-            for target in {function.name, function.native_name}
-            if target
-        }
-        for semantic_class in self._iter_classes(self.module.classes):
-            for method in semantic_class.methods:
-                if method.is_static or method.passed_object_position is None:
-                    continue
-                target = by_name.get(method.native_name or method.name)
-                if target is None:
-                    continue
-                passed_position = method.passed_object_position
-                if not 0 <= passed_position < len(target.arguments):
-                    continue
-                target.metadata["fortran_type_bound_target"] = True
-                target.metadata["fortran_passed_object_name"] = target.arguments[passed_position].name
-                target.metadata["fortran_passed_object_position"] = passed_position
-                target.arguments[passed_position].semantic_type.metadata["fortran_polymorphic"] = True
 
     @classmethod
     def _iter_classes(cls, classes: list[SemanticClass]):

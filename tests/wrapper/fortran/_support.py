@@ -488,6 +488,9 @@ def _assert_modern_class_examples(module):
     value.shift(np.float64(1.5), np.float64(-2.0))
     assert value.x == np.float64(7.5)
     assert value.y == np.float64(6.0)
+    module.scale(value, np.float64(0.5))
+    assert value.x == np.float64(3.75)
+    assert value.y == np.float64(3.0)
 
     assert hasattr(module, "vector_store")
     store = module.vector_store()

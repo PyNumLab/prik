@@ -2,15 +2,12 @@ from x2py.contracts import Addr, Arg, Float64, Pass, bind, native_call
 
 
 class vector:
-    @bind("shift")
+    @bind("shift_vector")
+    @native_call([Addr(Arg(0)), Pass(), Addr(Arg(1))])
     def __init__(self, dx: Float64, dy: Float64) -> None: ...
 
     x: Float64
     y: Float64
-
-    @bind("shift_vector")
-    @native_call([Addr(Arg(0)), Pass(), Addr(Arg(1))])
-    def shift(self, dx: Float64, dy: Float64) -> None: ...
 
 
 @native_call([Addr(Arg(0)), Arg(1), Addr(Arg(2))])

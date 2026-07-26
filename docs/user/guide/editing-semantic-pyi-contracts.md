@@ -230,13 +230,13 @@ from x2py.contracts import Float64
 def norm2(values: Float64[:]) -> Float64: ...
 ```
 
-The leaf filename identifies the native module. The Python name is also the
-native procedure name unless `@bind(...)` says otherwise.
+The leaf filename identifies the native module. The declaration name selects
+the native procedure unless an
+[`@bind(...)`](wrapping-functions.md#python-and-native-names) target is present.
 
 ### Add or rename a native target
 
-Use `@bind(...)` when the declaration's Python name differs from the native
-specific procedure:
+Retain the native procedure name when choosing a different Python name:
 
 ```python
 from x2py.contracts import Float64, Int32, bind
@@ -255,7 +255,28 @@ from x2py.contracts import Float64, bind, external
 def norm2(values: Float64[:]) -> Float64: ...
 ```
 
-`@bind(...)` changes name resolution. It does not adapt an incompatible ABI.
+### Project a module function as a method
+
+A class method can call a declared module procedure. Use `Pass()` for the
+method receiver:
+
+```python
+from x2py.contracts import Addr, Arg, Float64, Pass, native_call
+
+class point:
+    @native_call([Pass(), Addr(Arg(0))])
+    def move_point(self, dx: Float64) -> None: ...
+
+@native_call([Arg(0), Addr(Arg(1))])
+def move_point(item: point, dx: Float64) -> None: ...
+```
+
+This exposes both `move_point(item, dx)` and `item.move_point(dx)`. The names
+occupy different Python scopes. No `@bind` is needed because both declarations
+select native `move_point`.
+
+The two declarations have independent visibility. Add `@private` to the
+module declaration when only the method should be public.
 
 ### Add an overload candidate
 
@@ -309,17 +330,19 @@ silently choose a native procedure.
 An edited class may bind `__init__` to one concrete native initializer:
 
 ```python
-from x2py.contracts import Addr, Arg, Int32, Pass, bind, native_call, private
+from x2py.contracts import Addr, Arg, Int32, Pass, bind, native_call
 
 class state:
-    @private
-    @native_call([Pass(), Addr(Arg(0))])
-    def init_state(self, size: Int32) -> None: ...
-
     @bind("init_state")
     @native_call([Pass(), Addr(Arg(0))])
     def __init__(self, size: Int32) -> None: ...
 ```
+
+`__init__` and `init_state` have different names, so `@bind("init_state")`
+selects the initializer. Exactly one `Pass()` places the newly allocated
+`state` in the native argument list. Its position is explicit, so other
+`state` arguments are not ambiguous. The selected native dummy must accept
+`state`.
 
 The generated field-keyword constructor and a bound native initializer are
 different contracts. Remove the old constructor declaration when replacing it.

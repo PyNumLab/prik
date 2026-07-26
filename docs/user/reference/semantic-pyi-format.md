@@ -296,8 +296,9 @@ def update(value: Float64[()]) -> None: ...
 
 `@bind("native_name")` remains necessary only when the Python declaration name
 differs from the native symbol. `@native_call` remains necessary only when the
-Python signature hides, inserts, or reorders native arguments. For type-bound
-methods, `Pass()` records a non-default passed-object position.
+Python signature hides, inserts, or reorders native arguments. `Pass()` marks
+the implicit class instance. This is a method receiver or a newly allocated
+constructor object.
 
 Ordinary semantic types are the native type contract. `Int32`, `Float64`,
 `Addr`, scalar storage rank `()`, array rank, shape, and focused metadata such
@@ -1729,6 +1730,12 @@ values instead.
 Class methods use the same stub form. An untyped leading `self` is allowed in a
 method and is not treated as a native argument.
 
+A declared module procedure may also be projected as an instance method.
+`Pass()` places `self` in its native argument list. The module function and
+method remain independent Python exports, even when they have the same name.
+Matching names select the same native procedure without `@bind`. A different
+Python method name requires `@bind("native_name")`.
+
 ## Generic Procedure Overloads
 
 The x2py semantic `.pyi` format uses `@overload("specific_name")` to link one
@@ -2006,30 +2013,19 @@ generation must not recreate it. A class left without any `__init__` has no
 public Python constructor; native allocation remains an internal wrapper
 operation only.
 
-An edited stub may instead replace the generated field-keyword constructor by
-binding `__init__` to one concrete class method with
-`@bind("specific_name")`. The target string must name another method declared in
-the same class, with the same Python-call signature and return type. The target
-method may be public, exposing both `state.init_state(...)` and `state(...)`, or
-marked `@private`, exposing only construction. A private target is still emitted
-in the `.pyi` because the `.pyi` must be sufficient to generate a wrapper
-without the original Fortran source. The target method represents the native
-initializer that keeps the native class argument; the Python `__init__`
-declaration omits that argument because Python supplies the newly allocated
-instance.
+An edited stub may replace the generated field-keyword constructor with one
+native initializer. `@bind("native_name")` selects the procedure. Exactly one
+`Pass()` in `@native_call(...)` selects the newly allocated object. Its native
+position is explicit, so other arguments of the same derived type remain
+unambiguous. The selected native dummy must accept the constructed type. The
+original module-level declaration may remain public or be marked `@private`.
+It may also be removed when only construction should expose the initializer.
+The `__init__` declaration remains sufficient to generate the native call.
 
 ```python
-from x2py.contracts import Addr, Arg, Float64, Int32, Pass, bind, native_call, private
+from x2py.contracts import Addr, Arg, Float64, Int32, Pass, bind, native_call
 
 class state:
-    @private
-    @native_call([Pass(), Addr(Arg(0)), Addr(Arg(1))])
-    def init_state(
-        self,
-        seed: Int32,
-        scale: Float64 = ...
-    ) -> None: ...
-
     @bind("init_state")
     @native_call([Pass(), Addr(Arg(0)), Addr(Arg(1))])
     def __init__(
@@ -2292,7 +2288,7 @@ Loaded projection entries:
 | `Return(i)` | native argument is supplied by projected return slot `i` as hidden writable storage passed by address |
 | `Return("name", i)` | named native argument is supplied by projected return slot `i` as hidden writable storage passed by address |
 | `Allocatable(Return(...))`, `Pointer(Return(...))` | native output dummy is a nullable scalar descriptor copied to the selected Python result slot |
-| `Pass()` | hidden type-bound passed-object argument |
+| `Pass()` | implicit class instance: a method receiver or newly allocated constructor object |
 | `Int32(1)`, `Float64(0.5)`, `Bool(False)`, `String[1]("N")` | hidden native literal with an explicit ABI type |
 | `Len(Arg(i))`, `Len(Return(i))`, `Len(Work("name"))` | hidden native length metadata |
 | `Arg(i).shape[d]`, `Return(i).shape[d]`, `Work("name").shape[d]` | hidden native shape metadata |

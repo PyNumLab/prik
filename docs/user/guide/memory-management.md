@@ -2,7 +2,7 @@
 title: Memory Management
 description: Clear ownership rules, views vs copies, lifetimes, and destruction responsibility in x2py
 audience: users, advanced users
-prerequisites: arrays, wrapping derived types
+prerequisites: arrays, wrapping derived types, allocatables, pointers
 related: allocatables.md, pointers.md, editing-semantic-pyi-contracts.md
 status: maintained
 publication: reviewed
@@ -200,6 +200,49 @@ without owning the target at all.
     `handle.to_numpy()` returns a view of current native storage. It never
     creates an automatic detached snapshot. If native code may reallocate or
     deallocate that storage, copy the view first.
+
+---
+
+## Derived Objects And Native Dummies
+
+Derived objects can come from ordinary wrappers, module state, allocatables,
+or pointers. Their origin determines which native dummies they can satisfy.
+
+### Payload Calls
+
+These dummies receive a derived value, not its allocation or association
+descriptor:
+
+| Python object origin | Ordinary or `target` dummy | `value` dummy |
+| --- | --- | --- |
+| Wrapper-owned ordinary object | Direct object reference | Typed value copy |
+| Native module object | Scoped live reference | Scoped typed value |
+| Wrapper-owned allocatable holder | Current payload | Payload value copy |
+| Module allocatable | Scoped payload | Scoped payload copy |
+| Wrapper-owned pointer holder | Current target | Target value copy |
+| Module pointer | Module target | Target value copy |
+
+An unallocated allocatable or unassociated pointer has no payload. It cannot
+satisfy an ordinary, `target`, or `value` dummy.
+
+### Descriptor Calls
+
+These dummies can update allocation or association state:
+
+| Python object origin | `allocatable` dummy | `pointer` dummy |
+| --- | --- | --- |
+| Wrapper-owned ordinary object | Incompatible | Input-only adapter |
+| Native module object | Incompatible | Scoped input-only adapter |
+| Wrapper-owned allocatable holder | Persistent holder | Payload input-only adapter |
+| Module allocatable | Allocation transaction | Scoped payload input-only adapter |
+| Wrapper-owned pointer holder | Incompatible | Persistent pointer holder |
+| Module pointer | Incompatible | Association transaction |
+
+Descriptor dummies accept empty state so native code can establish it. A
+nonpointer object can satisfy a pointer dummy only for `intent(in)`.
+
+Module allocation and association transactions are restored before the call
+returns. Pointer holders own their association variable, not an unknown target.
 
 ---
 

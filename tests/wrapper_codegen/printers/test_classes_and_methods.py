@@ -187,6 +187,7 @@ end module pass_mod
     assert "    def shift(\n        self,\n        dx: Float64,\n        dy: Float64" in code
     assert "        owner: Addr(vector)" not in code
     assert "@native_call([Addr(Arg(0)), Pass(), Addr(Arg(1))])" in code
+    assert "owner: Annotated[vector, Polymorphic]" in code
     assert '    @staticmethod\n    @bind("make_vector")' in code
     assert "value: Float64" in code
     assert "-> vector: ..." in code
@@ -391,10 +392,8 @@ def test_bound_constructor_pyi_generates_single_initializer_without_keyword_defa
     loaded = parse_pyi_text(
         """
 class state:
-    @private
-    def init_state(self, seed: Addr(Int32)) -> None: ...
-
     @bind("init_state")
+    @native_call([Pass(), Arg(0)])
     def __init__(self, seed: Addr(Int32)) -> None: ...
 
     id: Int32

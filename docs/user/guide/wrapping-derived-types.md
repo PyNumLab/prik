@@ -11,10 +11,12 @@ publication: reviewed
 # Wrapping Derived Types
 
 A supported Fortran `type` becomes a **generated Python extension class**.
-Constructor calls and ordinary function results own an opaque native instance.
+Constructors and ordinary function results create wrapper-owned Fortran
+instances.
 Nested components and module-owned objects use borrowed or native-owned
-instances of the same generated class. Field access and method calls go through
-generated native operations; Python never depends on the native memory layout.
+instances of the same generated class. Python accesses fields through generated
+getters and setters. Methods call wrapped Fortran procedures. Python never reads
+the native memory layout directly.
 
 ---
 
@@ -106,7 +108,40 @@ print(container.origin.x)  # 12.0
 - **Fields**: Public scalar numeric/logical/complex fields become Python attributes.
 - **Nested types**: Appear as borrowed child wrappers (they don’t own the memory).
 - **Results**: Derived-type function results create new wrapper-owned objects.
-- **Constructors**: Generated for public scalar fields (keyword-only).
+- **Default constructor**: Automatically generated from public, writable
+  primitive scalar fields.
+- **Default arguments**: Keyword-only (`logical`, `integer`, `real`, and
+  `complex`).
+- **Custom constructor**: Define `__init__` in the edited `.pyi` to call one
+  native initializer.
+
+---
+
+## Custom Constructor
+
+The default constructor assigns fields directly. An edited `.pyi` can replace
+it with a native initializer:
+
+```python
+from x2py.contracts import Addr, Arg, Float64, Pass, bind, native_call
+
+class point:
+    x: Float64
+    y: Float64
+
+    @bind("initialize_point")
+    @native_call([Addr(Arg(0)), Pass(), Addr(Arg(1))])
+    def __init__(self, x: Float64, y: Float64) -> None: ...
+```
+
+`__init__` and `initialize_point` have different names, so
+`@bind("initialize_point")` selects the initializer. `Pass()` marks the new
+`point` at zero-based native position 1. That dummy must accept `point`.
+Exactly one `Pass()` is required. Other `point` arguments use `Arg(...)` like
+ordinary constructor inputs.
+
+The generated module-level function can remain public or be marked `@private`.
+The custom declaration replaces only the default field constructor.
 
 ---
 
@@ -139,6 +174,33 @@ print(item.value)  # 7
 
 The method mutates the existing `counter`; it does not replace the Python
 object.
+
+### Project A Module Procedure As A Method
+
+An edited `.pyi` can expose one native procedure in both Python scopes:
+
+```python
+from x2py.contracts import Addr, Arg, Float64, Pass, native_call
+
+class point:
+    @native_call([Pass(), Addr(Arg(0))])
+    def move_point(self, dx: Float64) -> None: ...
+
+@native_call([Arg(0), Addr(Arg(1))])
+def move_point(item: point, dx: Float64) -> None: ...
+```
+
+Both calls reach native `move_point`:
+
+```python
+move_point(item, np.float64(2.0))
+item.move_point(np.float64(2.0))
+```
+
+`Pass()` inserts `item` for the method call. Both declarations already match
+native `move_point`, so no `@bind` is needed.
+
+Mark the module declaration `@private` to expose only the method.
 
 ---
 
@@ -249,34 +311,11 @@ exact.
 
 ---
 
-## Scalar Actuals And Native Dummies
-
-The generated class can represent several native origins. Compatibility depends
-on both the object passed from Python and the native dummy declaration:
-
-| Python object origin | Ordinary or `target` dummy | `allocatable` dummy | `pointer` dummy | `value` dummy |
-| --- | --- | --- | --- | --- |
-| Wrapper-owned ordinary object | Direct object reference | Incompatible | Input-only pointer adapter | Typed value copy |
-| Native module object | Scoped live reference | Incompatible | Scoped input-only pointer adapter | Scoped typed value |
-| Wrapper-owned allocatable holder | Current payload | Persistent holder | Payload input-only adapter | Payload value copy |
-| Module allocatable | Scoped payload | Allocation transaction | Scoped payload input-only adapter | Scoped payload copy |
-| Wrapper-owned pointer holder | Current target | Incompatible | Persistent pointer holder | Target value copy |
-| Module pointer | Module target | Incompatible | Association transaction | Target value copy |
-
-An unallocated allocatable or unassociated pointer cannot supply a payload to an
-ordinary, `target`, or `value` dummy. Descriptor dummies accept empty state so
-native code can establish it. A nonpointer actual can satisfy a pointer dummy
-only when that dummy is known to be `intent(in)`.
-
-Module allocation and association transactions are restored before the wrapped
-call returns. Pointer holders own their association variable, not an unknown
-target.
-
----
-
 ## Next
 
-- Learn about [Memory Management](memory-management.md) before keeping borrowed objects or views.
-- See [Allocatables](allocatables.md) and [Pointers](pointers.md) for advanced storage
+- Continue with [Allocatables](allocatables.md) and [Pointers](pointers.md) for
+  advanced storage.
+- Review [Memory Management](memory-management.md) before keeping borrowed
+  objects or views.
 
 ---

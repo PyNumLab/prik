@@ -97,7 +97,7 @@ absent and otherwise exposes the generated fields. Compatible allocatable
 dummies use a reversible typed `move_alloc` transaction; reassociable pointer
 dummies use a typed pointer transaction and restore the final association.
 Payload-only calls use direct or synchronous scoped addresses. See the
-[complete scalar-derived compatibility matrix](../guide/wrapping-derived-types.md#scalar-actuals-and-native-dummies).
+[derived-object compatibility matrix](../guide/memory-management.md#derived-objects-and-native-dummies).
 
 ## Visibility, Binding Names, And Imports
 

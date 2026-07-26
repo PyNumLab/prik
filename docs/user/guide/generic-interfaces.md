@@ -80,8 +80,9 @@ def convert(value: Float64) -> Float64: ...
 
 The concrete procedures are private because the source exports `convert`, not
 `convert_integer` or `convert_real`. Each `@overload` links the candidate to
-its concrete contract. `@bind("convert")` tells the bridge to call the public
-native generic.
+its concrete contract. Since those procedures are native-private,
+[`@bind("convert")`](wrapping-functions.md#python-and-native-names) routes both
+candidates through the public generic.
 
 ---
 
@@ -141,8 +142,7 @@ generation adds this bind automatically.
 - If no overload matches, a `TypeError` is raised.
 - If two candidates have the same runtime signature, wrapper generation fails.
 - Each `@overload` declaration links to exactly one concrete procedure.
-- Without `@bind`, a candidate calls its linked procedure.
-- With `@bind`, the candidate calls the named native generic instead.
+- `@bind` changes the final native target, not the linked candidate contract.
 - `@private` controls Python visibility only.
 
 Type-bound generics, defined operators, and defined assignment become methods

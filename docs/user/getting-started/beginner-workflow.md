@@ -67,7 +67,6 @@ import scale
 def test_scale_function():
     result = scale.scale(np.float64(3.0), np.float64(2.5))
     assert result == 7.5
-    assert isinstance(result, float)
 
 if __name__ == "__main__":
     test_scale_function()

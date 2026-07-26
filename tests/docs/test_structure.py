@@ -1099,6 +1099,8 @@ def test_first_wrapped_function_shows_contract_and_mentions_later_support_bounda
     )
 
     assert source_index < build_index < command_index < contract_index
+    assert "assert result == 7.5" in page
+    assert "isinstance(result, float)" not in page
     assert "## Current Limitations" not in page
 
 

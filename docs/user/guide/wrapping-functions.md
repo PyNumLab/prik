@@ -53,6 +53,38 @@ print(result)  # 7.5
 
 ---
 
+## Python And Native Names
+
+A contract declaration normally uses one name for both Python and the native
+procedure. Use `@bind("native_name")` only when those names differ.
+
+This edited contract exposes Python `multiply` while calling native `scale`:
+
+```python
+from x2py.contracts import Addr, Arg, Float64, bind, external, native_call
+
+@bind("scale")
+@external
+@native_call([Addr(Arg(0)), Addr(Arg(1))])
+def multiply(
+    value: Float64,
+    factor: Float64
+) -> Float64: ...
+```
+
+```python
+result = scale.multiply(np.float64(3.0), np.float64(2.5))
+print(result)  # 7.5
+```
+
+`@bind` changes the native target name. It does not change the argument
+contract or adapt an incompatible native interface. Matching names need no
+`@bind`.
+
+The same rule applies to functions, subroutines, and methods.
+
+---
+
 ## Array Return Values
 
 Functions can return arrays. These are returned as new NumPy arrays (Fortran-ordered by default).
