@@ -594,7 +594,7 @@ summary, the exhaustive matrix, and the test tree disagree.
 
 | Status | Collected nodes |
 | --- | ---: |
-| `wrapper-plan` | 362 |
+| `wrapper-plan` | 363 |
 | `dual-route` | 0 |
 | `legacy` | 0 |
 | `not-applicable` | 76 |
