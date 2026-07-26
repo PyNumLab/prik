@@ -83,6 +83,8 @@ print(adjust(np.int32(5), offset=np.int32(10)))    # 15 (keyword)
 - Optional arrays and derived types also accept `None` to indicate absence.
 - Optional `intent(out)` / `intent(inout)` arguments remain visible in Python
   so you can control `present(...)`.
+- An optional argument without `intent` uses the same conservative
+  `intent(inout)` behavior when present.
 
 Scalar allocatable and pointer descriptors are the three-state exception:
 omission means absent, `None` means present but unallocated or unassociated,
@@ -143,4 +145,5 @@ rules. Check the generated `.pyi` contract when mixing output kinds.
 ## Next
 
 - Continue with [Generic Interfaces](generic-interfaces.md).
-- For optional outputs and memory, see [Error Handling](error-handling.md) and [Memory Management](memory-management.md).
+- For optional outputs and memory, see [Error Handling](error-handling.md) and
+  [Memory Management](memory-management.md).

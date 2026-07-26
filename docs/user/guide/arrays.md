@@ -2,8 +2,8 @@
 title: Arrays
 description: NumPy array shape, layout, strides, and validation in x2py
 audience: users
-prerequisites: data types, wrapping functions
-related: allocatables.md, pointers.md, wrapping-subroutines.md
+prerequisites: data types
+related: strings.md, allocatables.md, pointers.md, wrapping-subroutines.md
 status: maintained
 publication: reviewed
 ---
@@ -19,7 +19,8 @@ arrays, `COPY_F`, `Flat` storage, and strided views.
 
 Small `intent` note for this page: `intent(in)` reads an array,
 `intent(inout)` mutates it, and `intent(out)` fills caller-provided storage.
-The subroutines page covers the full return rules.
+Without `intent`, x2py conservatively uses the `intent(inout)` rule. The
+subroutines page covers the full return rules.
 
 ---
 
@@ -425,6 +426,7 @@ Fortran-oriented contract. Strides are not an order workaround.
 | `intent(in)` array          | NumPy array read by native code              |
 | `intent(inout)` array       | Mutated in place; no Python return            |
 | `intent(out)` array         | Filled in place; no Python return             |
+| Array without `intent`      | Mutated in place; no Python return            |
 | Function returning array    | New NumPy array result                       |
 
 ---
@@ -456,7 +458,9 @@ Use this list when reading or editing a generated `.pyi` contract:
 
 - [Wrapping Functions](wrapping-functions.md) and
   [Wrapping Subroutines](wrapping-subroutines.md)
+- [Strings](strings.md) for fixed-width NumPy byte arrays
 - [Allocatables](allocatables.md) and [Pointers](pointers.md) for native
   allocation control
+- [Raw Addresses](raw-addresses.md) for unchecked address-based calls
 - [Language Feature Matrix](../language-support/feature-matrix.md) for support
   details

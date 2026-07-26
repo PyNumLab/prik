@@ -734,3 +734,8 @@ When an edited contract fails, reduce the edit to one surface change at a time:
 visibility, call ordering, ownership, mutability, or type shape. Keep the
 generated contract nearby and compare each intentional edit against the native
 artifact you are asking x2py to call.
+
+## Next
+
+- [Raw Addresses](raw-addresses.md) for primitive, array, and fixed-string
+  address boundaries

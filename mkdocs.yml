@@ -41,6 +41,7 @@ nav:
           - Overview: user/guide/index.md
           - Data Types: user/guide/data-types.md
           - Arrays: user/guide/arrays.md
+          - Strings: user/guide/strings.md
           - Wrapping Functions: user/guide/wrapping-functions.md
           - Wrapping Subroutines: user/guide/wrapping-subroutines.md
           - Wrapping Modules: user/guide/wrapping-modules.md
@@ -57,6 +58,7 @@ nav:
           - Distribution: user/guide/distribution.md
           - Fortran Wrapper Guide: user/guide/fortran-wrapper.md
           - Editing Semantic .pyi Contracts: user/guide/editing-semantic-pyi-contracts.md
+          - Raw Addresses: user/guide/raw-addresses.md
       - Tutorials:
           - Overview: user/tutorials/index.md
           - Basic Wrapper Tutorial: user/tutorials/basic-wrapper.md

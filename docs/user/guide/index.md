@@ -20,6 +20,7 @@ behavior, packaging, and distribution.
 
 - [Data Types](data-types.md) — Fortran types, semantic `.pyi` names, exact NumPy dtypes, strings, and arrays
 - [Arrays](arrays.md) — Rank, shape, strides, contiguity, and layout rules
+- [Strings](strings.md) — Immutable text, mutable byte storage, and string arrays
 - [Wrapping Functions](wrapping-functions.md)
 - [Wrapping Subroutines](wrapping-subroutines.md)
 - [Wrapping Modules](wrapping-modules.md)
@@ -56,6 +57,7 @@ behavior, packaging, and distribution.
 
 - **[Fortran Wrapper Guide](fortran-wrapper.md)** — Complete reference for the generated runtime surface
 - [Editing Semantic `.pyi` Contracts](editing-semantic-pyi-contracts.md) — When and how to customize contracts
+- [Raw Addresses](raw-addresses.md) — Advanced primitive, array, and fixed-string address boundaries
 - [Semantic `.pyi` Format](../reference/semantic-pyi-format.md) — Full annotation reference
 - [Language Feature Matrix](../language-support/feature-matrix.md) — Current support status (supported / partial / unsupported)
 

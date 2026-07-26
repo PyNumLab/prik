@@ -726,6 +726,9 @@ Python immutable scalars cannot expose native in-place mutation. Scalar
 `intent(out)` values are hidden and returned as new Python values. Source-built
 primitive scalar `intent(inout)` arguments remain visible inputs and are
 returned as replacement values; the original Python scalar object is unchanged.
+Without `intent`, x2py conservatively uses this `intent(inout)` behavior. This
+is common in legacy sources, but fixed-form and free-form code follow the same
+rule.
 Mutable semantics for strings use replacement projection as described below.
 
 Editable semantic contracts distinguish three numeric scalar boundaries:
@@ -878,7 +881,8 @@ The initial contents of an `intent(out)` array are ignored. An `intent(inout)`
 array also remains visible and is mutated in place. Neither ordinary array is
 duplicated in the return value. Array function results and hidden allocatable
 outputs still return Python-visible objects because the caller did not provide
-their storage.
+their storage. An array without `intent` follows the same conservative
+in-place rule as `intent(inout)`.
 
 ### Allocatable Outputs
 
@@ -1387,7 +1391,7 @@ X2PY_C_DOCS_END -->
   transferring ownership;
 - `intent(inout)` mutates that existing instance;
 - `intent(out)` fills a caller-provided instance without returning it again;
-  and
+- a dummy without `intent` follows the conservative `intent(inout)` rule; and
 - a function result is copied into a new wrapper-owned native instance before
   the Fortran temporary expires.
 

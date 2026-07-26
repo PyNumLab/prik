@@ -45,6 +45,7 @@ VISIBLE_C_DOCUMENTATION_EXCEPTIONS = {
     "docs/user/guide/enumerations.md": ("bind(C)",),
     "docs/user/guide/wrapping-derived-types.md": ("bind(C)",),
     "docs/user/guide/arrays.md": ("ORDER_C", "C-contiguous", "C-order", "C-oriented", 'order="C"'),
+    "docs/user/guide/raw-addresses.md": ("C-order", "C ordering"),
     "docs/user/reference/semantic-pyi-format.md": (
         "ORDER_C",
         "C-contiguous",
@@ -136,6 +137,7 @@ REQUIRED_USER_GUIDE_PAGES = [
     "user/guide/index.md",
     "user/guide/data-types.md",
     "user/guide/arrays.md",
+    "user/guide/strings.md",
     "user/guide/wrapping-functions.md",
     "user/guide/wrapping-subroutines.md",
     "user/guide/wrapping-modules.md",
@@ -152,6 +154,7 @@ REQUIRED_USER_GUIDE_PAGES = [
     "user/guide/distribution.md",
     "user/guide/fortran-wrapper.md",
     "user/guide/editing-semantic-pyi-contracts.md",
+    "user/guide/raw-addresses.md",
 ]
 CLI_HELP_GROUP_HEADINGS = [
     "commands:",
@@ -964,7 +967,18 @@ def test_next_sections_use_linked_bullet_destinations(relative_path: str) -> Non
         assert MARKDOWN_LINK.search(item), f"{relative_path}:{line_number}: Next item must include a Markdown link"
 
 
-@pytest.mark.parametrize("relative_path", REQUIRED_USER_GUIDE_PAGES[:-2])
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        path
+        for path in REQUIRED_USER_GUIDE_PAGES
+        if path
+        not in {
+            "user/guide/fortran-wrapper.md",
+            "user/guide/editing-semantic-pyi-contracts.md",
+        }
+    ],
+)
 def test_user_guide_commands_do_not_expose_fixture_paths(relative_path: str) -> None:
     page = (DOCS_ROOT / relative_path).read_text(encoding="utf-8")
     assert "python3 -m x2py tests/" not in page

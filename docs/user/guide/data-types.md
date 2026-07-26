@@ -3,7 +3,7 @@ title: Data Types
 description: How x2py maps Fortran types to Python, NumPy dtypes, and semantic contracts
 audience: users
 prerequisites: common beginner workflow
-related: arrays.md, wrapping-derived-types.md, ../reference/semantic-pyi-format.md
+related: arrays.md, strings.md, wrapping-derived-types.md, ../reference/semantic-pyi-format.md
 status: maintained
 publication: reviewed
 ---
@@ -126,8 +126,8 @@ def double(value: Float64) -> Float64: ...
 Use `T[()]` when the Python boundary is rank-zero NumPy storage. Arguments
 accept a 0-D NumPy array, and results return a 0-D NumPy array.
 Use type-level `Addr(T)` only for an API whose caller supplies a raw integer
-address. Arrays and strings already carry storage and do not need an address
-override.
+address. Prefer normal array and string contracts when the caller can pass the
+storage object itself.
 
 The semantic format can represent wider types such as `Float128` and
 `Complex256`, but the current Fortran wrapper blocks real storage wider than 64
@@ -138,6 +138,8 @@ bits and complex storage wider than 128 total bits instead of narrowing it.
 ## Next
 
 - **[Arrays](arrays.md)** - Rank, shape, strides, and contiguity rules
+- [Strings](strings.md) - Immutable values and mutable character storage
+- [Raw Addresses](raw-addresses.md) - Advanced address-based calls
 - [Wrapping Derived Types](wrapping-derived-types.md)
 - [Semantic `.pyi` Format](../reference/semantic-pyi-format.md)
 - Check the [Language Feature Matrix](../language-support/feature-matrix.md) for current type support status.

@@ -101,6 +101,8 @@ print(container.origin.x)  # 12.0
 - **Ownership**: Wrapper-owned objects are finalized when the Python object is garbage-collected.
 - **Mutation**: `intent(out)` and `intent(inout)` modify a caller-provided
   instance and do not return it again.
+- **Missing intent**: A dummy without `intent` follows the same conservative
+  in-place rule as `intent(inout)`.
 - **Fields**: Public scalar numeric/logical/complex fields become Python attributes.
 - **Nested types**: Appear as borrowed child wrappers (they don’t own the memory).
 - **Results**: Derived-type function results create new wrapper-owned objects.

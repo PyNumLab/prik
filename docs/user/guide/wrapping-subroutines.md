@@ -10,7 +10,9 @@ publication: reviewed
 
 # Wrapping Subroutines
 
-A Fortran `subroutine` has no direct return value. Instead, its `intent(out)` and `intent(inout)` arguments are projected into the Python result.
+A Fortran `subroutine` has no direct return value. Projected scalar and
+native-created outputs form the Python result. Caller-provided mutable objects
+change in place.
 
 ---
 
@@ -25,11 +27,13 @@ A Fortran `subroutine` has no direct return value. Instead, its `intent(out)` an
 | `intent(inout)` array       | Visible writable NumPy array | Mutated in place; not returned    |
 | Derived `intent(out/inout)` | Visible generated object     | Mutated in place; not returned    |
 | `intent(out)` allocatable   | Hidden (or optional)         | `Allocatable[...]` handle         |
+| No `intent`                 | Visible argument             | Conservative `intent(inout)` rule |
 
 Without `intent`, x2py uses the conservative `intent(inout)` behavior. A
 primitive scalar stays visible and its replacement value is returned. If the
 dummy is known to be input-only, remove that projected result from the
-generated contract.
+generated contract. This is common in legacy sources, but the rule applies to
+any dummy declaration without `intent`.
 
 ---
 

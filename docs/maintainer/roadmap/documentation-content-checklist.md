@@ -295,6 +295,8 @@ primary placeholder queue.
 - [x] `docs/user/guide/arrays.md`: maintained dtype, rank, shape, layout,
   C-order zero-copy and `COPY_F`, stride-aware view, lower-bound, assumed-rank,
   zero-size, result, and validation guide.
+- [x] `docs/user/guide/strings.md`: maintained immutable value, replacement,
+  mutable storage, fixed-width array, length, and encoding guide.
 - [x] `docs/user/guide/wrapping-functions.md`: maintained scalar, array-result,
   mixed-output, signature, native-call-limit, and evidence guide.
 - [x] `docs/user/guide/wrapping-subroutines.md`: maintained input, output,
@@ -326,6 +328,8 @@ primary placeholder queue.
 - [x] `docs/user/guide/fortran-wrapper.md`: maintained Fortran wrapper contract.
 - [x] `docs/user/guide/editing-semantic-pyi-contracts.md`: maintained editable
   `.pyi` contract guide.
+- [x] `docs/user/guide/raw-addresses.md`: maintained primitive, array,
+  fixed-string, lifetime, validation, and address-safety guide.
 - [x] `docs/user/tutorials/basic-wrapper.md`: maintained basic wrapper workflow.
 - [x] `docs/user/examples/verified-cookbook.md`: maintained verified example
   cookbook.

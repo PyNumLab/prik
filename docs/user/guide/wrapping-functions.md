@@ -129,4 +129,16 @@ total, count = sum_with_count(data_array)
 
 - Always pass **exact NumPy dtypes** (`np.float64`, `np.int32`, etc.).
 - Array results are returned as new NumPy arrays (copies).
-- `intent(out)` and `intent(inout)` values are handled by the generated contract.
+- Projected scalar outputs follow the direct function result in the return
+  tuple.
+- Caller-provided arrays and derived objects mutate in place. They are not
+  repeated in the return tuple.
+- Without `intent`, an argument uses conservative `intent(inout)` behavior.
+  Primitive scalar replacements follow the direct function result in the
+  Python return tuple.
+
+## Next
+
+- [Wrapping Subroutines](wrapping-subroutines.md) for the complete argument
+  projection rules
+- [Wrapping Modules](wrapping-modules.md) for native namespaces and state
