@@ -3,6 +3,14 @@
   margin: 0;
 }
 
+.wy-nav-side {
+  padding-bottom: 0;
+}
+
+.rst-versions {
+  display: none;
+}
+
 .rst-content pre {
   width: 100%;
   max-width: 56rem;

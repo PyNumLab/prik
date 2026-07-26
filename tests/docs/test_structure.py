@@ -1347,6 +1347,10 @@ def test_site_theme_keeps_sidebar_open_and_code_blocks_copyable() -> None:
     assert ".wy-nav-content" in layout_stylesheet
     assert "max-width: 1200px" in layout_stylesheet
     assert "margin: 0" in layout_stylesheet
+    assert ".wy-nav-side" in layout_stylesheet
+    assert "padding-bottom: 0" in layout_stylesheet
+    assert ".rst-versions" in layout_stylesheet
+    assert "display: none" in layout_stylesheet
     assert ".rst-content pre" in layout_stylesheet
     assert "width: 100%" in layout_stylesheet
     assert "max-width: 56rem" in layout_stylesheet
