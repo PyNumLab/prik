@@ -667,9 +667,9 @@ lifetime.
 | `call_local` | Converted scalar/string/array inputs, pointer inputs associated only for one call, and explicitly discarded immutable mutation. | `none` or `call_local` |
 | `in_place` | Caller-supplied writable scalar storage, NumPy arrays, and existing wrapper instances. | `caller` or the existing wrapper's `wrapper_dealloc` |
 | `copy_return` | Strings, ordinary array results, and immutable replacement results copied to Python. | `python_refcount` |
-| `snapshot_copy` | Detached copies for explicitly supported projections. Pointer-array handle results remain blocked until owner storage, target lifetime, descriptor extraction, and destroy behavior are implemented. | `python_refcount` |
+| `snapshot_copy` | Detached copies for explicitly supported projections. Pointer-array handle results instead preserve association in owned descriptor handles; they are not implicit snapshots. | `python_refcount` |
 | `borrowed_view` | Target-backed module allocatables and supported fields/components whose owner remains identifiable. | `native_owner` or `wrapper_dealloc` |
-| `wrapper_instance` | Derived-type output or owned allocatable result represented by a Python object controlling native storage. | `wrapper_dealloc` |
+| `wrapper_instance` | Derived-type output or owned native descriptor result represented by a Python object controlling persistent wrapper storage. | `wrapper_dealloc` |
 | `blocked` | Intentional declaration that no safe implemented transfer exists. | `blocked` |
 
 ### Destruction responsibilities

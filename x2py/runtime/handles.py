@@ -44,16 +44,13 @@ class _NativeArrayHandoff:
 
 @dataclass(frozen=True)
 class _NativeArrayDescriptorHandoff:
-    """Internal opaque handoff for persistent standard C descriptor storage."""
+    """Internal opaque handoff for one versioned native-handle capsule."""
 
-    address: int
-    owner: Any = None
+    capsule: Any
 
     def __post_init__(self) -> None:
-        if isinstance(self.address, bool) or not isinstance(self.address, int):
-            raise TypeError("native array descriptor handoff address must be an integer")
-        if self.address <= 0:
-            raise ValueError("native array descriptor handoff address must be a non-null positive pointer value")
+        if self.capsule is None:
+            raise TypeError("native array descriptor handoff capsule is required")
 
 
 def _numpy_view_from_pointer_c_descriptor(
@@ -106,6 +103,11 @@ def _native_array_handle_from_generated_ops(
             normalized = _generated_owned_descriptor_operation(operation, owner)
         elif name in {"shape", "to_numpy"} and owned:
             normalized = _generated_owned_descriptor_record_operation(operation, owner)
+        elif name == "associate":
+            normalized = _generated_pointer_associate_operation(
+                operation,
+                owner=owner if owned else None,
+            )
         elif name in {"allocate", "resize"}:
             normalized = _generated_shape_operation(operation, owner=owner if owned else None)
         elif owned:
@@ -135,6 +137,175 @@ def _native_array_handle_from_generated_ops(
             with suppress(Exception):
                 normalized_ops["destroy"](None)
         raise
+
+
+def _native_array_handle_from_contract(
+    descriptor_kind: str,
+    dtype: Any,
+    rank: int,
+) -> NativeArrayHandleBase:
+    """Create one owned, initially empty descriptor handle from a contract."""
+    descriptor_state = {
+        "record": _empty_descriptor_record(dtype, rank),
+        "owner": None,
+    }
+
+    def current_shape(_handle: NativeArrayHandleBase) -> tuple[int, ...] | None:
+        record = descriptor_state["record"]
+        if _pointer_descriptor_base_addr(record) == 0:
+            return None
+        shape, _strides = _pointer_descriptor_shape_and_strides(record)
+        return shape
+
+    def current_array_actual(_handle: NativeArrayHandleBase) -> _NativeArrayHandoff | None:
+        address = _pointer_descriptor_base_addr(descriptor_state["record"])
+        if address == 0:
+            return None
+        return _NativeArrayHandoff(address, owner=descriptor_state["owner"])
+
+    def descriptor(_handle: NativeArrayHandleBase) -> Mapping[str, Any]:
+        return descriptor_state["record"]
+
+    def present(_handle: NativeArrayHandleBase) -> bool:
+        return _pointer_descriptor_base_addr(descriptor_state["record"]) != 0
+
+    def current_view(_handle: NativeArrayHandleBase) -> np.ndarray | None:
+        return _numpy_view_from_pointer_c_descriptor(
+            descriptor_state["record"],
+            dtype=dtype,
+            expected_rank=rank,
+        )
+
+    def clear(_handle: NativeArrayHandleBase) -> None:
+        descriptor_state["record"] = _empty_descriptor_record(dtype, rank)
+        descriptor_state["owner"] = None
+
+    def associate_record(
+        _handle: NativeArrayHandleBase,
+        record: Mapping[str, Any],
+        owner: NativeArrayHandleBase,
+    ) -> None:
+        descriptor_state["record"] = _copy_pointer_descriptor_record(record)
+        descriptor_state["owner"] = owner
+
+    common_ops = {
+        "shape": current_shape,
+        "array_actual": current_array_actual,
+        "descriptor": descriptor,
+        "to_numpy": current_view,
+        "destroy": clear,
+    }
+    try:
+        handle_cls, descriptor_ops = {
+            "allocatable": (AllocatableArray, {"allocated": present}),
+            "pointer": (
+                PointerArray,
+                {
+                    "associated": present,
+                    "nullify": clear,
+                    "_associate_record": associate_record,
+                },
+            ),
+        }[descriptor_kind]
+    except KeyError:
+        raise ValueError("contract native array handle kind must be 'allocatable' or 'pointer'") from None
+    handle = handle_cls(
+        dtype=dtype,
+        rank=rank,
+        ops={**common_ops, **descriptor_ops},
+        descriptor_ownership="owned",
+        to_numpy_policy="borrowed_view",
+    )
+    handle._contract_default = True
+    return handle
+
+
+def _empty_descriptor_record(dtype: Any, rank: int) -> dict[str, Any]:
+    """Return canonical unallocated or unassociated descriptor facts."""
+    array_dtype = np.dtype(dtype)
+    return {
+        "base_addr": 0,
+        "elem_len": array_dtype.itemsize,
+        "rank": int(rank),
+        "dim": [{"lower_bound": 0, "extent": 0, "sm": array_dtype.itemsize} for _axis in range(int(rank))],
+    }
+
+
+def _copy_pointer_descriptor_record(descriptor: Mapping[str, Any]) -> dict[str, Any]:
+    """Copy validated standard descriptor facts for independent association state."""
+    dimensions = _pointer_descriptor_dimensions(descriptor)
+    return {
+        "base_addr": _required_descriptor_int(descriptor, "base_addr"),
+        "elem_len": _required_descriptor_int(descriptor, "elem_len"),
+        "rank": _required_descriptor_int(descriptor, "rank"),
+        "dim": [
+            {
+                "lower_bound": _required_descriptor_int(dimension, "lower_bound", field_owner=f"dim[{index}]"),
+                "extent": _required_descriptor_int(dimension, "extent", field_owner=f"dim[{index}]"),
+                "sm": _required_descriptor_int(dimension, "sm", field_owner=f"dim[{index}]"),
+            }
+            for index, dimension in enumerate(dimensions)
+        ],
+    }
+
+
+def _pointer_descriptor_record_facts(descriptor: Mapping[str, Any]) -> tuple[int, ...]:
+    """Flatten standard descriptor facts for one generated association operation."""
+    record = _copy_pointer_descriptor_record(descriptor)
+    fields = [
+        record["base_addr"],
+        record["elem_len"],
+        record["rank"],
+    ]
+    for dimension in record["dim"]:
+        fields.extend(
+            (
+                dimension["lower_bound"],
+                dimension["extent"],
+                dimension["sm"],
+            )
+        )
+    return tuple(fields)
+
+
+def _bind_contract_native_array_handle(
+    handle: NativeArrayHandleBase,
+    descriptor_kind: str,
+    dtype: Any,
+    rank: int,
+    ops: Mapping[str, HandleOperation],
+    owner: Any,
+    descriptor_ownership: str,
+    to_numpy_policy: str,
+    generation: int | None = None,
+) -> None:
+    """Attach generated persistent descriptor storage to a contract handle."""
+    if not isinstance(handle, NativeArrayHandleBase) or not handle._contract_default:
+        raise TypeError("generated descriptor storage can attach only to a fresh contract handle")
+    if handle.closed:
+        raise ReferenceError(f"{handle.descriptor_kind} handle is closed")
+    if handle.descriptor_kind != descriptor_kind:
+        raise TypeError(f"cannot attach {descriptor_kind} descriptor storage to {handle.descriptor_kind} handle")
+    if handle.rank != int(rank):
+        raise ValueError(f"{descriptor_kind} handle rank {handle.rank} does not match generated rank {int(rank)}")
+    if not handle._dtype_matches(dtype):
+        raise TypeError(f"{descriptor_kind} handle dtype {handle.dtype!r} does not match generated dtype {dtype!r}")
+    pending_pointer_descriptor = (
+        handle._association_descriptor_record() if isinstance(handle, PointerArray) and handle.associated else None
+    )
+    generated = _native_array_handle_from_generated_ops(
+        descriptor_kind,
+        dtype,
+        rank,
+        ops,
+        owner=owner,
+        descriptor_ownership=descriptor_ownership,
+        to_numpy_policy=to_numpy_policy,
+        generation=generation,
+    )
+    handle._adopt_generated_storage(generated)
+    if pending_pointer_descriptor is not None:
+        handle._call_op("associate", pending_pointer_descriptor)
 
 
 def _generated_handle_operation(operation: HandleOperation) -> HandleOperation:
@@ -186,6 +357,22 @@ def _generated_owned_descriptor_record_operation(operation: HandleOperation, own
     return call
 
 
+def _generated_pointer_associate_operation(
+    operation: HandleOperation,
+    *,
+    owner: Any = None,
+) -> HandleOperation:
+    """Adapt pointer association to one generated standard-descriptor operation."""
+
+    def call(_handle: NativeArrayHandleBase, descriptor: Mapping[str, Any]) -> Any:
+        facts = _pointer_descriptor_record_facts(descriptor)
+        if owner is None:
+            return operation(facts)
+        return operation(owner, facts)
+
+    return call
+
+
 def _generated_shape_operation(operation: HandleOperation, *, owner: Any = None) -> HandleOperation:
     """Adapt generated shape operations from one runtime shape tuple to scalar extents."""
 
@@ -227,16 +414,14 @@ def _native_array_descriptor_handoff_from_generated_result(
     *,
     owner: Any = None,
 ) -> _NativeArrayDescriptorHandoff:
-    """Normalize a generated standard-descriptor pointer into a typed handoff."""
+    """Normalize a generated native-handle capsule into a typed handoff."""
     if isinstance(value, _NativeArrayDescriptorHandoff):
         return value
-    if isinstance(value, ctypes.c_void_p):
-        value = value.value
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise TypeError(
-            f"generated native array descriptor handoff address must be an integer; received {type(value).__name__}"
-        )
-    return _NativeArrayDescriptorHandoff(value, owner=owner)
+    if owner is None:
+        raise TypeError("generated native array descriptor handoff requires an owner capsule")
+    if value is not owner:
+        raise TypeError("generated native array descriptor operation must return its owner capsule")
+    return _NativeArrayDescriptorHandoff(owner)
 
 
 def _pointer_descriptor_base_addr(descriptor: Any) -> int:
@@ -387,7 +572,7 @@ class NativeArrayHandleBase:
             raise ValueError(
                 f"native array handle to_numpy_policy must be one of {sorted(self._VALID_TO_NUMPY_POLICIES)!r}"
             )
-        self._dtype = dtype
+        self._dtype = None if dtype is None else np.dtype(dtype)
         self._rank = int(rank)
         self._ops = self._normalize_ops(ops)
         self._owner = owner
@@ -395,11 +580,12 @@ class NativeArrayHandleBase:
         self._descriptor_ownership = descriptor_ownership
         self._to_numpy_policy = to_numpy_policy
         self._generation = generation
+        self._contract_default = False
         self._validate_required_ops()
         self._closed = False
 
     @property
-    def dtype(self) -> Any:
+    def dtype(self) -> np.dtype:
         if self._dtype is not None:
             return self._dtype
         return self._deferred_character_dtype()
@@ -482,6 +668,24 @@ class NativeArrayHandleBase:
             return operation(self)
         finally:
             self._closed = True
+            self._owner = None
+            self._ops = {}
+
+    def _adopt_generated_storage(self, generated: NativeArrayHandleBase) -> None:
+        """Replace a fresh contract placeholder with validated generated storage."""
+        if not self._contract_default:
+            raise TypeError("native descriptor storage is already attached")
+        if type(self) is not type(generated):
+            raise TypeError("generated native descriptor kind does not match contract handle")
+        if self.rank != generated.rank or not self._dtype_matches(generated.dtype):
+            raise TypeError("generated native descriptor metadata does not match contract handle")
+        self._ops = generated._ops
+        self._owner = generated._owner
+        self._descriptor_ownership = generated._descriptor_ownership
+        self._to_numpy_policy = generated._to_numpy_policy
+        self._generation = generated._generation
+        self._contract_default = False
+        generated._closed = True
 
     def __del__(self) -> None:
         with suppress(Exception):
@@ -562,6 +766,15 @@ class NativeArrayHandleBase:
                 f"or an integer data address; received {type(descriptor).__name__}"
             )
         return self._contiguous_descriptor_record(address, shape)
+
+    def _descriptor_record_for_binding(self) -> Any:
+        """Return standard descriptor fields for a fact-packed descriptor call."""
+        descriptor = self._call_op("to_numpy")
+        if not _is_pointer_descriptor_record(descriptor):
+            raise TypeError(
+                f"{self.descriptor_kind} handle cannot expose standard descriptor fields for binding handoff"
+            )
+        return descriptor
 
     def _contiguous_descriptor_record(self, address: int, shape: tuple[int, ...] | None) -> dict[str, Any]:
         """Build standard descriptor fields for a contiguous native array actual."""
@@ -889,6 +1102,41 @@ class PointerArray(NativeArrayHandleBase):
     def _to_numpy_absent_state(self) -> bool:
         return not self.associated
 
+    def _association_descriptor_record(self) -> dict[str, Any]:
+        """Return independent standard descriptor facts for pointer assignment."""
+        descriptor = self._descriptor_for_binding(
+            expected_dtype=self.dtype,
+            expected_rank=self.rank,
+        )
+        if isinstance(descriptor, _NativeArrayDescriptorHandoff):
+            descriptor = self._descriptor_record_for_binding()
+        if not isinstance(descriptor, Mapping):
+            raise TypeError("pointer handle cannot expose descriptor facts for association")
+        record = _copy_pointer_descriptor_record(descriptor)
+        if record["rank"] != self.rank:
+            raise ValueError(
+                f"pointer descriptor rank {record['rank']} does not match declared handle rank {self.rank}"
+            )
+        _validate_pointer_descriptor_itemsize(record, self.dtype)
+        return record
+
+    def associate(self, other: PointerArray) -> Any:
+        """Make this pointer's association match another pointer handle."""
+        if self.closed:
+            raise ReferenceError("pointer handle is closed")
+        if not isinstance(other, PointerArray):
+            raise TypeError(f"pointer association requires another PointerArray; received {type(other).__name__}")
+        if other.closed:
+            raise ReferenceError("source pointer handle is closed")
+        if self.rank != other.rank:
+            raise ValueError(f"pointer handle rank {self.rank} does not match source rank {other.rank}")
+        if not self._dtype_matches(other.dtype):
+            raise TypeError(f"pointer handle dtype {self.dtype!r} does not match source dtype {other.dtype!r}")
+        descriptor = other._association_descriptor_record()
+        if self._contract_default:
+            return self._call_op("_associate_record", descriptor, other)
+        return self._call_op("associate", descriptor)
+
     def nullify(self) -> Any:
         return self._call_op("nullify")
 
@@ -1169,6 +1417,8 @@ def _native_array_descriptor_argument_for_binding(
             raise ValueError("optional absent native array descriptor arguments require an expected rank")
         fields = (None,) * (3 + 3 * int(expected_rank))
         return (*fields, None)
+    if isinstance(descriptor, _NativeArrayDescriptorHandoff):
+        descriptor = value._descriptor_record_for_binding()
     dimensions = _pointer_descriptor_dimensions(descriptor)
     fields = [
         _required_descriptor_int(descriptor, "base_addr"),
@@ -1215,8 +1465,23 @@ def _native_array_descriptor_handoff_for_binding(
     expected_rank: int | None = None,
     expected_shape: Sequence[int | None] | int | None = None,
     optional_absent: bool = False,
-) -> tuple[int | None, ...]:
-    """Pack a direct standard-descriptor pointer for projected handle mutation."""
+    bind_default: HandleOperation | None = None,
+) -> tuple[Any | None, ...]:
+    """Pack a versioned native-handle capsule for projected descriptor mutation."""
+    if isinstance(value, NativeArrayHandleBase) and value._contract_default:
+        if bind_default is None:
+            raise TypeError(
+                f"writable {descriptor_kind} contract handle requires generated persistent descriptor storage"
+            )
+        _native_array_descriptor_for_binding(
+            value,
+            descriptor_kind=descriptor_kind,
+            expected_dtype=expected_dtype,
+            expected_rank=expected_rank,
+            expected_shape=expected_shape,
+            optional=optional_absent,
+        )
+        bind_default(value)
     descriptor = _native_array_descriptor_for_binding(
         value,
         descriptor_kind=descriptor_kind,
@@ -1232,8 +1497,8 @@ def _native_array_descriptor_handoff_for_binding(
             f"writable {descriptor_kind} descriptor argument requires a generated direct descriptor handoff"
         )
     if optional_absent:
-        return descriptor.address, _PRESENT_NATIVE_ARRAY_DESCRIPTOR_ARGUMENT_ADDRESS
-    return (descriptor.address,)
+        return descriptor.capsule, _PRESENT_NATIVE_ARRAY_DESCRIPTOR_ARGUMENT_ADDRESS
+    return (descriptor.capsule,)
 
 
 def _native_array_descriptor_handoff_for_binding_positional(
@@ -1243,7 +1508,8 @@ def _native_array_descriptor_handoff_for_binding_positional(
     expected_rank: int | None = None,
     expected_shape: Sequence[int | None] | int | None = None,
     optional_absent: bool = False,
-) -> tuple[int | None, ...]:
+    bind_default: HandleOperation | None = None,
+) -> tuple[Any | None, ...]:
     """Positional wrapper used by projected-handle CPython binding code."""
     return _native_array_descriptor_handoff_for_binding(
         value,
@@ -1252,6 +1518,7 @@ def _native_array_descriptor_handoff_for_binding_positional(
         expected_rank=None if expected_rank is None else int(expected_rank),
         expected_shape=expected_shape,
         optional_absent=bool(optional_absent),
+        bind_default=bind_default,
     )
 
 

@@ -68,6 +68,11 @@ class NativeArrayHandlePolicy:
     storage_mode: str
     operations: tuple[str, ...] = ()
     blocker: str | None = None
+    default_construction: str = "none"
+    default_descriptor_ownership: str = "unknown"
+    default_release: str = "none"
+    default_destroy_behavior: str = "none"
+    default_operations: tuple[str, ...] = ()
 
     @property
     def is_blocked(self) -> bool:

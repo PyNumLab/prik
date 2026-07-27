@@ -1053,6 +1053,8 @@ def _native_array_handle_policy(
     blocker = _native_array_handle_blocker(descriptor_kind, handle_kind, decision)
     descriptor_ownership = _native_array_descriptor_ownership(handle_kind)
     to_numpy = _native_array_to_numpy_policy(descriptor_kind, handle_kind, decision, semantic_type)
+    operations = _native_array_handle_operations(descriptor_kind, handle_kind, context, semantic_type)
+    default_construction = _native_array_default_construction(handle_kind, context, semantic_type)
     return NativeArrayHandlePolicy(
         descriptor_kind=descriptor_kind,
         handle_kind=handle_kind,
@@ -1078,8 +1080,13 @@ def _native_array_handle_policy(
         nullable=bool(decision.nullable or optional_absent),
         optional_absent=optional_absent,
         storage_mode=decision.storage_mode.value,
-        operations=_native_array_handle_operations(descriptor_kind, handle_kind, context, semantic_type),
+        operations=operations,
         blocker=blocker,
+        default_construction=default_construction,
+        default_descriptor_ownership="owned" if default_construction != "none" else "unknown",
+        default_release="wrapper_dealloc" if default_construction != "none" else "none",
+        default_destroy_behavior="handle_finalizer" if default_construction != "none" else "none",
+        default_operations=(tuple(sorted({*operations, "destroy"})) if default_construction != "none" else ()),
     )
 
 
@@ -1096,14 +1103,29 @@ def _native_array_handle_kind(
     if context.is_field:
         return "borrowed_field_descriptor"
     if context.is_argument and context.projects_result and not context.python_visible:
-        if descriptor_kind == "allocatable":
-            return "owned_result_descriptor"
-        return "unsupported"
+        return "owned_result_descriptor"
     if context.is_argument:
         return "argument_descriptor"
-    if context.is_result and descriptor_kind == "allocatable":
+    if context.is_result:
         return "owned_result_descriptor"
     return "unsupported"
+
+
+def _native_array_default_construction(
+    handle_kind: str,
+    context: OwnershipContext,
+    semantic_type: models.SemanticType,
+) -> str:
+    """Complete how a runtime-constructed descriptor reaches one argument."""
+    if (
+        semantic_type.name == "String"
+        or handle_kind not in {"argument_descriptor", "optional_absent_handle"}
+        or not context.is_argument
+    ):
+        return "none"
+    if context.projects_result:
+        return "lazy_owned_descriptor"
+    return "fact_packed_empty"
 
 
 def _native_array_handle_origin(context: OwnershipContext) -> str:
@@ -1180,7 +1202,7 @@ def _native_array_output_projection(
     if handle_kind == "unsupported":
         return "unsupported"
     if context.is_result:
-        return "handle_result" if descriptor_kind == "allocatable" else "unsupported"
+        return "handle_result"
     if context.is_argument and context.projects_result:
         return "projected_handle"
     return "none"
@@ -1222,6 +1244,8 @@ def _native_array_target_lifetime(
         pointer_lifetime = _pointer_policy_value(_pointer_policy_metadata(semantic_type), "lifetime")
         if pointer_lifetime:
             return pointer_lifetime
+        if handle_kind == "owned_result_descriptor":
+            return "unknown"
         if blocker is not None and handle_kind in {"borrowed_field_descriptor", "borrowed_module_descriptor"}:
             return "unknown"
     return {
@@ -1292,7 +1316,7 @@ def _native_array_handle_operations(
             if not _is_deferred_character_array(semantic_type):
                 operations.add("resize")
         return tuple(sorted(operations))
-    operations = {"associated", "nullify", "to_numpy"}
+    operations = {"associate", "associated", "nullify", "to_numpy"}
     pointer_policy = _pointer_policy_metadata(semantic_type)
     if _pointer_policy_allows_allocate(pointer_policy):
         operations.add("allocate")
@@ -1351,14 +1375,12 @@ def _pointer_policy_allows_resize(policy: dict[str, object]) -> bool:
 
 
 def _native_array_handle_blocker(
-    descriptor_kind: str,
+    _descriptor_kind: str,
     handle_kind: str,
     decision: OwnershipDecision,
 ) -> str | None:
     if decision.is_blocked:
         return decision.blocker or decision.reason
-    if handle_kind == "unsupported" and descriptor_kind == "pointer":
-        return "pointer handle results need stable owner storage and target lifetime policy before wrapping"
     if handle_kind == "unsupported":
         return "native array handle origin is unsupported before wrapper lowering"
     return None

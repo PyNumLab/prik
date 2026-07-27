@@ -33,6 +33,7 @@ from x2py.semantics.wrapper_policy import (
     ModuleObjectAccessMechanism,
     NativeArrayDescriptorKind,
     NativeArrayDescriptorInterop,
+    NativeArrayDefaultConstruction,
     NativeArrayOperation,
     NativeArrayResultAllocation,
     NativeDescriptorHandoffABI,
@@ -75,6 +76,7 @@ from x2py.wrapper_codegen.plan import (
     ModulePlan,
     ModuleVariablePlan,
     NamespacePlan,
+    NativeArrayHandlePlan,
     NativeCallSlotPlan,
     ResultPlan,
 )
@@ -415,11 +417,10 @@ class FortranBridgeGenerator(ClassVisitor):
         self._require_array_result_type_supported(function, slot)
 
     def _require_owned_native_array_result_supported(self, result: ResultPlan) -> None:
-        """Require one wrapper-owned allocatable standard descriptor result."""
+        """Require one wrapper-owned standard descriptor result."""
         handle = result.native_array_handle
         if (
             handle is None
-            or handle.descriptor_kind is not NativeArrayDescriptorKind.ALLOCATABLE
             or handle.handoff.abi is not NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
             or handle.array.rank is None
         ):
@@ -697,7 +698,11 @@ class FortranBridgeGenerator(ClassVisitor):
             *(
                 procedure
                 for function in plan.functions
-                for procedure in (self.visit(function), *self._owned_native_array_result_operations(function))
+                for procedure in (
+                    self.visit(function),
+                    *self._owned_native_array_result_operations(function),
+                    *self._default_native_array_argument_operations(function),
+                )
             ),
             *(procedure for variable in plan.variables for procedure in self.visit(variable)),
         )
@@ -1833,7 +1838,7 @@ class FortranBridgeGenerator(ClassVisitor):
             FortranParameter(
                 "result",
                 self._array_result_element_type(result),
-                ("allocatable", dimension, "intent(out)"),
+                (self._owned_native_array_descriptor_attribute(handle), dimension, "intent(out)"),
             ),
         )
 
@@ -1866,37 +1871,89 @@ class FortranBridgeGenerator(ClassVisitor):
                     procedures.append(procedure)
         return tuple(procedures)
 
+    def _default_native_array_argument_operations(
+        self,
+        function: FunctionPlan,
+    ) -> tuple[FortranFunction, ...]:
+        """Lower typed operations used after lazy caller-handle attachment."""
+        procedures = []
+        for argument in function.arguments:
+            handle = argument.native_array_handle
+            if (
+                handle is None
+                or handle.default_handle.construction is not NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR
+            ):
+                continue
+            for operation in handle.default_handle.operations:
+                procedure = self._owned_native_array_result_operation(argument, operation)
+                if procedure is not None:
+                    procedures.append(procedure)
+        return tuple(procedures)
+
     def _supports_owned_native_array_result_operations(self, result: ResultPlan) -> bool:
         """Return whether typed helper operations use a Fortran descriptor dummy."""
         return self._is_owned_native_array_result(result) and not self._is_owned_deferred_character_result(result)
 
     def _owned_native_array_result_operation(
         self,
-        result: ResultPlan,
+        result: ArgumentTransferPlan | ResultPlan,
         operation: NativeArrayOperation,
     ) -> FortranFunction | None:
         """Dispatch one generated operation selected by completed handle policy."""
-        if operation is NativeArrayOperation.ALLOCATED:
-            return self._owned_native_array_result_allocated_operation(result)
+        if operation in {NativeArrayOperation.ALLOCATED, NativeArrayOperation.ASSOCIATED}:
+            return self._owned_native_array_result_state_operation(result, operation)
+        if operation is NativeArrayOperation.CONTIGUOUS:
+            return self._owned_native_array_result_contiguous_operation(result)
         if operation is NativeArrayOperation.SHAPE:
             return self._owned_native_array_result_shape_operation(result)
-        if operation in {NativeArrayOperation.DEALLOCATE, NativeArrayOperation.DESTROY}:
-            return self._owned_native_array_result_deallocate_operation(result, operation)
+        if operation is NativeArrayOperation.ASSOCIATE:
+            return self._owned_native_array_result_associate_operation(result)
+        if operation in {NativeArrayOperation.DEALLOCATE, NativeArrayOperation.NULLIFY, NativeArrayOperation.DESTROY}:
+            return self._owned_native_array_result_release_operation(result, operation)
         return None
 
-    def _owned_native_array_result_allocated_operation(self, result: ResultPlan) -> FortranFunction:
-        """Return allocation state using the compiler's descriptor inquiry."""
-        name = self._owned_native_array_result_operation_name(result, NativeArrayOperation.ALLOCATED)
+    def _owned_native_array_result_state_operation(
+        self,
+        result: ArgumentTransferPlan | ResultPlan,
+        operation: NativeArrayOperation,
+    ) -> FortranFunction:
+        """Return descriptor presence using its completed compiler inquiry."""
+        inquiry = self._owned_native_array_result_presence_inquiry(result)
+        name = self._owned_native_array_result_operation_name(result, operation)
         return FortranFunction(
             name=name,
             parameters=(self._owned_native_array_result_parameter(result, intent="in"),),
             result_name="state",
             result_type="logical(c_bool)",
             bind_name=name,
-            body=(FortranAssignment("state", CodeExpression("allocated(result)")),),
+            body=(FortranAssignment("state", CodeExpression(f"{inquiry}(result)")),),
         )
 
-    def _owned_native_array_result_shape_operation(self, result: ResultPlan) -> FortranFunction:
+    def _owned_native_array_result_contiguous_operation(
+        self,
+        result: ArgumentTransferPlan | ResultPlan,
+    ) -> FortranFunction:
+        """Return target contiguity without querying an absent pointer target."""
+        name = self._owned_native_array_result_operation_name(result, NativeArrayOperation.CONTIGUOUS)
+        return FortranFunction(
+            name=name,
+            parameters=(self._owned_native_array_result_parameter(result, intent="in"),),
+            result_name="state",
+            result_type="logical(c_bool)",
+            bind_name=name,
+            body=(
+                FortranAssignment("state", CodeExpression(".false._c_bool")),
+                FortranIf(
+                    CodeExpression("associated(result)"),
+                    body=(FortranAssignment("state", CodeExpression("is_contiguous(result)")),),
+                ),
+            ),
+        )
+
+    def _owned_native_array_result_shape_operation(
+        self,
+        result: ArgumentTransferPlan | ResultPlan,
+    ) -> FortranFunction:
         """Return shape through Fortran when the owned descriptor is allocated."""
         handle = result.native_array_handle
         if handle is None or handle.array.rank is None:
@@ -1913,13 +1970,14 @@ class FortranBridgeGenerator(ClassVisitor):
         absent = tuple(
             FortranAssignment(f"extent_{axis}", CodeExpression("0_c_int64_t")) for axis in range(handle.array.rank)
         )
+        inquiry = self._owned_native_array_result_presence_inquiry(result)
         return FortranFunction(
             name=name,
             parameters=(self._owned_native_array_result_parameter(result, intent="in"), *extents),
             bind_name=name,
             body=(
                 FortranIf(
-                    CodeExpression("allocated(result)"),
+                    CodeExpression(f"{inquiry}(result)"),
                     body=present,
                     else_body=absent,
                 ),
@@ -1927,40 +1985,87 @@ class FortranBridgeGenerator(ClassVisitor):
             is_subroutine=True,
         )
 
-    def _owned_native_array_result_deallocate_operation(
+    def _owned_native_array_result_release_operation(
         self,
-        result: ResultPlan,
+        result: ArgumentTransferPlan | ResultPlan,
         operation: NativeArrayOperation,
     ) -> FortranFunction:
-        """Release owned payload through the compiler's descriptor machinery."""
+        """Apply the planned payload or association release operation."""
         name = self._owned_native_array_result_operation_name(result, operation)
+        handle = result.native_array_handle
+        if handle is None:
+            raise ValueError(f"Owned result {result.owner_path!r} has no descriptor policy")
+        pointer = handle.descriptor_kind is NativeArrayDescriptorKind.POINTER
+        nullify_only = pointer and operation in {NativeArrayOperation.NULLIFY, NativeArrayOperation.DESTROY}
+        inquiry = self._owned_native_array_result_presence_inquiry(result)
+        release = FortranNullify("result") if nullify_only else FortranDeallocate("result")
         return FortranFunction(
             name=name,
             parameters=(self._owned_native_array_result_parameter(result, intent="inout"),),
             bind_name=name,
             body=(
                 FortranIf(
-                    CodeExpression("allocated(result)"),
-                    body=(FortranDeallocate("result"),),
+                    CodeExpression(f"{inquiry}(result)"),
+                    body=(release,),
                 ),
             ),
             is_subroutine=True,
         )
 
-    def _owned_native_array_result_parameter(self, result: ResultPlan, *, intent: str) -> FortranParameter:
+    def _owned_native_array_result_associate_operation(
+        self,
+        result: ArgumentTransferPlan | ResultPlan,
+    ) -> FortranFunction:
+        """Make one owned pointer descriptor match another pointer descriptor."""
+        name = self._owned_native_array_result_operation_name(result, NativeArrayOperation.ASSOCIATE)
+        return FortranFunction(
+            name=name,
+            parameters=(
+                self._owned_native_array_result_parameter(result, intent="inout"),
+                self._owned_native_array_result_parameter(result, intent="in", name="source"),
+            ),
+            bind_name=name,
+            body=(FortranPointerAssignment("result", CodeExpression("source")),),
+            is_subroutine=True,
+        )
+
+    def _owned_native_array_result_parameter(
+        self,
+        result: ArgumentTransferPlan | ResultPlan,
+        *,
+        intent: str,
+        name: str = "result",
+    ) -> FortranParameter:
         """Return the typed descriptor dummy used by owned-result operations."""
         handle = result.native_array_handle
         if handle is None or handle.array.rank is None:
             raise ValueError(f"Owned result {result.owner_path!r} has no descriptor rank")
         return FortranParameter(
-            "result",
+            name,
             self._array_result_element_type(result),
-            ("allocatable", self._array_dimension_attribute(handle.array.rank), f"intent({intent})"),
+            (
+                self._owned_native_array_descriptor_attribute(handle),
+                self._array_dimension_attribute(handle.array.rank),
+                f"intent({intent})",
+            ),
         )
+
+    @staticmethod
+    def _owned_native_array_descriptor_attribute(handle: NativeArrayHandlePlan) -> str:
+        """Return the descriptor attribute selected by completed handle policy."""
+        return handle.descriptor_kind.value
+
+    @staticmethod
+    def _owned_native_array_result_presence_inquiry(result: ArgumentTransferPlan | ResultPlan) -> str:
+        """Return the compiler inquiry selected by completed descriptor kind."""
+        handle = result.native_array_handle
+        if handle is None:
+            raise ValueError(f"Owned result {result.owner_path!r} has no descriptor policy")
+        return "associated" if handle.descriptor_kind is NativeArrayDescriptorKind.POINTER else "allocated"
 
     def _owned_native_array_result_operation_name(
         self,
-        result: ResultPlan,
+        result: ArgumentTransferPlan | ResultPlan,
         operation: NativeArrayOperation,
     ) -> str:
         """Return the C-visible typed operation name for one owned result."""
@@ -2424,6 +2529,8 @@ class FortranBridgeGenerator(ClassVisitor):
             return self._module_native_array_shape_operation(plan)
         if operation is NativeArrayOperation.DESCRIPTOR:
             return self._module_native_array_descriptor_operation(plan)
+        if operation is NativeArrayOperation.ASSOCIATE:
+            return self._module_native_array_associate_operation(plan)
         if operation in {NativeArrayOperation.ALLOCATE, NativeArrayOperation.RESIZE}:
             return self._module_native_array_shape_mutation_operation(plan, operation)
         if operation is NativeArrayOperation.DEALLOCATE:
@@ -2618,6 +2725,31 @@ class FortranBridgeGenerator(ClassVisitor):
             parameters=parameters,
             bind_name=name,
             body=body,
+            is_subroutine=True,
+        )
+
+    def _module_native_array_associate_operation(self, plan: ModuleVariablePlan) -> FortranFunction:
+        """Make one module pointer association match the source descriptor."""
+        handle = plan.native_array_handle
+        if handle is None or handle.array.rank is None:
+            raise ValueError(f"Module pointer handle {plan.owner_path!r} has no association rank")
+        name = self._module_native_array_operation_name(plan, NativeArrayOperation.ASSOCIATE)
+        return FortranFunction(
+            name=name,
+            parameters=(
+                FortranParameter(
+                    "source",
+                    self._module_native_array_element_type(plan),
+                    ("pointer", self._array_dimension_attribute(handle.array.rank), "intent(in)"),
+                ),
+            ),
+            bind_name=name,
+            body=(
+                FortranPointerAssignment(
+                    self._native_variable_name(plan),
+                    CodeExpression("source"),
+                ),
+            ),
             is_subroutine=True,
         )
 
@@ -3382,8 +3514,16 @@ class FortranBridgeGenerator(ClassVisitor):
             return True
         return bool(
             result is not None
-            and result.scalar_descriptor is not None
-            and result.scalar_descriptor.descriptor_kind is NativeArrayDescriptorKind.POINTER
+            and (
+                (
+                    result.scalar_descriptor is not None
+                    and result.scalar_descriptor.descriptor_kind is NativeArrayDescriptorKind.POINTER
+                )
+                or (
+                    result.native_array_handle is not None
+                    and result.native_array_handle.descriptor_kind is NativeArrayDescriptorKind.POINTER
+                )
+            )
         )
 
     def _native_invocation_target(
@@ -4256,7 +4396,11 @@ class FortranBridgeGenerator(ClassVisitor):
             FortranParameter(
                 name,
                 self._array_result_element_type(slot),
-                ("allocatable", self._array_dimension_attribute(handle.array.rank), "intent(out)"),
+                (
+                    self._owned_native_array_descriptor_attribute(handle),
+                    self._array_dimension_attribute(handle.array.rank),
+                    "intent(out)",
+                ),
             ),
         )
 
@@ -4277,7 +4421,10 @@ class FortranBridgeGenerator(ClassVisitor):
                     FortranDeclaration(
                         f"{slot.native_name.lower()}_value",
                         self._array_result_element_type(slot),
-                        ("allocatable", self._array_dimension_attribute(handle.array.rank)),
+                        (
+                            self._owned_native_array_descriptor_attribute(handle),
+                            self._array_dimension_attribute(handle.array.rank),
+                        ),
                     )
                 )
                 if self._is_owned_deferred_character_slot(slot):
@@ -4335,7 +4482,10 @@ class FortranBridgeGenerator(ClassVisitor):
             FortranDeclaration(
                 "result_value",
                 self._array_result_element_type(result),
-                ("allocatable", self._array_dimension_attribute(handle.array.rank)),
+                (
+                    self._owned_native_array_descriptor_attribute(handle),
+                    self._array_dimension_attribute(handle.array.rank),
+                ),
             ),
         ]
         if self._is_owned_deferred_character_result(result):
@@ -4506,27 +4656,7 @@ class FortranBridgeGenerator(ClassVisitor):
         if result.scalar_descriptor is not None:
             return self._scalar_descriptor_copy_nodes(result, "result")
         if self._is_owned_native_array_result(result):
-            if self._uses_owned_direct_array_result_collector(plan):
-                return ()
-            if self._is_owned_deferred_character_result(result):
-                return self._owned_deferred_character_copy_nodes(result, "result", "result_value", "result_copy")
-            return (
-                FortranIf(
-                    CodeExpression("allocated(result_value)"),
-                    body=(
-                        FortranCall(
-                            "move_alloc",
-                            (CodeExpression("result_value"), CodeExpression("result")),
-                        ),
-                    ),
-                    else_body=(
-                        FortranIf(
-                            CodeExpression("allocated(result)"),
-                            body=(FortranDeallocate("result"),),
-                        ),
-                    ),
-                ),
-            )
+            return self._owned_direct_native_array_result_finalizers(plan, result)
         if result.object_kind is ObjectKind.NUMPY_ARRAY:
             if result.array is None:
                 raise ValueError(f"Array result {result.owner_path!r} has no shape plan")
@@ -4547,6 +4677,39 @@ class FortranBridgeGenerator(ClassVisitor):
             target_name="result",
             value_name="result_value",
             copy_name="result_copy",
+        )
+
+    def _owned_direct_native_array_result_finalizers(
+        self,
+        plan: FunctionPlan,
+        result: ResultPlan,
+    ) -> tuple[FortranAssignment | FortranCall | FortranIf | FortranPointerAssignment, ...]:
+        """Finalize one owned result through its completed descriptor kind."""
+        if self._uses_owned_direct_array_result_collector(plan):
+            return ()
+        if self._is_owned_deferred_character_result(result):
+            return self._owned_deferred_character_copy_nodes(result, "result", "result_value", "result_copy")
+        handle = result.native_array_handle
+        if handle is None:
+            raise ValueError(f"Owned result {result.owner_path!r} has no descriptor policy")
+        if handle.descriptor_kind is NativeArrayDescriptorKind.POINTER:
+            return (FortranPointerAssignment("result", CodeExpression("result_value")),)
+        return (
+            FortranIf(
+                CodeExpression("allocated(result_value)"),
+                body=(
+                    FortranCall(
+                        "move_alloc",
+                        (CodeExpression("result_value"), CodeExpression("result")),
+                    ),
+                ),
+                else_body=(
+                    FortranIf(
+                        CodeExpression("allocated(result)"),
+                        body=(FortranDeallocate("result"),),
+                    ),
+                ),
+            ),
         )
 
     def _direct_result_internal_procedures(self, plan: FunctionPlan) -> tuple[FortranFunction, ...]:
@@ -4705,6 +4868,9 @@ class FortranBridgeGenerator(ClassVisitor):
                             f"{name}_copy",
                         )
                     )
+                    continue
+                if slot.native_array_handle.descriptor_kind is NativeArrayDescriptorKind.POINTER:
+                    nodes.append(FortranPointerAssignment(name, CodeExpression(f"{name}_value")))
                     continue
                 nodes.append(
                     FortranIf(
@@ -5707,6 +5873,8 @@ class FortranBridgeGenerator(ClassVisitor):
             return self._native_handle_field_shape_procedure(owner, field)
         if operation is NativeArrayOperation.DESCRIPTOR:
             return self._native_handle_field_descriptor_procedure(owner, field)
+        if operation is NativeArrayOperation.ASSOCIATE:
+            return self._native_handle_field_associate_procedure(owner, field)
         if operation in {NativeArrayOperation.ALLOCATE, NativeArrayOperation.RESIZE}:
             return self._native_handle_field_resize_procedure(owner, field, operation)
         if operation is NativeArrayOperation.DEALLOCATE:
@@ -5845,6 +6013,37 @@ class FortranBridgeGenerator(ClassVisitor):
                     expression,
                     tuple(CodeExpression(f"extent_{axis}") for axis in range(handle.array.rank)),
                 ),
+            ),
+            is_subroutine=True,
+        )
+
+    def _native_handle_field_associate_procedure(self, owner, field) -> FortranFunction:
+        """Make one pointer field association match the source descriptor."""
+        handle = field.native_array_handle
+        if handle is None or handle.array.rank is None:
+            raise ValueError(f"Pointer field {field.owner_path!r} has no association rank")
+        element_type = (
+            "character(kind=c_char, len=:)"
+            if field.string_element
+            else PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name).fortran_spelling
+        )
+        expression = self._native_handle_field_expression(owner, field)
+        name = self._native_handle_field_bridge_name(owner, field, NativeArrayOperation.ASSOCIATE)
+        return FortranFunction(
+            name=name,
+            parameters=(
+                *self._native_handle_field_owner_parameters(owner),
+                FortranParameter(
+                    "source",
+                    element_type,
+                    ("pointer", self._array_dimension_attribute(handle.array.rank), "intent(in)"),
+                ),
+            ),
+            bind_name=name,
+            declarations=self._native_handle_field_owner_declarations(owner),
+            body=(
+                *self._native_handle_field_owner_body(owner),
+                FortranPointerAssignment(expression, CodeExpression("source")),
             ),
             is_subroutine=True,
         )

@@ -59,6 +59,7 @@ from x2py.semantics.wrapper_policy import (
     NativeArrayDescriptorInterop,
     NativeArrayDescriptorKind,
     NativeArrayDescriptorOwnership,
+    NativeArrayDefaultConstruction,
     NativeArrayDestroyBehavior,
     NativeArrayExtractionAction,
     NativeArrayHandleKind,
@@ -1871,6 +1872,7 @@ class WrapperCodeGenerator:
             *self._native_array_handle_argument_ownership_diagnostics(plan, handle),
             *self._native_array_handle_shape_diagnostics(plan.owner_path, handle),
             *self._native_descriptor_handoff_diagnostics(plan.owner_path, handle, plan),
+            *self._native_array_default_handle_diagnostics(plan.owner_path, handle),
         ]
         if plan.array is not handle.array:
             diagnostics.append(self._diagnostic(plan.owner_path, "inconsistent-handle-array-facet", plan.array))
@@ -1929,6 +1931,125 @@ class WrapperCodeGenerator:
         if plan.binding.optional_mode is not expected_optional:
             diagnostics.append(
                 self._diagnostic(plan.owner_path, "invalid-handle-presence-mode", plan.binding.optional_mode.value)
+            )
+        return tuple(diagnostics)
+
+    def _native_array_default_handle_diagnostics(
+        self,
+        owner_path: str,
+        handle: NativeArrayHandlePlan,
+    ) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Validate caller-construction ownership, lifecycle, and named roles."""
+        default = handle.default_handle
+        if default.construction is NativeArrayDefaultConstruction.NONE:
+            return self._disabled_native_array_default_handle_diagnostics(owner_path, handle)
+        return (
+            *self._native_array_default_handle_lifecycle_diagnostics(owner_path, handle),
+            *self._native_array_default_handle_operation_diagnostics(owner_path, handle),
+            *self._native_array_default_handle_storage_diagnostics(owner_path, handle),
+        )
+
+    def _disabled_native_array_default_handle_diagnostics(
+        self,
+        owner_path: str,
+        handle: NativeArrayHandlePlan,
+    ) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Require an omitted lifecycle when caller construction is disabled."""
+        default = handle.default_handle
+        actual = (
+            default.descriptor_ownership,
+            default.release,
+            default.destroy_behavior,
+            default.operations,
+            default.operation_roles,
+            default.owner_storage_role,
+        )
+        expected = (
+            None,
+            NativeArrayRelease.NONE,
+            NativeArrayDestroyBehavior.NONE,
+            (),
+            (),
+            None,
+        )
+        if actual == expected:
+            return ()
+        return (self._diagnostic(owner_path, "invalid-disabled-default-handle-policy", default),)
+
+    def _native_array_default_handle_lifecycle_diagnostics(
+        self,
+        owner_path: str,
+        handle: NativeArrayHandlePlan,
+    ) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Require owned descriptor storage and finalizer release."""
+        default = handle.default_handle
+        diagnostics = []
+        if default.descriptor_ownership is not NativeArrayDescriptorOwnership.OWNED:
+            diagnostics.append(
+                self._diagnostic(
+                    owner_path,
+                    "invalid-default-handle-descriptor-ownership",
+                    default.descriptor_ownership,
+                )
+            )
+        lifecycle = default.release, default.destroy_behavior
+        expected = NativeArrayRelease.WRAPPER_DEALLOC, NativeArrayDestroyBehavior.HANDLE_FINALIZER
+        if lifecycle != expected:
+            diagnostics.append(self._diagnostic(owner_path, "invalid-default-handle-lifecycle", default.release))
+        return tuple(diagnostics)
+
+    def _native_array_default_handle_operation_diagnostics(
+        self,
+        owner_path: str,
+        handle: NativeArrayHandlePlan,
+    ) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Require complete unique operation names and matching roles."""
+        operations = handle.default_handle.operations
+        roles = handle.default_handle.operation_roles
+        required = {
+            NativeArrayOperation.SHAPE,
+            NativeArrayOperation.ARRAY_ACTUAL,
+            NativeArrayOperation.DESCRIPTOR,
+            NativeArrayOperation.DESTROY,
+        }
+        if handle.descriptor_kind is NativeArrayDescriptorKind.POINTER:
+            required.add(NativeArrayOperation.ASSOCIATE)
+        diagnostics = []
+        complete = len(set(operations)) == len(operations) and required.issubset(operations)
+        if not complete:
+            diagnostics.append(self._diagnostic(owner_path, "incomplete-default-handle-operations", operations))
+        named_operations = tuple(operation for operation, _role in roles)
+        roles_complete = named_operations == operations and all(role for _operation, role in roles)
+        if not roles_complete:
+            diagnostics.append(self._diagnostic(owner_path, "inconsistent-default-handle-operation-roles", roles))
+        return tuple(diagnostics)
+
+    def _native_array_default_handle_storage_diagnostics(
+        self,
+        owner_path: str,
+        handle: NativeArrayHandlePlan,
+    ) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Match persistent owner storage and descriptor ABI to construction."""
+        default = handle.default_handle
+        expected_owner_role = {
+            NativeArrayDefaultConstruction.FACT_PACKED_EMPTY: None,
+            NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR: True,
+        }[default.construction]
+        owner_role = True if default.owner_storage_role is not None else None
+        diagnostics = []
+        if owner_role is not expected_owner_role:
+            diagnostics.append(
+                self._diagnostic(
+                    owner_path, "inconsistent-default-handle-owner-storage-role", default.owner_storage_role
+                )
+            )
+        expected_abi = {
+            NativeArrayDefaultConstruction.FACT_PACKED_EMPTY: NativeDescriptorHandoffABI.FACT_PACKED_CALL_LOCAL,
+            NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR: NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR,
+        }[default.construction]
+        if handle.handoff.abi is not expected_abi:
+            diagnostics.append(
+                self._diagnostic(owner_path, "inconsistent-default-handle-descriptor-abi", handle.handoff.abi)
             )
         return tuple(diagnostics)
 
@@ -2052,18 +2173,12 @@ class WrapperCodeGenerator:
         handle: NativeArrayHandlePlan,
     ) -> tuple[WrapperPlanDiagnostic, ...]:
         """Validate one concrete descriptor data facet."""
-        diagnostics = [
+        return (
             *self._native_array_handle_rank_diagnostics(owner_path, handle),
             *self._native_array_handle_buffer_role_diagnostics(owner_path, handle),
             *self._native_array_handle_header_diagnostics(owner_path, handle),
             *self._native_array_handle_extraction_diagnostics(owner_path, handle),
-        ]
-        if (
-            handle.descriptor_kind is NativeArrayDescriptorKind.POINTER
-            and handle.handle_kind is NativeArrayHandleKind.OWNED_RESULT_DESCRIPTOR
-        ):
-            diagnostics.append(self._diagnostic(owner_path, "pointer-result-without-stable-owner", None))
-        return tuple(diagnostics)
+        )
 
     def _native_array_handle_extraction_diagnostics(
         self,
@@ -2265,6 +2380,8 @@ class WrapperCodeGenerator:
         """Require every handle to expose its common runtime operations exactly once."""
         operations = handle.operations
         required = {NativeArrayOperation.SHAPE, NativeArrayOperation.ARRAY_ACTUAL, NativeArrayOperation.DESCRIPTOR}
+        if handle.descriptor_kind is NativeArrayDescriptorKind.POINTER:
+            required.add(NativeArrayOperation.ASSOCIATE)
         diagnostics = []
         if len(set(operations)) != len(operations) or not required.issubset(operations):
             diagnostics.append(self._diagnostic(owner_path, "incomplete-native-array-operations", operations))
@@ -3407,7 +3524,7 @@ class WrapperCodeGenerator:
 
     # Native-array-handle result validation.
     def _native_array_handle_result_diagnostics(self, plan: ResultPlan) -> tuple[WrapperPlanDiagnostic, ...]:
-        """Validate one wrapper-owned allocatable descriptor result."""
+        """Validate one wrapper-owned native descriptor result."""
         handle = plan.native_array_handle
         if handle is None:
             return ()
@@ -3443,7 +3560,7 @@ class WrapperCodeGenerator:
         self,
         plan: ResultPlan,
     ) -> tuple[WrapperPlanDiagnostic, ...]:
-        """Validate owned allocatable handle identity and release policy."""
+        """Validate owned native descriptor handle identity and release policy."""
         handle = plan.native_array_handle
         if handle is None:
             return ()
@@ -3452,8 +3569,6 @@ class WrapperCodeGenerator:
             diagnostics.append(
                 self._diagnostic(plan.owner_path, "invalid-native-array-result-kind", handle.handle_kind)
             )
-        if handle.descriptor_kind is not NativeArrayDescriptorKind.ALLOCATABLE:
-            diagnostics.append(self._diagnostic(plan.owner_path, "unsupported-pointer-array-result", None))
         if handle.descriptor_ownership is not NativeArrayDescriptorOwnership.OWNED or handle.borrowed:
             diagnostics.append(self._diagnostic(plan.owner_path, "invalid-native-array-result-ownership", None))
         if handle.release is not NativeArrayRelease.WRAPPER_DEALLOC:

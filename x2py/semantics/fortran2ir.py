@@ -1456,6 +1456,8 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _apply_pointer_result_policy(semantic_type: SemanticType) -> None:
+        if semantic_type.rank > 0:
+            return
         set_ownership_metadata(
             semantic_type.metadata,
             owner="python",
@@ -2014,7 +2016,7 @@ class FortranToIRConverter(ClassVisitor):
             return False
         return (
             FortranToIRConverter._is_python_value_scalar_output(semantic_type)
-            or FortranToIRConverter._is_allocatable_array(semantic_type)
+            or FortranToIRConverter._is_native_descriptor_output(semantic_type)
             or FortranToIRConverter._is_scalar_descriptor(semantic_type)
         )
 

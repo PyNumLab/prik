@@ -1159,19 +1159,6 @@ class OwnershipPolicyResolver:
     @staticmethod
     def _native_array_handle_projected_output_decision(facts: _StorageFacts) -> OwnershipDecision:
         """Create stable wrapper-owned storage for a Python-hidden descriptor output."""
-        if facts.pointer:
-            return OwnershipDecision(
-                ObjectKind.NUMPY_ARRAY,
-                OwnershipOwner.UNKNOWN,
-                TransferMode.BLOCKED,
-                DestructionPolicy.BLOCKED,
-                storage_mode=StorageMode.ALIAS,
-                boundary_storage_mode=StorageMode.ALIAS,
-                nullable=True,
-                descriptor_boundary=True,
-                blocker="pointer handle results need stable owner storage and target lifetime policy before wrapping",
-                reason="hidden pointer descriptor output has no completed target lifetime",
-            )
         return OwnershipDecision(
             ObjectKind.NUMPY_ARRAY,
             OwnershipOwner.WRAPPER,
@@ -1183,25 +1170,12 @@ class OwnershipPolicyResolver:
             borrowed=False,
             mutates_native=True,
             descriptor_boundary=True,
-            reason="hidden allocatable descriptor output moves into wrapper-owned stable storage",
+            reason="hidden descriptor output moves into wrapper-owned stable descriptor storage",
         )
 
     @staticmethod
     def _native_array_handle_result_decision(facts: _StorageFacts) -> OwnershipDecision:
         """Materialize a supported direct descriptor result as one runtime handle."""
-        if facts.pointer:
-            return OwnershipDecision(
-                ObjectKind.NUMPY_ARRAY,
-                OwnershipOwner.UNKNOWN,
-                TransferMode.BLOCKED,
-                DestructionPolicy.BLOCKED,
-                storage_mode=StorageMode.ALIAS,
-                boundary_storage_mode=StorageMode.ALIAS,
-                nullable=True,
-                descriptor_boundary=True,
-                blocker="pointer handle results need stable owner storage and target lifetime policy before wrapping",
-                reason="pointer descriptor result has no completed stable target owner",
-            )
         return OwnershipDecision(
             ObjectKind.NUMPY_ARRAY,
             OwnershipOwner.WRAPPER,
@@ -1211,7 +1185,7 @@ class OwnershipPolicyResolver:
             boundary_storage_mode=StorageMode.ALIAS,
             nullable=True,
             descriptor_boundary=True,
-            reason="allocatable descriptor result moves into wrapper-owned stable storage",
+            reason="descriptor result moves into wrapper-owned stable descriptor storage",
         )
 
     def _allocatable_array_decision(self, facts: _StorageFacts, context: OwnershipContext) -> OwnershipDecision:
@@ -1280,15 +1254,7 @@ class OwnershipPolicyResolver:
                 reason=reason,
             )
         if context.is_result:
-            return OwnershipDecision(
-                ObjectKind.NUMPY_ARRAY,
-                OwnershipOwner.PYTHON,
-                TransferMode.SNAPSHOT_COPY,
-                DestructionPolicy.PYTHON_REFCOUNT,
-                storage_mode=StorageMode.ALIAS,
-                nullable=True,
-                reason="pointer array result is copied into Python-owned NumPy storage",
-            )
+            return self._native_array_handle_result_decision(facts)
         if context.writes_argument:
             return OwnershipDecision(
                 ObjectKind.NUMPY_ARRAY,
@@ -1488,7 +1454,9 @@ class OwnershipPolicyResolver:
         raw = metadata.get(OWNERSHIP_POLICY_METADATA)
         pointer_policy = metadata.get(POINTER_POLICY_METADATA)
         pointer_container = (
-            facts.pointer and facts.rank > 0 and (context.is_argument or context.is_field or context.is_module_variable)
+            facts.pointer
+            and facts.rank > 0
+            and (context.is_argument or context.is_field or context.is_module_variable or context.is_result)
         )
         if facts.pointer and isinstance(pointer_policy, Mapping) and not pointer_container:
             raw = {**(raw if isinstance(raw, Mapping) else {}), **pointer_policy}
@@ -1542,13 +1510,11 @@ class OwnershipPolicyResolver:
     ) -> OwnershipDecision:
         if not facts.pointer or decision.is_blocked:
             return decision
-        if context.is_argument and _is_native_array_handle_facts(facts):
+        if (context.is_argument or context.is_result) and _is_native_array_handle_facts(facts):
             return decision
-        blocker = (
-            OwnershipPolicyResolver._pointer_argument_blocker(decision, facts, context)
-            or OwnershipPolicyResolver._pointer_container_blocker(decision, facts, context)
-            or OwnershipPolicyResolver._pointer_result_blocker(decision, facts, context)
-        )
+        blocker = OwnershipPolicyResolver._pointer_argument_blocker(
+            decision, facts, context
+        ) or OwnershipPolicyResolver._pointer_container_blocker(decision, facts, context)
         if blocker is None:
             return decision
         return replace(
@@ -1602,20 +1568,6 @@ class OwnershipPolicyResolver:
             return None
         if decision.transfer is not TransferMode.SNAPSHOT_COPY:
             return "scalar pointer field and module accessors require snapshot_copy detached values"
-        return None
-
-    @staticmethod
-    def _pointer_result_blocker(
-        decision: OwnershipDecision,
-        facts: _StorageFacts,
-        context: OwnershipContext,
-    ) -> str | None:
-        """Return a blocker for an unsupported pointer function result policy."""
-        if facts.rank > 0 and context.is_result and decision.transfer is not TransferMode.SNAPSHOT_COPY:
-            return (
-                "pointer array results remain blocked until returned-handle owner storage, "
-                "target lifetime, descriptor extraction, and destroy behavior are implemented"
-            )
         return None
 
     @staticmethod

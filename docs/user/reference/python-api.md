@@ -125,6 +125,25 @@ they need to distinguish descriptor handles from ordinary NumPy arrays. Borrowed
 handles do not own native storage. Owned handles expose `close()` and `closed`;
 their finalizer attempts generated owner-storage destruction at most once.
 
+`Allocatable[T[...]]()` creates an owned, initially unallocated
+`AllocatableArray`. `Pointer[T[...]]()` creates an owned, initially
+unassociated `PointerArray`. The dtype and rank come from the annotation. On
+the first writable descriptor call, the generated wrapper attaches
+compiler-compatible persistent storage to the same handle. Closing an
+allocatable handle also releases any allocation it still owns; closing a
+pointer handle releases only its descriptor, not an associated target.
+
+`p1.associate(p2)` makes `p1` refer to the same target as `p2`, or makes
+`p1` unassociated when `p2` is unassociated. It replaces any current
+association of `p1` without copying or deallocating target storage.
+
+Owned writable handles carry a versioned record defined by x2py's bundled
+native binding support. Separately built x2py extensions can accept the same
+handle without linking to each other when their x2py handle ABI and Fortran
+compiler/runtime ABIs are compatible. Each receiving wrapper validates the
+record's version, size, descriptor kind, dtype, and rank before direct
+descriptor use.
+
 These classes are array-only. Scalar `Allocatable[T]` and `Pointer[T]`
 projections remain ordinary `T | None` values and never produce an
 `AllocatableArray` or `PointerArray`.

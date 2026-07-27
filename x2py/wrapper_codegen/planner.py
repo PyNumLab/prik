@@ -30,6 +30,8 @@ from x2py.semantics.wrapper_policy import (
     LifecyclePolicy,
     NativeCallSlotPolicy,
     NativeArrayActualPolicy,
+    NativeArrayDefaultConstruction,
+    NativeArrayDefaultHandlePolicy,
     NativeArrayHandleWrapperPolicy,
     NativeDescriptorHandoffABI,
     NativeDescriptorHandoffPolicy,
@@ -88,6 +90,7 @@ from x2py.wrapper_codegen.plan import (
     NamespacePlan,
     NativeCallSlotPlan,
     NativeArrayActualPlan,
+    NativeArrayDefaultHandlePlan,
     NativeArrayHandlePlan,
     NativeDescriptorHandoffPlan,
     PolymorphicDispatchPlan,
@@ -1503,6 +1506,30 @@ class WrapperPlanner(ClassVisitor):
             required_headers=policy.required_headers,
             array=array_plan,
             handoff=self._native_descriptor_handoff_plan(policy.handoff, owner_path, policy.operations),
+            default_handle=self._native_array_default_handle_plan(policy.default_handle, owner_path),
+        )
+
+    def _native_array_default_handle_plan(
+        self,
+        policy: NativeArrayDefaultHandlePolicy,
+        owner_path: str,
+    ) -> NativeArrayDefaultHandlePlan:
+        """Name completed caller-construction storage and operation roles."""
+        owner_storage_role = (
+            f"{owner_path}:default-owner-storage"
+            if policy.construction is NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR
+            else None
+        )
+        return NativeArrayDefaultHandlePlan(
+            construction=policy.construction,
+            descriptor_ownership=policy.descriptor_ownership,
+            release=policy.release,
+            destroy_behavior=policy.destroy_behavior,
+            operations=policy.operations,
+            owner_storage_role=owner_storage_role,
+            operation_roles=tuple(
+                (operation, f"{owner_path}:default-operation:{operation.value}") for operation in policy.operations
+            ),
         )
 
     def _native_descriptor_handoff_plan(

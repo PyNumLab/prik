@@ -98,6 +98,54 @@ print(bool(invert(True)))                          # False
 
 ---
 
+## Runtime Default Constructors
+
+Concrete primitive contracts can create their matching NumPy scalar with its
+zero value:
+
+```python
+import x2py.contracts as xc
+
+count = xc.Int32()      # np.int32(0)
+weight = xc.Float64()   # np.float64(0.0)
+flag = xc.Bool()        # np.bool_(False)
+```
+
+This applies to Boolean, fixed-width numeric, and `SizeT` contracts. It does
+not apply to target-resolved `Int`, `UInt`, or `CEnum`, or to `Byte`, `Char`,
+`String`, and `Void`, because those names do not define one portable NumPy
+scalar representation by themselves. A scalar being constructible does not
+mean every wrapper backend supports that native type; the generated contract
+and feature matrix remain authoritative.
+
+Array annotations are not array factories: `Float64[:]()` is invalid. Create
+ordinary arrays with NumPy. Allocatable and pointer descriptor handles have
+their own default constructors, described in their later user-guide pages.
+
+### Sharing Descriptor Handles Between Modules
+
+The same allocatable or pointer handle can be passed between separately built
+x2py extension modules. The modules do not need to link to each other. Their
+matching wrapper arguments must use the same descriptor kind, element type,
+and rank.
+
+For a writable handle, the first wrapper that needs persistent storage attaches
+a versioned record defined by x2py's bundled native binding support. Later
+wrappers validate that record before using the same descriptor. This is a
+zero-copy handoff and therefore requires both extensions to use compatible
+versions of:
+
+- the x2py native-handle ABI;
+- the same Fortran compiler descriptor ABI; and
+- the same Fortran runtime ABI.
+
+In practice, build both extensions with the same compiler toolchain and avoid
+separately statically linked Fortran runtimes. An incompatible native-handle
+record is rejected instead of being interpreted as a descriptor. Pointer
+sharing still does not transfer ownership of the pointer target.
+
+---
+
 ## Important Rules
 
 - Always use **exact NumPy scalar dtypes** (`np.float64`, `np.int32`, etc.).

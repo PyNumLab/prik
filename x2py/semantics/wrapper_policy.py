@@ -65,9 +65,7 @@ _NUMPY_DTYPE_NAMES = {
 
 FIXED_STRING_RESULT_COPY_REASON = "copy fixed-length Fortran character output into C-owned null-terminated storage"
 ORDINARY_ARRAY_RESULT_COPY_REASON = "copy non-descriptor Fortran array output into C-owned contiguous storage"
-OWNED_NATIVE_ARRAY_HANDLE_COPY_REASON = (
-    "materialize native allocatable descriptor into persistent wrapper-owned CFI storage"
-)
+OWNED_NATIVE_ARRAY_HANDLE_COPY_REASON = "materialize native descriptor into persistent wrapper-owned CFI storage"
 SCALAR_DESCRIPTOR_RESULT_COPY_REASON = (
     "copy a present rank-zero native descriptor value before releasing call-local descriptor storage"
 )
@@ -666,6 +664,14 @@ class NativeDescriptorHandoffABI(str, Enum):
     OWNED_RESULT_STORAGE = "owned_result_storage"
 
 
+class NativeArrayDefaultConstruction(str, Enum):
+    """Completed storage path for a runtime-constructed empty descriptor."""
+
+    NONE = "none"
+    FACT_PACKED_EMPTY = "fact_packed_empty"
+    LAZY_OWNED_DESCRIPTOR = "lazy_owned_descriptor"
+
+
 class NativeArraySourceKind(str, Enum):
     """Python runtime sources accepted by an ordinary array argument."""
 
@@ -777,6 +783,7 @@ class NativeArrayOperation(str, Enum):
     ALLOCATE = "allocate"
     DEALLOCATE = "deallocate"
     RESIZE = "resize"
+    ASSOCIATE = "associate"
     NULLIFY = "nullify"
     DESTROY = "destroy"
 
@@ -907,6 +914,17 @@ class NativeDescriptorHandoffPolicy:
 
 
 @dataclass(frozen=True)
+class NativeArrayDefaultHandlePolicy:
+    """Completed lifecycle for a caller-created empty descriptor handle."""
+
+    construction: NativeArrayDefaultConstruction
+    descriptor_ownership: NativeArrayDescriptorOwnership | None
+    release: NativeArrayRelease
+    destroy_behavior: NativeArrayDestroyBehavior
+    operations: tuple[NativeArrayOperation, ...]
+
+
+@dataclass(frozen=True)
 class NativeArrayHandleWrapperPolicy:
     """Typed wrapper-facing projection of completed native handle policy."""
 
@@ -934,6 +952,7 @@ class NativeArrayHandleWrapperPolicy:
     required_headers: tuple[str, ...]
     array: ArrayHandoffPolicy
     handoff: NativeDescriptorHandoffPolicy
+    default_handle: NativeArrayDefaultHandlePolicy
 
 
 @dataclass(frozen=True)
@@ -4451,11 +4470,7 @@ def _result_blockers(semantic_type: models.SemanticType, decision: OwnershipDeci
         family_blockers = _scalar_descriptor_result_blockers(semantic_type, decision, "result")
     else:
         descriptor_kind = native_array_descriptor_kind(semantic_type)
-        if descriptor_kind == "pointer":
-            family_blockers = (
-                "pointer handle results need stable owner storage and target lifetime policy before wrapping",
-            )
-        elif descriptor_kind is not None:
+        if descriptor_kind is not None:
             family_blockers = _native_array_handle_result_blockers(decision, "result")
         elif _is_phase6_ordinary_array_type(semantic_type):
             family_blockers = _ordinary_array_result_blockers(semantic_type, decision, "result")
@@ -4554,11 +4569,7 @@ def _hidden_result_blockers(
         )
     else:
         descriptor_kind = native_array_descriptor_kind(argument.semantic_type)
-        if descriptor_kind == "pointer":
-            family_blockers = (
-                "pointer handle results need stable owner storage and target lifetime policy before wrapping",
-            )
-        elif descriptor_kind is not None:
+        if descriptor_kind is not None:
             family_blockers = _native_array_handle_result_blockers(decision, f"hidden result {argument.name!r}")
         elif _is_phase6_ordinary_array_type(argument.semantic_type):
             family_blockers = _ordinary_array_hidden_result_blockers(argument, decision, mapping)
@@ -4667,7 +4678,7 @@ def _native_array_handle_result_blockers(
     decision: OwnershipDecision,
     label: str,
 ) -> tuple[str, ...]:
-    """Require one wrapper-owned allocatable handle result."""
+    """Require one wrapper-owned native descriptor handle result."""
     blockers = []
     if decision.is_blocked:
         blockers.append(f"{label} has blocked ownership policy: {decision.blocker or decision.reason}")
@@ -4685,7 +4696,7 @@ def _native_array_handle_result_blockers(
         if actual is not required
     )
     if not decision.nullable:
-        blockers.append(f"{label} native handle must preserve unallocated state")
+        blockers.append(f"{label} native handle must preserve an absent descriptor state")
     return tuple(blockers)
 
 
@@ -5206,6 +5217,67 @@ def _native_array_handle_wrapper_policy(
         ),
         array=array,
         handoff=handoff,
+        default_handle=_native_array_default_handle_policy(completed, operations, owner_path),
+    )
+
+
+def _native_array_default_handle_policy(
+    completed: CompletedNativeArrayHandlePolicy,
+    operations: set[NativeArrayOperation],
+    owner_path: str,
+) -> NativeArrayDefaultHandlePolicy:
+    """Translate completed caller-construction lifecycle selectors."""
+    construction = _native_array_enum(
+        NativeArrayDefaultConstruction,
+        completed.default_construction,
+        owner_path,
+        "default construction",
+    )
+    if construction is NativeArrayDefaultConstruction.NONE:
+        descriptor_ownership = None
+    else:
+        descriptor_ownership = _native_array_enum(
+            NativeArrayDescriptorOwnership,
+            completed.default_descriptor_ownership,
+            owner_path,
+            "default descriptor ownership",
+        )
+    default_operations = {
+        _native_array_enum(NativeArrayOperation, item, owner_path, "default operation")
+        for item in completed.default_operations
+    }
+    if construction is not NativeArrayDefaultConstruction.NONE:
+        default_operations.update(
+            operation
+            for operation in operations
+            if operation
+            in {
+                NativeArrayOperation.SHAPE,
+                NativeArrayOperation.ARRAY_ACTUAL,
+                NativeArrayOperation.DESCRIPTOR,
+                NativeArrayOperation.NATIVE_BYTE_ORDER,
+                NativeArrayOperation.ALIGNED,
+                NativeArrayOperation.WRITEABLE,
+                NativeArrayOperation.LAYOUT,
+                NativeArrayOperation.CONTIGUOUS,
+            }
+        )
+    return NativeArrayDefaultHandlePolicy(
+        construction=construction,
+        descriptor_ownership=descriptor_ownership,
+        release=_native_array_enum(
+            NativeArrayRelease,
+            completed.default_release,
+            owner_path,
+            "default release",
+        ),
+        destroy_behavior=_native_array_enum(
+            NativeArrayDestroyBehavior,
+            completed.default_destroy_behavior,
+            owner_path,
+            "default destroy behavior",
+        ),
+        operations=tuple(sorted(default_operations, key=lambda item: item.value)),
     )
 
 
@@ -5880,7 +5952,7 @@ def _result_bridge_data_action(
         )
     if _is_scalar_descriptor_result_type(semantic_type, descriptor_kind=descriptor_kind):
         return BridgeDataAction.COPY_REPRESENTATION, SCALAR_DESCRIPTOR_RESULT_COPY_REASON
-    if native_array_descriptor_kind(semantic_type) == "allocatable":
+    if native_array_descriptor_kind(semantic_type) is not None:
         return BridgeDataAction.COPY_REPRESENTATION, OWNED_NATIVE_ARRAY_HANDLE_COPY_REASON
     if _is_first_lane_scalar_type(semantic_type):
         return BridgeDataAction.DIRECT_TRANSFER, None
@@ -5931,7 +6003,7 @@ def _native_result_bridge_data_action(
         )
     if _is_scalar_descriptor_result_type(semantic_type, descriptor_kind=descriptor_kind):
         return BridgeDataAction.COPY_REPRESENTATION, SCALAR_DESCRIPTOR_RESULT_COPY_REASON
-    if native_array_descriptor_kind(semantic_type) == "allocatable":
+    if native_array_descriptor_kind(semantic_type) is not None:
         return BridgeDataAction.COPY_REPRESENTATION, OWNED_NATIVE_ARRAY_HANDLE_COPY_REASON
     if _is_first_lane_scalar_type(semantic_type):
         return BridgeDataAction.DIRECT_TRANSFER, None

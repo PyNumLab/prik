@@ -1176,9 +1176,12 @@ def test_array_handle_docs_keep_views_copies_and_handles_distinct() -> None:
     assert "Reading the Python attribute" in allocatables
     assert "returns an `Allocatable[T[...]]` handle, not `ndarray | None`." in allocatables
     assert "never creates an automatic detached snapshot" in allocatables
-    assert "A borrowed view is a NumPy array that points at storage Python does not own." in allocatables
-    assert "Pointer-array handle results remain blocked" in pointers
-    assert "Any NumPy view returned by `p.to_numpy()` is tied to the pointer target" in pointers
+    assert "A NumPy view reflects current native storage." in allocatables
+    assert "A pointer-array function result becomes a returned `PointerArray`." in pointers
+    assert "owns persistent descriptor storage, not necessarily the target" in pointers
+    assert "`associate(other)` makes two pointer handles refer to the same target" in pointers
+    assert "If `p2` is unassociated, `p1` becomes" in pointers
+    assert "Do Not Return A Pointer To Expired Local Storage" in pointers
     assert "plain and `Aliased` derived module variables remain live native-owned objects" in memory
 
 

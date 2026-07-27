@@ -381,6 +381,58 @@ end module scalar_descriptor_mod
     ]
 
 
+def test_pointer_array_output_visibility_follows_intent_and_optional_presence():
+    source = """
+module pointer_output_mod
+contains
+subroutine create_values(values)
+    real(8), pointer, intent(out) :: values(:)
+end subroutine create_values
+
+subroutine maybe_create_values(values)
+    real(8), pointer, optional, intent(out) :: values(:)
+end subroutine maybe_create_values
+
+subroutine replace_values(values)
+    real(8), pointer, intent(inout) :: values(:)
+end subroutine replace_values
+end module pointer_output_mod
+"""
+
+    smod = fortran_module_to_semantic_module(parse_fortran_source(source))
+    create = get_function(smod, "create_values")
+    maybe_create = get_function(smod, "maybe_create_values")
+    replace = get_function(smod, "replace_values")
+
+    assert create.arguments[0].metadata[PROJECTED_OUTPUT_METADATA] is True
+    assert create.projection == [
+        ProjectionMapping(
+            python_name="values",
+            native_name="values",
+            native_position=0,
+            python_position=None,
+            result_position=0,
+        )
+    ]
+    assert maybe_create.projection == [
+        ProjectionMapping(
+            python_name="values",
+            native_name="values",
+            native_position=0,
+            python_position=0,
+            result_position=0,
+        )
+    ]
+    assert replace.projection == [
+        ProjectionMapping(
+            python_name="values",
+            native_name="values",
+            native_position=0,
+            python_position=0,
+        )
+    ]
+
+
 def test_primitive_scalar_inout_stays_visible_and_projects_replacement_return():
     source = """
 module outputs

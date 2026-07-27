@@ -1150,10 +1150,10 @@ callee allocation, or nothing. x2py therefore supports a conservative subset:
   `Pointer[T[...]]` handles;
 - descriptor-backed `to_numpy()` extraction can expose contiguous or strided
   targets when policy provides the required owner and lifetime facts;
-- pointer-array results remain blocked until stable owner storage and target
-  lifetime are implemented; and
-- pointer array `intent(out)` and `intent(inout)` reassociation without complete
-  policy is blocked.
+- pointer-array function results and nonoptional `intent(out)` outputs use
+  wrapper-owned descriptor handles; and
+- pointer array `intent(inout)` reassociation without complete policy is
+  blocked.
 
 ### Call-Local Input
 
@@ -1187,14 +1187,24 @@ end function selected_values
 ```
 
 ```python
-selected = selected_values(True)    # blocked until handle result policy is complete
+selected = selected_values(True)
 missing = selected_values(False)
+
+assert selected.associated
+assert not missing.associated
 ```
 
-Pointer-array results are not silently converted to detached NumPy copies.
-They remain blocked until owner storage, target lifetime, descriptor extraction,
-and generated destroy behavior are implemented for returned handles. Scalar
-pointer results still use copied Python values or `None`.
+Pointer-array results are not silently converted to detached NumPy copies. The
+returned `PointerArray` owns persistent standard-descriptor storage while target
+ownership remains governed by pointer policy. Closing the handle releases its
+descriptor and never implicitly deallocates the target; target deallocation is
+a separate policy-gated operation. Scalar pointer results still use copied
+Python values or `None`.
+
+A nonoptional pointer-array `intent(out)` uses the same owned-descriptor result
+path and is hidden from the Python parameters. Optional outputs remain visible
+to preserve native presence, while `intent(inout)` remains visible because its
+incoming association is meaningful.
 
 ### Pointer Policy Metadata
 
@@ -1202,8 +1212,8 @@ Semantic `.pyi` metadata can record `nullable`, transfer mode, target owner,
 lifetime, deallocation, shape source, contiguity, reassociation, aliasing, and
 mutability. Contradictory or incomplete facts produce a semantic or wrapper-planning error.
 Metadata can select implemented descriptor extraction and policy-gated
-operations. It cannot invent stable owner storage for a pointer-array result or
-make an unproved persistent reassociation safe.
+operations. Returned handles provide stable descriptor storage, but metadata
+cannot make an expired target valid or make unproved target deallocation safe.
 
 
 ## Array-Valued Function Results
@@ -1211,8 +1221,9 @@ make an unproved persistent reassociation safe.
 Numeric explicit-shape and automatic-shape array function results are returned
 as new Python-owned NumPy arrays. Allocatable array results use owned
 `AllocatableArray` objects instead, including matrices and higher-rank arrays.
-Pointer-array results remain blocked because a returned pointer association does
-not establish stable owner storage or target lifetime.
+Pointer-array results use owned `PointerArray` descriptor handles. The pointer
+target remains borrowed unless completed policy explicitly assigns target
+release responsibility.
 
 ```fortran
 function spectrum(n) result(values)

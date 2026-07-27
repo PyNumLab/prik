@@ -1206,6 +1206,12 @@ association state. Both are handles, not NumPy arrays. Extra metadata wraps the
 handle, for example `Annotated[Allocatable[Float64[:]], Aliased]` or
 `Annotated[Pointer[Float64[:]], PointerAssociation("runtime")]`.
 
+At runtime, the same annotation can create a present empty descriptor handle:
+`Allocatable[Float64[:]]()` starts unallocated, while
+`Pointer[Float64[:]]()` starts unassociated. The element annotation and array
+rank are required. Ordinary array annotations such as `Float64[:]` and scalar
+descriptor annotations such as `Allocatable[Float64]` are not constructors.
+
 `Allocatable[T[...]] | None` and `Pointer[T[...]] | None` are valid only on
 optional callable arguments, where `None` or omission maps to native
 `present(...)` false. Module variables, derived-type fields, and function results
@@ -1373,10 +1379,10 @@ preserved verbatim so project-specific owner and release names can be expressed;
 the backend still validates whether the requested transfer and destruction path
 are implemented.
 
-For native pointer-array handles, descriptor operations are opt-in. `nullify()`
-is always available on a present pointer handle. `allocate(shape)` is permitted
-only when `reassociation` is `allocate`, `allocate_resize`, `reallocate`, or
-`reassociate_allocate`. `deallocate()` is permitted only when `deallocation` is
+For native pointer-array handles, `associate(other)` and `nullify()` are always
+available. `allocate(shape)` is permitted only when `reassociation` is
+`allocate`, `allocate_resize`, `reallocate`, or `reassociate_allocate`.
+`deallocate()` is permitted only when `deallocation` is
 `deallocate`, `deallocate_resize`, `owner_deallocate`,
 `unsafe_deallocate`, or `wrapper_dealloc`.
 Use `unsafe_deallocate` only when the contract intentionally makes the caller
@@ -1419,9 +1425,10 @@ value: Annotated[
 For module and derived-field pointer-array handles, a completed contiguous
 policy enables `contiguous_view` extraction and checks the target's current
 contiguity before reading it. General strided extraction still requires the
-descriptor-view path. Pointer-array function results remain
-blocked until returned-handle owner storage, target lifetime, descriptor
-extraction, and destroy behavior are implemented.
+descriptor-view path. Pointer-array function results and nonoptional
+`intent(out)` outputs use wrapper-owned standard pointer descriptors. Their
+handles release descriptor storage on `close()` or finalization without
+implicitly deallocating the target.
 
 Derived module objects use the normal generated class in both plain and
 `Aliased` declarations:
@@ -2221,9 +2228,15 @@ The handle carries association state and descriptor operations:
 
 - `p.associated` reports whether the pointer currently has a target.
 - `p.to_numpy()` returns the current target view or `None`.
+- `p.associate(other)` copies `other`'s association without copying data.
 - `p.nullify()` is the default descriptor operation.
 - `allocate(shape)`, `deallocate()`, and `resize(shape)` are exposed only when
   completed pointer policy allows them.
+
+Direct pointer-array function results and nonoptional pointer-array
+`intent(out)` outputs return owned `PointerArray` descriptor handles. Optional
+outputs remain visible to preserve native absence, and `intent(inout)` remains
+visible because its incoming association is part of the call.
 
 When descriptor-backed extraction is enabled, `to_numpy()` builds NumPy shape and
 strides from descriptor metadata and can expose strided pointer targets. If that

@@ -23,6 +23,7 @@ def test_semantic_dtype_to_numpy_dtype_dictionary_uses_resolved_widths():
         "UInt16": "numpy.uint16",
         "UInt32": "numpy.uint32",
         "UInt64": "numpy.uint64",
+        "Float16": "numpy.float16",
         "Float32": "numpy.float32",
         "Float64": "numpy.float64",
         "Float128": "numpy.longdouble",
@@ -48,6 +49,7 @@ def test_semantic_type_to_numpy_dtype_uses_dtype_not_name():
     semantic_type = SemanticType("Int", dtype="Int64")
 
     assert semantic_type_to_numpy_dtype(semantic_type) == numpy.dtype(numpy.int64)
+    assert semantic_dtype_to_numpy_dtype("Float16") == numpy.dtype(numpy.float16)
     assert semantic_dtype_to_numpy_dtype("Float64") == numpy.dtype(numpy.float64)
     dtype_map = semantic_dtype_to_numpy_dtype_map()
     assert dtype_map["Int32"] == numpy.dtype(numpy.int32)

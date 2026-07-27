@@ -53,6 +53,7 @@ from x2py.semantics.wrapper_policy import (
     NativeArrayDescriptorInterop,
     NativeArrayDescriptorKind,
     NativeArrayDescriptorOwnership,
+    NativeArrayDefaultConstruction,
     NativeArrayDestroyBehavior,
     NativeArrayExtractionAction,
     NativeArrayGetterBehavior,
@@ -335,6 +336,19 @@ class NativeDescriptorHandoffPlan(StageRecord):
 
 
 @dataclass
+class NativeArrayDefaultHandlePlan(StageRecord):
+    """Caller-created descriptor storage and lifecycle selected before lowering."""
+
+    construction: NativeArrayDefaultConstruction
+    descriptor_ownership: NativeArrayDescriptorOwnership | None
+    release: NativeArrayRelease
+    destroy_behavior: NativeArrayDestroyBehavior
+    operations: tuple[NativeArrayOperation, ...]
+    owner_storage_role: str | None
+    operation_roles: tuple[tuple[NativeArrayOperation, str], ...]
+
+
+@dataclass
 class NativeArrayHandlePlan(StageRecord):
     """One typed editable native-array handle policy and descriptor handoff."""
 
@@ -362,6 +376,7 @@ class NativeArrayHandlePlan(StageRecord):
     required_headers: tuple[str, ...]
     array: ArrayHandoffPlan
     handoff: NativeDescriptorHandoffPlan
+    default_handle: NativeArrayDefaultHandlePlan
 
 
 @dataclass
