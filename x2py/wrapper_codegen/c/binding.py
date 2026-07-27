@@ -4172,15 +4172,7 @@ class CBindingGenerator(ClassVisitor):
             )
             return (*prefix, *self._field_handle_actual_nodes(descriptor_bridge, owner_args, callback))
         if operation is NativeArrayOperation.ASSOCIATE:
-            arguments = f"{owner_args}, source_descriptor" if owner_args else "source_descriptor"
-            return (
-                *prefix,
-                CDeclaration("source_packed", "PyObject *"),
-                CExpressionStatement(CodeExpression('if (!PyArg_ParseTuple(args, "O", &source_packed)) return NULL')),
-                *self._pointer_association_source_nodes(field),
-                CExpressionStatement(CodeExpression(f"{bridge}({arguments})")),
-                CExpressionStatement(CodeExpression("Py_RETURN_NONE")),
-            )
+            return self._field_handle_associate_body(field, prefix, bridge, owner_args)
         if operation in {NativeArrayOperation.ALLOCATE, NativeArrayOperation.RESIZE}:
             return (*prefix, *self._field_handle_shape_mutation_nodes(field, bridge, owner_args))
         if operation in {NativeArrayOperation.DEALLOCATE, NativeArrayOperation.NULLIFY}:
@@ -4191,6 +4183,24 @@ class CBindingGenerator(ClassVisitor):
                 CExpressionStatement(CodeExpression("Py_RETURN_NONE")),
             )
         raise ValueError(f"Unsupported field handle operation for {field.owner_path!r}: {operation!r}")
+
+    def _field_handle_associate_body(
+        self,
+        field: DerivedFieldPlan,
+        prefix: tuple,
+        bridge: str,
+        owner_args: str,
+    ) -> tuple:
+        """Associate one field pointer through its selected bridge operation."""
+        arguments = f"{owner_args}, source_descriptor" if owner_args else "source_descriptor"
+        return (
+            *prefix,
+            CDeclaration("source_packed", "PyObject *"),
+            CExpressionStatement(CodeExpression('if (!PyArg_ParseTuple(args, "O", &source_packed)) return NULL')),
+            *self._pointer_association_source_nodes(field),
+            CExpressionStatement(CodeExpression(f"{bridge}({arguments})")),
+            CExpressionStatement(CodeExpression("Py_RETURN_NONE")),
+        )
 
     def _field_handle_owner_nodes(self, owner) -> tuple:
         """Extract an address only for a completed direct-parent target."""

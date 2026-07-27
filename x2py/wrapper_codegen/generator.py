@@ -2379,9 +2379,7 @@ class WrapperCodeGenerator:
     ) -> tuple[WrapperPlanDiagnostic, ...]:
         """Require every handle to expose its common runtime operations exactly once."""
         operations = handle.operations
-        required = {NativeArrayOperation.SHAPE, NativeArrayOperation.ARRAY_ACTUAL, NativeArrayOperation.DESCRIPTOR}
-        if handle.descriptor_kind is NativeArrayDescriptorKind.POINTER:
-            required.add(NativeArrayOperation.ASSOCIATE)
+        required = self._required_native_array_operations(handle)
         diagnostics = []
         if len(set(operations)) != len(operations) or not required.issubset(operations):
             diagnostics.append(self._diagnostic(owner_path, "incomplete-native-array-operations", operations))
@@ -2394,6 +2392,20 @@ class WrapperCodeGenerator:
         elif NativeArrayOperation.DESTROY in operations:
             diagnostics.append(self._diagnostic(owner_path, "borrowed-native-array-has-destroy-operation", None))
         return tuple(diagnostics)
+
+    @staticmethod
+    def _required_native_array_operations(
+        handle: NativeArrayHandlePlan,
+    ) -> set[NativeArrayOperation]:
+        """Return common operations required by the completed descriptor kind."""
+        required = {
+            NativeArrayOperation.SHAPE,
+            NativeArrayOperation.ARRAY_ACTUAL,
+            NativeArrayOperation.DESCRIPTOR,
+        }
+        if handle.descriptor_kind is NativeArrayDescriptorKind.POINTER:
+            required.add(NativeArrayOperation.ASSOCIATE)
+        return required
 
     def _array_action_diagnostics(
         self,
