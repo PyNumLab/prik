@@ -2,7 +2,7 @@
 title: Editing .pyi Contracts
 audience: users, advanced users
 prerequisites: generated .pyi contract, wrapper build workflow
-related: exports-and-modules.md, functions-and-classes.md, calls-and-results.md, ownership-and-lifetimes.md, ../semantic-pyi-format.md
+related: exports-and-modules.md, functions-and-classes.md, calls-and-results.md, ../semantic-pyi-format.md
 status: maintained
 publication: reviewed
 ---
@@ -73,14 +73,6 @@ to compare and undo.
 - [How do I turn a native status into a Python exception?](calls-and-results.md#translate-status-results-into-exceptions)
 - [How do I keep Python's Global Interpreter Lock (GIL) during a call, or return to the normal releasing behavior?](calls-and-results.md#keep-the-gil-when-required)
 - [How do I describe a callback signature in the contract?](../../guide/callbacks.md#choosing-the-prototype-spelling)
-
-### Storage and Lifetimes
-
-- [How do I understand or edit a complete ownership rule?](ownership-and-lifetimes.md#the-complete-ownership-rule)
-- [How do I choose a value, copy, view, existing object, or new handle?](ownership-and-lifetimes.md#transfer-values)
-- [How do I decide who releases persistent storage?](ownership-and-lifetimes.md#destruction-values)
-- [How do I understand allocatable or pointer handle ownership?](ownership-and-lifetimes.md#common-handle-cases)
-- [Why is an ownership combination rejected?](ownership-and-lifetimes.md#combinations-that-are-rejected)
 
 Most edits change the Python surface: names, visibility, grouping, or how
 native arguments appear as Python parameters and results.

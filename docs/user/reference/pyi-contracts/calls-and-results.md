@@ -2,7 +2,7 @@
 title: .pyi Calls and Results
 audience: users, advanced users
 prerequisites: editing .pyi contracts overview
-related: index.md, functions-and-classes.md, ownership-and-lifetimes.md, ../semantic-pyi-format.md, ../../guide/arrays.md, ../../guide/error-handling.md
+related: index.md, functions-and-classes.md, ../semantic-pyi-format.md, ../../guide/arrays.md, ../../guide/error-handling.md
 status: maintained
 publication: reviewed
 ---
@@ -156,6 +156,5 @@ covered in the [Callbacks](../../guide/callbacks.md) guide.
 
 ## Next
 
-Most users can stop here. Read
-[Ownership and Lifetimes](ownership-and-lifetimes.md) only when editing
-explicit ownership annotations.
+Most users can stop here. Return to
+[Editing `.pyi` Contracts](index.md) to choose another edit.

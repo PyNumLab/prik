@@ -125,7 +125,6 @@ REQUIRED_REFERENCE_PAGES = [
     "user/reference/pyi-contracts/exports-and-modules.md",
     "user/reference/pyi-contracts/functions-and-classes.md",
     "user/reference/pyi-contracts/calls-and-results.md",
-    "user/reference/pyi-contracts/ownership-and-lifetimes.md",
     "user/reference/diagnostic-codes.md",
 ]
 REQUIRED_ROADMAP_PAGES = [

@@ -92,7 +92,6 @@ nav:
               - Exports and Modules: user/reference/pyi-contracts/exports-and-modules.md
               - Functions and Classes: user/reference/pyi-contracts/functions-and-classes.md
               - Calls and Results: user/reference/pyi-contracts/calls-and-results.md
-              - Ownership and Lifetimes: user/reference/pyi-contracts/ownership-and-lifetimes.md
           - Diagnostic Codes: user/reference/diagnostic-codes.md
           - Generated Functions: user/reference/generated-functions.md
           - Generated Modules: user/reference/generated-modules.md

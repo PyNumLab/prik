@@ -275,8 +275,8 @@ primary placeholder queue.
 - [x] `docs/user/reference/semantic-pyi-format.md`: maintained semantic `.pyi`
   contract.
 - [x] `docs/user/reference/pyi-contracts/`: maintained editable `.pyi`
-  contract reference, organized by exports, callable surfaces, call
-  projection, and ownership.
+  contract reference, organized by exports, callable surfaces, and argument
+  and result projection.
 - [x] `docs/user/reference/fortran-wrapper.md`: maintained Fortran wrapper
   contract reference.
 - [x] `docs/user/reference/cli-commands.md`: maintained CLI reference.
