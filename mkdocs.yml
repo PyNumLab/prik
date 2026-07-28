@@ -53,12 +53,9 @@ nav:
           - Memory Management: user/guide/memory-management.md
           - Callbacks: user/guide/callbacks.md
           - Enumerations: user/guide/enumerations.md
-          - Error Handling & Diagnostics: user/guide/error-handling.md
-          - Packaging: user/guide/packaging.md
-          - Distribution: user/guide/distribution.md
-          - Fortran Wrapper Guide: user/guide/fortran-wrapper.md
-          - Editing Semantic .pyi Contracts: user/guide/editing-semantic-pyi-contracts.md
           - Raw Addresses: user/guide/raw-addresses.md
+          - Error Handling & Diagnostics: user/guide/error-handling.md
+          - Building the Shared Library: user/guide/building-shared-library.md
       - Tutorials:
           - Overview: user/tutorials/index.md
           - Basic Wrapper Tutorial: user/tutorials/basic-wrapper.md
@@ -92,8 +89,10 @@ nav:
           - Overview: user/reference/index.md
           - CLI Commands: user/reference/cli-commands.md
           - Python API: user/reference/python-api.md
+          - Fortran Wrapper Reference: user/reference/fortran-wrapper.md
           - Semantic IR: user/reference/semantic-ir.md
           - Semantic .pyi Format: user/reference/semantic-pyi-format.md
+          - Editing Semantic .pyi Contracts: user/reference/editing-semantic-pyi-contracts.md
           - Callbacks: user/reference/callbacks.md
           - Diagnostic Codes: user/reference/diagnostic-codes.md
           - Generated Functions: user/reference/generated-functions.md

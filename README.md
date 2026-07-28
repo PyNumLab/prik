@@ -344,7 +344,7 @@ X2PY_C_DOCS_END -->
 
 For diagnostic and inspection commands beyond the main build path, start with
 `python3 -m x2py --help`, then continue to the
-[Fortran wrapper guide](docs/user/guide/fortran-wrapper.md).
+[CLI command reference](docs/user/reference/cli-commands.md).
 
 <!-- X2PY_C_DOCS_START
 The runtime build path accepts one or more ordered Fortran sources. C parsing,

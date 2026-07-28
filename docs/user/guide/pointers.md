@@ -58,9 +58,9 @@ not carry a native pointer descriptor.
 
 ## Pointer Array Handle API
 
-`Pointer[T[...]]` is the semantic contract spelling. Generated Python APIs
-return a `PointerArray`. You can also create an unassociated handle when a
-routine needs a present pointer descriptor that it will associate:
+`Pointer[T[...]]` is the type annotation. At runtime, generated Python APIs use
+a `PointerArray`. You can also create an unassociated handle when a routine
+needs a present pointer descriptor that it will associate:
 
 ```python
 import x2py.contracts as xc
@@ -72,9 +72,9 @@ api.choose_target(target)
 assert target.associated is True
 ```
 
-The annotation supplies the element dtype and rank. The handle acquires
-compiler-compatible descriptor storage when first passed to a writable
-matching wrapper argument. It stays the same Python object after the call.
+The annotation supplies the element dtype and rank. The handle creates its
+native descriptor storage when first passed to a matching writable argument.
+It stays the same Python object after the call.
 `Pointer[Float64]()` is not supported because scalar pointers cross the Python
 boundary as values rather than array handles.
 
@@ -95,8 +95,7 @@ boundary as values rather than array handles.
 
 `associate()` and `nullify()` are available by default. A handle may also
 support allocation, target deallocation, resizing, and NumPy extraction.
-Calling one of these operations when it is unavailable raises
-`NotImplementedError`.
+An unavailable operation raises `NotImplementedError`.
 
 ---
 
@@ -112,8 +111,9 @@ pointers refer to the same target. If `p2` is unassociated, `p1` becomes
 unassociated. No data is copied.
 
 Any previous association of `p1` is removed without destroying its old target.
-If `p1` was the only pointer to a target it allocated, call `p1.deallocate()`
-before reassociating it to avoid leaking that memory.
+If `p1` is responsible for a target created with `p1.allocate()`, call
+`p1.deallocate()` before reassociating it. Otherwise, that memory may be left
+without a pointer that can release it.
 
 ---
 
@@ -187,8 +187,9 @@ api.reassociate_values(p)
 assert p.associated  # the same descriptor was updated in place
 ```
 
-For an optional pointer descriptor, omission or `None` makes the native dummy
-absent. Passing an unassociated handle makes it present but unassociated.
+For an optional pointer descriptor, omission or `None` means the native
+argument is absent. Passing an unassociated handle makes the argument present
+but unassociated.
 
 ---
 
@@ -321,7 +322,7 @@ current = p.to_numpy()
 
 Do not use `view` after target deallocation, reassociation, resizing, or
 reallocation behind the pointer. Extract `current` for the new target. The
-independent Python-owned `saved` copy remains safe.
+independent `saved` copy remains safe.
 
 ### Deallocate Only What This Pointer Allocated
 
@@ -338,9 +339,9 @@ same pointer. If the pointer was only associated with existing storage, use
 p.nullify()  # does not destroy the target
 ```
 
-Do not use `nullify()` for a target created with `p.allocate()`. The memory
-remains allocated and leaks if no other pointer refers to it. Use
-`p.deallocate()` instead.
+Do not use `nullify()`, `associate()`, or `close()` while `p` is responsible
+for an allocated target. The target remains allocated and may become
+unreachable. Use `p.deallocate()` first.
 
 Use `resize()` only in the same cases where `deallocate()` is valid.
 
@@ -407,9 +408,15 @@ Scalar pointers appear as `T | None` values at the Python boundary rather than
 Scalar values do not expose persistent association, `to_numpy()`, or pointer
 descriptor operations.
 
+For an optional scalar pointer argument, omission makes the argument absent.
+Passing `None` makes it present but unassociated, while passing a value makes it
+present with that value. See [Optional Arguments](optional-arguments.md).
+
 ---
 
 ## Next
 
-- Continue with [Memory Management](memory-management.md) for owner and lifetime
-  rules shared by arrays, pointers, allocatables, and derived objects.
+- Review [Memory Management](memory-management.md) for the ownership and live
+  view rules shared by all native storage.
+- Compare [Allocatables](allocatables.md) when the native object owns an
+  allocation rather than a pointer association.

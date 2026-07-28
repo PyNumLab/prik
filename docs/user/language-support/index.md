@@ -2,7 +2,7 @@
 title: Language Support
 audience: users, developers
 prerequisites: user guide
-related: feature-matrix.md, ../guide/fortran-wrapper.md
+related: feature-matrix.md, ../reference/fortran-wrapper.md
 status: maintained
 publication: draft
 ---

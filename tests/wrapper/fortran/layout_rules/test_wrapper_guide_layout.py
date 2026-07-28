@@ -398,18 +398,18 @@ def test_wrapper_plan_migration_matrix_tracks_collected_wrapper_nodes():
     assert _wrapper_plan_migration_summary_counts() == expected_summary
 
 
-def test_wrapper_language_suite_and_user_guide_link_current_subject_paths():
+def test_wrapper_language_suite_and_reference_link_current_subject_paths():
     root_test_modules = sorted(path.name for path in WRAPPER_SUITE_ROOT.glob("test_*.py"))
     assert root_test_modules == []
     assert (WRAPPER_SUITE_ROOT / "README.md").is_file()
     assert "fortran/README.md" in (WRAPPER_SUITE_ROOT / "README.md").read_text(encoding="utf-8")
 
-    guide = (DOCS_ROOT / "user/guide/fortran-wrapper.md").read_text(encoding="utf-8")
+    reference = (DOCS_ROOT / "user/reference/fortran-wrapper.md").read_text(encoding="utf-8")
     runtime_paths = [test_path for test_path in SUBJECT_TEST_PATHS if not test_path.startswith("layout_rules/")]
-    missing = [test_path for test_path in runtime_paths if test_path not in guide]
+    missing = [test_path for test_path in runtime_paths if test_path not in reference]
     assert missing == []
-    assert "- [x]" not in guide
-    assert "- [ ]" not in guide
+    assert "- [x]" not in reference
+    assert "- [ ]" not in reference
 
 
 def test_stale_wrapper_paths_are_rejected_after_stage_one_moves():

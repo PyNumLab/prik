@@ -2,7 +2,7 @@
 title: Configuration Files Reference
 audience: users, developers
 prerequisites: packaging, CLI commands
-related: cli-commands.md, python-api.md, ../guide/packaging.md, ../../developer/quality-assurance.md
+related: cli-commands.md, python-api.md, ../guide/building-shared-library.md, ../../developer/quality-assurance.md
 status: maintained
 publication: draft
 ---
@@ -64,7 +64,7 @@ build flags. The preceding `generate --makefile` command is what writes a new
 
 Replay accepts only settings that are defined as overrides: `--out`,
 `--compiler`, `-I`/`--include-dir`, `--json`, `--verbose`, `--no-color`, and
-`--debug`/`--debug-traceback`. The manifest remains authoritative for its
+`--debug`. The manifest remains authoritative for its
 output directory, language, preprocessing recipe, wrapper behavior, native
 inputs, and ordered link plan. Passing one of those saved settings again is an
 error rather than an ignored command-line value.
@@ -119,18 +119,19 @@ Wrapper users select inputs through CLI flags, Python API arguments, semantic
 selects MkDocs' built-in Read the Docs theme, owns the complete intended
 navigation tree, and loads the publication hook. The theme configuration keeps
 the sidebar expanded through four navigation levels. A local stylesheet keeps
-the page body adjacent to the sidebar with a `1200px` maximum width, balancing
-readable prose with room for code and tables. Code and result blocks use the
-available page width up to a consistent `56rem` cap; long lines scroll inside
-the block. Local JavaScript and CSS add an accessible copy control to every
-rendered code, command-output, and result block, with separate space reserved
-beside the text. The production hook includes only pages whose front matter says
-`publication: reviewed`. A draft lane index suppresses its complete User,
-Developer, or Maintainer lane. Links from documentation pages to existing
-source, tests, configuration, and other repository evidence are rendered as
-GitHub links because those files are outside the MkDocs source tree. Links
-between documentation pages remain site-relative and are never rewritten to
-GitHub.
+its scrollbar visible and draggable when the navigation is longer than the
+screen. The same stylesheet keeps the page body adjacent to the sidebar with a
+`1200px` maximum width, balancing readable prose with room for code and tables.
+Code and result blocks use the available page width up to a consistent `56rem`
+cap; long lines scroll inside the block. Local JavaScript and CSS add an
+accessible copy control to every rendered code, command-output, and result
+block, with separate space reserved beside the text. The production hook
+includes only pages whose front matter says `publication: reviewed`. A draft
+lane index suppresses its complete User, Developer, or Maintainer lane. Links
+from documentation pages to existing source, tests, configuration, and other
+repository evidence are rendered as GitHub links because those files are
+outside the MkDocs source tree. Links between documentation pages remain
+site-relative and are never rewritten to GitHub.
 
 Preview exactly what GitHub Pages will publish with:
 
@@ -173,5 +174,5 @@ Tooling configuration is covered by
 [`test_check_static_analysis_versions.py`](../../../tests/tools/test_check_static_analysis_versions.py).
 
 When a generated file contract changes, update this page with the CLI reference,
-Python API reference, packaging guide, and wrapper tests that prove the replay
-or Makefile behavior.
+Python API reference, shared-library build guide, and wrapper tests that prove
+the replay or Makefile behavior.

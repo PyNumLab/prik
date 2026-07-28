@@ -102,7 +102,8 @@ Only do this after you are comfortable with the basic workflow:
 python3 -m x2py generate --pyi src/scale.f90 --out contracts
 ```
 
-Editing contracts is powerful but adds complexity. See **Editing Semantic .pyi Contracts** in the User Guide when you're ready.
+Editing contracts is powerful but adds complexity. See
+**Editing Semantic .pyi Contracts** in Reference when you're ready.
 
 ---
 

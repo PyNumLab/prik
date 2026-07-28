@@ -30,7 +30,7 @@ X2PY_C_DOCS_END -->
 For lookup-style commands, use the
 [verified examples cookbook](../examples/verified-cookbook.md). For
 the full generated Python contract, use the
-[Fortran wrapper guide](../guide/fortran-wrapper.md).
+[Fortran wrapper reference](../reference/fortran-wrapper.md).
 
 ## Before You Start
 
@@ -251,7 +251,7 @@ Next:
 
 - Use the [verified examples cookbook](../examples/verified-cookbook.md)
   for task-specific recipes.
-- Use the [Fortran wrapper guide](../guide/fortran-wrapper.md) for the
+- Use the [Fortran wrapper reference](../reference/fortran-wrapper.md) for the
   complete generated Python behavior.
 - Use [Semantic .pyi Format](../reference/semantic-pyi-format.md) when editing
   wrapper contracts.

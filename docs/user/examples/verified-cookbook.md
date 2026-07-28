@@ -13,10 +13,9 @@ This cookbook is for lookup. Each recipe answers one practical question and
 uses checked repository fixtures where the command output is stable.
 
 Start with the [basic wrapper tutorial](../tutorials/basic-wrapper.md) if this
-is your first x2py workflow. Use the
-[Fortran wrapper guide](../guide/fortran-wrapper.md) for the full runtime
-contract. The Semantic .pyi Format reference gives the complete editable
-wrapper contract syntax.
+is your first x2py workflow. The Fortran wrapper reference gives the full
+runtime contract. The Semantic .pyi Format reference gives the complete
+editable wrapper contract syntax.
 
 ## Choose A Recipe
 
@@ -61,10 +60,10 @@ lowered to semantic IR and printed as `.pyi`; runtime
 wrapping of user-supplied C libraries is not implemented yet.
 X2PY_C_DOCS_END -->
 
-## Related Documentation
+## Next
 
 - [Basic wrapper tutorial](../tutorials/basic-wrapper.md)
-- [Fortran wrapper guide](../guide/fortran-wrapper.md)
+- [Fortran wrapper reference](../reference/fortran-wrapper.md)
 - Semantic .pyi Format
 - Semantic IR Reference
 - Diagnostic Codes

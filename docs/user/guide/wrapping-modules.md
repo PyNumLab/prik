@@ -3,7 +3,7 @@ title: Wrapping Modules
 description: How x2py exposes Fortran modules as Python namespaces with procedures, variables, and state
 audience: users
 prerequisites: data types, first wrapped module
-related: wrapping-functions.md, memory-management.md, packaging.md
+related: wrapping-functions.md, memory-management.md, building-shared-library.md
 status: maintained
 publication: reviewed
 ---
@@ -87,6 +87,6 @@ print(mod.nmax)         # 12 (read-only parameter)
 
 - Learn about [Memory Management](memory-management.md) — especially important when working with module state
 - See [Optional Arguments](optional-arguments.md)
-- Explore [Packaging](packaging.md) for distribution
+- See [Building the Shared Library](building-shared-library.md)
 - Check the [Language Feature Matrix](../language-support/feature-matrix.md)
   for supported module features and limitations

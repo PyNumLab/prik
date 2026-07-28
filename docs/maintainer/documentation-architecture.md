@@ -33,7 +33,8 @@ contains only pages explicitly marked as reviewed.
    command that consumes it. Generated paths must come from an immediately
    preceding command, and commands show their expected result. Fixture-backed
    examples stay synchronized with their checked source.
-8. The website keeps its documentation navigation expanded and renders an
+8. The website keeps its documentation navigation expanded, shows a draggable
+   scrollbar when the sidebar is longer than the screen, and renders an
    accessible copy control on every code block, including command-output and
    result blocks.
 9. On desktop-sized viewports, the page body starts beside the navigation and

@@ -1366,7 +1366,7 @@ validation, allocation, and writeback behavior, while
 `_build_string_storage_argument()`, `_convert_raw_string_argument()`, and
 `_convert_string_result()` define the bridge representation. The public
 contract and observable oracle are
-`docs/user/guide/fortran-wrapper.md`, `docs/user/guide/data-types.md`,
+`docs/user/reference/fortran-wrapper.md`, `docs/user/guide/data-types.md`,
 `docs/user/reference/semantic-pyi-format.md`,
 `tests/wrapper/fortran/strings/test_character_arguments.py`, and
 `tests/wrapper/fortran/strings/test_character_edge_cases.py`. Direct-plan
@@ -1726,7 +1726,7 @@ with the native-handle caller contract recorded as their sole Phase 7 blocker;
 the direct route is forced only by the internal parity harness.
 
 The public behavior is defined by the NumPy array contract in
-`docs/user/guide/fortran-wrapper.md`, the array spelling and metadata rules in
+`docs/user/reference/fortran-wrapper.md`, the array spelling and metadata rules in
 `docs/user/reference/semantic-pyi-format.md`, and the existing array wrapper
 tests. The legacy binding validates exact dtype, rank, every expressible
 extent, native byte order, alignment, layout/stride requirements, and

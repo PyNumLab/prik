@@ -3,7 +3,7 @@ title: User Guide
 description: Detailed guides for wrapping Fortran code with x2py
 audience: users
 prerequisites: getting started
-related: data-types.md, fortran-wrapper.md, ../language-support/index.md
+related: data-types.md, ../reference/fortran-wrapper.md, ../language-support/index.md
 status: maintained
 publication: reviewed
 ---
@@ -12,7 +12,7 @@ publication: reviewed
 
 This section builds on the [Getting Started](../getting-started/index.md)
 workflow. It explains data type mapping, supported Fortran constructs, runtime
-behavior, packaging, and distribution.
+behavior, and how to build the shared library.
 
 ---
 
@@ -42,23 +42,20 @@ behavior, packaging, and distribution.
 
 - [Callbacks](callbacks.md)
 - [Enumerations](enumerations.md)
+- [Raw Addresses](raw-addresses.md) — Advanced primitive, array, and fixed-string address boundaries
 - [Error Handling](error-handling.md)
 
 ---
 
-## Build and Deployment
+## Building
 
-- [Packaging](packaging.md)
-- [Distribution](distribution.md)
+- [Building the Shared Library](building-shared-library.md)
 
 ---
 
-## Contract & Reference
+## Reference
 
-- **[Fortran Wrapper Guide](fortran-wrapper.md)** — Complete reference for the generated runtime surface
-- [Editing Semantic `.pyi` Contracts](editing-semantic-pyi-contracts.md) — When and how to customize contracts
-- [Raw Addresses](raw-addresses.md) — Advanced primitive, array, and fixed-string address boundaries
-- [Semantic `.pyi` Format](../reference/semantic-pyi-format.md) — Full annotation reference
+- [Reference Overview](../reference/index.md) — CLI, Python API, wrapper behavior, and semantic contracts
 - [Language Feature Matrix](../language-support/feature-matrix.md) — Current support status (supported / partial / unsupported)
 
 ---

@@ -1,21 +1,22 @@
 ---
 title: Editing Semantic .pyi Contracts
 audience: users, advanced users
-prerequisites: Fortran wrapper guide, semantic .pyi format
-related: fortran-wrapper.md, ../reference/semantic-pyi-format.md
+prerequisites: Fortran wrapper reference, semantic .pyi format
+related: fortran-wrapper.md, semantic-pyi-format.md
 status: maintained
 publication: reviewed
 ---
 
 # Editing Semantic `.pyi` Contracts
 
-This guide is the user-facing contract for changing a generated semantic
+This reference explains how to change a generated semantic
 `.pyi` before building a wrapper. It covers the edits x2py handles, the native
 facts an edit must preserve, the runtime effect of each supported edit, and the
 errors raised for unsafe combinations.
 
-The Semantic `.pyi` Format reference later provides the complete grammar. Use
-this guide to decide whether a proposed edit is a supported wrapper operation.
+The [Semantic `.pyi` Format](semantic-pyi-format.md) provides the complete
+grammar. Use this page to decide whether a proposed edit is a supported wrapper
+operation.
 
 ## The Editing Workflow
 
@@ -232,7 +233,7 @@ def norm2(values: Float64[:]) -> Float64: ...
 
 The leaf filename identifies the native module. The declaration name selects
 the native procedure unless an
-[`@bind(...)`](wrapping-functions.md#python-and-native-names) target is present.
+[`@bind(...)`](../guide/wrapping-functions.md#python-and-native-names) target is present.
 
 ### Add or rename a native target
 
@@ -760,5 +761,5 @@ artifact you are asking x2py to call.
 
 ## Next
 
-- [Raw Addresses](raw-addresses.md) for primitive, array, and fixed-string
+- [Raw Addresses](../guide/raw-addresses.md) for primitive, array, and fixed-string
   address boundaries

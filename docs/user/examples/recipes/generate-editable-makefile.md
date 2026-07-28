@@ -2,7 +2,7 @@
 title: Generate An Editable Makefile
 audience: users, developers
 prerequisites: basic wrapper tutorial, GNU Make, supported compiler toolchain
-related: ../verified-cookbook.md, ../../guide/fortran-wrapper.md
+related: ../verified-cookbook.md, ../../reference/fortran-wrapper.md
 status: maintained
 publication: draft
 ---

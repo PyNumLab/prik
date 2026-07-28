@@ -3,7 +3,7 @@ title: Wrapping Functions
 description: How x2py wraps Fortran `function` procedures — return values, output arguments, arrays, and contracts
 audience: users
 prerequisites: data types, first wrapped function
-related: wrapping-subroutines.md, arrays.md, fortran-wrapper.md
+related: wrapping-subroutines.md, arrays.md, ../reference/fortran-wrapper.md
 status: maintained
 publication: reviewed
 ---

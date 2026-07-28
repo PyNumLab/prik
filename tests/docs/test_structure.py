@@ -116,8 +116,10 @@ REQUIRED_REFERENCE_PAGES = [
     "user/reference/index.md",
     "user/reference/cli-commands.md",
     "user/reference/python-api.md",
+    "user/reference/fortran-wrapper.md",
     "user/reference/semantic-ir.md",
     "user/reference/semantic-pyi-format.md",
+    "user/reference/editing-semantic-pyi-contracts.md",
     "user/reference/diagnostic-codes.md",
 ]
 REQUIRED_ROADMAP_PAGES = [
@@ -149,12 +151,9 @@ REQUIRED_USER_GUIDE_PAGES = [
     "user/guide/memory-management.md",
     "user/guide/callbacks.md",
     "user/guide/enumerations.md",
-    "user/guide/error-handling.md",
-    "user/guide/packaging.md",
-    "user/guide/distribution.md",
-    "user/guide/fortran-wrapper.md",
-    "user/guide/editing-semantic-pyi-contracts.md",
     "user/guide/raw-addresses.md",
+    "user/guide/error-handling.md",
+    "user/guide/building-shared-library.md",
 ]
 CLI_HELP_GROUP_HEADINGS = [
     "commands:",
@@ -213,7 +212,6 @@ CLI_REFERENCE_OPTIONS = [
     "--verbose",
     "--no-color",
     "--debug",
-    "--debug-traceback",
 ]
 CLI_VISIBLE_HELP_OPTIONS = CLI_REFERENCE_OPTIONS
 REQUIRED_SOURCE_NAVIGATION_PAGES = [
@@ -277,8 +275,8 @@ SOURCE_NAVIGATION_PUBLIC_DOCS = [
     "docs/user/examples/recipes/inspect-c-api.md",
     "docs/user/examples/recipes/inspect-fortran-api.md",
     "docs/user/examples/recipes/semantic-pyi-contracts.md",
-    "docs/user/guide/fortran-wrapper.md",
-    "docs/user/guide/editing-semantic-pyi-contracts.md",
+    "docs/user/reference/fortran-wrapper.md",
+    "docs/user/reference/editing-semantic-pyi-contracts.md",
     "docs/user/reference/cli-commands.md",
     "docs/user/reference/diagnostic-codes.md",
     "docs/user/reference/python-api.md",
@@ -967,18 +965,7 @@ def test_next_sections_use_linked_bullet_destinations(relative_path: str) -> Non
         assert MARKDOWN_LINK.search(item), f"{relative_path}:{line_number}: Next item must include a Markdown link"
 
 
-@pytest.mark.parametrize(
-    "relative_path",
-    [
-        path
-        for path in REQUIRED_USER_GUIDE_PAGES
-        if path
-        not in {
-            "user/guide/fortran-wrapper.md",
-            "user/guide/editing-semantic-pyi-contracts.md",
-        }
-    ],
-)
+@pytest.mark.parametrize("relative_path", REQUIRED_USER_GUIDE_PAGES)
 def test_user_guide_commands_do_not_expose_fixture_paths(relative_path: str) -> None:
     page = (DOCS_ROOT / relative_path).read_text(encoding="utf-8")
     assert "python3 -m x2py tests/" not in page
@@ -1139,18 +1126,16 @@ def test_getting_started_pages_keep_advanced_stage_flags_out_of_beginner_path() 
     assert "--json" not in content
 
 
-def test_user_guide_uses_automatic_wrapper_stage_selection() -> None:
+def test_user_guide_shows_direct_shared_library_build() -> None:
     content = "\n".join(
         _visible_documentation_source(DOCS_ROOT / relative_path) for relative_path in REQUIRED_USER_GUIDE_PAGES
     )
 
-    assert "python3 -m x2py generate --makefile src/scale.f90" in content
-    assert "python3 -m x2py contracts/solver/__init__.pyi \\\n  --native-fortran-sources solver.f90" in content
-    assert "python3 -m x2py generate --makefile mesh.f90 solver.f90 --out-dir build" in content
+    assert "python3 -m x2py src/scale.f90 --out-dir build/scale" in content
 
 
-def test_fortran_wrapper_guide_shows_every_common_shared_library_build_input() -> None:
-    content = _visible_documentation_source(DOCS_ROOT / "user/guide/fortran-wrapper.md")
+def test_fortran_wrapper_reference_shows_every_common_shared_library_build_input() -> None:
+    content = _visible_documentation_source(DOCS_ROOT / "user/reference/fortran-wrapper.md")
     example = content.split("For example, this command supplies every common build input", maxsplit=1)[1].split(
         "`--compiler` selects", maxsplit=1
     )[0]
@@ -1182,7 +1167,8 @@ def test_array_handle_docs_keep_views_copies_and_handles_distinct() -> None:
     assert "`associate(other)` makes two pointer handles refer to the same target" in pointers
     assert "If `p2` is unassociated, `p1` becomes" in pointers
     assert "Do Not Return A Pointer To Expired Local Storage" in pointers
-    assert "plain and `Aliased` derived module variables remain live native-owned objects" in memory
+    assert "plain and `Aliased` derived module variables remain live objects" in memory
+    assert "Fortran module owns their storage" in memory
 
 
 @pytest.mark.parametrize("heading", CLI_HELP_GROUP_HEADINGS)
@@ -1354,6 +1340,10 @@ def test_site_theme_keeps_sidebar_open_and_code_blocks_copyable() -> None:
     assert "margin: 0" in layout_stylesheet
     assert ".wy-nav-side" in layout_stylesheet
     assert "padding-bottom: 0" in layout_stylesheet
+    assert ".wy-side-scroll" in layout_stylesheet
+    assert "overflow-y: auto" in layout_stylesheet
+    assert "scrollbar-width: thin" in layout_stylesheet
+    assert ".wy-side-scroll::-webkit-scrollbar-thumb" in layout_stylesheet
     assert ".rst-versions" in layout_stylesheet
     assert "display: none" in layout_stylesheet
     assert ".rst-content pre" in layout_stylesheet

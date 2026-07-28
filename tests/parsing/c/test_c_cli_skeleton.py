@@ -365,7 +365,7 @@ def test_cli_c_rejects_fortran_only_parse_flags(tmp_path: Path):
     assert "Fortran-only" in res.stderr
 
 
-def test_cli_c_no_color_and_debug_traceback_flags_are_accepted(tmp_path: Path):
+def test_cli_c_no_color_and_debug_flags_are_accepted(tmp_path: Path):
     header = tmp_path / "api.h"
     header.write_text("int run(void);\n", encoding="utf-8")
     cmd = [
@@ -377,7 +377,7 @@ def test_cli_c_no_color_and_debug_traceback_flags_are_accepted(tmp_path: Path):
         "--language",
         "c",
         "--no-color",
-        "--debug-traceback",
+        "--debug",
     ]
 
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)

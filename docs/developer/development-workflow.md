@@ -75,7 +75,7 @@ Use these documentation roles consistently:
 | --- | --- |
 | [Basic wrapper tutorial](../user/tutorials/basic-wrapper.md) | Main supported user workflow and boundaries |
 | [Verified examples cookbook](../user/examples/verified-cookbook.md) | Copy-paste commands and Python API recipes |
-| [Fortran wrapper guide](../user/guide/fortran-wrapper.md) | Implemented Fortran runtime contract, mechanism, ownership, and build modes |
+| [Fortran wrapper reference](../user/reference/fortran-wrapper.md) | Implemented Fortran runtime contract, mechanism, ownership, and build modes |
 | [Fortran parser reference](fortran-parser-reference.md) | Developer inventory for the Fortran frontend |
 | [Semantic IR reference](../user/reference/semantic-ir.md) | Accepted semantic IR and datatype contract |
 | [Semantic .pyi format](../user/reference/semantic-pyi-format.md) | User-visible semantic `.pyi` syntax and roadmap |

@@ -2,7 +2,7 @@
 title: Allocatables
 description: How x2py handles Fortran `allocatable` variables, arrays, and descriptors
 audience: users, advanced users
-prerequisites: arrays
+prerequisites: arrays, memory management
 related: arrays.md, pointers.md, memory-management.md
 status: maintained
 publication: reviewed
@@ -23,10 +23,10 @@ while the owner of the Python handle depends on where that handle came from.
 - `allocated` reports whether storage exists; `to_numpy()` returns a borrowed
   live view of that storage.
 - Reallocation or deallocation invalidates existing views.
-- Module and derived-field handles borrow their native owner. Function results
-  and caller-created handles own persistent descriptor storage.
-- `deallocate()` releases the current allocation but keeps the handle open;
-  `close()` permanently ends an owned handle.
+- Module and derived-field handles borrow their native owner. Returned and
+  caller-created handles own persistent descriptor storage.
+- When available, `deallocate()` releases the current allocation but keeps the
+  handle open. `close()` permanently ends an owned handle.
 
 ---
 
@@ -57,8 +57,8 @@ the current array data held by an allocatable handle.
 
 ## Allocatable Array Handle API
 
-`Allocatable[T[...]]` is the semantic contract spelling. Generated Python APIs
-return an `AllocatableArray`. You can also create an unallocated handle when a
+`Allocatable[T[...]]` is the type annotation. At runtime, generated Python APIs
+use an `AllocatableArray`. You can also create an unallocated handle when a
 routine needs a present descriptor that it will allocate:
 
 ```python
@@ -71,15 +71,11 @@ api.fill_values(values)
 assert values.allocated is True
 ```
 
-The annotation supplies the element dtype and rank. The handle acquires
-compiler-compatible descriptor storage when first passed to a writable
-matching wrapper argument. It stays the same Python object after the call.
+The annotation supplies the element dtype and rank. The handle creates its
+native descriptor storage when first passed to a matching writable argument.
+It stays the same Python object after the call.
 `Allocatable[Float64]()` is not supported because scalar allocatables cross the
 Python boundary as values rather than array handles.
-
-The same handle may be used by separately built x2py modules when their native
-handle and Fortran compiler/runtime ABIs are compatible. See
-[Sharing Descriptor Handles Between Modules](data-types.md#sharing-descriptor-handles-between-modules).
 
 A returned or attribute array handle remains present even when its descriptor
 is unallocated. Reading the Python attribute
@@ -104,8 +100,8 @@ else:
 | `dtype` | `numpy.dtype` | Declared array element type. |
 | `rank` | `int` | Declared number of dimensions. |
 | `to_numpy()` | `numpy.ndarray \| None` | A live view of current storage, or `None` when unallocated. It never creates an automatic detached snapshot. |
-| `deallocate()` | `() -> None` | Deallocates current storage when the generated contract permits this operation. |
-| `resize(shape)` | `(int \| Sequence[int]) -> None` | Allocates or resizes storage to `shape` when the generated contract permits this operation. |
+| `deallocate()` | `() -> None` | Deallocates current storage when this operation is available for the handle. |
+| `resize(shape)` | `(int \| Sequence[int]) -> None` | Allocates or resizes storage to `shape` when this operation is available for the handle. |
 | `close()` | `() -> None` | Permanently releases an owned descriptor and any remaining allocation. It does nothing on a borrowed handle. |
 | `closed` | `bool` | Whether an owned handle has been closed. |
 
@@ -126,7 +122,7 @@ when deterministic release matters, such as after using a large allocation.
 
 Module and field handles are borrowed. Calling `close()` on one is a no-op: it
 leaves the handle and its owner's storage unchanged. `deallocate()` changes the
-owner's allocation when the generated contract permits it.
+owner's allocation when that operation is available.
 
 ---
 
@@ -289,7 +285,7 @@ h.resize(8)
 
 After `resize()`, `deallocate()`, or a native call that may reallocate the
 descriptor, discard `view` and call `to_numpy()` again. The independent
-Python-owned `saved` copy remains safe.
+`saved` copy remains safe.
 
 ### Do Not Keep Using A Closed Result
 
@@ -304,17 +300,15 @@ A view normally retains its handle, but an explicit `close()` releases an owned
 allocatable result immediately. Finish using or copy all views before closing
 the handle.
 
-### Respect Ownership And Operation Permissions
+### Release Only Through The Owner
 
 ```python
-h.deallocate()  # NOT OK when the generated contract does not permit it
+h.deallocate()  # may be unavailable when h only observes native-owned storage
 ```
 
-Allocation, deallocation, and resizing are available only when completed
-policy permits them. A module or field handle can borrow storage controlled by
-its native owner; the presence of an allocation does not by itself grant
-Python permission to release it. Only a permitted descriptor operation or the
-native owner's API may deallocate that storage.
+Not every borrowed handle lets Python resize or deallocate its owner's storage.
+An unavailable operation raises `NotImplementedError`. Use the native owner's
+functions to change that storage instead.
 
 ---
 
@@ -325,9 +319,14 @@ than `AllocatableArray` handles. An unallocated projected scalar result becomes
 `None`. Scalar values do not expose persistent allocation state, `to_numpy()`,
 or descriptor operations.
 
+For an optional scalar allocatable argument, omission makes the argument absent.
+Passing `None` makes it present but unallocated, while passing a value makes it
+present with that value. See [Optional Arguments](optional-arguments.md).
+
 ---
 
 ## Next
 
-- Continue with [Memory Management](memory-management.md) for ownership,
-  lifetime, and cleanup rules.
+- Review [Memory Management](memory-management.md) for the ownership and live
+  view rules shared by all native storage.
+- Continue with [Pointers](pointers.md) for association and target lifetime.

@@ -2,7 +2,7 @@
 title: Large Fortran Codebase Tutorial
 audience: advanced users
 prerequisites: modern Fortran project tutorial, packaging
-related: modern-fortran-project.md, ../guide/packaging.md
+related: modern-fortran-project.md, ../guide/building-shared-library.md
 status: planned-documentation
 publication: draft
 ---

@@ -101,9 +101,9 @@ _BUILD_HELP_EPILOG = (
     "  Replay a build manifest:\n"
     "    python3 -m x2py --build-manifest build/x2py-build.json\n\n"
     '  See README.md "Quick Start" for the scale.f90 source and expected output.\n'
-    "  See docs/user/guide/fortran-wrapper.md for native flags and libraries.\n\n"
+    "  See docs/user/reference/cli-commands.md for all build options.\n\n"
     "  Manifest overrides: --out, --compiler, -I/--include-dir, --json, --verbose,\n"
-    "    --no-color, and --debug/--debug-traceback."
+    "    --no-color, and --debug."
 )
 _PARSE_HELP_EPILOG = (
     f"{_HELP_DIVIDER}\n\n"
@@ -1865,8 +1865,6 @@ def _add_diagnostic_controls(group: argparse._ArgumentGroup, *, allow_verbose: b
     group.add_argument("--no-color", action="store_true", help="Disable ANSI colors in help and diagnostics")
     group.add_argument(
         "--debug",
-        "--debug-traceback",
-        dest="debug",
         action="store_true",
         help="Re-raise command failures and print the full Python traceback",
     )

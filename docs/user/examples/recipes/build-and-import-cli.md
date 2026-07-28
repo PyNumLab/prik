@@ -2,7 +2,7 @@
 title: Build And Import With The CLI
 audience: users
 prerequisites: basic wrapper tutorial, supported compiler toolchain
-related: ../verified-cookbook.md, ../../guide/fortran-wrapper.md
+related: ../verified-cookbook.md, ../../reference/fortran-wrapper.md
 status: maintained
 publication: draft
 ---

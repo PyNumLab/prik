@@ -86,16 +86,26 @@ print(adjust(np.int32(5), offset=np.int32(10)))    # 15 (keyword)
 - An optional argument without `intent` uses the same conservative
   `intent(inout)` behavior when present.
 
-Scalar allocatable and pointer descriptors are the three-state exception:
-omission means absent, `None` means present but unallocated or unassociated,
-and a concrete value means present storage.
+### Scalar Allocatables And Pointers
+
+For an optional scalar allocatable or pointer, omission and `None` have
+different meanings:
+
+| Python call | What Fortran receives |
+| --- | --- |
+| `func()` | The argument is absent: `present(value)` is false. |
+| `func(None)` | The argument is present but unallocated or unassociated. |
+| `func(value)` | The argument is present with `value`. |
+
+This is the only scalar optional case where explicit `None` does not mean
+absence. The scalar crosses the call as a value, not as a persistent handle.
 
 ---
 
 ## Optional Outputs
 
-An optional output remains visible in the Python call. This lets the caller
-decide whether the native routine receives it.
+An optional ordinary output remains visible in the Python call. This lets the
+caller decide whether the native routine receives it.
 
 Pass writable storage to make `values` present:
 
@@ -129,8 +139,10 @@ For optional ordinary array outputs:
   those arrays are present or absent.
 
 Optional scalar derived-type outputs follow the same in-place rule as arrays.
-Primitive scalar outputs and native descriptor outputs have different storage
-rules. Check the generated `.pyi` contract when mixing output kinds.
+For an optional scalar allocatable or pointer output, omit the argument to make
+it absent. Pass `None` to make it present without an initial allocation or
+association. If its updated value is returned, Python receives a scalar or
+`None`, not a handle.
 
 ---
 

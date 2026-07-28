@@ -3,7 +3,7 @@ title: Wrapping Derived Types
 description: How x2py wraps Fortran derived types as Python classes with methods, fields, constructors, and ownership rules
 audience: users, advanced users
 prerequisites: wrapping modules, data types
-related: memory-management.md, generic-interfaces.md, fortran-wrapper.md
+related: memory-management.md, generic-interfaces.md, ../reference/fortran-wrapper.md
 status: maintained
 publication: reviewed
 ---

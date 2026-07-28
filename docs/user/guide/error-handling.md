@@ -29,6 +29,21 @@ x2py reports failures at several distinct stages. Understanding which stage fail
 
 ---
 
+## Verbose Output And Tracebacks
+
+Use the two diagnostic flags for different problems:
+
+| Flag | Use it when |
+| --- | --- |
+| `--verbose` | A build or link fails and you need the generated files, build steps, timings, or compiler commands. |
+| `--debug` | x2py fails unexpectedly and you need the full Python traceback. |
+
+`--verbose` keeps the normal concise error message. `--debug` exposes x2py's
+internal call stack, so it is mainly useful when reporting or investigating an
+x2py bug.
+
+---
+
 ## Status Projection Example
 
 You can turn Fortran status codes into Python exceptions using the `@raises` decorator in an edited contract.
@@ -57,7 +72,7 @@ Then:
 try:
     api.solve(np.int32(-1))
 except RuntimeError as e:
-    print(e)          # "negative input"
+    print(e)
 ```
 
 ---
@@ -75,6 +90,8 @@ except RuntimeError as e:
 
 - Always start with the **full error message** — it usually tells you exactly what went wrong.
 - Use `--verbose` when investigating build failures.
+- Use `--debug` only when an unexpected x2py failure requires a Python
+  traceback.
 - For complex contracts, generate the `.pyi` first and inspect it.
 - Run risky or untrusted callbacks in a subprocess if you need the main process to survive failures.
 
@@ -82,5 +99,5 @@ except RuntimeError as e:
 
 ## Next
 
-- [Editing Semantic `.pyi` Contracts](editing-semantic-pyi-contracts.md)
+- [Editing Semantic `.pyi` Contracts](../reference/editing-semantic-pyi-contracts.md)
 - Check the [Diagnostic Codes](../reference/diagnostic-codes.md) reference for detailed error categories

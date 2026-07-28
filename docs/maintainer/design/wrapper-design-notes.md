@@ -1,7 +1,7 @@
 ---
 title: Wrapper Design Notes
 audience: maintainers
-prerequisites: Fortran wrapper guide, semantic IR reference
+prerequisites: Fortran wrapper reference, semantic IR reference
 related: overall-architecture.md, ../internal-architecture/wrapper-generation-pipeline.md
 status: design
 publication: draft
@@ -21,7 +21,7 @@ X2PY_C_DOCS_END -->
 Reference details live in:
 
 - `docs/developer/fortran-parser-reference.md`
-- `docs/user/guide/fortran-wrapper.md`
+- `docs/user/reference/fortran-wrapper.md`
 - `docs/user/reference/semantic-ir.md`
 
 <!-- X2PY_C_DOCS_START

@@ -2,7 +2,7 @@
 title: Packaging Tutorial
 audience: users, packagers
 prerequisites: basic wrapper tutorial
-related: ../guide/packaging.md, ../guide/distribution.md
+related: ../guide/building-shared-library.md
 status: planned-documentation
 publication: draft
 ---

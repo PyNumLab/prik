@@ -21,7 +21,7 @@ Sections through [Deferred C Work](#deferred-c-work) describe current semantic
 behavior. The final self-contained C runtime-contract section is explicitly a
 design proposal and is not implemented C-input wrapper support. The current
 Fortran runtime contract is documented separately in
-[Fortran wrapper guide](../guide/fortran-wrapper.md).
+[Fortran wrapper reference](fortran-wrapper.md).
 X2PY_C_DOCS_END -->
 
 ## Datatype Mapping

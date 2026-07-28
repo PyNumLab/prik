@@ -276,6 +276,10 @@ primary placeholder queue.
 - [x] `docs/user/reference/semantic-ir.md`: maintained Semantic IR contract.
 - [x] `docs/user/reference/semantic-pyi-format.md`: maintained semantic `.pyi`
   contract.
+- [x] `docs/user/reference/editing-semantic-pyi-contracts.md`: maintained
+  editable `.pyi` contract reference.
+- [x] `docs/user/reference/fortran-wrapper.md`: maintained Fortran wrapper
+  contract reference.
 - [x] `docs/user/reference/cli-commands.md`: maintained CLI reference.
 - [x] `docs/user/reference/python-api.md`: maintained Python API reference.
 - [x] `docs/user/reference/diagnostic-codes.md`: maintained diagnostic registry.
@@ -321,13 +325,8 @@ primary placeholder queue.
   value, typing, naming, and unsupported-form guide.
 - [x] `docs/user/guide/error-handling.md`: maintained failure-layer, Python
   exception, native status projection, callback, diagnostic, and cleanup guide.
-- [x] `docs/user/guide/packaging.md`: maintained local project integration,
-  artifact, Makefile, rebuild, import, and packaging-limit guide.
-- [x] `docs/user/guide/distribution.md`: maintained source-rebuild, prebuilt
-  compatibility, native dependency, wheel-limit, and release-checklist guide.
-- [x] `docs/user/guide/fortran-wrapper.md`: maintained Fortran wrapper contract.
-- [x] `docs/user/guide/editing-semantic-pyi-contracts.md`: maintained editable
-  `.pyi` contract guide.
+- [x] `docs/user/guide/building-shared-library.md`: maintained build, import,
+  multi-source, compatibility, and editable-Makefile guide.
 - [x] `docs/user/guide/raw-addresses.md`: maintained primitive, array,
   fixed-string, lifetime, validation, and address-safety guide.
 - [x] `docs/user/tutorials/basic-wrapper.md`: maintained basic wrapper workflow.
