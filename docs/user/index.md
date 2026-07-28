@@ -2,27 +2,23 @@
 title: User Documentation
 audience: users
 prerequisites: none
-related: getting-started/index.md, guide/index.md, reference/index.md
+related: getting-started/index.md, guide/index.md
 status: maintained
+publication: reviewed
 ---
 
 # User Documentation
 
-This lane explains how to use x2py. Follow the learning material in navigation
-order; instructional pages link back to established concepts and name later
-topics without interrupting the current task.
+Use these pages to install x2py, verify your environment, build your first
+Fortran wrappers, and understand the supported behavior of generated Python
+extensions.
 
-## Learn And Build
+## Start Here
 
 1. [Getting Started](getting-started/index.md)
 2. [User Guide](guide/index.md)
-3. [Tutorials](tutorials/index.md)
-4. [Examples](examples/index.md)
 
-## Look Up Behavior
-
-- [Reference](reference/index.md)
-- [Language Support](language-support/index.md)
-- [FAQ](faq/index.md)
-- [Troubleshooting](troubleshooting/index.md)
-- [Changelog](changelog/index.md)
+Getting Started covers installation, environment verification, the first
+standalone wrapper, the first module wrapper, and the beginner edit-build-test
+loop. The User Guide covers supported Fortran wrapper features, runtime
+behavior, packaging, and distribution.

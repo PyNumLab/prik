@@ -58,6 +58,8 @@ def test_required_array_buffer_has_one_printable_editable_handoff_plan():
     assert argument.array.shape == (":",)
     assert argument.array.axes == ("dense",)
     assert argument.array.contiguous is True
+    assert argument.array.flatten_python_storage is False
+    assert argument.array.flat_axis is None
     assert argument.array.data_role == argument.binding.handoff_role
     assert argument.array.extent_roles == (f"{argument.owner_path}:extent:0",)
     assert argument.array.upper_bound_roles == ()
@@ -72,8 +74,8 @@ def test_required_array_buffer_dispatches_through_named_binding_and_bridge_metho
     assert "double bind_c_sum_values(void * values, int64_t values_extent_0);" in c_source
     assert '"_native_array_actual_argument_for_binding_positional"' in c_source
     assert (
-        'PyObject_CallFunction(bound_values_helper, "OsiOOiiiiiii", bound_values_obj, "float64", 1, '
-        "bound_values_shape, bound_values_layout, 1, 1, 1, 0, 0, 0, 1)"
+        'PyObject_CallFunction(bound_values_helper, "OsiOOiiiiiiiii", bound_values_obj, "float64", 1, '
+        "bound_values_shape, bound_values_layout, 1, 1, 1, 0, 0, 0, 1, 0, -1)"
     ) in c_source
     assert "bound_values = PyLong_AsVoidPtr(PyTuple_GetItem(bound_values_packed, 0));" in c_source
     assert "bound_values_extent_0 = (int64_t)PyLong_AsLongLong(PyTuple_GetItem(bound_values_packed, 1));" in c_source

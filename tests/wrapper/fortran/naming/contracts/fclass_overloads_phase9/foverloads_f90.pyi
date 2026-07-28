@@ -16,9 +16,11 @@ class accumulator:
     @native_call([Pass(), Addr(Arg(0))])
     def add_real(self, value: Float64) -> None: ...
 
+    @bind("add")
     @overload("accumulator_add_integer")
     def add(self, value: Int32) -> None: ...
 
+    @bind("add")
     @overload("accumulator_add_real")
     def add(self, value: Float64) -> None: ...
 

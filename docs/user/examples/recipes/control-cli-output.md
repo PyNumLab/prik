@@ -2,8 +2,9 @@
 title: Control CLI Output
 audience: users, developers
 prerequisites: installation
-related: ../verified-cookbook.md, ../../reference/cli-commands.md
+related: ../../reference/cli-commands.md
 status: maintained
+publication: draft
 ---
 
 # Control CLI Output

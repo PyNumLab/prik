@@ -288,7 +288,8 @@ def test_descriptor_argument_abi_packer_rejects_wrong_kind_and_unsupported_descr
 
 
 def test_projected_descriptor_handoff_requires_persistent_standard_descriptor_storage():
-    direct = _NativeArrayDescriptorHandoff(0x1234)
+    owner = object()
+    direct = _NativeArrayDescriptorHandoff(owner)
     handle = AllocatableArray(
         dtype=np.dtype(np.float64),
         rank=1,
@@ -307,7 +308,7 @@ def test_projected_descriptor_handoff_requires_persistent_standard_descriptor_st
         expected_dtype=np.float64,
         expected_rank=1,
         expected_shape=(2,),
-    ) == (direct.address,)
+    ) == (owner,)
     assert _native_array_descriptor_handoff_for_binding_positional(
         handle,
         "allocatable",
@@ -315,7 +316,48 @@ def test_projected_descriptor_handoff_requires_persistent_standard_descriptor_st
         1,
         (2,),
         False,
-    ) == (direct.address,)
+    ) == (owner,)
+
+
+def test_owned_standard_descriptor_can_supply_fact_packed_read_only_handoff():
+    owner = object()
+    direct = _NativeArrayDescriptorHandoff(owner)
+    record = {
+        "base_addr": 0x5678,
+        "elem_len": 8,
+        "rank": 1,
+        "dim": [{"lower_bound": 0, "extent": 2, "sm": 8}],
+    }
+    handle = PointerArray(
+        dtype=np.dtype(np.float64),
+        rank=1,
+        ops={
+            "array_actual": lambda _handle: pytest.fail("descriptor handoff must not request array actual"),
+            "shape": lambda _handle: (2,),
+            "associated": lambda _handle: True,
+            "nullify": lambda _handle: None,
+            "descriptor": lambda _handle: direct,
+            "to_numpy": lambda _handle: record,
+            "destroy": lambda _handle: None,
+        },
+        descriptor_ownership="owned",
+        to_numpy_policy="unsupported",
+    )
+
+    assert _native_array_descriptor_argument_for_binding(
+        handle,
+        descriptor_kind="pointer",
+        expected_dtype=np.float64,
+        expected_rank=1,
+        expected_shape=(2,),
+    ) == (0x5678, 8, 1, 0, 2, 8)
+    assert _native_array_descriptor_handoff_for_binding(
+        handle,
+        descriptor_kind="pointer",
+        expected_dtype=np.float64,
+        expected_rank=1,
+        expected_shape=(2,),
+    ) == (owner,)
     assert _native_array_descriptor_handoff_for_binding_positional(
         None,
         "allocatable",

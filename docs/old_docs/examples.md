@@ -2,7 +2,7 @@
 title: Verified Examples Cookbook
 audience: users
 prerequisites: installation, first wrapped function
-related: tutorials/basic-wrapper.md, examples-gallery/index.md
+related: examples-gallery/index.md
 status: maintained
 ---
 

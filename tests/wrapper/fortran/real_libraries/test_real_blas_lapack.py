@@ -348,18 +348,30 @@ def _import_extension(module_name: str, build_dir: Path, *, lazy: bool = False):
 def _assert_blas_runtime_smoke(module) -> None:
     x = np.array([1.0, 2.0, 3.0], dtype=np.float64)
     y = np.array([10.0, 20.0, 30.0], dtype=np.float64)
-    module.daxpy(np.int32(3), np.float64(2.0), x, np.int32(1), y, np.int32(1))
+    daxpy_scalars = module.daxpy(np.int32(3), np.float64(2.0), x, np.int32(1), y, np.int32(1))
+    assert daxpy_scalars == (np.int32(3), np.float64(2.0), np.int32(1), np.int32(1))
     np.testing.assert_allclose(y, [12.0, 24.0, 36.0])
-    assert module.ddot(np.int32(3), x, np.int32(1), y, np.int32(1)) == np.float64(168.0)
-    assert module.dasum(np.int32(3), y, np.int32(1)) == np.float64(72.0)
-    module.dscal(np.int32(3), np.float64(0.5), y, np.int32(1))
+    assert module.ddot(np.int32(3), x, np.int32(1), y, np.int32(1)) == (
+        np.float64(168.0),
+        np.int32(3),
+        np.int32(1),
+        np.int32(1),
+    )
+    assert module.dasum(np.int32(3), y, np.int32(1)) == (
+        np.float64(72.0),
+        np.int32(3),
+        np.int32(1),
+    )
+    dscal_scalars = module.dscal(np.int32(3), np.float64(0.5), y, np.int32(1))
+    assert dscal_scalars == (np.int32(3), np.float64(0.5), np.int32(1))
     np.testing.assert_allclose(y, [6.0, 12.0, 18.0])
 
 
 def _assert_lapack_runtime_smoke(module) -> None:
     index = np.zeros(5, dtype=np.int32)
     values = np.array([1.0, 4.0, 7.0, 2.0, 8.0], dtype=np.float64)
-    module.dlamrg(np.int32(3), np.int32(2), values, np.int32(1), np.int32(1), index)
+    scalars = module.dlamrg(np.int32(3), np.int32(2), values, np.int32(1), np.int32(1), index)
+    assert scalars == (np.int32(3), np.int32(2), np.int32(1), np.int32(1))
     np.testing.assert_array_equal(index, [1, 4, 2, 3, 5])
 
 

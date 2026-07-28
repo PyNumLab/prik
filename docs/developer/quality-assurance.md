@@ -4,6 +4,7 @@ audience: developers, contributors
 prerequisites: repository checkout, QA dependencies
 related: testing-strategy.md, development-workflow.md
 status: maintained
+publication: draft
 ---
 
 # Quality Assurance

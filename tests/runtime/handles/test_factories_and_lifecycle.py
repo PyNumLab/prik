@@ -67,6 +67,8 @@ def test_generated_handle_factory_adapts_private_operations_to_runtime_protocol(
     )
 
     assert isinstance(handle, AllocatableArray)
+    assert isinstance(handle.dtype, np.dtype)
+    assert handle.dtype == np.dtype("float64")
     assert handle.owner is owner
     assert handle.generation == 9
     assert handle.shape == (3,)
@@ -116,7 +118,7 @@ def test_generated_handle_factory_splats_shape_operations_to_scalar_extents():
 
 def test_generated_owned_handle_factory_passes_persistent_owner_to_every_operation():
     calls = []
-    owner = 0x1234
+    owner = object()
     value = np.arange(3, dtype=np.float64)
 
     def operation(name, result=None):
@@ -133,7 +135,7 @@ def test_generated_owned_handle_factory_passes_persistent_owner_to_every_operati
         {
             "shape": operation("shape", (3,)),
             "array_actual": operation("array_actual", 0x5678),
-            "descriptor": operation("descriptor", 0x9ABC),
+            "descriptor": operation("descriptor", owner),
             "allocated": operation("allocated", True),
             "to_numpy": operation("to_numpy", value),
             "resize": operation("resize"),
@@ -151,7 +153,7 @@ def test_generated_owned_handle_factory_passes_persistent_owner_to_every_operati
         descriptor_kind="allocatable",
         expected_dtype=np.float64,
         expected_rank=1,
-    ) == (0x9ABC,)
+    ) == (owner,)
     handle.resize((5,))
     handle.close()
 

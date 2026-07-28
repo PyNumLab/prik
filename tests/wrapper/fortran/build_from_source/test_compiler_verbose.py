@@ -2,6 +2,7 @@ import shlex
 import sys
 from pathlib import Path
 
+import x2py.compiling.compilers as compiler_module
 from x2py.compiling.objects import ObjectFile
 from x2py.compiling.compilers import Compiler
 from x2py.compiling.compiler_profiles import available_compilers, vendors
@@ -87,6 +88,79 @@ def test_python_sysconfig_profile_flags_do_not_override_wrapper_profile(monkeypa
     assert command.count("-O3") == 1
     assert command.count("-DNDEBUG") == 1
     assert "-g" not in command
+
+
+def test_supported_optional_profile_flags_are_used_when_executing(monkeypatch, tmp_path: Path):
+    compiler = Compiler("GNU")
+    monkeypatch.setattr(compiler, "_executable", lambda _language, _tools: "gfortran")
+    monkeypatch.setattr(compiler, "_supports_optional_flag", lambda _executable, flag: flag == "-ftrampoline-impl=heap")
+    monkeypatch.setattr(Compiler, "run_command", staticmethod(lambda command, _verbose=False: tuple(command)))
+    object_file = ObjectFile(
+        source=tmp_path / "bridge.f90",
+        object_path=tmp_path / "bridge.o",
+        language="fortran",
+    )
+
+    compiler.compile_object(object_file)
+
+    assert "-ftrampoline-impl=heap" in compiler.command_log[0]
+
+
+def test_unsupported_optional_profile_flags_are_omitted(monkeypatch, tmp_path: Path):
+    compiler = Compiler("GNU")
+    monkeypatch.setattr(compiler, "_executable", lambda _language, _tools: "gfortran")
+    monkeypatch.setattr(compiler, "_supports_optional_flag", lambda _executable, _flag: False)
+    monkeypatch.setattr(Compiler, "run_command", staticmethod(lambda command, _verbose=False: tuple(command)))
+    object_file = ObjectFile(
+        source=tmp_path / "bridge.f90",
+        object_path=tmp_path / "bridge.o",
+        language="fortran",
+    )
+
+    compiler.compile_object(object_file)
+
+    assert "-ftrampoline-impl=heap" not in compiler.command_log[0]
+
+
+def test_optional_profile_flag_probe_reads_the_selected_compiler_help(monkeypatch):
+    calls = []
+
+    def completed(command, **kwargs):
+        calls.append((command, kwargs))
+        return type(
+            "Completed",
+            (),
+            {
+                "returncode": 0,
+                "stdout": "  -ftrampoline-impl=        stack\n",
+                "stderr": "",
+            },
+        )()
+
+    Compiler._supports_optional_flag.cache_clear()
+    monkeypatch.setattr(compiler_module.subprocess, "run", completed)
+
+    assert Compiler._supports_optional_flag("gfortran-test", "-ftrampoline-impl=heap") is True
+    assert calls == [
+        (
+            ("gfortran-test", "-Q", "--help=common"),
+            {
+                "capture_output": True,
+                "text": True,
+                "check": False,
+            },
+        )
+    ]
+
+
+def test_optional_profile_flag_probe_fails_closed_when_the_compiler_cannot_start(monkeypatch):
+    def unavailable(*_args, **_kwargs):
+        raise OSError("missing compiler")
+
+    Compiler._supports_optional_flag.cache_clear()
+    monkeypatch.setattr(compiler_module.subprocess, "run", unavailable)
+
+    assert Compiler._supports_optional_flag("missing-gfortran", "-ftrampoline-impl=heap") is False
 
 
 def test_link_keeps_the_declared_object_and_link_argument_order(monkeypatch, tmp_path: Path):

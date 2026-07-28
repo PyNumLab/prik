@@ -1,21 +1,22 @@
 """Array-valued function result runtime wrapper tests."""
 
 import gc
-from pathlib import Path
 import shutil
+from pathlib import Path
 
 import numpy as np
 import pytest
 
-from x2py import build_pyi_extension
-from x2py.runtime.handles import AllocatableArray
 from tests.wrapper.fortran._support import (
     _build_source_or_generated_pyi_and_import,
     _compile_native_object,
     _import_from_build_dir,
+    _require_maybe_unallocated_function_result_support,
     _sole_native_module,
     wrapper_source,
 )
+from x2py import build_pyi_extension
+from x2py.runtime.handles import AllocatableArray
 
 ARRAY_RESULTS_F90_SOURCE = wrapper_source("farray_results_f90.f90")
 CONTRACT_FIXTURES = Path(__file__).parent / "contracts"
@@ -88,6 +89,21 @@ def test_array_results_follow_data_buffer_and_descriptor_handle_contracts(
     allocated = module.maybe_alloc_vector(np.int32(3))
     assert isinstance(allocated, AllocatableArray)
     np.testing.assert_allclose(allocated.to_numpy(), np.array([5.0, 10.0, 15.0], dtype=np.float64))
+
+    allocated_matrix = module.maybe_alloc_matrix(np.int32(2), np.int32(3))
+    assert isinstance(allocated_matrix, AllocatableArray)
+    assert allocated_matrix.allocated is True
+    np.testing.assert_allclose(
+        allocated_matrix.to_numpy(),
+        np.array([[110.0, 120.0, 130.0], [210.0, 220.0, 230.0]], dtype=np.float64),
+    )
+
+    zero_alloc_matrix = module.zero_alloc_matrix(np.int32(2))
+    assert isinstance(zero_alloc_matrix, AllocatableArray)
+    assert zero_alloc_matrix.allocated is True
+    assert zero_alloc_matrix.shape == (0, 2)
+    assert zero_alloc_matrix.to_numpy().shape == (0, 2)
+
     del module
     gc.collect()
     np.testing.assert_allclose(matrix, np.array([[12.0, 13.0, 14.0], [22.0, 23.0, 24.0]], dtype=np.float64))
@@ -142,7 +158,7 @@ def test_owned_allocatable_results_preserve_handle_state(tmp_path: Path):
     contract_package = tmp_path / "allocatable_results"
     shutil.copytree(CONTRACT_FIXTURES / "farray_results_f90", contract_package)
     (contract_package / "__init__.pyi").write_text(
-        "from .farray_results_f90 import maybe_alloc_vector, zero_alloc_vector\n",
+        "from .farray_results_f90 import maybe_alloc_matrix, maybe_alloc_vector, zero_alloc_matrix, zero_alloc_vector\n",
         encoding="utf-8",
     )
     result = build_pyi_extension(
@@ -165,5 +181,76 @@ def test_owned_allocatable_results_preserve_handle_state(tmp_path: Path):
     assert zero_sized.shape == (0,)
     assert zero_sized.to_numpy().shape == (0,)
 
+    allocated_matrix = module.maybe_alloc_matrix(np.int32(2), np.int32(3))
+    assert isinstance(allocated_matrix, AllocatableArray)
+    assert allocated_matrix.allocated is True
+    np.testing.assert_allclose(
+        allocated_matrix.to_numpy(),
+        np.array([[110.0, 120.0, 130.0], [210.0, 220.0, 230.0]]),
+    )
+
+    zero_sized_matrix = module.zero_alloc_matrix(np.int32(2))
+    assert isinstance(zero_sized_matrix, AllocatableArray)
+    assert zero_sized_matrix.allocated is True
+    assert zero_sized_matrix.shape == (0, 2)
+    assert zero_sized_matrix.to_numpy().shape == (0, 2)
+
     allocated.close()
     zero_sized.close()
+    allocated_matrix.close()
+    zero_sized_matrix.close()
+
+
+def test_maybe_unallocated_allocatable_result_preserves_absent_state(tmp_path: Path):
+    """Use an edited contract for direct allocatable results that may be unallocated."""
+    _require_maybe_unallocated_function_result_support()
+    native_object = _compile_native_object(ARRAY_RESULTS_F90_SOURCE, tmp_path / "native")
+    contract_package = tmp_path / "maybe_unallocated_results"
+    shutil.copytree(CONTRACT_FIXTURES / "farray_results_f90", contract_package)
+    pyi_path = contract_package / "farray_results_f90.pyi"
+    contract_text = pyi_path.read_text(encoding="utf-8")
+    contract_text = contract_text.replace(
+        "Addr, Allocatable, Arg, Float64, Int32, native_call",
+        "Addr, Allocatable, Annotated, Arg, Float64, Int32, MaybeUnallocated, native_call",
+        1,
+    )
+    contract_text = contract_text.replace(
+        "def maybe_alloc_vector(\n    n: Int32\n) -> Allocatable[Float64[:]]: ...",
+        "def maybe_alloc_vector(\n    n: Int32\n) -> Annotated[Allocatable[Float64[:]], MaybeUnallocated]: ...",
+        1,
+    )
+    contract_text = contract_text.replace(
+        "def maybe_alloc_matrix(\n    rows: Int32,\n    cols: Int32\n) -> Allocatable[Float64[:, :]]: ...",
+        "def maybe_alloc_matrix(\n"
+        "    rows: Int32,\n"
+        "    cols: Int32\n"
+        ") -> Annotated[Allocatable[Float64[:, :]], MaybeUnallocated]: ...",
+        1,
+    )
+    pyi_path.write_text(contract_text, encoding="utf-8")
+    (contract_package / "__init__.pyi").write_text(
+        "from .farray_results_f90 import maybe_alloc_matrix, maybe_alloc_vector\n",
+        encoding="utf-8",
+    )
+    result = build_pyi_extension(
+        contract_package / "__init__.pyi",
+        native_objects=[native_object],
+        native_include_dirs=[native_object.parent],
+        output_dir=tmp_path / "build",
+    )
+    imported = _import_from_build_dir(result.module_name, result.output_dir)
+    module = imported if hasattr(imported, "maybe_alloc_vector") else _sole_native_module(imported)
+
+    allocated_vector = module.maybe_alloc_vector(np.int32(3))
+    assert isinstance(allocated_vector, AllocatableArray)
+    assert allocated_vector.allocated is True
+    np.testing.assert_allclose(allocated_vector.to_numpy(), np.array([5.0, 10.0, 15.0]))
+
+    unallocated_matrix = module.maybe_alloc_matrix(np.int32(0), np.int32(3))
+    assert isinstance(unallocated_matrix, AllocatableArray)
+    assert unallocated_matrix.allocated is False
+    assert unallocated_matrix.shape is None
+    assert unallocated_matrix.to_numpy() is None
+
+    allocated_vector.close()
+    unallocated_matrix.close()

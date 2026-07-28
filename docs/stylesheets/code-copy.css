@@ -1,0 +1,78 @@
+.x2py-copy-host {
+  position: relative;
+}
+
+.x2py-code-copy {
+  position: absolute;
+  z-index: 2;
+  top: 0.45rem;
+  right: 0.45rem;
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: #404040;
+  background: rgb(255 255 255 / 92%);
+  border: 1px solid #d6d6d6;
+  border-radius: 0.2rem;
+  cursor: pointer;
+  opacity: 0.35;
+  transition: color 0.15s ease, background-color 0.15s ease, opacity 0.15s ease;
+}
+
+.x2py-copy-host:hover > .x2py-code-copy,
+.x2py-code-copy:focus-visible,
+.x2py-code-copy.is-copied,
+.x2py-code-copy.is-error {
+  opacity: 1;
+}
+
+.x2py-code-copy:hover {
+  color: #ffffff;
+  background: #2980b9;
+  border-color: #2980b9;
+}
+
+.x2py-code-copy:focus-visible {
+  outline: 3px solid #f1c40f;
+  outline-offset: 2px;
+}
+
+.x2py-code-copy.is-copied {
+  color: #ffffff;
+  background: #27ae60;
+  border-color: #27ae60;
+}
+
+.x2py-code-copy.is-error {
+  color: #ffffff;
+  background: #c0392b;
+  border-color: #c0392b;
+}
+
+.x2py-code-copy svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.x2py-copied-icon,
+.x2py-code-copy.is-copied .x2py-copy-icon {
+  display: none;
+}
+
+.x2py-code-copy.is-copied .x2py-copied-icon {
+  display: block;
+}
+
+@media (hover: none) {
+  .x2py-code-copy {
+    opacity: 0.8;
+  }
+}

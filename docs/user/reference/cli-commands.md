@@ -4,6 +4,7 @@ audience: users, developers
 prerequisites: installation
 related: python-api.md, configuration-files.md
 status: maintained
+publication: draft
 ---
 
 # CLI Commands Reference
@@ -81,8 +82,8 @@ for a basic source build, an explicitly named extension, and semantic contract
 generation; `--help-build` labels its basic build, semantic-contract build,
 and manifest-replay examples separately. Both help levels reuse the canonical
 `scale.f90` source and exact commands from the
-[README Quick Start](../../../README.md#quick-start), which contains the
-complete source, expected artifacts, contract, and import flow.
+[homepage example](../../index.md#try-x2py), which contains the
+complete source, basic build, import flow, and expected result.
 
 The full build help uses the following two forms:
 
@@ -106,7 +107,7 @@ default output directory shown there is `./__x2py__`.
 saved build; it does not generate a manifest. Manifest replay accepts only
 overrides that the replay implementation consumes:
 `--out`, `--compiler`, `-I`/`--include-dir`, `--json`, `--verbose`,
-`--no-color`, and `--debug`/`--debug-traceback`. The manifest owns its output
+`--no-color`, and `--debug`. The manifest owns its output
 directory, input language, preprocessing recipe, wrapper behavior, native
 inputs, and link plan, so replay rejects flags from those areas instead of
 silently ignoring them.
@@ -182,7 +183,7 @@ python3 -m x2py generate --makefile scale.f90 --out-dir build
 ```
 
 These examples reuse `scale.f90` from the
-[README Quick Start](../../../README.md#quick-start).
+[homepage example](../../index.md#try-x2py).
 
 These modes are mutually exclusive. Source and Makefile generation still run
 the preprocessing and semantic-policy stages needed to produce a valid wrapper
@@ -376,7 +377,7 @@ Important boundaries:
   --build-manifest PATH` regenerates `Makefile.x2py` without positional
   contracts or repeated native flags. Replay may override only `--out`,
   `--compiler`, `-I`/`--include-dir`, `--json`, `--verbose`, `--no-color`, and
-  `--debug`/`--debug-traceback`; all other build settings come from the
+  `--debug`; all other build settings come from the
   manifest.
 
 <!-- X2PY_C_DOCS_START
@@ -396,7 +397,7 @@ X2PY_C_DOCS_END -->
 | `--wrapper-fortran-flags FLAG...` | Appends flags to generated Fortran bridge compilation commands. |
 | `--wrapper-c-flags FLAG...` | Appends flags to generated binding compilation and extension-link commands. |
 | `--no-color` | Disables ANSI color in parse diagnostics. |
-| `--debug`, `--debug-traceback` | Re-raises parser errors so Python prints a traceback. |
+| `--debug` | Re-raises command failures so Python prints a traceback. |
 
 When `rich-argparse` is installed, x2py uses its colored help formatter
 automatically. Install the optional UI dependencies for a published package
@@ -438,7 +439,7 @@ X2PY_C_DOCS_END -->
 ## Related pages
 
 - Use [Python API Reference](python-api.md) when calling x2py from Python.
-- Use [Fortran Wrapper Guide](../guide/fortran-wrapper.md) for wrapper
+- Use [Fortran Wrapper Reference](fortran-wrapper.md) for wrapper
   build workflows.
 - Use [Semantic .pyi Format](semantic-pyi-format.md) when editing wrapper
   contracts.

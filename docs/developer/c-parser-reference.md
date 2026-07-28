@@ -5,6 +5,7 @@ audience: developers
 prerequisites: repository structure, parser architecture
 related: adding-a-feature.md, repository-structure.md
 status: maintained
+publication: draft
 ---
 
 <!-- X2PY_C_DOCS_START

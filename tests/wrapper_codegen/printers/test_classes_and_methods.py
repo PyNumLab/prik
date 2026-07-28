@@ -187,6 +187,7 @@ end module pass_mod
     assert "    def shift(\n        self,\n        dx: Float64,\n        dy: Float64" in code
     assert "        owner: Addr(vector)" not in code
     assert "@native_call([Addr(Arg(0)), Pass(), Addr(Arg(1))])" in code
+    assert "owner: Annotated[vector, Polymorphic]" in code
     assert '    @staticmethod\n    @bind("make_vector")' in code
     assert "value: Float64" in code
     assert "-> vector: ..." in code
@@ -200,9 +201,9 @@ module generic_mod
   end interface convert
   type :: box
   contains
-    procedure :: set_integer
-    procedure :: set_real
-    generic :: set => set_integer, set_real
+    procedure, private :: set_integer
+    procedure, private :: set_real
+    generic, public :: set => set_integer, set_real
   end type box
 contains
   integer function convert_integer(value)
@@ -228,8 +229,8 @@ end module generic_mod
     assert "from typing import overload" not in code
     assert code.count('@overload("convert_integer")\ndef convert(') == 1
     assert code.count('@overload("convert_real")\ndef convert(') == 1
-    assert code.count('    @overload("set_integer")\n    def set(') == 1
-    assert code.count('    @overload("set_real")\n    def set(') == 1
+    assert code.count('    @bind("set")\n    @overload("set_integer")\n    def set(') == 1
+    assert code.count('    @bind("set")\n    @overload("set_real")\n    def set(') == 1
     assert '@overload("convert_integer")\n@native_call' not in code
     assert '    @overload("set_integer")\n    @native_call' not in code
 
@@ -242,6 +243,73 @@ end module generic_mod
     assert loaded.imports == []
     assert [(item.name, len(item.procedures)) for item in loaded.classes[0].overload_sets] == [("set", 2)]
     assert [procedure.name for procedure in loaded.classes[0].overload_sets[0].procedures] == [
+        "set_integer",
+        "set_real",
+    ]
+    assert {procedure.native_name for procedure in loaded.classes[0].overload_sets[0].procedures} == {"set"}
+
+
+def test_private_module_generic_specifics_bind_overload_candidates_to_public_generic():
+    source = """
+module generic_mod
+  implicit none
+  private
+  public :: convert
+  interface convert
+    module procedure convert_integer, convert_real
+  end interface convert
+contains
+  integer function convert_integer(value)
+    integer :: value
+    convert_integer = value
+  end function convert_integer
+  real function convert_real(value)
+    real :: value
+    convert_real = value
+  end function convert_real
+end module generic_mod
+"""
+
+    code = generate_pyi(source)
+
+    assert code.count('@bind("convert")\n@overload("convert_integer")') == 1
+    assert code.count('@bind("convert")\n@overload("convert_real")') == 1
+    loaded = parse_pyi_text(code, module_name="generic_mod")
+    assert [procedure.native_name for procedure in loaded.overload_sets[0].procedures] == [
+        "convert",
+        "convert",
+    ]
+    assert emit_module(loaded) == code
+
+
+def test_public_type_bound_generic_specifics_do_not_emit_bind():
+    source = """
+module generic_mod
+  type :: box
+  contains
+    procedure :: set_integer
+    procedure :: set_real
+    generic :: set => set_integer, set_real
+  end type box
+contains
+  subroutine set_integer(self, value)
+    class(box) :: self
+    integer :: value
+  end subroutine set_integer
+  subroutine set_real(self, value)
+    class(box) :: self
+    real :: value
+  end subroutine set_real
+end module generic_mod
+"""
+
+    code = generate_pyi(source)
+
+    assert '    @bind("set")' not in code
+    assert code.count('    @overload("set_integer")\n    def set(') == 1
+    assert code.count('    @overload("set_real")\n    def set(') == 1
+    loaded = parse_pyi_text(code, module_name="generic_mod")
+    assert [procedure.native_name for procedure in loaded.classes[0].overload_sets[0].procedures] == [
         "set_integer",
         "set_real",
     ]
@@ -358,10 +426,8 @@ def test_bound_constructor_pyi_generates_single_initializer_without_keyword_defa
     loaded = parse_pyi_text(
         """
 class state:
-    @private
-    def init_state(self, seed: Addr(Int32)) -> None: ...
-
     @bind("init_state")
+    @native_call([Pass(), Arg(0)])
     def __init__(self, seed: Addr(Int32)) -> None: ...
 
     id: Int32

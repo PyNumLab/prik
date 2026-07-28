@@ -44,6 +44,10 @@ def test_fortran_defined_operators_and_assignment_dispatch_in_generated_c_extens
     left = vector(5.0)
     right = vector(2.0)
 
+    assert "__add__(*args, **kwargs)" in module.vector.__doc__
+    assert "__add__(right: vector) -> vector" in module.vector.__add__.__doc__
+    assert "add_vectors" not in module.vector.__add__.__doc__
+
     assert module.convert(np.int32(2)) == np.int32(12)
     assert module.convert(np.float64(2.0)) == np.float64(2.5)
     assert (left + right).value == np.float64(7.0)

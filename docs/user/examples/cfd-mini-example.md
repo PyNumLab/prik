@@ -4,6 +4,7 @@ audience: advanced users
 prerequisites: arrays, large Fortran codebase tutorial
 related: ../tutorials/large-fortran-codebase.md, ../guide/arrays.md
 status: planned-documentation
+publication: draft
 ---
 
 # CFD Mini-Example

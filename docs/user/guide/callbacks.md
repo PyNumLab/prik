@@ -1,43 +1,107 @@
 ---
 title: Callbacks
+description: How to pass Python callables to Fortran as callbacks with x2py
 audience: advanced users
-prerequisites: wrapping functions, error handling, data types
-related: error-handling.md, memory-management.md, ../reference/semantic-pyi-format.md
+prerequisites: wrapping functions, data types
+related: error-handling.md, memory-management.md
 status: maintained
+publication: reviewed
 ---
 
 # Callbacks
 
-x2py supports Python callbacks invoked immediately during one wrapped native
-call. A semantic `.pyi` declares each native callback shape once as a named
-prototype, then callback-taking procedures refer to that prototype by name.
+Callbacks let wrapped Fortran call a Python function while an x2py call is
+running. They are useful for objective functions, progress hooks, custom
+transforms, and small pieces of user-defined numerical logic.
 
-This is the opposite direction from a normal `.pyi` function signature. A
-normal function signature describes how Python calls the wrapper; x2py may
-lower that call into any compatible native bridge shape. A `@prototype`
-declaration describes how native code calls the callback adapter, so argument
-order, value/reference passing, rank, shape, character length, and result shape
-are part of the callback contract. Native callback direction is deliberately
-not repeated in semantic `.pyi`.
+Declare the callback shape once with `@prototype`, then use that prototype name
+as the type of the procedure argument that accepts the callback.
 
-## Complete Callback Example
+---
+
+## The Short Version
+
+| Native callback argument | Prototype spelling | Python callable receives |
+| --- | --- | --- |
+| Primitive scalar dummy declared with Fortran `value` | `value: Float64` | Independent `np.float64` scalar |
+| Primitive scalar reference dummy | `value: Addr(Float64)` | Independent `np.float64` scalar |
+| Array reference dummy | `values: Float64[n]` | NumPy array view |
+| Fixed-length string reference dummy | `label: String[8]` | Writable rank-zero bytes storage |
+| Derived-type reference dummy | `point: point_t` | Generated wrapper object |
+
+!!! tip "Rule of thumb"
+    Bare primitive callback arguments are native values:
+    `value: Float64`, `count: Int32`, and so on.
+
+    Use `Addr(T)` only when a primitive callback dummy is passed by reference.
+
+Arrays, strings, and derived-type callback arguments already use native storage
+or wrapper objects, so they do not need `Addr(...)` for ordinary reference
+dummies. Use `Value(point_t)` only for a supported derived-type callback dummy
+declared with the Fortran `value` attribute.
+
+---
+
+## What The Callable Sees
+
+Two declarations can appear around callbacks, and they control different calls:
+
+| Declaration | Controls |
+| --- | --- |
+| `@prototype` | How Fortran calls the callback adapter. |
+| `@native_call(...)` | How Python arguments are passed into the outer wrapped function. |
+
+For example, the wrapped function may need `@native_call([Addr(Arg(1))])`
+because its `value` argument is passed to Fortran by reference:
+
+```python
+from x2py.contracts import Addr, Arg, Float64, native_call, prototype
+
+@prototype
+def scalar_callback(value: Addr(Float64)) -> Float64: ...
+
+@native_call([Arg(0), Addr(Arg(1))])
+def apply(callback: scalar_callback, value: Float64) -> Float64: ...
+```
+
+The two `Addr(...)` markers belong to different boundaries. The one inside
+`@prototype` describes how Fortran calls the callback. The one inside
+`@native_call(...)` describes how Python calls the wrapped function.
+
+At runtime, pass an ordinary Python callable:
+
+```python
+import numpy as np
+
+api.apply(lambda value: np.float64(3.0 * value), np.float64(2.5))
+```
+
+The lambda receives converted Python objects, not `Addr(...)` markers.
+
+---
+
+## Small Example
 
 Create `callbacks.f90`:
 
 ```fortran
 module callbacks_api
   implicit none
+
   abstract interface
     real(8) function scalar_callback(value) result(output)
       real(8), intent(in) :: value
     end function scalar_callback
   end interface
+
 contains
+
   real(8) function apply(callback, value) result(output)
     procedure(scalar_callback) :: callback
     real(8), intent(in) :: value
     output = callback(value)
   end function apply
+
 end module callbacks_api
 ```
 
@@ -47,173 +111,107 @@ Build it:
 python3 -m x2py callbacks.f90 --out-dir build/callbacks
 ```
 
-Then pass a Python callable and assert the converted result:
+**Python usage:**
 
 ```python
 import sys
+
 import numpy as np
 
 sys.path.insert(0, "build/callbacks")
-import callbacks
+from callbacks.callbacks_api import apply
 
-api = callbacks.callbacks_api
-result = api.apply(lambda value: np.float64(3.0 * value), np.float64(2.5))
-assert result == np.float64(7.5)
+result = apply(
+    lambda value: np.float64(3.0 * value),
+    np.float64(2.5)
+)
+print(result)  # 7.5
 ```
 
-## Lifetime
+---
 
-The generated wrapper keeps a strong reference to the Python callable only
-until the wrapped call returns. Native code must not store the callback or call
-it later. Nested callback-taking calls on the same entering Python thread are
-supported.
+## Choosing The Prototype Spelling
 
-Primitive scalar callback arguments are materialized as independent NumPy
-scalar values, so retaining them is safe. Temporary NumPy array views and
-borrowed derived wrappers are valid only for that callback invocation.
-Retaining either afterward is unsupported unless the value is explicitly
-copied.
+Prototype declarations describe the **native callback signature**. They are not
+Python runtime functions and they are not exported from the generated module.
 
-## Callback Values
-
-Callback arguments use ordinary semantic types. Native code passes them by
-reference unless the prototype applies the one ABI override, `Value(T)`:
+For ordinary scalar and array callback arguments, use the same contract spellings
+you use elsewhere:
 
 ```python
-from x2py.contracts import Float64, Int32, Value, prototype
+from x2py.contracts import Addr, Float64, Int32, prototype
 
 @prototype
 def update_values(
-    count: Int32,
-    scale: Value(Float64),
-    values: Float64[count],
+    count: Addr(Int32),
+    scale: Float64,
+    values: Float64[count]
 ) -> None: ...
-
-def apply_update(callback: update_values, count: Int32) -> None: ...
 ```
 
-The spellings mean:
+Here `count` is a primitive reference dummy, while `scale` is a primitive value
+dummy. Python receives both as NumPy scalar values.
 
-| Callback spelling | Fortran callback dummy | Python callback object |
-| --- | --- | --- |
-| `Int32` | scalar reference dummy | owned `np.int32` scalar value |
-| `Value(Float64)` | scalar `value` dummy | owned `np.float64` scalar value |
-| `Float64[n]` | array reference dummy | writable NumPy array view |
-| `point_t` | derived reference dummy | generated wrapper object |
-| `Value(point_t)` | derived `value` dummy | generated wrapper over the call-local value copy |
+For scalar arguments, choose the spelling from the Fortran callback dummy:
 
-Array callback arguments require exact dtype, rank, declared shape, alignment,
-and required Fortran contiguity. Derived values use the generated wrapper class.
-Reference arrays, characters, and derived objects are exposed permissively and
-written back before the callback adapter returns. Primitive scalar arguments
-are immutable NumPy scalar values even when their native ABI uses a reference.
-Scalar reference writeback is unsupported: model a scalar value delivered back
-to native code as the declared callback result. A `Value(...)` argument changes
-only the native ABI to Fortran `value`; it is also received as an independent
-NumPy scalar.
+| Fortran callback dummy | Matching prototype |
+| --- | --- |
+| `real(8), intent(in) :: value` | `value: Addr(Float64)` |
+| `real(8), value :: value` | `value: Float64` |
 
-## Character Callback Arguments
+Both forms call Python with an independent `np.float64` scalar. The difference
+is the native calling convention x2py must match.
 
-Fixed-length character callback arguments use their ordinary semantic spelling:
+`Value(T)` is only for supported non-primitive scalar value dummies, such as a
+derived-type callback dummy declared with the Fortran `value` attribute.
 
-```python
-from x2py.contracts import String, prototype
+---
 
-@prototype
-def label_callback(label: String[8]) -> None: ...
-```
+## Key Rules
 
-Because reference callbacks are permissive, the callback receives mutable
-rank-zero NumPy bytes storage with shape `()` and dtype `S8`. The Python
-callback reads or writes through that storage:
+- The callback is only valid **during** the wrapped native call.
+- Native code must not store the callback for later use.
+- Return the exact NumPy scalar type when x2py expects a scalar callback result.
+- Primitive scalar callback arguments arrive as independent NumPy scalar values,
+  whether the native dummy is `value` or reference.
+- Primitive scalar reference writeback is unsupported; return a scalar result
+  instead.
+- Arrays and derived-type arguments can expose live native state; copy data you
+  need after the wrapped call returns.
 
-```python
-def rewrite_label(label):
-    label[...] = b"done    "
-```
+---
 
-The semantic callback annotation remains `String[n]`; the callback adapter
-chooses mutable scalar storage without encoding native direction in `.pyi`.
+## Important Limitations
 
-A non-callable argument raises `TypeError` before native execution.
+Supported callbacks are immediate, same-thread adapters. The native routine may
+call the Python callable while the wrapped call is active, and x2py tears down
+the callback context when that wrapped call returns.
 
-## Threads And The GIL
+The current callback contract does not support:
 
-The callback trampoline acquires the Python GIL for the callback and releases
-the matching state afterward. The callback must execute on the same Python
-thread that entered the wrapped routine. Cross-thread native invocation is not
-supported.
+- Stored callbacks, persistent callbacks, procedure pointers, or callbacks
+  invoked after the wrapped call returns. Pass the callable into each wrapped
+  call that needs it.
+- Optional callback procedure arguments. Expose a separate native entry point
+  for the no-callback path, or require the callback argument.
+- Optional arguments inside a `@prototype`. Pass an explicit value, sentinel, or
+  presence flag instead.
+- Allocatable, pointer, polymorphic, or assumed-type callback arguments and
+  results. Use plain scalars, fixed-shape primitive arrays, fixed-length strings,
+  or supported scalar derived types.
+- Arrays passed by Fortran `value`, arrays of derived values, and array callback
+  results without a complete fixed shape. Pass arrays by reference and give array
+  results an exact primitive shape.
+- Variable-length callback strings. Use a fixed positive `String[n]` length.
+- Callback execution on a different Python thread. The callback must run on the
+  same thread that entered the wrapper.
 
-Callback-taking calls keep the GIL policy required by the callback bridge.
-Do not use callback execution as synchronization for unrelated native state.
+Callback exceptions and invalid return conversions are fatal at the callback
+boundary: x2py prints the Python traceback and aborts the host process.
 
-## Callback Failures
+---
 
-A callback exception, invalid callback result, or cross-thread invocation
-cannot be safely unwound through arbitrary native frames. The wrapper prints
-the Python traceback and aborts the host process. It never invents a fallback
-return value and continues native execution.
+## Next
 
-Run untrusted callback behavior in a subprocess if the host application must
-survive such failures.
-
-## Unsupported Forms
-
-- stored callback registration and unregistration;
-- callbacks invoked after the wrapped call;
-- optional dummy procedure arguments;
-- procedure pointers and null procedure pointers;
-- asynchronous or cross-thread callback invocation; and
-- persistent callback ownership during object or library teardown.
-
-## Adapter Policy
-
-The post-IR policy stage completes how the adapter crosses the
-Fortran-to-Python-to-Fortran boundary before wrapper generation begins. It
-records value versus reference ABI, permissive reference writeback, array shape,
-fixed character length, exact derived type identity, call-scoped context
-lifetime, entering-thread enforcement, GIL entry, cleanup, and the fatal error
-action. The Python binding and Fortran bridge only lower those completed actions.
-
-A `@prototype` declaration is a compile-time semantic declaration, not a
-Python runtime export. Its declaration order, value/reference transport,
-storage shape, character length, and result type define the callback transport
-contract. The Python callable may adapt argument names itself, so prototypes do
-not use normal wrapper projection such as `@native_call`.
-
-Post-IR policy selects the weakest correct native declaration from the complete
-prototype. Classic scalar, explicit-shape, and assumed-size signatures use an
-implicit external declaration. Signatures with optional or descriptor
-arguments, polymorphism, or non-scalar/descriptor results use the
-named native prototype through an explicit declaration. That path imports the
-real interface, including direction facts deliberately omitted from semantic
-`.pyi`, so its compiler module file must be available. `Value(...)` alone does
-not force the explicit path when a typed external declaration is sufficient.
-
-Future work may add user-selectable policy for:
-
-- borrowed-view, detached-copy, and zero-copy choices;
-- dtype conversion, overflow checks, and result coercion;
-- fixed-length character encoding, padding, truncation, and writeback rules;
-- ownership and lifetime rules for arrays, scalar storage, derived wrappers,
-  and temporary callback values;
-- writeback protocols for values that cannot be mutated
-  directly by the Python object currently passed to the callback; and
-- callback-specific error/result policy beyond the current fatal native
-  callback boundary.
-
-These choices are not currently user-selectable; unsupported forms remain
-blocked instead of selecting a different backend behavior.
-
-## Evidence And Troubleshooting
-
-Scalar lifetime, nesting, GIL behavior, invalid callbacks, and fatal exception
-behavior are exercised by
-[`test_scalar_callbacks.py`](../../../tests/wrapper/fortran/callbacks/test_scalar_callbacks.py).
-Array conversion is exercised by
-[`test_array_callbacks.py`](../../../tests/wrapper/fortran/callbacks/test_array_callbacks.py)
-and derived values by
-[`test_derived_callbacks.py`](../../../tests/wrapper/fortran/callbacks/test_derived_callbacks.py).
-
-Error Handling later distinguishes ordinary wrapper exceptions from fatal
-callback-boundary failures.
+- Continue with [Enumerations](enumerations.md).
+- Review [Error Handling](error-handling.md) when callback failure behavior matters.

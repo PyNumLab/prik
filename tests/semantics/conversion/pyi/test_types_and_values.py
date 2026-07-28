@@ -203,7 +203,7 @@ def set_status(
     assert parse_pyi_text(emitted, module_name="status_api") == module
 
 
-def test_convert_pyi_to_ir_uses_reference_default_and_explicit_value_callbacks():
+def test_convert_pyi_to_ir_uses_value_default_and_explicit_reference_callbacks():
     module = parse_pyi_text(
         """
 class particle:
@@ -211,11 +211,13 @@ class particle:
 
 @prototype
 def callback_shape(
-    value: Value(Int32),
+    value: Int32,
+    scalar_ref: Addr(Float64),
     values: Float64[:],
     scalar_storage: Float64[()],
-    scalar: Float64,
-    count: Int32,
+    scalar_value: Float64,
+    count_ref: Addr(Int32),
+    derived_value: Value(particle),
     output: Float64[:],
     result_storage: Float64[()],
 ) -> None: ...
@@ -235,17 +237,21 @@ def register(
         False,
         False,
         False,
+        True,
         False,
+        True,
         False,
         False,
     ]
     assert callback_arguments[0].semantic_type.storage is None
-    assert callback_arguments[1].semantic_type.storage.kind == "array"
+    assert callback_arguments[1].semantic_type.storage.kind == "reference"
     assert callback_arguments[2].semantic_type.storage.kind == "array"
-    assert callback_arguments[3].semantic_type.storage.kind == "reference"
-    assert callback_arguments[4].semantic_type.storage.mutable is True
-    assert callback_arguments[5].semantic_type.storage.mutable is True
-    assert callback_arguments[6].semantic_type.storage.mutable is True
+    assert callback_arguments[3].semantic_type.storage.kind == "array"
+    assert callback_arguments[4].semantic_type.storage is None
+    assert callback_arguments[5].semantic_type.storage.kind == "reference"
+    assert callback_arguments[6].semantic_type.storage is None
+    assert callback_arguments[7].semantic_type.storage.mutable is True
+    assert callback_arguments[8].semantic_type.storage.mutable is True
 
 
 @pytest.mark.parametrize(
@@ -460,13 +466,34 @@ def invalid(value: String[:]) -> None: ...
 @pytest.mark.parametrize(
     "annotation",
     [
-        "Addr(Float64)",
         "Addr(Float64[n])",
         "Addr[2](Float64)",
+        "Addr(String[8])",
+        "Addr(particle)",
+        "Addr(Allocatable[Float64])",
+        "Addr(Pointer[Float64])",
     ],
 )
-def test_convert_pyi_to_ir_rejects_unnecessary_prototype_address_wrappers(annotation: str):
-    with pytest.raises(ValueError, match=r"Addr\(\.\.\.\) is unnecessary inside prototype declarations"):
+def test_convert_pyi_to_ir_rejects_invalid_prototype_address_wrappers(annotation: str):
+    with pytest.raises(ValueError, match=r"Addr.*prototype"):
+        parse_pyi_text(
+            f"class particle:\n    mass: Float64\n\n@prototype\ndef callback(value: {annotation}) -> None: ...",
+            module_name="callbacks",
+        )
+
+
+@pytest.mark.parametrize(
+    "annotation",
+    [
+        "Value(Float64)",
+        "Value(Int32)",
+        "Value(String[8])",
+        "Value(Allocatable[Float64])",
+        "Value(Pointer[Float64])",
+    ],
+)
+def test_convert_pyi_to_ir_rejects_redundant_or_invalid_prototype_value_wrappers(annotation: str):
+    with pytest.raises(ValueError, match=r"Value.*callback"):
         parse_pyi_text(
             f"@prototype\ndef callback(value: {annotation}) -> None: ...",
             module_name="callbacks",

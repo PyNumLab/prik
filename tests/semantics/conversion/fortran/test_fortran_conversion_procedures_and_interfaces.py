@@ -22,6 +22,7 @@ from tests.semantics.conversion.fortran._support import (
     pytest,
     semantic_models,
 )
+from x2py.semantics.metadata import PROJECTED_OUTPUT_METADATA
 
 
 def test_bind_c_name_and_value_calling_convention_reach_semantic_ir():
@@ -380,6 +381,193 @@ end module scalar_descriptor_mod
     ]
 
 
+def test_pointer_array_output_visibility_follows_intent_and_optional_presence():
+    source = """
+module pointer_output_mod
+contains
+subroutine create_values(values)
+    real(8), pointer, intent(out) :: values(:)
+end subroutine create_values
+
+subroutine maybe_create_values(values)
+    real(8), pointer, optional, intent(out) :: values(:)
+end subroutine maybe_create_values
+
+subroutine replace_values(values)
+    real(8), pointer, intent(inout) :: values(:)
+end subroutine replace_values
+end module pointer_output_mod
+"""
+
+    smod = fortran_module_to_semantic_module(parse_fortran_source(source))
+    create = get_function(smod, "create_values")
+    maybe_create = get_function(smod, "maybe_create_values")
+    replace = get_function(smod, "replace_values")
+
+    assert create.arguments[0].metadata[PROJECTED_OUTPUT_METADATA] is True
+    assert create.projection == [
+        ProjectionMapping(
+            python_name="values",
+            native_name="values",
+            native_position=0,
+            python_position=None,
+            result_position=0,
+        )
+    ]
+    assert maybe_create.projection == [
+        ProjectionMapping(
+            python_name="values",
+            native_name="values",
+            native_position=0,
+            python_position=0,
+            result_position=0,
+        )
+    ]
+    assert replace.projection == [
+        ProjectionMapping(
+            python_name="values",
+            native_name="values",
+            native_position=0,
+            python_position=0,
+        )
+    ]
+
+
+def test_primitive_scalar_inout_stays_visible_and_projects_replacement_return():
+    source = """
+module outputs
+contains
+subroutine scale_in_place(value, factor)
+    real(8), intent(inout) :: value
+    real(8), intent(in) :: factor
+    value = factor * value
+end subroutine scale_in_place
+end module outputs
+"""
+
+    smod = fortran_module_to_semantic_module(parse_fortran_source(source))
+    scale = get_function(smod, "scale_in_place")
+
+    assert scale.arguments[0].metadata[PROJECTED_OUTPUT_METADATA] is True
+    assert scale.projection == [
+        ProjectionMapping(
+            python_name="value",
+            native_name="value",
+            native_position=0,
+            python_position=0,
+            result_position=0,
+        ),
+        ProjectionMapping(
+            python_name="factor",
+            native_name="factor",
+            native_position=1,
+            python_position=1,
+        ),
+    ]
+
+
+def test_missing_intent_scalar_uses_conservative_replacement_projection():
+    source = """
+real(4) function square(value) result(output)
+    real(4) :: value
+    output = value * value
+end function square
+"""
+
+    smod = fortran_file_to_semantic_modules(parse_fortran_source(source))[0]
+    square = get_function(smod, "square")
+
+    assert square.arguments[0].semantic_type.storage.mutable is True
+    assert square.arguments[0].metadata[PROJECTED_OUTPUT_METADATA] is True
+    assert square.projection == [
+        ProjectionMapping(
+            python_name="value",
+            native_name="value",
+            native_position=0,
+            python_position=0,
+            result_position=1,
+        )
+    ]
+
+
+def test_ordinary_array_output_stays_visible_without_result_projection():
+    source = """
+module outputs
+contains
+subroutine fill(values)
+    real(8), intent(out) :: values(:)
+end subroutine fill
+end module outputs
+"""
+
+    smod = fortran_module_to_semantic_module(parse_fortran_source(source))
+    fill = get_function(smod, "fill")
+
+    assert PROJECTED_OUTPUT_METADATA not in fill.arguments[0].metadata
+    assert fill.projection == [
+        ProjectionMapping(
+            python_name="values",
+            native_name="values",
+            native_position=0,
+            python_position=0,
+        )
+    ]
+
+
+def test_scalar_derived_output_stays_visible_without_result_projection():
+    source = """
+module outputs
+type :: point
+    real(8) :: x
+end type point
+contains
+subroutine fill(value)
+    type(point), intent(out) :: value
+end subroutine fill
+end module outputs
+"""
+
+    smod = fortran_module_to_semantic_module(parse_fortran_source(source))
+    fill = get_function(smod, "fill")
+
+    assert PROJECTED_OUTPUT_METADATA not in fill.arguments[0].metadata
+    assert fill.projection == [
+        ProjectionMapping(
+            python_name="value",
+            native_name="value",
+            native_position=0,
+            python_position=0,
+        )
+    ]
+
+
+def test_optional_scalar_derived_output_stays_visible_without_result_projection():
+    source = """
+module outputs
+type :: point
+    real(8) :: x
+end type point
+contains
+subroutine fill(value)
+    type(point), intent(out), optional :: value
+end subroutine fill
+end module outputs
+"""
+
+    smod = fortran_module_to_semantic_module(parse_fortran_source(source))
+    fill = get_function(smod, "fill")
+
+    assert PROJECTED_OUTPUT_METADATA not in fill.arguments[0].metadata
+    assert fill.projection == [
+        ProjectionMapping(
+            python_name="value",
+            native_name="value",
+            native_position=0,
+            python_position=0,
+        )
+    ]
+
+
 def test_function_result():
     source = """
 module func_mod
@@ -586,7 +774,8 @@ end module callbacks
     assert "@prototype\ndef transform_iface(" in emitted
     assert "callback: transform_iface" in emitted
     assert "@prototype\ndef value_iface(" in emitted
-    assert "value: Value(Int32)" in emitted
+    assert "value: Int32" in emitted
+    assert "ref: Addr(Float64)" in emitted
     assert "@prototype\ndef string_iface(" in emitted
     assert "read_label: String[8]" in emitted
     assert native_contract_issues(parse_pyi_text(emitted, module_name=module.name)) == []

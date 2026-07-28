@@ -26,7 +26,7 @@ user-visible feature that a contributor is changing.
 | Shared Python utilities | `tests/utilities/` | `python3 -m pytest -q tests/utilities` |
 | NumPy and semantic type mapping | `tests/types/` | `python3 -m pytest -q tests/types` |
 | Runtime handles | `tests/runtime/handles/` | `python3 -m pytest -q tests/runtime/handles` |
-| Documentation structure and examples | `tests/docs/` | `python3 -m pytest -q tests/docs` |
+| Documentation structure, publication, and examples | `tests/docs/` | `python3 -m pytest -q tests/docs` |
 | Repository tools | `tests/tools/` | `python3 -m pytest -q tests/tools` |
 | Parked performance lane | `tests/benchmarks/` | `python3 -m pytest -q tests/benchmarks` |
 

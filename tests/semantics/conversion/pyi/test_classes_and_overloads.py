@@ -167,22 +167,16 @@ class state:
     assert "    def __init__(self) -> None: ..." in emit_module(module)
 
 
-def test_convert_pyi_to_ir_bound_constructor_replaces_generated_keyword_initializer():
+def test_convert_pyi_to_ir_bound_constructor_uses_explicit_pass_position():
     module = parse_pyi_text(
         """
 class state:
-    @private
-    def init_state(
-        self,
-        seed: Addr(Int32),
-        scale: Addr(Float64) = ...
-    ) -> None: ...
-
     @bind("init_state")
+    @native_call([Arg(0), Pass(), Arg(1)])
     def __init__(
         self,
-        seed: Addr(Int32),
-        scale: Addr(Float64) = ...
+        left: state,
+        right: state
     ) -> None: ...
 
     id: Int32 = 7
@@ -193,41 +187,43 @@ class state:
 
     cls = module.classes[0]
     assert cls.origin.metadata[SUPPRESS_DEFAULT_CONSTRUCTOR_METADATA] is True
-    assert [method.name for method in cls.methods] == ["init_state", "__init__"]
-    target = cls.methods[0]
-    assert target.visibility == "private"
-    init = cls.methods[1]
+    assert [method.name for method in cls.methods] == ["__init__"]
+    init = cls.methods[0]
     assert init.native_name == "init_state"
     assert init.metadata[BIND_TARGET_METADATA] == "init_state"
-    assert [arg.name for arg in init.arguments] == ["seed", "scale"]
+    assert [arg.name for arg in init.arguments] == ["left", "self", "right"]
+    assert init.passed_object_position == 1
+    assert [(item.native_position, item.python_position) for item in init.projection] == [
+        (0, 0),
+        (1, 1),
+        (2, 2),
+    ]
 
     emitted = emit_module(module)
-    assert "    @private\n    def init_state(" in emitted
-    assert '    @bind("init_state")\n    def __init__(' in emitted
+    assert '    @bind("init_state")\n    @native_call([Arg(0), Pass(), Arg(1)])\n    def __init__(' in emitted
     assert "def __init__(\n        self,\n        *," not in emitted
     assert parse_pyi_text(emitted, module_name="edited") == module
 
 
-def test_convert_pyi_to_ir_bound_constructor_allows_public_target_method():
+def test_convert_pyi_to_ir_bound_constructor_does_not_require_class_method_target():
     module = parse_pyi_text(
         """
-class state:
-    def init_state(self, seed: Int32) -> None: ...
+def init_state(owner: state, seed: Int32) -> None: ...
 
+class state:
     @bind("init_state")
+    @native_call([Pass(), Addr(Arg(0))])
     def __init__(self, seed: Int32) -> None: ...
 """,
         module_name="edited",
     )
 
     cls = module.classes[0]
-    assert [(method.name, method.visibility) for method in cls.methods] == [
-        ("init_state", "public"),
-        ("__init__", "public"),
-    ]
+    assert [method.name for method in cls.methods] == ["__init__"]
+    assert cls.methods[0].native_name == module.functions[0].native_name == "init_state"
     emitted = emit_module(module)
-    assert "    def init_state(" in emitted
-    assert '    @bind("init_state")\n    def __init__(' in emitted
+    assert "def init_state(" in emitted
+    assert '    @bind("init_state")\n    @native_call([Pass(), Addr(Arg(0))])\n    def __init__(' in emitted
 
 
 @pytest.mark.parametrize(
@@ -246,6 +242,7 @@ class state:
     def __init__(self, *, id: Int32 = 7) -> None: ...
 
     @bind("init_state")
+    @native_call([Pass(), Addr(Arg(0))])
     def __init__(self, seed: Int32) -> None: ...
 """,
             "Direct constructor bindings replace the generated field constructor",
@@ -254,19 +251,19 @@ class state:
             """
 class state:
     @bind("init_state")
+    @native_call([Addr(Arg(0))])
     def __init__(self, seed: Int32) -> None: ...
 """,
-            "Bound constructor references missing class method 'init_state'",
+            "Bound constructor native_call requires exactly one Pass() entry",
         ),
         (
             """
 class state:
-    def init_state(self, seed: Int32, scale: Float64) -> None: ...
-
     @bind("init_state")
+    @native_call([Pass(), Pass(), Addr(Arg(0))])
     def __init__(self, seed: Int32) -> None: ...
 """,
-            "Bound constructor declaration is incompatible with class method 'init_state'",
+            "Bound constructor native_call requires exactly one Pass() entry",
         ),
     ],
 )
@@ -291,6 +288,7 @@ def hidden() -> None: ...
 def test_convert_pyi_to_ir_resolves_x2py_overload_by_explicit_specific_name():
     module = parse_pyi_text(
         """
+@bind("convert_integer_native")
 def convert_integer(value: Int32) -> Int32: ...
 
 @overload("convert_integer")
@@ -304,15 +302,16 @@ def convert(value: Int32) -> Int32: ...
         ("convert", ["convert_integer"])
     ]
     assert module.overload_sets[0].procedures[0].metadata["overload_target"] == "convert_integer"
+    assert module.overload_sets[0].procedures[0].native_name == "convert_integer_native"
 
 
-def test_convert_pyi_to_ir_renames_module_generic_and_round_trips_native_name():
+def test_convert_pyi_to_ir_applies_module_overload_bind_and_round_trips_native_name():
     module = parse_pyi_text(
         """
-@bind("convert")
 def convert_integer(value: Int32) -> Int32: ...
 
-@overload("convert_integer", generic="convert")
+@bind("convert")
+@overload("convert_integer")
 def convert_number(value: Int32) -> Int32: ...
 """,
         module_name="generic_mod",
@@ -320,9 +319,48 @@ def convert_number(value: Int32) -> Int32: ...
 
     overload = module.overload_sets[0]
     assert overload.name == "convert_number"
-    assert overload.procedures[0].metadata["fortran_generic_name"] == "convert"
+    assert overload.procedures[0].native_name == "convert"
+    assert overload.procedures[0].metadata[BIND_TARGET_METADATA] == "convert"
     emitted = emit_module(module)
-    assert '@overload("convert_integer", generic="convert")' in emitted
+    assert '@bind("convert")\n@overload("convert_integer")' in emitted
+
+
+def test_convert_pyi_to_ir_applies_class_overload_bind_and_round_trips_native_name():
+    module = parse_pyi_text(
+        """
+def set_integer(self: item, value: Int32) -> None: ...
+
+class item:
+    @bind("set")
+    @overload("set_integer")
+    def set(self, value: Int32) -> None: ...
+""",
+        module_name="generic_mod",
+    )
+
+    candidate = module.classes[0].overload_sets[0].procedures[0]
+    assert candidate.native_name == "set"
+    assert candidate.metadata[BIND_TARGET_METADATA] == "set"
+    emitted = emit_module(module)
+    assert '    @bind("set")\n    @overload("set_integer")' in emitted
+
+
+def test_convert_pyi_to_ir_applies_constructor_overload_bind():
+    module = parse_pyi_text(
+        """
+def set_integer(self: item, value: Int32) -> None: ...
+
+class item:
+    @bind("set")
+    @overload("set_integer")
+    def __init__(self, value: Int32) -> None: ...
+""",
+        module_name="generic_mod",
+    )
+
+    candidate = module.classes[0].overload_sets[0].procedures[0]
+    assert candidate.native_name == "set"
+    assert candidate.metadata[BIND_TARGET_METADATA] == "set"
 
 
 @pytest.mark.parametrize(
@@ -335,6 +373,15 @@ def convert_number(value: Int32) -> Int32: ...
         (
             "from typing import overload\n",
             "typing.overload is not supported",
+        ),
+        (
+            """
+def convert_integer(value: Int32) -> Int32: ...
+
+@overload("convert_integer", generic="convert")
+def convert_number(value: Int32) -> Int32: ...
+""",
+            "generic is only valid for class overloads; use bind on a module overload",
         ),
         (
             """
@@ -448,10 +495,11 @@ def assign_vector_real(
     assert from_pyi.classes[0].overload_sets[0].procedures[0].metadata["overload_kind"] == "assignment"
 
 
-def test_type_bound_method_declarations_restore_root_target_metadata():
+def test_method_declarations_keep_module_procedure_targets_independent():
     from_pyi = parse_pyi_text(
         """
 class vector:
+    @native_call([Pass(), Arg(0)])
     def scale(
         self,
         factor: Addr(Float64)
@@ -481,21 +529,20 @@ def inspect(value: Annotated[vector, Polymorphic]) -> None: ...
         module_name="edited",
     )
     functions = {func.name: func for func in from_pyi.functions}
+    methods = {method.name: method for method in from_pyi.classes[0].methods}
 
-    assert functions["scale"].metadata["fortran_type_bound_target"] is True
-    assert functions["scale"].metadata["fortran_passed_object_name"] == "self"
-    assert functions["scale"].metadata["fortran_passed_object_position"] == 0
-    assert functions["scale"].arguments[0].semantic_type.metadata["fortran_polymorphic"] is True
-    assert functions["shift_vector"].metadata["fortran_type_bound_target"] is True
-    assert functions["shift_vector"].metadata["fortran_passed_object_name"] == "owner"
-    assert functions["shift_vector"].metadata["fortran_passed_object_position"] == 1
-    assert functions["shift_vector"].arguments[1].semantic_type.metadata["fortran_polymorphic"] is True
+    assert methods["scale"].native_name == "scale"
+    assert methods["shift"].native_name == "shift_vector"
+    assert "fortran_type_bound_target" not in functions["scale"].metadata
+    assert "fortran_type_bound_target" not in functions["shift_vector"].metadata
 
     emitted = emit_module(from_pyi)
     assert "self: vector" in emitted
     assert "owner: vector" in emitted
     assert "value: Annotated[vector, Polymorphic]" in emitted
-    assert parse_pyi_text(emitted, module_name="edited") == from_pyi
+    reparsed = parse_pyi_text(emitted, module_name="edited")
+    assert "fortran_type_bound_target" not in reparsed.functions[0].metadata
+    assert emit_module(reparsed) == emitted
 
 
 def test_pyi_keyword_normalized_type_bound_method_keeps_native_binding_name():

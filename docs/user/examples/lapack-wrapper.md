@@ -4,6 +4,7 @@ audience: users, advanced users
 prerequisites: arrays, BLAS wrapper example
 related: blas-wrapper.md, ../guide/error-handling.md
 status: planned-documentation
+publication: draft
 ---
 
 # LAPACK Wrapper Example

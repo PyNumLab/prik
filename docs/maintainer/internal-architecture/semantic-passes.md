@@ -4,6 +4,7 @@ audience: maintainers
 prerequisites: type system, symbol tables
 related: dependency-analysis.md, ../../user/reference/semantic-ir.md
 status: planned-documentation
+publication: draft
 ---
 
 # Semantic Passes

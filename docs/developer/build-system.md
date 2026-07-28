@@ -4,6 +4,7 @@ audience: developers, contributors
 prerequisites: repository structure
 related: testing-strategy.md, ../user/reference/configuration-files.md
 status: planned-documentation
+publication: draft
 ---
 
 # Build System

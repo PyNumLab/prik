@@ -1,63 +1,42 @@
 ---
 title: First Wrapped Function
+description: Build and call your first Fortran function as a Python extension
 audience: users
 prerequisites: installation, verification
-related: first-wrapped-module.md, ../guide/wrapping-functions.md, ../reference/semantic-pyi-format.md
+related: first-wrapped-module.md, ../guide/wrapping-functions.md
 status: maintained
+publication: reviewed
 ---
 
 # First Wrapped Function
 
-This example builds one checked scalar function and calls it with the exact
-NumPy dtypes required by its native contract.
+This example shows how to build a simple scalar Fortran function and call it from Python using the exact NumPy dtypes required by its contract.
 
-## Source
+---
 
-Reuse the same `scale.f90` input from the
-[README Quick Start](../../../README.md#quick-start).
+## Source Code
 
-The generated Python call accepts two `numpy.float64` values and returns a
-Python `float` result.
+Use the same `scale.f90` from the homepage:
 
-## Build
-
-From the directory containing `scale.f90`:
-
-```bash
-python3 -m x2py scale.f90 \
-  --out-dir build/first-function
+```fortran
+real(8) function scale(value, factor) result(output)
+  real(8), intent(in) :: value
+  real(8), intent(in) :: factor
+  output = value * factor
+end function scale
 ```
 
-The extension is named after the source stem: `scale`. The standalone native
-function is exposed directly at that extension's root.
+---
 
-## Import And Call
+## Inspect the Generated Contract
 
-```python
-import sys
-
-import numpy as np
-
-sys.path.insert(0, "build/first-function")
-import scale
-
-result = scale.scale(np.float64(3.0), np.float64(2.5))
-
-assert isinstance(result, float)
-assert result == 7.5
-```
-
-The checked call returns the Python value `7.5`.
-
-## Inspect The Generated Signature
-
-Before compiling, print the semantic contract:
+Preview the Python interface before building:
 
 ```bash
 python3 -m x2py generate --pyi scale.f90
 ```
 
-The generated declaration is:
+The generated semantic `.pyi` contains:
 
 ```python
 from x2py.contracts import Addr, Arg, Float64, external, native_call
@@ -70,46 +49,95 @@ def scale(
 ) -> Float64: ...
 ```
 
-The contract describes `value` and `factor` as read-only `Float64` values at
-the Python boundary. The `@native_call` decorator records that the native call
-receives the address of each converted native scalar slot. It does not mean the
-caller passes references. The semantic `.pyi` is a native contract, not an
-ordinary pure-Python type stub. Do not edit it during this first workflow; the
-Semantic `.pyi` Format reference explains the complete grammar later.
+`Float64` means the function requires `numpy.float64` scalar arguments and
+returns the same scalar type. `@external` identifies a procedure outside a
+Fortran module. `@native_call(...)` maps the two Python arguments to the native
+call and passes each scalar by address.
 
-Fortran `intent` is not printed into the semantic `.pyi`. It helps generate the
-initial Python argument/result projection, but the visible signature,
-`Returns[...]`, and ordered `@native_call` list are the wrapper authority after
-the contract is loaded. The compiled Fortran procedure retains its own `intent`.
+This file is both the wrapper contract and an editable description of the
+Python interface. You can leave it unchanged for this example; later pages
+show useful edits in context.
 
-## Failure Mode: Wrong Scalar Type
+---
 
-Native scalar arguments use exact NumPy dtypes. A plain Python `float` is not a
-replacement for `numpy.float64` at this boundary:
+## Build the Extension
 
-```python
-scale.scale(3.0, 2.5)  # raises TypeError
+From the directory containing `scale.f90`, run:
+
+```bash
+python3 -m x2py scale.f90 --out-dir build/first-function
 ```
 
-Do not fix this by adding an implicit conversion inside generated code. Convert
-at the Python call site so the selected ABI is explicit:
+This creates an importable `scale` extension module in the `build/first-function` directory.
+
+---
+
+## Inspect the Generated Docstring
+
+x2py creates NumPy-style docstrings from the same contract. Import the built
+extension and inspect the function:
 
 ```python
+import sys
+
+sys.path.insert(0, "build/first-function")
+import scale
+
+print(scale.scale.__doc__)
+```
+
+```text
+scale(value, factor) -> float64
+
+Parameters
+----------
+value : float64
+factor : float64
+
+Returns
+-------
+result : float64
+```
+
+`help(scale.scale)` shows the same signature, parameter types, result, and
+documented exceptions. Generated modules, classes, methods, and properties
+also provide docstrings.
+
+---
+
+## Call the Function
+
+```python
+import numpy as np
+
+result = scale.scale(np.float64(3.0), np.float64(2.5))
+print(result)          # 7.5
+assert result == 7.5
+```
+
+---
+
+## Common Pitfall: Wrong Scalar Type
+
+You **must** pass the exact NumPy scalar types:
+
+```python
+# This will raise TypeError
+scale.scale(3.0, 2.5)
+
+# Correct way
 scale.scale(np.float64(3.0), np.float64(2.5))
 ```
 
-For array functions, rank, dtype, shape, order, contiguity, and allowed stride
-patterns can also be contract requirements. Wrapping Functions and Arrays
-expand those rules later in the User Guide. The language feature matrix later
-records supported, partial, and unsupported wrapper forms.
+Always convert at the call site for scalar arguments.
 
-Build Issues and Runtime Issues are covered later in Troubleshooting. For now,
-rerun failed builds with `--verbose`, and compare rejected calls with the
-generated `.pyi` contract.
+---
 
-## Evidence
+If the build fails, rerun it with `--verbose`.
 
-The linked `scale.f90` input is checked against the repository fixture by
-[`test_examples.py`](../../../tests/docs/test_examples.py).
-The default extension name and `7.5` runtime result are checked by
-[`test_build_modes.py`](../../../tests/wrapper/fortran/build_from_source/test_build_modes.py).
+---
+
+## Next
+
+- Continue with [Your First Wrapped Module](first-wrapped-module.md).
+- For more function behavior, see [Wrapping Functions](../guide/wrapping-functions.md).

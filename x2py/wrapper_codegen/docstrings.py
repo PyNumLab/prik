@@ -56,18 +56,18 @@ class WrapperDocstringBuilder:
         overloads: tuple[OverloadPlan, ...],
     ) -> str:
         """Index every public owner in one generated Python namespace."""
-        qualified_name = ".".join((module_name, *path))
-        lines = [qualified_name, "", f"Generated Python interface for native namespace {qualified_name}."]
+        display_name = path[-1] if path else module_name
+        lines = [display_name]
         callable_lines = (
             *(self._first_line(function.binding.docstring) for function in functions if function.binding.public),
             *(self._first_line(overload.docstring) for overload in overloads),
         )
-        self._append_section(lines, "Functions", callable_lines)
         self._append_section(
             lines,
             "Module Attributes",
             tuple(line for variable in variables for line in self._module_variable_summary_lines(variable)),
         )
+        self._append_section(lines, "Functions", callable_lines)
         self._append_section(lines, "Classes", tuple(name for surface in classes for name in surface.python_names))
         return "\n".join(lines)
 
@@ -264,16 +264,14 @@ class WrapperDocstringBuilder:
         lines = [f"{name} : {self._type(variable, nullable=nullable, signature=False)}"]
         lines.extend(self._array_lines(variable.array))
         if variable.binding.getter_action is ModuleGetterAction.CONSTANT_VALUE:
-            lines.append("    Read-only native constant.")
+            lines.append("    Read-only constant.")
         elif variable.binding.getter_action is ModuleGetterAction.BORROWED_ARRAY_VIEW:
             lines.append("    Native-owned borrowed view; mutations affect module storage.")
         elif variable.native_array_handle is not None:
             lines.append(f"    Persistent {variable.native_array_handle.descriptor_kind.value} descriptor handle.")
         elif variable.derived is not None:
             lines.append("    Live native module object.")
-        if variable.binding.setter_action is SetterAction.WRITE_THROUGH:
-            lines.append("    Assignment writes through to native storage.")
-        elif variable.binding.setter_action is SetterAction.REJECT_REPLACEMENT:
+        if variable.binding.setter_action is SetterAction.REJECT_REPLACEMENT:
             lines.append("    Replacement assignment is not supported.")
         return "\n".join(lines)
 
@@ -435,6 +433,8 @@ class WrapperDocstringBuilder:
         lines.extend(self._array_lines(argument.array))
         lines.extend(self._optional_lines(argument))
         lines.extend(self._mutation_lines(argument))
+        if argument.datatype_family is DatatypeFamily.DERIVED or argument.array is not None:
+            lines.extend(self._ownership_lines(argument.ownership_owner))
         if argument.native_array_handle is not None:
             lines.append(f"    Descriptor ownership: {argument.native_array_handle.descriptor_ownership.value}.")
         return tuple(lines)
@@ -572,13 +572,25 @@ class WrapperDocstringBuilder:
     def _array_lines(array: ArrayHandoffPlan | None) -> tuple[str, ...]:
         if array is None:
             return ()
-        lines = ["    Rank: 1..15" if array.rank is None else f"    Rank: {array.rank}"]
+        lines = [WrapperDocstringBuilder._array_rank_line(array)]
         if array.shape and all(str(extent) not in _UNKNOWN_EXTENTS for extent in array.shape):
             lines.append(f"    Shape: ({', '.join(map(str, array.shape))})")
         if (array.rank is None or array.rank > 1) and array.order in {"ORDER_C", "ORDER_F"}:
             layout = "C-contiguous" if array.order == "ORDER_C" else "F-contiguous"
             lines.append(f"    Layout: {layout}")
         return tuple(lines)
+
+    @staticmethod
+    def _array_rank_line(array: ArrayHandoffPlan) -> str:
+        if array.flatten_python_storage:
+            native_rank = 1 if array.rank is None else array.rank
+            if native_rank == 1:
+                return "    Rank: 1..15, flattened to native rank 1"
+            edge = "leading" if array.flat_axis == 0 else "final"
+            return f"    Rank: {native_rank}..15, flattened at {edge} Flat axis to native rank {native_rank}"
+        if array.rank is None:
+            return "    Rank: 1..15"
+        return f"    Rank: {array.rank}"
 
     @staticmethod
     def _ownership_lines(owner: OwnershipOwner) -> tuple[str, ...]:

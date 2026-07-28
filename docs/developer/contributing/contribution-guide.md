@@ -4,6 +4,7 @@ audience: contributors
 prerequisites: repository checkout
 related: pull-request-workflow.md, ../index.md
 status: planned-documentation
+publication: draft
 ---
 
 # Contribution Guide

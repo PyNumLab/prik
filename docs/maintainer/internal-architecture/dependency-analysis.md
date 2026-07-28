@@ -4,6 +4,7 @@ audience: maintainers
 prerequisites: semantic passes
 related: wrapper-generation-pipeline.md, symbol-tables.md
 status: planned-documentation
+publication: draft
 ---
 
 # Dependency Analysis

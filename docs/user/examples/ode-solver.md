@@ -4,6 +4,7 @@ audience: users, advanced users
 prerequisites: callbacks, arrays
 related: ../tutorials/numerical-solver.md, ../guide/callbacks.md
 status: planned-documentation
+publication: draft
 ---
 
 # ODE Solver Example

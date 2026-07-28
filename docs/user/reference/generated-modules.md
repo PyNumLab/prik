@@ -4,6 +4,7 @@ audience: users
 prerequisites: wrapping modules
 related: generated-functions.md, generated-classes.md, semantic-pyi-format.md, ../guide/wrapping-modules.md
 status: maintained
+publication: draft
 ---
 
 # Generated Modules Reference
@@ -27,13 +28,13 @@ directory name becomes the default extension identity.
 Contained Fortran modules become child Python modules:
 
 ```python
-import module_state
+from module_state.module_state import summarize
 
-api = module_state.module_state
-assert api.summarize() == np.int32(15)
+assert summarize() == np.int32(15)
 ```
 
-Module members are not automatically flattened onto the extension root. A
+Module members are importable through their child module; they are not
+automatically flattened onto the extension root. A
 root-level semantic `.pyi` entry may explicitly reshape the Python export tree
 with imports, aliases, or star imports. Duplicate root exports fail before
 code generation.
@@ -96,7 +97,7 @@ absent and otherwise exposes the generated fields. Compatible allocatable
 dummies use a reversible typed `move_alloc` transaction; reassociable pointer
 dummies use a typed pointer transaction and restore the final association.
 Payload-only calls use direct or synchronous scoped addresses. See the
-[complete scalar-derived compatibility matrix](../guide/wrapping-derived-types.md#scalar-actuals-and-native-dummies).
+[derived-object compatibility matrix](../guide/memory-management.md#derived-objects-and-native-dummies).
 
 ## Visibility, Binding Names, And Imports
 

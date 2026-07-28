@@ -55,9 +55,7 @@
               },
               "visibility": "public",
               "default_value": null,
-              "metadata": {
-                "projected_output": true
-              },
+              "metadata": {},
               "origin": {
                 "source_language": "fortran",
                 "native_name": "p",
@@ -444,8 +442,8 @@
               "python_name": "p",
               "native_name": "p",
               "native_position": 0,
-              "python_position": null,
-              "result_position": 0,
+              "python_position": 0,
+              "result_position": null,
               "value_kind": "",
               "value": null
             },
@@ -453,7 +451,7 @@
               "python_name": "pid",
               "native_name": "pid",
               "native_position": 1,
-              "python_position": 0,
+              "python_position": 1,
               "result_position": null,
               "value_kind": "",
               "value": null
@@ -462,7 +460,7 @@
               "python_name": "mass",
               "native_name": "mass",
               "native_position": 2,
-              "python_position": 1,
+              "python_position": 2,
               "result_position": null,
               "value_kind": "",
               "value": null
@@ -471,7 +469,7 @@
               "python_name": "x",
               "native_name": "x",
               "native_position": 3,
-              "python_position": 2,
+              "python_position": 3,
               "result_position": null,
               "value_kind": "",
               "value": null
@@ -480,7 +478,7 @@
               "python_name": "y",
               "native_name": "y",
               "native_position": 4,
-              "python_position": 3,
+              "python_position": 4,
               "result_position": null,
               "value_kind": "",
               "value": null
@@ -489,7 +487,7 @@
               "python_name": "z",
               "native_name": "z",
               "native_position": 5,
-              "python_position": 4,
+              "python_position": 5,
               "result_position": null,
               "value_kind": "",
               "value": null
@@ -1470,9 +1468,7 @@
               },
               "visibility": "public",
               "default_value": null,
-              "metadata": {
-                "projected_output": true
-              },
+              "metadata": {},
               "origin": {
                 "source_language": "fortran",
                 "native_name": "a",
@@ -1514,7 +1510,7 @@
               "native_name": "a",
               "native_position": 0,
               "python_position": 0,
-              "result_position": 0,
+              "result_position": null,
               "value_kind": "",
               "value": null
             }

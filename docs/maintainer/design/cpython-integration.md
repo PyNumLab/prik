@@ -5,6 +5,7 @@ audience: maintainers
 prerequisites: code generation
 related: runtime-model.md, error-propagation-model.md
 status: planned-documentation
+publication: draft
 ---
 
 <!-- X2PY_C_DOCS_START

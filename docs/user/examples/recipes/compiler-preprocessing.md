@@ -2,8 +2,9 @@
 title: Use Compiler Preprocessing Options
 audience: users, developers
 prerequisites: installation, native project compiler flags
-related: ../verified-cookbook.md, ../../../developer/c-parser-reference.md, ../../../developer/fortran-parser-reference.md
+related: ../../../developer/c-parser-reference.md, ../../../developer/fortran-parser-reference.md
 status: maintained
+publication: draft
 ---
 
 # Use Compiler Preprocessing Options

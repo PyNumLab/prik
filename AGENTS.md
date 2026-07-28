@@ -17,6 +17,12 @@ When updating tests, remove obsolete tests that only assert removed/old implemen
 
 Before `x2py/semantics/ir2ast.py` runs, the post-IR policy stage must have completed every semantic decision needed by wrapper generation, including object kind, ownership, transfer, destruction, mutability/writeback, nullability, output projection, release responsibility, contract-value storage mode (`stack`, `heap`, or `alias`), getter behavior, native setter assignment, and Python setter exposure. Bridge and binding generators may only dispatch from those completed decisions into small named implementation methods. They must not infer or override semantic policy from datatype, `intent`, dotted-variable shape, `is_alias`, or local memory checks, and they must not contain a fallback that silently chooses a different behavior. When such a decision is found in bridge or binding code, remove it there and move it into post-IR policy completion. Backend-local helper temporaries may still be created inside the selected implementation method because they are emitted-code details, not semantic policy.
 
+For behavior changes, first try to express the change in completed semantic
+policy or the shared wrapper plan. Change binding or bridge lowering only when
+the selected plan requires a genuinely new emitted-code mechanism; those
+generators should otherwise keep reusing and dispatching existing planned
+paths.
+
 After every implementation task, the final summary must include a breakdown of
 the stages that actually changed. Relevant stages include parsing, semantic IR
 construction, post-IR policy completion, IR-to-AST/lowering, binding

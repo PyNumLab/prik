@@ -4,6 +4,7 @@ audience: developers, contributors
 prerequisites: code generation design, internal architecture
 related: adding-a-feature.md, build-system.md
 status: planned-documentation
+publication: draft
 ---
 
 # Adding A New Code Generation Backend

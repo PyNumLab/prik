@@ -4,6 +4,7 @@ audience: developers
 prerequisites: repository structure, parser architecture
 related: adding-a-fortran-construct.md, repository-structure.md
 status: maintained
+publication: draft
 ---
 
 # Fortran parser reference (wrapper-focused subset)
@@ -616,8 +617,6 @@ error was raised internally:
 python -m x2py bad.f90 --debug
 ```
 
-`--debug-traceback` remains accepted as a compatibility alias.
-
 The same developer mode can be enabled with the environment variable
 `FORTRAN_PARSER_DEBUG=1`:
 
@@ -813,8 +812,7 @@ disable ANSI output. On Windows, ANSI console compatibility is enabled through
 
 For parser development, `format_diagnostic(debug=True)` appends a note with the
 internal parser file, line, and function that raised the error. The CLI exposes
-this through `--debug`, its compatibility alias `--debug-traceback`, or
-`FORTRAN_PARSER_DEBUG=1`; normal CLI parse errors intentionally hide Python
+this through `--debug` or `FORTRAN_PARSER_DEBUG=1`; normal CLI parse errors intentionally hide Python
 tracebacks.
 
 The sections below list each error category, the triggering condition, and the

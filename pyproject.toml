@@ -20,6 +20,10 @@ pretty = [
     "rich>=13.7",
     "rich-argparse>=1.4",
 ]
+docs = [
+    "mkdocs==1.6.1",
+    "mkdocs-material==9.7.6",
+]
 qa = [
     "bandit[toml]==1.9.4",
     "coverage[toml]>=7.10",

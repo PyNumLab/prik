@@ -4,6 +4,7 @@ audience: maintainers
 prerequisites: developer documentation, user contracts
 related: ../internal-architecture/index.md, semantic-multilanguage-wrapper-runtime-architecture.md
 status: planned-documentation
+publication: draft
 ---
 
 # Design Documents

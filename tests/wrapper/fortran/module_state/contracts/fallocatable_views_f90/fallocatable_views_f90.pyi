@@ -53,7 +53,7 @@ def make_values(
     n: Int32
 ) -> Allocatable[Float64[:]]: ...
 
-@native_call([Addr(Arg(0)), Addr(Arg(1))])
+@native_call([Addr(Arg(0)), Addr(Arg(1)), Return('values', 0)])
 def make_matrix(
     n: Int32,
     m: Int32

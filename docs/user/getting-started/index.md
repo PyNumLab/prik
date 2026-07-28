@@ -1,42 +1,36 @@
 ---
 title: Getting Started
+description: Install x2py, set up compilers, and build your first Fortran-to-Python extension
 audience: users
 prerequisites: repository checkout
 related: installation.md, verification.md
 status: maintained
+publication: reviewed
 ---
 
 # Getting Started
 
-This section takes you from a source checkout to an imported Python extension.
-The supported beginner path wraps Fortran source with the GNU native toolchain.
+This guide takes you from a fresh clone to your first working Python extension built from Fortran code.
 
-<!-- X2PY_C_DOCS_START
-This section takes you from a source checkout to an imported Python extension.
-The shortest supported path wraps Fortran source with the GNU compiler
-toolchain. C parsing and interface inspection are available, but runtime
-wrapping of user-supplied C code is not implemented yet.
-X2PY_C_DOCS_END -->
+The recommended beginner path uses the **GNU toolchain**, which offers the best compatibility right now.
+
+---
 
 ## Beginner Path
 
 Follow these pages in order:
 
-1. [Install x2py and its native prerequisites](installation.md).
-2. [Verify Python, NumPy, the CLI, and the compilers](verification.md).
-3. [Build and call a scalar function](first-wrapped-function.md).
-4. [Work with a Fortran module and its saved state](first-wrapped-module.md).
-5. [Use the normal edit, inspect, build, test, and rebuild loop](beginner-workflow.md).
+1. **[Installation](installation.md)** — Install x2py and the required native compilers.
+2. **[Verification](verification.md)** — Check the package, headers, and compiler.
+3. **[Your First Function](first-wrapped-function.md)** — Wrap a simple scalar Fortran function.
+4. **[Your First Module](first-wrapped-module.md)** — Work with Fortran modules and saved state.
+5. **[Development Workflow](beginner-workflow.md)** — Learn the edit → review → build → test loop.
+
+---
 
 ## What You Will Build
 
-The checked beginner example exposes a Fortran function through an importable
-Python extension:
-
-<!-- X2PY_C_DOCS_START
-The checked beginner example exposes a Fortran function as an importable
-CPython extension:
-X2PY_C_DOCS_END -->
+By the end of this section you will be able to write Fortran and call it cleanly from Python:
 
 ```python
 import numpy as np
@@ -44,21 +38,14 @@ import numpy as np
 import scale
 
 result = scale.scale(np.float64(3.0), np.float64(2.5))
-assert result == np.float64(7.5)
+print(result)        # 7.5
 ```
 
-The first example is a standalone procedure exposed directly at the extension
-root. The next module example introduces contained Fortran modules as Python
-child namespaces.
+The first example exposes a standalone Fortran function directly on the extension.  
+Later examples show how Fortran modules become Python namespaces.
 
-Check the [language feature matrix](../language-support/feature-matrix.md) before
-depending on an advanced construct. Installation, compiler, build, and import
-failures are routed through [Troubleshooting](../troubleshooting/index.md).
+---
 
-## Evidence
+## Next
 
-The standalone example used throughout this section is checked against its
-fixture by
-[`test_examples.py`](../../../tests/docs/test_examples.py),
-and its `7.5` runtime result is checked by
-[`test_build_modes.py`](../../../tests/wrapper/fortran/build_from_source/test_build_modes.py).
+- Start with [Installation](installation.md).

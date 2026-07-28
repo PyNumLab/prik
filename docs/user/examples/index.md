@@ -2,36 +2,37 @@
 title: Examples Gallery
 audience: users
 prerequisites: getting started
-related: ../tutorials/index.md, verified-cookbook.md
+related: ../tutorials/index.md, ../guide/building-shared-library.md
 status: planned-documentation
+publication: draft
 ---
 
 # Examples Gallery
 
-The maintained part of this section is the checked recipe cookbook. Use it when
-you need a copy-paste command, a short Python API pattern, or the current
-boundary between inspection and runtime wrapper support.
+The maintained part of this section is the checked recipes. Use them when you
+need a copy-paste command, a short Python API pattern, or the current boundary
+between inspection and runtime wrapper support.
 
 The larger project examples below are placeholders for future complete runnable
 projects. Each one must include source, build command, import command, runtime
 check, limitations, and test evidence before it is marked maintained.
 
-## Maintained Recipes
+## Choose A Page
 
-- [Verified examples cookbook](verified-cookbook.md)
-- [Build and import with the CLI](recipes/build-and-import-cli.md)
-- [Build and import with the Python API](recipes/build-and-import-python-api.md)
-- [Generate an editable Makefile](recipes/generate-editable-makefile.md)
-- [Build multiple Fortran sources](recipes/build-multiple-fortran-sources.md)
-- [Inspect a Fortran API](recipes/inspect-fortran-api.md)
-- [Work with semantic .pyi contracts](recipes/semantic-pyi-contracts.md)
-- [Control CLI output](recipes/control-cli-output.md)
-- [Use Python inspection APIs](recipes/use-python-inspection-apis.md)
-- [Use compiler preprocessing options](recipes/compiler-preprocessing.md)
-
+| Goal | Page |
+| --- | --- |
+| Build and import a first extension | [First Wrapped Function](../getting-started/first-wrapped-function.md) |
+| Build from several ordered sources | [Building the Shared Library](../guide/building-shared-library.md#multiple-source-files) |
+| Generate and edit `Makefile.x2py` | [Building the Shared Library](../guide/building-shared-library.md#use-a-makefile) |
+| Build through Python code | [Build and import with the Python API](recipes/build-and-import-python-api.md) |
+| Inspect a Fortran API | [Inspect a Fortran API](recipes/inspect-fortran-api.md) |
 <!-- X2PY_C_DOCS_START
-- [Inspect a C API](recipes/inspect-c-api.md)
+| Inspect a C API | [Inspect a C API](recipes/inspect-c-api.md) |
 X2PY_C_DOCS_END -->
+| Work with semantic `.pyi` contracts | [Work with semantic `.pyi` contracts](recipes/semantic-pyi-contracts.md) |
+| Control command output | [Control CLI output](recipes/control-cli-output.md) |
+| Use inspection APIs from Python | [Use Python inspection APIs](recipes/use-python-inspection-apis.md) |
+| Pass compiler and preprocessing options | [Use compiler preprocessing options](recipes/compiler-preprocessing.md) |
 
 ## Planned Project Examples
 

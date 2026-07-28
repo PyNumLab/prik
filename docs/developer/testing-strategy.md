@@ -4,6 +4,7 @@ audience: developers, contributors
 prerequisites: repository structure
 related: quality-assurance.md, development-workflow.md
 status: maintained
+publication: draft
 ---
 
 # Testing Strategy

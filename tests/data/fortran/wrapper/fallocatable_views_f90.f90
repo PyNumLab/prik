@@ -90,10 +90,10 @@ contains
     end do
   end function make_values
 
-  function make_matrix(n, m) result(values)
+  subroutine make_matrix(n, m, values)
     integer, intent(in) :: n
     integer, intent(in) :: m
-    real(8), allocatable :: values(:, :)
+    real(8), allocatable, intent(out) :: values(:, :)
     integer :: i
     integer :: j
 
@@ -104,7 +104,7 @@ contains
         values(i, j) = real(100 + i + 10 * j, kind=8)
       end do
     end do
-  end function make_matrix
+  end subroutine make_matrix
 
   subroutine allocate_values(self, n)
     class(buffer), intent(inout) :: self

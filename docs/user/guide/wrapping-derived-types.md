@@ -1,24 +1,33 @@
 ---
 title: Wrapping Derived Types
+description: How x2py wraps Fortran derived types as Python classes with methods, fields, constructors, and ownership rules
 audience: users, advanced users
 prerequisites: wrapping modules, data types
-related: memory-management.md, generic-interfaces.md, fortran-wrapper.md
+related: memory-management.md, generic-interfaces.md
 status: maintained
+publication: reviewed
 ---
 
 # Wrapping Derived Types
 
-A supported Fortran-derived type becomes a generated Python extension class.
-The wrapper owns an opaque native instance; Python field access and methods use
-generated native operations rather than assuming a public memory layout.
+A supported Fortran `type` becomes a **generated Python extension class**.
+Constructors and ordinary function results create independent Fortran
+instances that are released with their Python objects. A nested component
+belongs to its parent, and a module object belongs to the Fortran module.
+Python accesses fields through generated getters and setters. Methods call
+wrapped Fortran procedures. Python never reads the native memory layout
+directly.
 
-## Complete Derived-Type Example
+---
+
+## Complete Example
 
 Create `points.f90`:
 
 ```fortran
 module points
   implicit none
+
   type :: point
     real(8) :: x = 0.0_8
     real(8) :: y = 0.0_8
@@ -27,7 +36,9 @@ module points
   type :: holder
     type(point) :: origin
   end type holder
+
 contains
+
   subroutine move(item, dx, dy)
     type(point), intent(inout) :: item
     real(8), intent(in) :: dx, dy
@@ -47,6 +58,7 @@ contains
     type(point), intent(in) :: item
     container%origin = item
   end subroutine set_origin
+
 end module points
 ```
 
@@ -56,260 +68,320 @@ Build it:
 python3 -m x2py points.f90 --out geometry --out-dir build/geometry
 ```
 
-Then construct, mutate, return, and borrow generated objects:
+---
+
+## Usage in Python
 
 ```python
 import sys
+
 import numpy as np
 
 sys.path.insert(0, "build/geometry")
-import geometry
+import geometry.points as points
 
-points = geometry.points
+# Create new object
 item = points.point(x=np.float64(1.0), y=np.float64(2.0))
+
+# Call method (inout mutation)
 points.move(item, np.float64(3.0), np.float64(4.0))
-assert item.x == np.float64(4.0)
-assert item.y == np.float64(6.0)
+print(item.x, item.y)  # 4.0 6.0
 
+# Function returning derived type
 made = points.make_point(np.float64(8.0), np.float64(9.0))
-assert isinstance(made, points.point)
 
+# Nested component
 container = points.holder()
 points.set_origin(container, made)
-origin = container.origin
-origin.x = np.float64(12.0)
-assert container.origin.x == np.float64(12.0)
+container.origin.x = np.float64(12.0)
+print(container.origin.x)  # 12.0
 ```
 
-## Arguments And Results
+---
 
-- `intent(in)` passes an existing wrapper instance without transferring ownership.
-- `intent(inout)` mutates the same native instance.
-- hidden `intent(out)` returns a new wrapper-owned instance.
-- a function result is copied into a new wrapper-owned native instance before
-  the native temporary expires.
+## Inspect the Class
 
-When an edited semantic contract keeps a writable derived argument visible and
-projects it with `Returns["name", T]`, the return value is the exact same Python
-wrapper that the caller supplied. Native code mutates that wrapper's existing
-storage; the binding does not construct a replacement object, copy the derived
-value, or assume destruction responsibility. Omitting the projection leaves the
-same mutation in place and returns only the other declared results (or `None`).
+The class docstring gives a short index:
 
-The complete example shows inout mutation and a wrapper-owned function result.
+```python
+print(points.point.__doc__)
+```
 
-A native by-value argument is preserved in generated semantic contracts as
-`@native_call([Value(Arg(0)), ...])`. Python still passes an existing `point`
-wrapper.
-The generated Fortran bridge imports the exact native type and performs the
-typed by-value call. The foreign boundary never lays out or byte-copies the
-aggregate,
-so the same opaque mechanism applies to exact ordinary, `sequence`, and
-`bind(C)` types. Polymorphic or unresolved types remain blocked.
+```text
+point
 
-## Scalar Actuals And Native Dummies
+Opaque wrapper for native type point.
 
-This section is the canonical compatibility reference for rank-zero,
-monomorphic derived objects. It applies when a wrapper object—including a live
-module attribute—is passed to another wrapped Fortran procedure. Arrays and
-polymorphic objects follow different rules.
+Constructor
+-----------
+point(*, x=0.0, y=0.0) -> point
 
-An actual object has one of five relevant Fortran declaration forms:
+Fields
+------
+x : float64
+y : float64
+```
 
-| Key | Actual declaration |
-| --- | --- |
-| `O` | `type(item) :: value` |
-| `T` | `type(item), target :: value` |
-| `A` | `type(item), allocatable :: value` |
-| `AT` | `type(item), allocatable, target :: value` |
-| `P` | `type(item), pointer :: value` |
+The constructor has its own detailed docstring:
 
-A native dummy has six forms:
+```python
+print(points.point.__init__.__doc__)
+```
 
-| Key | Dummy declaration |
-| --- | --- |
-| `O` | `type(item) :: arg` |
-| `T` | `type(item), target :: arg` |
-| `A` | `type(item), allocatable :: arg` |
-| `AT` | `type(item), allocatable, target :: arg` |
-| `P` | `type(item), pointer :: arg` |
-| `V` | `type(item), value :: arg` |
+---
 
-`OPTIONAL`, `INTENT`, rank, and the qualified native type are additional facts;
-they are not extra declaration rows. In the table, “payload” requires an
-allocated allocatable or associated pointer. “Holder” means persistent
-wrapper-owned Fortran storage. “Scoped” means the originating module exposes an
-address only for the duration of the synchronous native call. “Allocation
-transaction” and “pointer transaction” write descriptor or association changes
-back to the originating module variable before control returns to Python.
+## Key Concepts
 
-| Actual and origin | `O` dummy | `T` dummy | `A` dummy | `AT` dummy | `P` dummy | `V` dummy |
-| --- | --- | --- | --- | --- | --- | --- |
-| `O`, wrapper-owned | direct reference | call-scoped target | incompatible | incompatible | input-only pointer adapter | typed value |
-| `O`, module | scoped reference | scoped target | incompatible | incompatible | scoped input-only pointer adapter | scoped typed value |
-| `T`, wrapper-owned | direct reference | direct target | incompatible | incompatible | input-only pointer adapter | typed value |
-| `T`, module | module address | module target | incompatible | incompatible | input-only pointer adapter | typed value |
-| `A`, wrapper holder | payload | payload as holder target | allocatable holder | allocatable holder | payload input-only pointer adapter | payload typed value |
-| `A`, module | scoped payload | scoped payload target | allocation transaction | allocation transaction with call target | scoped payload input-only pointer adapter | scoped payload typed value |
-| `AT`, wrapper holder | payload | payload as holder target | allocatable holder | allocatable holder | payload input-only pointer adapter | payload typed value |
-| `AT`, module | module payload address | module payload target | target-preserving allocation transaction | target-preserving allocation transaction | payload input-only pointer adapter | payload typed value |
-| `P`, wrapper holder | pointee | pointee target | incompatible | incompatible | pointer holder | pointee typed value |
-| `P`, module | module pointee | module pointee target | incompatible | incompatible | pointer transaction | pointee typed value |
+- **Lifetime**: A constructed or returned object is released when its Python
+  object is no longer used. A nested component stays tied to its parent.
+- **Mutation**: `intent(out)` and `intent(inout)` modify a caller-provided
+  instance and do not return it again.
+- **Missing intent**: A dummy without `intent` follows the same conservative
+  in-place rule as `intent(inout)`.
+- **Fields**: Public scalar numeric/logical/complex fields become Python attributes.
+- **Nested types**: Appear as generated objects tied to their parent.
+- **Results**: Derived-type function results create new independent objects.
+- **Default constructor**: Automatically generated from public, writable
+  primitive scalar fields.
+- **Constructor fields**: Passed by keyword (`logical`, `integer`, `real`, and
+  `complex`).
 
-“Incompatible” is a deliberate `TypeError` before native entry, not an
-unimplemented Phase 8 fallback. A nonpointer actual can satisfy `P` only when
-the pointer dummy is proved `INTENT(IN)`. A pointer dummy with no `INTENT`, or
-with `INTENT(OUT)`/`INTENT(INOUT)`, may change association and therefore
-requires a pointer actual. If the edited contract omits `INTENT` but an imported
-Fortran interface is authoritative, x2py emits the target adapter and lets the
-Fortran compiler enforce this rule. Without either source of authority, wrapper
-generation reports an interface error.
+---
 
-For payload calls, an unallocated `A`/`AT` actual or disassociated `P` actual
-raises `ValueError` before native entry. Descriptor dummies `A`, `AT`, and `P`
-instead accept empty state so the native procedure can allocate, deallocate,
-nullify, or reassociate it. Empty state is still a present argument; only an
-omitted optional argument or explicit optional `None` means absence.
+## Custom Constructor
 
-### Module Transactions And Multiple Arguments
+The default constructor assigns public fields directly. If the native module
+already provides `initialize_point(item, x, y)`, an edited contract can use it
+as the constructor.
 
-Module allocation and pointer state stays in Fortran. x2py uses one shared
-typed allocatable holder and pointer holder per qualified native type. The
-interoperable boundary carries only an opaque holder address and typed operation
-pointers; no native descriptor crosses that boundary.
+In this mapping, `@bind` selects the native initializer,
+`@native_call(...)` gives its argument order, `Pass()` inserts the new
+`point`, and `Addr(Arg(i))` passes Python argument `i` by address:
 
-For an allocatable module actual passed to `A` or `AT`, a module operation uses
-`move_alloc` to place its allocation in a bridge-local typed holder. The native
-procedure receives that holder component, and a cleanup operation moves the
-final allocation back exactly once. For a module pointer passed to `P`, a local
-pointer holder starts with the current association; cleanup restores its final
-association to the module pointer exactly once. A module target needs neither
-transaction: its durable native address is sufficient.
+```python
+from x2py.contracts import Addr, Arg, Float64, Pass, bind, native_call
 
-A procedure may take any number of scalar-derived arguments. x2py validates all
-slots first, acquires module origins in deterministic order, nests scoped
-address producers, invokes the native procedure once, and restores transactions
-in reverse order. It does not generate `2**N` call variants. Repeated read-only
-use of the same object shares one acquisition; ambiguous writable aliasing is
-rejected before any module state moves.
+class point:
+    x: Float64
+    y: Float64
 
-This also applies when arguments are module variables from different Fortran
-modules and have different qualified derived types. Each module variable owns a
-separate bridge operation table and scoped callback; the binding validates the
-table's qualified native type before the callback is invoked. There is no
-shared type-specific callback slot, so one module variable cannot overwrite
-another argument's transport.
+    @bind("initialize_point")
+    @native_call([Pass(), Addr(Arg(0)), Addr(Arg(1))])
+    def __init__(self, x: Float64, y: Float64) -> None: ...
+```
 
-If a later acquisition or the native call reports a normal ABI error, cleanup
-continues for every acquired origin and Python raises only after the Fortran
-frames have returned. Concurrent or recursive use of the same active module
-transaction raises `RuntimeError`. A restoration failure also raises
-`RuntimeError` and poisons that module proxy rather than pretending its state is
-usable. Process termination, `error stop`, signals, and invalid native pointers
-cannot be converted into recoverable Python exceptions.
+Replace the generated field-keyword `__init__` declaration with this one.
+The edit changes construction only; it does not create
+`initialize_point` in the native module.
 
-A pointer holder owns its association variable, not its target. Native storage
-remains native-owned unless completed policy identifies and retains a known
-module, parent, or wrapper target. Destroying the Python holder nullifies its
-component and releases only the holder; it never deallocates an unknown target.
+After rebuilding, `points.point.__init__.__doc__` starts with
+`point(x, y) -> point` and lists both parameters.
 
-## Fields And Nested Components
+For the complete replacement rules, see
+[Replace the Constructor](../reference/pyi-contracts/functions-and-classes.md#replace-the-constructor).
 
-Public supported scalar fields become Python descriptors. Private fields are
-omitted. A nested scalar derived component is a borrowed child wrapper: it
-retains its parent owner and never destroys the component independently.
-The same readable and, when policy permits, writable descriptor surface is used
-for wrapper-owned instances, borrowed objects, and live module objects. A
-target/addressable module object may use a direct native address; a plain module
-object uses typed member getter and setter operations instead. Neither path
-creates a detached whole-object copy.
+---
 
-Allocatable fields expose `Allocatable[T[...]]` handles, and pointer-array
-fields expose `Pointer[T[...]]` handles. Each field handle retains the parent
-wrapper for descriptor access. Call `to_numpy()` to extract the current NumPy
-view or `None`; extraction never copies. Discard old views after native
-deallocation, reallocation, nullification, or reassociation because accessing a
-stale view is unsupported and may crash. Call `.copy()` explicitly for
-independent NumPy storage. Pointer fields use a conservative default operation
-policy, while ownership-changing operations require explicit pointer policy.
-Arrays of derived types remain blocked because element construction,
-destruction, layout, aliasing, and copy policy are incomplete.
-Rank-zero allocatable or pointer components whose value is itself a derived
-object use the same completed holder and ownership policy when their origin is
-supported. Rank-zero allocatable and pointer module variables expose persistent
-live descriptor proxies, including while the allocatable is unallocated or the
-pointer is disassociated. Payload-field access then raises `ReferenceError`,
-but the same proxy can still be passed to an `A`, `AT`, or `P` dummy so native
-code can establish new state. Wrapper-owned allocatable and pointer results use
-persistent typed holders with the same empty-state rule.
-Their complete call compatibility and transaction rules are defined in
-[Scalar Actuals And Native Dummies](#scalar-actuals-and-native-dummies). x2py
-does not silently turn an unsupported origin into an owned object or detached
-copy.
+## Type-Bound Methods
 
-## Constructors
+A public type-bound procedure becomes a method on the generated class. The
+passed object becomes `self` and is not repeated in the Python call.
 
-Native allocation runs native default component initialization. x2py generates
-a keyword-only Python initializer for public rank-zero numeric, logical, and
-complex fields. Omitted keywords preserve the native initialized values.
+```fortran
+type :: counter
+  integer(4) :: value = 0
+contains
+  procedure :: increment
+end type counter
 
-Private components, arrays, allocatables, pointers, strings, and nested derived
-components are not automatic constructor keywords. A type with fields but no
-eligible keywords still receives explicit default construction when supported.
+contains
 
-An edited semantic `.pyi` may remove the generated constructor or bind one
-concrete initializer. x2py does not regenerate a constructor that the edited
-contract intentionally removed.
+subroutine increment(self, amount)
+  class(counter), intent(inout) :: self
+  integer(4), intent(in) :: amount
+  self%value = self%value + amount
+end subroutine increment
+```
 
-## Finalizers
+```python
+item = counters.counter(value=np.int32(4))
+item.increment(np.int32(3))
+print(item.value)  # 7
+```
 
-An owned wrapper invokes native finalization exactly once when its owning Python
-wrapper is collected. Failed initialization still releases the allocated native
-instance. Borrowed child wrappers do not finalize their component; finalization
-belongs to the containing owner.
+The method mutates the existing `counter`; it does not replace the Python
+object.
 
-A native finalizer has no recoverable Python status channel during object
-deallocation. Native termination from a finalizer terminates the process.
+### Expose a Module Procedure as a Method
 
-## Inheritance And Polymorphism
+The `move(item, dx, dy)` procedure from this page's example can remain a
+module-level function and also become `point.move(dx, dy)`.
 
-Supported extension types form a matching Python inheritance hierarchy. A
-scalar polymorphic input over a known hierarchy dispatches descendant-first.
+`Pass()` supplies `self` to the native call. `Arg(i)` refers to a visible
+Python argument. Add the method to the existing `point` class while keeping
+the module declaration:
 
-Ordinary native `class(T)` arguments retain `Annotated[T, Polymorphic]` in the
-semantic `.pyi` because that source fact selects the accepted dynamic-type
-dispatch. The passed-object dummy of a type-bound procedure is different: its
-class binding already proves that it is polymorphic, so generated contracts use
-the plain declared type for that one argument and restore the fact when loading
-the binding.
+```python
+from x2py.contracts import Addr, Arg, Float64, Pass, native_call
 
-Polymorphic results, mutable polymorphic arguments, arrays, allocatable or pointer
-polymorphic scalars, `class(*)`, abstract instantiation, and deferred bindings
-are blocked.
+class point:
+    @native_call([Pass(), Addr(Arg(0)), Addr(Arg(1))])
+    def move(self, dx: Float64, dy: Float64) -> None: ...
 
-## Opaque Layout
+@native_call([Arg(0), Addr(Arg(1)), Addr(Arg(2))])
+def move(item: point, dx: Float64, dy: Float64) -> None: ...
+```
 
-Generated wrappers do not expose a direct binary-layout promise for ordinary
-derived types. Component order and native facts remain in semantic IR, but
-Python access follows generated accessors. Do not use `ctypes` offsets or assume
-that Python-visible fields imply a stable binary layout.
+Both declarations call the existing native `move` procedure:
 
-## Evidence And Troubleshooting
+```python
+points.move(item, np.float64(2.0), np.float64(3.0))
+item.move(np.float64(2.0), np.float64(3.0))
+```
 
-Scalar boundaries and nested lifetime are exercised by
-[`test_derived_type_boundaries.py`](../../../tests/wrapper/fortran/derived_types/test_derived_type_boundaries.py),
-direct live object and field behavior by
-[`test_phase8_derived_plan.py`](../../../tests/wrapper/fortran/derived_types/test_phase8_derived_plan.py),
-the complete scalar actual/dummy matrix and multi-argument transactions by
-[`test_scalar_derived_actual_dummy_matrix.py`](../../../tests/wrapper/fortran/derived_types/test_scalar_derived_actual_dummy_matrix.py),
-methods by
-[`test_derived_type_methods.py`](../../../tests/wrapper/fortran/derived_types/test_derived_type_methods.py),
-constructors/finalizers by
-[`test_constructors_and_finalizers.py`](../../../tests/wrapper/fortran/derived_types/test_constructors_and_finalizers.py),
-and borrowed finalization by
-[`test_borrowed_finalizers.py`](../../../tests/wrapper/fortran/derived_types/test_borrowed_finalizers.py).
+To expose only the method, import `private` and add `@private` to the
+module-level declaration.
 
-Treat nested child wrappers as borrowed from their containing wrapper rather
-than independently owned native objects. Memory Management later expands
-ownership, and Error Handling later covers constructor, type, and wrapper-planning
-failures.
+The class docstring now lists `move(dx, dy) -> None` under `Methods`.
+`points.point.move.__doc__` contains its complete parameter and return details.
+
+For the complete mapping rules, see
+[Expose a Module Procedure as a Method](../reference/pyi-contracts/functions-and-classes.md#expose-a-module-procedure-as-a-method).
+
+---
+
+## Type-Bound Generics
+
+A type-bound generic groups several concrete methods under one Python method.
+For example, `add` can accept exact integer or real amounts:
+
+```fortran
+type :: counter
+  integer(4) :: value = 0
+contains
+  procedure :: add_integer
+  procedure :: add_real
+  generic :: add => add_integer, add_real
+end type counter
+```
+
+The generated contract uses the same explicit overload links as a module-level
+generic:
+
+```python
+from x2py.contracts import Float64, Int32, bind, overload, private
+
+class counter:
+    @private
+    def add_integer(self, amount: Int32) -> Int32: ...
+
+    @private
+    def add_real(self, amount: Float64) -> Float64: ...
+
+    @bind("add")
+    @overload("add_integer")
+    def add(self, amount: Int32) -> Int32: ...
+
+    @bind("add")
+    @overload("add_real")
+    def add(self, amount: Float64) -> Float64: ...
+```
+
+```python
+print(item.add(np.int32(2)))       # exact Int32 candidate
+print(item.add(np.float64(0.5)))   # exact Float64 candidate
+```
+
+The passed object participates in native dispatch but is already fixed by the
+generated class. The remaining arguments must still match one candidate
+exactly. Each `@overload` retains a concrete contract. `@bind("add")` routes
+the native call through the public type-bound generic because its specifics
+are private.
+
+---
+
+## Defined Operators
+
+A defined operator with a wrapped derived-type operand becomes a Python magic
+method. Its overload candidates are attached to the generated class.
+
+```fortran
+interface operator(+)
+  module procedure add_points
+end interface operator(+)
+
+contains
+
+function add_points(left, right) result(output)
+  type(point), intent(in) :: left, right
+  type(point) :: output
+  output%x = left%x + right%x
+  output%y = left%y + right%y
+end function add_points
+```
+
+The generated contract exposes `operator(+)` as `__add__`:
+
+```python
+from x2py.contracts import overload, private
+
+class point:
+    @overload("add_points")
+    def __add__(self, right: point) -> point: ...
+
+@private
+def add_points(left: point, right: point) -> point: ...
+```
+
+Python uses the normal operator:
+
+```python
+left = points.point(x=np.float64(1.0), y=np.float64(2.0))
+right = points.point(x=np.float64(3.0), y=np.float64(4.0))
+total = left + right
+print(total.x, total.y)  # 4.0 6.0
+```
+
+The magic method docstring shows the accepted operator signatures:
+
+```python
+print(points.point.__add__.__doc__)
+```
+
+The relevant part is:
+
+```text
+__add__(*args, **kwargs)
+
+Supported Signatures
+--------------------
+__add__(right: point) -> point
+```
+
+| Fortran generic | Python method | Python syntax |
+|-----------------|---------------|---------------|
+| Binary `+`, `-`, `*`, `/`, `**` | Direct and reflected magic methods | `left + right` |
+| Unary `+`, `-` | `__pos__`, `__neg__` | `+value`, `-value` |
+| Relational operators | `__eq__`, `__lt__`, and related methods | `left == right` |
+| `.and.`, `.or.`, `.not.` | `__and__`, `__or__`, `__invert__` | `left & right`, `~value` |
+| Named operator `.name.` | `operator_name` or `r_operator_name` | Explicit method call |
+| `assignment(=)` | `assign` | `target.assign(value)` |
+
+Python `and`, `or`, and `not` cannot be overloaded, so logical operator
+generics use `&`, `|`, and `~`. Python assignment only rebinds a name, so
+defined assignment uses `.assign(...)`.
+
+At least one operand must be a wrapped derived type. Other operands can be
+supported primitive scalars, arrays, or generated classes. Their dispatch is
+exact.
+
+For the overload rules shared by type-bound generics and operators, see
+[Edit an Overload Set](../reference/pyi-contracts/functions-and-classes.md#edit-an-overload-set).
+
+---
+
+## Next
+
+- Continue with [Allocatables](allocatables.md).
+- Read [Memory Management](memory-management.md) for the lifetime of native
+  storage and NumPy views.

@@ -4,21 +4,22 @@ audience: users
 prerequisites: getting started
 related: ../getting-started/index.md, ../examples/index.md
 status: planned-documentation
+publication: draft
 ---
 
 # Tutorials
 
-Tutorials are ordered from beginner to advanced and should be step-by-step,
-runnable, and backed by checked fixtures or tests.
+Getting Started covers the first wrapper workflow. These tutorials are for
+larger projects and should be step-by-step, runnable, and backed by checked
+fixtures or tests.
 
 ## Tutorial Order
 
-1. [Basic wrapper tutorial](basic-wrapper.md)
-2. [Scientific library tutorial](scientific-library.md)
-3. [Numerical solver tutorial](numerical-solver.md)
-4. [Modern Fortran project tutorial](modern-fortran-project.md)
-5. [Large Fortran codebase tutorial](large-fortran-codebase.md)
-6. [Packaging tutorial](packaging.md)
+1. [Scientific library tutorial](scientific-library.md)
+2. [Numerical solver tutorial](numerical-solver.md)
+3. [Modern Fortran project tutorial](modern-fortran-project.md)
+4. [Large Fortran codebase tutorial](large-fortran-codebase.md)
+5. [Packaging tutorial](packaging.md)
 
 ## TODO
 

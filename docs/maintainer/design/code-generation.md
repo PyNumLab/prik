@@ -4,6 +4,7 @@ audience: maintainers
 prerequisites: semantic analysis
 related: cpython-integration.md, runtime-model.md
 status: planned-documentation
+publication: draft
 ---
 
 # Code Generation

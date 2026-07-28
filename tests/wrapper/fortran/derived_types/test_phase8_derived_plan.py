@@ -266,10 +266,10 @@ def _exercise_point_boundary(module):
     assert point.x == np.float64(6.0)
     assert point.y == np.float64(8.0)
 
-    hidden = module.make_point_out(np.float64(10.0), np.float64(11.0))
-    assert isinstance(hidden, module.point)
-    assert hidden.x == np.float64(10.0)
-    assert hidden.y == np.float64(11.0)
+    output = module.make_point(np.float64(0.0), np.float64(0.0))
+    assert module.make_point_out(output, np.float64(10.0), np.float64(11.0)) is None
+    assert output.x == np.float64(10.0)
+    assert output.y == np.float64(11.0)
 
     with pytest.raises(TypeError, match="Expected"):
         point.x = 12.0
@@ -289,9 +289,8 @@ def test_scalar_derived_objects_use_canonical_plan(tmp_path: Path):
     assert "@x.setter\\n    def x(self, value):" in generated_c
     assert "bind_c_x2py_field_point_x_get" in generated_fortran
     assert "bind_c_x2py_field_point_x_set" in generated_fortran
-    assert "p = c_null_ptr" in generated_fortran
+    assert "call native_make_point_out(p, x, y)" in generated_fortran
     assert "result = c_null_ptr" in generated_fortran
-    assert "allocate(p_value, stat=x2py_allocation_status)" in generated_fortran
     assert "allocate(result_value, stat=x2py_allocation_status)" in generated_fortran
 
 
@@ -542,7 +541,8 @@ def test_value_copy_and_optional_derived_inputs_match_source_oracle(tmp_path: Pa
     assert source_module.update_point(source_point) is None
     assert source_point.x == np.float64(11.0)
     assert source_point.y == np.float64(22.0)
-    source_filled = source_module.fill_point()
+    source_filled = source_module.point()
+    assert source_module.fill_point(source_filled) is None
     assert source_filled.x == np.float64(31.0)
     assert source_filled.y == np.float64(32.0)
 

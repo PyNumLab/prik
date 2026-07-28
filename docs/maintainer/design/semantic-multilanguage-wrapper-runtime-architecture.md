@@ -4,6 +4,7 @@ audience: maintainers
 prerequisites: semantic IR reference, wrapper design notes
 related: ../design/overall-architecture.md, ../internal-architecture/wrapper-generation-pipeline.md
 status: design
+publication: draft
 ---
 
 # Semantic Multilanguage Wrapper and Interoperability Runtime
@@ -12,7 +13,7 @@ status: design
 > **Status:** This is a long-term architecture document, not a statement that
 > every backend below exists. The source-driven Fortran-to-Python wrapper is
 > implemented and documented in
-> [the Fortran wrapper guide](../../user/guide/fortran-wrapper.md). C parsing, semantic IR,
+> [the Fortran wrapper reference](../../user/reference/fortran-wrapper.md). C parsing, semantic IR,
 > `.pyi`, and semantic inspection are implemented, but the runtime backend for
 > user-supplied C inputs will be added later. Other language backends and the
 > broader coercion runtime remain design goals.

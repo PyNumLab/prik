@@ -4,6 +4,7 @@ audience: maintainers
 prerequisites: overall architecture
 related: semantic-analysis.md, ../../developer/c-parser-reference.md, ../../developer/fortran-parser-reference.md
 status: planned-documentation
+publication: draft
 ---
 
 # Parser Architecture

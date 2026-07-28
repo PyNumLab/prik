@@ -1,9 +1,10 @@
 ---
 title: Semantic .pyi Wrapper Checklist
 audience: maintainers
-prerequisites: semantic .pyi format, Fortran wrapper guide
+prerequisites: semantic .pyi format, Fortran wrapper reference
 related: ../../user/reference/semantic-pyi-format.md, index.md
 status: active-roadmap
+publication: draft
 ---
 
 # Semantic `.pyi` Wrapper Checklist
@@ -452,8 +453,8 @@ X2PY_C_DOCS_END -->
   immutable, and declare as ownership/lifetime policy. It separates editable
   wrapper policy from native ABI facts and records the failure layers for
   edited contracts. Evidence:
-  `docs/user/guide/editing-semantic-pyi-contracts.md`,
-  `docs/user/guide/fortran-wrapper.md`, and
+  `docs/user/reference/pyi-contracts/`,
+  `docs/user/reference/fortran-wrapper.md`, and
   `tests/docs/test_structure.py`.
 - [x] Edited contracts can remove a class, method, generated constructor, class
   member, and individual overload candidate from the Python API. They can also
@@ -464,10 +465,10 @@ X2PY_C_DOCS_END -->
   `tests/wrapper/fortran/edit_pyi_contracts/modified_contracts/foverloads_without_constructor_member/`,
   and
   `tests/wrapper/fortran/edit_pyi_contracts/modified_contracts/foverloads_added_bindings/`.
-- [x] Module overload groups can be renamed while preserving the native generic
-  name with `@overload("specific", generic="native_generic")`, and the printer
-  round-trips that metadata. Evidence:
-  `tests/semantics/conversion/pyi/test_classes_and_overloads.py::test_convert_pyi_to_ir_renames_module_generic_and_round_trips_native_name`
+- [x] Module overload candidates can override the linked specific's native call
+  with `@bind("native_generic")`, and the printer round-trips that metadata.
+  Evidence:
+  `tests/semantics/conversion/pyi/test_classes_and_overloads.py::test_convert_pyi_to_ir_applies_module_overload_bind_and_round_trips_native_name`
   and `docs/user/reference/semantic-pyi-format.md`.
 - [x] Explicit owner, transfer, and destruction triples are validated as a
   complete lifetime policy instead of independent switches. Supported triples
@@ -504,15 +505,20 @@ X2PY_C_DOCS_END -->
 - [x] Generic `Annotated` constraints and semantic coercions are not silently
   accepted as runtime validation. Fortran wrapper planning reports direct
   blockers until named validators or conversion actions exist. Evidence:
-  wrapper-plan tests that prove generic constraints without a runtime validator fail
-  and `docs/user/reference/semantic-pyi-format.md`.
+  wrapper-plan tests that prove generic constraints without a runtime validator
+  fail.
+- [ ] Implement runtime validators for `Bounded(...)` and `Finite`, connect
+  them to completed wrapper policy and generated calls, and document them for
+  users only after runtime enforcement is tested.
+- [ ] Implement explicit runtime dtype-conversion actions before documenting
+  contract-controlled coercion as a user feature.
 - [x] The currently documented editable-contract surface has direct modified
   runtime evidence or focused semantic/planning evidence: removal and hiding,
   added and renamed bindings, overload pruning and renamed overload groups,
   native-order identity calls without `@native_call`, immutable replacement,
-  ownership triples, pointer-policy blockers, runtime constraints, `@raises`,
+  ownership triples, pointer-policy blockers, `@raises`,
   `@hold_gil`, and native-artifact failures. Evidence:
-  `docs/user/guide/editing-semantic-pyi-contracts.md`,
+  `docs/user/reference/pyi-contracts/`,
   `tests/wrapper/fortran/edit_pyi_contracts/`,
   `tests/semantics/policy/`,
   `tests/wrapper/fortran/runtime_behavior/test_runtime_policy_decorators.py`,

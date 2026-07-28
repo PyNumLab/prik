@@ -100,6 +100,58 @@ def make_values() -> Allocatable[Float64[:]]: ...
     assert policy.output_projection == "projected_handle"
 
 
+def test_hidden_pointer_handle_output_owns_descriptor_but_not_target_policy():
+    module = parse_pyi_text(
+        """
+@native_call([Return("values", 0)])
+def select_values() -> Pointer[Float64[:]]: ...
+""",
+        module_name="hidden_pointer_handle_result",
+    )
+    complete_semantic_policies(module)
+
+    argument = module.functions[0].arguments[0]
+    decision = argument.metadata[RESOLVED_OWNERSHIP_POLICY_METADATA]
+    policy = argument.metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
+
+    assert decision.owner is OwnershipOwner.WRAPPER
+    assert decision.transfer is TransferMode.WRAPPER_INSTANCE
+    assert decision.destruction is DestructionPolicy.WRAPPER_DEALLOC
+    assert decision.codegen_action is CodegenAction.WRAPPER_INSTANCE
+    assert decision.native_barrier_action is NativeBarrierAction.PASS_NATIVE_DESCRIPTOR
+    assert policy.descriptor_kind == "pointer"
+    assert policy.handle_kind == "owned_result_descriptor"
+    assert policy.origin == "projected_result"
+    assert policy.owner_retention == "wrapper_owner_storage"
+    assert policy.descriptor_ownership == "owned"
+    assert policy.output_projection == "projected_handle"
+    assert policy.target_lifetime == "unknown"
+    assert policy.destroy_behavior == "handle_finalizer"
+    assert policy.to_numpy == "unsupported"
+    assert set(policy.operations) == {"associate", "associated", "nullify", "to_numpy"}
+
+
+def test_visible_descriptor_writeback_completes_caller_handle_construction_lifecycle():
+    module = parse_pyi_text(
+        """
+@native_call([Arg(0)])
+def replace_values(
+    values: Allocatable[Float64[:]],
+) -> Returns["values", Allocatable[Float64[:]]]: ...
+""",
+        module_name="caller_created_handle",
+    )
+    complete_semantic_policies(module)
+
+    policy = module.functions[0].arguments[0].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
+
+    assert policy.default_construction == "lazy_owned_descriptor"
+    assert policy.default_descriptor_ownership == "owned"
+    assert policy.default_release == "wrapper_dealloc"
+    assert policy.default_destroy_behavior == "handle_finalizer"
+    assert "destroy" in policy.default_operations
+
+
 @pytest.mark.parametrize(
     ("owner", "transfer", "destruction", "context"),
     [
@@ -218,7 +270,7 @@ def test_documented_transfer_and_destruction_modes_resolve_or_fail_closed():
         (
             "blocked",
             _array_type(pointer=True),
-            _hidden_output_context(projects_result=True, python_visible=False),
+            _writable_argument_context(),
         ),
     ]
 
@@ -337,7 +389,7 @@ class box:
     assert module_policy.requires_pointer_c_descriptor_interop is True
     assert module_policy.target_lifetime == "module"
     assert module_policy.destroy_behavior == "none"
-    assert set(module_policy.operations) == {"associated", "nullify", "to_numpy"}
+    assert set(module_policy.operations) == {"associate", "associated", "nullify", "to_numpy"}
     assert "allocate" not in module_policy.operations
     assert "deallocate" not in module_policy.operations
     assert "resize" not in module_policy.operations
@@ -350,7 +402,7 @@ class box:
     assert field_policy.requires_pointer_c_descriptor_interop is True
     assert field_policy.target_lifetime == "parent_wrapper"
     assert field_policy.destroy_behavior == "parent_wrapper_finalizer"
-    assert set(field_policy.operations) == {"associated", "nullify", "to_numpy"}
+    assert set(field_policy.operations) == {"associate", "associated", "nullify", "to_numpy"}
 
 
 def test_complete_pointer_policy_metadata_round_trips_without_overriding_container_ownership():
@@ -489,8 +541,8 @@ def consume(
     default_target = module.functions[0].arguments[0].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
     unsafe_target = module.functions[0].arguments[1].metadata[RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA]
 
-    assert set(default_target.operations) == {"associated", "nullify", "to_numpy"}
-    assert set(unsafe_target.operations) == {"associated", "deallocate", "nullify", "to_numpy"}
+    assert set(default_target.operations) == {"associate", "associated", "nullify", "to_numpy"}
+    assert set(unsafe_target.operations) == {"associate", "associated", "deallocate", "nullify", "to_numpy"}
     assert "allocate" not in unsafe_target.operations
     assert "resize" not in unsafe_target.operations
 
@@ -584,7 +636,7 @@ def make_target() -> Pointer[Float64[:]]: ...
     assert field_target.descriptor_interop == "pointer_c_descriptor"
     assert field_target.requires_pointer_c_descriptor_interop is True
     assert field_target.is_blocked is False
-    assert set(field_target.operations) == {"associated", "nullify", "to_numpy"}
+    assert set(field_target.operations) == {"associate", "associated", "nullify", "to_numpy"}
 
     assert argument_values.handle_kind == "argument_descriptor"
     assert argument_values.origin == "argument"
@@ -596,6 +648,11 @@ def make_target() -> Pointer[Float64[:]]: ...
     assert argument_values.descriptor_interop == "none"
     assert argument_values.requires_pointer_c_descriptor_interop is False
     assert set(argument_values.operations) == {"allocated", "to_numpy"}
+    assert argument_values.default_construction == "fact_packed_empty"
+    assert argument_values.default_descriptor_ownership == "owned"
+    assert argument_values.default_release == "wrapper_dealloc"
+    assert argument_values.default_destroy_behavior == "handle_finalizer"
+    assert "destroy" in argument_values.default_operations
 
     assert optional_target.handle_kind == "optional_absent_handle"
     assert optional_target.optional_absent is True
@@ -607,7 +664,9 @@ def make_target() -> Pointer[Float64[:]]: ...
     assert optional_target.blocker is None
     assert optional_target.descriptor_interop == "pointer_c_descriptor"
     assert optional_target.requires_pointer_c_descriptor_interop is True
-    assert set(optional_target.operations) == {"associated", "nullify", "to_numpy"}
+    assert set(optional_target.operations) == {"associate", "associated", "nullify", "to_numpy"}
+    assert optional_target.default_construction == "fact_packed_empty"
+    assert "destroy" in optional_target.default_operations
     assert "allocate" not in optional_target.operations
     assert "deallocate" not in optional_target.operations
     assert "resize" not in optional_target.operations
@@ -623,6 +682,7 @@ def make_target() -> Pointer[Float64[:]]: ...
     assert managed_target.requires_pointer_c_descriptor_interop is True
     assert set(managed_target.operations) == {
         "allocate",
+        "associate",
         "associated",
         "deallocate",
         "nullify",
@@ -644,15 +704,25 @@ def make_target() -> Pointer[Float64[:]]: ...
     assert allocatable_result.requires_pointer_c_descriptor_interop is False
     assert allocatable_result.requires_c_descriptor_interop is True
     assert set(allocatable_result.operations) == {"allocated", "deallocate", "resize", "to_numpy"}
+    assert allocatable_result.default_construction == "none"
+    assert allocatable_result.default_operations == ()
 
-    assert pointer_result.handle_kind == "unsupported"
-    assert pointer_result.owner_retention == "unknown"
+    assert pointer_result.handle_kind == "owned_result_descriptor"
+    assert pointer_result.origin == "result"
+    assert pointer_result.owner == "wrapper"
+    assert pointer_result.owner_retention == "wrapper_owner_storage"
+    assert pointer_result.descriptor_ownership == "owned"
+    assert pointer_result.output_projection == "handle_result"
+    assert pointer_result.release == "wrapper_dealloc"
     assert pointer_result.target_lifetime == "unknown"
-    assert pointer_result.destroy_behavior == "blocked"
-    assert pointer_result.is_blocked is True
-    assert pointer_result.descriptor_interop == "none"
-    assert pointer_result.requires_pointer_c_descriptor_interop is False
-    assert "stable owner storage and target lifetime" in pointer_result.blocker
+    assert pointer_result.destroy_behavior == "handle_finalizer"
+    assert pointer_result.is_blocked is False
+    assert pointer_result.blocker is None
+    assert pointer_result.descriptor_interop == "pointer_c_descriptor"
+    assert pointer_result.requires_pointer_c_descriptor_interop is True
+    assert pointer_result.requires_c_descriptor_interop is True
+    assert set(pointer_result.operations) == {"associate", "associated", "nullify", "to_numpy"}
+    assert pointer_result.default_construction == "none"
 
 
 def test_aliased_does_not_change_allocatable_live_view_semantics():

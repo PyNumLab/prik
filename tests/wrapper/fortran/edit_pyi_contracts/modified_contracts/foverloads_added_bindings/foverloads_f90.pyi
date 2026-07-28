@@ -15,12 +15,14 @@ def convert_real_specific(
     value: Float64
 ) -> Float64: ...
 
-@overload("convert_int", generic="convert")
+@bind("convert")
+@overload("convert_int")
 def convert_number(
     value: Int32
 ) -> Int32: ...
 
-@overload("convert_real_specific", generic="convert")
+@bind("convert")
+@overload("convert_real_specific")
 def convert_number(
     value: Float64
 ) -> Float64: ...

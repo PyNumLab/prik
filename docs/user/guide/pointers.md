@@ -1,328 +1,423 @@
 ---
 title: Pointers
+description: How x2py handles Fortran `pointer` variables, results, fields, and descriptors
 audience: advanced users
-prerequisites: arrays, memory management
-related: allocatables.md, memory-management.md, ../reference/semantic-pyi-format.md
+prerequisites: arrays, allocatables
+related: allocatables.md, memory-management.md
 status: maintained
+publication: reviewed
 ---
 
 # Pointers
 
-A Fortran pointer does not identify the target owner. Scalar pointers cross
-procedure boundaries as ordinary nullable Python values plus bridge descriptor
-metadata. Pointer arrays use `Pointer[T[...]]`, which is a Python handle to
-native pointer association state, not a NumPy array.
+A Fortran pointer describes an association with target storage. The pointer
+descriptor records whether a target is present and, for arrays, its address,
+shape, and strides. It does not by itself say who owns that target.
 
-## Array Handles
+## Key Concepts
 
-`Pointer[T[...]]` is the active pointer-array spelling in semantic `.pyi`
-contracts:
+- A pointer descriptor refers to target storage; it does not own that storage
+  by default.
+- Scalar pointers appear as `T | None`; array pointers use live
+  `Pointer[T[...]]` handles.
+- `associated` describes association, not ownership or target lifetime.
+- NumPy arrays returned by `to_numpy()` are live views, not copies.
+- Reassociation, resizing, or deallocation can invalidate existing views.
+- `associate(other)` makes two pointer handles refer to the same target without
+  copying it.
+- Use `deallocate()` only if this pointer was used to create its current target
+  with `allocate()`. Otherwise, use `nullify()`.
+- `close()` releases a returned or caller-created descriptor, not its target.
+
+---
+
+## When To Use A Pointer Handle
+
+Use `Pointer[T[...]]` when the native callable needs the pointer descriptor:
 
 ```python
-from x2py.contracts import Float64, Int32, Pointer
+from x2py.contracts import Float64, Pointer
 
-values: Pointer[Float64[:]]
+module_values: Pointer[Float64[:]]
 
-def reassociate(values: Pointer[Float64[:]], target: Pointer[Float64[:]]) -> None: ...
-def scale(values: Float64[:], factor: Int32) -> None: ...
+def inspect_pointer(values: Pointer[Float64[:]]) -> Float64: ...
 ```
 
-The handle owns association state. An unassociated descriptor is still a
-present handle: `p.associated is False`, `p.shape is None`, and
-`p.to_numpy() is None`. `| None` means the handle object itself may be absent
-for an optional native dummy, making native `present(values)` false:
+Use ordinary `T[...]` when the callable needs only array data:
 
 ```python
-def maybe_use(values: Pointer[Float64[:]] | None = ...) -> None: ...
+def sum_values(values: Float64[:]) -> Float64: ...
 ```
 
-That spelling is valid only for optional callable arguments. Do not use
-`Pointer[T[...]] | None` for module variables, derived-type fields, or function
-results; those surfaces return a present handle, and unassociated state is
-represented inside that handle.
-
-Passing a handle to `Pointer[T[...]]` passes the native pointer descriptor.
-Passing an associated handle to a normal `T[...]` parameter uses ordinary
-Fortran array-actual semantics by handing off the handle's native array data
-facet. It is not an implicit call to `.to_numpy()`. A normal `T[...]` parameter
-rejects an unassociated pointer handle because there is no valid array actual
-to pass; an associated zero-length target remains valid. The pointer/shape
-handoff accepts only targets proved contiguous. A noncontiguous target is
-rejected until descriptor-backed stride handoff is selected; x2py never treats
-such a target as contiguous.
-
-Plain NumPy arrays are accepted by normal `T[...]` array parameters. They are
-rejected for `Pointer[T[...]]` descriptor parameters because a NumPy array does
+An associated pointer handle may satisfy an ordinary array parameter when its
+dtype, rank, shape, layout, and contiguity meet that parameter's contract. A
+plain NumPy array cannot satisfy a `Pointer[T[...]]` parameter because it does
 not carry a native pointer descriptor.
 
-`p.to_numpy()` is the explicit extraction operation. It returns `None` when the
-handle is unassociated. When descriptor extraction is supported, it returns the
-current target view and may expose strided targets. It never creates an
-automatic detached snapshot or copy. If no supported live-view mechanism can
-expose the current target, policy completion or wrapper planning fails explicitly;
-x2py does not guess compiler-specific descriptor layout or fall back to a copy.
+---
 
-Any NumPy view returned by `p.to_numpy()` is tied to the pointer target at the
-time of extraction. After native code nullifies, reassociates, deallocates, or
-otherwise changes that target, discard older views and call `p.to_numpy()`
-again. Accessing a stale view is unsupported and may crash. Users who need
-independent storage must call `.copy()` before the target-changing operation.
-Each fresh extraction inspects the current descriptor and starts at the
-target's current native lower bounds rather than assuming a fixed Fortran lower
-bound.
+## Pointer Array Handle API
 
-`p.nullify()` is the default pointer descriptor operation. `allocate(shape)`,
-`deallocate()`, and `resize(shape)` are exposed only when completed pointer
-policy explicitly allows those operations. A pointer handle does not imply
-target ownership.
-
-## Scalar Pointer Projections
-
-Supported scalar pointer dummies use ordinary nullable Python values. The
-semantic `.pyi` uses `Pointer(...)` inside `@native_call` to construct or read
-the native pointer descriptor without exposing a Python pointer handle.
-
-For example:
-
-```fortran
-real(8), target :: target_scale
-
-subroutine update_pointer(scale)
-  real(8), pointer, intent(inout) :: scale
-
-  if (associated(scale)) then
-    scale = scale + 1.0_8
-  else
-    scale => target_scale
-  end if
-end subroutine update_pointer
-
-function maybe_pointer(enabled) result(scale)
-  integer(4), intent(in) :: enabled
-  real(8), pointer :: scale
-
-  nullify(scale)
-  if (enabled /= 0) scale => target_scale
-end function maybe_pointer
-```
-
-The corresponding semantic contract keeps scalar pointer values nullable and
-uses `Pointer(...)` only for native descriptor projection:
+`Pointer[T[...]]` is the type annotation. At runtime, generated Python APIs use
+a `PointerArray`. You can also create an unassociated handle when a routine
+needs a present pointer descriptor that it will associate:
 
 ```python
-from x2py.contracts import Addr, Arg, Float64, Int32, Pointer, Return, Returns, native_call
+import x2py.contracts as xc
 
-@native_call([Pointer(Arg(0))])
-def update_pointer(
-    scale: Float64 | None,
-) -> Returns["scale", Float64] | None: ...
+target = xc.Pointer[xc.Float64[:]]()
+assert target.associated is False
 
-@native_call([Addr(Arg(0))], result=Pointer(Return(0)))
-def maybe_pointer(enabled: Int32) -> Float64 | None: ...
+api.choose_target(target)
+assert target.associated is True
 ```
 
-Passing `None` creates a present but unassociated call-local descriptor.
-Omitting a defaulted scalar descriptor argument creates native optional absence,
-so `present(scale)` is false. Passing a value creates a present associated
-call-local descriptor. An unassociated function result or projected output
-becomes `None`. Ordinary scalar projection rules remain unchanged: `intent(out)`
-uses `Pointer(Return("name", j))`, and `intent(inout)` uses `Pointer(Arg(i))`
-plus a matching `Returns["name", T] | None` readback. Scalar pointer values do
-not expose a handle API.
+The annotation supplies the element dtype and rank. The handle creates its
+native descriptor storage when first passed to a matching writable argument.
+It stays the same Python object after the call.
+`Pointer[Float64]()` is not supported because scalar pointers cross the Python
+boundary as values rather than array handles.
 
-Use a default only when the native scalar dummy is optional:
+| Member | Type | Behavior |
+| --- | --- | --- |
+| `associated` | `bool` | Whether the descriptor currently has a target. |
+| `shape` | `tuple[int, ...] \| None` | Current target dimensions, or `None` when unassociated. |
+| `dtype` | `numpy.dtype` | Declared target element type. |
+| `rank` | `int` | Declared number of dimensions. |
+| `to_numpy()` | `numpy.ndarray \| None` | A live target view, or `None` when unassociated. |
+| `associate(other)` | `(PointerArray) -> None` | Makes this pointer's association match `other` without copying data. |
+| `nullify()` | `() -> None` | Removes the association without destroying the target. |
+| `allocate(shape)` | `(int \| Sequence[int]) -> None` | Creates and associates a target for an unassociated pointer. |
+| `deallocate()` | `() -> None` | Destroys the current target if this pointer was used to allocate it. |
+| `resize(shape)` | `(int \| Sequence[int]) -> None` | Replaces the current target when `deallocate()` is valid. |
+| `close()` | `() -> None` | Permanently releases returned or caller-created descriptor storage; it does not deallocate the target. It does nothing on a module or field handle. |
+| `closed` | `bool` | Whether a closable handle has been closed. |
+
+`associate()` and `nullify()` are available by default. A handle may also
+support allocation, target deallocation, resizing, and NumPy extraction.
+An unavailable operation raises `NotImplementedError`.
+
+---
+
+## Associate Two Pointers
 
 ```python
-@native_call([Pointer(Arg(0))])
-def update_pointer(scale: Float64 | None = ...) -> None: ...
+p1 = xc.Pointer[xc.Float64[:]]()
+p1.associate(p2)
 ```
 
-This scalar rule is separate from array pointer handles. Array arguments use
-`Pointer[T[...]] | None` only for an optional absent handle; unassociated array
-state stays inside a present handle.
+Both pointers must have the same dtype and rank. If `p2` is associated, both
+pointers refer to the same target. If `p2` is unassociated, `p1` becomes
+unassociated. No data is copied.
 
-## Complete Pointer Example
+Any previous association of `p1` is removed without destroying its old target.
+If `p1` is responsible for a target created with `p1.allocate()`, call
+`p1.deallocate()` before reassociating it. Otherwise, that memory may be left
+without a pointer that can release it.
+
+---
+
+## Nullify, Deallocate, And Close
+
+| Operation | What it releases | Handle afterward |
+| --- | --- | --- |
+| `nullify()` | This descriptor's association. It does not destroy the target. | Open and usable, with `associated == False`. |
+| `deallocate()` | A target this pointer was used to allocate. | Open and usable, with `associated == False`. |
+| `close()` | This handle's descriptor storage. It does not destroy the target. | Permanently closed and unusable. |
+
+Returned and caller-created descriptors close automatically when Python no
+longer uses them. Call `close()` explicitly only when immediate descriptor
+release matters. It never destroys the pointer target because the descriptor
+and target have separate lifetimes.
+
+Calling `close()` on a module or field pointer handle does nothing. It leaves
+the descriptor, target, and handle unchanged.
+
+---
+
+## Where Handles Come From
+
+### Module Variables And Derived Fields
+
+A module handle observes the live module pointer descriptor. A field handle
+retains its parent wrapper and observes the live pointer component inside it.
+Native reassociation is visible through the same Python handle:
+
+```python
+p = api.values
+assert not p.associated
+
+api.associate_values()
+assert p.associated
+
+api.choose_different_values()
+print(p.shape)  # reflects the new target
+```
+
+### Function Results
+
+A pointer-array function result becomes a returned `PointerArray`. The handle
+has persistent descriptor storage, but the target can belong to another
+object:
+
+```python
+p = api.selected_values(True)
+if p.associated:
+    print(p.shape)
+```
+
+An unassociated native result is a present handle with `associated == False`.
+It is not returned as `None`.
+
+### Output And Inout Arguments
+
+A nonoptional pointer-array `intent(out)` does not consume an incoming
+association, so it is hidden and returned as a new handle:
+
+```python
+p = api.select_values()
+```
+
+An optional `intent(out)` remains visible so omission can preserve native
+`present(...)` behavior. Pointer-array `intent(inout)` also remains visible
+because its incoming association is part of the call:
+
+```python
+p = api.values
+api.reassociate_values(p)
+assert p.associated  # the same descriptor was updated in place
+```
+
+For an optional pointer descriptor, omission or `None` means the native
+argument is absent. Passing an unassociated handle makes the argument present
+but unassociated.
+
+---
+
+## Complete Module Example
 
 Create `pointers.f90`:
 
 ```fortran
 module pointers_api
   implicit none
-  real(8), target :: storage(3) = [1.0_8, 2.0_8, 3.0_8]
+  real(8), target :: storage(6) = [1, 2, 3, 4, 5, 6]
   real(8), pointer :: values(:) => null()
 contains
+
   subroutine associate_values()
-    values => storage
+    values => storage(1:6:2)
   end subroutine associate_values
 
-  real(8) function sum_array(actual) result(total)
-    real(8), intent(in) :: actual(:)
-    total = sum(actual)
-  end function sum_array
-
-  real(8) function sum_pointer(actual) result(total)
-    real(8), pointer, intent(in) :: actual(:)
-
-    if (associated(actual)) then
-      total = sum(actual)
+  real(8) function sum_pointer(p) result(total)
+    real(8), pointer, intent(in) :: p(:)
+    if (associated(p)) then
+      total = sum(p)
     else
       total = -1.0_8
     end if
   end function sum_pointer
+
 end module pointers_api
 ```
 
-The generated semantic contract distinguishes the module descriptor, an
-ordinary array parameter, and a pointer-descriptor parameter:
-
-```python
-from x2py.contracts import (
-    Aliased,
-    Annotated,
-    Destruction,
-    Float64,
-    Ownership,
-    Pointer,
-    PointerAssociation,
-    Transfer,
-)
-
-storage: Annotated[Float64[3], Aliased]
-values: Annotated[Pointer[Float64[:]], PointerAssociation("runtime")]
-
-def associate_values() -> None: ...
-def sum_array(actual: Float64[::]) -> Float64: ...
-def sum_pointer(
-    actual: Annotated[
-        Pointer[Float64[:]],
-        PointerAssociation("runtime"),
-        Ownership("caller"),
-        Transfer("call_local"),
-        Destruction("none"),
-    ]
-) -> Float64: ...
-```
-
-Build it:
+Build and use it:
 
 ```bash
 python3 -m x2py pointers.f90 --out-dir build/pointers
 ```
 
-Then verify descriptor state, descriptor passing, and normal array-actual
-handoff from the same handle:
-
 ```python
 import sys
 
-import numpy as np
-
 sys.path.insert(0, "build/pointers")
-import pointers
+import pointers.pointers_api as pointers_api
 
-api = pointers.pointers_api
-handle = api.values
+handle = pointers_api.values
+assert not handle.associated
+assert pointers_api.sum_pointer(handle) == -1.0
 
-assert handle.associated is False
-assert handle.shape is None
-assert api.sum_pointer(handle) == np.float64(-1.0)
-
-api.associate_values()
-assert handle.associated is True
-assert handle.shape == (3,)
-assert api.sum_pointer(handle) == np.float64(6.0)
-assert api.sum_array(handle) == np.float64(6.0)
+pointers_api.associate_values()
+assert handle.associated
+assert pointers_api.sum_pointer(handle) == 9.0
 
 handle.nullify()
-assert handle.associated is False
+assert not handle.associated
 ```
 
-The ordinary `sum_array` call uses the handle's valid contiguous array actual;
-it does not call `to_numpy()`. The descriptor-typed `sum_pointer` call requires
-the pointer handle and can observe unassociated state. Add explicit pointer
-policy when public NumPy extraction or ownership-changing operations are
-required.
+---
 
-## Call Compatibility
+## Contiguous And Strided Targets
 
-A normal `T[...]` array parameter may accept a plain NumPy array or an
-associated `Pointer[T[...]]` handle. The NumPy path passes caller-owned array
-storage. The handle path validates pointer association, dtype, rank, shape,
-layout, and mutability, then passes the handle's native array actual to the
-normal native array dummy. The two paths share validation policy but remain
-separate implementation methods.
+A pointer may describe a whole array, a contiguous section, or a strided
+section:
 
-If the user writes `api.scale(p.to_numpy())`, that is an explicit ndarray path.
-The returned value from `to_numpy()` follows ordinary ndarray validation,
-including rejection of `None` and read-only arrays when writable native storage
-is required.
+```fortran
+real(8), target :: storage(6) = [10, 20, 30, 40, 50, 60]
+real(8), pointer :: selected(:)
 
-## Pointer Results
+selected => storage(1:6:2)
+```
 
-An associated pointer scalar result becomes a copied Python value. An
-unassociated scalar result becomes `None`.
+The NumPy view preserves that layout:
 
-Pointer-array handle results remain blocked until x2py has stable owner storage,
-target lifetime, descriptor extraction, and generated destroy behavior for the
-returned handle. The wrapper does not silently fall back to a detached NumPy
-copy for `Pointer[T[...]]` results.
+```python
+view = api.selected.to_numpy()
+print(view)          # [10. 30. 50.]
+print(view.shape)    # (3,)
+print(view.strides)  # (16,) for eight-byte elements
 
-## Pointer Fields And Module Variables
+view[1] = 99.0       # updates storage(3)
+```
 
-Pointer-backed array fields and module variables expose `Pointer[T[...]]`
-handles. Their runtime Python class is `PointerArray`. A scalar pointer to a
-derived object instead returns its generated live wrapper or `None`.
-The containing object or module does not automatically own the pointer target.
-Derived-field handles keep the parent wrapper alive for descriptor access, but
-that retention is not target ownership. Plain `Pointer[T[...]]` has a default
-conservative handle policy for association inspection and legal descriptor
-operations. Generated field operations address the component through its parent
-wrapper, and generated module operations address the native module variable.
-Neither path invents target ownership or enables ownership-changing operations
-that completed pointer policy did not allow.
+A strided pointer can be passed to a pointer-descriptor parameter. Passing the
+same handle to an ordinary array parameter that requires contiguous data is
+rejected.
 
-An associated scalar derived module pointer can be passed to an ordinary,
-target, input-only pointer, or value dummy through its current target. For a
-reassociable pointer dummy, x2py uses a typed local pointer holder and restores
-the final association—associated, reassociated, allocated, disassociated, or
-deallocated—to the module pointer exactly once. A wrapper-owned pointer result
-uses the same persistent holder component directly. The holder owns its
-association variable, not an unknown target, and its destructor never
-deallocates native-owned target storage. Nullification or reassociation makes an
-older payload proxy stale, and later field access raises `ReferenceError`.
+---
 
-The later Wrapping Derived Types guide gives the canonical “Scalar Actuals And
-Native Dummies” matrix, including the `INTENT(IN)` exception for nonpointer
-actuals, empty-state behavior, module transactions, and multi-argument cleanup.
+## Safety Checklist
 
-## Unsupported Forms
+Pointer safety depends on the target owner and lifetime, not only on descriptor
+state.
 
-- pointer array `intent(out)` and `intent(inout)` reassociation without a
-  completed descriptor policy;
-- pointer `allocate()`, `deallocate()`, or `resize()` without explicit policy;
-- unknown target owners or release responsibility;
-- persistent associations to Python storage after return; and
-- stale-view invalidation after target reassociation, nullification, or
-  deallocation; and
-- scalar-derived pointer targets whose lifetime or release responsibility is
-  neither native nor tied to a retained known owner.
+### Check Association And Lifetime
 
-Semantic `.pyi` metadata can record these policy facts, but metadata does not
-implement a missing runtime path.
+```python
+view = p.to_numpy()
+view[0] = 1.0  # NOT OK: view may be None
+```
 
-## Evidence And Troubleshooting
+```python
+if p.associated:
+    view = p.to_numpy()
+    if view is not None:
+        view[0] = 1.0
+```
 
-Scalar pointer inputs, outputs, inout readback, nullable results, array pointer
-handles, descriptor views, normal array-actual handoff, and dtype rejection are exercised by
-[`test_pointers.py`](../../../tests/wrapper/fortran/derived_types/test_pointers.py).
-Scalar derived module-pointer state, reassociation writeback, wrapper pointer
-holders, stale proxy rejection, and multi-argument cleanup are exercised by
-[`test_scalar_derived_actual_dummy_matrix.py`](../../../tests/wrapper/fortran/derived_types/test_scalar_derived_actual_dummy_matrix.py).
-The scalar `out` and `inout` parity cases are exercised by
-[`test_allocatable_views.py`](../../../tests/wrapper/fortran/module_state/test_allocatable_views.py).
+Association is necessary but cannot prove that an externally managed target is
+still alive. Native code must not leave a pointer associated with expired
+storage.
 
-If wrapper planning rejects a pointer, do not replace the diagnostic with guessed
-ownership metadata. Detached pointer result behavior is expressible only when shape,
-nullability, target owner, lifetime, and release facts are complete. Memory
-Management and the semantic `.pyi` ownership reference expand those decisions
-later.
+### Do Not Return A Pointer To Expired Local Storage
+
+```fortran
+function invalid_result() result(values)
+  real(8), target :: local_values(3)
+  real(8), pointer :: values(:)
+  values => local_values  ! NOT OK: local_values expires on return
+end function invalid_result
+```
+
+Putting the pointer inside a returned derived object does not repair this
+native lifetime error.
+
+### Copy Or Discard Views Before Target Changes
+
+```python
+view = p.to_numpy()
+saved = None if view is None else view.copy()
+api.point_at_different_storage()
+current = p.to_numpy()
+```
+
+Do not use `view` after target deallocation, reassociation, resizing, or
+reallocation behind the pointer. Extract `current` for the new target. The
+independent `saved` copy remains safe.
+
+### Deallocate Only What This Pointer Allocated
+
+```python
+p.allocate(10)
+p.deallocate()
+```
+
+The `allocate()` may be called from Python or from a native routine using the
+same pointer. If the pointer was only associated with existing storage, use
+`nullify()` instead:
+
+```python
+p.nullify()  # does not destroy the target
+```
+
+Do not use `nullify()`, `associate()`, or `close()` while `p` is responsible
+for an allocated target. The target remains allocated and may become
+unreachable. Use `p.deallocate()` first.
+
+Use `resize()` only in the same cases where `deallocate()` is valid.
+
+### Nullifying One Pointer Does Not Change Other Pointers
+
+```python
+first = api.first_pointer
+second = api.second_pointer
+assert first.associated and second.associated
+
+first.nullify()
+assert second.associated
+```
+
+`nullify()` removes only `first`'s association. It does not destroy the target
+or change `second`. Deallocating their shared target makes every pointer to
+that target invalid.
+
+### Do Not Keep Using A Closed Handle
+
+```python
+view = returned_pointer.to_numpy()
+returned_pointer.close()
+returned_pointer.shape  # NOT OK: the descriptor has been released
+```
+
+`close()` releases a returned descriptor but never deallocates its target.
+An existing NumPy view may still refer to the target, but its safety now depends
+entirely on that target's separate owner and lifetime. Do not use the closed
+handle to reason about the view.
+
+### Respect Contiguity Requirements
+
+```python
+strided = api.selected_slice
+api.requires_contiguous_array(strided)  # NOT OK: rejected before the call
+```
+
+Pass the descriptor to a pointer parameter, or make an explicit contiguous
+copy when ordinary array data is required:
+
+```python
+view = strided.to_numpy()
+copy = None if view is None else view.copy(order="F")
+```
+
+### Synchronize Target Changes
+
+```python
+view = p.to_numpy()
+# Another thread reassociates or deallocates p here.
+value = view[0]  # NOT OK without native synchronization
+```
+
+x2py does not lock native pointer association or track outstanding NumPy views.
+The application must synchronize concurrent native changes.
+
+---
+
+## Scalar Pointers
+
+Scalar pointers appear as `T | None` values at the Python boundary rather than
+`PointerArray` handles. An unassociated projected scalar result becomes `None`.
+Scalar values do not expose persistent association, `to_numpy()`, or pointer
+descriptor operations.
+
+For an optional scalar pointer argument, omission makes the argument absent.
+Passing `None` makes it present but unassociated, while passing a value makes it
+present with that value. See [Optional Arguments](optional-arguments.md).
+
+---
+
+## Next
+
+- Review [Memory Management](memory-management.md) for the ownership and live
+  view rules shared by all native storage.
+- Compare [Allocatables](allocatables.md) when the native object owns an
+  allocation rather than a pointer association.

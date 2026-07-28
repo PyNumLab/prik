@@ -55,7 +55,9 @@
               },
               "visibility": "public",
               "default_value": null,
-              "metadata": {},
+              "metadata": {
+                "projected_output": true
+              },
               "origin": {
                 "source_language": "fortran",
                 "native_name": "same_name",
@@ -88,7 +90,7 @@
               "native_name": "same_name",
               "native_position": 0,
               "python_position": 0,
-              "result_position": null,
+              "result_position": 0,
               "value_kind": "",
               "value": null
             }
@@ -361,7 +363,9 @@
               },
               "visibility": "public",
               "default_value": null,
-              "metadata": {},
+              "metadata": {
+                "projected_output": true
+              },
               "origin": {
                 "source_language": "fortran",
                 "native_name": "same_name",
@@ -394,7 +398,7 @@
               "native_name": "same_name",
               "native_position": 0,
               "python_position": 0,
-              "result_position": null,
+              "result_position": 0,
               "value_kind": "",
               "value": null
             }
@@ -463,7 +467,9 @@
               },
               "visibility": "public",
               "default_value": null,
-              "metadata": {},
+              "metadata": {
+                "projected_output": true
+              },
               "origin": {
                 "source_language": "fortran",
                 "native_name": "same_name",
@@ -496,7 +502,7 @@
               "native_name": "same_name",
               "native_position": 0,
               "python_position": 0,
-              "result_position": null,
+              "result_position": 0,
               "value_kind": "",
               "value": null
             }
@@ -983,7 +989,9 @@
                   },
                   "visibility": "public",
                   "default_value": null,
-                  "metadata": {},
+                  "metadata": {
+                    "projected_output": true
+                  },
                   "origin": {
                     "source_language": "fortran",
                     "native_name": "same_name",
@@ -1016,7 +1024,7 @@
                   "native_name": "same_name",
                   "native_position": 0,
                   "python_position": 0,
-                  "result_position": null,
+                  "result_position": 0,
                   "value_kind": "",
                   "value": null
                 }

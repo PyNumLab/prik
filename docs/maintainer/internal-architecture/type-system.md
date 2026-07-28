@@ -4,6 +4,7 @@ audience: maintainers
 prerequisites: AST design, semantic IR
 related: semantic-passes.md, ownership-tracking.md
 status: planned-documentation
+publication: draft
 ---
 
 # Type System

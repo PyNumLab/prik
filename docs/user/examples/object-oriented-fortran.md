@@ -4,6 +4,7 @@ audience: advanced users
 prerequisites: wrapping derived types, memory management
 related: ../guide/wrapping-derived-types.md, ../guide/memory-management.md
 status: planned-documentation
+publication: draft
 ---
 
 # Object-Oriented Fortran Example

@@ -116,26 +116,38 @@ def test_dense_array_plan_records_extent_dependencies_flat_storage_and_order():
     assert flat.rank == 1
     assert flat.shape == (":",)
     assert flat.category == "assumed_size"
+    assert flat.flatten_python_storage is True
+    assert flat.flat_axis == 0
     assert flat_rank2_runtime is not None
     assert flat_rank2_runtime.rank == 2
     assert flat_rank2_runtime.shape == (":", ":")
     assert flat_rank2_runtime.order == "ORDER_F"
     assert flat_rank2_runtime.category == "assumed_size"
+    assert flat_rank2_runtime.flatten_python_storage is True
+    assert flat_rank2_runtime.flat_axis == 1
     assert flat_rank2_fixed is not None
     assert flat_rank2_fixed.rank == 2
     assert flat_rank2_fixed.shape == ("3", ":")
     assert flat_rank2_fixed.order == "ORDER_F"
+    assert flat_rank2_fixed.flatten_python_storage is True
+    assert flat_rank2_fixed.flat_axis == 1
     assert c_flat_rank2_runtime is not None
     assert c_flat_rank2_runtime.rank == 2
     assert c_flat_rank2_runtime.shape == (":", ":")
     assert c_flat_rank2_runtime.order == "ORDER_C"
     assert c_flat_rank2_runtime.category == "assumed_size"
+    assert c_flat_rank2_runtime.flatten_python_storage is True
+    assert c_flat_rank2_runtime.flat_axis == 0
     assert c_flat_rank2_fixed is not None
     assert c_flat_rank2_fixed.rank == 2
     assert c_flat_rank2_fixed.shape == (":", "3")
     assert c_flat_rank2_fixed.order == "ORDER_C"
+    assert c_flat_rank2_fixed.flatten_python_storage is True
+    assert c_flat_rank2_fixed.flat_axis == 0
     assert bounded_flat is not None
     assert bounded_flat.shape == ("ldb", ":")
+    assert bounded_flat.flatten_python_storage is True
+    assert bounded_flat.flat_axis == 1
     assert bounded_flat.extent_reference_roles == (("dense_array_shapes.bounded_flat.ldb:value",), ())
 
 
@@ -149,6 +161,16 @@ def test_dense_array_lowering_uses_planned_shape_checks_and_bridge_orientation()
     assert 'bound_values_layout = PyUnicode_FromString("F")' in c_source
     assert 'bound_values_layout = PyUnicode_FromString("C")' in c_source
     assert '"_native_array_actual_argument_for_binding_positional"' in c_source
+    assert "bound_values_shape = PyTuple_New(1)" in c_source
+    assert "PyTuple_SET_ITEM(bound_values_shape, 0, Py_None)" in c_source
+    assert (
+        'PyObject_CallFunction(bound_values_helper, "OsiOOiiiiiiiii", bound_values_obj, "float64", 1, '
+        "bound_values_shape, bound_values_layout, 1, 1, 1, 0, 0, 0, 1, 1, 0)"
+    ) in c_source
+    assert (
+        'PyObject_CallFunction(bound_values_helper, "OsiOOiiiiiiiii", bound_values_obj, "float64", 2, '
+        "bound_values_shape, bound_values_layout, 1, 1, 1, 0, 0, 0, 1, 1, 1)"
+    ) in c_source
     assert "call c_f_pointer(bound_values, values, [values_extent_0, values_extent_1])" in bridge_source
     assert "call c_f_pointer(bound_values, values, [values_extent_1, values_extent_0])" in bridge_source
     assert "subroutine bind_c_flat(n, bound_values, values_extent_0)" in bridge_source

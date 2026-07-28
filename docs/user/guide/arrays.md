@@ -1,21 +1,40 @@
 ---
 title: Arrays
+description: NumPy array shape, layout, strides, and validation in x2py
 audience: users
-prerequisites: data types, wrapping functions
-related: allocatables.md, pointers.md, wrapping-subroutines.md
+prerequisites: data types
+related: strings.md, allocatables.md, pointers.md, wrapping-subroutines.md
 status: maintained
+publication: reviewed
 ---
 
 # Arrays
 
-Ordinary numeric Fortran arrays cross the Python boundary as NumPy arrays.
-Native allocatable and pointer array descriptors instead cross as
-`Allocatable[T[...]]` and `Pointer[T[...]]` handles. In both cases, the
-semantic contract records element dtype, rank, known extents, layout, allowed
-strides, mutability, and storage category. The wrapper validates these facts
-before the native call and does not silently repair an incompatible value.
+x2py exposes Fortran arrays as **NumPy arrays**.
+Each generated contract defines the accepted dtype, shape, layout,
+writeability, and strides. x2py validates these rules before native code runs.
 
-## Complete Array Example
+This page starts with normal Fortran-order arrays. It then covers C-order
+arrays, `COPY_F`, `Flat` storage, and strided views.
+
+Small `intent` note for this page: `intent(in)` reads an array,
+`intent(inout)` mutates it, and `intent(out)` fills caller-provided storage.
+Without `intent`, x2py conservatively uses the `intent(inout)` rule. The
+subroutines page covers the full return rules.
+
+---
+
+## Complete Example
+
+The page uses one module throughout. Its routines cover:
+
+- `scale_matrix`: a 2D array mutated in place
+- `shift`: lower bounds with normal Python indexing
+- `sum_columns`: the effect of storage order
+- `sum_flat`: `values(*)` assumed-size storage
+- `sum_flat_columns`: a checked prefix and flat final axis
+- `scale_visible_rows`: stride-aware assumed-shape arrays
+- `automatic_vector`: an array function result
 
 Create `arrays.f90`:
 
@@ -23,6 +42,7 @@ Create `arrays.f90`:
 module array_ops
   implicit none
 contains
+
   subroutine scale_matrix(rows, columns, values)
     integer(4), intent(in) :: rows, columns
     real(8), intent(inout) :: values(rows, columns)
@@ -35,213 +55,412 @@ contains
     values = values + 1.0_8
   end subroutine shift
 
+  subroutine sum_columns(size, values, result)
+    integer(4), intent(in) :: size
+    real(8), intent(in) :: values(size, size)
+    real(8), intent(out) :: result(size)
+    integer(4) :: column
+
+    do column = 1, size
+      result(column) = sum(values(:, column))
+    end do
+  end subroutine sum_columns
+
+  function sum_flat(count, values) result(total)
+    integer(4), intent(in) :: count
+    real(8), intent(in) :: values(*)
+    real(8) :: total
+    integer(4) :: index
+
+    total = 0.0_8
+    do index = 1, count
+      total = total + values(index)
+    end do
+  end function sum_flat
+
+  function sum_flat_columns(rows, columns, values) result(total)
+    integer(4), intent(in) :: rows, columns
+    real(8), intent(in) :: values(rows, *)
+    real(8) :: total
+    integer(4) :: row, column
+
+    total = 0.0_8
+    do column = 1, columns
+      do row = 1, rows
+        total = total + values(row, column)
+      end do
+    end do
+  end function sum_flat_columns
+
+  subroutine scale_visible_rows(values, out)
+    real(8), intent(in) :: values(:, :)
+    real(8), intent(out) :: out(:, :)
+
+    out = 3.0_8 * values
+  end subroutine scale_visible_rows
+
   function automatic_vector(count) result(values)
     integer(4), intent(in) :: count
     real(8) :: values(count)
-    integer(4) :: index
+    integer(4) :: i
 
-    values = [(2.0_8 * index, index = 1, count)]
+    values = [(2.0_8 * i, i = 1, count)]
   end function automatic_vector
+
 end module array_ops
 ```
 
-Inspecting `arrays.f90` prints these array contracts:
-
-```python
-from x2py.contracts import Addr, Arg, Float64, Int32, native_call
-
-@native_call([Addr(Arg(0)), Addr(Arg(1)), Arg(2)])
-def scale_matrix(
-    rows: Int32,
-    columns: Int32,
-    values: Float64[rows, columns]
-) -> None: ...
-
-@native_call([Addr(Arg(0)), Arg(1)])
-def shift(
-    size: Int32,
-    values: Float64[size]
-) -> None: ...
-
-@native_call([Addr(Arg(0))])
-def automatic_vector(
-    count: Int32
-) -> Float64[count]: ...
-```
-
-Build it:
+Build:
 
 ```bash
 python3 -m x2py arrays.f90 --out-dir build/arrays
 ```
 
-Then assert in-place mutation, lower-bound handling, and an array result:
+---
+
+## Python Usage
 
 ```python
 import sys
-
 import numpy as np
 
 sys.path.insert(0, "build/arrays")
-import arrays
+from arrays.array_ops import *
 
-api = arrays.array_ops
+# Fortran-order matrix, mutated in place.
 matrix = np.ones((2, 3), dtype=np.float64, order="F")
-api.scale_matrix(np.int32(2), np.int32(3), matrix)
-np.testing.assert_array_equal(matrix, np.full((2, 3), 2.0, order="F"))
+scale_matrix(np.int32(2), np.int32(3), matrix)
+print(matrix)
+# [[2. 2. 2.]
+#  [2. 2. 2.]]
 
+# The Fortran routine uses a lower bound, but Python sees an ordinary ndarray.
 shifted = np.zeros(4, dtype=np.float64)
-api.shift(np.int32(4), shifted)
-np.testing.assert_array_equal(shifted, np.ones(4, dtype=np.float64))
+shift(np.int32(4), shifted)
+print(shifted)  # [1. 1. 1. 1.]
 
-result = api.automatic_vector(np.int32(4))
-np.testing.assert_array_equal(
-    result,
-    np.array([2.0, 4.0, 6.0, 8.0], dtype=np.float64),
+# A flat argument can read any contiguous rank.
+flat_matrix = np.array(
+    [
+        [1.0, 2.0, 3.0],
+        [10.0, 20.0, 30.0],
+    ],
+    dtype=np.float64,
+    order="F",
 )
+total = sum_flat(np.int32(flat_matrix.size), flat_matrix)
+print(total)  # 66.0
+
+# A flat final axis keeps the prefix and flattens the rest.
+panels = np.asfortranarray(
+    np.arange(1, 25, dtype=np.float64).reshape((2, 3, 4), order="F")
+)
+panel_total = sum_flat_columns(np.int32(2), np.int32(12), panels)
+print(panel_total)  # 300.0
+
+# Array function results come back as NumPy arrays.
+vec = automatic_vector(np.int32(4))
+print(vec)  # [2. 4. 6. 8.]
 ```
 
-## Read The Contract
+---
 
-For the complete example, generated annotations record a rank-two matrix whose
-extents depend on `rows` and `columns`, a rank-one lower-bound-aware array, and
-an automatic rank-one result. Other supported contracts can use `Float64[:]`,
-`Float64[3]`, `Float64[::]`, `Float64[Flat]`, or `Float64[...]`.
+## What x2py Validates
 
-The element name maps to an exact NumPy dtype; see [Data Types](data-types.md).
-Dimension expressions constrain extents, not source lower/upper-bound
-spellings. The native dimension `0:size-1` therefore becomes the public extent
-`size`. Python remains zero-indexed even when the native declaration has
-non-default lower bounds.
+- Exact NumPy dtype (`np.float64`, `np.int32`, ...)
+- Correct rank and shape (including expressions such as `rows, columns`)
+- Required layout and contiguity
+- Writeability for `intent(out)` or `intent(inout)` arrays
+- Declared stride pattern for stride-aware contracts
 
-## Validation
+**x2py does not silently cast, copy, transpose, or convert layouts.**
+A mismatch raises `TypeError` before native code runs.
 
-Before entering native code, x2py checks:
+Contiguous elements have no gaps between them in the required layout.
+Two arrays can print the same values but use different memory orders.
 
-- exact NumPy dtype without implicit casts;
-- native byte order and alignment;
-- required rank and every expressible extent;
-- contract-required contiguity, orientation, and stride pattern; and
-- writeability for output and inout storage.
+---
 
-Read-only arrays are valid for input-only arguments. x2py does not byte-swap,
-realign, de-alias overlapping arrays, or make a hidden contiguous copy for an
-ordinary in-place contract. A violation raises `TypeError` before native code
-runs.
+## Layout: Fortran First
 
-## Layout And Strides
-
-Use `numpy.asfortranarray` or `order="F"` for a multidimensional contract that
-requires Fortran orientation, as shown by `matrix` in the complete example.
-
-Layout annotations describe a deliberate non-default storage representation;
-they do not request an automatic conversion. Plain multidimensional
-Fortran-facing arrays already pass Fortran-contiguous storage with their logical
-axes unchanged. `ORDER_C` passes the same C-contiguous data address without
-copying and constructs the Fortran bridge view with reversed axes. For example,
-a C-order Python shape `(2, 3)` is a Fortran bridge shape `(3, 2)` over the
-same six elements. Use `ORDER_C` only when the native operation intentionally
-accepts that transposed storage view.
-
-Add `COPY_F` when Python should accept C-contiguous storage but native Fortran
-must observe the same logical axes in Fortran order:
+Use Fortran (column-major) order for normal multidimensional arrays:
 
 ```python
-values: Annotated[Float64[:, :], ORDER_C, COPY_F]
+values = np.asfortranarray(data, dtype=np.float64)
+# or
+values = np.ones(shape, dtype=np.float64, order="F")
 ```
 
-The binding owns this complete representation lifecycle. It creates an
-F-contiguous NumPy temporary before the call, passes that ordinary F-order
-buffer through the unchanged bridge path, copies values back into the original
-C-order array after the call, and releases the temporary. Projected results
-return the original C-order object. Native `intent(in)` remains a property of
-the native procedure call; neither the semantic `.pyi` nor the bridge temporary
-needs a separate direction annotation for `COPY_F`. The bridge performs neither
-half of this argument conversion.
+x2py rejects C-contiguous matrices for a Fortran-contiguous contract.
+This gives the native routine the layout it expects.
 
-Rank-one contiguous arrays can satisfy their documented contiguous contract
-without a meaningful row/column distinction. Legacy fixed-form array contracts
-are contiguous-only. A modern Fortran dummy is stride-aware only when its
-generated contract explicitly permits strides. Inspect `.pyi` output instead
-of assuming every slice is accepted.
+---
 
-Zero-sized dimensions are supported when dtype, rank, writeability, and known
-extent rules still match. Degenerate strides on axes with no addressable
-movement do not by themselves make the layout invalid.
+## C-order Arrays
 
-## Inputs, Outputs, And Inout Arrays
+Start with the generated Fortran-oriented contract for `sum_columns`:
 
-- Input arrays remain caller-owned and may be read-only.
-- Ordinary output arrays remain visible; the caller allocates writable storage.
-- Inout arrays remain visible and mutate in place.
-- Ordinary array function results are Python-owned NumPy copies.
-- Non-optional hidden allocatable outputs are wrapper-owned
-  `Allocatable[T[...]]` handles. Unallocated state remains inside the present
-  handle.
-- Optional allocatable outputs remain visible so the caller controls native
-  `present(...)`.
-- Pointer-array handle results remain blocked until owner storage, target
-  lifetime, descriptor extraction, and destroy behavior are implemented.
-- Allocatable and pointer module variables and supported components are handle
-  objects. NumPy views are obtained explicitly with `to_numpy()` and require
-  lifetime care after native descriptor changes.
+```python
+from x2py.contracts import Float64, Int32
 
-Caller-provided output storage is demonstrated with complete source in
-[Wrapping Subroutines](wrapping-subroutines.md#complete-output-example).
+def sum_columns(
+    size: Int32,
+    values: Float64[size, size],
+    result: Float64[size],
+) -> None: ...
+```
 
-## Assumed Size And Lower Bounds
+With that contract, pass a Fortran-order matrix. The routine sums columns:
 
-`Float64[Flat]` records supported flat assumed-size storage. Python supplies
-the actual allocation, and the caller must ensure it is large enough for the
-native routine. x2py validates explicit dimensions it can express but cannot
-infer an omitted final extent from an unrelated argument.
+```python
+values = np.array(
+    [
+        [1.0, 2.0, 3.0],
+        [10.0, 20.0, 30.0],
+        [100.0, 200.0, 300.0],
+    ],
+    dtype=np.float64,
+    order="F",
+)
+result = np.empty(values.shape[0], dtype=np.float64)
 
-Non-default native lower bounds change how extents are computed internally,
-but they do not alter Python indexing. Even if a Fortran argument is declared
-with custom bounds like values(3:size+2),
-the wrapped NumPy array in Python remains strictly zero-indexed.
+sum_columns(np.int32(values.shape[0]), values, result)
+print(result)  # [111. 222. 333.]
+```
 
-## Assumed Rank
+### Option 1: Accept C-order Without Copy
 
-Supported numeric assumed-rank arguments accept NumPy ranks 1 through 15 through
-a generated native rank dispatcher. Each assumed-rank argument dispatches at
-its own runtime rank. Rank-zero values and ranks above 15 are rejected.
+Edit the semantic `.pyi` and add `ORDER_C`:
 
-## Array Results
+```python
+from x2py.contracts import Annotated, Float64, Int32, ORDER_C
 
-Supported ordinary numeric and fixed-width character array results preserve
-dtype, rank, and Fortran-oriented multidimensional data as NumPy arrays.
-Character arrays use NumPy bytes dtypes such as `S5`, where the dtype itemsize
-is the Fortran element length. Ordinary zero-sized results remain zero-sized
-arrays.
+def sum_columns(
+    size: Int32,
+    values: Annotated[Float64[size, size], ORDER_C],
+    result: Float64[size],
+) -> None: ...
+```
 
-An allocatable array result instead returns an `Allocatable[T[...]]` handle.
-An allocated zero-sized result is a handle whose shape contains a zero extent;
-an unallocated result is a present handle with `allocated is False` and
-`to_numpy() is None`. Pointer-array results remain blocked until their owner
-and target lifetime can be represented safely.
+For the complete dtype, shape, layout, and optionality rules, see
+[Edit Types, Shapes, Layout, and Optionality](../reference/pyi-contracts/calls-and-results.md#edit-types-shapes-layout-and-optionality).
 
-## Unsupported Forms
+The call does not change. Pass a C-order array instead.
+The same values now produce row sums:
 
-- assumed type `type(*)`;
-- character arrays that cannot be represented as fixed-width NumPy bytes
-  storage;
-- arrays of derived types;
-- pointer-array results and reassociation without completed owner, lifetime,
-  and operation policy; and
-- any kind or rank whose portable NumPy storage contract cannot be proved.
+```python
+values = np.array(
+    [
+        [1.0, 2.0, 3.0],
+        [10.0, 20.0, 30.0],
+        [100.0, 200.0, 300.0],
+    ],
+    dtype=np.float64,
+    order="C",
+)
+result = np.empty(values.shape[0], dtype=np.float64)
 
-## Evidence And Troubleshooting
+sum_columns(np.int32(values.shape[0]), values, result)
+print(result)  # [  6.  60. 600.]
+```
 
-Validation and layout behavior are exercised by
-[`test_array_contracts.py`](../../../tests/wrapper/fortran/arrays/test_array_contracts.py),
-assumed-rank behavior by
-[`test_assumed_rank_arrays.py`](../../../tests/wrapper/fortran/arrays/test_assumed_rank_arrays.py),
-multidimensional behavior by
-[`test_multidimensional_arrays.py`](../../../tests/wrapper/fortran/arrays/test_multidimensional_arrays.py),
-and results by
-[`test_array_results.py`](../../../tests/wrapper/fortran/arrays/test_array_results.py).
+No transposition happens. Native code reads the existing storage directly.
 
-When a call fails, compare `value.dtype`, `value.shape`, `value.strides`,
-`value.flags`, and writeability with the generated annotation. Runtime Issues
-later covers calls that still fail when those properties match.
+| Python layout | Native grouping | Result |
+|---------------|-----------------|--------|
+| Fortran order | Python columns  | `[111.0, 222.0, 333.0]` |
+| C-order       | Python rows     | `[6.0, 60.0, 600.0]` |
+
+### Option 2: Copy C-order to Fortran Order
+
+Keep `ORDER_C` and add `COPY_F`:
+
+```python
+from x2py.contracts import Annotated, COPY_F, Float64, Int32, ORDER_C
+
+def sum_columns(
+    size: Int32,
+    values: Annotated[Float64[size, size], ORDER_C, COPY_F],
+    result: Float64[size],
+) -> None: ...
+```
+
+x2py copies the input to Fortran order before the native call.
+The routine returns the original column sums:
+
+```python
+values = np.array(
+    [
+        [1.0, 2.0, 3.0],
+        [10.0, 20.0, 30.0],
+        [100.0, 200.0, 300.0],
+    ],
+    dtype=np.float64,
+    order="C",
+)
+result = np.empty(values.shape[0], dtype=np.float64)
+
+sum_columns(np.int32(values.shape[0]), values, result)
+print(result)  # [111. 222. 333.]
+```
+
+`ORDER_C` validates the caller's layout.
+`COPY_F` creates the Fortran-order temporary while preserving logical axes.
+For output arrays, x2py copies the result back to the caller's C-order storage.
+
+---
+
+## Flat Storage
+
+An assumed-size dummy such as `values(*)` does not declare its extent.
+A companion argument such as `count` tells the routine how much storage to read.
+
+The generated contract for `sum_flat` uses `Flat`:
+
+```python
+from x2py.contracts import Flat, Float64, Int32
+
+def sum_flat(
+    count: Int32,
+    values: Float64[Flat],
+) -> Float64: ...
+```
+
+`Float64[Flat]` accepts a contiguous array with rank 1-15.
+Native code sees its storage as rank one:
+
+```python
+values = np.array(
+    [
+        [1.0, 2.0, 3.0],
+        [10.0, 20.0, 30.0],
+    ],
+    dtype=np.float64,
+)
+total = sum_flat(np.int32(values.size), values)
+print(total)  # 66.0
+```
+
+Storage order controls flattening:
+
+- Fortran-contiguous: column-major order
+- C-contiguous: row-major order
+
+`Flat` rejects strided slices; dtype and contiguity rules still apply.
+
+`Flat` can appear at one edge of a multidimensional contract.
+Other axes remain visible. x2py collapses the remaining Python axes into one
+native extent.
+
+For `real(8) :: values(rows, *)`, the generated contract is:
+
+```python
+from x2py.contracts import Flat, Float64, Int32
+
+def sum_flat_columns(
+    rows: Int32,
+    columns: Int32,
+    values: Float64[rows, Flat],
+) -> Float64: ...
+```
+
+This accepts a Fortran-contiguous array of rank 2 or higher.
+Shape `(2, 3, 4)` becomes the native shape `(2, 12)`:
+
+```python
+panels = np.asfortranarray(
+    np.arange(1, 25, dtype=np.float64).reshape((2, 3, 4), order="F")
+)
+
+total = sum_flat_columns(np.int32(2), np.int32(12), panels)
+print(total)  # 300.0
+```
+
+`Float64[:, Flat]` reads the leading extent from the array itself.
+
+For C-order buffers, put `Flat` first:
+`Annotated[Float64[Flat, columns], ORDER_C]`.
+This checks the final Python axis and flattens the leading axes.
+
+---
+
+## Strided Views
+
+Use `::` for an assumed-shape axis that supports positive strides:
+
+```python
+from x2py.contracts import Float64, Returns
+
+def scale_visible_rows(
+    values: Float64[::, ::],
+    out: Float64[::, ::],
+) -> Returns["out", Float64[::, ::]]: ...
+```
+
+Here, only the first Python axis is sliced:
+
+```python
+base = np.asfortranarray(
+    np.arange(1, 25, dtype=np.float64).reshape((8, 3), order="F")
+)
+
+visible_rows = base[::2, :]  # shape (4, 3)
+out_storage = np.zeros((8, 3), dtype=np.float64, order="F")
+out = out_storage[::2, :]  # matching strided output
+
+scale_visible_rows(visible_rows, out)
+print(out)
+# [[ 3. 27. 51.]
+#  [ 9. 33. 57.]
+#  [15. 39. 63.]
+#  [21. 45. 69.]]
+```
+
+x2py passes the base address, extents, and positive element strides. Reversed
+slices, broadcasted views, and C-order strided matrices are rejected for this
+Fortran-oriented contract. Strides are not an order workaround.
+
+---
+
+## Mutation and Results
+
+| Fortran intent / result      | Python behavior                              |
+|-----------------------------|----------------------------------------------|
+| `intent(in)` array          | NumPy array read by native code              |
+| `intent(inout)` array       | Mutated in place; no Python return            |
+| `intent(out)` array         | Filled in place; no Python return             |
+| Array without `intent`      | Mutated in place; no Python return            |
+| Function returning array    | New NumPy array result                       |
+
+---
+
+## Common Array Contracts
+
+`T` means a concrete primitive contract such as `Float64`, `Int32`, or
+`Complex128`. The examples above use `Float64` because `arrays.f90` declares
+`real(8)`.
+
+Use this list when reading or editing a generated `.pyi` contract:
+
+- `T[:]`: 1D contiguous
+- `T[:, :]`: 2D Fortran-contiguous
+- `Annotated[T[:, :], ORDER_C]`: 2D C-contiguous
+- `Annotated[T[:, :], ORDER_C, COPY_F]`: C-order input, Fortran temporary
+- `T[::]`: 1D strided
+- `T[::, ::]`: 2D stride-aware
+- `T[rows, columns]`: shape depends on other arguments
+- `T[Flat]`: any contiguous rank, flattened to native rank one
+- `T[rows, Flat]`: Fortran-contiguous; checked prefix, remaining axes flattened
+- `Annotated[T[Flat, columns], ORDER_C]`: C-contiguous; checked suffix,
+  leading axes flattened
+- `T[...]`: assumed-rank, currently rank 1-15
+
+---
+
+## Next
+
+- Continue with [Strings](strings.md) for fixed-width NumPy byte arrays.
+- Then read [Wrapping Functions](wrapping-functions.md) and
+  [Wrapping Subroutines](wrapping-subroutines.md).
+- [Allocatables](allocatables.md) and [Pointers](pointers.md) for native
+  allocation control.

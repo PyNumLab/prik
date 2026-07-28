@@ -4,6 +4,7 @@ audience: maintainers
 prerequisites: CI/CD, changelog
 related: ../user/changelog/index.md, ci-cd.md
 status: planned-documentation
+publication: draft
 ---
 
 # Release Process

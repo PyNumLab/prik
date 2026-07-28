@@ -111,7 +111,10 @@ def _scalar_conversion_failure(module) -> tuple[type[BaseException], str]:
     with pytest.raises(TypeError) as error_info:
         module.add_r8("not-a-real", np.float64(1.0))
 
-    np.testing.assert_allclose(module.add_r8(np.float64(1.5), np.float64(2.25)), np.float64(3.75))
+    np.testing.assert_allclose(
+        module.add_r8(np.float64(1.5), np.float64(2.25)),
+        (np.float64(3.75), np.float64(1.5), np.float64(2.25)),
+    )
     return type(error_info.value), str(error_info.value)
 
 
@@ -195,22 +198,19 @@ def test_required_array_buffers_use_canonical_wrapper_plan(tmp_path: Path):
 
     values = np.array([2.0, 3.0, -4.0], dtype=np.float64)
     output = np.zeros_like(values)
-    assert module.square_r8_contiguous(np.int32(values.size), values, output) is None
+    assert module.square_r8_contiguous(np.int32(values.size), values, output) == np.int32(values.size)
     np.testing.assert_array_equal(output, values**2)
 
     handle_output = np.zeros_like(values)
-    assert (
-        module.square_r8_contiguous(
-            np.int32(values.size),
-            _native_array_actual(values, pointer=False),
-            _native_array_actual(handle_output, pointer=True),
-        )
-        is None
-    )
+    assert module.square_r8_contiguous(
+        np.int32(values.size),
+        _native_array_actual(values, pointer=False),
+        _native_array_actual(handle_output, pointer=True),
+    ) == np.int32(values.size)
     np.testing.assert_array_equal(handle_output, values**2)
 
     empty = np.empty(0, dtype=np.float64)
-    assert module.square_r8_contiguous(np.int32(0), empty, empty.copy()) is None
+    assert module.square_r8_contiguous(np.int32(0), empty, empty.copy()) == np.int32(0)
 
     valid = np.arange(4, dtype=np.float64)
     output = np.zeros_like(valid)

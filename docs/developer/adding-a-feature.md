@@ -4,6 +4,7 @@ audience: developers, contributors
 prerequisites: testing strategy, documentation architecture
 related: adding-a-fortran-construct.md, coding-standards.md
 status: planned-documentation
+publication: draft
 ---
 
 # Adding A New Feature

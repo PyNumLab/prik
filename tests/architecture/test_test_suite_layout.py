@@ -50,7 +50,7 @@ TOOLS_TEST_MODULES = {
     "test_print_pytest_failures.py",
     "test_warm_real_library_native_cache.py",
 }
-DOCS_TEST_MODULES = {"test_examples.py", "test_structure.py"}
+DOCS_TEST_MODULES = {"test_examples.py", "test_publication.py", "test_structure.py"}
 ARCHITECTURE_TEST_MODULES = {
     "test_dependency_boundaries.py",
     "test_package_structure.py",

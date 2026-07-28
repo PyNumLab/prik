@@ -4,6 +4,7 @@ audience: users, advanced users
 prerequisites: basic wrapper tutorial, arrays
 related: scientific-library.md, ../guide/arrays.md
 status: planned-documentation
+publication: draft
 ---
 
 # Numerical Solver Tutorial

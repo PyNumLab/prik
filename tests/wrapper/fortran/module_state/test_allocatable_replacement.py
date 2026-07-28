@@ -10,9 +10,11 @@ import numpy as np
 import pytest
 
 from x2py import build_pyi_extension
+from x2py.contracts import Allocatable, Float64
 from x2py.runtime.handles import AllocatableArray
 from tests.wrapper.fortran._support import (
     WRAPPER_TEST_ROOT,
+    _build_text_and_import,
     _compile_native_object,
     _import_from_build_dir,
     _build_source_or_generated_pyi_and_import,
@@ -23,6 +25,48 @@ from tests.wrapper.fortran._support import (
 ALLOCATABLE_INOUT_F90_SOURCE = wrapper_source("fallocatable_inout_f90.f90")
 ALLOCATABLE_FACTORY_F90_SOURCE = wrapper_source("fallocatable_views_f90.f90")
 CONTRACT_FIXTURES = Path(__file__).parent / "contracts"
+ALLOCATABLE_CROSS_A_SOURCE = """\
+module fallocatable_cross_a
+contains
+  subroutine select_a(values)
+    real(8), allocatable, intent(inout) :: values(:)
+    if (allocated(values)) deallocate(values)
+    allocate(values(2))
+    values = [1.0_8, 2.0_8]
+  end subroutine select_a
+
+  function total_a(values) result(total)
+    real(8), allocatable, intent(in) :: values(:)
+    real(8) :: total
+    if (allocated(values)) then
+      total = sum(values)
+    else
+      total = -1.0_8
+    end if
+  end function total_a
+end module fallocatable_cross_a
+"""
+ALLOCATABLE_CROSS_B_SOURCE = """\
+module fallocatable_cross_b
+contains
+  subroutine select_b(values)
+    real(8), allocatable, intent(inout) :: values(:)
+    if (allocated(values)) deallocate(values)
+    allocate(values(3))
+    values = [10.0_8, 20.0_8, 30.0_8]
+  end subroutine select_b
+
+  function total_b(values) result(total)
+    real(8), allocatable, intent(in) :: values(:)
+    real(8) :: total
+    if (allocated(values)) then
+      total = sum(values)
+    else
+      total = -1.0_8
+    end if
+  end function total_b
+end module fallocatable_cross_b
+"""
 
 
 def _allocatable_replacement_build_dir(tmp_path: Path, build_mode: str) -> Path:
@@ -85,6 +129,13 @@ def test_allocatable_inout_arrays_mutate_and_return_the_same_handle(
     assert returned is values
     np.testing.assert_allclose(values.to_numpy(), np.array([1.0, 2.0], dtype=np.float64))
 
+    fresh = Allocatable[Float64[:]]()
+    assert fresh.allocated is False
+    assert module.replace_values(fresh, np.int32(3)) is fresh
+    np.testing.assert_allclose(fresh.to_numpy(), np.array([3.0, 6.0, 9.0], dtype=np.float64))
+    fresh.close()
+    assert fresh.closed is True
+
     del values
     gc.collect()
 
@@ -145,6 +196,45 @@ def build_values(n: Int32) -> Allocatable[Float64[:]]: ...
     assert module.replace_values(values, np.int32(1)) is values
     np.testing.assert_allclose(values.to_numpy(), np.array([1.0, 2.0]))
     values.close()
+
+
+def test_caller_created_allocatable_crosses_separately_built_extensions(tmp_path: Path):
+    first_dir = tmp_path / "first"
+    second_dir = tmp_path / "second"
+    first_dir.mkdir()
+    second_dir.mkdir()
+    first = _build_text_and_import(
+        ALLOCATABLE_CROSS_A_SOURCE,
+        "fallocatable_cross_a.f90",
+        first_dir,
+        {
+            "bind_c_fallocatable_cross_a_wrapper.f90",
+            "fallocatable_cross_a_wrapper.c",
+            "fallocatable_cross_a_wrapper.h",
+        },
+    )
+    second = _build_text_and_import(
+        ALLOCATABLE_CROSS_B_SOURCE,
+        "fallocatable_cross_b.f90",
+        second_dir,
+        {
+            "bind_c_fallocatable_cross_b_wrapper.f90",
+            "fallocatable_cross_b_wrapper.c",
+            "fallocatable_cross_b_wrapper.h",
+        },
+    )
+    values = Allocatable[Float64[:]]()
+
+    assert first.select_a(values) is values
+    np.testing.assert_array_equal(values.to_numpy(), np.array([1.0, 2.0]))
+    assert second.total_b(values) == np.float64(3.0)
+
+    assert second.select_b(values) is values
+    np.testing.assert_array_equal(values.to_numpy(), np.array([10.0, 20.0, 30.0]))
+    assert first.total_a(values) == np.float64(60.0)
+
+    values.close()
+    assert values.closed is True
 
 
 @pytest.mark.skipif(shutil.which("valgrind") is None, reason="Valgrind is required for native ownership checks")

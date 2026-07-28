@@ -35,5 +35,5 @@ def test_immediate_dummy_procedure_converts_array_arguments_and_results(
         values,
         transformed,
     )
-    assert result is transformed
+    assert result is None
     np.testing.assert_array_equal(transformed, np.array([2.0, 4.0, 6.0], dtype=np.float64))

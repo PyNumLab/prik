@@ -38,11 +38,11 @@ def test_output_arguments_and_multiple_results_follow_python_projection_rules(
 
     assert "scalar_status(n) -> int32" in module.scalar_status.__doc__
     assert "status : int32" in module.scalar_status.__doc__
-    assert "fill_vector(n, values) -> ndarray[float64]" in module.fill_vector.__doc__
+    assert "fill_vector(n, values) -> None" in module.fill_vector.__doc__
     assert "Parameters\n----------" in module.fill_vector.__doc__
-    assert "Returns\n-------" in module.fill_vector.__doc__
+    assert "Returns\n-------\nNone" in module.fill_vector.__doc__
     assert "Raises\n------" in module.fill_vector.__doc__
-    assert "Native code may update this value; the updated value is returned." in module.fill_vector.__doc__
+    assert "Native code may update the supplied storage in place." in module.fill_vector.__doc__
     assert "Direction:" not in module.fill_vector.__doc__
     assert "Initial contents are ignored." not in module.fill_vector.__doc__
     assert "Ownership: Caller-owned" in module.fill_vector.__doc__
@@ -50,18 +50,17 @@ def test_output_arguments_and_multiple_results_follow_python_projection_rules(
     assert "Descriptor ownership: owned" in module.build_alloc.__doc__
     assert "Unallocated state remains inside the returned handle." in module.build_alloc.__doc__
     assert "make_label() -> str" in module.make_label.__doc__
-    assert "make_point(scale) -> output_point" in module.make_point.__doc__
+    assert "make_point(scale, point) -> None" in module.make_point.__doc__
+    assert "point : output_point" in module.make_point.__doc__
 
     assert module.scalar_status(np.int32(5)) == np.int32(15)
 
     vector = np.empty(4, dtype=np.float64)
-    returned_vector = module.fill_vector(np.int32(4), vector)
-    assert returned_vector is vector
+    assert module.fill_vector(np.int32(4), vector) is None
     np.testing.assert_allclose(vector, np.array([2.0, 4.0, 6.0, 8.0], dtype=np.float64))
 
     matrix = np.empty((2, 3), dtype=np.float64, order="F")
-    returned_matrix = module.fill_matrix(np.int32(2), np.int32(3), matrix)
-    assert returned_matrix is matrix
+    assert module.fill_matrix(np.int32(2), np.int32(3), matrix) is None
     np.testing.assert_allclose(
         matrix,
         np.array([[11.0, 21.0, 31.0], [12.0, 22.0, 32.0]], dtype=np.float64),
@@ -81,12 +80,11 @@ def test_output_arguments_and_multiple_results_follow_python_projection_rules(
     mixed_vector = np.empty(3, dtype=np.float64)
     mixed_result = module.mixed_outputs(np.int32(3), mixed_vector)
     assert mixed_result[0] == np.float64(3.5)
-    assert mixed_result[1] is mixed_vector
-    assert mixed_result[2] == np.int32(23)
-    np.testing.assert_allclose(mixed_result[1], np.array([101.0, 102.0, 103.0], dtype=np.float64))
-    assert isinstance(mixed_result[3], AllocatableArray)
+    assert mixed_result[1] == np.int32(23)
+    np.testing.assert_allclose(mixed_vector, np.array([101.0, 102.0, 103.0], dtype=np.float64))
+    assert isinstance(mixed_result[2], AllocatableArray)
     np.testing.assert_allclose(
-        mixed_result[3].to_numpy(),
+        mixed_result[2].to_numpy(),
         np.array([201.0, 202.0, 203.0], dtype=np.float64),
     )
 
@@ -98,8 +96,8 @@ def test_output_arguments_and_multiple_results_follow_python_projection_rules(
 
     assert module.make_label() == "RESULT!!"
 
-    point = module.make_point(np.int32(6))
-    assert isinstance(point, module.output_point)
+    point = module.output_point()
+    assert module.make_point(np.int32(6), point) is None
     assert point.x == np.float64(6.25)
     assert point.tag == np.int32(46)
 

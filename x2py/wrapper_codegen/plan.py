@@ -19,6 +19,7 @@ from x2py.semantics.ownership import (
     TransferMode,
 )
 from x2py.semantics.wrapper_policy import (
+    ArgumentConversionPhase,
     ArgumentHandoffMode,
     BridgeDataAction,
     CallbackABIKind,
@@ -52,6 +53,7 @@ from x2py.semantics.wrapper_policy import (
     NativeArrayDescriptorInterop,
     NativeArrayDescriptorKind,
     NativeArrayDescriptorOwnership,
+    NativeArrayDefaultConstruction,
     NativeArrayDestroyBehavior,
     NativeArrayExtractionAction,
     NativeArrayGetterBehavior,
@@ -59,6 +61,7 @@ from x2py.semantics.wrapper_policy import (
     NativeArrayHandleOrigin,
     NativeArrayOperation,
     NativeArrayOutputProjection,
+    NativeArrayResultAllocation,
     NativeArrayOwnerRetention,
     NativeArrayRelease,
     NativeArraySourceKind,
@@ -285,6 +288,8 @@ class ArrayHandoffPlan(StageRecord):
     order: str | None
     native_order: str | None
     contiguous: bool | None
+    flatten_python_storage: bool
+    flat_axis: int | None
     itemsize: int | None
     category: str | None
     data_role: str
@@ -309,6 +314,8 @@ class NativeArrayActualPlan(StageRecord):
     require_native_byte_order: bool
     require_aligned: bool
     require_contiguous: bool
+    flatten_storage: bool = False
+    flat_axis: int | None = None
 
 
 @dataclass
@@ -329,6 +336,19 @@ class NativeDescriptorHandoffPlan(StageRecord):
 
 
 @dataclass
+class NativeArrayDefaultHandlePlan(StageRecord):
+    """Caller-created descriptor storage and lifecycle selected before lowering."""
+
+    construction: NativeArrayDefaultConstruction
+    descriptor_ownership: NativeArrayDescriptorOwnership | None
+    release: NativeArrayRelease
+    destroy_behavior: NativeArrayDestroyBehavior
+    operations: tuple[NativeArrayOperation, ...]
+    owner_storage_role: str | None
+    operation_roles: tuple[tuple[NativeArrayOperation, str], ...]
+
+
+@dataclass
 class NativeArrayHandlePlan(StageRecord):
     """One typed editable native-array handle policy and descriptor handoff."""
 
@@ -343,6 +363,7 @@ class NativeArrayHandlePlan(StageRecord):
     setter_action: SetterAction
     native_assignment: AssignmentMode
     output_projection: NativeArrayOutputProjection
+    result_allocation: NativeArrayResultAllocation
     release: NativeArrayRelease
     target_lifetime: str
     destroy_behavior: NativeArrayDestroyBehavior
@@ -355,6 +376,7 @@ class NativeArrayHandlePlan(StageRecord):
     required_headers: tuple[str, ...]
     array: ArrayHandoffPlan
     handoff: NativeDescriptorHandoffPlan
+    default_handle: NativeArrayDefaultHandlePlan
 
 
 @dataclass
@@ -486,6 +508,7 @@ class BindingArgumentPlan(StageRecord):
     python_name: str
     python_action: PythonBarrierAction
     codegen_action: CodegenAction
+    conversion_phase: ArgumentConversionPhase
     handoff_role: str
     optional_mode: OptionalMode
     nullable: bool

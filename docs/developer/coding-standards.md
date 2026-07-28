@@ -4,6 +4,7 @@ audience: contributors
 prerequisites: repository structure
 related: testing-strategy.md, quality-assurance.md
 status: planned-documentation
+publication: draft
 ---
 
 # Coding Standards

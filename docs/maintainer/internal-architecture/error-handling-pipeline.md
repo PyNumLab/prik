@@ -4,6 +4,7 @@ audience: maintainers
 prerequisites: runtime layer, error propagation model
 related: runtime-layer.md, ../../user/reference/diagnostic-codes.md
 status: planned-documentation
+publication: draft
 ---
 
 # Error Handling Pipeline

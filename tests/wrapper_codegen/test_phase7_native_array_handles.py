@@ -12,8 +12,10 @@ from x2py.semantics.wrapper_policy import (
     NativeArrayDescriptorInterop,
     NativeArrayDescriptorKind,
     NativeArrayDescriptorOwnership,
+    NativeArrayDefaultConstruction,
     NativeArrayOperation,
     NativeArrayOutputProjection,
+    NativeArrayResultAllocation,
     NativeArraySourceKind,
     NativeDescriptorHandoffABI,
 )
@@ -23,7 +25,21 @@ from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 def _phase7_plan():
     module = parse_pyi_text(
         """
-from x2py.contracts import Addr, Allocatable, Arg, Float64, Int32, Pointer, Return, Returns, String, native_call
+from x2py.contracts import (
+    Addr,
+    Allocatable,
+    Annotated,
+    Arg,
+    Float64,
+    Int32,
+    MaybeUnallocated,
+    Pointer,
+    PointerPolicy,
+    Return,
+    Returns,
+    String,
+    native_call,
+)
 
 def normal(values: Float64[:]) -> Float64: ...
 def alloc(values: Allocatable[Float64[:]]) -> Float64: ...
@@ -39,10 +55,65 @@ def replace(
 @native_call([Addr(Arg(0))])
 def make(n: Int32) -> Allocatable[Float64[:]]: ...
 
-@native_call([Arg(0)], result=Allocatable(Return(0)))
+@native_call([Addr(Arg(0))])
+def maybe_make(n: Int32) -> Annotated[Allocatable[Float64[:]], MaybeUnallocated]: ...
+
+@native_call([Addr(Arg(0)), Addr(Arg(1))])
+def make_matrix(n: Int32, m: Int32) -> Allocatable[Float64[:, :]]: ...
+
+@native_call([Arg(0), Allocatable(Return("value", 0))])
 def deferred(text: String) -> String | None: ...
 
 def make_names() -> Allocatable[String[:][:]]: ...
+
+def make_pointer(n: Int32) -> Annotated[
+    Pointer[Float64[:]],
+    PointerPolicy(
+        nullable=True,
+        transfer="call_local",
+        target_owner="module",
+        lifetime="module",
+        deallocation="never",
+        shape_source="pointer_bounds",
+        contiguity="strided",
+        reassociation="never",
+        aliasing="borrowed",
+        mutability="view",
+    ),
+]: ...
+
+@native_call([Arg(0), Return("selected", 0)])
+def select_pointer(n: Int32) -> Annotated[
+    Pointer[Float64[:]],
+    PointerPolicy(
+        nullable=True,
+        transfer="call_local",
+        target_owner="module",
+        lifetime="module",
+        deallocation="never",
+        shape_source="pointer_bounds",
+        contiguity="strided",
+        reassociation="never",
+        aliasing="borrowed",
+        mutability="view",
+    ),
+]: ...
+
+def make_managed_pointer(n: Int32) -> Annotated[
+    Pointer[Float64[:]],
+    PointerPolicy(
+        nullable=True,
+        transfer="call_local",
+        target_owner="wrapper",
+        lifetime="wrapper",
+        deallocation="deallocate_resize",
+        shape_source="pointer_bounds",
+        contiguity="contiguous",
+        reassociation="allocate_resize",
+        aliasing="descriptor",
+        mutability="mutable",
+    ),
+]: ...
 
 def replace_names(
     names: Allocatable[String[:][:]],
@@ -117,6 +188,10 @@ def test_phase7_keeps_datatype_specific_state_under_argument_and_result_plans():
         assert handle is argument.native_call_slot.native_array_handle
         assert handle.descriptor_kind is descriptor_kind
         assert handle.handoff.abi is NativeDescriptorHandoffABI.FACT_PACKED_CALL_LOCAL
+        assert handle.default_handle.construction is NativeArrayDefaultConstruction.FACT_PACKED_EMPTY
+        assert handle.default_handle.descriptor_ownership is NativeArrayDescriptorOwnership.OWNED
+        assert handle.default_handle.owner_storage_role is None
+        assert NativeArrayOperation.DESTROY in handle.default_handle.operations
         assert len(handle.handoff.extent_roles) == handle.array.rank == 1
         assert argument.binding.python_action is PythonBarrierAction.WRAPPER_INSTANCE
         assert argument.bridge.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR
@@ -133,14 +208,31 @@ def test_phase7_keeps_datatype_specific_state_under_argument_and_result_plans():
     assert replacement.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
     assert replacement.native_array_handle.output_projection is NativeArrayOutputProjection.PROJECTED_HANDLE
     assert replacement.native_array_handle.handoff.extent_roles == ()
+    assert (
+        replacement.native_array_handle.default_handle.construction
+        is NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR
+    )
+    assert replacement.native_array_handle.default_handle.owner_storage_role is not None
+    assert NativeArrayOperation.DESTROY in replacement.native_array_handle.default_handle.operations
     assert replacement.binding.codegen_action is CodegenAction.IN_PLACE_ARGUMENT
 
     owned = functions["make"].results[0]
     assert owned.native_array_handle is not None
     assert owned.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
     assert owned.native_array_handle.descriptor_ownership is NativeArrayDescriptorOwnership.OWNED
+    assert owned.native_array_handle.result_allocation is NativeArrayResultAllocation.ALWAYS_ALLOCATED
     assert owned.native_array_handle.handoff.owner_storage_role is not None
     assert NativeArrayOperation.DESTROY in owned.native_array_handle.operations
+
+    maybe_owned = functions["maybe_make"].results[0]
+    assert maybe_owned.native_array_handle is not None
+    assert maybe_owned.native_array_handle.result_allocation is NativeArrayResultAllocation.MAYBE_UNALLOCATED
+
+    owned_matrix = functions["make_matrix"].results[0]
+    assert owned_matrix.native_array_handle is not None
+    assert owned_matrix.native_array_handle.array.rank == 2
+    assert owned_matrix.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
+    assert owned_matrix.native_array_handle.descriptor_ownership is NativeArrayDescriptorOwnership.OWNED
 
     deferred = functions["deferred"].results[0]
     assert deferred.native_array_handle is None
@@ -158,8 +250,38 @@ def test_phase7_keeps_datatype_specific_state_under_argument_and_result_plans():
     replacement_names = functions["replace_names"].arguments[0]
     assert replacement_names.native_array_handle is not None
     assert replacement_names.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
+    assert replacement_names.native_array_handle.default_handle.construction is NativeArrayDefaultConstruction.NONE
     assert NativeArrayOperation.ELEMENT_LENGTH in replacement_names.native_array_handle.operations
     assert plan.required_headers == ("ISO_Fortran_binding.h",)
+
+    pointer_result = functions["make_pointer"].results[0]
+    assert pointer_result.native_array_handle is not None
+    assert pointer_result.native_array_handle.descriptor_kind is NativeArrayDescriptorKind.POINTER
+    assert pointer_result.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
+    assert pointer_result.native_array_handle.descriptor_ownership is NativeArrayDescriptorOwnership.OWNED
+    assert pointer_result.native_array_handle.result_allocation is NativeArrayResultAllocation.NOT_APPLICABLE
+    assert pointer_result.native_array_handle.target_lifetime == "module"
+    assert NativeArrayOperation.ASSOCIATE in pointer_result.native_array_handle.operations
+    assert NativeArrayOperation.ASSOCIATED in pointer_result.native_array_handle.operations
+    assert NativeArrayOperation.NULLIFY in pointer_result.native_array_handle.operations
+    assert NativeArrayOperation.CONTIGUOUS in pointer_result.native_array_handle.operations
+    assert NativeArrayOperation.DESTROY in pointer_result.native_array_handle.operations
+
+    pointer_output = functions["select_pointer"].results[0]
+    assert pointer_output.source_kind == "hidden_output"
+    assert pointer_output.native_array_handle is not None
+    assert pointer_output.native_array_handle.descriptor_kind is NativeArrayDescriptorKind.POINTER
+    assert pointer_output.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
+    assert pointer_output.native_call_slot is not None
+    assert pointer_output.native_call_slot.source_kind == "result"
+
+    managed_pointer = functions["make_managed_pointer"].results[0]
+    assert managed_pointer.native_array_handle is not None
+    assert {
+        NativeArrayOperation.ALLOCATE,
+        NativeArrayOperation.DEALLOCATE,
+        NativeArrayOperation.RESIZE,
+    }.issubset(managed_pointer.native_array_handle.operations)
 
 
 def test_phase7_module_variables_own_borrowed_handle_plans_and_operation_sets():
@@ -182,6 +304,7 @@ def test_phase7_module_variables_own_borrowed_handle_plans_and_operation_sets():
     assert NativeArrayOperation.DEALLOCATE in allocatable.operations
     assert NativeArrayOperation.RESIZE in allocatable.operations
     assert NativeArrayOperation.NULLIFY in pointer.operations
+    assert NativeArrayOperation.ASSOCIATE in pointer.operations
     assert NativeArrayOperation.CONTIGUOUS in pointer.operations
     assert NativeArrayOperation.DESTROY not in allocatable.operations
     assert NativeArrayOperation.ELEMENT_LENGTH in names.operations
@@ -193,6 +316,18 @@ def test_phase7_module_variables_own_borrowed_handle_plans_and_operation_sets():
     assert plain.required_headers == ("ISO_Fortran_binding.h",)
     assert pointer.required_headers == ("ISO_Fortran_binding.h",)
     assert plan.required_headers == ("ISO_Fortran_binding.h",)
+
+
+def test_phase7_module_pointer_association_uses_standard_descriptor_assignment():
+    artifacts = WrapperCodeGenerator().generate(_module_handle_plan())
+    c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
+    bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
+
+    assert "void bind_c_module_pointer_associate(CFI_cdesc_t * source);" in c_source
+    assert "pointer association requires 6 descriptor facts" in c_source
+    assert "bind_c_module_pointer_associate(source_descriptor);" in c_source
+    assert "subroutine bind_c_module_pointer_associate(source)" in bridge_source
+    assert "native_module_pointer => source" in bridge_source
 
 
 def test_phase7_deferred_character_module_handles_use_runtime_element_length():
@@ -232,9 +367,21 @@ def test_phase7_generated_artifacts_follow_one_typed_action_vocabulary():
     assert '"_native_array_descriptor_argument_for_binding_positional"' in c_source
     assert '"_native_array_descriptor_handoff_for_binding_positional"' in c_source
     assert '"_native_array_handle_from_generated_ops"' in c_source
+    assert '"_bind_contract_native_array_handle"' in c_source
+    assert "x2py_native_array_handle_capsule_new(" in c_source
+    assert "x2py_native_array_handle_from_capsule(" in c_source
+    assert "X2PY_NATIVE_ARRAY_KIND_ALLOCATABLE" in c_source
+    assert "X2PY_NATIVE_ARRAY_KIND_POINTER" in c_source
+    assert "x2py_native_array_handle_release(owner_handle)" in c_source
+    assert "bound_values_native_handle = x2py_native_array_handle_from_capsule(bound_values_item" in c_source
+    assert "x2py_bind_default_phase7_handles_replace_values" in c_source
+    assert "x2py_owned_phase7_handles_replace_values_destroy" in c_source
+    assert "bound_values_default_binder" in c_source
     assert "CFI_CDESC_T(1)" in c_source
+    assert "CFI_CDESC_T(2)" in c_source
     assert "real(c_double), allocatable, dimension(:) :: values" in bridge_source
     assert "real(c_double), pointer, dimension(:) :: values" in bridge_source
+    assert "real(c_double), allocatable, dimension(:, :) :: result_value" in bridge_source
     optional_start = bridge_source.index("function bind_c_optional(")
     optional_end = bridge_source.index("end function bind_c_optional", optional_start)
     optional_bridge = bridge_source[optional_start:optional_end]
@@ -248,17 +395,23 @@ def test_phase7_generated_artifacts_follow_one_typed_action_vocabulary():
     assert "bound_values_elem_len = sizeof(double);" in optional_binding
     assert "bound_values_descriptor_rank = 1;" in optional_binding
     assert "bound_values = (CFI_cdesc_t *)&bound_values_storage;" in optional_binding
-    assert "x2py_collect_make_allocatable_array_result" in bridge_source
-    assert "call x2py_collect_make_allocatable_array_result(native_make(n), result_value)" in bridge_source
-    assert "call move_alloc(result_value, result)" in bridge_source
-    assert "x2py_collect_deferred_scalar_descriptor_result" in bridge_source
-    assert "character(kind=c_char, len=:), allocatable :: result_value" in bridge_source
+    assert "result_value = native_make(n)" in bridge_source
+    assert "result_value = native_make_matrix(n, m)" in bridge_source
+    assert "call x2py_collect_allocatable_array_result(native_maybe_make(n), result)" in bridge_source
+    assert "if (allocated(value)) then" in bridge_source
+    assert "call move_alloc(value, result)" in bridge_source
+    assert "bool bind_c_owned_result_73146804_allocated(CFI_cdesc_t * result);" in c_source
+    assert "return PyBool_FromLong(bind_c_owned_result_73146804_allocated(owner_descriptor));" in c_source
+    assert "bind_c_owned_result_73146804_deallocate(owner_descriptor);" in c_source
+    assert "bind_c_owned_result_73146804_destroy(owner_descriptor);" in c_source
+    assert "bind_c_owned_result_73146804_shape(owner_descriptor, &extent_0);" in c_source
+    assert "character(kind=c_char, len=:), allocatable :: value_value" in bridge_source
     assert "result_itemsize" in c_source
     assert "CFI_type_char" in c_source
     assert "character(kind=c_char, len=:), allocatable, dimension(:) :: names" in bridge_source
 
 
-def test_phase7_numeric_owned_result_is_collected_before_persistent_descriptor_move():
+def test_phase7_numeric_owned_result_defaults_to_assignment_then_move_alloc():
     bridge_source = next(
         source.text
         for source in WrapperCodeGenerator().generate(_phase7_plan()).sources
@@ -270,15 +423,93 @@ def test_phase7_numeric_owned_result_is_collected_before_persistent_descriptor_m
 
     assert "real(c_double), allocatable, dimension(:), intent(out) :: result" in procedure
     assert "real(c_double), allocatable, dimension(:) :: result_value" in procedure
-    assert "call x2py_collect_make_allocatable_array_result(native_make(n), result_value)" in procedure
+    assert "result_value = native_make(n)" in procedure
+    assert "if (allocated(result_value)) then" in procedure
     assert "call move_alloc(result_value, result)" in procedure
+    assert "if (allocated(result)) then" in procedure
+    assert "deallocate(result)" in procedure
+    assert "call x2py_collect_allocatable_array_result(native_make(n), result)" not in procedure
     assert "result = result_value" not in procedure
+    assert "function bind_c_owned_result_73146804_allocated(" in bridge_source
+    assert "real(c_double), allocatable, dimension(:), intent(in) :: result" in bridge_source
+    assert "state = allocated(result)" in bridge_source
+    assert "subroutine bind_c_owned_result_73146804_deallocate(" in bridge_source
+    assert "real(c_double), allocatable, dimension(:), intent(inout) :: result" in bridge_source
+    assert "subroutine bind_c_owned_result_73146804_destroy(" in bridge_source
 
-    helper_start = bridge_source.index("subroutine x2py_collect_make_allocatable_array_result(")
-    helper_end = bridge_source.index("end subroutine", helper_start)
-    helper = bridge_source[helper_start:helper_end]
-    assert "if (allocated(value)) then" in helper
-    assert "target = value" in helper
+
+def test_phase7_pointer_result_uses_owned_pointer_descriptor_without_target_deallocation():
+    artifacts = WrapperCodeGenerator().generate(_phase7_plan())
+    c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
+    bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
+    start = bridge_source.index("subroutine bind_c_make_pointer(")
+    end = bridge_source.index("end subroutine", start)
+    procedure = bridge_source[start:end]
+    operations_end = bridge_source.index("bind_c_select_pointer(", end)
+    pointer_operations = bridge_source[end:operations_end]
+
+    assert "real(c_double), pointer, dimension(:), intent(out) :: result" in procedure
+    assert "real(c_double), pointer, dimension(:) :: result_value" in procedure
+    assert "result_value => native_make_pointer(n)" in procedure
+    assert "result => result_value" in procedure
+    assert "move_alloc" not in procedure
+    assert "CFI_attribute_pointer" in c_source
+    assert "function bind_c_owned_" in bridge_source
+    assert "associated(CFI_cdesc_t * result)" in c_source
+    assert "contiguous(CFI_cdesc_t * result)" in c_source
+    assert "subroutine bind_c_owned_" in bridge_source
+    assert "pointer association requires 6 descriptor facts" in c_source
+    assert "result => source" in pointer_operations
+    assert "nullify(result)" in pointer_operations
+    assert "deallocate(result)" not in pointer_operations
+    assert '"failed to allocate owned native array"' in c_source
+    assert '"failed to resize owned native array"' in c_source
+    assert "CFI_allocate(owner_descriptor, lower_bounds, upper_bounds" in c_source
+
+    output_start = bridge_source.index("subroutine bind_c_select_pointer(")
+    output_end = bridge_source.index("end subroutine", output_start)
+    output_procedure = bridge_source[output_start:output_end]
+    assert "real(c_double), pointer, dimension(:), intent(out) :: selected" in output_procedure
+    assert "real(c_double), pointer, dimension(:) :: selected_value" in output_procedure
+    assert "call native_select_pointer(n, selected_value)" in output_procedure
+    assert "selected => selected_value" in output_procedure
+
+
+def test_phase7_maybe_unallocated_owned_result_uses_collector_without_local_assignment():
+    bridge_source = next(
+        source.text
+        for source in WrapperCodeGenerator().generate(_phase7_plan()).sources
+        if source.path.suffix == ".f90"
+    )
+    start = bridge_source.index("subroutine bind_c_maybe_make(")
+    end = bridge_source.index("end subroutine", start)
+    procedure = bridge_source[start:end]
+
+    assert "real(c_double), allocatable, dimension(:), intent(out) :: result" in procedure
+    assert "call x2py_collect_allocatable_array_result(native_maybe_make(n), result)" in procedure
+    assert "real(c_double), allocatable, dimension(:) :: value" in procedure
+    assert "if (allocated(value)) then" in procedure
+    assert "call move_alloc(value, result)" in procedure
+    assert "if (allocated(result)) then" in procedure
+    assert "deallocate(result)" in procedure
+    assert "result_value = native_make(n)" not in procedure
+    assert "call move_alloc(result_value, result)" not in procedure
+    assert "result = result_value" not in procedure
+    assert "subroutine x2py_collect_allocatable_array_result(" in procedure
+
+
+def test_phase7_maybe_unallocated_is_only_valid_on_direct_allocatable_array_results():
+    module = parse_pyi_text(
+        """
+from x2py.contracts import Allocatable, Annotated, Float64, MaybeUnallocated
+
+def invalid_argument(values: Annotated[Allocatable[Float64[:]], MaybeUnallocated]) -> Float64: ...
+""",
+        module_name="invalid_maybe_unallocated",
+    )
+
+    with pytest.raises(ValueError, match="MaybeUnallocated metadata"):
+        complete_semantic_policies(module)
 
 
 @pytest.mark.parametrize(
@@ -287,6 +518,7 @@ def test_phase7_numeric_owned_result_is_collected_before_persistent_descriptor_m
         ("required_presence", "inconsistent-native-descriptor-presence"),
         ("projected_facts", "invalid-direct-native-descriptor-roles"),
         ("owned_storage", "invalid-owned-native-descriptor-roles"),
+        ("default_storage", "inconsistent-default-handle-owner-storage-role"),
         ("operation", "incomplete-native-array-operations"),
         ("header", "inconsistent-required-headers"),
     ],
@@ -300,6 +532,8 @@ def test_phase7_plan_edits_fail_central_validation(edit: str, diagnostic: str):
         functions["replace"].arguments[0].native_array_handle.handoff.extent_roles = ("edited:extent",)
     elif edit == "owned_storage":
         functions["make"].results[0].native_array_handle.handoff.owner_storage_role = None
+    elif edit == "default_storage":
+        functions["replace"].arguments[0].native_array_handle.default_handle.owner_storage_role = None
     elif edit == "operation":
         functions["pointer"].arguments[0].native_array_handle.operations = ()
     else:

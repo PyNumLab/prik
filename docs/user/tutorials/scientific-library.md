@@ -4,6 +4,7 @@ audience: users
 prerequisites: basic wrapper tutorial
 related: numerical-solver.md, ../examples/index.md
 status: planned-documentation
+publication: draft
 ---
 
 # Scientific Library Tutorial

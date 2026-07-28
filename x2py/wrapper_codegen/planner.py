@@ -30,6 +30,8 @@ from x2py.semantics.wrapper_policy import (
     LifecyclePolicy,
     NativeCallSlotPolicy,
     NativeArrayActualPolicy,
+    NativeArrayDefaultConstruction,
+    NativeArrayDefaultHandlePolicy,
     NativeArrayHandleWrapperPolicy,
     NativeDescriptorHandoffABI,
     NativeDescriptorHandoffPolicy,
@@ -88,6 +90,7 @@ from x2py.wrapper_codegen.plan import (
     NamespacePlan,
     NativeCallSlotPlan,
     NativeArrayActualPlan,
+    NativeArrayDefaultHandlePlan,
     NativeArrayHandlePlan,
     NativeDescriptorHandoffPlan,
     PolymorphicDispatchPlan,
@@ -362,7 +365,6 @@ class WrapperPlanner(ClassVisitor):
             namespace,
             semantic_class,
             policy,
-            methods,
             overloads_by_name,
             python_name=python_names[0],
             fields=fields,
@@ -393,7 +395,7 @@ class WrapperPlanner(ClassVisitor):
         semantic_class: models.SemanticClass,
         policy: ClassSurfacePolicy,
     ) -> tuple[ClassMethodPlan, ...]:
-        """Link public methods and a private constructor target in source order."""
+        """Link public methods in source order."""
         methods_by_owner = self._class_methods_by_owner(policy)
         methods = []
         for method in semantic_class.methods:
@@ -401,7 +403,7 @@ class WrapperPlanner(ClassVisitor):
                 continue
             owner_path = f"{policy.owner_path}.{method.name}"
             method_policy = methods_by_owner[owner_path]
-            if not self._class_method_is_planned(method, method_policy, owner_path, policy):
+            if not method_policy.public:
                 continue
             methods.append(
                 self._class_method_plan(
@@ -418,11 +420,6 @@ class WrapperPlanner(ClassVisitor):
     def _class_methods_by_owner(policy: ClassSurfacePolicy) -> dict[str, object]:
         """Index completed method records by their stable semantic owner path."""
         return {method.owner_path: method for method in policy.methods}
-
-    @staticmethod
-    def _class_method_is_planned(method, method_policy, owner_path: str, policy: ClassSurfacePolicy) -> bool:
-        """Keep public methods plus the private target selected for construction."""
-        return method_policy.public or owner_path == policy.constructor.target_owner_path
 
     def _class_overload_plans(
         self,
@@ -452,7 +449,6 @@ class WrapperPlanner(ClassVisitor):
         namespace: tuple[str, ...],
         semantic_class: models.SemanticClass,
         policy: ClassSurfacePolicy,
-        methods: tuple[ClassMethodPlan, ...],
         overloads_by_name: dict,
         *,
         python_name: str,
@@ -460,7 +456,12 @@ class WrapperPlanner(ClassVisitor):
     ) -> ConstructorPlan:
         """Link one completed constructor to its target and lifecycle records."""
         constructor = policy.constructor
-        target = next((item.function for item in methods if item.owner_path == constructor.target_owner_path), None)
+        target = self._bound_constructor_target_plan(
+            module_name,
+            namespace,
+            semantic_class,
+            policy,
+        )
         overload = self._constructor_overload_plan(
             module_name,
             namespace,
@@ -480,6 +481,33 @@ class WrapperPlanner(ClassVisitor):
         )
         plan.docstring = self.docstrings.constructor(python_name, plan, fields)
         return plan
+
+    def _bound_constructor_target_plan(
+        self,
+        module_name: str,
+        namespace: tuple[str, ...],
+        semantic_class: models.SemanticClass,
+        policy: ClassSurfacePolicy,
+    ) -> FunctionPlan | None:
+        """Project the direct constructor call selected by completed policy."""
+        target_path = policy.constructor.target_owner_path
+        if target_path is None:
+            return None
+        method = next(
+            (item for item in semantic_class.methods if f"{policy.owner_path}.{item.name}" == target_path),
+            None,
+        )
+        if method is None:
+            return None
+        return self._function_plan(
+            completed_function_wrapper_policy(method),
+            PythonExportPolicy(
+                namespace,
+                self._class_callable_name(policy.type_identity, method.name),
+            ),
+            module_name,
+            public=False,
+        )
 
     def _constructor_overload_plan(
         self,
@@ -630,8 +658,16 @@ class WrapperPlanner(ClassVisitor):
         return (
             *(method.function for method in surface.methods),
             *(candidate for overload in surface.overloads for candidate in overload.candidates),
+            *WrapperPlanner._constructor_target_functions(surface.constructor),
             *(surface.constructor.overload.candidates if surface.constructor.overload is not None else ()),
         )
+
+    @staticmethod
+    def _constructor_target_functions(constructor: ConstructorPlan) -> tuple[FunctionPlan, ...]:
+        """Return the direct constructor target when one was selected."""
+        if constructor.target is None:
+            return ()
+        return (constructor.target,)
 
     def _derived_field_plan(self, policy: DerivedFieldPolicy) -> DerivedFieldPlan:
         """Project one completed field once for every backend and module path."""
@@ -749,7 +785,7 @@ class WrapperPlanner(ClassVisitor):
 
     @staticmethod
     def _module_function_policy(function: models.SemanticFunction) -> FunctionWrapperPolicy | None:
-        """Return a public function plan policy, excluding class-only root targets."""
+        """Return one completed module-function policy when it is exportable."""
         policy = function.metadata.get(models.RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA)
         if isinstance(policy, FunctionWrapperPolicy) and not policy.module_export:
             return None
@@ -1118,6 +1154,7 @@ class WrapperPlanner(ClassVisitor):
             python_name=policy.python_name,
             python_action=policy.python_barrier_action,
             codegen_action=policy.codegen_action,
+            conversion_phase=policy.conversion_phase,
             handoff_role=role,
             optional_mode=policy.optional_mode,
             nullable=policy.nullable,
@@ -1427,6 +1464,8 @@ class WrapperPlanner(ClassVisitor):
             require_native_byte_order=policy.require_native_byte_order,
             require_aligned=policy.require_aligned,
             require_contiguous=policy.require_contiguous,
+            flatten_storage=policy.flatten_storage,
+            flat_axis=policy.flat_axis,
         )
 
     def _native_array_handle_plan(
@@ -1454,6 +1493,7 @@ class WrapperPlanner(ClassVisitor):
             setter_action=policy.setter_action,
             native_assignment=policy.native_assignment,
             output_projection=policy.output_projection,
+            result_allocation=policy.result_allocation,
             release=policy.release,
             target_lifetime=policy.target_lifetime,
             destroy_behavior=policy.destroy_behavior,
@@ -1466,6 +1506,30 @@ class WrapperPlanner(ClassVisitor):
             required_headers=policy.required_headers,
             array=array_plan,
             handoff=self._native_descriptor_handoff_plan(policy.handoff, owner_path, policy.operations),
+            default_handle=self._native_array_default_handle_plan(policy.default_handle, owner_path),
+        )
+
+    def _native_array_default_handle_plan(
+        self,
+        policy: NativeArrayDefaultHandlePolicy,
+        owner_path: str,
+    ) -> NativeArrayDefaultHandlePlan:
+        """Name completed caller-construction storage and operation roles."""
+        owner_storage_role = (
+            f"{owner_path}:default-owner-storage"
+            if policy.construction is NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR
+            else None
+        )
+        return NativeArrayDefaultHandlePlan(
+            construction=policy.construction,
+            descriptor_ownership=policy.descriptor_ownership,
+            release=policy.release,
+            destroy_behavior=policy.destroy_behavior,
+            operations=policy.operations,
+            owner_storage_role=owner_storage_role,
+            operation_roles=tuple(
+                (operation, f"{owner_path}:default-operation:{operation.value}") for operation in policy.operations
+            ),
         )
 
     def _native_descriptor_handoff_plan(
@@ -1559,6 +1623,8 @@ class WrapperPlanner(ClassVisitor):
             order=policy.order,
             native_order=policy.native_order,
             contiguous=policy.contiguous,
+            flatten_python_storage=policy.flatten_python_storage,
+            flat_axis=policy.flat_axis,
             itemsize=policy.itemsize,
             category=policy.category,
             data_role=self._value_role(owner_path),

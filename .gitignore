@@ -10,6 +10,7 @@ mutants/
 .ruff_cache/
 .benchmarks/
 htmlcov/
+site/
 
 *.pyc
 *.pyo

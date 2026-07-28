@@ -4,6 +4,7 @@ audience: maintainers
 prerequisites: parser architecture
 related: code-generation.md, ../../user/reference/semantic-ir.md
 status: planned-documentation
+publication: draft
 ---
 
 # Semantic Analysis

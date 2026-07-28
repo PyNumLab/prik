@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Allocatable, Arg, Float64, Int32, Return, Returns, String, native_call
+from x2py.contracts import Addr, Allocatable, Arg, Float64, Int32, Return, String, native_call
 
 class output_point:
     def __init__(
@@ -20,14 +20,14 @@ def scalar_status(
 def fill_vector(
     n: Int32,
     values: Float64[n]
-) -> Returns["values", Float64[n]]: ...
+) -> None: ...
 
 @native_call([Addr(Arg(0)), Addr(Arg(1)), Arg(2)])
 def fill_matrix(
     n: Int32,
     m: Int32,
     values: Float64[n, m]
-) -> Returns["values", Float64[n, m]]: ...
+) -> None: ...
 
 @native_call([Addr(Arg(0)), Return('values', 0)])
 def build_alloc(
@@ -39,11 +39,11 @@ def with_scalar(
     n: Int32
 ) -> tuple[Int32, Int32]: ...
 
-@native_call([Addr(Arg(0)), Arg(1), Return('status', 2), Return('built', 3)])
+@native_call([Addr(Arg(0)), Arg(1), Return('status', 1), Return('built', 2)])
 def mixed_outputs(
     n: Int32,
     values: Float64[n]
-) -> tuple[Float64, Returns["values", Float64[n]], Int32, Allocatable[Float64[:]]]: ...
+) -> tuple[Float64, Int32, Allocatable[Float64[:]]]: ...
 
 def increment(
     values: Float64[::]
@@ -57,7 +57,8 @@ def increment_with_status(
 @native_call([Return('label', 0)])
 def make_label() -> String[8]: ...
 
-@native_call([Addr(Arg(0)), Return('point', 0)])
+@native_call([Addr(Arg(0)), Arg(1)])
 def make_point(
-    scale: Int32
-) -> output_point: ...
+    scale: Int32,
+    point: output_point
+) -> None: ...

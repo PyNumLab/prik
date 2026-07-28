@@ -23,7 +23,8 @@ from x2py.parsers.fortran.models import (
     FortranVariable,
 )
 from x2py.semantics.ownership import set_ownership_metadata
-from x2py.semantics.metadata import PROJECTED_OUTPUT_METADATA, SCALAR_STORAGE_CATEGORY
+from x2py.semantics.metadata import BIND_TARGET_METADATA, PROJECTED_OUTPUT_METADATA, SCALAR_STORAGE_CATEGORY
+from x2py.types.numpy import SEMANTIC_SCALAR_TYPE_NAMES
 from x2py.utilities.visitor import ClassVisitor
 
 from .models import (
@@ -1455,6 +1456,8 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _apply_pointer_result_policy(semantic_type: SemanticType) -> None:
+        if semantic_type.rank > 0:
+            return
         set_ownership_metadata(
             semantic_type.metadata,
             owner="python",
@@ -1568,7 +1571,13 @@ class FortranToIRConverter(ClassVisitor):
                         f"Fortran semantic conversion cannot represent generic constructor "
                         f"{module.name}.{interface.name!s}; constructor projection is not implemented"
                     )
-                overload_sets.append(self._normal_overload_set(interface.name, procedures))
+                overload_set = self._normal_overload_set(interface.name, procedures)
+                target_lookup = procedure_lookup | inline_lookup
+                for target_name, candidate in zip(target_names, overload_set.procedures, strict=True):
+                    if target_lookup[target_name.casefold()].visibility == "private":
+                        candidate.native_name = interface.name
+                        candidate.metadata[BIND_TARGET_METADATA] = interface.name
+                overload_sets.append(overload_set)
                 continue
             defined_sets = self._defined_overload_sets(
                 interface.name,
@@ -1601,7 +1610,12 @@ class FortranToIRConverter(ClassVisitor):
                     overload_sets.append(ProcedureOverloadSet(name))
                 continue
             if self._is_procedure_generic_name(name):
-                overload_sets.append(self._normal_overload_set(name, procedures))
+                overload_set = self._normal_overload_set(name, procedures)
+                for target_name, candidate in zip(binding.get("targets", ()), overload_set.procedures, strict=True):
+                    if lookup[target_name.casefold()].visibility == "private":
+                        candidate.native_name = name
+                        candidate.metadata[BIND_TARGET_METADATA] = name
+                overload_sets.append(overload_set)
                 continue
             placeholder = SemanticClass(dtype.name)
             defined_sets = self._defined_overload_sets(
@@ -1973,15 +1987,23 @@ class FortranToIRConverter(ClassVisitor):
         *,
         is_output: bool,
         semantic_type: SemanticType | None,
+        is_primitive_scalar_replacement: bool,
         is_allocatable_replacement: bool,
         is_character_replacement: bool,
         is_descriptor_replacement: bool,
     ) -> bool:
-        if is_allocatable_replacement or is_character_replacement or is_descriptor_replacement:
+        if (
+            is_primitive_scalar_replacement
+            or is_allocatable_replacement
+            or is_character_replacement
+            or is_descriptor_replacement
+        ):
             return True
         if not is_output or semantic_type is None:
             return False
-        return FortranToIRConverter._is_scalar_copy_return(semantic_type) or semantic_type.rank > 0
+        return FortranToIRConverter._is_python_value_scalar_output(
+            semantic_type
+        ) or FortranToIRConverter._is_native_descriptor_output(semantic_type)
 
     @staticmethod
     def _is_hidden_output_argument(
@@ -1993,8 +2015,8 @@ class FortranToIRConverter(ClassVisitor):
         if not is_output or getattr(native_arg, "optional", False):
             return False
         return (
-            FortranToIRConverter._is_scalar_copy_return(semantic_type)
-            or FortranToIRConverter._is_allocatable_array(semantic_type)
+            FortranToIRConverter._is_python_value_scalar_output(semantic_type)
+            or FortranToIRConverter._is_native_descriptor_output(semantic_type)
             or FortranToIRConverter._is_scalar_descriptor(semantic_type)
         )
 
@@ -2012,18 +2034,19 @@ class FortranToIRConverter(ClassVisitor):
             arg = by_name[native_arg.name]
             reads_argument, writes_argument = FortranToIRConverter._argument_access(native_arg, arg.semantic_type)
             is_output = writes_argument and not reads_argument
-            is_allocatable_replacement = (
-                reads_argument and writes_argument and FortranToIRConverter._is_allocatable_array(arg.semantic_type)
+            is_replacement = reads_argument and writes_argument
+            is_allocatable_replacement = is_replacement and FortranToIRConverter._is_allocatable_array(
+                arg.semantic_type
             )
-            is_character_replacement = (
-                reads_argument and writes_argument and FortranToIRConverter._is_scalar_character(arg.semantic_type)
-            )
-            is_descriptor_replacement = (
-                reads_argument and writes_argument and FortranToIRConverter._is_scalar_descriptor(arg.semantic_type)
+            is_character_replacement = is_replacement and FortranToIRConverter._is_scalar_character(arg.semantic_type)
+            is_descriptor_replacement = is_replacement and FortranToIRConverter._is_scalar_descriptor(arg.semantic_type)
+            is_primitive_scalar_replacement = is_replacement and FortranToIRConverter._is_primitive_scalar_replacement(
+                arg.semantic_type
             )
             is_returned_output = FortranToIRConverter._is_returned_output_argument(
                 is_output=is_output,
                 semantic_type=arg.semantic_type,
+                is_primitive_scalar_replacement=is_primitive_scalar_replacement,
                 is_allocatable_replacement=is_allocatable_replacement,
                 is_character_replacement=is_character_replacement,
                 is_descriptor_replacement=is_descriptor_replacement,
@@ -2075,11 +2098,31 @@ class FortranToIRConverter(ClassVisitor):
         )
 
     @staticmethod
+    def _is_native_descriptor_output(semantic_type: SemanticType | None) -> bool:
+        if semantic_type is None:
+            return False
+        if FortranToIRConverter._is_scalar_descriptor(semantic_type):
+            return True
+        storage = semantic_type.storage
+        array = storage.array if storage is not None else None
+        return bool(array is not None and (array.allocatable or array.pointer))
+
+    @staticmethod
     def _is_scalar_descriptor(semantic_type: SemanticType | None) -> bool:
         return bool(
             semantic_type is not None
             and semantic_type.rank == 0
             and (semantic_type.metadata.get("fortran_allocatable") or semantic_type.metadata.get("fortran_pointer"))
+        )
+
+    @staticmethod
+    def _is_primitive_scalar_replacement(semantic_type: SemanticType | None) -> bool:
+        return bool(
+            semantic_type is not None
+            and semantic_type.rank == 0
+            and semantic_type.name != "String"
+            and semantic_type.name in SEMANTIC_SCALAR_TYPE_NAMES
+            and not FortranToIRConverter._is_scalar_descriptor(semantic_type)
         )
 
     @staticmethod
@@ -2115,8 +2158,13 @@ class FortranToIRConverter(ClassVisitor):
         raise ValueError(f"Scalar descriptor {name!r} has no Python argument or result projection")
 
     @staticmethod
-    def _is_scalar_copy_return(semantic_type: SemanticType | None) -> bool:
-        return bool(semantic_type is not None and semantic_type.rank == 0)
+    def _is_python_value_scalar_output(semantic_type: SemanticType | None) -> bool:
+        return bool(
+            semantic_type is not None
+            and semantic_type.rank == 0
+            and not FortranToIRConverter._is_scalar_descriptor(semantic_type)
+            and (semantic_type.name == "String" or semantic_type.name in SEMANTIC_SCALAR_TYPE_NAMES)
+        )
 
     @staticmethod
     def _is_scalar_character(semantic_type: SemanticType | None) -> bool:

@@ -4,6 +4,7 @@ audience: maintainers
 prerequisites: semantic passes, code generation design
 related: runtime-layer.md, ownership-tracking.md, ../roadmap/wrapper-plan-migration-checklist.md
 status: maintained
+publication: draft
 ---
 
 # Wrapper Generation Pipeline

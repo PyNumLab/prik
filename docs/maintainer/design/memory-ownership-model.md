@@ -4,6 +4,7 @@ audience: maintainers
 prerequisites: runtime model
 related: ../../user/guide/memory-management.md, error-propagation-model.md
 status: planned-documentation
+publication: draft
 ---
 
 # Memory Ownership Model

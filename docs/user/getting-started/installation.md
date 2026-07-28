@@ -1,67 +1,54 @@
 ---
 title: Installation
+description: Install x2py from source and set up the native GNU toolchain
 audience: users, contributors
 prerequisites: Python 3.10 or newer, repository checkout
-related: verification.md, ../troubleshooting/installation-issues.md, ../../developer/quality-assurance.md
+related: verification.md
 status: maintained
+publication: reviewed
 ---
 
 # Installation
 
-x2py is currently installed from a source checkout. A runtime wrapper build
-needs both the Python package and a native GNU toolchain.
+x2py is currently installed from a local source checkout. Building Python
+extensions also requires GNU Fortran and standard build tools.
+
+---
 
 ## Supported Python Versions
 
-The package metadata requires Python 3.10 or newer. GitHub Actions currently
-tests Python 3.10, 3.11, and 3.12 on Ubuntu 24.04. A newer Python may satisfy
-the package constraint but is not part of the current CI matrix.
+x2py requires **Python 3.10 or newer**.  
+The project is regularly tested on Python 3.10, 3.11, and 3.12.
 
-Check the interpreter before creating the environment:
+Check your Python version first:
 
 ```bash
 python3 --version
 ```
 
+---
+
 ## Native Prerequisites
 
-Install these before attempting a wrapper build:
+Install these packages before building wrappers:
 
-- GNU Fortran (`gfortran`) for preprocessing, type probes, and native builds;
-- Python development headers matching the active interpreter;
-- NumPy, whose installed package supplies the required development files;
-- a native linker supplied by the compiler toolchain.
+- `gfortran` (GNU Fortran compiler)
+- `python3-dev` (Python development headers)
+- NumPy (includes required development files)
+- `build-essential` (linker and build tools)
 
-<!-- X2PY_C_DOCS_START
-- GNU C (`gcc`) for the generated CPython binding;
-- NumPy, whose Python package supplies the required C headers; and
-X2PY_C_DOCS_END -->
-
-GNU Make is optional. Direct builds do not require it. The generated Makefile
-workflow is an advanced build mode that expects GNU Make and a POSIX-style
-shell.
-
-On Ubuntu or Debian, the prerequisite packages normally come from:
+On **Ubuntu / Debian**:
 
 ```bash
 sudo apt-get update
 sudo apt-get install build-essential gfortran python3-dev
 ```
 
-<!-- X2PY_C_DOCS_START
-```bash
-sudo apt-get update
-sudo apt-get install gcc gfortran python3-dev
-```
-X2PY_C_DOCS_END -->
-
-The checked CI target uses Ubuntu 24.04 and `gfortran-13`. Package names and
-compiler locations differ on other Linux distributions.
+---
 
 ## User Installation
 
-Create an isolated environment from the repository root and install the
-checkout in editable mode:
+From the root of the cloned repository, run:
 
 ```bash
 python3 -m venv .venv
@@ -70,65 +57,31 @@ python3 -m pip install --upgrade pip
 python3 -m pip install -e .
 ```
 
-The installation pulls the runtime Python dependencies declared by the
-project, including NumPy, `filelock`, and `immutabledict`.
+This installs x2py in editable mode along with its runtime dependencies (including NumPy).
+
+---
 
 ## Contributor Installation
 
-Contributors should install the optional QA dependencies as well:
+If you are contributing code or running tests, also install the QA tools:
 
 ```bash
 python3 -m pip install -e ".[qa]"
 ```
 
-The `qa` extra includes pytest, coverage, Hypothesis, Ruff, Bandit, Vulture,
-and Radon. These tools are not required merely to import x2py or build a wrapper.
+---
 
-## Header And Compiler Checks
+## Platform Support
 
-Verify that the active environment can locate its development headers:
+| Platform           | Current Status                          |
+|--------------------|-----------------------------------------|
+| Ubuntu Linux       | CI-verified (Ubuntu 24.04 + gfortran-13) |
+| Other Linux        | Expected to work with GNU tools         |
+| macOS              | Not yet in CI matrix                    |
+| Windows            | Not yet supported                       |
 
-```bash
-python3 -c "import sysconfig; print(sysconfig.get_path('include'))"
-python3 -c "import numpy; print(numpy.get_include())"
-```
+---
 
-Verify the compiler executables independently:
+## Next
 
-```bash
-gfortran --version
-```
-
-<!-- X2PY_C_DOCS_START
-```bash
-gfortran &#45;&#45;version
-gcc &#45;&#45;version
-```
-X2PY_C_DOCS_END -->
-
-Continue with the Verification page only after these commands succeed and the
-printed header directories exist.
-
-## Platform Caveats
-
-| Platform | Current status |
-| --- | --- |
-| Ubuntu Linux | CI-verified with Ubuntu 24.04, Python 3.10-3.12, and `gfortran-13`. |
-| Other Linux distributions | Expected to require equivalent GNU compilers and development headers; package names and ABI details are not CI-verified. |
-| macOS | Not in the current wrapper CI matrix. Compiler discovery, extension suffixes, linker flags, and runtime library paths need platform validation. |
-| Windows | Not in the current wrapper CI matrix. The direct GNU/POSIX build assumptions and generated Makefile workflow are not established as supported. |
-
-Do not interpret successful contract-generation or diagnostic commands as proof
-that the native wrapper toolchain works on an unverified platform.
-
-## Evidence And Troubleshooting
-
-Dependency and version declarations live in
-[`pyproject.toml`](../../../pyproject.toml). The current CI environment is defined
-in [`.github/workflows/quality.yml`](../../../.github/workflows/quality.yml), and
-the compiler/header configuration is exercised by
-[`test_runtime_abi.py`](../../../tests/wrapper/fortran/build_from_source/test_runtime_abi.py).
-
-For missing packages, headers, or virtual-environment problems, the later
-Installation Issues page provides focused checks. Compiler discovery and
-linking problems are covered later under Compiler Issues.
+- Go to [Verification](verification.md) to check the installation and compiler.

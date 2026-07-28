@@ -58,3 +58,14 @@ def zero_alloc_vector() -> Allocatable[Float64[:]]: ...
 def maybe_alloc_vector(
     n: Int32
 ) -> Allocatable[Float64[:]]: ...
+
+@native_call([Addr(Arg(0))])
+def zero_alloc_matrix(
+    cols: Int32
+) -> Allocatable[Float64[:, :]]: ...
+
+@native_call([Addr(Arg(0)), Addr(Arg(1))])
+def maybe_alloc_matrix(
+    rows: Int32,
+    cols: Int32
+) -> Allocatable[Float64[:, :]]: ...

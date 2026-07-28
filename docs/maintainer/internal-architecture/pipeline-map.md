@@ -4,13 +4,14 @@ audience: maintainers
 prerequisites: source map, overall architecture
 related: ../../developer/source-map.md, wrapper-generation-pipeline.md, runtime-layer.md
 status: maintained
+publication: draft
 ---
 
 # Pipeline Map
 
 This page is the source-code route through the current wrapper and inspection
 pipelines. It complements the user-facing wrapper mechanism in
-`docs/user/guide/fortran-wrapper.md` with the implementation files a maintainer should
+`docs/user/reference/fortran-wrapper.md` with the implementation files a maintainer should
 open at each stage.
 
 ## Source-Driven Fortran Wrapper Pipeline
@@ -157,7 +158,7 @@ X2PY_C_DOCS_END -->
 | Source loading and preprocessing | `x2py/pipeline/preprocessing.py` | `docs/developer/source-map.md`, parser references |
 | Editable semantic contracts | `x2py/parsers/pyi/parser.py`, `x2py/pipeline/pyi.py`, `x2py/semantics/pyi2ir.py`, `x2py/wrapper_codegen/printers/pyi_printer.py` | `docs/user/reference/semantic-pyi-format.md` |
 | Semantic and wrapper-planning errors | `x2py/semantics/fortran2ir.py`, `x2py/semantics/policy_completion.py`, `x2py/semantics/wrapper_policy.py`, `x2py/wrapper_codegen/planner.py` | `docs/user/guide/error-handling.md` |
-| Wrapper policy and lowering | `x2py/semantics/policy_completion.py`, `x2py/semantics/ownership.py`, `x2py/wrapper_codegen/planner.py`, `x2py/wrapper_codegen/generator.py` | `docs/user/guide/fortran-wrapper.md`, ownership docs |
+| Wrapper policy and lowering | `x2py/semantics/policy_completion.py`, `x2py/semantics/ownership.py`, `x2py/wrapper_codegen/planner.py`, `x2py/wrapper_codegen/generator.py` | `docs/user/reference/fortran-wrapper.md`, ownership docs |
 | Native build | `x2py/pipeline/build.py`, `x2py/compiling/compilers.py`, `x2py/compiling/native_support.py` | compiling package README and build-system docs |
 
 <!-- X2PY_C_DOCS_START

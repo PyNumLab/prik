@@ -94,6 +94,16 @@ contains
     value = 43
   end subroutine make_raw
 
+  function direct_storage_result() result(value)
+    integer(c_int32_t) :: value
+    value = 44
+  end function direct_storage_result
+
+  subroutine hidden_storage_result(value)
+    integer(c_int32_t), intent(out) :: value
+    value = 45
+  end subroutine hidden_storage_result
+
   subroutine mapped_status(status, base)
     integer(c_int32_t), intent(out) :: status
     integer(c_int32_t), intent(in) :: base
@@ -124,6 +134,11 @@ def make_value() -> Int32: ...
 def make_storage(value: Int32[()]) -> None: ...
 
 def make_raw(value: Addr(Int32)) -> None: ...
+
+def direct_storage_result() -> Int32[()]: ...
+
+@native_call([Return("value", 0)])
+def hidden_storage_result() -> Int32[()]: ...
 
 @native_call([Return("status", 0), Addr(Arg(0))])
 def mapped_status(base: Int32) -> Int32: ...
@@ -349,6 +364,18 @@ def test_scalar_value_storage_raw_address_out_and_inout_use_canonical_plan(tmp_p
         output_raw = np.empty((), dtype=np.int32)
         assert module.make_raw(output_raw.ctypes.data) is None
         assert output_raw[()] == np.int32(43)
+
+        direct_storage = module.direct_storage_result()
+        assert isinstance(direct_storage, np.ndarray)
+        assert direct_storage.shape == ()
+        assert direct_storage.dtype == np.dtype(np.int32)
+        assert direct_storage[()] == np.int32(44)
+
+        hidden_storage = module.hidden_storage_result()
+        assert isinstance(hidden_storage, np.ndarray)
+        assert hidden_storage.shape == ()
+        assert hidden_storage.dtype == np.dtype(np.int32)
+        assert hidden_storage[()] == np.int32(45)
 
         assert module.mapped_status(np.int32(4)) == np.int32(15)
 

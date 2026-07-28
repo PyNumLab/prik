@@ -21,6 +21,177 @@
 #endif
 #include <numpy/arrayobject.h>
 
+#define X2PY_NATIVE_ARRAY_HANDLE_ABI_VERSION 1u
+#define X2PY_NATIVE_ARRAY_HANDLE_CAPSULE_NAME "x2py.native_array_handle.v1"
+#define X2PY_NATIVE_ARRAY_HANDLE_MAGIC UINT64_C(0x583250594e414831)
+#define X2PY_NATIVE_ARRAY_KIND_ALLOCATABLE 1u
+#define X2PY_NATIVE_ARRAY_KIND_POINTER 2u
+
+typedef void (*x2py_native_array_release_fn)(void *descriptor);
+
+/*
+ * Versioned cross-extension record for one persistent Fortran array
+ * descriptor. The descriptor representation remains compiler-owned; this
+ * record only makes its metadata, ownership, and validation ABI common to
+ * independently generated x2py extensions.
+ */
+typedef struct {
+    uint64_t magic;
+    uint32_t abi_version;
+    uint32_t struct_size;
+    uint32_t descriptor_kind;
+    uint32_t rank;
+    int32_t cfi_type;
+    uint32_t reserved;
+    size_t element_size;
+    size_t descriptor_size;
+    void *descriptor;
+    x2py_native_array_release_fn release;
+} x2py_native_array_handle;
+
+/* Release descriptor payload and storage at most once while retaining the record. */
+static inline void x2py_native_array_handle_release(x2py_native_array_handle *handle)
+{
+    void *descriptor;
+
+    if (handle == NULL || handle->descriptor == NULL) {
+        return;
+    }
+    descriptor = handle->descriptor;
+    handle->descriptor = NULL;
+    if (handle->release != NULL) {
+        handle->release(descriptor);
+    }
+    free(descriptor);
+}
+
+/* Finalize one native handle record owned by a Python capsule. */
+static inline void x2py_native_array_handle_capsule_destructor(PyObject *capsule)
+{
+    PyObject *error_type = NULL;
+    PyObject *error_value = NULL;
+    PyObject *error_traceback = NULL;
+    x2py_native_array_handle *handle;
+
+    PyErr_Fetch(&error_type, &error_value, &error_traceback);
+    handle = (x2py_native_array_handle *)PyCapsule_GetPointer(
+        capsule, X2PY_NATIVE_ARRAY_HANDLE_CAPSULE_NAME);
+    if (handle == NULL) {
+        PyErr_Clear();
+    } else {
+        x2py_native_array_handle_release(handle);
+        handle->magic = 0;
+        free(handle);
+    }
+    PyErr_Restore(error_type, error_value, error_traceback);
+}
+
+/*
+ * Create a capsule that takes descriptor ownership only on success. The
+ * caller remains responsible for descriptor cleanup when this function
+ * returns NULL.
+ */
+static inline PyObject *x2py_native_array_handle_capsule_new(
+    uint32_t descriptor_kind,
+    uint32_t rank,
+    int cfi_type,
+    size_t element_size,
+    size_t descriptor_size,
+    void *descriptor,
+    x2py_native_array_release_fn release)
+{
+    x2py_native_array_handle *handle;
+    PyObject *capsule;
+
+    if (descriptor_kind != X2PY_NATIVE_ARRAY_KIND_ALLOCATABLE
+        && descriptor_kind != X2PY_NATIVE_ARRAY_KIND_POINTER) {
+        PyErr_SetString(PyExc_ValueError, "invalid x2py native array descriptor kind");
+        return NULL;
+    }
+    if (descriptor == NULL || descriptor_size == 0 || element_size == 0 || release == NULL) {
+        PyErr_SetString(PyExc_ValueError, "incomplete x2py native array handle storage");
+        return NULL;
+    }
+    handle = (x2py_native_array_handle *)calloc(1, sizeof(*handle));
+    if (handle == NULL) {
+        PyErr_NoMemory();
+        return NULL;
+    }
+    handle->magic = X2PY_NATIVE_ARRAY_HANDLE_MAGIC;
+    handle->abi_version = X2PY_NATIVE_ARRAY_HANDLE_ABI_VERSION;
+    handle->struct_size = (uint32_t)sizeof(*handle);
+    handle->descriptor_kind = descriptor_kind;
+    handle->rank = rank;
+    handle->cfi_type = (int32_t)cfi_type;
+    handle->element_size = element_size;
+    handle->descriptor_size = descriptor_size;
+    handle->descriptor = descriptor;
+    handle->release = release;
+    capsule = PyCapsule_New(
+        handle,
+        X2PY_NATIVE_ARRAY_HANDLE_CAPSULE_NAME,
+        x2py_native_array_handle_capsule_destructor);
+    if (capsule == NULL) {
+        handle->descriptor = NULL;
+        handle->magic = 0;
+        free(handle);
+    }
+    return capsule;
+}
+
+/* Validate and unwrap one cross-extension native array handle capsule. */
+static inline x2py_native_array_handle *x2py_native_array_handle_from_capsule(
+    PyObject *capsule,
+    uint32_t expected_kind,
+    uint32_t expected_rank,
+    int expected_cfi_type,
+    size_t expected_element_size,
+    size_t expected_descriptor_size)
+{
+    x2py_native_array_handle *handle;
+
+    if (!PyCapsule_IsValid(capsule, X2PY_NATIVE_ARRAY_HANDLE_CAPSULE_NAME)) {
+        PyErr_SetString(PyExc_TypeError, "incompatible x2py native array handle capsule");
+        return NULL;
+    }
+    handle = (x2py_native_array_handle *)PyCapsule_GetPointer(
+        capsule, X2PY_NATIVE_ARRAY_HANDLE_CAPSULE_NAME);
+    if (handle == NULL) {
+        return NULL;
+    }
+    if (handle->magic != X2PY_NATIVE_ARRAY_HANDLE_MAGIC
+        || handle->abi_version != X2PY_NATIVE_ARRAY_HANDLE_ABI_VERSION
+        || handle->struct_size != sizeof(*handle)) {
+        PyErr_SetString(PyExc_TypeError, "incompatible x2py native array handle ABI");
+        return NULL;
+    }
+    if (handle->descriptor_kind != expected_kind) {
+        PyErr_SetString(PyExc_TypeError, "x2py native array descriptor kind does not match");
+        return NULL;
+    }
+    if (handle->rank != expected_rank) {
+        PyErr_SetString(PyExc_ValueError, "x2py native array descriptor rank does not match");
+        return NULL;
+    }
+    if (handle->cfi_type != expected_cfi_type) {
+        PyErr_SetString(PyExc_TypeError, "x2py native array element type does not match");
+        return NULL;
+    }
+    if (expected_element_size != 0 && handle->element_size != expected_element_size) {
+        PyErr_SetString(PyExc_TypeError, "x2py native array element size does not match");
+        return NULL;
+    }
+    if (handle->descriptor_size != expected_descriptor_size) {
+        PyErr_SetString(PyExc_TypeError, "incompatible Fortran descriptor storage size");
+        return NULL;
+    }
+    if (handle->descriptor == NULL) {
+        PyErr_SetString(PyExc_ReferenceError, "x2py native array handle is closed");
+        return NULL;
+    }
+    return handle;
+}
+
 /* Return whether value is exactly the NumPy scalar required by numpy_type. */
 static inline bool x2py_scalar_matches(PyObject *value, int numpy_type)
 {

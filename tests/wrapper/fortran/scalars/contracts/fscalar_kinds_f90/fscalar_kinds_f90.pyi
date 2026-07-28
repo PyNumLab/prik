@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Arg, Bool, Complex128, Complex64, Float32, Float64, Int16, Int32, Int64, Int8, Returns, native_call
+from x2py.contracts import Addr, Arg, Bool, Complex128, Complex64, Float32, Float64, Int16, Int32, Int64, Int8, native_call
 
 @native_call([Addr(Arg(0))])
 def id_i8(
@@ -25,7 +25,7 @@ def copy_i16(
     n: Int32,
     values: Int16[n],
     out: Int16[n]
-) -> Returns["out", Int16[n]]: ...
+) -> None: ...
 
 @native_call([Addr(Arg(0))])
 def not_flag(
@@ -37,7 +37,7 @@ def invert_flags(
     n: Int32,
     values: Bool[n],
     out: Bool[n]
-) -> Returns["out", Bool[n]]: ...
+) -> None: ...
 
 @native_call([Addr(Arg(0))])
 def id_r32(
@@ -54,7 +54,7 @@ def copy_r64(
     n: Int32,
     values: Float64[n],
     out: Float64[n]
-) -> Returns["out", Float64[n]]: ...
+) -> None: ...
 
 @native_call([Addr(Arg(0))])
 def conj_c64(
@@ -71,7 +71,7 @@ def copy_c128(
     n: Int32,
     values: Complex128[n],
     out: Complex128[n]
-) -> Returns["out", Complex128[n]]: ...
+) -> None: ...
 
 @native_call([Addr(Arg(0))])
 def id_c_i32(

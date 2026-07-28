@@ -4,6 +4,7 @@ audience: advanced users
 prerequisites: runtime troubleshooting, platform-specific troubleshooting
 related: mpi-example.md, ../guide/error-handling.md
 status: planned-documentation
+publication: draft
 ---
 
 # OpenMP Example

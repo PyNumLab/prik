@@ -4,6 +4,7 @@ audience: users, packagers
 prerequisites: installation, compiler issues
 related: installation-issues.md, build-issues.md
 status: planned-documentation
+publication: draft
 ---
 
 # Platform-Specific Issues

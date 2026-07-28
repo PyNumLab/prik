@@ -1,19 +1,21 @@
 ---
 title: Optional Arguments
+description: How x2py handles Fortran `optional` arguments — inputs, outputs, arrays, and None behavior
 audience: users
 prerequisites: wrapping subroutines, data types
 related: generic-interfaces.md, arrays.md, error-handling.md
 status: maintained
+publication: reviewed
 ---
 
 # Optional Arguments
 
-Supported optional scalars, arrays, strings, derived types, outputs, and inout
-arguments preserve native `present(...)` behavior. The generated Python
-signature places required parameters before optional parameters without
-changing native argument positions.
+x2py supports optional scalars, arrays, strings, derived types, and outputs.
+It preserves native `present(...)` semantics.
 
-## Complete Optional Example
+---
+
+## Complete Example
 
 Create `optional.f90`:
 
@@ -21,6 +23,7 @@ Create `optional.f90`:
 module adjustments
   implicit none
 contains
+
   integer(4) function adjust(value, offset) result(output)
     integer(4), intent(in) :: value
     integer(4), intent(in), optional :: offset
@@ -28,19 +31,22 @@ contains
     output = value
     if (present(offset)) output = output + offset
   end function adjust
+
+  subroutine make_values(size, count, values)
+    integer(4), intent(in) :: size
+    integer(4), intent(out) :: count
+    real(8), intent(out), optional :: values(size)
+    integer(4) :: index
+
+    count = size
+    if (present(values)) then
+      do index = 1, size
+        values(index) = real(index, 8)
+      end do
+    end if
+  end subroutine make_values
+
 end module adjustments
-```
-
-Inspecting `optional.f90` prints this optional-input contract:
-
-```python
-from x2py.contracts import Addr, Arg, Int32, native_call
-
-@native_call([Addr(Arg(0)), Addr(Arg(1))])
-def adjust(
-    value: Int32,
-    offset: Int32 = ...
-) -> Int32: ...
 ```
 
 Build it:
@@ -49,76 +55,107 @@ Build it:
 python3 -m x2py optional.f90 --out-dir build/optional
 ```
 
-Omission and explicit `None` both make `offset` absent:
+---
+
+## Usage in Python
 
 ```python
 import sys
-
 import numpy as np
 
 sys.path.insert(0, "build/optional")
-import optional
+from optional.adjustments import adjust, make_values
 
-api = optional.adjustments
-assert api.adjust(np.int32(5)) == np.int32(5)
-assert api.adjust(np.int32(5), None) == np.int32(5)
-assert api.adjust(np.int32(5), offset=np.int32(3)) == np.int32(8)
+print(adjust(np.int32(5)))                         # 5 (omitted)
+print(adjust(np.int32(5), None))                   # 5 (explicit None)
+print(adjust(np.int32(5), np.int32(3)))            # 8 (provided)
+print(adjust(np.int32(5), offset=np.int32(10)))    # 15 (keyword)
 ```
 
-## Omission And `None`
+---
 
-For a Python-visible optional input, omission and explicit `None` both mean the
-native actual argument is absent. The `adjust` calls above show omission,
-explicit `None`, and a concrete keyword value.
+## Key Rules
 
-A concrete value means the native argument is present. Use keywords when skipping
-an earlier optional argument; do not depend on native declaration order after
-required and optional Python parameters have been normalized.
+- For ordinary optional inputs, **omission** and `None` both mean the argument
+  is **not present** to Fortran.
+- Providing a concrete value makes the argument **present**.
+- Use **keyword arguments** when skipping earlier optional parameters.
+- Optional arrays and derived types also accept `None` to indicate absence.
+- Optional `intent(out)` / `intent(inout)` arguments remain visible in Python
+  so you can control `present(...)`.
+- An optional argument without `intent` uses the same conservative
+  `intent(inout)` behavior when present.
 
-## Optional Arrays And Objects
+### Scalar Allocatables And Pointers
 
-An optional array still requires exact dtype, rank, shape, layout, alignment,
-and writeability when supplied. `None` means no native argument; it does not
-mean a zero-sized array. An optional derived-type argument accepts `None` or an
-instance of the required generated class.
+For an optional scalar allocatable or pointer, omission and `None` have
+different meanings:
 
-## Optional Native Outputs
+| Python call | What Fortran receives |
+| --- | --- |
+| `func()` | The argument is absent: `present(value)` is false. |
+| `func(None)` | The argument is present but unallocated or unassociated. |
+| `func(value)` | The argument is present with `value`. |
 
-Optional `intent(out)` and `intent(inout)` dummies stay Python-visible so the
-caller controls native `present(...)`:
+This is the only scalar optional case where explicit `None` does not mean
+absence. The scalar crosses the call as a value, not as a persistent handle.
 
-- a supplied optional scalar output uses mutable rank-zero storage such as
-  `Int32[()]`, mutates that storage, and returns it when projected;
-- a supplied optional output array is mutated and returned as documented;
-- an absent optional output contributes `None` to its result position;
-- an optional inout argument mutates normally when supplied and does nothing
-  when absent; and
-- a hidden `Return(...)` output is not caller-optional because the wrapper
-  requests it with generated temporary storage on every call.
+---
 
-Always review the generated return annotation when optional outputs are mixed
-with required outputs.
+## Optional Outputs
 
-## Defaults
+An optional ordinary output remains visible in the Python call. This lets the
+caller decide whether the native routine receives it.
 
-The generated Python default is normally `None`, meaning native absence. x2py
-does not invent a native default value from a Python literal unless the semantic
-contract explicitly defines that behavior. A native procedure remains
-responsible for its own `present(...)` branch.
+Pass writable storage to make `values` present:
 
-## Unsupported Combinations
+```python
+values = np.empty(3, dtype=np.float64)
+count = make_values(np.int32(3), values)
 
-Optional passed procedures, procedure pointers, and combinations without a
-complete native presence and ownership contract make wrapper planning fail. x2py
-does not convert an unsupported optional form into an always-present argument
-or silently drop it.
+print(count)   # 3
+print(values)  # [1. 2. 3.]
+```
 
-## Evidence And Troubleshooting
+Omit the argument, or pass `None`, to make it absent:
 
-Optional scalar, array, string, derived, output, and inout behavior is exercised
-by
-[`test_optional_arguments.py`](../../../tests/wrapper/fortran/function_calls/test_optional_arguments.py).
+```python
+omitted_count = make_values(np.int32(3))
+none_count = make_values(np.int32(3), None)
 
-Use [Wrapping Subroutines](wrapping-subroutines.md) for result projection and
-the later Error Handling page when an unsupported optional combination stops at
-wrapper planning.
+print(omitted_count)  # 3
+print(none_count)     # 3
+```
+
+`count` is a required scalar output, so it is always returned. `values` is
+caller-owned mutable storage, so it is never added to the result.
+
+For optional ordinary array outputs:
+
+- Supplying writable storage mutates that array in place.
+- Passing `None` or omitting it makes the native dummy absent.
+- Presence does not add an array-or-`None` position to the result.
+- A routine with only optional ordinary array outputs returns `None`, whether
+  those arrays are present or absent.
+
+Optional scalar derived-type outputs follow the same in-place rule as arrays.
+For an optional scalar allocatable or pointer output, omit the argument to make
+it absent. Pass `None` to make it present without an initial allocation or
+association. If its updated value is returned, Python receives a scalar or
+`None`, not a handle.
+
+---
+
+## Limitations
+
+- Optional procedure pointers and passed procedures are not yet supported.
+- x2py does not invent default values. The Fortran procedure handles missing
+  arguments.
+
+---
+
+## Next
+
+- Continue with [Generic Interfaces](generic-interfaces.md).
+- For optional outputs and memory, see [Error Handling](error-handling.md) and
+  [Memory Management](memory-management.md).

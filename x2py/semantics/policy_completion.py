@@ -24,6 +24,7 @@ from x2py.semantics.metadata import (
     ADDRESS_ROLE_PROJECTION,
     ADDRESS_ROLE_RAW,
     BIND_TARGET_METADATA,
+    MAYBE_UNALLOCATED_METADATA,
     OPTIONAL_ABSENT_HANDLE_METADATA,
     PROJECTED_OUTPUT_METADATA,
     SCALAR_STORAGE_CATEGORY,
@@ -164,7 +165,6 @@ def _complete_ownership_policies(
         derived_types,
         strict_wrapper_names=strict_wrapper_names,
     )
-    class_targets = _class_root_target_names(module.classes)
     polymorphic_variants = _polymorphic_variant_map(module.classes)
     _complete_class_method_policies(
         module.classes,
@@ -182,30 +182,20 @@ def _complete_ownership_policies(
         )
     for function in module.functions:
         function_scope = str(function.origin.native_scope or module.name)
-        native_name = str(function.native_name or function.name)
         _complete_function(
             function,
             f"{function_scope}.{function.name}",
             derived_types=derived_types,
-            module_export=native_name not in class_targets,
+            module_export=True,
             polymorphic_variants=polymorphic_variants,
         )
     for overload_set in module.overload_sets:
-        native_dispatch_name = next(
-            (
-                str(procedure.metadata[models.FORTRAN_GENERIC_NAME_METADATA])
-                for procedure in overload_set.procedures
-                if procedure.metadata.get(models.FORTRAN_GENERIC_NAME_METADATA)
-            ),
-            overload_set.name,
-        )
         for procedure in overload_set.procedures:
             procedure_scope = str(procedure.origin.native_scope or module.name)
             _complete_function(
                 procedure,
                 f"{procedure_scope}.{overload_set.name}.{procedure.name}",
                 derived_types=derived_types,
-                native_dispatch_name=native_dispatch_name,
             )
     overload_functions = {
         f"{(procedure.origin.native_scope or module.name)!s}.{overload_set.name}.{procedure.name}": procedure
@@ -509,6 +499,8 @@ def _complete_concrete_class_methods(
 ) -> None:
     """Attach completed function policy to constructors and ordinary methods."""
     calls = {method.owner_path: method for method in completed_methods}
+    surface = semantic_class.metadata.get(models.RESOLVED_CLASS_SURFACE_POLICY_METADATA)
+    constructor_call = surface.constructor.call if isinstance(surface, ClassSurfacePolicy) else None
     for method in semantic_class.methods:
         owner_path = f"{derived.owner_path}.{method.name}"
         if method.name == "__init__":
@@ -517,13 +509,15 @@ def _complete_concrete_class_methods(
                     method,
                     owner_path,
                     derived_types=derived_types,
+                    class_call=constructor_call,
                     module_export=False,
                     polymorphic_variants=polymorphic_variants,
                 )
             continue
+        function_owner_path = f"{derived.owner_path}.__method__.{method.name}"
         _complete_function(
             method,
-            owner_path,
+            function_owner_path,
             derived_types=derived_types,
             class_call=calls.get(owner_path),
             polymorphic_variants=polymorphic_variants,
@@ -540,7 +534,7 @@ def _complete_class_overload_methods(
 ) -> None:
     """Complete every concrete overload through one typed call leaf."""
     generic_bindings = {
-        str(procedure.native_name or procedure.name): overload.name
+        _class_overload_native_target(procedure): overload.name
         for overload in semantic_class.overload_sets
         if overload.name != "__init__"
         for procedure in overload.procedures
@@ -571,7 +565,8 @@ def _complete_one_class_overload_method(
 ) -> None:
     """Complete one overload candidate and its native dispatch spelling."""
     owner_path = f"{derived.owner_path}.{overload.name}.{procedure.name}"
-    native_name = str(procedure.native_name or procedure.name)
+    native_name = _class_overload_native_target(procedure)
+    bind_target = procedure.metadata.get(BIND_TARGET_METADATA)
     passed_position = _class_overload_passed_object_position(procedure)
     type_bound = native_name in type_bound_targets or (
         passed_position is not None and native_name not in module_targets
@@ -581,13 +576,19 @@ def _complete_one_class_overload_method(
         procedure,
         owner_path,
         type_bound=type_bound,
-        type_bound_name=generic_bindings.get(native_name) if type_bound else None,
+        type_bound_name=(str(bind_target) if bind_target else generic_bindings.get(native_name))
+        if type_bound
+        else None,
     )
     overload_kind = str(procedure.metadata.get(models.OVERLOAD_KIND_METADATA, "generic"))
     native_dispatch_name = (
-        str(procedure.metadata.get(models.FORTRAN_GENERIC_NAME_METADATA, overload.name))
-        if overload_kind != "generic"
-        else None
+        str(bind_target)
+        if bind_target
+        else (
+            str(procedure.metadata.get(models.FORTRAN_GENERIC_NAME_METADATA, overload.name))
+            if overload_kind != "generic"
+            else None
+        )
     )
     _complete_function(
         procedure,
@@ -597,6 +598,11 @@ def _complete_one_class_overload_method(
         polymorphic_variants=polymorphic_variants,
         native_dispatch_name=native_dispatch_name,
     )
+
+
+def _class_overload_native_target(procedure: models.SemanticFunction) -> str:
+    """Return the completed native target selected by an overload contract."""
+    return str(procedure.metadata.get(BIND_TARGET_METADATA) or procedure.native_name or procedure.name)
 
 
 def _uses_type_bound_invocation(
@@ -781,17 +787,6 @@ def _iter_semantic_classes(classes: list[models.SemanticClass]):
         yield from _iter_semantic_classes(semantic_class.classes)
 
 
-def _class_root_target_names(classes: list[models.SemanticClass]) -> frozenset[str]:
-    """Return native procedures consumed exclusively by completed class descriptors."""
-    targets = {
-        method.native_name or method.name
-        for semantic_class in _iter_semantic_classes(classes)
-        for method in semantic_class.methods
-        if method.name != "__init__" or method.metadata.get("bind_target")
-    }
-    return frozenset(str(target) for target in targets)
-
-
 def _polymorphic_variant_map(
     classes: list[models.SemanticClass],
 ) -> dict[tuple[str, str], tuple[tuple[str, str], ...]]:
@@ -859,6 +854,7 @@ def _complete_function(
             owner_path=f"{owner_path}.{argument.name}",
         )
     if function.return_type is not None:
+        _validate_maybe_unallocated_return(function, owner_path)
         decision = default_ownership_policy.decide_semantic_type(function.return_type, OwnershipContext.result())
         function.metadata[models.RESOLVED_RETURN_OWNERSHIP_POLICY_METADATA] = decision
         _complete_native_array_handle_result_policy(function, decision)
@@ -1014,6 +1010,15 @@ def _complete_native_array_handle_result_policy(
     function.metadata[models.RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA] = policy
 
 
+def _validate_maybe_unallocated_return(function: models.SemanticFunction, owner_path: str) -> None:
+    """Require MaybeUnallocated only on direct allocatable array function results."""
+    return_type = function.return_type
+    if return_type is None or not return_type.metadata.get(MAYBE_UNALLOCATED_METADATA):
+        return
+    if native_array_descriptor_kind(return_type) != "allocatable" or int(return_type.rank or 0) <= 0:
+        raise ValueError(f"MaybeUnallocated metadata on {owner_path}.return requires an Allocatable[...] array result")
+
+
 def _complete_native_array_handle_variable_policy(
     variable: models.SemanticVariable,
     context: OwnershipContext,
@@ -1048,6 +1053,8 @@ def _native_array_handle_policy(
     blocker = _native_array_handle_blocker(descriptor_kind, handle_kind, decision)
     descriptor_ownership = _native_array_descriptor_ownership(handle_kind)
     to_numpy = _native_array_to_numpy_policy(descriptor_kind, handle_kind, decision, semantic_type)
+    operations = _native_array_handle_operations(descriptor_kind, handle_kind, context, semantic_type)
+    default_construction = _native_array_default_construction(handle_kind, context, semantic_type)
     return NativeArrayHandlePolicy(
         descriptor_kind=descriptor_kind,
         handle_kind=handle_kind,
@@ -1060,6 +1067,7 @@ def _native_array_handle_policy(
         python_setter=_native_array_python_setter(variable),
         native_setter=_native_array_native_setter(variable),
         output_projection=_native_array_output_projection(descriptor_kind, handle_kind, context),
+        result_allocation=_native_array_result_allocation(descriptor_kind, handle_kind, context, semantic_type),
         release=_native_array_release_responsibility(handle_kind),
         target_lifetime=_native_array_target_lifetime(descriptor_kind, handle_kind, semantic_type, blocker),
         destroy_behavior=_native_array_destroy_behavior(handle_kind, blocker),
@@ -1072,8 +1080,13 @@ def _native_array_handle_policy(
         nullable=bool(decision.nullable or optional_absent),
         optional_absent=optional_absent,
         storage_mode=decision.storage_mode.value,
-        operations=_native_array_handle_operations(descriptor_kind, handle_kind, context, semantic_type),
+        operations=operations,
         blocker=blocker,
+        default_construction=default_construction,
+        default_descriptor_ownership="owned" if default_construction != "none" else "unknown",
+        default_release="wrapper_dealloc" if default_construction != "none" else "none",
+        default_destroy_behavior="handle_finalizer" if default_construction != "none" else "none",
+        default_operations=(tuple(sorted({*operations, "destroy"})) if default_construction != "none" else ()),
     )
 
 
@@ -1090,14 +1103,29 @@ def _native_array_handle_kind(
     if context.is_field:
         return "borrowed_field_descriptor"
     if context.is_argument and context.projects_result and not context.python_visible:
-        if descriptor_kind == "allocatable":
-            return "owned_result_descriptor"
-        return "unsupported"
+        return "owned_result_descriptor"
     if context.is_argument:
         return "argument_descriptor"
-    if context.is_result and descriptor_kind == "allocatable":
+    if context.is_result:
         return "owned_result_descriptor"
     return "unsupported"
+
+
+def _native_array_default_construction(
+    handle_kind: str,
+    context: OwnershipContext,
+    semantic_type: models.SemanticType,
+) -> str:
+    """Complete how a runtime-constructed descriptor reaches one argument."""
+    if (
+        semantic_type.name == "String"
+        or handle_kind not in {"argument_descriptor", "optional_absent_handle"}
+        or not context.is_argument
+    ):
+        return "none"
+    if context.projects_result:
+        return "lazy_owned_descriptor"
+    return "fact_packed_empty"
 
 
 def _native_array_handle_origin(context: OwnershipContext) -> str:
@@ -1174,10 +1202,23 @@ def _native_array_output_projection(
     if handle_kind == "unsupported":
         return "unsupported"
     if context.is_result:
-        return "handle_result" if descriptor_kind == "allocatable" else "unsupported"
+        return "handle_result"
     if context.is_argument and context.projects_result:
         return "projected_handle"
     return "none"
+
+
+def _native_array_result_allocation(
+    descriptor_kind: str,
+    handle_kind: str,
+    context: OwnershipContext,
+    semantic_type: models.SemanticType,
+) -> str:
+    if context.is_result and descriptor_kind == "allocatable" and handle_kind == "owned_result_descriptor":
+        if semantic_type.metadata.get(MAYBE_UNALLOCATED_METADATA):
+            return "maybe_unallocated"
+        return "always_allocated"
+    return "not_applicable"
 
 
 def _native_array_release_responsibility(handle_kind: str) -> str:
@@ -1203,6 +1244,8 @@ def _native_array_target_lifetime(
         pointer_lifetime = _pointer_policy_value(_pointer_policy_metadata(semantic_type), "lifetime")
         if pointer_lifetime:
             return pointer_lifetime
+        if handle_kind == "owned_result_descriptor":
+            return "unknown"
         if blocker is not None and handle_kind in {"borrowed_field_descriptor", "borrowed_module_descriptor"}:
             return "unknown"
     return {
@@ -1273,7 +1316,7 @@ def _native_array_handle_operations(
             if not _is_deferred_character_array(semantic_type):
                 operations.add("resize")
         return tuple(sorted(operations))
-    operations = {"associated", "nullify", "to_numpy"}
+    operations = {"associate", "associated", "nullify", "to_numpy"}
     pointer_policy = _pointer_policy_metadata(semantic_type)
     if _pointer_policy_allows_allocate(pointer_policy):
         operations.add("allocate")
@@ -1332,14 +1375,12 @@ def _pointer_policy_allows_resize(policy: dict[str, object]) -> bool:
 
 
 def _native_array_handle_blocker(
-    descriptor_kind: str,
+    _descriptor_kind: str,
     handle_kind: str,
     decision: OwnershipDecision,
 ) -> str | None:
     if decision.is_blocked:
         return decision.blocker or decision.reason
-    if handle_kind == "unsupported" and descriptor_kind == "pointer":
-        return "pointer handle results need stable owner storage and target lifetime policy before wrapping"
     if handle_kind == "unsupported":
         return "native array handle origin is unsupported before wrapper lowering"
     return None
@@ -1530,6 +1571,10 @@ def _complete_variable(
     *,
     owner_path: str | None = None,
 ) -> None:
+    if variable.semantic_type.metadata.get(MAYBE_UNALLOCATED_METADATA):
+        raise ValueError(
+            f"MaybeUnallocated metadata on {owner_path or variable.name!r} is only valid on function return types"
+        )
     decision = default_ownership_policy.decide_semantic_variable(variable, context)
     variable.metadata[models.RESOLVED_OWNERSHIP_POLICY_METADATA] = decision
     _complete_prototype_reference_policy(variable.semantic_type, owner_path=owner_path or variable.name)

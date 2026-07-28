@@ -13,6 +13,7 @@ from x2py.semantics.metadata import (
     ADDRESS_ROLE_PROJECTION,
     ADDRESS_ROLE_RAW,
     BIND_TARGET_METADATA,
+    MAYBE_UNALLOCATED_METADATA,
     NATIVE_PROJECTION_METADATA,
     OPTIONAL_ABSENT_HANDLE_METADATA,
     PROJECTED_OUTPUT_METADATA,
@@ -132,7 +133,6 @@ class _PyiAstParser:
     def parse(self, tree: ast.Module) -> SemanticModule:
         _ModuleVisitor(self)._visit(tree)
         self._resolve_overloads()
-        self._restore_type_bound_targets()
         self._resolve_local_prototype_references()
         return self.module
 
@@ -241,33 +241,11 @@ class _PyiAstParser:
             visibility=visibility,
             origin=origin,
         )
-        self._validate_bound_constructor_targets(semantic_class)
         self._pending_overloads.extend(
             _PendingOverload(semantic_class, declaration, target, generic_name)
             for declaration, target, generic_name in body.pending_overloads
         )
         return semantic_class
-
-    @staticmethod
-    def _validate_bound_constructor_targets(semantic_class: SemanticClass) -> None:
-        for constructor in semantic_class.methods:
-            target_name = constructor.metadata.get(BIND_TARGET_METADATA)
-            if constructor.name != "__init__" or not isinstance(target_name, str):
-                continue
-            candidates = [
-                method for method in semantic_class.methods if method is not constructor and method.name == target_name
-            ]
-            if not candidates:
-                raise ValueError(f"Bound constructor references missing class method {target_name!r}")
-            if len(candidates) > 1:
-                raise ValueError(f"Bound constructor target {target_name!r} is ambiguous")
-            target = candidates[0]
-            target_arguments = list(target.arguments)
-            if isinstance(target, SemanticMethod) and target.passed_object_position is not None:
-                target_arguments.pop(target.passed_object_position)
-            if constructor.arguments != target_arguments or constructor.return_type != target.return_type:
-                raise ValueError(f"Bound constructor declaration is incompatible with class method {target_name!r}")
-            constructor.native_name = target.native_name or target.name
 
     @staticmethod
     def _class_metadata(base_classes: list[str]) -> dict[str, object]:
@@ -402,8 +380,10 @@ class _PyiAstParser:
             metadata[NATIVE_PROJECTION_METADATA] = True
         passed_object_name = None
         passed_object_position = None
-        if infer_passed_object and not is_static and node.name != "__init__":
+        if infer_passed_object and not is_static:
             pass_mappings = [mapping for mapping in actual_projection if mapping.value_kind == "pass"]
+            if node.name == "__init__" and len(pass_mappings) != 1:
+                raise ValueError("Bound constructor native_call requires exactly one Pass() entry")
             if len(pass_mappings) > 1:
                 raise ValueError("native_call may contain at most one Pass() entry")
             passed_object_position = pass_mappings[0].native_position if pass_mappings else 0
@@ -487,8 +467,6 @@ class _PyiAstParser:
         parsed = _Decorators()
         for node in nodes:
             self._apply_decorator(parsed, node, context=context)
-        if parsed.overload_target is not None and parsed.bind_target is not None:
-            raise ValueError("bind cannot be combined with overload")
         if parsed.overload_target is not None and parsed.has_native_call:
             raise ValueError("overload cannot be combined with native_call; put native_call on the specific procedure")
         if parsed.prototype and len(nodes) != 1:
@@ -690,30 +668,6 @@ class _PyiAstParser:
                 )
             overload_set.procedures.append(candidate)
 
-    def _restore_type_bound_targets(self) -> None:
-        """Mark module procedures referenced by type-bound method declarations."""
-
-        by_name = {
-            target: function
-            for function in self.module.functions
-            for target in {function.name, function.native_name}
-            if target
-        }
-        for semantic_class in self._iter_classes(self.module.classes):
-            for method in semantic_class.methods:
-                if method.is_static or method.passed_object_position is None:
-                    continue
-                target = by_name.get(method.native_name or method.name)
-                if target is None:
-                    continue
-                passed_position = method.passed_object_position
-                if not 0 <= passed_position < len(target.arguments):
-                    continue
-                target.metadata["fortran_type_bound_target"] = True
-                target.metadata["fortran_passed_object_name"] = target.arguments[passed_position].name
-                target.metadata["fortran_passed_object_position"] = passed_position
-                target.arguments[passed_position].semantic_type.metadata["fortran_polymorphic"] = True
-
     @classmethod
     def _iter_classes(cls, classes: list[SemanticClass]):
         for semantic_class in classes:
@@ -766,8 +720,12 @@ class _PyiAstParser:
                 candidate.metadata[key] = deepcopy(declaration.metadata[key])
 
         if isinstance(owner, SemanticModule):
+            if generic_name is not None:
+                raise ValueError("generic is only valid for class overloads; use bind on a module overload")
             self._validate_overload_signature(declaration, candidate, list(candidate.arguments))
-            candidate.metadata[FORTRAN_GENERIC_NAME_METADATA] = generic_name or declaration.name
+            if bind_target := declaration.metadata.get(BIND_TARGET_METADATA):
+                candidate.native_name = str(bind_target)
+                candidate.metadata[BIND_TARGET_METADATA] = str(bind_target)
             candidate.metadata[OVERLOAD_KIND_METADATA] = "generic"
             return candidate
 
@@ -786,6 +744,9 @@ class _PyiAstParser:
         candidate.metadata[FORTRAN_GENERIC_NAME_METADATA] = native_name
         candidate.metadata[OVERLOAD_KIND_METADATA] = kind
         candidate.metadata[PYTHON_METHOD_NAME_METADATA] = declaration.name
+        if bind_target := declaration.metadata.get(BIND_TARGET_METADATA):
+            candidate.native_name = str(bind_target)
+            candidate.metadata[BIND_TARGET_METADATA] = str(bind_target)
         if bound_position is not None:
             candidate.metadata[PYTHON_BOUND_POSITION_METADATA] = bound_position
         if isinstance(declaration, SemanticMethod) and declaration.is_static:
@@ -1740,6 +1701,9 @@ class _PyiAstParser:
         if name == "Immutable":
             semantic_type.metadata[PYTHON_VALUE_MUTABILITY_METADATA] = PYTHON_VALUE_IMMUTABLE
             return True
+        if name == "MaybeUnallocated":
+            semantic_type.metadata[MAYBE_UNALLOCATED_METADATA] = True
+            return True
         if name == "FortranAllocatable":
             semantic_type.metadata["fortran_allocatable"] = True
             return True
@@ -1929,15 +1893,63 @@ class _PyiAstParser:
                 semantic_type = self.semantic_type(node.args[0])
                 if semantic_type.rank > 0:
                     raise ValueError("Value(...) callback arguments must be scalar")
+                if self._is_primitive_scalar_value_type(semantic_type):
+                    raise ValueError(
+                        "Value(...) is unnecessary for primitive callback arguments; "
+                        "bare primitive types are passed by value"
+                    )
+                if (
+                    semantic_type.name == "String"
+                    or semantic_type.storage is not None
+                    or self._has_callback_descriptor_metadata(semantic_type)
+                ):
+                    raise ValueError("Value(...) callback arguments are only valid for rank-zero wrapped types")
                 return _CallbackArgumentSpec(semantic_type, True)
             if self._is_addr_call(node):
-                raise ValueError(
-                    "Addr(...) is unnecessary inside prototype declarations; reference passing is the default"
-                )
+                return self._prototype_address_argument_spec(node)
 
         semantic_type = self.semantic_type(node)
+        if self._is_primitive_scalar_value_type(semantic_type):
+            return _CallbackArgumentSpec(semantic_type, True)
         self._mark_callback_reference_type(semantic_type)
         return _CallbackArgumentSpec(semantic_type, False)
+
+    def _prototype_address_argument_spec(self, node: ast.Call) -> _CallbackArgumentSpec:
+        """Parse the callback-only primitive reference marker."""
+        if len(node.args) != 1 or node.keywords:
+            raise ValueError(f"Addr type expects one callback argument type: {ast.unparse(node)!r}")
+        if self._addr_depth(node.func) != 1:
+            raise ValueError("Addr[...](...) is not supported inside prototype declarations; use Addr(T)")
+        semantic_type = self.semantic_type(node.args[0])
+        if not self._is_primitive_scalar_value_type(semantic_type):
+            raise ValueError(
+                "Addr(...) inside prototype declarations is only valid for primitive scalar reference dummies; "
+                "arrays, strings, and wrapped objects already use reference storage"
+            )
+        self._mark_callback_reference_type(semantic_type)
+        return _CallbackArgumentSpec(semantic_type, False)
+
+    @staticmethod
+    def _is_primitive_scalar_value_type(semantic_type: SemanticType) -> bool:
+        return bool(
+            semantic_type.rank == 0
+            and semantic_type.name not in {"String", "Void"}
+            and (semantic_type.dtype or semantic_type.name) in SEMANTIC_SCALAR_TYPE_NAMES
+            and semantic_type.storage is None
+            and not _PyiAstParser._has_callback_descriptor_metadata(semantic_type)
+        )
+
+    @staticmethod
+    def _has_callback_descriptor_metadata(semantic_type: SemanticType) -> bool:
+        return any(
+            semantic_type.metadata.get(name)
+            for name in (
+                "fortran_allocatable",
+                "fortran_pointer",
+                "fortran_polymorphic",
+                "fortran_assumed_type",
+            )
+        )
 
     @staticmethod
     def _mark_callback_reference_type(semantic_type: SemanticType) -> None:
@@ -2645,7 +2657,7 @@ class _ClassBodyVisitor(ClassVisitor):
             hold_gil=decorators.hold_gil,
             error_status_policy=decorators.error_status_policy,
         )
-        if node.name == "__init__" and decorators.bind_target is not None:
+        if node.name == "__init__" and decorators.bind_target is not None and decorators.overload_target is None:
             self.has_bound_constructor = True
         if decorators.overload_target is not None:
             self.pending_overloads.append((method, decorators.overload_target, decorators.overload_generic))

@@ -4,6 +4,7 @@ audience: maintainers
 prerequisites: AST design
 related: type-system.md, dependency-analysis.md
 status: planned-documentation
+publication: draft
 ---
 
 # Symbol Tables

@@ -106,6 +106,25 @@ def _is_project_location(location: object) -> bool:
     return isinstance(location, dict) and _is_project_filename(location.get("filename"))
 
 
+def _project_source_line(filename: object, line: object) -> str | None:
+    if not _is_project_filename(filename) or not isinstance(line, int) or line <= 0:
+        return None
+    source = _C_DATA_DIR / filename
+    if not source.is_file():
+        return None
+    try:
+        return source.read_text(encoding="utf-8").splitlines()[line - 1]
+    except IndexError:
+        return None
+
+
+def _stable_project_location(location: dict) -> dict:
+    source_line = _project_source_line(location.get("filename"), location.get("line"))
+    if source_line is None:
+        return location
+    return {**location, "source_line": source_line}
+
+
 def _has_project_source_location(declaration: object) -> bool:
     return isinstance(declaration, dict) and _is_project_location(declaration.get("source_location"))
 
@@ -202,8 +221,30 @@ def _system_declaration_reference(declaration: dict) -> str | None:
     return None
 
 
+def _stable_bool_payload(qualifiers: object = None) -> dict:
+    return {"model": "CBool", "qualifiers": list(qualifiers or []), "source_text": "bool"}
+
+
+def _stable_bool_type_payload(declaration: dict) -> dict | None:
+    if declaration.get("reference") == "bool":
+        return _stable_bool_payload()
+    if declaration.get("model") == "CBool":
+        return _stable_bool_payload(declaration.get("qualifiers"))
+    if (
+        declaration.get("model") == "CTypedef"
+        and declaration.get("name") == "bool"
+        and not _is_project_location(declaration.get("source_location"))
+    ):
+        return _stable_bool_payload(declaration.get("qualifiers"))
+    return None
+
+
 def _stable_payload_value(value, symbols: dict[str, set[str]]):
     if isinstance(value, dict):
+        bool_payload = _stable_bool_type_payload(value)
+        if bool_payload is not None:
+            return bool_payload
+
         reference = _system_declaration_reference(value)
         if reference is not None:
             return {"reference": _stable_payload_value(reference, symbols)}
@@ -249,6 +290,9 @@ def _stable_payload_value(value, symbols: dict[str, set[str]]):
                         "column": 0,
                         "source_line": None,
                     }
+                    continue
+                if _is_project_filename(filename):
+                    stable[key] = _stable_project_location(nested)
                     continue
             stable[key] = _stable_payload_value(nested, symbols)
         return stable

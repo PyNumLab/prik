@@ -4,6 +4,7 @@ audience: contributors
 prerequisites: contribution guide
 related: review-process.md, ../quality-assurance.md
 status: planned-documentation
+publication: draft
 ---
 
 # Pull Request Workflow

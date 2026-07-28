@@ -16,6 +16,7 @@ from x2py.semantics.metadata import (
     ADDRESS_ROLE_PROJECTION,
     ADDRESS_ROLE_RAW,
     BIND_TARGET_METADATA,
+    MAYBE_UNALLOCATED_METADATA,
     NATIVE_PROJECTION_METADATA,
     OPTIONAL_ABSENT_HANDLE_METADATA,
     SCALAR_STORAGE_CATEGORY,
@@ -198,25 +199,12 @@ class PyiPrinter(ClassVisitor):
         decorator = self._decorators(func, emitted_name=name)
         return self._emit_callable(
             name=name,
-            arguments=[self._emit_contract_argument(func, arg) for arg in self._call_arguments(func)],
+            arguments=[self._emit_call_argument(func, arg) for arg in self._call_arguments(func)],
             return_type=return_type,
             decorator=decorator,
             def_indent="",
             parameter_indent="    ",
         )
-
-    def _emit_contract_argument(self, func: SemanticFunction, arg: SemanticArgument) -> str:
-        """Omit native facts already implied by the surrounding callable contract."""
-        passed_object_name = func.metadata.get("fortran_passed_object_name")
-        if (
-            func.metadata.get("fortran_type_bound_target")
-            and isinstance(passed_object_name, str)
-            and arg.name == passed_object_name
-            and arg.semantic_type.metadata.get("fortran_polymorphic")
-        ):
-            arg = deepcopy(arg)
-            arg.semantic_type.metadata.pop("fortran_polymorphic", None)
-        return self._emit_call_argument(func, arg)
 
     def _visit_SemanticMethod(self, method: SemanticMethod) -> str:
         """Emit method syntax."""
@@ -259,8 +247,10 @@ class PyiPrinter(ClassVisitor):
                     name_owner=("overload", overload_set.name),
                 )
                 indent = ""
-            generic = self._overload_generic_argument(candidate, overload_set.name)
-            definitions.append(f'{indent}@{self._contract("overload")}("{target}"{generic})\n{definition}')
+            generic = self._overload_generic_argument(candidate, overload_set.name) if in_class else ""
+            bind_target = candidate.metadata.get(BIND_TARGET_METADATA)
+            bind = f"{indent}@{self._contract('bind')}({json.dumps(str(bind_target))})\n" if bind_target else ""
+            definitions.append(f'{bind}{indent}@{self._contract("overload")}("{target}"{generic})\n{definition}')
         return "\n\n".join(definitions)
 
     def _visit_SemanticClass(self, cls: SemanticClass) -> str:
@@ -514,6 +504,8 @@ class PyiPrinter(ClassVisitor):
             metadata.append(self._contract("Aliased"))
         if semantic_type.metadata.get(PYTHON_VALUE_MUTABILITY_METADATA) == PYTHON_VALUE_IMMUTABLE:
             metadata.append(self._contract("Immutable"))
+        if semantic_type.metadata.get(MAYBE_UNALLOCATED_METADATA):
+            metadata.append(self._contract("MaybeUnallocated"))
         pointer_association = semantic_type.metadata.get("fortran_pointer_association")
         if pointer_association is not None and not self._is_scalar_pointer_descriptor(semantic_type):
             metadata.append(f"{self._contract('PointerAssociation')}({json.dumps(str(pointer_association))})")
@@ -598,10 +590,16 @@ class PyiPrinter(ClassVisitor):
         return visible
 
     def _emit_prototype_argument(self, argument: SemanticArgument) -> str:
-        """Emit one prototype dummy with reference default and one value override."""
+        """Emit one prototype dummy using the public callback transport rules."""
+        if self._is_prototype_descriptor_type(argument.semantic_type):
+            return self._prototype_descriptor_type_text(argument.semantic_type)
         inner = self._prototype_argument_inner_type(argument.semantic_type)
         if bool(getattr(argument.origin, "metadata", {}).get("value")):
+            if self._is_prototype_primitive_value(argument.semantic_type):
+                return inner
             return f"{self._contract('Value')}({inner})"
+        if self._is_prototype_primitive_reference(argument.semantic_type):
+            return f"{self._contract('Addr')}({inner})"
         return inner
 
     def _prototype_argument_inner_type(self, semantic_type: SemanticType) -> str:
@@ -617,6 +615,51 @@ class PyiPrinter(ClassVisitor):
         if storage is not None and storage.kind in {"reference", "address", "pointer"}:
             return self._address_target_type(semantic_type)
         return self._visit(semantic_type)
+
+    def _prototype_descriptor_type_text(self, semantic_type: SemanticType) -> str:
+        """Render descriptor metadata without a second reference wrapper."""
+        if semantic_type.metadata.get("fortran_allocatable") or semantic_type.metadata.get("fortran_pointer"):
+            return self._visit(semantic_type)
+        visible = deepcopy(semantic_type)
+        if visible.storage is not None and visible.storage.kind in {"reference", "address", "pointer"}:
+            visible.storage = None
+        return self._visit(visible)
+
+    @staticmethod
+    def _is_prototype_primitive_value(semantic_type: SemanticType) -> bool:
+        storage = semantic_type.storage
+        return bool(
+            semantic_type.rank == 0
+            and semantic_type.name not in {"String", "Void"}
+            and (semantic_type.dtype or semantic_type.name) in SEMANTIC_SCALAR_TYPE_NAMES
+            and (storage is None or storage.kind == "value")
+            and not PyiPrinter._is_prototype_descriptor_type(semantic_type)
+        )
+
+    @staticmethod
+    def _is_prototype_primitive_reference(semantic_type: SemanticType) -> bool:
+        storage = semantic_type.storage
+        return bool(
+            semantic_type.rank == 0
+            and semantic_type.name not in {"String", "Void"}
+            and (semantic_type.dtype or semantic_type.name) in SEMANTIC_SCALAR_TYPE_NAMES
+            and storage is not None
+            and storage.kind in {"reference", "address", "pointer"}
+            and storage.pointer_depth == 1
+            and not PyiPrinter._is_prototype_descriptor_type(semantic_type)
+        )
+
+    @staticmethod
+    def _is_prototype_descriptor_type(semantic_type: SemanticType) -> bool:
+        return any(
+            semantic_type.metadata.get(name)
+            for name in (
+                "fortran_allocatable",
+                "fortran_pointer",
+                "fortran_polymorphic",
+                "fortran_assumed_type",
+            )
+        )
 
     def _emit_data_member(self, variable: SemanticVariable) -> str:
         """Emit a variable in class-field context rather than argument context."""
@@ -1391,7 +1434,7 @@ class PyiPrinter(ClassVisitor):
             else:
                 parts.append(self._visit(self._visible_wrapped_callable_type(func.return_type)))
         parts.extend(
-            self._projected_argument_return(arg, visible=visible)
+            self._projected_argument_return(func, arg, visible=visible)
             for _, arg, visible in sorted(
                 self._projected_return_arguments(func),
                 key=lambda item: item[0],
@@ -1434,15 +1477,32 @@ class PyiPrinter(ClassVisitor):
             return False
         return mapping.python_position is not None
 
-    def _projected_argument_return(self, arg: SemanticArgument, *, visible: bool) -> str:
+    def _projected_argument_return(
+        self,
+        func_or_arg: SemanticFunction | SemanticArgument,
+        arg: SemanticArgument | None = None,
+        *,
+        visible: bool,
+    ) -> str:
         """Handle projected argument return for the current generation context."""
+        if isinstance(func_or_arg, SemanticFunction):
+            if arg is None:
+                raise TypeError("Function projection return emission requires an argument")
+            func = func_or_arg
+            projected_arg = arg
+        else:
+            func = None
+            projected_arg = func_or_arg
         if visible:
-            return self._named_return(arg)
-        return self._plain_projected_return(arg)
+            return self._named_return(projected_arg, func=func)
+        return self._plain_projected_return(projected_arg)
 
-    def _named_return(self, arg: SemanticArgument) -> str:
+    def _named_return(self, arg: SemanticArgument, *, func: SemanticFunction | None = None) -> str:
         """Handle named return for the current generation context."""
-        semantic_type = self._visible_projected_type(arg.semantic_type)
+        semantic_type = self._visible_projected_type(
+            arg.semantic_type,
+            unwrap_address_projection=func is not None and self._uses_address_projection(func, arg),
+        )
         descriptor_kind = self._scalar_descriptor_kind(semantic_type)
         if descriptor_kind is not None:
             semantic_type = self._visible_scalar_descriptor_type(semantic_type)
@@ -1452,13 +1512,23 @@ class PyiPrinter(ClassVisitor):
         return return_text
 
     @staticmethod
-    def _visible_projected_type(semantic_type: SemanticType) -> SemanticType:
+    def _visible_projected_type(
+        semantic_type: SemanticType,
+        *,
+        unwrap_address_projection: bool = False,
+    ) -> SemanticType:
         """Return the Python-visible type for address-projected scalars."""
         wrapped = PyiPrinter._visible_wrapped_callable_type(semantic_type)
         if wrapped is not semantic_type:
             return wrapped
         storage = semantic_type.storage
         if (
+            unwrap_address_projection
+            and semantic_type.rank == 0
+            and storage is not None
+            and storage.kind in {"address", "reference"}
+            and storage.pointer_depth == 1
+        ) or (
             semantic_type.rank == 0
             and storage is not None
             and storage.kind == "address"
@@ -1838,6 +1908,8 @@ class PyiPrinter(ClassVisitor):
     @staticmethod
     def _requires_native_call(func: SemanticFunction) -> bool:
         """Return whether requires native call."""
+        if isinstance(func, SemanticMethod) and func.name == "__init__" and func.metadata.get(BIND_TARGET_METADATA):
+            return True
         if PyiPrinter._scalar_descriptor_kind(func.return_type) is not None:
             return True
         if any(PyiPrinter._scalar_descriptor_kind(argument.semantic_type) is not None for argument in func.arguments):

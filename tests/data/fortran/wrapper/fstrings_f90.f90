@@ -61,11 +61,11 @@ contains
     value = 'C-CHAR!!'
   end function string_result_c_char
 
-  function string_result_deferred(text) result(value)
+  subroutine string_result_deferred(text, value)
     character(len=*), intent(in) :: text
-    character(len=:), allocatable :: value
+    character(len=:), allocatable, intent(out) :: value
     value = trim(text) // '-deferred'
-  end function string_result_deferred
+  end subroutine string_result_deferred
 
   integer function fixed_array_extent(labels)
     character(len=8), intent(in) :: labels(:)

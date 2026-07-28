@@ -4,6 +4,7 @@ audience: maintainers
 prerequisites: documentation architecture
 related: parser-architecture.md, code-generation.md
 status: planned-documentation
+publication: draft
 ---
 
 # Overall Architecture

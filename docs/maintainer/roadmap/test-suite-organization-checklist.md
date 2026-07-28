@@ -4,6 +4,7 @@ audience: maintainers
 prerequisites: testing strategy, repository structure
 related: ../../../developer/testing-strategy.md, ../../../../tests/README.md
 status: active-roadmap
+publication: draft
 ---
 
 # Test Suite Organization Checklist

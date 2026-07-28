@@ -576,8 +576,8 @@ def test_x2py_command_parsers_group_options_by_user_intent():
     assert "Name the Python extension and stable NAME.so library" in normalized_build_help
     assert "Print build paths and metadata as JSON" in normalized_build_help
     assert 'Native compiler flags (for example, "-O3 -fopenmp")' in normalized_build_help
-    assert "docs/user/guide/fortran-wrapper.md" in build_help
-    assert "See docs/user/guide/fortran-wrapper.md for native flags and libraries." in build_help
+    assert "docs/user/reference/cli-commands.md" in build_help
+    assert "See docs/user/reference/cli-commands.md for all build options." in build_help
     assert "Build from a semantic contract:" in build_help
     assert "Replay a build manifest:" in build_help
     assert "Manifest overrides: --out, --compiler, -I/--include-dir" in normalized_build_help

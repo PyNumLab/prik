@@ -4,6 +4,7 @@ audience: users, contributors
 prerequisites: installation, verification
 related: ../faq/index.md, ../reference/diagnostic-codes.md
 status: planned-documentation
+publication: draft
 ---
 
 # Troubleshooting

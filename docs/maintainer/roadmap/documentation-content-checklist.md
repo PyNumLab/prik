@@ -4,6 +4,7 @@ audience: maintainers
 prerequisites: documentation architecture
 related: ../documentation-architecture.md, index.md, semantic-pyi-wrapper-checklist.md
 status: active-roadmap
+publication: draft
 ---
 
 # Documentation Content Checklist
@@ -24,14 +25,14 @@ these are true:
 - [ ] The page status is accurate: `maintained` for current public behavior,
   `design` for accepted architecture, or `not-yet-implemented` for explicit
   future behavior.
-- [ ] The page explains what is supported now, what is unsupported, and where to
-  find the supporting tests, fixtures, examples, or source owner.
+- [ ] The page explains what is supported now and what is unsupported without
+  exposing internal test-evidence ledgers in public user-facing prose.
 - [ ] User-facing pages include a task-oriented workflow, expected output or API
   shape, limitations, and troubleshooting links.
 - [ ] Developer-facing pages include ownership boundaries, source routes,
   focused verification commands, and rules for updating related docs.
-- [ ] Examples are either executable documentation examples, checked fixtures,
-  or clearly labeled illustrative snippets.
+- [ ] Examples are polished, copyable, and internally coherent. Executable
+  examples and fixture-backed source stay synchronized with their checks.
 - [ ] Reuse earlier examples by reference instead of reprinting them, unless the
   page must be self-contained for a first-time user task.
 - [ ] User-facing examples use clean copyable filenames and module names; keep
@@ -101,7 +102,8 @@ X2PY_C_DOCS_END -->
   and future packaging boundaries.
 - [ ] `docs/developer/coding-standards.md`: document Python style,
   documentation front matter, no-compatibility-layer rule, parser/codegen
-  organization, and review expectations.
+  organization, public contributor rules, TODO markers, support-claim
+  discipline, and review expectations.
 - [ ] `docs/maintainer/ci-cd.md`: document current GitHub Actions gates,
   coverage policy, static-analysis policy, docs checks, and local caveats for
   CI-only environment values.
@@ -115,9 +117,6 @@ X2PY_C_DOCS_END -->
 - [ ] `docs/developer/contributing/review-process.md`: document review focus, support
   claims, docs completeness, fixture quality, and blocking versus advisory
   comments.
-- [ ] `docs/developer/contributing/coding-standards.md`: document public contributor style
-  rules, docs metadata, TODO markers, and support-claim discipline.
-
 ### Design And Internal Architecture
 
 - [ ] `docs/maintainer/design/overall-architecture.md`: document system components,
@@ -223,6 +222,9 @@ X2PY_C_DOCS_END -->
 - [ ] Public documentation site publication gate: deploy the existing MkDocs
   documentation as the project website only after all of the following are
   true; do not create a separate marketing-content system for this milestone.
+  - [x] Material for MkDocs, fail-closed `publication` metadata filtering,
+    local draft preview, strict production builds, and the GitHub Pages Actions
+    workflow are configured.
   - [ ] The landing page states the current project promise, supported workflow,
     and limitations without relying on planned behavior.
   - [ ] Installation and the first-wrapper workflow are complete and verified
@@ -233,10 +235,14 @@ X2PY_C_DOCS_END -->
     management have maintained user-facing explanations.
   - [ ] The architecture overview explains the parser, semantic-policy,
     lowering, bridge, and binding boundaries.
-  - [ ] Empty, placeholder-only, and TODO-only pages are removed from public
-    navigation until their content is ready.
-  - [ ] An unlisted development preview has validated navigation, links, search,
-    rendering, and the static site build before public deployment.
+  - [ ] Each page has been reviewed explicitly; change `publication: draft` to
+    `publication: reviewed` only after that review.
+  - [ ] Each lane index is reviewed last, after the lane pages intended for its
+    initial publication are ready. A draft lane index keeps the complete lane
+    out of production.
+  - [ ] A local draft preview and the Pages workflow artifact have validated
+    navigation, links, search, rendering, and the static site build before
+    enabling GitHub Pages.
 
 ## Completed Content Evidence
 
@@ -244,13 +250,13 @@ These pages already carry maintained content or active implementation roadmap
 evidence. Keep them current as behavior changes, but do not treat them as the
 primary placeholder queue.
 
-- [x] `docs/index.md`: maintained website entry point for User and Developer
-  documentation.
+- [x] `docs/index.md`: maintained website entry point for all reviewed
+  documentation lanes.
 - [x] `docs/user/index.md`: maintained User documentation lane entry point.
 - [x] `docs/developer/index.md`: maintained Developer documentation lane entry
   point.
-- [x] `docs/maintainer/README.md`: maintained GitHub-only Maintainer
-  documentation entry point.
+- [x] `docs/maintainer/README.md`: maintained Maintainer documentation entry
+  point, publication-gated like the User and Developer indexes.
 - [x] `docs/maintainer/documentation-architecture.md`: maintained three-lane
   documentation and publication contract.
 - [x] `docs/user/getting-started/index.md`: maintained beginner route from
@@ -268,6 +274,11 @@ primary placeholder queue.
 - [x] `docs/user/reference/semantic-ir.md`: maintained Semantic IR contract.
 - [x] `docs/user/reference/semantic-pyi-format.md`: maintained semantic `.pyi`
   contract.
+- [x] `docs/user/reference/pyi-contracts/`: maintained editable `.pyi`
+  contract reference, organized by exports, callable surfaces, and argument
+  and result projection.
+- [x] `docs/user/reference/fortran-wrapper.md`: maintained Fortran wrapper
+  contract reference.
 - [x] `docs/user/reference/cli-commands.md`: maintained CLI reference.
 - [x] `docs/user/reference/python-api.md`: maintained Python API reference.
 - [x] `docs/user/reference/diagnostic-codes.md`: maintained diagnostic registry.
@@ -284,24 +295,27 @@ primary placeholder queue.
   mapping through calls, storage, runtime behavior, and deployment.
 - [x] `docs/user/guide/data-types.md`: maintained Fortran storage, semantic
   `.pyi`, Python value, and NumPy dtype mapping with compiler-probed limits.
+- [x] `docs/user/guide/arrays.md`: maintained dtype, rank, shape, layout,
+  C-order zero-copy and `COPY_F`, stride-aware view, lower-bound, assumed-rank,
+  zero-size, result, and validation guide.
+- [x] `docs/user/guide/strings.md`: maintained immutable value, replacement,
+  mutable storage, fixed-width array, length, and encoding guide.
 - [x] `docs/user/guide/wrapping-functions.md`: maintained scalar, array-result,
   mixed-output, signature, native-call-limit, and evidence guide.
 - [x] `docs/user/guide/wrapping-subroutines.md`: maintained input, output,
   inout, hidden/visible storage, tuple-order, and scalar-replacement guide.
 - [x] `docs/user/guide/wrapping-modules.md`: maintained module namespace,
   procedure, constant, variable, saved-state, module-array, and common-block guide.
-- [x] `docs/user/guide/arrays.md`: maintained dtype, rank, shape, layout,
-  stride, lower-bound, assumed-rank, zero-size, result, and validation guide.
 - [x] `docs/user/guide/optional-arguments.md`: maintained omission, `None`,
   keyword, input/output, default, limitation, and diagnostic guide.
 - [x] `docs/user/guide/generic-interfaces.md`: maintained named, type-bound,
   operator, assignment, exact-dispatch, ambiguity, and overload guide.
+- [x] `docs/user/guide/wrapping-derived-types.md`: maintained class, field,
+  method, constructor, finalizer, nested borrow, layout, and polymorphism guide.
 - [x] `docs/user/guide/allocatables.md`: maintained scalar projection, copy, replacement,
   borrowed module/component view, unallocated, lifetime, and limitation guide.
 - [x] `docs/user/guide/pointers.md`: maintained scalar projection, call-local
   input, detached result, nullability, target policy, and blocked-reassociation guide.
-- [x] `docs/user/guide/wrapping-derived-types.md`: maintained class, field,
-  method, constructor, finalizer, nested borrow, layout, and polymorphism guide.
 - [x] `docs/user/guide/memory-management.md`: maintained ownership, transfer,
   destruction, mutability, release, borrowing, and policy-completion guide.
 - [x] `docs/user/guide/callbacks.md`: maintained immediate callback contract,
@@ -310,16 +324,10 @@ primary placeholder queue.
   value, typing, naming, and unsupported-form guide.
 - [x] `docs/user/guide/error-handling.md`: maintained failure-layer, Python
   exception, native status projection, callback, diagnostic, and cleanup guide.
-- [x] `docs/user/guide/packaging.md`: maintained local project integration,
-  artifact, Makefile, rebuild, import, and packaging-limit guide.
-- [x] `docs/user/guide/distribution.md`: maintained source-rebuild, prebuilt
-  compatibility, native dependency, wheel-limit, and release-checklist guide.
-- [x] `docs/user/guide/fortran-wrapper.md`: maintained Fortran wrapper contract.
-- [x] `docs/user/guide/editing-semantic-pyi-contracts.md`: maintained editable
-  `.pyi` contract guide.
-- [x] `docs/user/tutorials/basic-wrapper.md`: maintained basic wrapper workflow.
-- [x] `docs/user/examples/verified-cookbook.md`: maintained verified example
-  cookbook.
+- [x] `docs/user/guide/building-shared-library.md`: maintained build, import,
+  multi-source, compatibility, and editable-Makefile guide.
+- [x] `docs/user/guide/raw-addresses.md`: maintained primitive, array,
+  fixed-string, lifetime, validation, and address-safety guide.
 - [x] `docs/user/examples/recipes/`: maintained recipe lane for checked
   command and API examples.
 - [x] `docs/user/language-support/feature-matrix.md`: maintained support matrix.

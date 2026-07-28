@@ -1,25 +1,28 @@
 ---
 title: First Wrapped Module
+description: Wrap a Fortran module with public procedures and state variables
 audience: users
 prerequisites: first wrapped function
-related: beginner-workflow.md, ../guide/wrapping-modules.md, ../language-support/feature-matrix.md
+related: beginner-workflow.md, ../guide/wrapping-modules.md
 status: maintained
+publication: reviewed
 ---
 
 # First Wrapped Module
 
-A Fortran module becomes a child Python module inside the extension. Public
-procedures and supported public state appear on that child; private native
-names and internal getter/setter hooks do not.
+A Fortran `module` becomes a **child namespace** inside the generated Python extension. Public procedures and supported public variables are exposed under that namespace.
 
-## Source
+---
 
-Create `module_state.f90` with this module:
+## Source Code
+
+Create a file named `module_state.f90`:
 
 ```fortran
 module module_state
   implicit none
   private
+
   public :: nmax, counter, scale, saved_counter
   public :: summarize, scaled_counter, next_local
 
@@ -30,6 +33,7 @@ module module_state
   integer(4) :: hidden_counter = 17
 
 contains
+
   integer(4) function summarize() result(value)
     value = counter + nmax
   end function summarize
@@ -40,135 +44,119 @@ contains
 
   integer(4) function next_local() result(value)
     integer(4), save :: local_counter = 0
-
     local_counter = local_counter + 1
     value = local_counter
   end function next_local
+
 end module module_state
 ```
 
-## Build
+---
 
-From the directory containing `module_state.f90`:
+## Build the Extension
+
+Run the following command:
 
 ```bash
-python3 -m x2py module_state.f90 \
-  --out-dir build/first-module
+python3 -m x2py module_state.f90 --out-dir build/first-module
 ```
 
-The source stem creates extension `module_state`. Its contained module is
-available as `module_state.module_state`.
+The extension will be named `module_state`, and the Fortran module will be available as `module_state.module_state`.
 
-## Read Procedures And State
+---
+
+## Inspect the Generated Docstring
+
+Import the built module and print its generated docstring:
 
 ```python
 import sys
 
+sys.path.insert(0, "build/first-module")
+import module_state.module_state as mod
+
+print(mod.__doc__)
+```
+
+```text
+module_state
+
+Module Attributes
+-----------------
+nmax : int32
+    Read-only constant.
+counter : int32
+scale : float64
+saved_counter : int32
+
+Functions
+---------
+summarize() -> int32
+scaled_counter() -> float64
+next_local() -> int32
+```
+
+`help(mod)` shows the same index. Individual functions have their own detailed
+docstrings.
+
+---
+
+## Usage Example
+
+```python
 import numpy as np
 
-sys.path.insert(0, "build/first-module")
-import module_state
+print(mod.nmax)           # 12
+print(mod.counter)        # 3
+print(mod.scale)          # 1.5
 
-module = module_state.module_state
-
-assert module.nmax == np.int32(12)
-assert module.counter == np.int32(3)
-assert module.scale == np.float64(1.5)
-assert module.summarize() == np.int32(15)
+print(mod.summarize())           # 15
+print(mod.scaled_counter())      # 4.5
 ```
 
-The generated surface exposes public variable names directly. Internal native
-helpers such as `get_counter` and `set_counter`, and private names such as
-`hidden_counter`, are not part of the Python API.
+---
 
-## Mutate Module State
-
-Writable state is assigned through the public attribute with its exact NumPy
-dtype:
+## Mutating Module State
 
 ```python
-module.counter = np.int32(9)
-assert module.counter == np.int32(9)
-assert module.summarize() == np.int32(21)
+mod.counter = np.int32(9)
+print(mod.summarize())           # 21
 
-module.scale = np.float64(2.0)
-assert module.scaled_counter() == np.float64(18.0)
+mod.scale = np.float64(2.0)
+print(mod.scaled_counter())      # 18.0
 ```
 
-Supported saved state is native process state. Importing a second extension
-module object does not create a second copy of the underlying writable Fortran
-state; updates are visible through both wrappers. Python-side values that are
-not backed by a native setter can differ between module objects, so do not infer
-native mutability from assignment success alone.
-
-Procedure-local saved state also persists across calls:
+Procedure-local `save` variables also persist across calls:
 
 ```python
-assert module.next_local() == np.int32(1)
-assert module.next_local() == np.int32(2)
+print(mod.next_local())   # 1
+print(mod.next_local())   # 2
 ```
 
-## Public Surface Rules
+---
 
-- The extension name comes from the first source filename.
-- Each contained Fortran module is a Python child namespace.
-- Public procedures use their generated Python names under that namespace.
-- Supported writable module variables use direct attributes; generated native
-  accessors stay hidden.
-- Constants and parameters may be readable without a native setter.
-- Private Fortran declarations remain absent from the public wrapper.
+## Inspect the Contract
 
-Use `--pyi` to inspect names and types before building:
+Preview the generated interface without building:
 
 ```bash
 python3 -m x2py generate --pyi module_state.f90
 ```
 
-The generated package entry preserves the module namespace:
+---
 
-```python
-from . import module_state
-```
+## Key Rules
 
-The generated module leaf remains the native contract:
+- The extension name is derived from the source filename.
+- Each Fortran `module` becomes a child Python namespace.
+- Only **public** entities are exposed.
+- Private variables (like `hidden_counter`) are hidden.
+- Assign module variables with the matching NumPy scalar dtype.
 
-```python
-from x2py.contracts import Final, Float64, Int32
+---
 
-nmax: Final[Int32] = 12
+## Next
 
-counter: Int32
-
-scale: Float64
-
-saved_counter: Int32
-
-def summarize() -> Int32: ...
-
-def scaled_counter() -> Float64: ...
-
-def next_local() -> Int32: ...
-```
-
-The entry file is Python export policy. Advanced contract editing can flatten
-the child module, select only some declarations, or expose one native declaration
-under multiple Python names. Those edits reshape Python exports only; they are
-not native ABI changes. Keep the leaf contract as the source of native facts and
-wait for Editing Semantic `.pyi` Contracts later in the User Guide before
-changing the generated contract package.
-
-The language feature matrix later collects support boundaries for module state
-and other Fortran constructs.
-
-If the extension imports but a name is absent, inspect the generated `.pyi`,
-then check native visibility. Runtime Issues later expands this diagnosis.
-
-## Evidence
-
-The same module-state behavior, hidden accessors, mutation, saved state, and
-repeated import behavior are checked by the internal fixture tests in
-[`test_module_state.py`](../../../tests/wrapper/fortran/module_state/test_module_state.py).
-Generated module contracts are checked by
-[`test_module_state_generated_pyi_contracts.py`](../../../tests/wrapper/fortran/module_state/test_module_state_generated_pyi_contracts.py).
-The advanced entry export policy linked from this page is checked by
-[`test_pyi_wrapper_builds.py`](../../../tests/wrapper/fortran/build_from_pyi/test_pyi_wrapper_builds.py).
+- Continue with the [Beginner Workflow](beginner-workflow.md) to turn these
+  steps into a repeatable development loop.
+- For module details, see [Wrapping Modules](../guide/wrapping-modules.md).

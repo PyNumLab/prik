@@ -4,6 +4,7 @@ audience: users, developers
 prerequisites: error handling
 related: index.md, ../troubleshooting/index.md
 status: maintained
+publication: draft
 ---
 
 # Diagnostic Codes

@@ -4,6 +4,7 @@ audience: maintainers
 prerequisites: pipeline map, semantic IR, ownership policy
 related: ../internal-architecture/pipeline-map.md, ../../user/reference/semantic-ir.md, semantic-pyi-wrapper-checklist.md, index.md
 status: active-roadmap
+publication: draft
 ---
 
 # Wrapper Plan Migration Checklist
@@ -593,7 +594,7 @@ summary, the exhaustive matrix, and the test tree disagree.
 
 | Status | Collected nodes |
 | --- | ---: |
-| `wrapper-plan` | 353 |
+| `wrapper-plan` | 366 |
 | `dual-route` | 0 |
 | `legacy` | 0 |
 | `not-applicable` | 76 |
@@ -650,6 +651,7 @@ already covered by the new generator.
 | `tests/wrapper/fortran/arrays/test_array_contracts.py::*` | source/generated-.pyi parity or parametrized route | ordinary arrays | `wrapper-plan` |
 | `tests/wrapper/fortran/arrays/test_array_generated_pyi_contracts.py::*` | non-generating: generated semantic .pyi fixture parity | semantic .pyi generation/parsing | `not-applicable` |
 | `tests/wrapper/fortran/arrays/test_array_results.py::test_array_results_follow_data_buffer_and_descriptor_handle_contracts[*]` | production plan route in source/generated-.pyi parity modes | fixed/runtime-shape ordinary array results; owned allocatable descriptor results; namespace preservation | `wrapper-plan` |
+| `tests/wrapper/fortran/arrays/test_array_results.py::test_maybe_unallocated_allocatable_result_preserves_absent_state` | edited semantic `.pyi` contract over the existing array-result native unit | `MaybeUnallocated` direct allocatable vector/matrix result annotations preserve allocated and unallocated result states without changing default always-allocated result handling | `wrapper-plan` |
 | `tests/wrapper/fortran/arrays/test_array_results.py::test_ordinary_array_results_use_canonical_plan` | canonical production output-only plan route | fixed/runtime-shape ordinary array results; ranks one through fifteen; Fortran order; zero-sized results; allocation/copy/release failure paths | `wrapper-plan` |
 | `tests/wrapper/fortran/arrays/test_array_results.py::test_owned_allocatable_results_preserve_handle_state` | canonical reduced owned-result contract | allocated and zero-sized wrapper-owned `CFI_CDESC_T` function-result handles; extraction and release | `wrapper-plan` |
 | `tests/wrapper/fortran/arrays/test_assumed_rank_arrays.py::test_assumed_rank_arguments_dispatch_to_runtime_rank[*]` | source/generated-.pyi parity | ordinary arrays; native-handle actuals deferred to Phase 7 | `wrapper-plan` |
@@ -724,9 +726,11 @@ already covered by the new generator.
 | `tests/wrapper/fortran/derived_types/test_phase8_derived_plan.py::*` | reduced passing legacy/source artifacts compared with direct typed-plan generation; plain non-target module objects intentionally use the safer member-proxy correction described in Phase 8 | scalar derived arguments/results; optional and by-value inputs; projected identity; owned/borrowed lifecycle; plain/`Aliased` module objects; scalar/string/array/nested/native-handle fields; production routing | `wrapper-plan` |
 | `tests/wrapper/fortran/derived_types/test_phase9_bound_constructors.py::*` | reduced direct-plan bound-constructor runtime and artifact proof | explicit bound construction; shared method plan; allocation and owner commit | `wrapper-plan` |
 | `tests/wrapper/fortran/derived_types/test_scalar_derived_actual_dummy_matrix.py::*` | complete source/generated-contract and direct-plan proof over the canonical scalar-derived matrix fixture; replaces the former isolated descriptor rejection unit; final Phase 8H cross-suite verification remains a separate closure gate | all five actual declarations from module and wrapper origins; all six dummy forms; exact action/error selection; holder, scoped-address, allocation and pointer transactions; mixed multi-argument acquisition and reverse cleanup; distinct module-origin callbacks for qualified types from separate Fortran modules | `wrapper-plan` |
+| `tests/wrapper/fortran/derived_types/test_pointers.py::test_caller_created_pointer_crosses_separately_built_extensions` | two independently built semantic-contract extensions | caller-created pointer descriptor identity; cross-extension validation and association | `wrapper-plan` |
+| `tests/wrapper/fortran/derived_types/test_pointers.py::test_caller_created_pointer_handle_tracks_native_output_association` | direct semantic-contract wrapper/build route | caller-created pointer storage attachment; output association and descriptor operations | `wrapper-plan` |
 | `tests/wrapper/fortran/derived_types/test_pointers.py::test_module_and_derived_pointer_handles_track_native_association[*]` | source/generated-.pyi parity or parametrized route | derived types/object lifetimes; native handles/descriptors | `wrapper-plan` |
 | `tests/wrapper/fortran/derived_types/test_pointers.py::test_module_native_array_handles_use_canonical_plan` | canonical reduced module-only contract | borrowed pointer/allocatable handles; descriptor calls; strided extraction; ordinary array actuals; operation permissions | `wrapper-plan` |
-| `tests/wrapper/fortran/derived_types/test_pointers.py::test_pointer_array_handles_block_on_unsupported_result_owner_policy[*]` | source/generated-.pyi parity or parametrized route | derived types/object lifetimes; native handles/descriptors | `wrapper-plan` |
+| `tests/wrapper/fortran/derived_types/test_pointers.py::test_pointer_array_results_use_owned_descriptors_without_owning_targets[*]` | source/generated-.pyi parity or parametrized route | owned pointer result descriptors; associated and unassociated state; borrowed target lifetime | `wrapper-plan` |
 | `tests/wrapper/fortran/derived_types/test_pointers.py::test_pointer_descriptor_views_preserve_slice_shape_strides_and_parent_lifetime` | direct wrapper/build route | derived types/object lifetimes; native handles/descriptors | `wrapper-plan` |
 | `tests/wrapper/fortran/edit_pyi_contracts/test_native_order_contracts.py::test_editable_contract_can_use_native_order_arguments_without_native_call` | direct wrapper/build route | semantic .pyi generation/parsing; raw array addresses completed by Phase 6G; derived result remains Phase 8 | `wrapper-plan` |
 | `tests/wrapper/fortran/edit_pyi_contracts/test_native_order_contracts.py::test_raw_array_addresses_use_canonical_plan` | reduced edited semantic `.pyi` entries over existing vector/matrix native routines | raw numeric addresses; visible scalar-storage extents; rank one/two; default C and explicit Fortran orientation; mutation; integer-only conversion | `wrapper-plan` |
@@ -759,13 +763,16 @@ already covered by the new generator.
 | `tests/wrapper/fortran/function_calls/test_optional_arguments.py::test_optional_arguments_drive_fortran_present_behavior[*]` | source/generated-.pyi parity or parametrized route | optional/presence/writeback | `wrapper-plan` |
 | `tests/wrapper/fortran/function_calls/test_optional_arguments.py::test_optional_array_buffers_preserve_omission_and_identity` | reduced semantic `.pyi` entry over the existing optional native unit | omitted/`None`/present ordinary array storage; mutation; projected identity; native-handle actuals deferred to Phase 7 | `wrapper-plan` |
 | `tests/wrapper/fortran/function_calls/test_scalar_writeback_plan.py::test_scalar_copy_in_out_returns_replacement` | canonical production plan route | scalar copy-in/native mutation/copy-out/cleanup; build/artifact integration | `wrapper-plan` |
+| `tests/wrapper/fortran/function_calls/test_scalar_writeback_plan.py::test_source_generated_scalar_inout_contract_returns_replacement_and_keeps_namespace` | source/generated-.pyi parity | scalar replacement projection; namespace preservation; semantic .pyi generation/parsing | `wrapper-plan` |
 | `tests/wrapper/fortran/function_calls/test_output_arguments.py::test_output_arguments_and_multiple_results_follow_python_projection_rules[*]` | source/generated-.pyi parity | mixed-type multiple-result aggregation; ordinary arrays; strings; derived types/object lifetimes; native handles/descriptors | `wrapper-plan` |
 | `tests/wrapper/fortran/function_calls/test_output_arguments.py::test_hidden_ordinary_array_output_uses_canonical_plan` | canonical production output-only plan route | fixed/runtime-shape hidden ordinary array output; zero-sized output; allocation/copy failure paths | `wrapper-plan` |
 | `tests/wrapper/fortran/layout_rules/test_wrapper_guide_layout.py::*` | non-generating: wrapper docs/test layout | test/docs layout | `not-applicable` |
 | `tests/wrapper/fortran/module_state/test_allocatable_replacement.py::test_allocatable_inout_arrays_mutate_and_return_the_same_handle[*]` | source/generated-.pyi parity route | module variables/state; native handles/descriptors | `wrapper-plan` |
 | `tests/wrapper/fortran/module_state/test_allocatable_replacement.py::test_allocatable_replacement_has_no_native_memory_errors[*]` | source/generated-.pyi parity route | module variables/state; native handles/descriptors | `wrapper-plan` |
+| `tests/wrapper/fortran/module_state/test_allocatable_replacement.py::test_caller_created_allocatable_crosses_separately_built_extensions` | two independently built semantic-contract extensions | caller-created allocatable descriptor identity; cross-extension validation and mutation | `wrapper-plan` |
 | `tests/wrapper/fortran/module_state/test_allocatable_replacement.py::test_projected_allocatable_descriptor_preserves_same_handle_identity` | canonical reduced owned-result plus projected-descriptor contract | direct persistent descriptor mutation; allocation/reallocation/deallocation; same-handle result identity | `wrapper-plan` |
 | `tests/wrapper/fortran/module_state/test_allocatable_views.py::test_allocatable_module_fields_and_results_expose_lifetime_safe_handles[*]` | source/generated-.pyi parity with one mixed generation unit | derived class/field handles and parent retention remain Phase 8/9 blockers | `wrapper-plan` |
+| `tests/wrapper/fortran/module_state/test_allocatable_views.py::test_maybe_unallocated_direct_allocatable_results_preserve_unallocated_state` | edited semantic `.pyi` contract over the existing allocatable module unit | `MaybeUnallocated` direct allocatable result annotation preserves the unallocated result state without changing default always-allocated result handling | `wrapper-plan` |
 | `tests/wrapper/fortran/module_state/test_allocatable_views.py::test_scalar_descriptor_module_variables_return_copied_optional_values[*]` | production plan route in source/generated-.pyi parity modes | rank-zero allocatable/pointer arguments, writeback, results, and copied nullable module values | `wrapper-plan` |
 | `tests/wrapper/fortran/module_state/test_allocatable_views.py::test_plain_allocatable_module_array_exposes_current_live_view[*]` | production plan route after the Phase 7 contract correction | plain and `Aliased` module handles return a current live view or `None`; explicit `.copy()` is independent and a fresh extraction follows current native state | `wrapper-plan` |
 | `tests/wrapper/fortran/module_state/test_common_blocks.py::*` | source/generated-.pyi parity or parametrized route | scalar calls with internal common-block storage | `wrapper-plan` |
@@ -776,6 +783,7 @@ already covered by the new generator.
 | `tests/wrapper/fortran/multiple_files/test_multi_source_builds.py::test_makefile_mode_reproduces_multi_source_build` | direct wrapper/build route | build/compile/link orchestration; external symbols/native linkage; module variables/state | `wrapper-plan` |
 | `tests/wrapper/fortran/multiple_files/test_multi_source_builds.py::test_multi_file_modules_build_one_merged_extension` | direct wrapper/build route | scalar multi-source build/link orchestration; module variables/state | `wrapper-plan` |
 | `tests/wrapper/fortran/multiple_files/test_multi_source_builds.py::test_multi_file_standalone_procedures_build_one_merged_extension` | direct wrapper/build route | scalar multi-source external symbols and link orchestration | `wrapper-plan` |
+| `tests/wrapper/fortran/multiple_files/test_multi_source_builds.py::test_generated_child_modules_are_importable_submodules` | direct wrapper/build route | generated child-module imports and namespace preservation | `wrapper-plan` |
 | `tests/wrapper/fortran/multiple_files/test_multi_source_builds.py::test_multi_source_generated_contract_build_matches_source_runtime_and_link_order` | direct wrapper/build route | build/compile/link orchestration; external symbols/native linkage; module variables/state; semantic .pyi generation/parsing | `wrapper-plan` |
 | `tests/wrapper/fortran/multiple_files/test_multi_source_builds.py::test_multi_source_modified_entry_preserves_modules_and_adds_documented_alias` | direct wrapper/build route | build/compile/link orchestration; external symbols/native linkage; module variables/state | `wrapper-plan` |
 | `tests/wrapper/fortran/multiple_files/test_multi_source_builds.py::test_multi_source_pyi_out_writes_one_flat_combined_package` | direct wrapper/build route | build/compile/link orchestration; external symbols/native linkage; module variables/state; semantic .pyi generation/parsing | `wrapper-plan` |
@@ -1358,7 +1366,7 @@ validation, allocation, and writeback behavior, while
 `_build_string_storage_argument()`, `_convert_raw_string_argument()`, and
 `_convert_string_result()` define the bridge representation. The public
 contract and observable oracle are
-`docs/user/guide/fortran-wrapper.md`, `docs/user/guide/data-types.md`,
+`docs/user/reference/fortran-wrapper.md`, `docs/user/guide/data-types.md`,
 `docs/user/reference/semantic-pyi-format.md`,
 `tests/wrapper/fortran/strings/test_character_arguments.py`, and
 `tests/wrapper/fortran/strings/test_character_edge_cases.py`. Direct-plan
@@ -1718,7 +1726,7 @@ with the native-handle caller contract recorded as their sole Phase 7 blocker;
 the direct route is forced only by the internal parity harness.
 
 The public behavior is defined by the NumPy array contract in
-`docs/user/guide/fortran-wrapper.md`, the array spelling and metadata rules in
+`docs/user/reference/fortran-wrapper.md`, the array spelling and metadata rules in
 `docs/user/reference/semantic-pyi-format.md`, and the existing array wrapper
 tests. The legacy binding validates exact dtype, rank, every expressible
 extent, native byte order, alignment, layout/stride requirements, and
@@ -2609,30 +2617,27 @@ Legacy oracle:
 
 ### Phase 7E — Owned Allocatable Results And Hidden Outputs
 
-Included: rank-positive allocatable direct function results and hidden output
-descriptors whose completed policy selects `owned_result_descriptor`. A valid
-allocatable function result is allocated when returned; an unallocated
-nonpointer function result is a nonconforming native procedure and the wrapper
-does not compensate for it. An allocatable output dummy may validly remain
-unallocated and still returns a present `AllocatableArray` handle whose state
-lives inside that handle. Pointer handle results remain blocked until stable
-owner storage and target lifetime are explicit.
+Included: allocatable array direct function results and hidden output
+descriptors whose completed policy selects `owned_result_descriptor`.
+Direct array results preserve allocated, zero-sized, and unallocated state,
+including matrices and higher-rank arrays. An allocatable output dummy may
+validly remain unallocated and still returns a present `AllocatableArray` handle
+whose state lives inside that handle. Pointer handle results remain blocked
+until stable owner storage and target lifetime are
+explicit.
 
-For a numeric direct allocatable function result, the bridge assigns the native
-function expression once into a procedure-local allocatable and then uses
-`move_alloc` to transfer that allocation into the allocatable `intent(out)`
-dummy backed by persistent wrapper-owned `CFI_CDESC_T(rank)` storage. The move
-does not copy the array payload. Do not insert a collector helper, an
-`allocated(...)` guard, or a second intrinsic assignment. The native function
-must return an allocated, defined result; an unallocated result is a
-nonconforming native procedure and remains the user's responsibility rather
-than a wrapper fallback. Other procedure-local storage remains permitted only
-when representation conversion genuinely requires it, such as
-deferred-character byte materialization. The binding constructs the complete
-generated operation table and Python handle only after owner storage is valid.
-Ownership transfers to the handle exactly once; every earlier failure path
-releases the persistent allocation and any genuinely required bridge-local
-allocation.
+For a supported numeric direct allocatable function result, the bridge assigns
+the native function expression once into a procedure-local allocatable and then
+uses `move_alloc` to transfer its state into the allocatable `intent(out)` dummy
+backed by persistent wrapper-owned `CFI_CDESC_T(rank)` storage. The move does
+not copy the array payload and preserves an unallocated rank-one result. Do not
+insert a collector helper or a second intrinsic assignment. Other
+procedure-local storage remains permitted only when representation conversion
+genuinely requires it, such as deferred-character byte materialization. The
+binding constructs the complete generated operation table and Python handle
+only after owner storage is valid. Ownership transfers to the handle exactly
+once; every earlier failure path releases persistent storage and any genuinely
+required bridge-local allocation.
 
 Character-element handles carry runtime `elem_len` and declared element-length
 policy in the same descriptor record. Because a deferred character width is
@@ -2863,7 +2868,7 @@ Phase 7 rows were split, proved through both routes, and then recorded as
 | `build_from_pyi/test_pyi_wrapper_builds.py::test_pyi_manifest_records_pointer_descriptor_interop_requirements` | non-generating manifest policy; `not-applicable` | Phase 7G plan/header union is covered by direct generated-artifact tests |
 | `derived_types/test_pointers.py::test_module_and_derived_pointer_handles_track_native_association[*]` | module, normal-array actual, and field mix; `legacy` | split Phase 7A/7F module subsets; field subset remains Phase 8/9 |
 | `derived_types/test_pointers.py::test_pointer_descriptor_views_preserve_slice_shape_strides_and_parent_lifetime` | module/field descriptor views; `legacy` | Phase 7B/7G module subset; field owner remains Phase 8/9 |
-| `derived_types/test_pointers.py::test_pointer_array_handles_block_on_unsupported_result_owner_policy[*]` | explicit supported blocker; `legacy` | remain blocker until owner/lifetime policy changes; never auto-promote |
+| `derived_types/test_pointers.py::test_pointer_array_results_use_owned_descriptors_without_owning_targets[*]` | owned pointer-result descriptor support; `wrapper-plan` | replaces the former owner-policy blocker after descriptor ownership and target lifetime became explicit |
 | `edit_pyi_contracts/test_ownership_contracts.py::*` | module, field, result lifetime mix; `legacy` | Phase 7E/7F subsets; field/finalizer owners remain Phase 8/9 |
 | `function_calls/test_optional_arguments.py::test_optional_allocatable_scalar_descriptor_distinguishes_omitted_none_and_value` | scalar baseline; `wrapper-plan` | reuse Phase 3 behavior; no status change |
 | `function_calls/test_output_arguments.py::test_output_arguments_and_multiple_results_follow_python_projection_rules[*]` | mixed scalar/array/string/derived/allocatable outputs; `legacy` | Phase 7E reduced allocatable result; retain mixed row |
@@ -4430,8 +4435,8 @@ existing source/generated-`.pyi` runtime assertions are the behavioral oracle.
 | `callbacks/test_array_callbacks.py::test_immediate_dummy_procedure_converts_array_arguments_and_results[*]` | writable array view, shaped array result, outer-output identity, and reference writeback | array argument/result slice |
 | `callbacks/test_all_callback_shapes.py::test_immediate_callbacks_cover_all_supported_argument_shapes[*]` | scalar values, fixed strings, arrays, derived values, non-scalar reference writeback, and one combined call envelope | cross-kind closure slice |
 | `callbacks/test_derived_callbacks.py::test_immediate_dummy_procedure_converts_derived_arguments_and_results[*]` | callback-local borrowed derived input plus wrapper-owned derived result conversion | derived slice after Phase 9 construction |
-| `callbacks/test_callback_generated_pyi_contracts.py` | named prototypes, reference-default and `Value(T)` transport, shape, character storage, cross-module identity, and result annotations round-trip exactly | semantic-contract parity slice |
-| `semantics/conversion/pyi/test_types_and_values.py` callback cases | prototype declarations and references, `Value(T)`, exact argument names used by shapes, and unnecessary `Addr(...)` prototype forms | policy completion before planner work |
+| `callbacks/test_callback_generated_pyi_contracts.py` | named prototypes, primitive value defaults, explicit primitive `Addr(T)` references, non-primitive `Value(T)` transport, shape, character storage, cross-module identity, and result annotations round-trip exactly | semantic-contract parity slice |
+| `semantics/conversion/pyi/test_types_and_values.py` callback cases | prototype declarations and references, primitive `Addr(T)`, non-primitive `Value(T)`, exact argument names used by shapes, and invalid prototype transport forms | policy completion before planner work |
 
 ### Phase 10 Plan Shape And Action Vocabulary
 
@@ -4503,12 +4508,13 @@ For every dependency-closed sub-lane:
   call scope, context lifetime, same-thread rule, GIL rule, cleanup, and
   fatal-error behavior.
 - [x] Preserve generated and edited named prototypes exactly. Reject an
-  incomplete prototype reference, unnecessary `Addr`, optional procedure,
+  incomplete prototype reference, invalid prototype `Addr`, optional procedure,
   stored/procedure-pointer lifetime, unavailable mandatory native interface,
   or unsupported result with the owner path and one exact reason.
 - [x] Complete callback signature/result/ownership policy before wrapper
   planning; lowering may only project the completed callback record.
-- [x] Add policy/planning tests for reference-default transport, `Value(T)`,
+- [x] Add policy/planning tests for primitive value defaults, explicit
+  primitive `Addr(T)` references, non-primitive `Value(T)`,
   and retained unsupported forms before planner changes.
 
 ### Phase 10B — Typed Callback Plan And Validation

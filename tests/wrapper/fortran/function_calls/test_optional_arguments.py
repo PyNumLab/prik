@@ -247,8 +247,7 @@ def test_optional_arguments_drive_fortran_present_behavior(
     np.testing.assert_allclose(mutable, np.array([5.5, 6.5], dtype=np.float64))
 
     output = np.empty(3, dtype=np.float64)
-    returned_output = module.fill_optional(np.int32(3), output)
-    assert returned_output is output
+    assert module.fill_optional(np.int32(3), output) is None
     np.testing.assert_allclose(output, np.array([11.0, 12.0, 13.0], dtype=np.float64))
     assert module.fill_optional(np.int32(3)) is None
     assert module.fill_optional(np.int32(3), None) is None

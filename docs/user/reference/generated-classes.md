@@ -4,6 +4,7 @@ audience: users, advanced users
 prerequisites: wrapping derived types
 related: generated-functions.md, generated-modules.md, semantic-pyi-format.md, ../guide/wrapping-derived-types.md, ../guide/memory-management.md
 status: maintained
+publication: draft
 ---
 
 # Generated Classes Reference
@@ -23,9 +24,8 @@ A derived type declared in a Fortran module is exposed from the generated child
 module for that native module:
 
 ```python
-import geometry
+from geometry.points import point
 
-point = geometry.points.point
 item = point(x=np.float64(1.0), y=np.float64(2.0))
 ```
 

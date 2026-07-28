@@ -4,6 +4,7 @@ audience: maintainers
 prerequisites: design documents, developer guide
 related: ../design/index.md, ../../developer/development-workflow.md
 status: planned-documentation
+publication: draft
 ---
 
 # Internal Architecture

@@ -2,23 +2,26 @@
 title: Reference
 audience: users, developers
 prerequisites: getting started
-related: cli-commands.md, python-api.md, semantic-ir.md, semantic-pyi-format.md, callbacks.md
+related: cli-commands.md, python-api.md, fortran-wrapper.md, semantic-pyi-format.md, pyi-contracts/index.md
 status: maintained
+publication: draft
 ---
 
 # Reference
 
-Reference pages describe the command, API, and data contracts that user guides
-and developer guides depend on. Workflow guidance belongs in tutorials, examples,
-and user guides; this section stays close to the public surfaces.
+Reference pages describe the command, API, generated-wrapper, and semantic
+contract surfaces that other documentation depends on. They also cover the
+advanced contract-editing boundary. Beginner workflows remain in tutorials,
+examples, and user guides.
 
 ## Pages
 
 - [CLI commands](cli-commands.md)
 - [Python API](python-api.md)
+- [Fortran wrapper reference](fortran-wrapper.md)
 - [Semantic IR](semantic-ir.md)
 - [Semantic .pyi format](semantic-pyi-format.md)
-- [Callbacks](callbacks.md)
+- [Editing .pyi contracts](pyi-contracts/index.md)
 - [Diagnostic codes](diagnostic-codes.md)
 - [Generated functions](generated-functions.md)
 - [Generated modules](generated-modules.md)

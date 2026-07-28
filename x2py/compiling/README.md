@@ -51,7 +51,7 @@ policy completion. Those decisions happen before generated sources reach this pa
 
 ## Tests And Docs
 
-- Wrapper guide: `docs/user/guide/fortran-wrapper.md`
+- Wrapper reference: `docs/user/reference/fortran-wrapper.md`
 - Build-system docs: `docs/developer/build-system.md`
 - Quality and static checks: `docs/developer/quality-assurance.md`
 - Source navigation: `docs/developer/source-map.md`, `docs/developer/feature-to-code-map.md`

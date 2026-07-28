@@ -4,6 +4,7 @@ audience: maintainers
 prerequisites: runtime model
 related: ../../user/guide/error-handling.md, cpython-integration.md
 status: planned-documentation
+publication: draft
 ---
 
 # Error Propagation Model

@@ -4,13 +4,14 @@ audience: users, advanced users, developers
 prerequisites: semantic IR reference, wrapper build workflow
 related: index.md, semantic-ir.md
 status: maintained
+publication: draft
 ---
 
 # Semantic `.pyi` Format
 
 For the supported edit workflow and runtime consequences of changing a
 contract, including ownership and destruction examples, see
-[Editing semantic `.pyi` contracts](../guide/editing-semantic-pyi-contracts.md).
+[Editing `.pyi` contracts](pyi-contracts/index.md).
 
 <!-- X2PY_C_DOCS_START
 Semantic `.pyi` files are x2py's editable wrapper contract. They are valid
@@ -295,8 +296,9 @@ def update(value: Float64[()]) -> None: ...
 
 `@bind("native_name")` remains necessary only when the Python declaration name
 differs from the native symbol. `@native_call` remains necessary only when the
-Python signature hides, inserts, or reorders native arguments. For type-bound
-methods, `Pass()` records a non-default passed-object position.
+Python signature hides, inserts, or reorders native arguments. `Pass()` marks
+the implicit class instance. This is a method receiver or a newly allocated
+constructor object.
 
 Ordinary semantic types are the native type contract. `Int32`, `Float64`,
 `Addr`, scalar storage rank `()`, array rank, shape, and focused metadata such
@@ -413,6 +415,9 @@ For `__init__.pyi`, the package directory name supplies the extension name
 unless wrapper `--out NAME` is provided. The runtime follows the entry's import
 policy: `from . import m1` exposes `basic_subroutine.m1`, while
 `from .m1 import *` explicitly flattens `m1` into the extension root.
+Passing a leaf such as `m1.pyi` directly builds a flat extension named `m1`
+unless `--out NAME` overrides it, so the same declaration is exposed as
+`m1.update(...)` instead of under a package child namespace.
 
 A mixed source keeps standalone procedures in the entry contract and marks each
 one with `@external`:
@@ -486,15 +491,19 @@ def DAXPY(
 ) -> None: ...
 ```
 
+`Float64[Flat]` maps to rank-one assumed-size storage such as `real :: a(*)`.
+The Python argument may be any contiguous NumPy array with rank 1 through 15;
+the wrapper passes the contiguous element sequence as a rank-one native view.
+
 `Float64[3, Flat]` maps to `real :: a(3, *)`, and
-`Float64[3, 4, Flat]` maps to `real :: a(3, 4, *)`. `Flat` is an axis marker,
-not a request to collapse the whole array to rank one: `Float64[:, Flat]`
-remains a rank-two Python and bridge contract. Because `real :: a(:, *)` is not
-a legal Fortran assumed-size declaration, an external interface whose prefix
-extent is known only at runtime uses the sequence-associated `a(*)` spelling
-when that procedure requires an explicit interface;
-the bridge view still has rank two and receives both runtime extents. The
-Python-visible flat dimension remains unconstrained.
+`Float64[3, 4, Flat]` maps to `real :: a(3, 4, *)`. Those multidimensional
+forms are flat-edge contracts: the wrapper validates the fixed prefix axes, then
+collapses all remaining contiguous Python axes into the final native assumed-size
+extent. `Float64[:, Flat]` follows the same rule but reads the prefix extent
+from the Python actual. Because `real :: a(:, *)` is not a legal Fortran
+assumed-size declaration, source-generated contracts use declared prefix
+extents such as `Float64[n, Flat]`; edited contracts may use `:` when the Python
+actual should provide that prefix extent.
 
 <!-- X2PY_C_DOCS_START
 C-order flat storage can be expressed for native routines that consume a raw
@@ -781,7 +790,8 @@ X2PY_C_DOCS_END -->
 | Text | `String` |
 | User types | class names and imported type names |
 | Named callable prototypes | `@prototype` function declarations referenced by name |
-| Prototype value override | `Value(T)` inside a `@prototype` declaration only |
+| Prototype primitive reference | `Addr(T)` inside a `@prototype` declaration |
+| Prototype non-primitive value override | `Value(T)` inside a `@prototype` declaration |
 
 <!-- X2PY_C_DOCS_START
 `Unknown` is intentionally rejected in `.pyi` annotations. Generated stubs must
@@ -794,21 +804,21 @@ type, rank, shape, character length, result shape, and value/reference passing.
 It does not repeat native callback direction:
 
 ```python
-from x2py.contracts import Float64, Int32, Value, prototype
+from x2py.contracts import Addr, Float64, Int32, prototype
 
 @prototype
-def update_values(count: Int32, scale: Value(Float64), values: Float64[:]) -> None: ...
+def update_values(count: Addr(Int32), scale: Float64, values: Float64[:]) -> None: ...
 
-def apply_update(callback: update_values, ...) -> ...: ...
+def apply_update(callback: update_values) -> None: ...
 ```
 
-Bare callback argument types use the normal Fortran reference form. A primitive
-scalar reference becomes an independent NumPy scalar value, arrays become
-writable NumPy views, fixed-length character references become mutable
+Bare primitive callback arguments use native value passing, matching ordinary
+wrapper signatures. Use `Addr(T)` when a primitive callback dummy is passed by
+reference; Python still receives an independent NumPy scalar value. Arrays
+become writable NumPy views, fixed-length character references become mutable
 rank-zero bytes storage, and wrapped objects retain their native reference.
-`Value(T)` selects the native Fortran `value` attribute; both forms give Python
-an independent primitive scalar value. `Addr(...)` is unnecessary because
-reference is the default.
+`Value(T)` is reserved for supported non-primitive scalar value dummies, such
+as derived types declared with the Fortran `value` attribute.
 
 Prototype declarations are not runtime functions and are not exported from the
 generated Python module. They may be referenced from another semantic contract
@@ -817,7 +827,7 @@ module through a relative import:
 ```python
 from .callback_shapes import transform
 
-def apply_transform(callback: transform, ...) -> ...: ...
+def apply_transform(callback: transform) -> None: ...
 ```
 
 Post-IR policy completes each prototype reference as an implicit external or a
@@ -826,8 +836,12 @@ contains an explicit-interface-only characteristic such as an optional or
 descriptor dummy, polymorphism, or an array/pointer/allocatable
 result. The backend imports that real interface from the prototype's native
 module, including its native direction attributes; the semantic `.pyi` does not
-duplicate them. `Value(...)` alone may still use a typed external declaration
-when no other characteristic requires the explicit interface.
+duplicate them. Primitive `Addr(...)` or non-primitive `Value(...)` alone may
+still use a typed external declaration when no other characteristic requires
+the explicit interface.
+
+Optional callback dummies and allocatable, pointer, or polymorphic callback
+dummies and results are currently rejected during policy completion.
 
 Before wrapper planning, x2py completes these declarations into explicit
 callback ABI, primitive-scalar value projection, non-scalar reference
@@ -902,15 +916,18 @@ from x2py.contracts import Float64
 def dot(a: Float64, b: Float64) -> Float64: ...
 ```
 
-`T[()]` represents caller-provided scalar storage. The caller passes an
+`T[()]` represents rank-zero NumPy storage. For arguments, the caller passes an
 addressable rank-0 NumPy array with the declared dtype; x2py validates the
-object and uses its data storage for the native call:
+object and uses its data storage for the native call. For direct or projected
+results, x2py returns a rank-0 NumPy array instead of collapsing the contract to
+a scalar value:
 
 ```python
 from x2py.contracts import Float64, Int32
 
 def update_storage(value: Float64[()]) -> None: ...
 def inspect_storage(value: Int32[()]) -> None: ...
+def current_storage() -> Float64[()]: ...
 ```
 
 The caller writes:
@@ -1055,21 +1072,26 @@ intrinsics such as `size(v)` are recognized only after visible symbols are
 resolved; the referenced value `v` must still be visible in the interface.
 
 <!-- X2PY_C_DOCS_START
-`Flat` must appear exactly once at either edge of a concrete-rank array. Final
-`Flat` is Fortran-oriented flat storage: `Float64[3, Flat]` corresponds to
-`real :: a(3, *)`. Leading `Flat` is C-oriented flat storage and should be
-spelled with explicit `ORDER_C` in Fortran-facing contracts:
-`Annotated[Float64[Flat, 3], ORDER_C]`. It validates a C-contiguous Python
-view, constructs a rank-preserving bridge view over the same storage, and passes
-that view to the native assumed-size dummy. It does not imply an invalid
-Fortran declaration such as `real :: a(*, 3)`.
+`Flat` must appear exactly once at either edge of a concrete-rank array.
+`Float64[Flat]` is the rank-one assumed-size storage contract: the Python side
+accepts any contiguous rank from 1 through 15 and flattens that storage sequence
+to the rank-one native view. Final `Flat` in a multidimensional contract is
+Fortran-oriented flat storage: `Float64[3, Flat]` corresponds to `real ::
+a(3, *)`, accepts any Fortran-contiguous Python rank from 2 through 15 with
+first extent `3`, and passes native extents `[3, product(rest)]`.
+
+Leading `Flat` is C-oriented flat storage and should be spelled with explicit
+`ORDER_C` in Fortran-facing contracts:
+`Annotated[Float64[Flat, 3], ORDER_C]`. It validates any C-contiguous Python
+rank from 2 through 15 with final extent `3`, flattens the leading Python axes,
+and passes binding extents `[product(leading), 3]`. It does not imply an
+invalid Fortran declaration such as `real :: a(*, 3)`.
 
 Array dimensions are always written in Python logical-axis order. Consequently
 the symmetric multidimensional forms are `Float64[rows, Flat]` for
 Fortran-contiguous storage and
 `Annotated[Float64[Flat, columns], ORDER_C]` for C-contiguous storage. The
 bridge reverses the latter's extents to construct its Fortran storage view.
-Only the bridge orientation changes; neither form loses its logical rank.
 X2PY_C_DOCS_END -->
 
 The Python argument may provide more storage than the declared explicit
@@ -1082,13 +1104,12 @@ Use local constants or generated `Final[...]` names for shape symbols.
 
 ## Metadata With `Annotated`
 
-`Annotated[...]` carries storage metadata and semantic constraints. It does
-not carry source-language argument direction or per-call value/reference
-selection. The Fortran semantic pipeline supplies `ORDER_F` as the default
-multidimensional layout. Generated contracts omit that default. Write explicit
-layout metadata only when the Python-visible storage deliberately differs from
-that Fortran representation, such as a row-major input accepted by a Fortran
-wrapper.
+`Annotated[...]` carries storage and call-boundary metadata. It does not carry
+source-language argument direction or per-call value/reference selection. The
+Fortran semantic pipeline supplies `ORDER_F` as the default multidimensional
+layout. Generated contracts omit that default. Write explicit layout metadata
+only when the Python-visible storage deliberately differs from that Fortran
+representation, such as a row-major input accepted by a Fortran wrapper.
 Native call transport belongs to `@native_call`: a wrapped derived
 object uses its normal reference handoff with `Arg(i)` and exact typed value
 handoff with `Value(Arg(i))`. The Python API accepts the same opaque wrapper
@@ -1184,6 +1205,12 @@ association state. Both are handles, not NumPy arrays. Extra metadata wraps the
 handle, for example `Annotated[Allocatable[Float64[:]], Aliased]` or
 `Annotated[Pointer[Float64[:]], PointerAssociation("runtime")]`.
 
+At runtime, the same annotation can create a present empty descriptor handle:
+`Allocatable[Float64[:]]()` starts unallocated, while
+`Pointer[Float64[:]]()` starts unassociated. The element annotation and array
+rank are required. Ordinary array annotations such as `Float64[:]` and scalar
+descriptor annotations such as `Allocatable[Float64]` are not constructors.
+
 `Allocatable[T[...]] | None` and `Pointer[T[...]] | None` are valid only on
 optional callable arguments, where `None` or omission maps to native
 `present(...)` false. Module variables, derived-type fields, and function results
@@ -1209,9 +1236,9 @@ from x2py.contracts import Allocatable, Arg, Float64, Pointer, Return, Returns, 
 @native_call(
     [
         Allocatable(Arg(0)),
+        Allocatable(Return("normalized", 0)),
         Pointer(Return("selected", 2)),
     ],
-    result=Allocatable(Return(0)),
 )
 def normalize(
     value: Float64 | None,
@@ -1231,6 +1258,15 @@ create hidden `intent(out)` descriptor dummies projected into Python result slot
 result; its nested `Return(j)` selects that result's position among all Python
 results. Other Python results come from projected `intent(out)` and
 `intent(inout)` dummies.
+
+Use hidden descriptor outputs for nullable rank-zero results that must preserve
+`None`: `Allocatable(Return("name", j))` or `Pointer(Return("name", j))`.
+Direct rank-zero allocatable function results are blocked because the bridge
+cannot safely preserve the unallocated function-result state across supported
+Fortran compilers.
+Direct allocatable array function results use wrapper-owned descriptor handles
+and preserve allocated, zero-sized, and unallocated state for rank one and
+higher.
 
 Descriptor projection uses calls, not type subscriptions. Write
 `Allocatable(Arg(0))`, not `Allocatable[Arg(0)]`. This is distinct from
@@ -1272,14 +1308,6 @@ For array descriptors, use `Allocatable[T[...]]` and `Pointer[T[...]]`.
 `Annotated[T[...], Allocatable]` and `Annotated[T[...], Pointer]` are not
 active public descriptor spellings. Derived module objects remain live objects;
 there is no public whole-object snapshot annotation.
-
-Other positional `Annotated` helpers are preserved as semantic constraints:
-
-```python
-from x2py.contracts import Annotated, Bounded, Finite, Int32
-
-value: Annotated[Int32, Bounded(1, 8), Finite]
-```
 
 ### Ownership, Transfer, And Destruction Policies
 
@@ -1342,10 +1370,10 @@ preserved verbatim so project-specific owner and release names can be expressed;
 the backend still validates whether the requested transfer and destruction path
 are implemented.
 
-For native pointer-array handles, descriptor operations are opt-in. `nullify()`
-is always available on a present pointer handle. `allocate(shape)` is permitted
-only when `reassociation` is `allocate`, `allocate_resize`, `reallocate`, or
-`reassociate_allocate`. `deallocate()` is permitted only when `deallocation` is
+For native pointer-array handles, `associate(other)` and `nullify()` are always
+available. `allocate(shape)` is permitted only when `reassociation` is
+`allocate`, `allocate_resize`, `reallocate`, or `reassociate_allocate`.
+`deallocate()` is permitted only when `deallocation` is
 `deallocate`, `deallocate_resize`, `owner_deallocate`,
 `unsafe_deallocate`, or `wrapper_dealloc`.
 Use `unsafe_deallocate` only when the contract intentionally makes the caller
@@ -1388,9 +1416,10 @@ value: Annotated[
 For module and derived-field pointer-array handles, a completed contiguous
 policy enables `contiguous_view` extraction and checks the target's current
 contiguity before reading it. General strided extraction still requires the
-descriptor-view path. Pointer-array function results remain
-blocked until returned-handle owner storage, target lifetime, descriptor
-extraction, and destroy behavior are implemented.
+descriptor-view path. Pointer-array function results and nonoptional
+`intent(out)` outputs use wrapper-owned standard pointer descriptors. Their
+handles release descriptor storage on `close()` or finalization without
+implicitly deallocating the target.
 
 Derived module objects use the normal generated class in both plain and
 `Aliased` declarations:
@@ -1663,6 +1692,13 @@ to the native procedure by address. The optional `result=` keyword records a
 native scalar descriptor function result, for example
 `result=Allocatable(Return(0))` or `result=Pointer(Return(0))`.
 
+For nullable rank-zero values, prefer a hidden output dummy:
+`Allocatable(Return("name", 0))` or `Pointer(Return("name", 0))`. Direct
+rank-zero allocatable function results are rejected when the wrapper would need
+to preserve an unallocated result as Python `None`.
+Direct allocatable array function results use wrapper-owned descriptor handles
+and are supported for matrices and higher-rank arrays.
+
 For descriptor projections, `Pointer(Arg(i))` without a matching
 `Returns["name", T]` creates a permissive call-local pointer adapter and
 discards any native reassociation after the call. Adding the matching projected
@@ -1692,6 +1728,12 @@ values instead.
 Class methods use the same stub form. An untyped leading `self` is allowed in a
 method and is not treated as a native argument.
 
+A declared module procedure may also be projected as an instance method.
+`Pass()` places `self` in its native argument list. The module function and
+method remain independent Python exports, even when they have the same name.
+Matching names select the same native procedure without `@bind`. A different
+Python method name requires `@bind("native_name")`.
+
 ## Generic Procedure Overloads
 
 The x2py semantic `.pyi` format uses `@overload("specific_name")` to link one
@@ -1700,7 +1742,7 @@ decorator is x2py metadata; it is not `typing.overload` and must not be imported
 from `typing`.
 
 ```python
-from x2py.contracts import Addr, Arg, Float64, Int32, Pass, native_call, overload, private
+from x2py.contracts import Addr, Arg, Float64, Int32, Pass, bind, native_call, overload, private
 
 @private
 @native_call([Addr(Arg(0))])
@@ -1710,16 +1752,20 @@ def convert_integer(value: Int32) -> Int32: ...
 @native_call([Addr(Arg(0))])
 def convert_real(value: Float64) -> Float64: ...
 
+@bind("convert")
 @overload("convert_integer")
 def convert(value: Int32) -> Int32: ...
 
+@bind("convert")
 @overload("convert_real")
 def convert(value: Float64) -> Float64: ...
 
 class accumulator:
+    @bind("add")
     @overload("accumulator_add_integer")
     def add(self, value: Int32) -> None: ...
 
+    @bind("add")
     @overload("accumulator_add_real")
     def add(self, value: Float64) -> None: ...
 ```
@@ -1732,9 +1778,14 @@ when it is needed to resolve a public overload declaration from the standalone
 that is otherwise part of the wrapper input.
 `@native_call` is not emitted merely to restate an unchanged native function
 name.
-An overload declaration is only a Python dispatch link. It must not also carry
-`@native_call`; the linked concrete procedure owns any native projection,
-including argument reordering, `Pass()`, hidden values, and projected returns.
+An overload declaration is a Python dispatch link. It must not also carry
+`@native_call`; the linked concrete procedure owns argument reordering,
+`Pass()`, hidden values, and projected returns. An overload-level `@bind`
+changes only the final native call target.
+
+The same rule applies to class overloads. Their concrete link may describe a
+private specific while `@bind("public_generic")` selects the callable
+type-bound generic.
 
 The loader resolves only the decorator string. It never guesses a target by
 signature. The target must exist exactly once, each target may occur only once
@@ -1742,15 +1793,25 @@ in one overload set, and the public declaration must agree with the concrete
 call signature and return type. Missing, duplicate, ambiguous, and incompatible
 links are deterministic errors.
 
-When a module-level Python overload group is renamed, `generic=` preserves the
-native Fortran generic name:
+Without overload-level `@bind`, a module candidate calls the linked procedure's
+resolved native name. With `@bind`, it calls the named native symbol instead.
+This is required when a public generic is the only native entry point for a
+private specific:
 
 ```python
-from x2py.contracts import Int32, overload
+from x2py.contracts import Int32, bind, overload, private
 
-@overload("convert_integer", generic="convert")
+@private
+def convert_integer(value: Int32) -> Int32: ...
+
+@bind("convert")
+@overload("convert_integer")
 def convert_number(value: Int32) -> Int32: ...
 ```
+
+`@private` controls Python visibility only. For edited standalone contracts,
+x2py cannot infer whether the linked native procedure is accessible. A direct
+call to a Fortran-private specific therefore fails during the native build.
 
 Python method names recover the native generic for ordinary operators. When
 two distinct Fortran generics share one Python method, the decorator also
@@ -1763,11 +1824,9 @@ from x2py.contracts import Bool, overload
 def __eq__(self, other: value) -> Bool: ...
 ```
 
-For module overloads, the optional `generic=` argument names the native generic
-when it differs from the Python overload-set name. For class methods it is
-restricted to a compatible operator or assignment generic. It is emitted for
-`.eqv.` and `.neqv.`, which would otherwise be indistinguishable from
-`operator(==)` and `operator(/=)`.
+For class methods, `generic=` is restricted to a compatible operator or
+assignment generic. It is emitted for `.eqv.` and `.neqv.`, which would
+otherwise be indistinguishable from `operator(==)` and `operator(/=)`.
 
 <!-- X2PY_C_DOCS_START
 The generated C extension exposes one callable for each generic name. It
@@ -1958,30 +2017,19 @@ generation must not recreate it. A class left without any `__init__` has no
 public Python constructor; native allocation remains an internal wrapper
 operation only.
 
-An edited stub may instead replace the generated field-keyword constructor by
-binding `__init__` to one concrete class method with
-`@bind("specific_name")`. The target string must name another method declared in
-the same class, with the same Python-call signature and return type. The target
-method may be public, exposing both `state.init_state(...)` and `state(...)`, or
-marked `@private`, exposing only construction. A private target is still emitted
-in the `.pyi` because the `.pyi` must be sufficient to generate a wrapper
-without the original Fortran source. The target method represents the native
-initializer that keeps the native class argument; the Python `__init__`
-declaration omits that argument because Python supplies the newly allocated
-instance.
+An edited stub may replace the generated field-keyword constructor with one
+native initializer. `@bind("native_name")` selects the procedure. Exactly one
+`Pass()` in `@native_call(...)` selects the newly allocated object. Its native
+position is explicit, so other arguments of the same derived type remain
+unambiguous. The selected native dummy must accept the constructed type. The
+original module-level declaration may remain public or be marked `@private`.
+It may also be removed when only construction should expose the initializer.
+The `__init__` declaration remains sufficient to generate the native call.
 
 ```python
-from x2py.contracts import Addr, Arg, Float64, Int32, Pass, bind, native_call, private
+from x2py.contracts import Addr, Arg, Float64, Int32, Pass, bind, native_call
 
 class state:
-    @private
-    @native_call([Pass(), Addr(Arg(0)), Addr(Arg(1))])
-    def init_state(
-        self,
-        seed: Int32,
-        scale: Float64 = ...
-    ) -> None: ...
-
     @bind("init_state")
     @native_call([Pass(), Addr(Arg(0)), Addr(Arg(1))])
     def __init__(
@@ -2002,6 +2050,18 @@ overload set linked to concrete same-class targets. The direct wrapper allocates
 one native owner, dispatches without candidate trial calls, and releases an
 uncommitted owner on failure. Missing, incompatible, or indistinguishable
 candidates are rejected before source emission.
+
+A constructor overload may also route through a public type-bound generic:
+
+```python
+class accumulator:
+    @bind("add")
+    @overload("accumulator_add_integer")
+    def __init__(self, value: Int32) -> None: ...
+```
+
+The wrapper allocates `self` first. The overload link supplies the concrete
+argument contract; `@bind("add")` supplies the native call target.
 
 Module variables are declarations in the semantic contract. Allocatable array
 module variables expose handles; unallocated state is represented by the handle,
@@ -2159,9 +2219,15 @@ The handle carries association state and descriptor operations:
 
 - `p.associated` reports whether the pointer currently has a target.
 - `p.to_numpy()` returns the current target view or `None`.
+- `p.associate(other)` copies `other`'s association without copying data.
 - `p.nullify()` is the default descriptor operation.
 - `allocate(shape)`, `deallocate()`, and `resize(shape)` are exposed only when
   completed pointer policy allows them.
+
+Direct pointer-array function results and nonoptional pointer-array
+`intent(out)` outputs return owned `PointerArray` descriptor handles. Optional
+outputs remain visible to preserve native absence, and `intent(inout)` remains
+visible because its incoming association is part of the call.
 
 When descriptor-backed extraction is enabled, `to_numpy()` builds NumPy shape and
 strides from descriptor metadata and can expose strided pointer targets. If that
@@ -2244,7 +2310,7 @@ Loaded projection entries:
 | `Return(i)` | native argument is supplied by projected return slot `i` as hidden writable storage passed by address |
 | `Return("name", i)` | named native argument is supplied by projected return slot `i` as hidden writable storage passed by address |
 | `Allocatable(Return(...))`, `Pointer(Return(...))` | native output dummy is a nullable scalar descriptor copied to the selected Python result slot |
-| `Pass()` | hidden type-bound passed-object argument |
+| `Pass()` | implicit class instance: a method receiver or newly allocated constructor object |
 | `Int32(1)`, `Float64(0.5)`, `Bool(False)`, `String[1]("N")` | hidden native literal with an explicit ABI type |
 | `Len(Arg(i))`, `Len(Return(i))`, `Len(Work("name"))` | hidden native length metadata |
 | `Arg(i).shape[d]`, `Return(i).shape[d]`, `Work("name").shape[d]` | hidden native shape metadata |
@@ -2256,6 +2322,11 @@ Hidden native literals must be typed call expressions inside `@native_call`.
 `result=Allocatable(Return(i))` or `result=Pointer(Return(i))` keyword. The
 `result=` mapping describes the native function result and is not another native
 dummy argument.
+For nullable rank-zero outputs, use `Allocatable(Return("name", i))` or
+`Pointer(Return("name", i))` in the native-argument list instead of a direct
+allocatable function result.
+Allocatable array function results can be direct returns or hidden output
+dummies; both forms preserve unallocated handle state.
 Bare literals such as `1` or `"N"` are rejected because they do not declare the
 native ABI type. Fixed-length string literals must include their length, for
 example `String[1]("N")`; plain `String("N")` is not enough.
@@ -2303,14 +2374,8 @@ Loaded but usually not generated from source today:
 | --- | --- |
 | `Addr[n](T)` for `n > 1` | direct low-level pointer topology |
 | `ORDER_ANY` | edited orientation-independent array contract |
-| generic `Annotated` constraints | preserved semantic constraints |
 | additional `@native_call` and `Returns[...]` edits | projection metadata beyond generated output mappings |
 | source-provenance array helpers | compatibility loading for older or edited stubs |
-
-Generic constraints are not silently treated as runtime checks. Fortran wrapper
-wrapper planning reports `fortran_runtime_constraints_unsupported` until a named
-constraint has an implemented validator. Semantic coercions similarly report
-`fortran_runtime_coercions_unsupported` until a conversion action exists.
 
 ## Rejected Or Not Yet Supported
 
@@ -2334,7 +2399,7 @@ ambiguous, unsafe, or stale before wrapper lowering:
 - ordinary function bodies instead of `...`.
 - unsupported decorators other than `@private`, `@bind`, `@external`,
   `@native_call`, `@native_type`,
-  `@overload("specific")`, its documented `generic=` form, `@raises`,
+  `@overload("specific")`, the class-operator `generic=` form, `@raises`,
   `@hold_gil`, and `@staticmethod`.
 - bare `@overload` or `typing.overload`; overload links require one concrete
   procedure name.

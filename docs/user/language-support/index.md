@@ -2,8 +2,9 @@
 title: Language Support
 audience: users, developers
 prerequisites: user guide
-related: feature-matrix.md, ../guide/fortran-wrapper.md
+related: feature-matrix.md, ../reference/fortran-wrapper.md
 status: maintained
+publication: draft
 ---
 
 # Language Support
@@ -18,11 +19,3 @@ The matrix links each row to:
 - the source-navigation route for developers;
 - runtime, parser, semantic, or documentation evidence; and
 - the current limitation or blocker.
-
-## Pages
-
-- [Feature matrix](feature-matrix.md)
-- [Supported features](supported-features.md)
-- [Partially supported features](partially-supported-features.md)
-- [Unsupported features](unsupported-features.md)
-- [Planned features](planned-features.md)

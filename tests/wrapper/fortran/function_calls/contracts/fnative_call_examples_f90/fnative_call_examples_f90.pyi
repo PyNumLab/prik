@@ -20,7 +20,7 @@ def scalar_status(
 def fill_vector(
     n: Int32,
     values: Float64[n]
-) -> Returns["values", Float64[n]]: ...
+) -> None: ...
 
 @native_call([Addr(Arg(0)), Addr(Arg(1)), Arg(2), Arg(3)])
 def shift_matrix(
@@ -28,7 +28,7 @@ def shift_matrix(
     m: Int32,
     values: Float64[n, m],
     out: Float64[n, m]
-) -> Returns["out", Float64[n, m]]: ...
+) -> None: ...
 
 @native_call([Arg(0), Return('status', 0)])
 def scale_with_status(
@@ -42,13 +42,14 @@ def fixed_inout(
 @native_call([Return('label', 0)])
 def make_label() -> String[6]: ...
 
-@native_call([Addr(Arg(0)), Arg(1), Return('status', 2), Return('label', 3)])
+@native_call([Addr(Arg(0)), Arg(1), Return('status', 1), Return('label', 2)])
 def summarize_mixed(
     n: Int32,
     values: Float64[n]
-) -> tuple[Float64, Returns["values", Float64[n]], Int32, String[6]]: ...
+) -> tuple[Float64, Int32, String[6]]: ...
 
-@native_call([Addr(Arg(0)), Return('point', 0)])
+@native_call([Addr(Arg(0)), Arg(1)])
 def make_point(
-    scale: Int32
-) -> summary_point: ...
+    scale: Int32,
+    point: summary_point
+) -> None: ...

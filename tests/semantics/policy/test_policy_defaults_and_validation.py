@@ -58,6 +58,14 @@ def test_default_policy_decisions_cover_public_object_kinds():
     assert scalar.transfer is TransferMode.BY_VALUE
     assert scalar.codegen_action is CodegenAction.DIRECT_VALUE
 
+    scalar_replacement = resolver.decide_semantic_type(
+        _scalar_type(),
+        _writable_argument_context(projects_result=True),
+    )
+    assert scalar_replacement.owner is OwnershipOwner.PYTHON
+    assert scalar_replacement.transfer is TransferMode.COPY_RETURN
+    assert scalar_replacement.codegen_action is CodegenAction.COPY_IN_OUT
+
     string = resolver.decide_semantic_type(_string_type(), OwnershipContext.result())
     assert string.owner is OwnershipOwner.PYTHON
     assert string.transfer is TransferMode.COPY_RETURN

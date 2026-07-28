@@ -4,6 +4,7 @@ audience: advanced users
 prerequisites: packaging, platform-specific troubleshooting
 related: openmp-example.md, ../troubleshooting/platform-specific-issues.md
 status: not-yet-implemented
+publication: draft
 ---
 
 # MPI Example

@@ -11,8 +11,16 @@ SUPPORT_SOURCE = ROOT / "x2py" / "binding_support" / "x2py_binding.c"
 def test_native_binding_support_is_header_only_and_exposes_the_small_x2py_api():
     header = SUPPORT_HEADER.read_text(encoding="utf-8")
     assert not SUPPORT_SOURCE.exists()
+    assert '#define X2PY_NATIVE_ARRAY_HANDLE_CAPSULE_NAME "x2py.native_array_handle.v1"' in header
+    assert "#define X2PY_NATIVE_ARRAY_HANDLE_ABI_VERSION 1u" in header
+    assert "typedef struct {" in header
+    assert "x2py_native_array_release_fn release;" in header
 
     expected_api = (
+        "x2py_native_array_handle_release",
+        "x2py_native_array_handle_capsule_destructor",
+        "x2py_native_array_handle_capsule_new",
+        "x2py_native_array_handle_from_capsule",
         "x2py_scalar_matches",
         "x2py_scalar_unpack",
         "x2py_scalar_to_python",

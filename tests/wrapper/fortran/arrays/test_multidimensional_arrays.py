@@ -279,21 +279,21 @@ def test_dense_strided_and_projected_arrays_use_canonical_plan(tmp_path: Path):
 
     dense = _matrix()
     dense_out = np.zeros_like(dense, order="F")
-    assert module.scale2_contiguous(dense, dense_out) is dense_out
+    assert module.scale2_contiguous(dense, dense_out) is None
     np.testing.assert_allclose(dense_out, 2.0 * dense)
 
     explicit_out = np.zeros_like(dense, order="F")
-    assert module.scale2_explicit(np.int32(4), np.int32(3), dense, explicit_out) is explicit_out
+    assert module.scale2_explicit(np.int32(4), np.int32(3), dense, explicit_out) is None
     np.testing.assert_allclose(explicit_out, 4.0 * dense)
 
     strided = _strided_matrix()
     strided_out = _strided_matrix_output(strided.shape)
-    assert module.scale2_strided(strided, strided_out) is strided_out
+    assert module.scale2_strided(strided, strided_out) is None
     np.testing.assert_allclose(strided_out, 3.0 * strided)
 
     empty = _strided_matrix(0, 3)
     empty_out = _strided_matrix_output(empty.shape)
-    assert module.scale2_strided(empty, empty_out) is empty_out
+    assert module.scale2_strided(empty, empty_out) is None
     assert empty_out.shape == (0, 3)
 
     dense = _matrix()

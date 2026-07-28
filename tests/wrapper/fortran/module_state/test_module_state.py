@@ -41,6 +41,17 @@ def test_scalar_module_variables_use_attributes_and_parameters_have_no_native_se
         pyi_parity_build_mode,
     )
 
+    module_docstring = module.__doc__
+    assert module_docstring.startswith("fmodule_vars_f90\n\nModule Attributes")
+    assert "fmodule_vars_f90.fmodule_vars_f90" not in module_docstring
+    assert module_docstring.index("Module Attributes") < module_docstring.index("Functions")
+    assert module_docstring.index("Functions") < module_docstring.index("Classes")
+    assert "nmax : int32\n    Read-only constant." in module_docstring
+    assert "counter : int32" in module_docstring
+    assert "scale : float64" in module_docstring
+    assert "saved_counter : int32" in module_docstring
+    assert "Assignment writes through to native storage." not in module_docstring
+
     assert module.nmax == np.int32(12)
     assert isinstance(module.black, module.rgb_color)
     assert module.black.r == np.int32(0)

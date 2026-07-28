@@ -4,6 +4,7 @@ audience: maintainers
 prerequisites: CPython integration
 related: memory-ownership-model.md, error-propagation-model.md
 status: planned-documentation
+publication: draft
 ---
 
 # Runtime Model

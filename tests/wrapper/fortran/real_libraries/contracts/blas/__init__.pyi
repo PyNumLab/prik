@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Arg, Bool, Complex128, Complex64, Flat, Float32, Float64, Int32, String, bind, external, native_call
+from x2py.contracts import Addr, Arg, Bool, Complex128, Complex64, Flat, Float32, Float64, Int32, Returns, String, bind, external, native_call
 
 @bind("CAXPY")
 @external
@@ -10,7 +10,7 @@ def caxpy(
     INCX: Int32,
     CY: Complex64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["CA", Complex64], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("CCOPY")
 @external
@@ -21,7 +21,7 @@ def ccopy(
     INCX: Int32,
     CY: Complex64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("CDOTC")
 @external
@@ -32,7 +32,7 @@ def cdotc(
     INCX: Int32,
     CY: Complex64[Flat],
     INCY: Int32
-) -> Complex64: ...
+) -> tuple[Complex64, Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("CDOTU")
 @external
@@ -43,7 +43,7 @@ def cdotu(
     INCX: Int32,
     CY: Complex64[Flat],
     INCY: Int32
-) -> Complex64: ...
+) -> tuple[Complex64, Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("CGBMV")
 @external
@@ -62,7 +62,7 @@ def cgbmv(
     BETA: Complex64,
     Y: Complex64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["ALPHA", Complex64], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Complex64], Returns["INCY", Int32]]: ...
 
 @bind("CGEMM")
 @external
@@ -81,7 +81,7 @@ def cgemm(
     BETA: Complex64,
     C: Complex64[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Complex64], Returns["LDA", Int32], Returns["LDB", Int32], Returns["BETA", Complex64], Returns["LDC", Int32]]: ...
 
 @bind("CGEMMTR")
 @external
@@ -100,7 +100,7 @@ def cgemmtr(
     BETA: Complex64,
     C: Complex64[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Complex64], Returns["LDA", Int32], Returns["LDB", Int32], Returns["BETA", Complex64], Returns["LDC", Int32]]: ...
 
 @bind("CGEMV")
 @external
@@ -117,7 +117,7 @@ def cgemv(
     BETA: Complex64,
     Y: Complex64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Complex64], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Complex64], Returns["INCY", Int32]]: ...
 
 @bind("CGERC")
 @external
@@ -132,7 +132,7 @@ def cgerc(
     INCY: Int32,
     A: Complex64[LDA, Flat],
     LDA: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Complex64], Returns["INCX", Int32], Returns["INCY", Int32], Returns["LDA", Int32]]: ...
 
 @bind("CGERU")
 @external
@@ -147,7 +147,7 @@ def cgeru(
     INCY: Int32,
     A: Complex64[LDA, Flat],
     LDA: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Complex64], Returns["INCX", Int32], Returns["INCY", Int32], Returns["LDA", Int32]]: ...
 
 @bind("CHBMV")
 @external
@@ -164,7 +164,7 @@ def chbmv(
     BETA: Complex64,
     Y: Complex64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Complex64], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Complex64], Returns["INCY", Int32]]: ...
 
 @bind("CHEMM")
 @external
@@ -182,7 +182,7 @@ def chemm(
     BETA: Complex64,
     C: Complex64[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Complex64], Returns["LDA", Int32], Returns["LDB", Int32], Returns["BETA", Complex64], Returns["LDC", Int32]]: ...
 
 @bind("CHEMV")
 @external
@@ -198,7 +198,7 @@ def chemv(
     BETA: Complex64,
     Y: Complex64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Complex64], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Complex64], Returns["INCY", Int32]]: ...
 
 @bind("CHER")
 @external
@@ -211,7 +211,7 @@ def cher(
     INCX: Int32,
     A: Complex64[LDA, Flat],
     LDA: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Float32], Returns["INCX", Int32], Returns["LDA", Int32]]: ...
 
 @bind("CHER2")
 @external
@@ -226,7 +226,7 @@ def cher2(
     INCY: Int32,
     A: Complex64[LDA, Flat],
     LDA: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Complex64], Returns["INCX", Int32], Returns["INCY", Int32], Returns["LDA", Int32]]: ...
 
 @bind("CHER2K")
 @external
@@ -244,7 +244,7 @@ def cher2k(
     BETA: Float32,
     C: Complex64[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Complex64], Returns["LDA", Int32], Returns["LDB", Int32], Returns["BETA", Float32], Returns["LDC", Int32]]: ...
 
 @bind("CHERK")
 @external
@@ -260,7 +260,7 @@ def cherk(
     BETA: Float32,
     C: Complex64[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Float32], Returns["LDA", Int32], Returns["BETA", Float32], Returns["LDC", Int32]]: ...
 
 @bind("CHPMV")
 @external
@@ -275,7 +275,7 @@ def chpmv(
     BETA: Complex64,
     Y: Complex64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Complex64], Returns["INCX", Int32], Returns["BETA", Complex64], Returns["INCY", Int32]]: ...
 
 @bind("CHPR")
 @external
@@ -287,7 +287,7 @@ def chpr(
     X: Complex64[Flat],
     INCX: Int32,
     AP: Complex64[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Float32], Returns["INCX", Int32]]: ...
 
 @bind("CHPR2")
 @external
@@ -301,7 +301,7 @@ def chpr2(
     Y: Complex64[Flat],
     INCY: Int32,
     AP: Complex64[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Complex64], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("CROTG")
 @external
@@ -311,7 +311,7 @@ def crotg(
     b: Complex64,
     c: Float32,
     s: Complex64
-) -> None: ...
+) -> tuple[Returns["a", Complex64], Returns["b", Complex64], Returns["c", Float32], Returns["s", Complex64]]: ...
 
 @bind("CSCAL")
 @external
@@ -321,7 +321,7 @@ def cscal(
     CA: Complex64,
     CX: Complex64[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["CA", Complex64], Returns["INCX", Int32]]: ...
 
 @bind("CSROT")
 @external
@@ -334,7 +334,7 @@ def csrot(
     INCY: Int32,
     C: Float32,
     S: Float32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32], Returns["C", Float32], Returns["S", Float32]]: ...
 
 @bind("CSSCAL")
 @external
@@ -344,7 +344,7 @@ def csscal(
     SA: Float32,
     CX: Complex64[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SA", Float32], Returns["INCX", Int32]]: ...
 
 @bind("CSWAP")
 @external
@@ -355,7 +355,7 @@ def cswap(
     INCX: Int32,
     CY: Complex64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("CSYMM")
 @external
@@ -373,7 +373,7 @@ def csymm(
     BETA: Complex64,
     C: Complex64[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Complex64], Returns["LDA", Int32], Returns["LDB", Int32], Returns["BETA", Complex64], Returns["LDC", Int32]]: ...
 
 @bind("CSYR2K")
 @external
@@ -391,7 +391,7 @@ def csyr2k(
     BETA: Complex64,
     C: Complex64[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Complex64], Returns["LDA", Int32], Returns["LDB", Int32], Returns["BETA", Complex64], Returns["LDC", Int32]]: ...
 
 @bind("CSYRK")
 @external
@@ -407,7 +407,7 @@ def csyrk(
     BETA: Complex64,
     C: Complex64[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Complex64], Returns["LDA", Int32], Returns["BETA", Complex64], Returns["LDC", Int32]]: ...
 
 @bind("CTBMV")
 @external
@@ -422,7 +422,7 @@ def ctbmv(
     LDA: Int32,
     X: Complex64[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["INCX", Int32]]: ...
 
 @bind("CTBSV")
 @external
@@ -437,7 +437,7 @@ def ctbsv(
     LDA: Int32,
     X: Complex64[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["INCX", Int32]]: ...
 
 @bind("CTPMV")
 @external
@@ -450,7 +450,7 @@ def ctpmv(
     AP: Complex64[Flat],
     X: Complex64[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32]]: ...
 
 @bind("CTPSV")
 @external
@@ -463,7 +463,7 @@ def ctpsv(
     AP: Complex64[Flat],
     X: Complex64[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32]]: ...
 
 @bind("CTRMM")
 @external
@@ -480,7 +480,7 @@ def ctrmm(
     LDA: Int32,
     B: Complex64[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Complex64], Returns["LDA", Int32], Returns["LDB", Int32]]: ...
 
 @bind("CTRMV")
 @external
@@ -494,7 +494,7 @@ def ctrmv(
     LDA: Int32,
     X: Complex64[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INCX", Int32]]: ...
 
 @bind("CTRSM")
 @external
@@ -511,7 +511,7 @@ def ctrsm(
     LDA: Int32,
     B: Complex64[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Complex64], Returns["LDA", Int32], Returns["LDB", Int32]]: ...
 
 @bind("CTRSV")
 @external
@@ -525,7 +525,7 @@ def ctrsv(
     LDA: Int32,
     X: Complex64[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INCX", Int32]]: ...
 
 @bind("DASUM")
 @external
@@ -534,7 +534,7 @@ def dasum(
     N: Int32,
     DX: Float64[Flat],
     INCX: Int32
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["INCX", Int32]]: ...
 
 @bind("DAXPY")
 @external
@@ -546,14 +546,14 @@ def daxpy(
     INCX: Int32,
     DY: Float64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["DA", Float64], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("DCABS1")
 @external
 @native_call([Addr(Arg(0))])
 def dcabs1(
     Z: Complex128
-) -> Float64: ...
+) -> tuple[Float64, Returns["Z", Complex128]]: ...
 
 @bind("DCOPY")
 @external
@@ -564,7 +564,7 @@ def dcopy(
     INCX: Int32,
     DY: Float64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("DDOT")
 @external
@@ -575,7 +575,7 @@ def ddot(
     INCX: Int32,
     DY: Float64[Flat],
     INCY: Int32
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("DGBMV")
 @external
@@ -594,7 +594,7 @@ def dgbmv(
     BETA: Float64,
     Y: Float64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["ALPHA", Float64], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Float64], Returns["INCY", Int32]]: ...
 
 @bind("DGEMM")
 @external
@@ -613,7 +613,7 @@ def dgemm(
     BETA: Float64,
     C: Float64[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Float64], Returns["LDA", Int32], Returns["LDB", Int32], Returns["BETA", Float64], Returns["LDC", Int32]]: ...
 
 @bind("DGEMMTR")
 @external
@@ -632,7 +632,7 @@ def dgemmtr(
     BETA: Float64,
     C: Float64[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Float64], Returns["LDA", Int32], Returns["LDB", Int32], Returns["BETA", Float64], Returns["LDC", Int32]]: ...
 
 @bind("DGEMV")
 @external
@@ -649,7 +649,7 @@ def dgemv(
     BETA: Float64,
     Y: Float64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Float64], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Float64], Returns["INCY", Int32]]: ...
 
 @bind("DGER")
 @external
@@ -664,7 +664,7 @@ def dger(
     INCY: Int32,
     A: Float64[LDA, Flat],
     LDA: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Float64], Returns["INCX", Int32], Returns["INCY", Int32], Returns["LDA", Int32]]: ...
 
 @bind("DNRM2")
 @external
@@ -673,7 +673,7 @@ def dnrm2(
     n: Int32,
     x: Float64[Flat],
     incx: Int32
-) -> Float64: ...
+) -> tuple[Float64, Returns["n", Int32], Returns["incx", Int32]]: ...
 
 @bind("DROT")
 @external
@@ -686,7 +686,7 @@ def drot(
     INCY: Int32,
     C: Float64,
     S: Float64
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32], Returns["C", Float64], Returns["S", Float64]]: ...
 
 @bind("DROTG")
 @external
@@ -696,7 +696,7 @@ def drotg(
     b: Float64,
     c: Float64,
     s: Float64
-) -> None: ...
+) -> tuple[Returns["a", Float64], Returns["b", Float64], Returns["c", Float64], Returns["s", Float64]]: ...
 
 @bind("DROTM")
 @external
@@ -708,7 +708,7 @@ def drotm(
     DY: Float64[Flat],
     INCY: Int32,
     DPARAM: Float64[5]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("DROTMG")
 @external
@@ -719,7 +719,7 @@ def drotmg(
     DX1: Float64,
     DY1: Float64,
     DPARAM: Float64[5]
-) -> None: ...
+) -> tuple[Returns["DD1", Float64], Returns["DD2", Float64], Returns["DX1", Float64], Returns["DY1", Float64]]: ...
 
 @bind("DSBMV")
 @external
@@ -736,7 +736,7 @@ def dsbmv(
     BETA: Float64,
     Y: Float64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Float64], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Float64], Returns["INCY", Int32]]: ...
 
 @bind("DSCAL")
 @external
@@ -746,7 +746,7 @@ def dscal(
     DA: Float64,
     DX: Float64[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["DA", Float64], Returns["INCX", Int32]]: ...
 
 @bind("DSDOT")
 @external
@@ -757,7 +757,7 @@ def dsdot(
     INCX: Int32,
     SY: Float32[Flat],
     INCY: Int32
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("DSPMV")
 @external
@@ -772,7 +772,7 @@ def dspmv(
     BETA: Float64,
     Y: Float64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Float64], Returns["INCX", Int32], Returns["BETA", Float64], Returns["INCY", Int32]]: ...
 
 @bind("DSPR")
 @external
@@ -784,7 +784,7 @@ def dspr(
     X: Float64[Flat],
     INCX: Int32,
     AP: Float64[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Float64], Returns["INCX", Int32]]: ...
 
 @bind("DSPR2")
 @external
@@ -798,7 +798,7 @@ def dspr2(
     Y: Float64[Flat],
     INCY: Int32,
     AP: Float64[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Float64], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("DSWAP")
 @external
@@ -809,7 +809,7 @@ def dswap(
     INCX: Int32,
     DY: Float64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("DSYMM")
 @external
@@ -827,7 +827,7 @@ def dsymm(
     BETA: Float64,
     C: Float64[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Float64], Returns["LDA", Int32], Returns["LDB", Int32], Returns["BETA", Float64], Returns["LDC", Int32]]: ...
 
 @bind("DSYMV")
 @external
@@ -843,7 +843,7 @@ def dsymv(
     BETA: Float64,
     Y: Float64[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Float64], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Float64], Returns["INCY", Int32]]: ...
 
 @bind("DSYR")
 @external
@@ -856,7 +856,7 @@ def dsyr(
     INCX: Int32,
     A: Float64[LDA, Flat],
     LDA: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Float64], Returns["INCX", Int32], Returns["LDA", Int32]]: ...
 
 @bind("DSYR2")
 @external
@@ -871,7 +871,7 @@ def dsyr2(
     INCY: Int32,
     A: Float64[LDA, Flat],
     LDA: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Float64], Returns["INCX", Int32], Returns["INCY", Int32], Returns["LDA", Int32]]: ...
 
 @bind("DSYR2K")
 @external
@@ -889,7 +889,7 @@ def dsyr2k(
     BETA: Float64,
     C: Float64[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Float64], Returns["LDA", Int32], Returns["LDB", Int32], Returns["BETA", Float64], Returns["LDC", Int32]]: ...
 
 @bind("DSYRK")
 @external
@@ -905,7 +905,7 @@ def dsyrk(
     BETA: Float64,
     C: Float64[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Float64], Returns["LDA", Int32], Returns["BETA", Float64], Returns["LDC", Int32]]: ...
 
 @bind("DTBMV")
 @external
@@ -920,7 +920,7 @@ def dtbmv(
     LDA: Int32,
     X: Float64[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["INCX", Int32]]: ...
 
 @bind("DTBSV")
 @external
@@ -935,7 +935,7 @@ def dtbsv(
     LDA: Int32,
     X: Float64[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["INCX", Int32]]: ...
 
 @bind("DTPMV")
 @external
@@ -948,7 +948,7 @@ def dtpmv(
     AP: Float64[Flat],
     X: Float64[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32]]: ...
 
 @bind("DTPSV")
 @external
@@ -961,7 +961,7 @@ def dtpsv(
     AP: Float64[Flat],
     X: Float64[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32]]: ...
 
 @bind("DTRMM")
 @external
@@ -978,7 +978,7 @@ def dtrmm(
     LDA: Int32,
     B: Float64[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Float64], Returns["LDA", Int32], Returns["LDB", Int32]]: ...
 
 @bind("DTRMV")
 @external
@@ -992,7 +992,7 @@ def dtrmv(
     LDA: Int32,
     X: Float64[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INCX", Int32]]: ...
 
 @bind("DTRSM")
 @external
@@ -1009,7 +1009,7 @@ def dtrsm(
     LDA: Int32,
     B: Float64[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Float64], Returns["LDA", Int32], Returns["LDB", Int32]]: ...
 
 @bind("DTRSV")
 @external
@@ -1023,7 +1023,7 @@ def dtrsv(
     LDA: Int32,
     X: Float64[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INCX", Int32]]: ...
 
 @bind("DZASUM")
 @external
@@ -1032,7 +1032,7 @@ def dzasum(
     N: Int32,
     ZX: Complex128[Flat],
     INCX: Int32
-) -> Float64: ...
+) -> tuple[Float64, Returns["N", Int32], Returns["INCX", Int32]]: ...
 
 @bind("DZNRM2")
 @external
@@ -1041,7 +1041,7 @@ def dznrm2(
     n: Int32,
     x: Complex128[Flat],
     incx: Int32
-) -> Float64: ...
+) -> tuple[Float64, Returns["n", Int32], Returns["incx", Int32]]: ...
 
 @bind("ICAMAX")
 @external
@@ -1050,7 +1050,7 @@ def icamax(
     N: Int32,
     CX: Complex64[Flat],
     INCX: Int32
-) -> Int32: ...
+) -> tuple[Int32, Returns["N", Int32], Returns["INCX", Int32]]: ...
 
 @bind("IDAMAX")
 @external
@@ -1059,7 +1059,7 @@ def idamax(
     N: Int32,
     DX: Float64[Flat],
     INCX: Int32
-) -> Int32: ...
+) -> tuple[Int32, Returns["N", Int32], Returns["INCX", Int32]]: ...
 
 @bind("ISAMAX")
 @external
@@ -1068,7 +1068,7 @@ def isamax(
     N: Int32,
     SX: Float32[Flat],
     INCX: Int32
-) -> Int32: ...
+) -> tuple[Int32, Returns["N", Int32], Returns["INCX", Int32]]: ...
 
 @bind("IZAMAX")
 @external
@@ -1077,7 +1077,7 @@ def izamax(
     N: Int32,
     ZX: Complex128[Flat],
     INCX: Int32
-) -> Int32: ...
+) -> tuple[Int32, Returns["N", Int32], Returns["INCX", Int32]]: ...
 
 @bind("LSAME")
 @external
@@ -1093,7 +1093,7 @@ def sasum(
     N: Int32,
     SX: Float32[Flat],
     INCX: Int32
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["INCX", Int32]]: ...
 
 @bind("SAXPY")
 @external
@@ -1105,14 +1105,14 @@ def saxpy(
     INCX: Int32,
     SY: Float32[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SA", Float32], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("SCABS1")
 @external
 @native_call([Addr(Arg(0))])
 def scabs1(
     Z: Complex64
-) -> Float32: ...
+) -> tuple[Float32, Returns["Z", Complex64]]: ...
 
 @bind("SCASUM")
 @external
@@ -1121,7 +1121,7 @@ def scasum(
     N: Int32,
     CX: Complex64[Flat],
     INCX: Int32
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["INCX", Int32]]: ...
 
 @bind("SCNRM2")
 @external
@@ -1130,7 +1130,7 @@ def scnrm2(
     n: Int32,
     x: Complex64[Flat],
     incx: Int32
-) -> Float32: ...
+) -> tuple[Float32, Returns["n", Int32], Returns["incx", Int32]]: ...
 
 @bind("SCOPY")
 @external
@@ -1141,7 +1141,7 @@ def scopy(
     INCX: Int32,
     SY: Float32[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("SDOT")
 @external
@@ -1152,7 +1152,7 @@ def sdot(
     INCX: Int32,
     SY: Float32[Flat],
     INCY: Int32
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("SDSDOT")
 @external
@@ -1164,7 +1164,7 @@ def sdsdot(
     INCX: Int32,
     SY: Float32[Flat],
     INCY: Int32
-) -> Float32: ...
+) -> tuple[Float32, Returns["N", Int32], Returns["SB", Float32], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("SGBMV")
 @external
@@ -1183,7 +1183,7 @@ def sgbmv(
     BETA: Float32,
     Y: Float32[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["ALPHA", Float32], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Float32], Returns["INCY", Int32]]: ...
 
 @bind("SGEMM")
 @external
@@ -1202,7 +1202,7 @@ def sgemm(
     BETA: Float32,
     C: Float32[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Float32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["BETA", Float32], Returns["LDC", Int32]]: ...
 
 @bind("SGEMMTR")
 @external
@@ -1221,7 +1221,7 @@ def sgemmtr(
     BETA: Float32,
     C: Float32[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Float32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["BETA", Float32], Returns["LDC", Int32]]: ...
 
 @bind("SGEMV")
 @external
@@ -1238,7 +1238,7 @@ def sgemv(
     BETA: Float32,
     Y: Float32[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Float32], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Float32], Returns["INCY", Int32]]: ...
 
 @bind("SGER")
 @external
@@ -1253,7 +1253,7 @@ def sger(
     INCY: Int32,
     A: Float32[LDA, Flat],
     LDA: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Float32], Returns["INCX", Int32], Returns["INCY", Int32], Returns["LDA", Int32]]: ...
 
 @bind("SNRM2")
 @external
@@ -1262,7 +1262,7 @@ def snrm2(
     n: Int32,
     x: Float32[Flat],
     incx: Int32
-) -> Float32: ...
+) -> tuple[Float32, Returns["n", Int32], Returns["incx", Int32]]: ...
 
 @bind("SROT")
 @external
@@ -1275,7 +1275,7 @@ def srot(
     INCY: Int32,
     C: Float32,
     S: Float32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32], Returns["C", Float32], Returns["S", Float32]]: ...
 
 @bind("SROTG")
 @external
@@ -1285,7 +1285,7 @@ def srotg(
     b: Float32,
     c: Float32,
     s: Float32
-) -> None: ...
+) -> tuple[Returns["a", Float32], Returns["b", Float32], Returns["c", Float32], Returns["s", Float32]]: ...
 
 @bind("SROTM")
 @external
@@ -1297,7 +1297,7 @@ def srotm(
     SY: Float32[Flat],
     INCY: Int32,
     SPARAM: Float32[5]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("SROTMG")
 @external
@@ -1308,7 +1308,7 @@ def srotmg(
     SX1: Float32,
     SY1: Float32,
     SPARAM: Float32[5]
-) -> None: ...
+) -> tuple[Returns["SD1", Float32], Returns["SD2", Float32], Returns["SX1", Float32], Returns["SY1", Float32]]: ...
 
 @bind("SSBMV")
 @external
@@ -1325,7 +1325,7 @@ def ssbmv(
     BETA: Float32,
     Y: Float32[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Float32], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Float32], Returns["INCY", Int32]]: ...
 
 @bind("SSCAL")
 @external
@@ -1335,7 +1335,7 @@ def sscal(
     SA: Float32,
     SX: Float32[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["SA", Float32], Returns["INCX", Int32]]: ...
 
 @bind("SSPMV")
 @external
@@ -1350,7 +1350,7 @@ def sspmv(
     BETA: Float32,
     Y: Float32[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Float32], Returns["INCX", Int32], Returns["BETA", Float32], Returns["INCY", Int32]]: ...
 
 @bind("SSPR")
 @external
@@ -1362,7 +1362,7 @@ def sspr(
     X: Float32[Flat],
     INCX: Int32,
     AP: Float32[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Float32], Returns["INCX", Int32]]: ...
 
 @bind("SSPR2")
 @external
@@ -1376,7 +1376,7 @@ def sspr2(
     Y: Float32[Flat],
     INCY: Int32,
     AP: Float32[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Float32], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("SSWAP")
 @external
@@ -1387,7 +1387,7 @@ def sswap(
     INCX: Int32,
     SY: Float32[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("SSYMM")
 @external
@@ -1405,7 +1405,7 @@ def ssymm(
     BETA: Float32,
     C: Float32[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Float32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["BETA", Float32], Returns["LDC", Int32]]: ...
 
 @bind("SSYMV")
 @external
@@ -1421,7 +1421,7 @@ def ssymv(
     BETA: Float32,
     Y: Float32[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Float32], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Float32], Returns["INCY", Int32]]: ...
 
 @bind("SSYR")
 @external
@@ -1434,7 +1434,7 @@ def ssyr(
     INCX: Int32,
     A: Float32[LDA, Flat],
     LDA: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Float32], Returns["INCX", Int32], Returns["LDA", Int32]]: ...
 
 @bind("SSYR2")
 @external
@@ -1449,7 +1449,7 @@ def ssyr2(
     INCY: Int32,
     A: Float32[LDA, Flat],
     LDA: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Float32], Returns["INCX", Int32], Returns["INCY", Int32], Returns["LDA", Int32]]: ...
 
 @bind("SSYR2K")
 @external
@@ -1467,7 +1467,7 @@ def ssyr2k(
     BETA: Float32,
     C: Float32[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Float32], Returns["LDA", Int32], Returns["LDB", Int32], Returns["BETA", Float32], Returns["LDC", Int32]]: ...
 
 @bind("SSYRK")
 @external
@@ -1483,7 +1483,7 @@ def ssyrk(
     BETA: Float32,
     C: Float32[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Float32], Returns["LDA", Int32], Returns["BETA", Float32], Returns["LDC", Int32]]: ...
 
 @bind("STBMV")
 @external
@@ -1498,7 +1498,7 @@ def stbmv(
     LDA: Int32,
     X: Float32[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["INCX", Int32]]: ...
 
 @bind("STBSV")
 @external
@@ -1513,7 +1513,7 @@ def stbsv(
     LDA: Int32,
     X: Float32[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["INCX", Int32]]: ...
 
 @bind("STPMV")
 @external
@@ -1526,7 +1526,7 @@ def stpmv(
     AP: Float32[Flat],
     X: Float32[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32]]: ...
 
 @bind("STPSV")
 @external
@@ -1539,7 +1539,7 @@ def stpsv(
     AP: Float32[Flat],
     X: Float32[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32]]: ...
 
 @bind("STRMM")
 @external
@@ -1556,7 +1556,7 @@ def strmm(
     LDA: Int32,
     B: Float32[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Float32], Returns["LDA", Int32], Returns["LDB", Int32]]: ...
 
 @bind("STRMV")
 @external
@@ -1570,7 +1570,7 @@ def strmv(
     LDA: Int32,
     X: Float32[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INCX", Int32]]: ...
 
 @bind("STRSM")
 @external
@@ -1587,7 +1587,7 @@ def strsm(
     LDA: Int32,
     B: Float32[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Float32], Returns["LDA", Int32], Returns["LDB", Int32]]: ...
 
 @bind("STRSV")
 @external
@@ -1601,7 +1601,7 @@ def strsv(
     LDA: Int32,
     X: Float32[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INCX", Int32]]: ...
 
 @bind("XERBLA")
 @external
@@ -1609,7 +1609,7 @@ def strsv(
 def xerbla(
     SRNAME: String,
     INFO: Int32
-) -> None: ...
+) -> Returns["INFO", Int32]: ...
 
 @bind("XERBLA_ARRAY")
 @external
@@ -1618,7 +1618,7 @@ def xerbla_array(
     SRNAME_ARRAY: String[1][SRNAME_LEN],
     SRNAME_LEN: Int32,
     INFO: Int32
-) -> None: ...
+) -> tuple[Returns["SRNAME_LEN", Int32], Returns["INFO", Int32]]: ...
 
 @bind("ZAXPY")
 @external
@@ -1630,7 +1630,7 @@ def zaxpy(
     INCX: Int32,
     ZY: Complex128[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ZA", Complex128], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("ZCOPY")
 @external
@@ -1641,7 +1641,7 @@ def zcopy(
     INCX: Int32,
     ZY: Complex128[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("ZDOTC")
 @external
@@ -1652,7 +1652,7 @@ def zdotc(
     INCX: Int32,
     ZY: Complex128[Flat],
     INCY: Int32
-) -> Complex128: ...
+) -> tuple[Complex128, Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("ZDOTU")
 @external
@@ -1663,7 +1663,7 @@ def zdotu(
     INCX: Int32,
     ZY: Complex128[Flat],
     INCY: Int32
-) -> Complex128: ...
+) -> tuple[Complex128, Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("ZDROT")
 @external
@@ -1676,7 +1676,7 @@ def zdrot(
     INCY: Int32,
     C: Float64,
     S: Float64
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32], Returns["C", Float64], Returns["S", Float64]]: ...
 
 @bind("ZDSCAL")
 @external
@@ -1686,7 +1686,7 @@ def zdscal(
     DA: Float64,
     ZX: Complex128[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["DA", Float64], Returns["INCX", Int32]]: ...
 
 @bind("ZGBMV")
 @external
@@ -1705,7 +1705,7 @@ def zgbmv(
     BETA: Complex128,
     Y: Complex128[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["KL", Int32], Returns["KU", Int32], Returns["ALPHA", Complex128], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Complex128], Returns["INCY", Int32]]: ...
 
 @bind("ZGEMM")
 @external
@@ -1724,7 +1724,7 @@ def zgemm(
     BETA: Complex128,
     C: Complex128[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Complex128], Returns["LDA", Int32], Returns["LDB", Int32], Returns["BETA", Complex128], Returns["LDC", Int32]]: ...
 
 @bind("ZGEMMTR")
 @external
@@ -1743,7 +1743,7 @@ def zgemmtr(
     BETA: Complex128,
     C: Complex128[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Complex128], Returns["LDA", Int32], Returns["LDB", Int32], Returns["BETA", Complex128], Returns["LDC", Int32]]: ...
 
 @bind("ZGEMV")
 @external
@@ -1760,7 +1760,7 @@ def zgemv(
     BETA: Complex128,
     Y: Complex128[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Complex128], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Complex128], Returns["INCY", Int32]]: ...
 
 @bind("ZGERC")
 @external
@@ -1775,7 +1775,7 @@ def zgerc(
     INCY: Int32,
     A: Complex128[LDA, Flat],
     LDA: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Complex128], Returns["INCX", Int32], Returns["INCY", Int32], Returns["LDA", Int32]]: ...
 
 @bind("ZGERU")
 @external
@@ -1790,7 +1790,7 @@ def zgeru(
     INCY: Int32,
     A: Complex128[LDA, Flat],
     LDA: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Complex128], Returns["INCX", Int32], Returns["INCY", Int32], Returns["LDA", Int32]]: ...
 
 @bind("ZHBMV")
 @external
@@ -1807,7 +1807,7 @@ def zhbmv(
     BETA: Complex128,
     Y: Complex128[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Complex128], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Complex128], Returns["INCY", Int32]]: ...
 
 @bind("ZHEMM")
 @external
@@ -1825,7 +1825,7 @@ def zhemm(
     BETA: Complex128,
     C: Complex128[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Complex128], Returns["LDA", Int32], Returns["LDB", Int32], Returns["BETA", Complex128], Returns["LDC", Int32]]: ...
 
 @bind("ZHEMV")
 @external
@@ -1841,7 +1841,7 @@ def zhemv(
     BETA: Complex128,
     Y: Complex128[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Complex128], Returns["LDA", Int32], Returns["INCX", Int32], Returns["BETA", Complex128], Returns["INCY", Int32]]: ...
 
 @bind("ZHER")
 @external
@@ -1854,7 +1854,7 @@ def zher(
     INCX: Int32,
     A: Complex128[LDA, Flat],
     LDA: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Float64], Returns["INCX", Int32], Returns["LDA", Int32]]: ...
 
 @bind("ZHER2")
 @external
@@ -1869,7 +1869,7 @@ def zher2(
     INCY: Int32,
     A: Complex128[LDA, Flat],
     LDA: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Complex128], Returns["INCX", Int32], Returns["INCY", Int32], Returns["LDA", Int32]]: ...
 
 @bind("ZHER2K")
 @external
@@ -1887,7 +1887,7 @@ def zher2k(
     BETA: Float64,
     C: Complex128[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Complex128], Returns["LDA", Int32], Returns["LDB", Int32], Returns["BETA", Float64], Returns["LDC", Int32]]: ...
 
 @bind("ZHERK")
 @external
@@ -1903,7 +1903,7 @@ def zherk(
     BETA: Float64,
     C: Complex128[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Float64], Returns["LDA", Int32], Returns["BETA", Float64], Returns["LDC", Int32]]: ...
 
 @bind("ZHPMV")
 @external
@@ -1918,7 +1918,7 @@ def zhpmv(
     BETA: Complex128,
     Y: Complex128[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Complex128], Returns["INCX", Int32], Returns["BETA", Complex128], Returns["INCY", Int32]]: ...
 
 @bind("ZHPR")
 @external
@@ -1930,7 +1930,7 @@ def zhpr(
     X: Complex128[Flat],
     INCX: Int32,
     AP: Complex128[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Float64], Returns["INCX", Int32]]: ...
 
 @bind("ZHPR2")
 @external
@@ -1944,7 +1944,7 @@ def zhpr2(
     Y: Complex128[Flat],
     INCY: Int32,
     AP: Complex128[Flat]
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ALPHA", Complex128], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("ZROTG")
 @external
@@ -1954,7 +1954,7 @@ def zrotg(
     b: Complex128,
     c: Float64,
     s: Complex128
-) -> None: ...
+) -> tuple[Returns["a", Complex128], Returns["b", Complex128], Returns["c", Float64], Returns["s", Complex128]]: ...
 
 @bind("ZSCAL")
 @external
@@ -1964,7 +1964,7 @@ def zscal(
     ZA: Complex128,
     ZX: Complex128[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["ZA", Complex128], Returns["INCX", Int32]]: ...
 
 @bind("ZSWAP")
 @external
@@ -1975,7 +1975,7 @@ def zswap(
     INCX: Int32,
     ZY: Complex128[Flat],
     INCY: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32], Returns["INCY", Int32]]: ...
 
 @bind("ZSYMM")
 @external
@@ -1993,7 +1993,7 @@ def zsymm(
     BETA: Complex128,
     C: Complex128[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Complex128], Returns["LDA", Int32], Returns["LDB", Int32], Returns["BETA", Complex128], Returns["LDC", Int32]]: ...
 
 @bind("ZSYR2K")
 @external
@@ -2011,7 +2011,7 @@ def zsyr2k(
     BETA: Complex128,
     C: Complex128[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Complex128], Returns["LDA", Int32], Returns["LDB", Int32], Returns["BETA", Complex128], Returns["LDC", Int32]]: ...
 
 @bind("ZSYRK")
 @external
@@ -2027,7 +2027,7 @@ def zsyrk(
     BETA: Complex128,
     C: Complex128[LDC, Flat],
     LDC: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["ALPHA", Complex128], Returns["LDA", Int32], Returns["BETA", Complex128], Returns["LDC", Int32]]: ...
 
 @bind("ZTBMV")
 @external
@@ -2042,7 +2042,7 @@ def ztbmv(
     LDA: Int32,
     X: Complex128[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["INCX", Int32]]: ...
 
 @bind("ZTBSV")
 @external
@@ -2057,7 +2057,7 @@ def ztbsv(
     LDA: Int32,
     X: Complex128[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["K", Int32], Returns["LDA", Int32], Returns["INCX", Int32]]: ...
 
 @bind("ZTPMV")
 @external
@@ -2070,7 +2070,7 @@ def ztpmv(
     AP: Complex128[Flat],
     X: Complex128[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32]]: ...
 
 @bind("ZTPSV")
 @external
@@ -2083,7 +2083,7 @@ def ztpsv(
     AP: Complex128[Flat],
     X: Complex128[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["INCX", Int32]]: ...
 
 @bind("ZTRMM")
 @external
@@ -2100,7 +2100,7 @@ def ztrmm(
     LDA: Int32,
     B: Complex128[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Complex128], Returns["LDA", Int32], Returns["LDB", Int32]]: ...
 
 @bind("ZTRMV")
 @external
@@ -2114,7 +2114,7 @@ def ztrmv(
     LDA: Int32,
     X: Complex128[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INCX", Int32]]: ...
 
 @bind("ZTRSM")
 @external
@@ -2131,7 +2131,7 @@ def ztrsm(
     LDA: Int32,
     B: Complex128[LDB, Flat],
     LDB: Int32
-) -> None: ...
+) -> tuple[Returns["M", Int32], Returns["N", Int32], Returns["ALPHA", Complex128], Returns["LDA", Int32], Returns["LDB", Int32]]: ...
 
 @bind("ZTRSV")
 @external
@@ -2145,4 +2145,4 @@ def ztrsv(
     LDA: Int32,
     X: Complex128[Flat],
     INCX: Int32
-) -> None: ...
+) -> tuple[Returns["N", Int32], Returns["LDA", Int32], Returns["INCX", Int32]]: ...

@@ -4,6 +4,7 @@ audience: developers, contributors
 prerequisites: parser architecture, semantic analysis
 related: adding-a-feature.md, fortran-parser-reference.md
 status: planned-documentation
+publication: draft
 ---
 
 # Adding A New Fortran Construct

@@ -206,6 +206,34 @@ def test_multi_file_modules_build_one_merged_extension(tmp_path: Path):
     assert "use second_api" in bridge
 
 
+def test_generated_child_modules_are_importable_submodules(tmp_path: Path):
+    _module, payload = _build_sources_and_import(
+        [
+            ("first_api.f90", _source_text(FIRST_API_SOURCE)),
+            ("second_api.f90", _source_text(SECOND_API_SOURCE)),
+        ],
+        tmp_path,
+    )
+
+    module_name = str(payload["module_name"])
+    for name in (module_name, f"{module_name}.first_api", f"{module_name}.second_api"):
+        sys.modules.pop(name, None)
+    sys.path.insert(0, str(tmp_path))
+    try:
+        from first_api.first_api import add_one
+        from first_api.second_api import double_value
+
+        root = importlib.import_module("first_api")
+        assert sys.modules["first_api.first_api"] is root.first_api
+        assert sys.modules["first_api.second_api"] is root.second_api
+        assert add_one(np.int32(4)) == 5
+        assert double_value(np.int32(4)) == 10
+    finally:
+        sys.path.remove(str(tmp_path))
+        for name in (f"{module_name}.second_api", f"{module_name}.first_api", module_name):
+            sys.modules.pop(name, None)
+
+
 def test_multi_file_standalone_procedures_build_one_merged_extension(tmp_path: Path):
     module, payload = _build_sources_and_import(
         [
@@ -216,8 +244,8 @@ def test_multi_file_standalone_procedures_build_one_merged_extension(tmp_path: P
     )
 
     assert payload["module_name"] == "standalone_api"
-    assert module.add_one(np.int32(4)) == 5
-    assert module.double_value(np.int32(4)) == 8
+    assert module.add_one(np.int32(4)) == (5, 4)
+    assert module.double_value(np.int32(4)) == (8, 4)
 
 
 def test_multi_source_pyi_out_writes_one_flat_combined_package(tmp_path: Path):

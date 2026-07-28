@@ -2,8 +2,9 @@
 title: Use Python Inspection APIs
 audience: users, developers
 prerequisites: installation
-related: ../verified-cookbook.md, ../../reference/python-api.md, ../../reference/semantic-ir.md
+related: ../../reference/python-api.md, ../../reference/semantic-ir.md
 status: maintained
+publication: draft
 ---
 
 # Use Python Inspection APIs

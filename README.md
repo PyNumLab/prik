@@ -344,7 +344,7 @@ X2PY_C_DOCS_END -->
 
 For diagnostic and inspection commands beyond the main build path, start with
 `python3 -m x2py --help`, then continue to the
-[Fortran wrapper guide](docs/user/guide/fortran-wrapper.md).
+[CLI command reference](docs/user/reference/cli-commands.md).
 
 <!-- X2PY_C_DOCS_START
 The runtime build path accepts one or more ordered Fortran sources. C parsing,
@@ -557,9 +557,8 @@ ownership, callback lifetime, ABI shims, or Python-visible projections.
 - **[Getting Started](docs/user/getting-started/index.md)** — Installation, verification, standalone procedures, modules, and rebuild workflow
 - **[User Guide](docs/user/guide/index.md)** — Detailed guidance on data types, functions, subroutines, modules, arrays, derived types, callbacks, ownership, runtime behavior, and packaging
 <!--
-- **[Tutorials](docs/user/tutorials/)** — Step-by-step walkthroughs
-- **[Examples Cookbook](docs/user/examples/verified-cookbook.md)** — Ready-to-use Fortran wrapper patterns and recipes
-- **[CLI Reference](docs/user/reference/cli.md)** — Complete command-line documentation
+- **[Tutorials](docs/user/tutorials/index.md)** — Step-by-step walkthroughs
+- **[CLI Reference](docs/user/reference/cli-commands.md)** — Complete command-line documentation
 - **[Language Support](docs/user/language-support/index.md)** — What is supported, partially supported, or planned
 - **[FAQ](docs/user/faq/index.md)** — Concise answers to common questions
 - **[Troubleshooting](docs/user/troubleshooting/index.md)** — Solutions for installation, compiler, build, runtime, and platform issues

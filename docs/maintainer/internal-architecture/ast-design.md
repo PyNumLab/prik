@@ -4,6 +4,7 @@ audience: maintainers
 prerequisites: parser architecture
 related: symbol-tables.md, type-system.md
 status: planned-documentation
+publication: draft
 ---
 
 # AST Design

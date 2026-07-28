@@ -207,6 +207,29 @@ def test_pointer_result_uses_a_persistent_holder_instead_of_the_removed_blocker(
     assert result.derived.target_release is DerivedRelease.NATIVE_OWNER
 
 
+def test_class_only_derived_methods_do_not_emit_unreachable_scoped_trampolines():
+    module = parse_pyi_text(
+        """
+from x2py.contracts import Int32
+
+class item:
+    value: Int32
+
+    def read(self) -> Int32: ...
+""",
+        module_name="phase8_class_only",
+    )
+    complete_semantic_policies(module)
+    bridge = next(
+        source.text
+        for source in WrapperCodeGenerator().generate(WrapperPlanner().build(module)).sources
+        if source.path.suffix == ".f90"
+    )
+
+    assert "c_funloc(x2py_derived_consumer" not in bridge
+    assert "bound_self_access == 2_c_int" not in bridge
+
+
 def test_validation_rejects_a_pointer_holder_without_completed_target_ownership():
     plan = WrapperPlanner().build(_module())
     function = next(item for item in plan.namespaces[0].functions if item.symbol_name == "make_pointer")
@@ -240,6 +263,7 @@ def test_artifacts_emit_shared_holders_typed_origin_operations_and_one_native_ca
     assert bridge.count("type :: x2py_item_pointer_holder") == 1
     assert "abstract interface" in bridge
     assert "c_f_procpointer" in bridge
+    assert "c_funloc(x2py_derived_consumer" in bridge
     assert "move_alloc" in bridge
     assert bridge.count("native_object_dummy(") == 1
     assert "x2py_derived_origin_ops" in c_source

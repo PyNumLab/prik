@@ -4,6 +4,7 @@ audience: users, advanced users
 prerequisites: arrays, packaging
 related: lapack-wrapper.md, ../guide/arrays.md
 status: planned-documentation
+publication: draft
 ---
 
 # BLAS Wrapper Example

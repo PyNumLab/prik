@@ -1,40 +1,40 @@
 ---
 title: Allocatables
+description: How x2py handles Fortran `allocatable` variables, arrays, and descriptors
 audience: users, advanced users
 prerequisites: arrays
 related: arrays.md, pointers.md, memory-management.md
 status: maintained
+publication: reviewed
 ---
 
 # Allocatables
 
-Allocatable behavior depends on whether the contract describes a scalar
-descriptor projection or an array descriptor handle. Scalar allocatables cross
-procedure boundaries as ordinary nullable Python values. Array allocatables use
-`Allocatable[T[...]]`, which is a Python handle to a native allocatable
-descriptor, not a NumPy array.
+A Fortran allocatable descriptor records whether storage is allocated and, for
+arrays, its address, shape, and strides. The descriptor controls the allocation,
+and an x2py handle gives Python access to that descriptor.
 
-| Case | Python sees | Owner and lifetime |
-| --- | --- | --- |
-| Scalar allocatable projection | `T | None` | a call-local native descriptor is created or read back by the bridge |
-| Allocatable descriptor argument | `Allocatable[T[...]]` handle | the handle passes the native allocatable descriptor |
-| Module allocatable array | `Allocatable[T[...]]` handle | the Fortran module owns allocation and release |
-| Derived allocatable field | `Allocatable[T[...]]` handle | the containing generated wrapper owns the native instance |
-| Owned allocatable result | `Allocatable[T[...]]` handle | x2py-owned descriptor storage releases the native allocation with the handle |
+## Key Concepts
 
-`Allocatable` is the dynamic-storage fact shared by all rows. It does not by
-itself choose copy, replacement, borrowed-view, or owned-handle behavior. The
-declaration context and completed ownership policy choose that behavior before
-wrapper lowering.
+- Scalar allocatables appear as `T | None`; array allocatables use
+  `Allocatable[T[...]]` handles.
+- An array handle exposes allocation state and descriptor operations; it is not
+  itself a NumPy array.
+- `allocated` reports whether storage exists; `to_numpy()` returns a live view
+  of that storage.
+- Reallocation or deallocation invalidates existing views.
+- Module and derived-field handles expose storage that belongs to their module
+  or parent object. Returned and caller-created handles have their own
+  descriptor storage.
+- When available, `deallocate()` releases the current allocation but keeps the
+  handle open. `close()` permanently ends a returned or caller-created handle.
 
-At runtime, every allocatable array handle described below is an
-`AllocatableArray`. Scalar allocatables never produce an `AllocatableArray`;
-they remain ordinary `T | None` values at the Python boundary.
+---
 
-## Array Handles
+## When To Use An Allocatable Handle
 
-`Allocatable[T[...]]` is the active allocatable-array spelling in semantic
-`.pyi` contracts:
+Use `Allocatable[T[...]]` when the native callable needs the allocatable
+descriptor and may inspect or change its allocation state:
 
 ```python
 from x2py.contracts import Allocatable, Float64, Int32
@@ -42,479 +42,293 @@ from x2py.contracts import Allocatable, Float64, Int32
 values: Allocatable[Float64[:]]
 
 def resize(values: Allocatable[Float64[:]], n: Int32) -> None: ...
-def scale(values: Float64[:]) -> None: ...
 ```
 
-The handle owns the allocation state, so an unallocated descriptor is still a
-present handle: `h.allocated is False`, `h.shape is None`, and
-`h.to_numpy() is None`. `| None` means the handle object itself may be absent
-for an optional native dummy, making native `present(values)` false:
+Use ordinary `T[...]` when the callable needs only array data:
 
 ```python
-def maybe_resize(values: Allocatable[Float64[:]] | None = ...) -> None: ...
+def sum_values(values: Float64[:]) -> Float64: ...
 ```
 
-That spelling is valid only for optional callable arguments. Do not use
-`Allocatable[T[...]] | None` for module variables, derived-type fields, or
-function results; those surfaces return a present handle. Module variables,
-fields, allocatable output dummies, function results, and handles changed by
-later operations may be unallocated. The handle then reports
-`allocated is False` and `to_numpy() is None`; this is descriptor state, not an
-absent optional argument.
+A plain NumPy array cannot satisfy an `Allocatable[T[...]]` parameter because
+it does not carry native allocation state. Use `to_numpy()` when Python needs
+the current array data held by an allocatable handle.
 
-Passing a handle to `Allocatable[T[...]]` passes the native descriptor. Passing
-the same allocated handle to a normal `T[...]` argument uses ordinary Fortran
-array-actual semantics by handing off the handle's native array data facet. It
-is not an implicit call to `.to_numpy()`. A normal `T[...]` argument rejects an
-unallocated handle because there is no valid array actual to pass; an allocated
-zero-length array remains valid.
+---
 
-Plain NumPy arrays are accepted by normal `T[...]` array parameters. They are
-rejected for `Allocatable[T[...]]` descriptor parameters because a NumPy array
-does not carry a native allocatable descriptor.
+## Allocatable Array Handle API
 
-`h.to_numpy()` is the explicit extraction operation. It returns `None` when the
-handle is unallocated. Otherwise, it returns a live mutable NumPy view of the
-current native allocation. It never creates an automatic detached snapshot or
-copy. Users who need independent storage must explicitly call `.copy()` on the
-returned array.
-
-A borrowed view is a NumPy array that points at storage Python does not own.
-Mutating the view mutates the owner. Deallocating or reallocating the owner can
-make an existing view stale. Accessing a stale view is unsupported and may
-crash the process; discard it and call `to_numpy()` again after the native state
-changes. Each fresh extraction inspects the current descriptor and starts at
-the current native lower bounds. Changing lower bounds during native
-reallocation must not offset the first element exposed to NumPy.
-
-An allocatable array returned by a function or hidden output is different from
-a borrowed module or field handle. x2py transfers the result into persistent
-descriptor storage owned by the returned handle. The handle remains
-usable after the native call returns, and `close()` or finalization releases the
-native allocation. A NumPy view extracted from that handle retains the handle;
-as with every live view, explicitly closing or resizing the handle makes older
-views stale.
-
-## Scalar Allocatable Projections
-
-Scalar allocatables cross a procedure boundary as ordinary nullable Python
-values. The semantic `.pyi` keeps the Python annotation as `T | None` and uses
-`Allocatable(...)` inside `@native_call` to describe native descriptor
-construction and readback.
-
-For example:
-
-```fortran
-function maybe_scale(enabled) result(scale)
-  integer(4), intent(in) :: enabled
-  real(8), allocatable :: scale
-
-  if (enabled /= 0) then
-    allocate(scale)
-    scale = 2.5_8
-  end if
-end function maybe_scale
-
-subroutine update_scale(scale)
-  real(8), allocatable, intent(inout) :: scale
-
-  if (allocated(scale)) then
-    scale = scale + 1.0_8
-  else
-    allocate(scale)
-    scale = 1.0_8
-  end if
-end subroutine update_scale
-```
-
-The corresponding semantic contract is:
+`Allocatable[T[...]]` is the type annotation. At runtime, generated Python APIs
+use an `AllocatableArray`. You can also create an unallocated handle when a
+routine needs a present descriptor that it will allocate:
 
 ```python
-from x2py.contracts import Addr, Allocatable, Arg, Float64, Int32, Return, Returns, native_call
+import x2py.contracts as xc
 
-@native_call([Addr(Arg(0))], result=Allocatable(Return(0)))
-def maybe_scale(enabled: Int32) -> Float64 | None: ...
+values = xc.Allocatable[xc.Float64[:]]()
+assert values.allocated is False
 
-@native_call([Allocatable(Arg(0))])
-def update_scale(
-    scale: Float64 | None,
-) -> Returns["scale", Float64] | None: ...
+api.fill_values(values)
+assert values.allocated is True
 ```
 
-Passing `None` creates a present but unallocated call-local descriptor. Omitting
-a defaulted scalar descriptor argument creates native optional absence, so
-`present(scale)` is false. Passing a value creates a present allocated
-call-local descriptor. A projected output becomes `None` when its descriptor is
-unallocated, including an allocatable scalar function result. Ordinary scalar
-projection rules still apply:
-`intent(out)` uses `Allocatable(Return("name", j))`, while `intent(inout)` uses
-`Allocatable(Arg(i))` plus a matching `Returns["name", T] | None` readback. The
-singular `result=Allocatable(Return(j))` mapping describes the native function
-result and places it among any other Python results.
+The annotation supplies the element dtype and rank. The handle creates its
+native descriptor storage when first passed to a matching writable argument.
+It stays the same Python object after the call.
+`Allocatable[Float64]()` is not supported because scalar allocatables cross the
+Python boundary as values rather than array handles.
 
-Use a default only when the native scalar dummy is optional:
+A returned or attribute array handle remains present even when its descriptor
+is unallocated. Reading the Python attribute
+returns an `Allocatable[T[...]]` handle, not `ndarray | None`.
+
+A NumPy view reflects current native storage. Access it only while the
+allocation is present:
 
 ```python
-@native_call([Allocatable(Arg(0))])
-def update_scale(scale: Float64 | None = ...) -> None: ...
+h = api.some_allocatable
+if h.allocated:
+    view = h.to_numpy()  # live view
+    view[0] = 42.0
+else:
+    print("Not allocated")
 ```
 
-This scalar rule is separate from array allocatable handles. Array arguments use
-`Allocatable[T[...]] | None` only for an optional absent handle; unallocated array
-state stays inside a present handle.
+| Member | Type | Behavior |
+| --- | --- | --- |
+| `allocated` | `bool` | Whether native storage is currently allocated. |
+| `shape` | `tuple[int, ...] \| None` | Current dimensions, or `None` when unallocated. |
+| `dtype` | `numpy.dtype` | Declared array element type. |
+| `rank` | `int` | Declared number of dimensions. |
+| `to_numpy()` | `numpy.ndarray \| None` | A live view of current storage, or `None` when unallocated. It never creates an automatic detached snapshot. |
+| `deallocate()` | `() -> None` | Deallocates current storage when this operation is available for the handle. |
+| `resize(shape)` | `(int \| Sequence[int]) -> None` | Allocates or resizes storage to `shape` when this operation is available for the handle. |
+| `close()` | `() -> None` | Permanently releases a returned or caller-created descriptor and any remaining allocation. It does nothing on a module or field handle. |
+| `closed` | `bool` | Whether a closable handle has been closed. |
 
-## Complete Allocatable Example
+Calling `deallocate()` or `resize(shape)` when the operation is unavailable
+raises `NotImplementedError`.
 
-Create `allocations.f90`:
+---
+
+## Deallocate Versus Close
+
+| Operation | What it releases | Handle afterward |
+| --- | --- | --- |
+| `deallocate()` | The current array allocation. | Open and usable, with `allocated == False`. |
+| `close()` | This handle's descriptor and any allocation it still contains. | Permanently closed and unusable. |
+
+Returned and caller-created handles close automatically when Python no longer
+uses them. Call `close()` explicitly only when immediate release matters, such
+as after using a large allocation.
+
+Calling `close()` on a module or field handle does nothing: it leaves the
+handle and the module's or parent object's storage unchanged. `deallocate()`
+changes that allocation when the operation is available.
+
+---
+
+## Where Handles Come From
+
+### Module Variables And Derived Fields
+
+A module handle observes the live module allocatable descriptor. A derived-field
+handle retains its parent wrapper and observes the live allocatable component
+inside it. Native allocation changes are visible through the same Python
+handle:
+
+```python
+h = api.values
+assert not h.allocated
+
+api.allocate_values(3)
+assert h.allocated
+assert h.shape == (3,)
+
+api.resize_values(5)
+assert h.shape == (5,)
+```
+
+### Function Results
+
+An allocatable-array function result becomes an `AllocatableArray` with its own
+descriptor storage, which x2py releases automatically:
+
+```python
+values = api.make_values(3)
+print(values.to_numpy())
+```
+
+A direct allocatable-array function result is expected to be allocated. Use a
+zero-sized allocation to represent an empty result. If the native function may
+instead return an unallocated result, declare that possibility explicitly:
+
+```python
+from x2py.contracts import Allocatable, Annotated, Float64, Int32, MaybeUnallocated
+
+def make_values(n: Int32) -> Allocatable[Float64[:]]: ...
+
+def maybe_values(
+    n: Int32,
+) -> Annotated[Allocatable[Float64[:]], MaybeUnallocated]: ...
+```
+
+The second function still returns a present handle. That handle may have
+`allocated == False`, in which case `to_numpy()` returns `None`. Returning an
+unallocated direct result without `MaybeUnallocated` violates the wrapper
+contract.
+
+### Output And Inout Arguments
+
+A nonoptional allocatable-array `intent(out)` does not consume incoming
+allocation state, so it is hidden and returned as a new handle. A hidden
+output may remain unallocated.
+
+An optional `intent(out)` remains visible so omission preserves native
+`present(...)` behavior. An `intent(inout)` descriptor also remains visible
+because native code reads and changes its current allocation. When the semantic
+contract projects that argument as a result, Python receives the same handle
+object:
+
+```python
+values = api.make_values(2)
+returned = api.replace_values(values)
+
+assert returned is values
+print(values.to_numpy())
+```
+
+---
+
+## Complete Example
+
+Create `storage.f90`:
 
 ```fortran
 module storage
   implicit none
-  real(8), allocatable, target :: shared_values(:)
-  real(8), allocatable :: plain_values(:)
+  real(8), allocatable :: values(:)
 contains
-  function make_values(count) result(values)
-    integer(4), intent(in) :: count
-    real(8), allocatable :: values(:)
-    integer(4) :: index
 
-    if (count <= 0) return
-    allocate(values(count))
-    values = [(2.0_8 * index, index = 1, count)]
+  function make_values(n) result(arr)
+    integer(4), intent(in) :: n
+    integer(4) :: i
+    real(8), allocatable :: arr(:)
+    allocate(arr(max(n, 0)))
+    if (n > 0) then
+      arr = [(real(i, 8)*2, i = 1, n)]
+    end if
   end function make_values
 
-  subroutine replace_values(values)
-    real(8), allocatable, intent(inout) :: values(:)
-
-    if (allocated(values)) deallocate(values)
-    allocate(values(2))
-    values = [10.0_8, 20.0_8]
+  subroutine replace_values(arr)
+    real(8), allocatable, intent(inout) :: arr(:)
+    if (allocated(arr)) deallocate(arr)
+    allocate(arr(2))
+    arr = [10.0_8, 20.0_8]
   end subroutine replace_values
 
-  subroutine allocate_shared(count)
-    integer(4), intent(in) :: count
-    integer(4) :: index
-
-    if (allocated(shared_values)) deallocate(shared_values)
-    allocate(shared_values(count))
-    shared_values = [(1.0_8 * index, index = 1, count)]
-  end subroutine allocate_shared
-
-  subroutine allocate_plain(count)
-    integer(4), intent(in) :: count
-    integer(4) :: index
-
-    if (allocated(plain_values)) deallocate(plain_values)
-    allocate(plain_values(count))
-    plain_values = [(3.0_8 * index, index = 1, count)]
-  end subroutine allocate_plain
-
-  subroutine release_shared()
-    if (allocated(shared_values)) deallocate(shared_values)
-  end subroutine release_shared
-
-  subroutine scale_plain(scale)
-    real(8), intent(in) :: scale
-    plain_values = scale * plain_values
-  end subroutine scale_plain
-
-  subroutine release_plain()
-    if (allocated(plain_values)) deallocate(plain_values)
-  end subroutine release_plain
-
-  real(8) function shared_sum() result(total)
-    total = sum(shared_values)
-  end function shared_sum
 end module storage
 ```
-
-Inspecting `allocations.f90` prints allocatable array handles for module
-storage, descriptor results, and descriptor arguments. `Aliased` remains a
-language-neutral fact that native storage may be externally aliased or
-addressed. It does not change `to_numpy()` extraction semantics:
-
-```python
-from x2py.contracts import Addr, Aliased, Allocatable, Annotated, Arg, Float64, Int32, Returns, native_call
-
-shared_values: Annotated[Allocatable[Float64[:]], Aliased]
-plain_values: Allocatable[Float64[:]]
-
-@native_call([Addr(Arg(0))])
-def make_values(
-    count: Int32
-) -> Allocatable[Float64[:]]: ...
-
-def replace_values(
-    values: Allocatable[Float64[:]]
-) -> Returns["values", Allocatable[Float64[:]]]: ...
-
-@native_call([Addr(Arg(0))])
-def allocate_shared(
-    count: Int32
-) -> None: ...
-
-@native_call([Addr(Arg(0))])
-def allocate_plain(
-    count: Int32
-) -> None: ...
-
-def release_shared() -> None: ...
-
-@native_call([Addr(Arg(0))])
-def scale_plain(
-    scale: Float64
-) -> None: ...
-
-def release_plain() -> None: ...
-
-def shared_sum() -> Float64: ...
-```
-
-`plain_values` and `shared_values` have the same extraction behavior: a fresh
-`to_numpy()` call returns a live view of the current allocation or `None`.
-`Aliased` remains present on `shared_values` because the native declaration
-supplies the corresponding addressability fact. It does not change the
-allocatable-array extraction mode.
 
 Build it:
 
 ```bash
-python3 -m x2py allocations.f90 --out-dir build/allocations
+python3 -m x2py storage.f90 --out-dir build/storage
 ```
 
-Then exercise owned-result, descriptor-argument, and module-handle behavior:
+Use the generated module:
 
 ```python
 import sys
+
 import numpy as np
 
-sys.path.insert(0, "build/allocations")
-import allocations
+sys.path.insert(0, "build/storage")
+from storage.storage import make_values, replace_values
 
-api = allocations.storage
+values = make_values(np.int32(3))
+print(values.to_numpy())                    # [2. 4. 6.]
 
-values = api.make_values(np.int32(3))
-np.testing.assert_array_equal(values.to_numpy(), np.array([2.0, 4.0, 6.0], dtype=np.float64))
-assert api.make_values(np.int32(0)).allocated is False
-
-returned = api.replace_values(values)
-assert returned is values
-np.testing.assert_array_equal(values.to_numpy(), np.array([10.0, 20.0], dtype=np.float64))
-
-api.allocate_shared(np.int32(3))
-shared = api.shared_values
-view = shared.to_numpy()
-view[0] = np.float64(10.0)
-assert api.shared_sum() == np.float64(15.0)
-
-api.allocate_plain(np.int32(3))
-plain_view = api.plain_values.to_numpy()
-plain_copy = plain_view.copy()
-plain_view[0] = np.float64(12.0)
-
-api.scale_plain(np.float64(2.0))
-np.testing.assert_array_equal(plain_copy, np.array([3.0, 6.0, 9.0], dtype=np.float64))
-np.testing.assert_array_equal(
-    api.plain_values.to_numpy(),
-    np.array([24.0, 12.0, 18.0], dtype=np.float64),
-)
+returned = replace_values(values)
+assert returned is values                   # same handle
+print(values.to_numpy())                    # [10. 20.]
 ```
 
-Do not access `view` after `api.release_shared()`, or `plain_view` after
-`api.release_plain()` or another reallocation. Native storage changes make the
-previous views stale, and accessing a stale view is unsupported and may crash.
+---
 
-## Output And Function Results
+## Safety Checklist
 
-Allocated top-level results and non-optional hidden allocatable outputs return
-wrapper-owned `AllocatableArray` objects. The generated binding transfers the
-result into persistent descriptor storage; the handle releases that storage on
-`close()` or finalization. Unallocated storage is represented by a present
-handle whose `allocated` property is false and whose `to_numpy()` result is
-`None`. Optional allocatable outputs remain visible so the caller can omit them
-and make native `present(...)` false.
+Keep these rules in mind when allocation state can change.
 
-A NumPy view returned by `to_numpy()` retains its handle owner. Changing that
-view changes the handle's current allocation, but does not affect later,
-independent result handles.
-
-## Inout Replacement
-
-An allocatable `intent(inout)` descriptor argument accepts an
-`AllocatableArray`, not a plain NumPy array. A matching `Returns[...]`
-projection records that the same caller handle is the Python result. Policy
-completion marks that descriptor boundary read-write before lowering; generated
-binding code does not manufacture a replacement ndarray or a second handle.
+### Check Allocation Before Use
 
 ```python
-assert api.replace_values(values) is values
+view = h.to_numpy()
+view[0] = 1.0  # NOT OK: view may be None
 ```
-
-The source for this call is already shown in the complete example above.
-
-## Character Array Replacement
-
-Allocatable character arrays use fixed-width NumPy bytes storage. Create
-`character_allocatables.f90`:
-
-```fortran
-module character_names
-  implicit none
-contains
-  function make_names() result(names)
-    character(len=:), allocatable :: names(:)
-
-    allocate(character(len=3) :: names(2))
-    names = [character(len=3) :: "red", "sky"]
-  end function make_names
-
-  subroutine replace_names(names)
-    character(len=:), allocatable, intent(inout) :: names(:)
-    integer :: count
-
-    if (allocated(names)) then
-      count = size(names)
-    else
-      count = 2
-    end if
-
-    if (allocated(names)) deallocate(names)
-    allocate(character(len=5) :: names(count))
-    names = "     "
-    if (count >= 1) names(1) = "red"
-    if (count >= 2) names(2) = "blue"
-  end subroutine replace_names
-end module character_names
-```
-
-The generated `.pyi` represents a fixed-length rank-one character array as
-`String[n][::]`, where `n` is its fixed element length. A deferred-length
-allocatable rank-one array uses the two-axis
-handle spelling `Allocatable[String[:][:]]`, so the element width can come from
-the native allocation at runtime:
 
 ```python
-from x2py.contracts import Allocatable, Returns, String
-
-def make_names() -> Allocatable[String[:][:]]: ...
-
-def replace_names(
-    names: Allocatable[String[:][:]]
-) -> Returns[
-    "names", Allocatable[String[:][:]]
-]: ...
+if h.allocated:
+    view = h.to_numpy()
+    if view is not None:
+        view[0] = 1.0
 ```
 
-Build the example:
+This check is required whenever an allocatable may be unallocated, including a
+result declared with `MaybeUnallocated`.
 
-```bash
-python3 -m x2py character_allocatables.f90 --out-dir build/character_allocatables
-```
-
-Pass an existing compatible allocatable character handle. The projected result
-is that same handle, and extraction remains explicit:
+### Copy Or Discard Views Before Storage Changes
 
 ```python
-import sys
-sys.path.insert(0, "build/character_allocatables")
-import character_allocatables
-
-api = character_allocatables.character_names
-names = api.make_names()
-assert api.replace_names(names) is names
-assert names.to_numpy().dtype.itemsize == 5
-assert names.to_numpy().tolist() == [b"red  ", b"blue "]
+view = h.to_numpy()
+saved = None if view is None else view.copy()
+h.resize(8)
 ```
 
-The `S5` itemsize comes from `allocate(character(len=5) :: names(count))`.
-Plain NumPy arrays are not allocatable descriptors and are rejected for this
-handle-typed parameter. When extracting character storage, x2py uses NumPy
-bytes dtype `S`; Unicode (`U`) and object (`O`) arrays are not descriptor-handle
-substitutes.
+After `resize()`, `deallocate()`, or a native call that may reallocate the
+descriptor, discard `view` and call `to_numpy()` again. The independent
+`saved` copy remains safe.
 
-Projected writable descriptor mutation requires a handle with persistent
-wrapper-owned standard-descriptor storage, such as the owned result returned by
-`make_names()`. A borrowed module handle can be passed to a read-only descriptor
-argument through descriptor facts, but it cannot be passed to a projected
-writable descriptor argument: native mutation of a call-local reconstructed
-descriptor would not update the module handle reliably.
-
-## Module Handles And Views
-
-An allocatable module array is native-owned. Reading the Python attribute
-returns an `Allocatable[T[...]]` handle, not `ndarray | None`. The module's
-allocation routines create and release the storage. `h.to_numpy()` returns the
-current live view or `None` according to the current allocation state. When the
-Fortran declaration has `target`, the generated `.pyi` marks the handle with
-`Aliased`. `Aliased` is not an ownership mode or an extraction selector; it
-records native addressability for pointer association, raw-address, foreign-pointer,
-and related policy.
-
-A plain allocatable module array has the same extraction contract as an
-`Aliased` one. The wrapper uses the completed descriptor mechanism to inspect
-the current allocation without copying. If the backend cannot expose a live
-view through a supported mechanism, wrapper planning stops with a clear
-diagnostic. Call `.copy()` explicitly when independent Python-owned storage is
-required.
-
-A supported allocatable component belongs to its containing native derived-type
-instance. The generated wrapper owns that native instance. The field exposes an
-`Allocatable[T[...]]` handle that retains the parent wrapper. Any borrowed NumPy
-view produced by `to_numpy()` retains the field handle, and the field handle
-retains the parent wrapper. Assigning a replacement array directly to such a
-field is rejected when native reallocation must go through an explicit method.
-
-Neither owner model can invalidate an already-created NumPy object safely after
-native reallocation. Copy before any operation that may reallocate or
-deallocate:
+### Do Not Keep Using A Closed Result
 
 ```python
-independent = view.copy()
+view = result.to_numpy()
+result.close()
+result.shape  # NOT OK: the descriptor has been released
+view[0]       # NOT OK: close() released the allocation
 ```
 
-## Limitations
+A view normally retains its handle, but an explicit `close()` releases a
+returned allocatable result immediately. Finish using or copy all views before
+closing the handle.
 
-- A wrapper-owned allocatable scalar derived result can be passed to a
-  compatible ordinary, target, allocatable, allocatable-target, input-only
-  pointer, or value dummy. The generated typed holder preserves the same Python
-  object and writes allocation changes back to that holder.
-- An allocatable scalar derived module variable is a live nullable field proxy,
-  and it can satisfy a compatible allocatable dummy through a scoped
-  `move_alloc` transaction. The allocation is moved into an exact typed local
-  holder, passed to the native procedure, and restored exactly once; no object
-  address substitutes for the module descriptor and no descriptor crosses the
-  interoperable boundary.
-- The complete ordinary, `TARGET`, `ALLOCATABLE`, `ALLOCATABLE,TARGET`,
-  `POINTER`, and `VALUE` compatibility rules—including empty state,
-  multi-argument cleanup, and deliberate errors—are in the later Wrapping
-  Derived Types guide under “Scalar Actuals And Native Dummies.”
-- Mutable scalar deferred-length character storage is blocked.
-- Plain derived module objects use typed module-specific member access;
-  `Aliased` is needed only for policies that require a direct native address.
-  Allocatable module-array handles use their standard descriptor path and have
-  the same live-view extraction contract with or without `Aliased`.
-- Borrowed module handles do not provide the persistent direct descriptor
-  handoff required by projected writable descriptor arguments; use an owned
-  result handle for that operation.
-- An edited `.pyi` cannot relabel a native-owned descriptor as Python-owned.
-  Use an implemented owned-result handle or copy an extracted NumPy value when
-  Python needs independent storage.
-- `Annotated[T[...], Allocatable]` is no longer the active public spelling for
-  allocatable array descriptors; use `Allocatable[T[...]]`.
+### Release Only Through The Owner
 
-## Evidence And Troubleshooting
+```python
+h.deallocate()  # may be unavailable for module or field storage
+```
 
-Owned results, module and component handles, unallocated state, extraction, and
-owner retention are exercised by
-[`test_allocatable_views.py`](../../../tests/wrapper/fortran/module_state/test_allocatable_views.py).
-Allocatable descriptor `intent(inout)` mutation and same-handle projection are
-exercised by
-[`test_allocatable_replacement.py`](../../../tests/wrapper/fortran/module_state/test_allocatable_replacement.py).
-Character descriptor generation in source and generated-`.pyi` modes is
-exercised by
-[`test_character_arguments.py`](../../../tests/wrapper/fortran/strings/test_character_arguments.py).
+Not every module or field handle lets Python resize or deallocate its storage.
+An unavailable operation raises `NotImplementedError`. Use the module's or
+parent object's functions to change that storage instead.
 
-A borrowed view can become stale after its native owner reallocates or
-deallocates storage, so copy any data that needs an independent lifetime.
-Memory Management expands this rule later, and Runtime Issues later covers
-dtype, rank, and stale-storage symptoms.
+---
+
+## Scalar Allocatables
+
+Scalar allocatables appear as `T | None` values at the Python boundary rather
+than `AllocatableArray` handles. An unallocated projected scalar result becomes
+`None`. Scalar values do not expose persistent allocation state, `to_numpy()`,
+or descriptor operations.
+
+For an optional scalar allocatable argument, omission makes the argument absent.
+Passing `None` makes it present but unallocated, while passing a value makes it
+present with that value. See [Optional Arguments](optional-arguments.md).
+
+---
+
+## Next
+
+- Continue with [Pointers](pointers.md) for association and target lifetime.
+- Then read [Memory Management](memory-management.md) for the rules shared by
+  both kinds of handle.

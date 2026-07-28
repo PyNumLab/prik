@@ -196,8 +196,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-color", action="store_true", help="Disable ANSI color in parse diagnostics")
     parser.add_argument(
         "--debug",
-        "--debug-traceback",
-        dest="debug",
         action="store_true",
         help="Re-raise parser errors so Python prints a traceback for parser debugging.",
     )

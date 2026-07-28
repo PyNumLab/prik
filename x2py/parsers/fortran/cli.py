@@ -301,8 +301,6 @@ def main() -> int:
     )
     parser.add_argument(
         "--debug",
-        "--debug-traceback",
-        dest="debug",
         action="store_true",
         help="Re-raise parser errors so Python prints a traceback for parser debugging. "
         "Can also be enabled with FORTRAN_PARSER_DEBUG=1.",

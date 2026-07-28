@@ -1,206 +1,137 @@
 ---
 title: Wrapping Functions
+description: How x2py wraps Fortran `function` procedures — return values, output arguments, arrays, and contracts
 audience: users
 prerequisites: data types, first wrapped function
-related: wrapping-subroutines.md, arrays.md, fortran-wrapper.md
+related: wrapping-subroutines.md, arrays.md
 status: maintained
+publication: reviewed
 ---
 
 # Wrapping Functions
 
-A Fortran `function` becomes a Python callable. The direct result of the function becomes the first returned value in Python.
-All arguments follow the exact semantic types shown in the generated `.pyi` file.
+A Fortran `function` becomes a Python callable. Its direct result is the first
+Python return value. Other outputs follow only when their contract marks them
+as Python results.
 
-See [Data Types](data-types.md) for details on how Fortran types are mapped to Python/NumPy.
+---
 
-For this example, we'll use `scale.f90` (from [README Quick Start](../../../README.md#quick-start)).
+## Basic Scalar Function
 
-```bash
-python3 -m x2py generate --pyi scale.f90
-python3 -m x2py scale.f90 --out-dir build/scale
-```
-
-## Scalar Functions
-
-The generated contract for the scale function is:
+The `scale` function built in
+[First Wrapped Function](../getting-started/first-wrapped-function.md) returns
+its direct result as one NumPy scalar:
 
 ```python
-from x2py.contracts import Addr, Arg, Float64, external, native_call
+import numpy as np
 
+import scale
+
+result = scale.scale(np.float64(3.0), np.float64(2.5))
+print(result)  # 7.5
+```
+
+---
+
+## Python And Native Names
+
+A contract declaration normally uses one name for both Python and the native
+procedure. Use `@bind("native_name")` only when those names differ.
+
+For example, rename the generated declaration to `multiply` and add
+`@bind("scale")`. The Python name changes, while the native target remains
+`scale`:
+
+```python
+from x2py.contracts import Addr, Arg, Float64, bind, external, native_call
+
+@bind("scale")
 @external
 @native_call([Addr(Arg(0)), Addr(Arg(1))])
-def scale(
+def multiply(
     value: Float64,
-    factor: Float64,
+    factor: Float64
 ) -> Float64: ...
 ```
 
-Call it like this:
+```python
+result = scale.multiply(np.float64(3.0), np.float64(2.5))
+print(result)  # 7.5
+```
+
+`@bind` changes the native target name. It does not change the argument
+contract or adapt an incompatible native interface. Matching names need no
+`@bind`.
+
+Also update the import in the contract package's `__init__.pyi` when it
+re-exports the old Python name. Build the edited package using the
+[editable-contract workflow](../getting-started/beginner-workflow.md#4-optionally-edit-the-contract).
+
+The same rule applies to functions, subroutines, and methods.
+
+For the complete naming rules, see
+[Add or Rename a Native Procedure](../reference/pyi-contracts/exports-and-modules.md#add-or-rename-a-native-procedure).
+
+---
+
+## Array Return Values
+
+Functions can return arrays. An ordinary array result becomes a new NumPy
+array in Fortran order, as described in
+the [`automatic_vector` example](arrays.md#complete-example):
 
 ```python
-result = scale.scale(np.float64(3.0), np.float64(2.5))
-assert result == np.float64(7.5)
-```
-
-Contained module functions appear on their generated child module instead of
-the extension root. Standalone procedures carry `@external` in the semantic
-contract. These placement details do not change the Python argument types.
-
-Supported scalar function results include resolved signed integer, real,
-complex, logical, scalar character, and supported derived-type values. Read
-[Data Types](data-types.md) for the complete mapping. Scalar character results
-are Python-owned `str` values; derived results are wrapper-owned generated
-class instances.
-
-## Array Results
-
-Functions can return numeric arrays. These are returned as new NumPy arrays with Fortran (column-major) ordering.
-
-Example (`function_results.f90`):
-
-```fortran
-module results
-  implicit none
-contains
-  function squares(count) result(values)
-    integer(4), intent(in) :: count
-    real(8) :: values(count)
-    integer(4) :: index
-
-    values = [(real(index, 8) * real(index, 8), index = 1, count)]
-  end function squares
-end module results
-```
-
-Generated contract:
-
-```python
-from x2py.contracts import Addr, Arg, Float64, Int32, native_call
-
-@native_call([Addr(Arg(0))])
-def squares(
-    count: Int32
-) -> Float64[count]: ...
-```
-
-Build it:
-
-```bash
-python3 -m x2py function_results.f90 --out-dir build/function-results
-```
-
-Usage:
-
-```python
-import sys
 import numpy as np
 
-sys.path.insert(0, "build/function-results")
-import function_results
-
-api = function_results.results
-result = api.squares(np.int32(4))
-
-np.testing.assert_array_equal(
-    result,
-    np.array([1.0, 4.0, 9.0, 16.0], dtype=np.float64),
-)
+result = automatic_vector(np.int32(4))
+print(result)  # [ 1.  4.  9. 16.]
 ```
 
-The `squares` result is an ordinary array contract, so allocated zero-sized
-results remain zero-sized NumPy arrays. Multidimensional results retain
-Fortran-oriented element ordering, and returned ordinary arrays are independent
-Python-owned copies.
+---
 
-An allocatable array function result has a different public shape: it returns a
-present `AllocatableArray`, including when the native result is unallocated.
-Check `handle.allocated` and call `handle.to_numpy()` for explicit extraction.
-Pointer-array function results remain blocked until x2py can prove stable owner
-storage and target lifetime.
+## Functions with Output Arguments
 
-## Functions With Output Arguments
+When a function has projected scalar or native-created outputs, Python returns
+a **tuple**:
 
-If a function also has output arguments, Python returns a tuple: **first the direct function result, then the output arguments** in their native
-argument order.
+> `(function_result, out_arg1, out_arg2, ...)`
 
-Create `function_outputs.f90`:
+Caller-provided ordinary arrays are mutated in place and are not added to this
+tuple.
+
+**Example:**
 
 ```fortran
-module outputs
-  implicit none
-contains
-  function sum_with_count(values, count) result(total)
-    real(8), intent(in) :: values(:)
-    integer(4), intent(out) :: count
-    real(8) :: total
-
-    total = sum(values)
-    count = size(values)
-  end function sum_with_count
-end module outputs
+function sum_with_count(values, count) result(total)
+  real(8), intent(in) :: values(:)
+  integer(4), intent(out) :: count
+  real(8) :: total
+  total = sum(values)
+  count = size(values)
+end function
 ```
 
-Inspecting `function_outputs.f90` prints this function contract:
+**Python call:**
 
 ```python
-from x2py.contracts import Arg, Float64, Int32, Return, native_call
-
-@native_call([Arg(0), Return('count', 1)])
-def sum_with_count(
-    values: Float64[::]
-) -> tuple[Float64, Int32]: ...
+total, count = sum_with_count(data_array)
 ```
 
-Build it:
+---
 
-```bash
-python3 -m x2py function_outputs.f90 --out-dir build/function-outputs
-```
+## Important Rules
 
-Then assert the tuple order:
+- Always pass **exact NumPy dtypes** (`np.float64`, `np.int32`, etc.).
+- Array results are returned as new NumPy arrays (copies).
+- Projected scalar outputs follow the direct function result in the return
+  tuple.
+- Caller-provided arrays and derived objects mutate in place. They are not
+  repeated in the return tuple.
+- Without `intent`, an argument uses conservative `intent(inout)` behavior.
+  Primitive scalar replacements follow the direct function result in the
+  Python return tuple.
 
-```python
-import sys
+## Next
 
-import numpy as np
-
-sys.path.insert(0, "build/function-outputs")
-import function_outputs
-
-api = function_outputs.outputs
-source = np.array([4.0, -2.0, 7.0], dtype=np.float64)
-total, count = api.sum_with_count(source)
-assert total == np.float64(9.0)
-assert count == np.int32(3)
-```
-
-Caller-provided output arrays remain arguments because the caller must allocate
-their storage. Their return projection, when present, refers to that same
-object. The same `intent(out)` and `intent(inout)` projection rules apply to
-subroutines that have no direct function result.
-
-## Call Limits
-
-- Exact input dtype is required where the generated contract names one; x2py
-  does not silently narrow or widen a native scalar or array.
-- Numeric and fixed-width bytes character array results support ranks 1 through
-  15. Arrays of derived types are blocked.
-- Wider-than-supported real, complex, or explicit logical storage is blocked
-  rather than narrowed.
-- A function result never creates an unproven borrowed pointer view.
-- Native `stop`, `error stop`, or process abort cannot be converted into a
-  normal Python return.
-
-## Evidence And Troubleshooting
-
-Scalar calls are exercised by
-[`test_verified_baseline.py`](../../../tests/wrapper/fortran/scalars/test_verified_baseline.py),
-array results by
-[`test_array_results.py`](../../../tests/wrapper/fortran/arrays/test_array_results.py),
-and mixed result projection by
-[`test_output_arguments.py`](../../../tests/wrapper/fortran/function_calls/test_output_arguments.py).
-
-For a rejected Python value, compare it with generated `.pyi` output and use
-the reported dtype, rank, shape, and layout facts. Runtime Issues later provides
-additional diagnosis. For an unsupported wrapper plan, the language feature matrix
-later records whether that form is supported before compilation.
+- [Wrapping Subroutines](wrapping-subroutines.md) for the complete argument
+  projection rules.

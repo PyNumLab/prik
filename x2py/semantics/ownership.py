@@ -538,7 +538,6 @@ class OwnershipPolicyResolver:
         facts = self._semantic_facts(semantic_type)
         decision = self._apply_overrides(self._decide(facts, context), facts, context)
         decision = self._validate_aliased_decision(decision, facts, context)
-        decision = self._validate_scalar_descriptor_decision(decision, facts, context)
         decision = self._validate_pointer_decision(decision, facts, context)
         decision = self._complete_immutable_policy(decision, facts, context)
         decision = self._validate_result_projection(decision, context)
@@ -681,6 +680,8 @@ class OwnershipPolicyResolver:
         return self._handlers[kind](facts, context)
 
     def _kind(self, facts: _StorageFacts, context: OwnershipContext) -> ObjectKind:
+        if facts.scalar_storage and not facts.is_string and not facts.allocatable and not facts.pointer:
+            return ObjectKind.NUMPY_ARRAY
         if facts.rank > 0 or facts.is_ndarray:
             return ObjectKind.NUMPY_ARRAY
         if facts.is_string:
@@ -725,6 +726,15 @@ class OwnershipPolicyResolver:
                 reason="scalar output is returned as a Python value",
             )
         if context.writes_argument and context.reads_argument:
+            if context.projects_result:
+                return OwnershipDecision(
+                    ObjectKind.SCALAR,
+                    OwnershipOwner.PYTHON,
+                    TransferMode.COPY_RETURN,
+                    DestructionPolicy.PYTHON_REFCOUNT,
+                    mutates_native=True,
+                    reason="projected scalar update uses call-local native storage and returns a replacement value",
+                )
             return OwnershipDecision(
                 ObjectKind.SCALAR,
                 OwnershipOwner.CALLER,
@@ -913,8 +923,50 @@ class OwnershipPolicyResolver:
         )
 
     def _string_decision(self, facts: _StorageFacts, context: OwnershipContext) -> OwnershipDecision:
-        if context.is_result and (facts.allocatable or facts.pointer):
-            storage = StorageMode.HEAP if facts.allocatable else StorageMode.ALIAS
+        descriptor_decision = self._string_descriptor_decision(facts, context)
+        if descriptor_decision is not None:
+            return descriptor_decision
+        if facts.address_role == ADDRESS_ROLE_RAW:
+            return OwnershipDecision(
+                ObjectKind.STRING,
+                OwnershipOwner.CALLER,
+                TransferMode.IN_PLACE,
+                DestructionPolicy.CALLER,
+                mutates_native=True,
+                reason="raw string address aliases caller-owned fixed-width storage",
+            )
+        if facts.scalar_storage:
+            return self._scalar_string_storage_decision(context)
+        if context.is_result:
+            return OwnershipDecision(
+                ObjectKind.STRING,
+                OwnershipOwner.PYTHON,
+                TransferMode.COPY_RETURN,
+                DestructionPolicy.PYTHON_REFCOUNT,
+                reason="string output is copied into a Python string",
+            )
+        if context.writes_argument and not context.reads_argument:
+            return self._string_output_argument_decision(context)
+        if context.writes_argument and context.reads_argument:
+            return self._string_update_argument_decision(context)
+        return OwnershipDecision(
+            ObjectKind.STRING,
+            OwnershipOwner.CALLER,
+            TransferMode.CALL_LOCAL,
+            DestructionPolicy.NONE,
+            reason="string input is converted for the call only",
+        )
+
+    @staticmethod
+    def _string_descriptor_decision(
+        facts: _StorageFacts,
+        context: OwnershipContext,
+    ) -> OwnershipDecision | None:
+        if not (facts.allocatable or facts.pointer):
+            return None
+
+        storage = StorageMode.HEAP if facts.allocatable else StorageMode.ALIAS
+        if context.is_result:
             return OwnershipDecision(
                 ObjectKind.STRING,
                 OwnershipOwner.PYTHON,
@@ -926,92 +978,90 @@ class OwnershipPolicyResolver:
                 descriptor_boundary=True,
                 reason="scalar string descriptor result is copied before native descriptor release",
             )
-        if facts.address_role == ADDRESS_ROLE_RAW:
+        if context.writes_argument and context.projects_result and not context.python_visible:
             return OwnershipDecision(
                 ObjectKind.STRING,
-                OwnershipOwner.CALLER,
-                TransferMode.IN_PLACE,
-                DestructionPolicy.CALLER,
+                OwnershipOwner.PYTHON,
+                TransferMode.COPY_RETURN,
+                DestructionPolicy.PYTHON_REFCOUNT,
+                storage_mode=storage,
+                boundary_storage_mode=storage,
+                nullable=True,
+                descriptor_boundary=True,
                 mutates_native=True,
-                reason="raw string address aliases caller-owned fixed-width storage",
+                projects_result=True,
+                python_visible=False,
+                reason="hidden scalar string descriptor output is copied before native descriptor release",
             )
-        if facts.scalar_storage:
-            if context.is_result:
-                return OwnershipDecision(
-                    ObjectKind.STRING,
-                    OwnershipOwner.PYTHON,
-                    TransferMode.COPY_RETURN,
-                    DestructionPolicy.PYTHON_REFCOUNT,
-                    reason="scalar string storage result is copied into a Python string",
-                )
-            if context.writes_argument:
-                return OwnershipDecision(
-                    ObjectKind.STRING,
-                    OwnershipOwner.CALLER,
-                    TransferMode.IN_PLACE,
-                    DestructionPolicy.CALLER,
-                    storage_mode=StorageMode.ALIAS,
-                    mutates_native=True,
-                    reason="rank-0 string storage mutates caller-provided NumPy bytes storage",
-                )
-            return OwnershipDecision(
-                ObjectKind.STRING,
-                OwnershipOwner.CALLER,
-                TransferMode.CALL_LOCAL,
-                DestructionPolicy.NONE,
-                storage_mode=StorageMode.ALIAS,
-                reason="rank-0 string storage is borrowed for the duration of the call",
-            )
+        return None
+
+    @staticmethod
+    def _scalar_string_storage_decision(context: OwnershipContext) -> OwnershipDecision:
         if context.is_result:
             return OwnershipDecision(
                 ObjectKind.STRING,
                 OwnershipOwner.PYTHON,
                 TransferMode.COPY_RETURN,
                 DestructionPolicy.PYTHON_REFCOUNT,
-                reason="string output is copied into a Python string",
+                reason="scalar string storage result is copied into a Python string",
             )
-        if context.writes_argument and not context.reads_argument:
-            if not context.projects_result:
-                return OwnershipDecision(
-                    ObjectKind.STRING,
-                    OwnershipOwner.TEMPORARY,
-                    TransferMode.CALL_LOCAL,
-                    DestructionPolicy.CALL_LOCAL,
-                    mutates_native=True,
-                    reason="identity string output uses temporary storage and discards native mutation",
-                )
+        if context.writes_argument:
             return OwnershipDecision(
                 ObjectKind.STRING,
-                OwnershipOwner.PYTHON,
-                TransferMode.COPY_RETURN,
-                DestructionPolicy.PYTHON_REFCOUNT,
+                OwnershipOwner.CALLER,
+                TransferMode.IN_PLACE,
+                DestructionPolicy.CALLER,
+                storage_mode=StorageMode.ALIAS,
                 mutates_native=True,
-                reason="string output is copied into a Python string",
-            )
-        if context.writes_argument and context.reads_argument:
-            if not context.projects_result:
-                return OwnershipDecision(
-                    ObjectKind.STRING,
-                    OwnershipOwner.TEMPORARY,
-                    TransferMode.CALL_LOCAL,
-                    DestructionPolicy.CALL_LOCAL,
-                    mutates_native=True,
-                    reason="string update uses a mutable call-local copy and discards native mutation",
-                )
-            return OwnershipDecision(
-                ObjectKind.STRING,
-                OwnershipOwner.PYTHON,
-                TransferMode.COPY_RETURN,
-                DestructionPolicy.PYTHON_REFCOUNT,
-                mutates_native=True,
-                reason="immutable Python strings use copy-in/copy-out replacement for updates",
+                reason="rank-0 string storage mutates caller-provided NumPy bytes storage",
             )
         return OwnershipDecision(
             ObjectKind.STRING,
             OwnershipOwner.CALLER,
             TransferMode.CALL_LOCAL,
             DestructionPolicy.NONE,
-            reason="string input is converted for the call only",
+            storage_mode=StorageMode.ALIAS,
+            reason="rank-0 string storage is borrowed for the duration of the call",
+        )
+
+    @staticmethod
+    def _string_output_argument_decision(context: OwnershipContext) -> OwnershipDecision:
+        if not context.projects_result:
+            return OwnershipDecision(
+                ObjectKind.STRING,
+                OwnershipOwner.TEMPORARY,
+                TransferMode.CALL_LOCAL,
+                DestructionPolicy.CALL_LOCAL,
+                mutates_native=True,
+                reason="identity string output uses temporary storage and discards native mutation",
+            )
+        return OwnershipDecision(
+            ObjectKind.STRING,
+            OwnershipOwner.PYTHON,
+            TransferMode.COPY_RETURN,
+            DestructionPolicy.PYTHON_REFCOUNT,
+            mutates_native=True,
+            reason="string output is copied into a Python string",
+        )
+
+    @staticmethod
+    def _string_update_argument_decision(context: OwnershipContext) -> OwnershipDecision:
+        if not context.projects_result:
+            return OwnershipDecision(
+                ObjectKind.STRING,
+                OwnershipOwner.TEMPORARY,
+                TransferMode.CALL_LOCAL,
+                DestructionPolicy.CALL_LOCAL,
+                mutates_native=True,
+                reason="string update uses a mutable call-local copy and discards native mutation",
+            )
+        return OwnershipDecision(
+            ObjectKind.STRING,
+            OwnershipOwner.PYTHON,
+            TransferMode.COPY_RETURN,
+            DestructionPolicy.PYTHON_REFCOUNT,
+            mutates_native=True,
+            reason="immutable Python strings use copy-in/copy-out replacement for updates",
         )
 
     def _array_decision(self, facts: _StorageFacts, context: OwnershipContext) -> OwnershipDecision:
@@ -1109,19 +1159,6 @@ class OwnershipPolicyResolver:
     @staticmethod
     def _native_array_handle_projected_output_decision(facts: _StorageFacts) -> OwnershipDecision:
         """Create stable wrapper-owned storage for a Python-hidden descriptor output."""
-        if facts.pointer:
-            return OwnershipDecision(
-                ObjectKind.NUMPY_ARRAY,
-                OwnershipOwner.UNKNOWN,
-                TransferMode.BLOCKED,
-                DestructionPolicy.BLOCKED,
-                storage_mode=StorageMode.ALIAS,
-                boundary_storage_mode=StorageMode.ALIAS,
-                nullable=True,
-                descriptor_boundary=True,
-                blocker="pointer handle results need stable owner storage and target lifetime policy before wrapping",
-                reason="hidden pointer descriptor output has no completed target lifetime",
-            )
         return OwnershipDecision(
             ObjectKind.NUMPY_ARRAY,
             OwnershipOwner.WRAPPER,
@@ -1133,25 +1170,12 @@ class OwnershipPolicyResolver:
             borrowed=False,
             mutates_native=True,
             descriptor_boundary=True,
-            reason="hidden allocatable descriptor output moves into wrapper-owned stable storage",
+            reason="hidden descriptor output moves into wrapper-owned stable descriptor storage",
         )
 
     @staticmethod
     def _native_array_handle_result_decision(facts: _StorageFacts) -> OwnershipDecision:
         """Materialize a supported direct descriptor result as one runtime handle."""
-        if facts.pointer:
-            return OwnershipDecision(
-                ObjectKind.NUMPY_ARRAY,
-                OwnershipOwner.UNKNOWN,
-                TransferMode.BLOCKED,
-                DestructionPolicy.BLOCKED,
-                storage_mode=StorageMode.ALIAS,
-                boundary_storage_mode=StorageMode.ALIAS,
-                nullable=True,
-                descriptor_boundary=True,
-                blocker="pointer handle results need stable owner storage and target lifetime policy before wrapping",
-                reason="pointer descriptor result has no completed stable target owner",
-            )
         return OwnershipDecision(
             ObjectKind.NUMPY_ARRAY,
             OwnershipOwner.WRAPPER,
@@ -1161,7 +1185,7 @@ class OwnershipPolicyResolver:
             boundary_storage_mode=StorageMode.ALIAS,
             nullable=True,
             descriptor_boundary=True,
-            reason="allocatable descriptor result moves into wrapper-owned stable storage",
+            reason="descriptor result moves into wrapper-owned stable descriptor storage",
         )
 
     def _allocatable_array_decision(self, facts: _StorageFacts, context: OwnershipContext) -> OwnershipDecision:
@@ -1230,15 +1254,7 @@ class OwnershipPolicyResolver:
                 reason=reason,
             )
         if context.is_result:
-            return OwnershipDecision(
-                ObjectKind.NUMPY_ARRAY,
-                OwnershipOwner.PYTHON,
-                TransferMode.SNAPSHOT_COPY,
-                DestructionPolicy.PYTHON_REFCOUNT,
-                storage_mode=StorageMode.ALIAS,
-                nullable=True,
-                reason="pointer array result is copied into Python-owned NumPy storage",
-            )
+            return self._native_array_handle_result_decision(facts)
         if context.writes_argument:
             return OwnershipDecision(
                 ObjectKind.NUMPY_ARRAY,
@@ -1438,7 +1454,9 @@ class OwnershipPolicyResolver:
         raw = metadata.get(OWNERSHIP_POLICY_METADATA)
         pointer_policy = metadata.get(POINTER_POLICY_METADATA)
         pointer_container = (
-            facts.pointer and facts.rank > 0 and (context.is_argument or context.is_field or context.is_module_variable)
+            facts.pointer
+            and facts.rank > 0
+            and (context.is_argument or context.is_field or context.is_module_variable or context.is_result)
         )
         if facts.pointer and isinstance(pointer_policy, Mapping) and not pointer_container:
             raw = {**(raw if isinstance(raw, Mapping) else {}), **pointer_policy}
@@ -1485,29 +1503,6 @@ class OwnershipPolicyResolver:
         return decision
 
     @staticmethod
-    def _validate_scalar_descriptor_decision(
-        decision: OwnershipDecision,
-        facts: _StorageFacts,
-        context: OwnershipContext,
-    ) -> OwnershipDecision:
-        if decision.is_blocked or facts.rank != 0 or not (facts.allocatable or facts.pointer):
-            return decision
-        blocker = None
-        if context.is_argument and context.writes_argument and facts.is_string:
-            blocker = "scalar descriptor output projection currently supports primitive numeric values only"
-        if blocker is None:
-            return decision
-        return replace(
-            decision,
-            owner=OwnershipOwner.UNKNOWN,
-            transfer=TransferMode.BLOCKED,
-            destruction=DestructionPolicy.BLOCKED,
-            borrowed=False,
-            blocker=blocker,
-            reason="scalar descriptor construction and readback must have a complete supported policy",
-        )
-
-    @staticmethod
     def _validate_pointer_decision(
         decision: OwnershipDecision,
         facts: _StorageFacts,
@@ -1515,13 +1510,11 @@ class OwnershipPolicyResolver:
     ) -> OwnershipDecision:
         if not facts.pointer or decision.is_blocked:
             return decision
-        if context.is_argument and _is_native_array_handle_facts(facts):
+        if (context.is_argument or context.is_result) and _is_native_array_handle_facts(facts):
             return decision
-        blocker = (
-            OwnershipPolicyResolver._pointer_argument_blocker(decision, facts, context)
-            or OwnershipPolicyResolver._pointer_container_blocker(decision, facts, context)
-            or OwnershipPolicyResolver._pointer_result_blocker(decision, facts, context)
-        )
+        blocker = OwnershipPolicyResolver._pointer_argument_blocker(
+            decision, facts, context
+        ) or OwnershipPolicyResolver._pointer_container_blocker(decision, facts, context)
         if blocker is None:
             return decision
         return replace(
@@ -1575,20 +1568,6 @@ class OwnershipPolicyResolver:
             return None
         if decision.transfer is not TransferMode.SNAPSHOT_COPY:
             return "scalar pointer field and module accessors require snapshot_copy detached values"
-        return None
-
-    @staticmethod
-    def _pointer_result_blocker(
-        decision: OwnershipDecision,
-        facts: _StorageFacts,
-        context: OwnershipContext,
-    ) -> str | None:
-        """Return a blocker for an unsupported pointer function result policy."""
-        if facts.rank > 0 and context.is_result and decision.transfer is not TransferMode.SNAPSHOT_COPY:
-            return (
-                "pointer array results remain blocked until returned-handle owner storage, "
-                "target lifetime, descriptor extraction, and destroy behavior are implemented"
-            )
         return None
 
     @staticmethod
