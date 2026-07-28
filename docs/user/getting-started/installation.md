@@ -48,7 +48,14 @@ sudo apt-get install build-essential gfortran python3-dev
 
 ## User Installation
 
-From the root of the cloned repository, run:
+Clone the repository:
+
+```bash
+git clone https://github.com/PyNumLab/x2py.git
+cd x2py
+```
+
+Create a virtual environment and install x2py:
 
 ```bash
 python3 -m venv .venv

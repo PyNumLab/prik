@@ -1,7 +1,8 @@
 site_name: x2py
 site_url: https://pynumlab.github.io/x2py/
 repo_url: https://github.com/PyNumLab/x2py
-repo_name: PyNumLab/x2py
+repo_name: GitHub
+edit_uri: edit/main/docs/
 docs_dir: docs
 theme:
   name: readthedocs

@@ -16,6 +16,9 @@ X2PY_C_DOCS_END -->
 [![Quality](https://github.com/PyNumLab/x2py/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/PyNumLab/x2py/actions/workflows/quality.yml)
 [![codecov](https://codecov.io/gh/PyNumLab/x2py/graph/badge.svg?token=QZRRCS5YO6)](https://codecov.io/gh/PyNumLab/x2py)
 
+[Read the documentation](https://pynumlab.github.io/x2py/) for installation,
+the user guide, examples, and reference material.
+
 ## Installation & Quick Start
 
 Requires **Python 3.10+**.
@@ -312,8 +315,8 @@ The custom wrapper flags appear in the relevant command lines:
 Standalone procedures are the smallest wrapper surface and therefore come
 first. Contained Fortran module procedures are preserved under Python child
 modules; continue with the
-[first wrapped module](docs/user/getting-started/first-wrapped-module.md) for that
-layout and for public module state.
+[first wrapped module](https://pynumlab.github.io/x2py/user/getting-started/first-wrapped-module/)
+for that layout and for public module state.
 
 The runtime wrapper mechanism is:
 
@@ -553,9 +556,9 @@ ownership, callback lifetime, ABI shims, or Python-visible projections.
 
 ## Documentation
 
-
-- **[Getting Started](docs/user/getting-started/index.md)** — Installation, verification, standalone procedures, modules, and rebuild workflow
-- **[User Guide](docs/user/guide/index.md)** — Detailed guidance on data types, functions, subroutines, modules, arrays, derived types, callbacks, ownership, runtime behavior, and packaging
+- **[Documentation](https://pynumlab.github.io/x2py/)** — Complete published documentation
+- **[Getting Started](https://pynumlab.github.io/x2py/user/getting-started/)** — Installation, verification, standalone procedures, modules, and rebuild workflow
+- **[User Guide](https://pynumlab.github.io/x2py/user/guide/)** — Data types, functions, modules, arrays, derived types, callbacks, ownership, and runtime behavior
 <!--
 - **[Tutorials](docs/user/tutorials/index.md)** — Step-by-step walkthroughs
 - **[CLI Reference](docs/user/reference/cli-commands.md)** — Complete command-line documentation
