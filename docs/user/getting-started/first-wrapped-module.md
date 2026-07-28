@@ -65,14 +65,46 @@ The extension will be named `module_state`, and the Fortran module will be avail
 
 ---
 
-## Usage Example
+## Inspect the Generated Docstring
+
+Import the built module and print its generated docstring:
 
 ```python
 import sys
-import numpy as np
 
 sys.path.insert(0, "build/first-module")
 import module_state.module_state as mod
+
+print(mod.__doc__)
+```
+
+```text
+module_state
+
+Module Attributes
+-----------------
+nmax : int32
+    Read-only constant.
+counter : int32
+scale : float64
+saved_counter : int32
+
+Functions
+---------
+summarize() -> int32
+scaled_counter() -> float64
+next_local() -> int32
+```
+
+`help(mod)` shows the same index. Individual functions have their own detailed
+docstrings.
+
+---
+
+## Usage Example
+
+```python
+import numpy as np
 
 print(mod.nmax)           # 12
 print(mod.counter)        # 3
@@ -119,12 +151,13 @@ python3 -m x2py generate --pyi module_state.f90
 - Each Fortran `module` becomes a child Python namespace.
 - Only **public** entities are exposed.
 - Private variables (like `hidden_counter`) are hidden.
-- Use exact NumPy dtypes when reading/writing variables.
+- Assign module variables with the matching NumPy scalar dtype.
 
 ---
 
 ## Next
 
-- Continue with the [Beginner Workflow](beginner-workflow.md) to learn the full development cycle.
+- Continue with the [Beginner Workflow](beginner-workflow.md) to turn these
+  steps into a repeatable development loop.
 - For module details, see [Wrapping Modules](../guide/wrapping-modules.md).
 - For support boundaries, see the [Language Feature Matrix](../language-support/feature-matrix.md).

@@ -18,13 +18,13 @@ x2py reports failures at several distinct stages. Understanding which stage fail
 
 | Stage                        | Typical Cause                                      | What to do |
 |-----------------------------|----------------------------------------------------|----------|
-| Preprocessing / Parsing     | Syntax x2py can't model, missing include           | Check the diagnostic code and source location |
-| Semantic Conversion         | Unresolved types, missing contract facts           | Fix source or edit the generated `.pyi` |
-| Policy Completion & Planning| Unsupported ownership, layout, callback, etc.      | Read the full error message — it points to the problematic declaration |
+| Parsing                     | Syntax x2py cannot model, missing include           | Check the diagnostic code and source location |
+| Interface conversion        | Unresolved types or missing interface details       | Fix the source or edit the generated `.pyi` |
+| Wrapper planning            | Unsupported storage, layout, or callback combination | Read the full error message; it points to the declaration |
 | Compilation / Linking       | Compiler issues, missing modules/libraries         | Run with `--verbose` to see native commands |
-| Import                      | Missing shared library, ABI mismatch               | Check paths and environment |
+| Import                      | Missing library or incompatible build tools        | Check paths and environment |
 | Python Call                 | Wrong dtype, shape, layout, class, etc.            | Match the generated contract |
-| Native Execution            | Application-level status (e.g. error code)         | Use `@raises` projection or handle manually |
+| Native Execution            | Application-level status, such as an error code    | Convert it with `@raises` or handle it manually |
 | Callback / Fatal            | Exception in callback, `stop`, `error stop`        | Process usually aborts |
 
 ---
@@ -69,6 +69,8 @@ def solve(value: Int32) -> None: ...
 Then:
 
 ```python
+import numpy as np
+
 try:
     api.solve(np.int32(-1))
 except RuntimeError as e:
@@ -99,5 +101,7 @@ except RuntimeError as e:
 
 ## Next
 
+- Finish with [Building the Shared Library](building-shared-library.md).
 - [Editing Semantic `.pyi` Contracts](../reference/editing-semantic-pyi-contracts.md)
-- Check the [Diagnostic Codes](../reference/diagnostic-codes.md) reference for detailed error categories
+- Check the [Diagnostic Codes](../reference/diagnostic-codes.md) reference for
+  detailed error categories.

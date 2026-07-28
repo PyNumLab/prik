@@ -456,11 +456,10 @@ Use this list when reading or editing a generated `.pyi` contract:
 
 ## Next
 
-- [Wrapping Functions](wrapping-functions.md) and
-  [Wrapping Subroutines](wrapping-subroutines.md)
-- [Strings](strings.md) for fixed-width NumPy byte arrays
+- Continue with [Strings](strings.md) for fixed-width NumPy byte arrays.
+- Then read [Wrapping Functions](wrapping-functions.md) and
+  [Wrapping Subroutines](wrapping-subroutines.md).
 - [Allocatables](allocatables.md) and [Pointers](pointers.md) for native
-  allocation control
-- [Raw Addresses](raw-addresses.md) for unchecked address-based calls
+  allocation control.
 - [Language Feature Matrix](../language-support/feature-matrix.md) for support
-  details
+  details.

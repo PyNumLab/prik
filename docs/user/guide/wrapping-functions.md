@@ -11,40 +11,20 @@ publication: reviewed
 # Wrapping Functions
 
 A Fortran `function` becomes a Python callable. Its direct result is the first
-Python return value. Other outputs follow only when their contract projects
-them as results.
+Python return value. Other outputs follow only when their contract marks them
+as Python results.
 
 ---
 
 ## Basic Scalar Function
 
-Using the `scale.f90` example:
-
-```bash
-python3 -m x2py generate --pyi scale.f90
-python3 -m x2py scale.f90 --out-dir build/scale
-```
-
-**Generated contract:**
+The `scale` function built in
+[First Wrapped Function](../getting-started/first-wrapped-function.md) returns
+its direct result as one NumPy scalar:
 
 ```python
-from x2py.contracts import Addr, Arg, Float64, external, native_call
-
-@external
-@native_call([Addr(Arg(0)), Addr(Arg(1))])
-def scale(
-    value: Float64,
-    factor: Float64
-) -> Float64: ...
-```
-
-**Python call:**
-
-```python
-import sys
 import numpy as np
 
-sys.path.insert(0, "build/scale")
 import scale
 
 result = scale.scale(np.float64(3.0), np.float64(2.5))
@@ -58,7 +38,9 @@ print(result)  # 7.5
 A contract declaration normally uses one name for both Python and the native
 procedure. Use `@bind("native_name")` only when those names differ.
 
-This edited contract exposes Python `multiply` while calling native `scale`:
+For example, rename the generated declaration to `multiply` and add
+`@bind("scale")`. The Python name changes, while the native target remains
+`scale`:
 
 ```python
 from x2py.contracts import Addr, Arg, Float64, bind, external, native_call
@@ -81,47 +63,24 @@ print(result)  # 7.5
 contract or adapt an incompatible native interface. Matching names need no
 `@bind`.
 
+Also update the import in the contract package's `__init__.pyi` when it
+re-exports the old Python name. Build the edited package using the
+[editable-contract workflow](../getting-started/beginner-workflow.md#4-optionally-edit-the-contract).
+
 The same rule applies to functions, subroutines, and methods.
 
 ---
 
 ## Array Return Values
 
-Functions can return arrays. These are returned as new NumPy arrays (Fortran-ordered by default).
-
-**Example** (`function_results.f90`):
-
-```fortran
-module results
-  implicit none
-contains
-
-  function squares(count) result(values)
-    integer(4), intent(in) :: count
-    real(8) :: values(count)
-    integer(4) :: i
-
-    values = [(real(i, 8)**2, i = 1, count)]
-  end function squares
-
-end module results
-```
-
-Build and import this example:
-
-```bash
-python3 -m x2py function_results.f90 --out-dir build/function-results
-```
+Functions can return arrays. An ordinary array result becomes a new NumPy
+array in Fortran order, as described in
+the [`automatic_vector` example](arrays.md#complete-example):
 
 ```python
-import sys
-
 import numpy as np
 
-sys.path.insert(0, "build/function-results")
-from function_results.results import squares
-
-result = squares(np.int32(4))
+result = automatic_vector(np.int32(4))
 print(result)  # [ 1.  4.  9. 16.]
 ```
 
@@ -172,5 +131,4 @@ total, count = sum_with_count(data_array)
 ## Next
 
 - [Wrapping Subroutines](wrapping-subroutines.md) for the complete argument
-  projection rules
-- [Wrapping Modules](wrapping-modules.md) for native namespaces and state
+  projection rules.

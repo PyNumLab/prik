@@ -10,7 +10,8 @@ publication: reviewed
 
 # Installation
 
-x2py is currently installed from a local source checkout. Building Python extensions also requires a native GNU toolchain.
+x2py is currently installed from a local source checkout. Building Python
+extensions also requires GNU Fortran and standard build tools.
 
 ---
 
@@ -70,23 +71,6 @@ python3 -m pip install -e ".[qa]"
 
 ---
 
-## Header and Compiler Checks
-
-Run these commands to verify your setup:
-
-```bash
-# Python and NumPy headers
-python3 -c "import sysconfig; print(sysconfig.get_path('include'))"
-python3 -c "import numpy; print(numpy.get_include())"
-
-# Compiler
-gfortran --version
-```
-
-Make sure the printed header directories exist.
-
----
-
 ## Platform Support
 
 | Platform           | Current Status                          |
@@ -100,5 +84,5 @@ Make sure the printed header directories exist.
 
 ## Next
 
-- Go to the [Verification](verification.md) page after the checks above pass.
+- Go to [Verification](verification.md) to check the installation and compiler.
 - If setup fails, see [Installation Issues](../troubleshooting/installation-issues.md).

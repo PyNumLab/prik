@@ -10,9 +10,9 @@ publication: reviewed
 
 # User Guide
 
-This section builds on the [Getting Started](../getting-started/index.md)
-workflow. It explains data type mapping, supported Fortran constructs, runtime
-behavior, and how to build the shared library.
+This section continues the [Getting Started](../getting-started/index.md)
+workflow. Read it in sidebar order to move from basic values and procedures to
+objects, storage, and advanced runtime behavior.
 
 ---
 
@@ -62,8 +62,12 @@ behavior, and how to build the shared library.
 
 **Important Note**
 
-The recommended workflow is **source-driven** (starting from `.f90` files).
-Only move to editing semantic `.pyi` contracts after you understand the default generated behavior and are ready to manage native artifacts manually.
+The recommended workflow starts from Fortran source. The generated semantic
+`.pyi` file describes the Python interface and native call. Editing that file
+lets you customize the wrapper without changing the native implementation.
+This guide introduces useful edits on the pages where they matter. The
+[editing reference](../reference/editing-semantic-pyi-contracts.md) collects
+the complete rules in one place.
 
 ---
 

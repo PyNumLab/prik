@@ -56,18 +56,18 @@ class WrapperDocstringBuilder:
         overloads: tuple[OverloadPlan, ...],
     ) -> str:
         """Index every public owner in one generated Python namespace."""
-        qualified_name = ".".join((module_name, *path))
-        lines = [qualified_name, "", f"Generated Python interface for native namespace {qualified_name}."]
+        display_name = path[-1] if path else module_name
+        lines = [display_name]
         callable_lines = (
             *(self._first_line(function.binding.docstring) for function in functions if function.binding.public),
             *(self._first_line(overload.docstring) for overload in overloads),
         )
-        self._append_section(lines, "Functions", callable_lines)
         self._append_section(
             lines,
             "Module Attributes",
             tuple(line for variable in variables for line in self._module_variable_summary_lines(variable)),
         )
+        self._append_section(lines, "Functions", callable_lines)
         self._append_section(lines, "Classes", tuple(name for surface in classes for name in surface.python_names))
         return "\n".join(lines)
 
@@ -264,16 +264,14 @@ class WrapperDocstringBuilder:
         lines = [f"{name} : {self._type(variable, nullable=nullable, signature=False)}"]
         lines.extend(self._array_lines(variable.array))
         if variable.binding.getter_action is ModuleGetterAction.CONSTANT_VALUE:
-            lines.append("    Read-only native constant.")
+            lines.append("    Read-only constant.")
         elif variable.binding.getter_action is ModuleGetterAction.BORROWED_ARRAY_VIEW:
             lines.append("    Native-owned borrowed view; mutations affect module storage.")
         elif variable.native_array_handle is not None:
             lines.append(f"    Persistent {variable.native_array_handle.descriptor_kind.value} descriptor handle.")
         elif variable.derived is not None:
             lines.append("    Live native module object.")
-        if variable.binding.setter_action is SetterAction.WRITE_THROUGH:
-            lines.append("    Assignment writes through to native storage.")
-        elif variable.binding.setter_action is SetterAction.REJECT_REPLACEMENT:
+        if variable.binding.setter_action is SetterAction.REJECT_REPLACEMENT:
             lines.append("    Replacement assignment is not supported.")
         return "\n".join(lines)
 

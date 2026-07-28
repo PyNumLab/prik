@@ -28,6 +28,7 @@ caller-owned storage.
 
 Use normal string and NumPy contracts by default. Raw addresses are an
 advanced boundary covered later in the guide.
+`Returns[...]` tells the wrapper to return the changed value of an argument.
 
 ## Complete Example
 
@@ -72,10 +73,12 @@ Generate a starter contract:
 python3 -m x2py generate --pyi strings_api.f90 --out contracts/strings
 ```
 
-Edit `contracts/strings/strings_api.pyi` to use these Python boundaries:
+Edit the declarations in `contracts/strings/strings_api.pyi` to use these
+Python boundaries. Keep the other generated decorators and native-call
+metadata unchanged:
 
 ```python
-from x2py.contracts import Addr, Arg, Int32, Returns, String, native_call
+from x2py.contracts import Int32, Returns, String
 
 def edit_text(text: String[8]) -> Returns["text", String[8]]: ...
 
@@ -83,7 +86,6 @@ def edit_buffer(text: String[8][()]) -> None: ...
 
 def make_text() -> String[8]: ...
 
-@native_call([Addr(Arg(0)), Arg(1)])
 def edit_labels(
     count: Int32,
     labels: String[8][count],
@@ -178,9 +180,10 @@ buffer or an immutable replacement result.
 
 ## Next
 
-- [Wrapping Functions](wrapping-functions.md)
+- Continue with [Wrapping Functions](wrapping-functions.md).
 - [Wrapping Subroutines](wrapping-subroutines.md) for complete `intent` and
-  result-projection rules
-- [Raw Addresses](raw-addresses.md) for `Addr(String[n])`
+  result-projection rules.
+- [Raw Addresses](raw-addresses.md) for the advanced `Addr(String[n])`
+  boundary.
 - [Semantic `.pyi` Format](../reference/semantic-pyi-format.md) for the full
-  character grammar
+  character grammar.

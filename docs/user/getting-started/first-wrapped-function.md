@@ -28,43 +28,15 @@ end function scale
 
 ---
 
-## Build the Extension
-
-From the directory containing `scale.f90`, run:
-
-```bash
-python3 -m x2py scale.f90 --out-dir build/first-function
-```
-
-This creates an importable `scale` extension module in the `build/first-function` directory.
-
----
-
-## Import and Call
-
-```python
-import sys
-import numpy as np
-
-sys.path.insert(0, "build/first-function")
-import scale
-
-result = scale.scale(np.float64(3.0), np.float64(2.5))
-print(result)          # 7.5
-assert result == 7.5
-```
-
----
-
 ## Inspect the Generated Contract
 
-You can preview the semantic interface without building:
+Preview the Python interface before building:
 
 ```bash
 python3 -m x2py generate --pyi scale.f90
 ```
 
-The generated contract has this shape:
+The generated semantic `.pyi` contains:
 
 ```python
 from x2py.contracts import Addr, Arg, Float64, external, native_call
@@ -77,7 +49,71 @@ def scale(
 ) -> Float64: ...
 ```
 
-This contract is the source of truth for the generated wrapper.
+`Float64` means the function requires `numpy.float64` scalar arguments and
+returns the same scalar type. `@external` identifies a procedure outside a
+Fortran module. `@native_call(...)` maps the two Python arguments to the native
+call and passes each scalar by address.
+
+This file is both the wrapper contract and an editable description of the
+Python interface. You can leave it unchanged for this example; later pages
+show useful edits in context.
+
+---
+
+## Build the Extension
+
+From the directory containing `scale.f90`, run:
+
+```bash
+python3 -m x2py scale.f90 --out-dir build/first-function
+```
+
+This creates an importable `scale` extension module in the `build/first-function` directory.
+
+---
+
+## Inspect the Generated Docstring
+
+x2py creates NumPy-style docstrings from the same contract. Import the built
+extension and inspect the function:
+
+```python
+import sys
+
+sys.path.insert(0, "build/first-function")
+import scale
+
+print(scale.scale.__doc__)
+```
+
+```text
+scale(value, factor) -> float64
+
+Parameters
+----------
+value : float64
+factor : float64
+
+Returns
+-------
+result : float64
+```
+
+`help(scale.scale)` shows the same signature, parameter types, result, and
+documented exceptions. Generated modules, classes, methods, and properties
+also provide docstrings.
+
+---
+
+## Call the Function
+
+```python
+import numpy as np
+
+result = scale.scale(np.float64(3.0), np.float64(2.5))
+print(result)          # 7.5
+assert result == 7.5
+```
 
 ---
 
@@ -97,14 +133,11 @@ Always convert at the call site for scalar arguments.
 
 ---
 
-## Next
-
-- Learn how to wrap [Fortran modules](first-wrapped-module.md)
-- Read more about [wrapping functions](../guide/wrapping-functions.md)
-- Understand the [semantic .pyi format](../reference/semantic-pyi-format.md)
+If the build fails, rerun it with `--verbose`.
 
 ---
 
-**Troubleshooting**
-If the build fails, rerun with `--verbose`.
-If the call fails, compare your arguments with the generated contract.
+## Next
+
+- Continue with [Your First Wrapped Module](first-wrapped-module.md).
+- For more function behavior, see [Wrapping Functions](../guide/wrapping-functions.md).

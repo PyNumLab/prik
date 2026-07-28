@@ -2,7 +2,7 @@
 title: Callbacks
 description: How to pass Python callables to Fortran as callbacks with x2py
 audience: advanced users
-prerequisites: wrapping functions, error handling, data types
+prerequisites: wrapping functions, data types
 related: error-handling.md, memory-management.md, ../reference/semantic-pyi-format.md
 status: maintained
 publication: reviewed
@@ -23,8 +23,8 @@ as the type of the procedure argument that accepts the callback.
 
 | Native callback argument | Prototype spelling | Python callable receives |
 | --- | --- | --- |
-| Primitive scalar dummy declared with Fortran `value` | `value: Float64` | Owned `np.float64` scalar |
-| Primitive scalar reference dummy | `value: Addr(Float64)` | Owned `np.float64` scalar |
+| Primitive scalar dummy declared with Fortran `value` | `value: Float64` | Independent `np.float64` scalar |
+| Primitive scalar reference dummy | `value: Addr(Float64)` | Independent `np.float64` scalar |
 | Array reference dummy | `values: Float64[n]` | NumPy array view |
 | Fixed-length string reference dummy | `label: String[8]` | Writable rank-zero bytes storage |
 | Derived-type reference dummy | `point: point_t` | Generated wrapper object |
@@ -115,6 +115,7 @@ python3 -m x2py callbacks.f90 --out-dir build/callbacks
 
 ```python
 import sys
+
 import numpy as np
 
 sys.path.insert(0, "build/callbacks")
@@ -158,8 +159,8 @@ For scalar arguments, choose the spelling from the Fortran callback dummy:
 | `real(8), intent(in) :: value` | `value: Addr(Float64)` |
 | `real(8), value :: value` | `value: Float64` |
 
-Both forms call Python with an owned `np.float64` scalar. The difference is the
-native calling convention x2py must match.
+Both forms call Python with an independent `np.float64` scalar. The difference
+is the native calling convention x2py must match.
 
 `Value(T)` is only for supported non-primitive scalar value dummies, such as a
 derived-type callback dummy declared with the Fortran `value` attribute.
@@ -212,5 +213,6 @@ boundary: x2py prints the Python traceback and aborts the host process.
 
 ## Next
 
+- Continue with [Enumerations](enumerations.md).
 - Use the [Callbacks Reference](../reference/callbacks.md) for the full prototype contract.
 - Review [Error Handling](error-handling.md) when callback failure behavior matters.

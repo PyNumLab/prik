@@ -10,12 +10,14 @@ publication: reviewed
 
 # Common Beginner Workflow
 
-Now that you have built individual examples, here is a clean, repeatable workflow you can use for your own projects.
-The example project continues to use `scale.f90`.
+Now that you have built a function and a module, use this loop for your own
+project: edit the source, review its Python interface, build, and test.
 
 ---
 
 ## Recommended Project Layout
+
+This layout continues with the `scale.f90` example:
 
 ```
 my-project/
@@ -24,22 +26,23 @@ my-project/
 ├── build/              # ← Generated, do not commit
 ├── tests/
 │   └── test_scale.py
-└── contracts/          # Optional: edited semantic contracts
+└── contracts/          # Optional edited semantic contracts
 ```
 
 Keep `src/` and `tests/` under version control. Never commit the `build/` folder.
 
 ---
 
-## 1. Review the Contract First
+## 1. Edit and Review
 
-Before building, always inspect the generated contract:
+Edit the Fortran source, then preview the generated Python interface:
 
 ```bash
 python3 -m x2py generate --pyi src/scale.f90
 ```
 
-This shows you exactly what Python signatures and dtypes x2py expects.
+Check the function names, arguments, result types, and required NumPy dtypes.
+This review is especially useful after changing a public Fortran declaration.
 
 ---
 
@@ -49,16 +52,18 @@ This shows you exactly what Python signatures and dtypes x2py expects.
 python3 -m x2py src/scale.f90 --out-dir build/scale
 ```
 
-Use `--verbose` if you want to see the exact compiler and linker commands.
+Rerun the same command after source changes. Add `--verbose` only when you need
+the compiler and linker details.
 
 ---
 
-## 3. Write a Small Smoke Test
+## 3. Write a Small Test
 
 Create `tests/test_scale.py`:
 
 ```python
 import sys
+
 import numpy as np
 
 sys.path.insert(0, "build/scale")
@@ -67,64 +72,55 @@ import scale
 def test_scale_function():
     result = scale.scale(np.float64(3.0), np.float64(2.5))
     assert result == 7.5
-
-if __name__ == "__main__":
-    test_scale_function()
-    print("✅ Test passed")
 ```
 
 Run it with:
 
 ```bash
 python3 -m pytest tests/test_scale.py -q
-# or simply:
-python3 tests/test_scale.py
 ```
 
 ---
 
-## 4. Clean Rebuild When Needed
+## 4. Optionally Edit the Contract
 
-When you change the Fortran source or want a completely clean build:
+Save a contract package when you want to change the Python interface:
 
 ```bash
-rm -rf build/scale
-python3 -m x2py src/scale.f90 --out-dir build/scale
+python3 -m x2py generate --pyi src/scale.f90 --out contracts/scale
 ```
 
----
-
-## 5. Advanced: Editing the Semantic Contract (Optional)
-
-Only do this after you are comfortable with the basic workflow:
+Edit `contracts/scale/scale.pyi`, then build through its package entry:
 
 ```bash
-python3 -m x2py generate --pyi src/scale.f90 --out contracts
+python3 -m x2py contracts/scale/__init__.pyi \
+  --native-fortran-sources src/scale.f90 \
+  --out-dir build/scale-edited
 ```
 
-Editing contracts is powerful but adds complexity. See
-**Editing Semantic .pyi Contracts** in Reference when you're ready.
+Use this form instead of the source build in step 2 when the edited contract
+should control the wrapper. The `.pyi` controls the Python surface; the Fortran
+source still supplies the native implementation. Keep its native symbol names,
+types, rank, and argument order accurate.
+
+The User Guide introduces small edits next to the feature they affect, such as
+renaming a function, changing array layout, adding an overload, or exposing a
+module procedure as a method.
 
 ---
 
-## Summary of the Workflow
+## 5. Diagnose a Failure
 
-1. Edit Fortran source in `src/`
-2. Review contract with `generate --pyi`
-3. Build with explicit `--out-dir`
-4. Test with a Python smoke test
-5. Clean rebuild when necessary (`rm -rf build/...`)
+If a build fails, rerun it with `--verbose`. If a Python call fails, compare
+the arguments with the generated contract. Use a clean output directory only
+when you need to rule out stale build files.
 
 ---
 
 ## Next
 
-- Explore the full [User Guide](../guide/index.md)
-- Check the [Language Feature Matrix](../language-support/feature-matrix.md)
-- Look at the [Verified Cookbook](../examples/verified-cookbook.md) for more examples
-
----
-
-**Troubleshooting**
-Use `--verbose` on build failures.
-Always compare failing calls with the generated contract.
+- Continue with the [User Guide](../guide/index.md).
+- Check the [Language Feature Matrix](../language-support/feature-matrix.md) for
+  current support boundaries.
+- Use the [Verified Cookbook](../examples/verified-cookbook.md) for more
+  complete examples.

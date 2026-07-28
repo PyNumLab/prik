@@ -67,6 +67,7 @@ python3 -m x2py numeric_types.f90 --out-dir build/numeric-types
 
 ```python
 import sys
+
 import numpy as np
 
 sys.path.insert(0, "build/numeric-types")
@@ -122,30 +123,6 @@ Array annotations are not array factories: `Float64[:]()` is invalid. Create
 ordinary arrays with NumPy. Allocatable and pointer descriptor handles have
 their own default constructors, described in their later user-guide pages.
 
-### Sharing Descriptor Handles Between Modules
-
-The same allocatable or pointer handle can be passed between separately built
-x2py extension modules. The modules do not need to link to each other. Their
-matching wrapper arguments must use the same descriptor kind, element type,
-and rank.
-
-For a writable handle, the first wrapper that needs persistent storage attaches
-a versioned record defined by x2py's bundled native binding support. Later
-wrappers validate that record before using the same descriptor. This is a
-zero-copy handoff and therefore requires both extensions to use compatible
-versions of:
-
-- the x2py native-handle ABI;
-- the same Fortran compiler descriptor ABI; and
-- the same Fortran runtime ABI.
-
-In practice, build both extensions with the same compiler toolchain and avoid
-separately statically linked Fortran runtimes. An incompatible native-handle
-record is rejected instead of being interpreted as a descriptor. Pointer
-sharing still does not transfer ownership of the pointer target.
-
----
-
 ## Important Rules
 
 - Always use **exact NumPy scalar dtypes** (`np.float64`, `np.int32`, etc.).
@@ -157,25 +134,18 @@ sharing still does not transfer ownership of the pointer target.
 
 ## Values And Native Storage
 
-A bare primitive type is a Python-visible value:
+A bare primitive type represents a Python-visible scalar:
 
 ```python
 def double(value: Float64) -> Float64: ...
 ```
 
-If the native routine expects that scalar by reference, the generated
-`@native_call` records the address handoff while the Python call stays simple:
+The wrapper handles the native call details. Python still passes and receives
+`numpy.float64` values.
 
-```python
-@native_call([Addr(Arg(0))])
-def double(value: Float64) -> Float64: ...
-```
-
-Use `T[()]` when the Python boundary is rank-zero NumPy storage. Arguments
-accept a 0-D NumPy array, and results return a 0-D NumPy array.
-Use type-level `Addr(T)` only for an API whose caller supplies a raw integer
-address. Prefer normal array and string contracts when the caller can pass the
-storage object itself.
+`T[()]` represents rank-zero NumPy storage: arguments accept a 0-D NumPy
+array, and results return a 0-D NumPy array. Raw integer addresses are an
+advanced boundary covered later in the guide.
 
 The semantic format can represent wider types such as `Float128` and
 `Complex256`, but the current Fortran wrapper blocks real storage wider than 64
@@ -185,9 +155,9 @@ bits and complex storage wider than 128 total bits instead of narrowing it.
 
 ## Next
 
-- **[Arrays](arrays.md)** - Rank, shape, strides, and contiguity rules
-- [Strings](strings.md) - Immutable values and mutable character storage
-- [Raw Addresses](raw-addresses.md) - Advanced address-based calls
+- Continue with [Arrays](arrays.md) for rank, shape, strides, and contiguity.
+- Then read [Strings](strings.md) for immutable values and mutable character
+  storage.
 - [Wrapping Derived Types](wrapping-derived-types.md)
-- [Semantic `.pyi` Format](../reference/semantic-pyi-format.md)
-- Check the [Language Feature Matrix](../language-support/feature-matrix.md) for current type support status.
+- Check the [Language Feature Matrix](../language-support/feature-matrix.md)
+  for current type support.

@@ -959,7 +959,7 @@ hidden outputs, ordered tuple results, optional omission versus a present
 `None`, constrained array shape and layout, handle ownership, and native-status
 exceptions.
 
-Module docstrings index their public functions, module attributes, and classes.
+Module docstrings index their public attributes, functions, and classes.
 Class docstrings index the public constructor, fields, methods, and overloads;
 the individual constructor, method, overload, and property descriptors also
 carry focused docstrings. Private wrapper helper names and internal bridge roles

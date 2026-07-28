@@ -2,7 +2,7 @@
 title: Pointers
 description: How x2py handles Fortran `pointer` variables, results, fields, and descriptors
 audience: advanced users
-prerequisites: arrays, memory management
+prerequisites: arrays, allocatables
 related: allocatables.md, memory-management.md
 status: maintained
 publication: reviewed
@@ -21,13 +21,13 @@ shape, and strides. It does not by itself say who owns that target.
 - Scalar pointers appear as `T | None`; array pointers use live
   `Pointer[T[...]]` handles.
 - `associated` describes association, not ownership or target lifetime.
-- NumPy arrays returned by `to_numpy()` are borrowed live views, not copies.
+- NumPy arrays returned by `to_numpy()` are live views, not copies.
 - Reassociation, resizing, or deallocation can invalidate existing views.
 - `associate(other)` makes two pointer handles refer to the same target without
   copying it.
 - Use `deallocate()` only if this pointer was used to create its current target
   with `allocate()`. Otherwise, use `nullify()`.
-- `close()` releases an owned handle descriptor, not its target.
+- `close()` releases a returned or caller-created descriptor, not its target.
 
 ---
 
@@ -84,14 +84,14 @@ boundary as values rather than array handles.
 | `shape` | `tuple[int, ...] \| None` | Current target dimensions, or `None` when unassociated. |
 | `dtype` | `numpy.dtype` | Declared target element type. |
 | `rank` | `int` | Declared number of dimensions. |
-| `to_numpy()` | `numpy.ndarray \| None` | A borrowed live target view, or `None` when unassociated. |
+| `to_numpy()` | `numpy.ndarray \| None` | A live target view, or `None` when unassociated. |
 | `associate(other)` | `(PointerArray) -> None` | Makes this pointer's association match `other` without copying data. |
 | `nullify()` | `() -> None` | Removes the association without destroying the target. |
 | `allocate(shape)` | `(int \| Sequence[int]) -> None` | Creates and associates a target for an unassociated pointer. |
 | `deallocate()` | `() -> None` | Destroys the current target if this pointer was used to allocate it. |
 | `resize(shape)` | `(int \| Sequence[int]) -> None` | Replaces the current target when `deallocate()` is valid. |
-| `close()` | `() -> None` | Permanently releases owned descriptor storage; it does not deallocate the target. It does nothing on a borrowed handle. |
-| `closed` | `bool` | Whether an owned handle has been closed. |
+| `close()` | `() -> None` | Permanently releases returned or caller-created descriptor storage; it does not deallocate the target. It does nothing on a module or field handle. |
+| `closed` | `bool` | Whether a closable handle has been closed. |
 
 `associate()` and `nullify()` are available by default. A handle may also
 support allocation, target deallocation, resizing, and NumPy extraction.
@@ -123,15 +123,15 @@ without a pointer that can release it.
 | --- | --- | --- |
 | `nullify()` | This descriptor's association. It does not destroy the target. | Open and usable, with `associated == False`. |
 | `deallocate()` | A target this pointer was used to allocate. | Open and usable, with `associated == False`. |
-| `close()` | Owned descriptor storage. It does not destroy the target. | Permanently closed and unusable. |
+| `close()` | This handle's descriptor storage. It does not destroy the target. | Permanently closed and unusable. |
 
-Finalization closes owned descriptors automatically. Call `close()`
-explicitly only when deterministic descriptor release matters. It never
-destroys the pointer target because descriptor and target ownership are
-separate.
+Returned and caller-created descriptors close automatically when Python no
+longer uses them. Call `close()` explicitly only when immediate descriptor
+release matters. It never destroys the pointer target because the descriptor
+and target have separate lifetimes.
 
-Module and field pointer handles are borrowed. Calling `close()` on one is a
-no-op that leaves the descriptor, target, and handle unchanged.
+Calling `close()` on a module or field pointer handle does nothing. It leaves
+the descriptor, target, and handle unchanged.
 
 ---
 
@@ -157,7 +157,8 @@ print(p.shape)  # reflects the new target
 ### Function Results
 
 A pointer-array function result becomes a returned `PointerArray`. The handle
-owns persistent descriptor storage, not necessarily the target:
+has persistent descriptor storage, but the target can belong to another
+object:
 
 ```python
 p = api.selected_values(True)
@@ -258,7 +259,7 @@ real(8), pointer :: selected(:)
 selected => storage(1:6:2)
 ```
 
-With descriptor-view extraction enabled, Python preserves that layout:
+The NumPy view preserves that layout:
 
 ```python
 view = api.selected.to_numpy()
@@ -345,7 +346,7 @@ unreachable. Use `p.deallocate()` first.
 
 Use `resize()` only in the same cases where `deallocate()` is valid.
 
-### Nullifying One Pointer Does Not Change Other Aliases
+### Nullifying One Pointer Does Not Change Other Pointers
 
 ```python
 first = api.first_pointer
@@ -368,7 +369,7 @@ returned_pointer.close()
 returned_pointer.shape  # NOT OK: the descriptor has been released
 ```
 
-`close()` releases an owned result descriptor but never deallocates its target.
+`close()` releases a returned descriptor but never deallocates its target.
 An existing NumPy view may still refer to the target, but its safety now depends
 entirely on that target's separate owner and lifetime. Do not use the closed
 handle to reason about the view.

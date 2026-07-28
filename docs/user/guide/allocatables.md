@@ -2,7 +2,7 @@
 title: Allocatables
 description: How x2py handles Fortran `allocatable` variables, arrays, and descriptors
 audience: users, advanced users
-prerequisites: arrays, memory management
+prerequisites: arrays
 related: arrays.md, pointers.md, memory-management.md
 status: maintained
 publication: reviewed
@@ -12,7 +12,7 @@ publication: reviewed
 
 A Fortran allocatable descriptor records whether storage is allocated and, for
 arrays, its address, shape, and strides. The descriptor controls the allocation,
-while the owner of the Python handle depends on where that handle came from.
+and an x2py handle gives Python access to that descriptor.
 
 ## Key Concepts
 
@@ -20,13 +20,14 @@ while the owner of the Python handle depends on where that handle came from.
   `Allocatable[T[...]]` handles.
 - An array handle exposes allocation state and descriptor operations; it is not
   itself a NumPy array.
-- `allocated` reports whether storage exists; `to_numpy()` returns a borrowed
-  live view of that storage.
+- `allocated` reports whether storage exists; `to_numpy()` returns a live view
+  of that storage.
 - Reallocation or deallocation invalidates existing views.
-- Module and derived-field handles borrow their native owner. Returned and
-  caller-created handles own persistent descriptor storage.
+- Module and derived-field handles expose storage that belongs to their module
+  or parent object. Returned and caller-created handles have their own
+  descriptor storage.
 - When available, `deallocate()` releases the current allocation but keeps the
-  handle open. `close()` permanently ends an owned handle.
+  handle open. `close()` permanently ends a returned or caller-created handle.
 
 ---
 
@@ -87,7 +88,7 @@ allocation is present:
 ```python
 h = api.some_allocatable
 if h.allocated:
-    view = h.to_numpy()  # borrowed live view
+    view = h.to_numpy()  # live view
     view[0] = 42.0
 else:
     print("Not allocated")
@@ -102,8 +103,8 @@ else:
 | `to_numpy()` | `numpy.ndarray \| None` | A live view of current storage, or `None` when unallocated. It never creates an automatic detached snapshot. |
 | `deallocate()` | `() -> None` | Deallocates current storage when this operation is available for the handle. |
 | `resize(shape)` | `(int \| Sequence[int]) -> None` | Allocates or resizes storage to `shape` when this operation is available for the handle. |
-| `close()` | `() -> None` | Permanently releases an owned descriptor and any remaining allocation. It does nothing on a borrowed handle. |
-| `closed` | `bool` | Whether an owned handle has been closed. |
+| `close()` | `() -> None` | Permanently releases a returned or caller-created descriptor and any remaining allocation. It does nothing on a module or field handle. |
+| `closed` | `bool` | Whether a closable handle has been closed. |
 
 Calling `deallocate()` or `resize(shape)` when the operation is unavailable
 raises `NotImplementedError`.
@@ -115,14 +116,15 @@ raises `NotImplementedError`.
 | Operation | What it releases | Handle afterward |
 | --- | --- | --- |
 | `deallocate()` | The current array allocation. | Open and usable, with `allocated == False`. |
-| `close()` | An owned descriptor and any allocation it still contains. | Permanently closed and unusable. |
+| `close()` | This handle's descriptor and any allocation it still contains. | Permanently closed and unusable. |
 
-Finalization closes owned handles automatically. Call `close()` explicitly only
-when deterministic release matters, such as after using a large allocation.
+Returned and caller-created handles close automatically when Python no longer
+uses them. Call `close()` explicitly only when immediate release matters, such
+as after using a large allocation.
 
-Module and field handles are borrowed. Calling `close()` on one is a no-op: it
-leaves the handle and its owner's storage unchanged. `deallocate()` changes the
-owner's allocation when that operation is available.
+Calling `close()` on a module or field handle does nothing: it leaves the
+handle and the module's or parent object's storage unchanged. `deallocate()`
+changes that allocation when the operation is available.
 
 ---
 
@@ -149,8 +151,8 @@ assert h.shape == (5,)
 
 ### Function Results
 
-An allocatable-array function result becomes an owned `AllocatableArray`. The
-handle owns persistent descriptor storage that x2py finalizes automatically:
+An allocatable-array function result becomes an `AllocatableArray` with its own
+descriptor storage, which x2py releases automatically:
 
 ```python
 values = api.make_values(3)
@@ -173,13 +175,13 @@ def maybe_values(
 
 The second function still returns a present handle. That handle may have
 `allocated == False`, in which case `to_numpy()` returns `None`. Returning an
-unallocated direct result without `MaybeUnallocated` violates the generated
-contract and may crash the wrapper.
+unallocated direct result without `MaybeUnallocated` violates the wrapper
+contract.
 
 ### Output And Inout Arguments
 
 A nonoptional allocatable-array `intent(out)` does not consume incoming
-allocation state, so it is hidden and returned as a new owned handle. A hidden
+allocation state, so it is hidden and returned as a new handle. A hidden
 output may remain unallocated.
 
 An optional `intent(out)` remains visible so omission preserves native
@@ -292,23 +294,23 @@ descriptor, discard `view` and call `to_numpy()` again. The independent
 ```python
 view = result.to_numpy()
 result.close()
-result.shape  # NOT OK: the owned descriptor has been released
-view[0]       # NOT OK: close() released the owned allocation
+result.shape  # NOT OK: the descriptor has been released
+view[0]       # NOT OK: close() released the allocation
 ```
 
-A view normally retains its handle, but an explicit `close()` releases an owned
-allocatable result immediately. Finish using or copy all views before closing
-the handle.
+A view normally retains its handle, but an explicit `close()` releases a
+returned allocatable result immediately. Finish using or copy all views before
+closing the handle.
 
 ### Release Only Through The Owner
 
 ```python
-h.deallocate()  # may be unavailable when h only observes native-owned storage
+h.deallocate()  # may be unavailable for module or field storage
 ```
 
-Not every borrowed handle lets Python resize or deallocate its owner's storage.
-An unavailable operation raises `NotImplementedError`. Use the native owner's
-functions to change that storage instead.
+Not every module or field handle lets Python resize or deallocate its storage.
+An unavailable operation raises `NotImplementedError`. Use the module's or
+parent object's functions to change that storage instead.
 
 ---
 
@@ -327,6 +329,6 @@ present with that value. See [Optional Arguments](optional-arguments.md).
 
 ## Next
 
-- Review [Memory Management](memory-management.md) for the ownership and live
-  view rules shared by all native storage.
 - Continue with [Pointers](pointers.md) for association and target lifetime.
+- Then read [Memory Management](memory-management.md) for the rules shared by
+  both kinds of handle.

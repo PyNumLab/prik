@@ -21,10 +21,10 @@ The recommended beginner path uses the **GNU toolchain**, which offers the best 
 Follow these pages in order:
 
 1. **[Installation](installation.md)** — Install x2py and the required native compilers.
-2. **[Verification](verification.md)** — Make sure everything works together.
+2. **[Verification](verification.md)** — Check the package, headers, and compiler.
 3. **[Your First Function](first-wrapped-function.md)** — Wrap a simple scalar Fortran function.
 4. **[Your First Module](first-wrapped-module.md)** — Work with Fortran modules and saved state.
-5. **[Development Workflow](beginner-workflow.md)** — Learn the edit → build → test loop.
+5. **[Development Workflow](beginner-workflow.md)** — Learn the edit → review → build → test loop.
 
 ---
 

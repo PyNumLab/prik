@@ -21,26 +21,11 @@ Two questions keep these cases simple:
 
 The answers are not always the same.
 
-## Key Concepts
-
-- Ordinary Python values and independently created NumPy arrays have
-  Python-managed storage.
-- An [allocatable](allocatables.md) or [pointer](pointers.md) handle is a Python
-  object that describes native array storage. Owning the handle does not always
-  mean owning the storage it refers to.
-- Calling `to_numpy()` on an allocatable or pointer handle returns a live NumPy
-  view, not a copy.
-- A live view can become invalid if native code reallocates, deallocates, or
-  changes the storage it refers to.
-- Passing an object to a wrapped function does not transfer its ownership.
-- Release storage only through the object or native API that owns it.
-
----
-
 ## The Python Object And Its Storage
 
-For example, an allocatable or pointer handle can refer to storage owned
-somewhere else:
+An [allocatable](allocatables.md) or [pointer](pointers.md) handle is a Python
+object that describes native array storage. The storage can belong to the
+handle itself, a Fortran module, a parent object, or a separate pointer target:
 
 ```python
 handle = api.values
@@ -108,7 +93,7 @@ have the same ownership rules:
 | View current data | `to_numpy()` | `to_numpy()` |
 | Remove current storage | `deallocate()` releases the allocation when the operation is available | `deallocate()` releases only a target allocated through this pointer |
 | Stop referring to storage without releasing it | Not applicable | `nullify()` |
-| End an owned handle | `close()` releases the descriptor and any remaining allocation | `close()` releases the descriptor, not the target |
+| End a returned or caller-created handle | `close()` releases the descriptor and any remaining allocation | `close()` releases the descriptor, not the target |
 
 A pointer association does not by itself make the pointer responsible for the
 target. If a target was allocated through a pointer, call `deallocate()` before
@@ -120,31 +105,43 @@ APIs and examples.
 
 ---
 
-## Owned And Borrowed Handles
+## Closing Handles
 
-Allocatable and pointer handles can be owned or borrowed. Caller-created
-handles and function-result handles own their descriptor storage. Their
-`close()` method permanently ends the handle:
+Caller-created handles and function-result handles have their own descriptor
+storage. Their `close()` method permanently ends the handle:
 
 ```python
 result.close()
 assert result.closed
 ```
 
-Do not use an owned allocatable or pointer handle after calling `close()` on
-it. Owned handles close automatically when Python finalizes them, so call
-`close()` yourself only when the resource must be released immediately.
+Do not use the handle after calling `close()` on it. These handles close
+automatically when Python no longer uses them, so call `close()` yourself only
+when the resource must be released immediately.
 
-Module and derived-field handles are borrowed from their native owner. Calling
-`close()` on a borrowed handle does nothing: it does not close the handle or
-release the owner's storage.
+Module and derived-field handles expose descriptors belonging to the Fortran
+module or parent object. Calling `close()` on one does nothing: it does not
+close the handle or release that storage.
 
 The resource released by `close()` depends on the handle:
 
-- Closing an owned allocatable handle releases its descriptor and any
+- Closing a returned or caller-created allocatable handle releases its descriptor and any
   allocation it still contains.
-- Closing an owned pointer handle releases only its descriptor. Its target has
+- Closing a returned or caller-created pointer handle releases only its descriptor. Its target has
   a separate lifetime.
+
+---
+
+## Sharing Handles Between Extensions
+
+The same allocatable or pointer handle can be passed between separately built
+x2py extensions. Their matching arguments must have the same descriptor kind,
+element type, and rank.
+
+The handoff does not copy array data. Both extensions must use compatible x2py
+versions, the same Fortran compiler toolchain, and compatible Fortran
+runtimes. An incompatible handle is rejected. Sharing a pointer handle does
+not extend the lifetime of its target.
 
 ---
 
@@ -170,8 +167,8 @@ before the call. Ask the handle for a new view afterward.
 A generated wrapper for a derived-type object can own a native instance. The
 wrapper releases that instance automatically when it is finalized.
 
-Both plain and `Aliased` derived module variables remain live objects. The
-Fortran module owns their storage, and Python only accesses it.
+Derived module variables remain live objects.
+The Fortran module owns their storage. Python only accesses it.
 
 A field returned from that object may refer to storage inside its parent. The
 generated field object keeps its parent alive, but it cannot stop native code
@@ -194,14 +191,13 @@ fields, and function arguments.
   that pointer.
 - Call `nullify()` on a pointer handle to remove its association without
   destroying the target.
-- Do not use an owned allocatable or pointer handle after `close()`.
+- Do not use a returned or caller-created handle after `close()`.
 - Synchronize access when another thread may change the same native storage.
 
 ---
 
 ## Next
 
-- Read [Allocatables](allocatables.md) for allocation and resizing.
-- Read [Pointers](pointers.md) for association and target lifetime.
-- Read [Wrapping Derived Types](wrapping-derived-types.md) for object and field
-  lifetimes.
+- Continue with [Callbacks](callbacks.md).
+- Return to [Allocatables](allocatables.md), [Pointers](pointers.md), or
+  [Wrapping Derived Types](wrapping-derived-types.md) for their full APIs.

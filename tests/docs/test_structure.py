@@ -1084,8 +1084,13 @@ def test_first_wrapped_function_shows_contract_and_mentions_later_support_bounda
         "@external\n@native_call([Addr(Arg(0)), Addr(Arg(1))])\ndef scale(\n"
         "    value: Float64,\n    factor: Float64\n) -> Float64: ..."
     )
+    docstring_index = page.index("## Inspect the Generated Docstring")
+    call_index = page.index("## Call the Function")
 
-    assert source_index < build_index < command_index < contract_index
+    assert source_index < command_index < contract_index < build_index
+    assert build_index < docstring_index < call_index
+    assert "editable description of the\nPython interface" in page
+    assert "scale(value, factor) -> float64" in page
     assert "assert result == 7.5" in page
     assert "isinstance(result, float)" not in page
     assert "## Current Limitations" not in page
@@ -1095,10 +1100,22 @@ def test_first_wrapped_module_shows_local_input_and_generated_contract() -> None
     page = (DOCS_ROOT / "user/getting-started/first-wrapped-module.md").read_text(encoding="utf-8")
     source_index = page.index("module_state.f90")
     build_index = page.index("python3 -m x2py module_state.f90")
+    docstring_index = page.index("## Inspect the Generated Docstring")
+    usage_index = page.index("## Usage Example")
     inspect_index = page.index("python3 -m x2py generate --pyi module_state.f90")
     contract_index = page.index("## Key Rules")
 
-    assert source_index < build_index < inspect_index < contract_index
+    assert source_index < build_index < docstring_index < usage_index < inspect_index < contract_index
+    assert "print(mod.__doc__)" in page
+    assert "module_state\n\nModule Attributes" in page
+    assert "summarize() -> int32" in page
+    assert "scaled_counter() -> float64" in page
+    assert "next_local() -> int32" in page
+    assert "nmax : int32\n    Read-only constant." in page
+    assert "counter : int32" in page
+    assert "scale : float64" in page
+    assert "saved_counter : int32" in page
+    assert "Assignment writes through to native storage." not in page
     assert "fmodule_vars_f90" not in page
     assert "## Current Limitations" not in page
 
@@ -1110,10 +1127,68 @@ def test_beginner_workflow_reuses_scale_example_without_renaming_it() -> None:
     contract_index = page.index("python3 -m x2py generate --pyi src/scale.f90")
     build_index = page.index("python3 -m x2py src/scale.f90")
     smoke_index = page.index("result = scale.scale(np.float64(3.0), np.float64(2.5))")
-    advanced_index = page.index("Editing the Semantic Contract")
+    editing_index = page.index("## 4. Optionally Edit the Contract")
+    edited_contract_index = page.index("contracts/scale/__init__.pyi", editing_index)
+    diagnosis_index = page.index("## 5. Diagnose a Failure")
 
-    assert source_reference_index < layout_index < contract_index < build_index < smoke_index < advanced_index
+    assert source_reference_index < layout_index < contract_index < build_index
+    assert build_index < smoke_index < editing_index < edited_contract_index < diagnosis_index
     assert "scale_api" not in page
+
+
+def test_user_guide_teaches_small_contract_edits_in_context() -> None:
+    arrays = _visible_documentation_source(DOCS_ROOT / "user/guide/arrays.md")
+    strings = _visible_documentation_source(DOCS_ROOT / "user/guide/strings.md")
+    functions = _visible_documentation_source(DOCS_ROOT / "user/guide/wrapping-functions.md")
+    modules = _visible_documentation_source(DOCS_ROOT / "user/guide/wrapping-modules.md")
+    generics = _visible_documentation_source(DOCS_ROOT / "user/guide/generic-interfaces.md")
+    derived = _visible_documentation_source(DOCS_ROOT / "user/guide/wrapping-derived-types.md")
+    errors = _visible_documentation_source(DOCS_ROOT / "user/guide/error-handling.md")
+
+    assert "Edit the semantic `.pyi` and add `ORDER_C`" in arrays
+    assert "Edit the declarations in `contracts/strings/strings_api.pyi`" in strings
+    assert '@bind("scale")' in functions
+    assert "## Shape the Module API With the Contract" in modules
+    assert "nmax: Final[Int32] = 12" in modules
+    assert "counter: Int32 = 9" in modules
+    assert "scale: Float64 = 2.0" in modules
+    assert "saved_counter: private[Int32]" in modules
+    assert "It does not turn a writable Fortran variable into a read-only" in modules
+    assert "## Flatten Module Namespaces" in modules
+    assert "from .module1 import *" in modules
+    assert "from .module2 import *" in modules
+    assert "library.func1()" in modules
+    assert "library.module1` and `library.module2` are no longer exported" in modules
+    assert "the wrapper build fails and asks for an explicit" in modules
+    assert "## Extend an Overload Set" in generics
+    assert '@overload("convert_logical")' in generics
+    assert "## Custom Constructor" in derived
+    assert '@bind("initialize_point")' in derived
+    assert "### Expose a Module Procedure as a Method" in derived
+    assert "def move(self, dx: Float64, dy: Float64)" in derived
+    assert '@raises(status="status", message="message", success=0)' in errors
+
+
+def test_user_guide_keeps_generated_docstrings_with_new_overload_and_class_features() -> None:
+    modules = _visible_documentation_source(DOCS_ROOT / "user/guide/wrapping-modules.md")
+    generics = _visible_documentation_source(DOCS_ROOT / "user/guide/generic-interfaces.md")
+    derived = _visible_documentation_source(DOCS_ROOT / "user/guide/wrapping-derived-types.md")
+
+    assert "## Inspect the Module" not in modules
+    assert "print(mod.__doc__)" not in modules
+
+    assert "## Inspect the Overloads" in generics
+    assert "print(conversions.__doc__)" in generics
+    assert "print(conversions.convert.__doc__)" in generics
+    assert "convert(value: int32) -> int32" in generics
+    assert "convert(value: float64) -> float64" in generics
+
+    assert "## Inspect the Class" in derived
+    assert "print(points.point.__doc__)" in derived
+    assert "print(points.point.__init__.__doc__)" in derived
+    assert "`points.point.move.__doc__`" in derived
+    assert "print(points.point.__add__.__doc__)" in derived
+    assert "__add__(right: point) -> point" in derived
 
 
 def test_getting_started_pages_keep_advanced_stage_flags_out_of_beginner_path() -> None:
@@ -1163,11 +1238,11 @@ def test_array_handle_docs_keep_views_copies_and_handles_distinct() -> None:
     assert "never creates an automatic detached snapshot" in allocatables
     assert "A NumPy view reflects current native storage." in allocatables
     assert "A pointer-array function result becomes a returned `PointerArray`." in pointers
-    assert "owns persistent descriptor storage, not necessarily the target" in pointers
+    assert "has persistent descriptor storage, but the target can belong to another" in pointers
     assert "`associate(other)` makes two pointer handles refer to the same target" in pointers
     assert "If `p2` is unassociated, `p1` becomes" in pointers
     assert "Do Not Return A Pointer To Expired Local Storage" in pointers
-    assert "plain and `Aliased` derived module variables remain live objects" in memory
+    assert "Derived module variables remain live objects" in memory
     assert "Fortran module owns their storage" in memory
 
 

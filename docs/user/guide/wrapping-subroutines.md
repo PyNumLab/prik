@@ -10,13 +10,13 @@ publication: reviewed
 
 # Wrapping Subroutines
 
-A Fortran `subroutine` has no direct return value. Projected scalar and
-native-created outputs form the Python result. Caller-provided mutable objects
+A Fortran `subroutine` has no direct return value. Scalar outputs and objects
+created by Fortran form the Python result. Caller-provided mutable objects
 change in place.
 
 ---
 
-## Argument Projection Rules
+## How Arguments Become Python Results
 
 | Native Argument              | Python Call                  | Python Result                     |
 |-----------------------------|------------------------------|-----------------------------------|
@@ -85,6 +85,7 @@ python3 -m x2py outputs.f90 --out-dir build/outputs
 
 ```python
 import sys
+
 import numpy as np
 
 sys.path.insert(0, "build/outputs")
@@ -130,5 +131,7 @@ print(target)              # [1. 1. 1. 1.]
 
 ## Next
 
-- Continue with [Optional Arguments](optional-arguments.md) or [Wrapping Modules](wrapping-modules.md).
+- Continue with [Wrapping Modules](wrapping-modules.md).
+- Then read [Optional Arguments](optional-arguments.md) to control whether a
+  native argument is present.
 - For advanced memory management, see [Allocatables](allocatables.md) and [Pointers](pointers.md).

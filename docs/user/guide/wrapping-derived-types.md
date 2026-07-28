@@ -11,12 +11,12 @@ publication: reviewed
 # Wrapping Derived Types
 
 A supported Fortran `type` becomes a **generated Python extension class**.
-Constructors and ordinary function results create wrapper-owned Fortran
-instances.
-Nested components and module-owned objects use borrowed or native-owned
-instances of the same generated class. Python accesses fields through generated
-getters and setters. Methods call wrapped Fortran procedures. Python never reads
-the native memory layout directly.
+Constructors and ordinary function results create independent Fortran
+instances that are released with their Python objects. A nested component
+belongs to its parent, and a module object belongs to the Fortran module.
+Python accesses fields through generated getters and setters. Methods call
+wrapped Fortran procedures. Python never reads the native memory layout
+directly.
 
 ---
 
@@ -74,6 +74,7 @@ python3 -m x2py points.f90 --out geometry --out-dir build/geometry
 
 ```python
 import sys
+
 import numpy as np
 
 sys.path.insert(0, "build/geometry")
@@ -98,29 +99,64 @@ print(container.origin.x)  # 12.0
 
 ---
 
+## Inspect the Class
+
+The class docstring gives a short index:
+
+```python
+print(points.point.__doc__)
+```
+
+```text
+point
+
+Opaque wrapper for native type point.
+
+Constructor
+-----------
+point(*, x=0.0, y=0.0) -> point
+
+Fields
+------
+x : float64
+y : float64
+```
+
+The constructor has its own detailed docstring:
+
+```python
+print(points.point.__init__.__doc__)
+```
+
+---
+
 ## Key Concepts
 
-- **Ownership**: Wrapper-owned objects are finalized when the Python object is garbage-collected.
+- **Lifetime**: A constructed or returned object is released when its Python
+  object is no longer used. A nested component stays tied to its parent.
 - **Mutation**: `intent(out)` and `intent(inout)` modify a caller-provided
   instance and do not return it again.
 - **Missing intent**: A dummy without `intent` follows the same conservative
   in-place rule as `intent(inout)`.
 - **Fields**: Public scalar numeric/logical/complex fields become Python attributes.
-- **Nested types**: Appear as borrowed child wrappers (they don’t own the memory).
-- **Results**: Derived-type function results create new wrapper-owned objects.
+- **Nested types**: Appear as generated objects tied to their parent.
+- **Results**: Derived-type function results create new independent objects.
 - **Default constructor**: Automatically generated from public, writable
   primitive scalar fields.
-- **Default arguments**: Keyword-only (`logical`, `integer`, `real`, and
+- **Constructor fields**: Passed by keyword (`logical`, `integer`, `real`, and
   `complex`).
-- **Custom constructor**: Define `__init__` in the edited `.pyi` to call one
-  native initializer.
 
 ---
 
 ## Custom Constructor
 
-The default constructor assigns fields directly. An edited `.pyi` can replace
-it with a native initializer:
+The default constructor assigns public fields directly. If the native module
+already provides `initialize_point(item, x, y)`, an edited contract can use it
+as the constructor.
+
+In this mapping, `@bind` selects the native initializer,
+`@native_call(...)` gives its argument order, `Pass()` inserts the new
+`point`, and `Addr(Arg(i))` passes Python argument `i` by address:
 
 ```python
 from x2py.contracts import Addr, Arg, Float64, Pass, bind, native_call
@@ -130,18 +166,16 @@ class point:
     y: Float64
 
     @bind("initialize_point")
-    @native_call([Addr(Arg(0)), Pass(), Addr(Arg(1))])
+    @native_call([Pass(), Addr(Arg(0)), Addr(Arg(1))])
     def __init__(self, x: Float64, y: Float64) -> None: ...
 ```
 
-`__init__` and `initialize_point` have different names, so
-`@bind("initialize_point")` selects the initializer. `Pass()` marks the new
-`point` at zero-based native position 1. That dummy must accept `point`.
-Exactly one `Pass()` is required. Other `point` arguments use `Arg(...)` like
-ordinary constructor inputs.
+Replace the generated field-keyword `__init__` declaration with this one.
+The edit changes construction only; it does not create
+`initialize_point` in the native module.
 
-The generated module-level function can remain public or be marked `@private`.
-The custom declaration replaces only the default field constructor.
+After rebuilding, `points.point.__init__.__doc__` starts with
+`point(x, y) -> point` and lists both parameters.
 
 ---
 
@@ -175,32 +209,38 @@ print(item.value)  # 7
 The method mutates the existing `counter`; it does not replace the Python
 object.
 
-### Project A Module Procedure As A Method
+### Expose a Module Procedure as a Method
 
-An edited `.pyi` can expose one native procedure in both Python scopes:
+The `move(item, dx, dy)` procedure from this page's example can remain a
+module-level function and also become `point.move(dx, dy)`.
+
+`Pass()` supplies `self` to the native call. `Arg(i)` refers to a visible
+Python argument. Add the method to the existing `point` class while keeping
+the module declaration:
 
 ```python
 from x2py.contracts import Addr, Arg, Float64, Pass, native_call
 
 class point:
-    @native_call([Pass(), Addr(Arg(0))])
-    def move_point(self, dx: Float64) -> None: ...
+    @native_call([Pass(), Addr(Arg(0)), Addr(Arg(1))])
+    def move(self, dx: Float64, dy: Float64) -> None: ...
 
-@native_call([Arg(0), Addr(Arg(1))])
-def move_point(item: point, dx: Float64) -> None: ...
+@native_call([Arg(0), Addr(Arg(1)), Addr(Arg(2))])
+def move(item: point, dx: Float64, dy: Float64) -> None: ...
 ```
 
-Both calls reach native `move_point`:
+Both declarations call the existing native `move` procedure:
 
 ```python
-move_point(item, np.float64(2.0))
-item.move_point(np.float64(2.0))
+points.move(item, np.float64(2.0), np.float64(3.0))
+item.move(np.float64(2.0), np.float64(3.0))
 ```
 
-`Pass()` inserts `item` for the method call. Both declarations already match
-native `move_point`, so no `@bind` is needed.
+To expose only the method, import `private` and add `@private` to the
+module-level declaration.
 
-Mark the module declaration `@private` to expose only the method.
+The class docstring now lists `move(dx, dy) -> None` under `Methods`.
+`points.point.move.__doc__` contains its complete parameter and return details.
 
 ---
 
@@ -296,6 +336,22 @@ total = left + right
 print(total.x, total.y)  # 4.0 6.0
 ```
 
+The magic method docstring shows the accepted operator signatures:
+
+```python
+print(points.point.__add__.__doc__)
+```
+
+The relevant part is:
+
+```text
+__add__(*args, **kwargs)
+
+Supported Signatures
+--------------------
+__add__(right: point) -> point
+```
+
 | Fortran generic | Python method | Python syntax |
 |-----------------|---------------|---------------|
 | Binary `+`, `-`, `*`, `/`, `**` | Direct and reflected magic methods | `left + right` |
@@ -317,9 +373,8 @@ exact.
 
 ## Next
 
-- Continue with [Allocatables](allocatables.md) and [Pointers](pointers.md) for
-  advanced storage.
-- Review [Memory Management](memory-management.md) before keeping borrowed
-  objects or views.
-
----
+- Continue with [Allocatables](allocatables.md).
+- Read [Memory Management](memory-management.md) for the lifetime of native
+  storage and NumPy views.
+- See [Replacing the Generated Constructor](../reference/editing-semantic-pyi-contracts.md#replace-the-generated-constructor)
+  for the advanced constructor contract.

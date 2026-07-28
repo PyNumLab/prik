@@ -10,7 +10,8 @@ publication: reviewed
 
 # Verification
 
-After installation, verify the Python package, contract generation, and native build toolchain separately. This makes debugging much easier.
+After installation, check the Python package, required headers, and compiler.
+The next page uses them together to build a complete extension.
 
 ---
 
@@ -22,76 +23,33 @@ Run these commands in your activated virtual environment:
 # Check x2py and NumPy
 python3 -c "from importlib.metadata import version; import x2py, numpy; print('x2py:', version('x2py')); print('NumPy:', numpy.__version__)"
 
-# Check CLI entrypoint
+# Check the command-line interface
 python3 -m x2py --help
 ```
 
 ---
 
-## 2. Verify Contract Generation
+## 2. Verify the Required Headers
 
-Use the `scale.f90` file from the homepage example.
-
-Run this command in the directory containing `scale.f90`:
+Print the Python and NumPy header directories:
 
 ```bash
-python3 -m x2py generate --pyi scale.f90
+python3 -c "import sysconfig; print(sysconfig.get_path('include'))"
+python3 -c "import numpy; print(numpy.get_include())"
 ```
 
-You should see a clean `.pyi`-style contract. This confirms parsing, semantic analysis, and type probing work correctly.
+Both commands should print existing directories.
 
 ---
 
-## 3. Verify Native Build Toolchain
-
-First, check the compiler:
+## 3. Verify the Compiler
 
 ```bash
 gfortran --version
 ```
 
-Then build the extension:
-
-```bash
-python3 -m x2py scale.f90 --out-dir build/verify
-```
-
-This should create an importable `scale` module inside `build/verify`.
-
-Test it:
-
-```python
-import sys
-import numpy as np
-
-sys.path.insert(0, "build/verify")
-import scale
-
-result = scale.scale(np.float64(3.0), np.float64(2.5))
-print(result)        # 7.5
-```
-
----
-
-## 4. Inspect Generated Files (Optional)
-
-You can also inspect the build programmatically:
-
-```python
-from x2py import build_fortran_extension
-
-build = build_fortran_extension("scale.f90", output_dir="build/verify")
-
-print("Compiled:", build.compiled)
-print("Shared library:", build.shared_library)
-print("Output directory:", build.output_dir)
-```
-
-For detailed output when something fails, add `--verbose`:
-
-```bash
-python3 -m x2py scale.f90 --out-dir build/verify --verbose
-```
+The output should identify GNU Fortran. If the command is missing, install
+`gfortran` or add it to `PATH`.
 
 ---
 
@@ -100,14 +58,13 @@ python3 -m x2py scale.f90 --out-dir build/verify --verbose
 | Failure Type                    | Recommended Action                          |
 |--------------------------------|---------------------------------------------|
 | Cannot import x2py / NumPy     | Check active virtual environment            |
-| `x2py --help` works but `.pyi` fails | Check diagnostics and reference section   |
+| A header directory is missing  | Reinstall Python development files or NumPy |
 | Compiler not found             | Fix `PATH` or reinstall gfortran           |
-| Build / linking fails          | Run with `--verbose`                        |
-| Builds but import/call fails   | Compare against generated contract          |
 
 ---
 
 ## Next
 
-- Proceed to [Your First Wrapped Function](first-wrapped-function.md).
+- Build and call [Your First Wrapped Function](first-wrapped-function.md). That
+  example is the end-to-end verification.
 - For detailed help, use [Troubleshooting](../troubleshooting/index.md).

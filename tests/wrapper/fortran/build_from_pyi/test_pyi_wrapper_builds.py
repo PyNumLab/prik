@@ -607,13 +607,16 @@ def test_mutable_module_variable_default_initializes_native_storage(tmp_path: Pa
     root = _generate_pyi(MODULE_VARIABLE_SOURCE, tmp_path / "contracts", MODULE_VARIABLES_GENERATED)
     leaf = root.parent / "fmodule_vars_f90.pyi"
     leaf.write_text(
-        leaf.read_text(encoding="utf-8").replace("counter: Int32", "counter: Int32 = 41"),
+        leaf.read_text(encoding="utf-8")
+        .replace("counter: Int32", "counter: Int32 = 41")
+        .replace("scale: Float64", "scale: Float64 = 2.5"),
         encoding="utf-8",
     )
     root.write_text(
         "\n".join(
             [
                 "from .fmodule_vars_f90 import counter",
+                "from .fmodule_vars_f90 import scale",
                 "from .fmodule_vars_f90 import summarize",
                 "",
             ]
@@ -625,9 +628,12 @@ def test_mutable_module_variable_default_initializes_native_storage(tmp_path: Pa
     module, _payload = _build_pyi_cli(root, native_object, tmp_path / "pyi_build")
 
     assert module.counter == np.int32(41)
+    assert module.scale == np.float64(2.5)
     assert module.summarize() == np.int32(53)
     module.counter = np.int32(5)
+    module.scale = np.float64(1.25)
     assert module.summarize() == np.int32(17)
+    assert module.scale == np.float64(1.25)
 
 
 def test_entry_rejects_colliding_wildcard_exports(tmp_path: Path):

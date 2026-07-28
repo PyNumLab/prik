@@ -60,6 +60,10 @@ python3 -m x2py generic.f90 --out-dir build/generic
 The semantic `.pyi` keeps the concrete procedures as private link targets.
 Each public declaration adds one candidate to `convert`:
 
+`@private` hides a concrete procedure from Python. `@overload` links a public
+candidate to that procedure, and `@bind` selects the public native generic when
+the concrete procedure is private in Fortran.
+
 ```python
 from x2py.contracts import Float64, Int32, bind, overload, private
 
@@ -78,9 +82,8 @@ def convert(value: Int32) -> Int32: ...
 def convert(value: Float64) -> Float64: ...
 ```
 
-The concrete procedures are private because the source exports `convert`, not
-`convert_integer` or `convert_real`. Each `@overload` links the candidate to
-its concrete contract. Since those procedures are native-private,
+The source exports `convert`, not `convert_integer` or `convert_real`. Since
+those concrete procedures are native-private,
 [`@bind("convert")`](wrapping-functions.md#python-and-native-names) routes both
 candidates through the public generic.
 
@@ -90,6 +93,7 @@ candidates through the public generic.
 
 ```python
 import sys
+
 import numpy as np
 
 sys.path.insert(0, "build/generic")
@@ -104,35 +108,61 @@ The argument type selects the concrete procedure. `np.int32` calls
 
 ---
 
-## Extending an Overload Set
+## Inspect the Overloads
 
-An edited contract can add an existing native procedure to a Python overload
-set, even when it was not in the original Fortran interface.
-
-Suppose the contract already declares `convert_logical`. Add a public overload
-declaration that links to it:
+The module docstring lists one public callable:
 
 ```python
-from x2py.contracts import Bool, Int32, overload
+import generic.conversions as conversions
 
+print(conversions.__doc__)  # includes convert(*args, **kwargs)
+```
+
+The callable docstring lists every accepted signature:
+
+```python
+print(conversions.convert.__doc__)
+```
+
+The relevant part is:
+
+```text
+convert(*args, **kwargs)
+
+Supported Signatures
+--------------------
+convert(value: int32) -> int32
+convert(value: float64) -> float64
+```
+
+Private procedures such as `convert_integer` do not appear.
+
+---
+
+## Extend an Overload Set
+
+An edited contract can add another existing native procedure to the same
+Python callable. Suppose the native module and contract also contain a public
+`convert_logical`:
+
+```python
+from x2py.contracts import Bool, Int32, overload, private
+
+@private
 def convert_logical(value: Bool) -> Int32: ...
 
 @overload("convert_logical")
 def convert(value: Bool) -> Int32: ...
 ```
 
-The decorator adds dispatch. It does not create a native implementation. The
-target procedure must already exist in the contract and have a compatible call
-shape.
+The new declaration makes `convert(np.bool_(...))` select
+`convert_logical`. It does not create the native procedure; that procedure
+must already exist and match the declaration. `@private` means users reach the
+procedure only through `convert`.
 
-Leave `convert_logical` public to expose both names. Mark it `@private` when it
-should only be available through `convert`. This changes Python visibility,
-not the native call. The overload still calls the public native specific
-directly.
-
-If that native specific is actually Fortran-private, the bridge cannot call it
-directly. Keep `@bind("convert")` on the overload candidate. Source-based
-generation adds this bind automatically.
+If the concrete procedure is private in Fortran, keep
+`@bind("convert")` on the overload so the native call goes through the public
+generic.
 
 ---
 
@@ -165,4 +195,6 @@ in Wrapping Derived Types.
 - Continue with [Wrapping Derived Types](wrapping-derived-types.md) for
   type-bound generics and operators
 - See [Error Handling](error-handling.md) for dispatch errors
+- See [Editing Semantic `.pyi` Contracts](../reference/editing-semantic-pyi-contracts.md)
+  for advanced overload changes
 - For current generic and operator support, refer to the [Language Feature Matrix](../language-support/feature-matrix.md).

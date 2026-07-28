@@ -21,14 +21,27 @@ scalar storage, arrays, and strings for normal wrappers.
 | Contract | Python argument | Validation |
 | --- | --- | --- |
 | `Int32[()]` | 0-D array with dtype `np.int32` | Dtype, rank, and writeability |
-| `Addr(Int32)` | Integer address | Pointer-sized integer only |
+| `Addr(Int32)` | Integer address | Integer that fits a native address |
 | `Float64[rows, columns]` | NumPy array | Dtype, shape, order, and writeability |
-| `Addr(Float64[rows, columns])` | Integer address | Extent expressions only |
+| `Addr(Float64[rows, columns])` | Integer address | Declared array sizes only |
 | `String[8][()]` | 0-D NumPy bytes array with dtype `S8` | Dtype, length, and writeability |
 | `Addr(String[8])` | Integer address | Declared fixed length only |
 
 `T[()]` changes the Python storage representation, not the native primitive
 datatype. It is usually the better choice for scalar mutation.
+
+## `Addr(T)` And `Addr(Arg(...))`
+
+These spellings describe different boundaries:
+
+- `Addr(T)` means the Python caller passes an integer address.
+- Inside `@native_call(...)`, `Arg(i)` selects Python argument `i`, and
+  `Addr(Arg(i))` tells x2py to pass that converted scalar by address.
+
+The `@native_call(...)` decorator records how Python arguments are placed in
+the native call. Arrays, rank-zero storage, strings, and raw addresses already
+use storage addresses, so their `Arg(i)` entry does not need another
+`Addr(...)`.
 
 ## Complete Example
 
@@ -173,22 +186,12 @@ Use `String[8][()]` when the wrapper should validate mutable storage.
 - Use writable memory when native code may modify it.
 - Treat address zero as null only when the native routine allows null.
 
-x2py cannot validate the pointee's lifetime, dtype, size, shape, order,
+x2py cannot validate the addressed memory's lifetime, dtype, size, shape, order,
 alignment, ownership, or writeability. A wrong address can crash the process.
-
-## `Addr(T)` And `Addr(Arg(...))`
-
-These spellings describe different boundaries:
-
-- `Addr(T)` means the Python caller passes an integer address.
-- `Addr(Arg(i))` means x2py takes the address of a converted scalar argument.
-
-Arrays, rank-zero storage, strings, and raw addresses already use storage
-addresses. Do not wrap their `Arg(i)` projection in another `Addr(...)`.
 
 ## Next
 
-- [Strings](strings.md) for immutable and checked mutable character boundaries
+- Continue with [Error Handling](error-handling.md).
 - [Editing Semantic `.pyi` Contracts](../reference/editing-semantic-pyi-contracts.md)
 - [Semantic `.pyi` Format](../reference/semantic-pyi-format.md) for complete
-  `Addr(...)` validation rules
+  `Addr(...)` validation rules.
