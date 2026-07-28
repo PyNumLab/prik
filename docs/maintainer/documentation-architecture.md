@@ -86,6 +86,10 @@ for its current task. A forward reference never defers a fact needed now.
 README documentation lists, lane indexes, and explicit navigation menus are
 exceptions because choosing a destination is their purpose. Same-page anchors
 and links to source or test evidence do not change documentation reading order.
+Contextual links to `user/reference/pyi-contracts/` are also allowed after a
+Getting Started or User Guide section has already taught a complete small
+contract edit. These links provide optional lookup of the full editing rules;
+they must not replace instructions required to complete the current example.
 
 ## Page Metadata Contract
 
@@ -190,7 +194,8 @@ website publication.
   synchronized.
 - Reject draft pages and draft-gated lanes from published site navigation.
 - Require explicit publication metadata on every active page.
-- Check that User documentation does not link forward from instructional prose.
+- Check that User documentation does not link forward from instructional prose,
+  except for the documented contextual `.pyi` contract references.
 - Treat unsupported-feature placeholders as blocking reminders during feature
   completion.
 - Run link, structure, generated-reference freshness, and executable-example

@@ -505,13 +505,18 @@ X2PY_C_DOCS_END -->
 - [x] Generic `Annotated` constraints and semantic coercions are not silently
   accepted as runtime validation. Fortran wrapper planning reports direct
   blockers until named validators or conversion actions exist. Evidence:
-  wrapper-plan tests that prove generic constraints without a runtime validator fail
-  and `docs/user/reference/semantic-pyi-format.md`.
+  wrapper-plan tests that prove generic constraints without a runtime validator
+  fail.
+- [ ] Implement runtime validators for `Bounded(...)` and `Finite`, connect
+  them to completed wrapper policy and generated calls, and document them for
+  users only after runtime enforcement is tested.
+- [ ] Implement explicit runtime dtype-conversion actions before documenting
+  contract-controlled coercion as a user feature.
 - [x] The currently documented editable-contract surface has direct modified
   runtime evidence or focused semantic/planning evidence: removal and hiding,
   added and renamed bindings, overload pruning and renamed overload groups,
   native-order identity calls without `@native_call`, immutable replacement,
-  ownership triples, pointer-policy blockers, runtime constraints, `@raises`,
+  ownership triples, pointer-policy blockers, `@raises`,
   `@hold_gil`, and native-artifact failures. Evidence:
   `docs/user/reference/pyi-contracts/`,
   `tests/wrapper/fortran/edit_pyi_contracts/`,

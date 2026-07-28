@@ -37,6 +37,8 @@ DEFERRED_C_PAGE_PATHS = [
 MARKDOWN_LINK = re.compile(r"\[[^\]]+\]\(([^)#]+)(?:#[^)]+)?\)")
 NEXT_NAVIGATION = re.compile(r"^\s*(?:#{2,6}\s+Next|\*\*Next\*\*:?)\s*$", re.IGNORECASE)
 NEXT_SECTION_BOUNDARY = re.compile(r"^\s*(?:#{2,6}\s+|---\s*$|\*\*[^*]+\*\*)")
+ALLOWED_CONTEXTUAL_FORWARD_LINK_SOURCE_PREFIXES = ("user/getting-started/", "user/guide/")
+ALLOWED_CONTEXTUAL_FORWARD_LINK_PREFIXES = ("user/reference/pyi-contracts/",)
 C_DOCS_START = "<!-- X2PY_C_DOCS_START"
 C_DOCS_END = "X2PY_C_DOCS_END -->"
 C_DOCS_DISABLED = "<!-- X2PY_C_DOCS_DISABLED:"
@@ -945,6 +947,10 @@ def test_sequential_user_pages_do_not_link_forward_from_instructional_prose(rela
             continue
         target_relative = target_path.relative_to(DOCS_ROOT).as_posix()
         if target_relative not in positions:
+            continue
+        if relative_path.startswith(ALLOWED_CONTEXTUAL_FORWARD_LINK_SOURCE_PREFIXES) and target_relative.startswith(
+            ALLOWED_CONTEXTUAL_FORWARD_LINK_PREFIXES
+        ):
             continue
         assert positions[target_relative] <= source_position, f"{relative_path}: forward link to {target_relative}"
 

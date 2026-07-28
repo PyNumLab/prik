@@ -1104,13 +1104,12 @@ Use local constants or generated `Final[...]` names for shape symbols.
 
 ## Metadata With `Annotated`
 
-`Annotated[...]` carries storage metadata and semantic constraints. It does
-not carry source-language argument direction or per-call value/reference
-selection. The Fortran semantic pipeline supplies `ORDER_F` as the default
-multidimensional layout. Generated contracts omit that default. Write explicit
-layout metadata only when the Python-visible storage deliberately differs from
-that Fortran representation, such as a row-major input accepted by a Fortran
-wrapper.
+`Annotated[...]` carries storage and call-boundary metadata. It does not carry
+source-language argument direction or per-call value/reference selection. The
+Fortran semantic pipeline supplies `ORDER_F` as the default multidimensional
+layout. Generated contracts omit that default. Write explicit layout metadata
+only when the Python-visible storage deliberately differs from that Fortran
+representation, such as a row-major input accepted by a Fortran wrapper.
 Native call transport belongs to `@native_call`: a wrapped derived
 object uses its normal reference handoff with `Arg(i)` and exact typed value
 handoff with `Value(Arg(i))`. The Python API accepts the same opaque wrapper
@@ -1309,14 +1308,6 @@ For array descriptors, use `Allocatable[T[...]]` and `Pointer[T[...]]`.
 `Annotated[T[...], Allocatable]` and `Annotated[T[...], Pointer]` are not
 active public descriptor spellings. Derived module objects remain live objects;
 there is no public whole-object snapshot annotation.
-
-Other positional `Annotated` helpers are preserved as semantic constraints:
-
-```python
-from x2py.contracts import Annotated, Bounded, Finite, Int32
-
-value: Annotated[Int32, Bounded(1, 8), Finite]
-```
 
 ### Ownership, Transfer, And Destruction Policies
 
@@ -2383,14 +2374,8 @@ Loaded but usually not generated from source today:
 | --- | --- |
 | `Addr[n](T)` for `n > 1` | direct low-level pointer topology |
 | `ORDER_ANY` | edited orientation-independent array contract |
-| generic `Annotated` constraints | preserved semantic constraints |
 | additional `@native_call` and `Returns[...]` edits | projection metadata beyond generated output mappings |
 | source-provenance array helpers | compatibility loading for older or edited stubs |
-
-Generic constraints are not silently treated as runtime checks. Fortran wrapper
-wrapper planning reports `fortran_runtime_constraints_unsupported` until a named
-constraint has an implemented validator. Semantic coercions similarly report
-`fortran_runtime_coercions_unsupported` until a conversion action exists.
 
 ## Rejected Or Not Yet Supported
 

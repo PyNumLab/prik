@@ -77,6 +77,9 @@ except RuntimeError as e:
     print(e)
 ```
 
+For the complete status and message rules, see
+[Translate Status Results into Exceptions](../reference/pyi-contracts/calls-and-results.md#translate-status-results-into-exceptions).
+
 ---
 
 ## Common Python Exceptions

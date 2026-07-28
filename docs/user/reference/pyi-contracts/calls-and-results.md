@@ -62,9 +62,9 @@ duplicate, and out-of-range positions are errors.
 
 The mapping may use entries such as `Arg(...)`, `Addr(...)`, `Value(...)`,
 `Len(...)`, `IsPresent(...)`, and `Work(...)`. These entries describe the
-existing native call; they cannot change what the implementation accepts. See
-[Projection Metadata](../semantic-pyi-format.md#projection-metadata) for the
-complete syntax.
+existing native call; they cannot change what the implementation accepts. The
+complete projection grammar will be covered by the Semantic `.pyi` Format
+reference.
 
 There is no `intent` annotation in the `.pyi`. The signature,
 `Returns[...]`, and `@native_call(...)` are the complete contract after the
@@ -117,11 +117,6 @@ check exact NumPy dtype, rank, shape, layout, writeability, byte order,
 alignment, and zero-sized-array rules. Plain multidimensional arrays in a
 Fortran contract use Fortran order by default. The
 [array guide](../../guide/arrays.md#what-x2py-validates) explains these checks.
-
-Generic constraints such as `Bounded(1, 8)` and `Finite` can be preserved in a
-contract, but they do not yet create runtime validation. Wrapper planning
-rejects them instead of silently ignoring them. General implicit dtype
-coercion is also unsupported unless a documented path explicitly provides it.
 
 ## Translate Status Results into Exceptions
 

@@ -177,6 +177,9 @@ The edit changes construction only; it does not create
 After rebuilding, `points.point.__init__.__doc__` starts with
 `point(x, y) -> point` and lists both parameters.
 
+For the complete replacement rules, see
+[Replace the Constructor](../reference/pyi-contracts/functions-and-classes.md#replace-the-constructor).
+
 ---
 
 ## Type-Bound Methods
@@ -241,6 +244,9 @@ module-level declaration.
 
 The class docstring now lists `move(dx, dy) -> None` under `Methods`.
 `points.point.move.__doc__` contains its complete parameter and return details.
+
+For the complete mapping rules, see
+[Expose a Module Procedure as a Method](../reference/pyi-contracts/functions-and-classes.md#expose-a-module-procedure-as-a-method).
 
 ---
 
@@ -368,6 +374,9 @@ defined assignment uses `.assign(...)`.
 At least one operand must be a wrapped derived type. Other operands can be
 supported primitive scalars, arrays, or generated classes. Their dispatch is
 exact.
+
+For the overload rules shared by type-bound generics and operators, see
+[Edit an Overload Set](../reference/pyi-contracts/functions-and-classes.md#edit-an-overload-set).
 
 ---
 

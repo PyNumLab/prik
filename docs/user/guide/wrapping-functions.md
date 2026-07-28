@@ -69,6 +69,9 @@ re-exports the old Python name. Build the edited package using the
 
 The same rule applies to functions, subroutines, and methods.
 
+For the complete naming rules, see
+[Add or Rename a Native Procedure](../reference/pyi-contracts/exports-and-modules.md#add-or-rename-a-native-procedure).
+
 ---
 
 ## Array Return Values

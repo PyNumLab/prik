@@ -242,6 +242,9 @@ def sum_columns(
 ) -> None: ...
 ```
 
+For the complete dtype, shape, layout, and optionality rules, see
+[Edit Types, Shapes, Layout, and Optionality](../reference/pyi-contracts/calls-and-results.md#edit-types-shapes-layout-and-optionality).
+
 The call does not change. Pass a C-order array instead.
 The same values now produce row sums:
 

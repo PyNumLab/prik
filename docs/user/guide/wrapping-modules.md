@@ -104,6 +104,11 @@ Deleting a declaration removes that name from the generated Python API. These
 edits do not create or rename native variables and procedures; those still
 need to exist in the compiled module.
 
+For the complete rules, see
+[Remove or Hide a Declaration](../reference/pyi-contracts/exports-and-modules.md#remove-or-hide-a-declaration)
+and
+[Set Module Values at Import](../reference/pyi-contracts/exports-and-modules.md#set-module-values-at-import).
+
 ---
 
 ## Flatten Module Namespaces
@@ -163,6 +168,9 @@ This produces `library.update_module1` and `library.update_module2`. You can
 also import only selected names instead of flattening every public declaration.
 Build the edited entry using the
 [editable-contract workflow](../getting-started/beginner-workflow.md#4-optionally-edit-the-contract).
+
+For all supported imports, aliases, and namespace layouts, see
+[Choose the Package Shape](../reference/pyi-contracts/exports-and-modules.md#choose-the-package-shape).
 
 ---
 

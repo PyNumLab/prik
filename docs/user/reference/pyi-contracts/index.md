@@ -13,9 +13,8 @@ x2py's generated `.pyi` files are editable wrapper contracts. They look like
 Python stubs, but they also describe native calls, storage, and results. Edit
 them to change the Python API without changing the native implementation.
 
-This section explains supported edits and their effect. For the exact syntax
-of every annotation and decorator, use the
-[Semantic `.pyi` Format](../semantic-pyi-format.md).
+This section explains supported edits and their effect. The complete grammar
+will be covered by the Semantic `.pyi` Format reference.
 
 ## Workflow
 
@@ -73,7 +72,7 @@ to compare and undo.
 - [How do I pass checked storage or a raw memory address?](../../guide/raw-addresses.md#checked-storage-or-raw-address)
 - [How do I turn a native status into a Python exception?](calls-and-results.md#translate-status-results-into-exceptions)
 - [How do I keep Python's Global Interpreter Lock (GIL) during a call, or return to the normal releasing behavior?](calls-and-results.md#keep-the-gil-when-required)
-- [How do I define or change a callback signature?](../../guide/callbacks.md#choosing-the-prototype-spelling)
+- [How do I describe a callback signature in the contract?](../../guide/callbacks.md#choosing-the-prototype-spelling)
 
 ### Storage and Lifetimes
 

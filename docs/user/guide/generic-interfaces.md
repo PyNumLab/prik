@@ -164,6 +164,9 @@ If the concrete procedure is private in Fortran, keep
 `@bind("convert")` on the overload so the native call goes through the public
 generic.
 
+For the complete add, remove, and binding rules, see
+[Edit an Overload Set](../reference/pyi-contracts/functions-and-classes.md#edit-an-overload-set).
+
 ---
 
 ## Key Rules

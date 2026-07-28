@@ -2,7 +2,7 @@
 title: Raw Addresses
 description: Pass primitive, array, and fixed-string storage addresses through semantic contracts
 audience: advanced users
-prerequisites: arrays, strings, editing semantic pyi contracts
+prerequisites: arrays, strings, editing .pyi contracts
 related: data-types.md, arrays.md, strings.md
 status: maintained
 publication: reviewed
@@ -101,6 +101,9 @@ python3 -m x2py contracts/raw/__init__.pyi \
   --native-fortran-sources raw_api.f90 \
   --out-dir build/raw
 ```
+
+For other argument-order and result mappings, see
+[Reorder Arguments and Project Outputs](../reference/pyi-contracts/calls-and-results.md#reorder-arguments-and-project-outputs).
 
 ## Primitive Address
 

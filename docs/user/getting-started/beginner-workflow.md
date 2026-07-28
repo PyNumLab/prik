@@ -107,6 +107,9 @@ The User Guide introduces small edits next to the feature they affect, such as
 renaming a function, changing array layout, adding an overload, or exposing a
 module procedure as a method.
 
+Use [Editing `.pyi` Contracts](../reference/pyi-contracts/index.md) to find
+every supported edit and its complete rules.
+
 ---
 
 ## 5. Diagnose a Failure

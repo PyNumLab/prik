@@ -100,6 +100,9 @@ python3 -m x2py contracts/strings/__init__.pyi \
   --out-dir build/strings
 ```
 
+For the complete result-mapping rules, see
+[Reorder Arguments and Project Outputs](../reference/pyi-contracts/calls-and-results.md#reorder-arguments-and-project-outputs).
+
 ## Immutable Values
 
 `String[8]` accepts a Python `str` whose encoded length is exactly eight bytes.

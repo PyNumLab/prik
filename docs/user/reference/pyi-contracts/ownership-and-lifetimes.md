@@ -117,5 +117,6 @@ it with a guessed default.
 
 ## Next
 
-Use the [Semantic `.pyi` Format](../semantic-pyi-format.md#ownership-transfer-and-destruction-policies)
-for the complete annotation grammar.
+Return to [Editing `.pyi` Contracts](index.md) to choose another kind of edit.
+The complete annotation grammar will be covered by the Semantic `.pyi` Format
+reference.
