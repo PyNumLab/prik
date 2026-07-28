@@ -14,8 +14,9 @@ implementation and tests, then gives focused change and verification
 workflows.
 
 <!-- X2PY_C_DOCS_START
-Use the [tutorial](../user/tutorials/basic-wrapper.md) and [examples cookbook](../user/examples/verified-cookbook.md) to inspect
-the public workflows before changing them. This guide is the developer entry
+Use [Getting Started](../user/getting-started/index.md) and the
+[Examples Gallery](../user/examples/index.md) to inspect the public workflows
+before changing them. This guide is the developer entry
 point for the C and Fortran parser references, implementation ownership, and
 the detailed maintained contracts.
 X2PY_C_DOCS_END -->
@@ -55,7 +56,7 @@ For example, a new CLI stage option normally requires:
 1. A focused contract test in `tests/cli/`.
 2. Dispatch or output routing in `x2py/cli.py`.
 3. Preprocessing tests if the option changes source loading.
-4. A copy-paste command in [Verified examples cookbook](../user/examples/verified-cookbook.md).
+4. A copy-paste command in the relevant user guide or checked example.
 5. A tutorial update only when the main user workflow changes.
 
 ## Support Evidence Rule
@@ -73,8 +74,8 @@ Use these documentation roles consistently:
 
 | Document | Role |
 | --- | --- |
-| [Basic wrapper tutorial](../user/tutorials/basic-wrapper.md) | Main supported user workflow and boundaries |
-| [Verified examples cookbook](../user/examples/verified-cookbook.md) | Copy-paste commands and Python API recipes |
+| [Getting Started](../user/getting-started/index.md) | Main supported user workflow and boundaries |
+| [Examples Gallery](../user/examples/index.md) | Checked commands and Python API recipes |
 | [Fortran wrapper reference](../user/reference/fortran-wrapper.md) | Implemented Fortran runtime contract, mechanism, ownership, and build modes |
 | [Fortran parser reference](fortran-parser-reference.md) | Developer inventory for the Fortran frontend |
 | [Semantic IR reference](../user/reference/semantic-ir.md) | Accepted semantic IR and datatype contract |
@@ -173,9 +174,10 @@ PYTHONPATH=. python3 -m pytest -q tests/docs/test_examples.py
 
 ## References
 
-- [Tutorial](../user/tutorials/basic-wrapper.md): supported end-to-end user workflow and current
-  boundaries.
-- [Verified examples cookbook](../user/examples/verified-cookbook.md): CLI and Python API recipes.
+- [Getting Started](../user/getting-started/index.md): supported end-to-end user
+  workflow and current boundaries.
+- [Examples Gallery](../user/examples/index.md): checked CLI and Python API
+  recipes.
 - [Fortran parser reference](fortran-parser-reference.md): Fortran frontend scope,
   recursive parser organization, API/CLI behavior, diagnostics, fixture
   workflow, semantic handoff, and tests.
@@ -320,8 +322,9 @@ When changing `.pyi` syntax:
 1. Add or update parser tests in `tests/parsing/pyi/`.
 2. Add or update printer tests in `tests/wrapper_codegen/printers/`.
 3. Update fixture tests only if the public generated contract changes.
-4. Update [Basic wrapper tutorial](../user/tutorials/basic-wrapper.md) or [Verified examples cookbook](../user/examples/verified-cookbook.md) if users
-   need to write or read the new syntax.
+4. Update the relevant [User Guide](../user/guide/index.md) or checked
+   [example](../user/examples/index.md) if users need to write or read the new
+   syntax.
 5. Update [Semantic .pyi format](../user/reference/semantic-pyi-format.md) for the full user-facing reference.
 6. Update [Semantic IR reference](../user/reference/semantic-ir.md) if the underlying semantic IR contract
    changes.
@@ -348,9 +351,10 @@ When changing datatype mapping:
 2. Add `.pyi` printer/loader coverage if the emitted syntax changes.
 3. Update semantic fixtures only when serialized semantic IR intentionally
    changes.
-4. Update [Semantic IR reference](../user/reference/semantic-ir.md), plus
-   [Basic wrapper tutorial](../user/tutorials/basic-wrapper.md) or [Verified examples cookbook](../user/examples/verified-cookbook.md) when the visible
-   user workflow or examples change.
+4. Update [Semantic IR reference](../user/reference/semantic-ir.md), plus the
+   relevant [User Guide](../user/guide/index.md) or checked
+   [example](../user/examples/index.md) when the visible user workflow or
+   examples change.
 5. Regenerate and update the exact target mapping snapshots in
    [Semantic IR reference](../user/reference/semantic-ir.md). The executable documentation test must match
    the complete output of:
@@ -1111,8 +1115,10 @@ X2PY_C_DOCS_END -->
    `x2py/semantics/c2ir.py` and add coverage in `tests/semantics/conversion/c/`.
 7. If the generated `.pyi` changes, update `tests/wrapper_codegen/printers/`
    or `tests/pipeline/pyi_builds/test_contract_fixtures.py`.
-8. Update [C parser reference](c-parser-reference.md), [Basic wrapper tutorial](../user/tutorials/basic-wrapper.md),
-   [Verified examples cookbook](../user/examples/verified-cookbook.md), or [Semantic IR reference](../user/reference/semantic-ir.md) if users or
+8. Update [C parser reference](c-parser-reference.md), the relevant
+   [User Guide](../user/guide/index.md), checked
+   [example](../user/examples/index.md), or
+   [Semantic IR reference](../user/reference/semantic-ir.md) if users or
    developers need to know the new behavior.
 X2PY_C_DOCS_END -->
 
@@ -1156,8 +1162,10 @@ metadata item.
    and `tests/semantics/conversion/fortran/`.
 7. If generated `.pyi` changes, update `tests/wrapper_codegen/printers/`
    and the relevant fixture tests.
-8. Update [Fortran parser reference](fortran-parser-reference.md), [Basic wrapper tutorial](../user/tutorials/basic-wrapper.md),
-   [Verified examples cookbook](../user/examples/verified-cookbook.md), or [Semantic IR reference](../user/reference/semantic-ir.md) as needed.
+8. Update [Fortran parser reference](fortran-parser-reference.md), the relevant
+   [User Guide](../user/guide/index.md), checked
+   [example](../user/examples/index.md), or
+   [Semantic IR reference](../user/reference/semantic-ir.md) as needed.
 
 Focused verification:
 
@@ -1181,9 +1189,10 @@ X2PY_C_DOCS_END -->
    there is a deliberate schema decision.
 4. If the emitted `.pyi` annotation changes, update
    `tests/wrapper_codegen/printers/` and `tests/parsing/pyi/`.
-5. Update the datatype tables in [Semantic IR reference](../user/reference/semantic-ir.md), and update
-   [Basic wrapper tutorial](../user/tutorials/basic-wrapper.md) or [Verified examples cookbook](../user/examples/verified-cookbook.md) when a visible
-   example changes.
+5. Update the datatype tables in
+   [Semantic IR reference](../user/reference/semantic-ir.md), and update the
+   relevant [User Guide](../user/guide/index.md) or checked
+   [example](../user/examples/index.md) when a visible example changes.
 
 <!-- X2PY_C_DOCS_START
 1. Add conversion coverage in `tests/semantics/conversion/fortran/` or
@@ -1223,8 +1232,10 @@ Example target: add a new `Annotated[...]` metadata item or projection helper.
    field or constraint.
 6. Update policy completion or wrapper planning if the syntax changes a
    completed decision.
-7. Update [Semantic IR reference](../user/reference/semantic-ir.md), plus [Basic wrapper tutorial](../user/tutorials/basic-wrapper.md) or
-   [Verified examples cookbook](../user/examples/verified-cookbook.md) when users need the new syntax in a workflow.
+7. Update [Semantic IR reference](../user/reference/semantic-ir.md), plus the
+   relevant [User Guide](../user/guide/index.md) or checked
+   [example](../user/examples/index.md) when users need the new syntax in a
+   workflow.
 
 Focused verification:
 
@@ -1278,8 +1289,9 @@ diagnostic formatting.
 3. Keep Fortran package-specific CLI behavior in `x2py/parsers/fortran/cli.py`.
 4. If compiler preprocessing behavior changes, update `x2py/pipeline/preprocessing.py`
    and preprocessing tests.
-5. Update [Basic wrapper tutorial](../user/tutorials/basic-wrapper.md) or [Verified examples cookbook](../user/examples/verified-cookbook.md) for
-   user-facing commands and this guide for developer command maps.
+5. Update the relevant [User Guide](../user/guide/index.md) or checked
+   [example](../user/examples/index.md) for user-facing commands and this guide
+   for developer command maps.
 
 Focused verification:
 

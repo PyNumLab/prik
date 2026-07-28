@@ -3,7 +3,7 @@ title: User Guide
 description: Detailed guides for wrapping Fortran code with x2py
 audience: users
 prerequisites: getting started
-related: data-types.md, ../reference/fortran-wrapper.md, ../language-support/index.md
+related: data-types.md
 status: maintained
 publication: reviewed
 ---
@@ -50,13 +50,6 @@ objects, storage, and advanced runtime behavior.
 ## Building
 
 - [Building the Shared Library](building-shared-library.md)
-
----
-
-## Reference
-
-- [Reference Overview](../reference/index.md) — CLI, Python API, wrapper behavior, and semantic contracts
-- [Language Feature Matrix](../language-support/feature-matrix.md) — Current support status (supported / partial / unsupported)
 
 ---
 

@@ -3,7 +3,7 @@ title: Verification
 description: Verify that x2py, NumPy, and the native toolchain are working correctly
 audience: users, contributors
 prerequisites: installation
-related: first-wrapped-function.md, ../troubleshooting/index.md, ../reference/cli-commands.md
+related: first-wrapped-function.md
 status: maintained
 publication: reviewed
 ---
@@ -67,4 +67,3 @@ The output should identify GNU Fortran. If the command is missing, install
 
 - Build and call [Your First Wrapped Function](first-wrapped-function.md). That
   example is the end-to-end verification.
-- For detailed help, use [Troubleshooting](../troubleshooting/index.md).

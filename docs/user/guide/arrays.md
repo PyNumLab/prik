@@ -461,5 +461,3 @@ Use this list when reading or editing a generated `.pyi` contract:
   [Wrapping Subroutines](wrapping-subroutines.md).
 - [Allocatables](allocatables.md) and [Pointers](pointers.md) for native
   allocation control.
-- [Language Feature Matrix](../language-support/feature-matrix.md) for support
-  details.

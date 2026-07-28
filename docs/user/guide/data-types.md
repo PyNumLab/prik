@@ -3,7 +3,7 @@ title: Data Types
 description: How x2py maps Fortran types to Python, NumPy dtypes, and semantic contracts
 audience: users
 prerequisites: common beginner workflow
-related: arrays.md, strings.md, wrapping-derived-types.md, ../reference/semantic-pyi-format.md
+related: arrays.md, strings.md, wrapping-derived-types.md
 status: maintained
 publication: reviewed
 ---
@@ -159,5 +159,3 @@ bits and complex storage wider than 128 total bits instead of narrowing it.
 - Then read [Strings](strings.md) for immutable values and mutable character
   storage.
 - [Wrapping Derived Types](wrapping-derived-types.md)
-- Check the [Language Feature Matrix](../language-support/feature-matrix.md)
-  for current type support.

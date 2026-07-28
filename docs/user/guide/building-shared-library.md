@@ -3,7 +3,7 @@ title: Building the Shared Library
 description: How to build and import a Python extension shared library with x2py
 audience: users
 prerequisites: common beginner workflow
-related: ../reference/cli-commands.md, ../examples/recipes/build-and-import-cli.md, ../examples/recipes/build-multiple-fortran-sources.md, ../examples/recipes/generate-editable-makefile.md
+related: error-handling.md
 status: maintained
 publication: reviewed
 ---
@@ -59,16 +59,37 @@ python3 -m x2py src/types.f90 src/solver.f90 \
 x2py preserves the given order. It does not discover source dependencies or
 external libraries automatically.
 
+## Use a Makefile
+
+To inspect or customize the build commands, generate a Makefile without
+compiling:
+
+```bash
+python3 -m x2py generate --makefile src/scale.f90 --out-dir build/scale
+```
+
+Edit `Makefile.x2py` before running `make` when customization is needed. Its
+most useful settings are near the top:
+
+| Setting | What it changes |
+| --- | --- |
+| `FC` | Fortran compiler |
+| `X2PY_LD` | Command that creates the shared library |
+| `X2PY_FFLAGS` | Extra Fortran compiler flags |
+| `X2PY_LDFLAGS` | Extra linker flags |
+
+The build targets and commands follow these settings and normally do not need
+editing. Then build the shared library:
+
+```bash
+make -f build/scale/Makefile.x2py
+```
+
+You can pass the same ordered list of source files used in the previous
+example. This workflow requires GNU Make.
+
 ## Compatibility
 
 The shared library is not universal. It must match the target machine's
 operating system and architecture, Python and NumPy, and required compiler
 libraries. Rebuilding it on the target machine is the safest choice.
-
-## Next
-
-- Follow the complete [build and import recipe](../examples/recipes/build-and-import-cli.md).
-- For several files, see the [multiple-source recipe](../examples/recipes/build-multiple-fortran-sources.md).
-- To inspect or customize the build, [generate an editable Makefile](../examples/recipes/generate-editable-makefile.md).
-- For build or import failures, see [Troubleshooting](../troubleshooting/index.md)
-  and rerun the build with `--verbose`.

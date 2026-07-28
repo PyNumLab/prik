@@ -58,7 +58,6 @@ nav:
           - Building the Shared Library: user/guide/building-shared-library.md
       - Tutorials:
           - Overview: user/tutorials/index.md
-          - Basic Wrapper Tutorial: user/tutorials/basic-wrapper.md
           - Large Fortran Codebase: user/tutorials/large-fortran-codebase.md
           - Modern Fortran Project: user/tutorials/modern-fortran-project.md
           - Numerical Solver: user/tutorials/numerical-solver.md
@@ -74,17 +73,13 @@ nav:
           - ODE Solver: user/examples/ode-solver.md
           - OpenMP Example: user/examples/openmp-example.md
           - Recipes:
-              - Build and Import With the CLI: user/examples/recipes/build-and-import-cli.md
               - Build and Import With the Python API: user/examples/recipes/build-and-import-python-api.md
-              - Generate an Editable Makefile: user/examples/recipes/generate-editable-makefile.md
-              - Build Multiple Fortran Sources: user/examples/recipes/build-multiple-fortran-sources.md
               - Inspect a Fortran API: user/examples/recipes/inspect-fortran-api.md
               # X2PY_C_DOCS: - Inspect a C API: user/examples/recipes/inspect-c-api.md
               - Work With Semantic .pyi Contracts: user/examples/recipes/semantic-pyi-contracts.md
               - Control CLI Output: user/examples/recipes/control-cli-output.md
               - Use Python Inspection APIs: user/examples/recipes/use-python-inspection-apis.md
               - Use Compiler Preprocessing Options: user/examples/recipes/compiler-preprocessing.md
-          - Verified Examples Cookbook: user/examples/verified-cookbook.md
       - Reference:
           - Overview: user/reference/index.md
           - CLI Commands: user/reference/cli-commands.md
@@ -93,7 +88,6 @@ nav:
           - Semantic IR: user/reference/semantic-ir.md
           - Semantic .pyi Format: user/reference/semantic-pyi-format.md
           - Editing Semantic .pyi Contracts: user/reference/editing-semantic-pyi-contracts.md
-          - Callbacks: user/reference/callbacks.md
           - Diagnostic Codes: user/reference/diagnostic-codes.md
           - Generated Functions: user/reference/generated-functions.md
           - Generated Modules: user/reference/generated-modules.md
@@ -102,10 +96,6 @@ nav:
       - Language Support:
           - Overview: user/language-support/index.md
           - Feature Matrix: user/language-support/feature-matrix.md
-          - Supported Features: user/language-support/supported-features.md
-          - Partially Supported Features: user/language-support/partially-supported-features.md
-          - Unsupported Features: user/language-support/unsupported-features.md
-          - Planned Features: user/language-support/planned-features.md
       - FAQ: user/faq/index.md
       - Troubleshooting:
           - Overview: user/troubleshooting/index.md
@@ -134,7 +124,6 @@ nav:
           - Overview: developer/contributing/index.md
           - Contribution Guide: developer/contributing/contribution-guide.md
           - Pull Request Workflow: developer/contributing/pull-request-workflow.md
-          - Coding Standards: developer/contributing/coding-standards.md
           - Review Process: developer/contributing/review-process.md
   - Maintainer Documentation:
       - Overview: maintainer/README.md

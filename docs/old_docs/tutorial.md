@@ -2,7 +2,7 @@
 title: Tutorial
 audience: users
 prerequisites: installation, supported compiler toolchain
-related: getting-started/index.md, tutorials/basic-wrapper.md
+related: getting-started/index.md
 status: maintained
 ---
 

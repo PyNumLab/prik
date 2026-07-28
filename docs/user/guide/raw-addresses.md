@@ -3,7 +3,7 @@ title: Raw Addresses
 description: Pass primitive, array, and fixed-string storage addresses through semantic contracts
 audience: advanced users
 prerequisites: arrays, strings, editing semantic pyi contracts
-related: data-types.md, arrays.md, strings.md, ../reference/editing-semantic-pyi-contracts.md, ../reference/semantic-pyi-format.md
+related: data-types.md, arrays.md, strings.md
 status: maintained
 publication: reviewed
 ---
@@ -192,6 +192,3 @@ alignment, ownership, or writeability. A wrong address can crash the process.
 ## Next
 
 - Continue with [Error Handling](error-handling.md).
-- [Editing Semantic `.pyi` Contracts](../reference/editing-semantic-pyi-contracts.md)
-- [Semantic `.pyi` Format](../reference/semantic-pyi-format.md) for complete
-  `Addr(...)` validation rules.

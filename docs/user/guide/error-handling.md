@@ -3,7 +3,7 @@ title: Error Handling & Diagnostics
 description: How x2py reports errors at different stages and how to diagnose them
 audience: users, advanced users
 prerequisites: common beginner workflow, data types
-related: ../reference/diagnostic-codes.md, ../troubleshooting/index.md, callbacks.md
+related: callbacks.md
 status: maintained
 publication: reviewed
 ---
@@ -102,6 +102,3 @@ except RuntimeError as e:
 ## Next
 
 - Finish with [Building the Shared Library](building-shared-library.md).
-- [Editing Semantic `.pyi` Contracts](../reference/editing-semantic-pyi-contracts.md)
-- Check the [Diagnostic Codes](../reference/diagnostic-codes.md) reference for
-  detailed error categories.

@@ -16,7 +16,7 @@ developer workflows.
 
 - [Contribution guide](contribution-guide.md)
 - [Pull request workflow](pull-request-workflow.md)
-- [Coding standards](coding-standards.md)
+- [Coding standards](../coding-standards.md)
 - [Review process](review-process.md)
 
 ## TODO

@@ -3,7 +3,7 @@ title: Common Beginner Workflow
 description: Recommended development loop — edit, review contract, build, test, and rebuild
 audience: users
 prerequisites: first wrapped module
-related: ../tutorials/basic-wrapper.md, ../examples/verified-cookbook.md, ../reference/cli-commands.md
+related: ../guide/index.md
 status: maintained
 publication: reviewed
 ---
@@ -120,7 +120,3 @@ when you need to rule out stale build files.
 ## Next
 
 - Continue with the [User Guide](../guide/index.md).
-- Check the [Language Feature Matrix](../language-support/feature-matrix.md) for
-  current support boundaries.
-- Use the [Verified Cookbook](../examples/verified-cookbook.md) for more
-  complete examples.

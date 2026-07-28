@@ -22,7 +22,6 @@ examples, and user guides.
 - [Semantic IR](semantic-ir.md)
 - [Semantic .pyi format](semantic-pyi-format.md)
 - [Editing semantic .pyi contracts](editing-semantic-pyi-contracts.md)
-- [Callbacks](callbacks.md)
 - [Diagnostic codes](diagnostic-codes.md)
 - [Generated functions](generated-functions.md)
 - [Generated modules](generated-modules.md)

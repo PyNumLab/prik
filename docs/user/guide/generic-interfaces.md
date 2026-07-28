@@ -195,6 +195,3 @@ in Wrapping Derived Types.
 - Continue with [Wrapping Derived Types](wrapping-derived-types.md) for
   type-bound generics and operators
 - See [Error Handling](error-handling.md) for dispatch errors
-- See [Editing Semantic `.pyi` Contracts](../reference/editing-semantic-pyi-contracts.md)
-  for advanced overload changes
-- For current generic and operator support, refer to the [Language Feature Matrix](../language-support/feature-matrix.md).

@@ -102,7 +102,8 @@ X2PY_C_DOCS_END -->
   and future packaging boundaries.
 - [ ] `docs/developer/coding-standards.md`: document Python style,
   documentation front matter, no-compatibility-layer rule, parser/codegen
-  organization, and review expectations.
+  organization, public contributor rules, TODO markers, support-claim
+  discipline, and review expectations.
 - [ ] `docs/maintainer/ci-cd.md`: document current GitHub Actions gates,
   coverage policy, static-analysis policy, docs checks, and local caveats for
   CI-only environment values.
@@ -116,9 +117,6 @@ X2PY_C_DOCS_END -->
 - [ ] `docs/developer/contributing/review-process.md`: document review focus, support
   claims, docs completeness, fixture quality, and blocking versus advisory
   comments.
-- [ ] `docs/developer/contributing/coding-standards.md`: document public contributor style
-  rules, docs metadata, TODO markers, and support-claim discipline.
-
 ### Design And Internal Architecture
 
 - [ ] `docs/maintainer/design/overall-architecture.md`: document system components,
@@ -329,9 +327,6 @@ primary placeholder queue.
   multi-source, compatibility, and editable-Makefile guide.
 - [x] `docs/user/guide/raw-addresses.md`: maintained primitive, array,
   fixed-string, lifetime, validation, and address-safety guide.
-- [x] `docs/user/tutorials/basic-wrapper.md`: maintained basic wrapper workflow.
-- [x] `docs/user/examples/verified-cookbook.md`: maintained verified example
-  cookbook.
 - [x] `docs/user/examples/recipes/`: maintained recipe lane for checked
   command and API examples.
 - [x] `docs/user/language-support/feature-matrix.md`: maintained support matrix.

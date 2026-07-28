@@ -3,7 +3,7 @@ title: Installation
 description: Install x2py from source and set up the native GNU toolchain
 audience: users, contributors
 prerequisites: Python 3.10 or newer, repository checkout
-related: verification.md, ../troubleshooting/installation-issues.md, ../../developer/quality-assurance.md
+related: verification.md
 status: maintained
 publication: reviewed
 ---
@@ -85,4 +85,3 @@ python3 -m pip install -e ".[qa]"
 ## Next
 
 - Go to [Verification](verification.md) to check the installation and compiler.
-- If setup fails, see [Installation Issues](../troubleshooting/installation-issues.md).

@@ -3,7 +3,7 @@ title: First Wrapped Module
 description: Wrap a Fortran module with public procedures and state variables
 audience: users
 prerequisites: first wrapped function
-related: beginner-workflow.md, ../guide/wrapping-modules.md, ../language-support/feature-matrix.md
+related: beginner-workflow.md, ../guide/wrapping-modules.md
 status: maintained
 publication: reviewed
 ---
@@ -160,4 +160,3 @@ python3 -m x2py generate --pyi module_state.f90
 - Continue with the [Beginner Workflow](beginner-workflow.md) to turn these
   steps into a repeatable development loop.
 - For module details, see [Wrapping Modules](../guide/wrapping-modules.md).
-- For support boundaries, see the [Language Feature Matrix](../language-support/feature-matrix.md).

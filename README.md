@@ -558,7 +558,6 @@ ownership, callback lifetime, ABI shims, or Python-visible projections.
 - **[User Guide](docs/user/guide/index.md)** — Detailed guidance on data types, functions, subroutines, modules, arrays, derived types, callbacks, ownership, runtime behavior, and packaging
 <!--
 - **[Tutorials](docs/user/tutorials/index.md)** — Step-by-step walkthroughs
-- **[Examples Cookbook](docs/user/examples/verified-cookbook.md)** — Ready-to-use Fortran wrapper patterns and recipes
 - **[CLI Reference](docs/user/reference/cli-commands.md)** — Complete command-line documentation
 - **[Language Support](docs/user/language-support/index.md)** — What is supported, partially supported, or planned
 - **[FAQ](docs/user/faq/index.md)** — Concise answers to common questions

@@ -3,7 +3,7 @@ title: First Wrapped Function
 description: Build and call your first Fortran function as a Python extension
 audience: users
 prerequisites: installation, verification
-related: first-wrapped-module.md, ../guide/wrapping-functions.md, ../reference/semantic-pyi-format.md
+related: first-wrapped-module.md, ../guide/wrapping-functions.md
 status: maintained
 publication: reviewed
 ---

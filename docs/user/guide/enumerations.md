@@ -3,7 +3,7 @@ title: Enumerations
 description: How x2py handles Fortran `enum` and enumerators
 audience: users
 prerequisites: wrapping modules, data types
-related: wrapping-modules.md, generic-interfaces.md, ../language-support/feature-matrix.md
+related: wrapping-modules.md, generic-interfaces.md
 status: maintained
 publication: reviewed
 ---
@@ -84,4 +84,3 @@ print(result)                    # 10
 ## Next
 
 - Continue with [Raw Addresses](raw-addresses.md).
-- Check the [Language Feature Matrix](../language-support/feature-matrix.md) for current enum support.

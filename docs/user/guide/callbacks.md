@@ -3,7 +3,7 @@ title: Callbacks
 description: How to pass Python callables to Fortran as callbacks with x2py
 audience: advanced users
 prerequisites: wrapping functions, data types
-related: error-handling.md, memory-management.md, ../reference/semantic-pyi-format.md
+related: error-handling.md, memory-management.md
 status: maintained
 publication: reviewed
 ---
@@ -214,5 +214,4 @@ boundary: x2py prints the Python traceback and aborts the host process.
 ## Next
 
 - Continue with [Enumerations](enumerations.md).
-- Use the [Callbacks Reference](../reference/callbacks.md) for the full prototype contract.
 - Review [Error Handling](error-handling.md) when callback failure behavior matters.

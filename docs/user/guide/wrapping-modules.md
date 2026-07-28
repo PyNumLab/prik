@@ -180,5 +180,3 @@ Build the edited entry using the
 - Continue with [Optional Arguments](optional-arguments.md).
 - Read [Memory Management](memory-management.md) before keeping live views of
   module storage.
-- Check the [Language Feature Matrix](../language-support/feature-matrix.md)
-  for supported module features and limitations.

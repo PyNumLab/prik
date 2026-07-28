@@ -3,7 +3,7 @@
 title: Deferred Native API Inspection
 audience: users, developers
 prerequisites: installation
-related: ../verified-cookbook.md, ../../../developer/c-parser-reference.md
+related: ../../../developer/c-parser-reference.md
 status: maintained
 publication: draft
 ---

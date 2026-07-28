@@ -3,7 +3,7 @@ title: Strings
 description: Immutable strings, mutable character storage, and NumPy byte arrays in x2py
 audience: users
 prerequisites: data types, arrays
-related: data-types.md, arrays.md, raw-addresses.md, ../reference/semantic-pyi-format.md
+related: data-types.md, arrays.md, raw-addresses.md
 status: maintained
 publication: reviewed
 ---
@@ -185,5 +185,3 @@ buffer or an immutable replacement result.
   result-projection rules.
 - [Raw Addresses](raw-addresses.md) for the advanced `Addr(String[n])`
   boundary.
-- [Semantic `.pyi` Format](../reference/semantic-pyi-format.md) for the full
-  character grammar.

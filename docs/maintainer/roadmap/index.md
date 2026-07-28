@@ -2,7 +2,7 @@
 title: Roadmap
 audience: maintainers
 prerequisites: user language support, developer documentation
-related: ../../user/language-support/planned-features.md, wrapper-plan-migration-checklist.md, semantic-pyi-wrapper-checklist.md, native-array-handle-checklist.md, documentation-content-checklist.md
+related: ../../user/language-support/feature-matrix.md, wrapper-plan-migration-checklist.md, semantic-pyi-wrapper-checklist.md, native-array-handle-checklist.md, documentation-content-checklist.md
 status: active-roadmap
 publication: draft
 ---

@@ -266,12 +266,7 @@ SOURCE_NAVIGATION_HOTSPOTS = [
 ]
 SOURCE_NAVIGATION_PUBLIC_DOCS = [
     "README.md",
-    "docs/user/tutorials/basic-wrapper.md",
-    "docs/user/examples/verified-cookbook.md",
-    "docs/user/examples/recipes/build-and-import-cli.md",
-    "docs/user/examples/recipes/build-multiple-fortran-sources.md",
     "docs/user/examples/recipes/compiler-preprocessing.md",
-    "docs/user/examples/recipes/generate-editable-makefile.md",
     "docs/user/examples/recipes/inspect-c-api.md",
     "docs/user/examples/recipes/inspect-fortran-api.md",
     "docs/user/examples/recipes/semantic-pyi-contracts.md",
@@ -371,11 +366,7 @@ FEATURE_MATRIX_REQUIRED_FEATURES = [
     "Generated reference pages for modules, functions, and classes",
 ]
 REQUIRED_EXAMPLE_RECIPE_PAGES = [
-    "user/examples/verified-cookbook.md",
-    "user/examples/recipes/build-and-import-cli.md",
     "user/examples/recipes/build-and-import-python-api.md",
-    "user/examples/recipes/generate-editable-makefile.md",
-    "user/examples/recipes/build-multiple-fortran-sources.md",
     "user/examples/recipes/inspect-fortran-api.md",
     "user/examples/recipes/inspect-c-api.md",
     "user/examples/recipes/semantic-pyi-contracts.md",
