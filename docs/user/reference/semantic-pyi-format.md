@@ -11,7 +11,7 @@ publication: draft
 
 For the supported edit workflow and runtime consequences of changing a
 contract, including ownership and destruction examples, see
-[Editing semantic `.pyi` contracts](editing-semantic-pyi-contracts.md).
+[Editing `.pyi` contracts](pyi-contracts/index.md).
 
 <!-- X2PY_C_DOCS_START
 Semantic `.pyi` files are x2py's editable wrapper contract. They are valid

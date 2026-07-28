@@ -87,7 +87,12 @@ nav:
           - Fortran Wrapper Reference: user/reference/fortran-wrapper.md
           - Semantic IR: user/reference/semantic-ir.md
           - Semantic .pyi Format: user/reference/semantic-pyi-format.md
-          - Editing Semantic .pyi Contracts: user/reference/editing-semantic-pyi-contracts.md
+          - .pyi Contracts:
+              - Overview: user/reference/pyi-contracts/index.md
+              - Exports and Modules: user/reference/pyi-contracts/exports-and-modules.md
+              - Functions and Classes: user/reference/pyi-contracts/functions-and-classes.md
+              - Calls and Results: user/reference/pyi-contracts/calls-and-results.md
+              - Ownership and Lifetimes: user/reference/pyi-contracts/ownership-and-lifetimes.md
           - Diagnostic Codes: user/reference/diagnostic-codes.md
           - Generated Functions: user/reference/generated-functions.md
           - Generated Modules: user/reference/generated-modules.md

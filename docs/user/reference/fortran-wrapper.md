@@ -2,9 +2,9 @@
 title: Fortran Wrapper Reference
 audience: users, advanced users
 prerequisites: first wrapped module, NumPy basics
-related: ../guide/index.md, editing-semantic-pyi-contracts.md, ../language-support/index.md
+related: ../guide/index.md, pyi-contracts/index.md, ../language-support/index.md
 status: maintained
-publication: reviewed
+publication: draft
 ---
 
 # Fortran Wrapper Reference
@@ -271,11 +271,11 @@ the current working directory unless `--out` gives it an explicit path. Generate
 wrapper sources remain build artifacts; users do not edit them to change the
 Python API.
 
-The semantic `.pyi` is the editable semantic contract and wrapper-planning surface.
+The semantic `.pyi` is the editable contract and wrapper-planning surface.
 The supported edit workflow, including removal, addition, call projection,
-ownership, and destruction, is explained later in Editing Semantic `.pyi`
-Contracts. The complete grammar appears later in the Semantic `.pyi` Format
-reference.
+ownership, and destruction, is explained in
+[Editing `.pyi` Contracts](pyi-contracts/index.md). The complete grammar
+appears in the Semantic `.pyi` Format reference.
 The normal CLI build is source-driven: recognizable Fortran sources build
 wrappers without a stage flag and cannot be combined with `--pyi`. A semantic
 `.pyi` entry contract also selects the wrapper stage automatically when its
@@ -370,8 +370,8 @@ the generated Python API while unaffected public declarations keep their runtime
 behavior.
 
 Misuse handling, diagnostic categories, and risky explicit-contract behavior
-are covered later in Editing Semantic `.pyi` Contracts and the Semantic `.pyi`
-Format reference.
+are covered in [Editing `.pyi` Contracts](pyi-contracts/index.md) and the
+Semantic `.pyi` Format reference.
 
 The Semantic `.pyi` Wrapper Checklist later records parity completion.
 

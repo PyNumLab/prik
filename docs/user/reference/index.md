@@ -2,7 +2,7 @@
 title: Reference
 audience: users, developers
 prerequisites: getting started
-related: cli-commands.md, python-api.md, fortran-wrapper.md, semantic-pyi-format.md, editing-semantic-pyi-contracts.md
+related: cli-commands.md, python-api.md, fortran-wrapper.md, semantic-pyi-format.md, pyi-contracts/index.md
 status: maintained
 publication: draft
 ---
@@ -21,7 +21,7 @@ examples, and user guides.
 - [Fortran wrapper reference](fortran-wrapper.md)
 - [Semantic IR](semantic-ir.md)
 - [Semantic .pyi format](semantic-pyi-format.md)
-- [Editing semantic .pyi contracts](editing-semantic-pyi-contracts.md)
+- [Editing .pyi contracts](pyi-contracts/index.md)
 - [Diagnostic codes](diagnostic-codes.md)
 - [Generated functions](generated-functions.md)
 - [Generated modules](generated-modules.md)

@@ -119,7 +119,11 @@ REQUIRED_REFERENCE_PAGES = [
     "user/reference/fortran-wrapper.md",
     "user/reference/semantic-ir.md",
     "user/reference/semantic-pyi-format.md",
-    "user/reference/editing-semantic-pyi-contracts.md",
+    "user/reference/pyi-contracts/index.md",
+    "user/reference/pyi-contracts/exports-and-modules.md",
+    "user/reference/pyi-contracts/functions-and-classes.md",
+    "user/reference/pyi-contracts/calls-and-results.md",
+    "user/reference/pyi-contracts/ownership-and-lifetimes.md",
     "user/reference/diagnostic-codes.md",
 ]
 REQUIRED_ROADMAP_PAGES = [
@@ -271,7 +275,7 @@ SOURCE_NAVIGATION_PUBLIC_DOCS = [
     "docs/user/examples/recipes/inspect-fortran-api.md",
     "docs/user/examples/recipes/semantic-pyi-contracts.md",
     "docs/user/reference/fortran-wrapper.md",
-    "docs/user/reference/editing-semantic-pyi-contracts.md",
+    "docs/user/reference/pyi-contracts/index.md",
     "docs/user/reference/cli-commands.md",
     "docs/user/reference/diagnostic-codes.md",
     "docs/user/reference/python-api.md",

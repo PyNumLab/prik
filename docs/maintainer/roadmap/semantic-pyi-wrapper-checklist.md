@@ -453,7 +453,7 @@ X2PY_C_DOCS_END -->
   immutable, and declare as ownership/lifetime policy. It separates editable
   wrapper policy from native ABI facts and records the failure layers for
   edited contracts. Evidence:
-  `docs/user/reference/editing-semantic-pyi-contracts.md`,
+  `docs/user/reference/pyi-contracts/`,
   `docs/user/reference/fortran-wrapper.md`, and
   `tests/docs/test_structure.py`.
 - [x] Edited contracts can remove a class, method, generated constructor, class
@@ -513,7 +513,7 @@ X2PY_C_DOCS_END -->
   native-order identity calls without `@native_call`, immutable replacement,
   ownership triples, pointer-policy blockers, runtime constraints, `@raises`,
   `@hold_gil`, and native-artifact failures. Evidence:
-  `docs/user/reference/editing-semantic-pyi-contracts.md`,
+  `docs/user/reference/pyi-contracts/`,
   `tests/wrapper/fortran/edit_pyi_contracts/`,
   `tests/semantics/policy/`,
   `tests/wrapper/fortran/runtime_behavior/test_runtime_policy_decorators.py`,
