@@ -594,7 +594,7 @@ summary, the exhaustive matrix, and the test tree disagree.
 
 | Status | Collected nodes |
 | --- | ---: |
-| `wrapper-plan` | 366 |
+| `wrapper-plan` | 369 |
 | `dual-route` | 0 |
 | `legacy` | 0 |
 | `not-applicable` | 76 |
@@ -749,6 +749,9 @@ already covered by the new generator.
 | `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_free_form_standalone_external_runtime_parity[*]` | source/generated-.pyi parity or parametrized route | scalar external symbol; explicit bridge interface | `wrapper-plan` |
 | `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_generated_external_contracts_are_non_empty_root_fragments` | direct wrapper/build route | external symbols/native linkage | `wrapper-plan` |
 | `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_handwritten_c_order_flat_contract_passes_rank_preserving_bridge_view` | direct wrapper/build route | external symbols/native linkage; ordinary arrays | `wrapper-plan` |
+| `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_handwritten_fortran_order_flat_contract_flattens_the_final_python_axes` | direct wrapper/build route | external symbols/native linkage; flat arrays; scalar storage | `wrapper-plan` |
+| `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_external_allocatable_argument_accepts_a_caller_created_handle` | direct wrapper/build route | external symbols/native linkage; native allocatable descriptors | `wrapper-plan` |
+| `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_optional_flat_contracts_preserve_present_and_absent_calls` | direct wrapper/build route | optional/presence; F-order and C-order flat arrays | `wrapper-plan` |
 | `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_module_procedure_bridge_uses_native_module_scope` | direct wrapper/build route | external symbols/native linkage | `wrapper-plan` |
 | `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_namespace_imported_module_rejects_external_marker_before_codegen` | non-generating: validation/failure-path assertion | external symbols/native linkage | `not-applicable` |
 | `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_one_source_with_several_standalone_externals_exports_each_at_root[*]` | source/generated-.pyi parity or parametrized route | scalar external symbols; explicit bridge interfaces | `wrapper-plan` |

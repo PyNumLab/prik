@@ -159,8 +159,6 @@ def _native_array_handle_from_contract(
 
     def current_array_actual(_handle: NativeArrayHandleBase) -> _NativeArrayHandoff | None:
         address = _pointer_descriptor_base_addr(descriptor_state["record"])
-        if address == 0:
-            return None
         return _NativeArrayHandoff(address, owner=descriptor_state["owner"])
 
     def descriptor(_handle: NativeArrayHandleBase) -> Mapping[str, Any]:
@@ -303,7 +301,13 @@ def _bind_contract_native_array_handle(
         to_numpy_policy=to_numpy_policy,
         generation=generation,
     )
-    handle._adopt_generated_storage(generated)
+    handle._ops = generated._ops
+    handle._owner = generated._owner
+    handle._descriptor_ownership = generated._descriptor_ownership
+    handle._to_numpy_policy = generated._to_numpy_policy
+    handle._generation = generated._generation
+    handle._contract_default = False
+    generated._closed = True
     if pending_pointer_descriptor is not None:
         handle._call_op("associate", pending_pointer_descriptor)
 
@@ -670,22 +674,6 @@ class NativeArrayHandleBase:
             self._closed = True
             self._owner = None
             self._ops = {}
-
-    def _adopt_generated_storage(self, generated: NativeArrayHandleBase) -> None:
-        """Replace a fresh contract placeholder with validated generated storage."""
-        if not self._contract_default:
-            raise TypeError("native descriptor storage is already attached")
-        if type(self) is not type(generated):
-            raise TypeError("generated native descriptor kind does not match contract handle")
-        if self.rank != generated.rank or not self._dtype_matches(generated.dtype):
-            raise TypeError("generated native descriptor metadata does not match contract handle")
-        self._ops = generated._ops
-        self._owner = generated._owner
-        self._descriptor_ownership = generated._descriptor_ownership
-        self._to_numpy_policy = generated._to_numpy_policy
-        self._generation = generated._generation
-        self._contract_default = False
-        generated._closed = True
 
     def __del__(self) -> None:
         with suppress(Exception):
@@ -1110,13 +1098,7 @@ class PointerArray(NativeArrayHandleBase):
         )
         if isinstance(descriptor, _NativeArrayDescriptorHandoff):
             descriptor = self._descriptor_record_for_binding()
-        if not isinstance(descriptor, Mapping):
-            raise TypeError("pointer handle cannot expose descriptor facts for association")
         record = _copy_pointer_descriptor_record(descriptor)
-        if record["rank"] != self.rank:
-            raise ValueError(
-                f"pointer descriptor rank {record['rank']} does not match declared handle rank {self.rank}"
-            )
         _validate_pointer_descriptor_itemsize(record, self.dtype)
         return record
 

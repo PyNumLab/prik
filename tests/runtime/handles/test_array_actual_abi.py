@@ -467,6 +467,67 @@ def test_array_actual_argument_abi_packer_flattens_leading_edge_before_checked_s
     ) == (values.ctypes.data, 6, 4)
 
 
+@pytest.mark.parametrize(
+    ("values", "expected_rank", "expected_shape", "flat_axis", "message"),
+    [
+        (
+            np.array(1.0, dtype=np.float64),
+            1,
+            (None,),
+            0,
+            "expects NumPy array rank 1 through 15",
+        ),
+        (
+            np.ones((2,), dtype=np.float64),
+            2,
+            (2, None),
+            1,
+            "expects NumPy array rank at least 2",
+        ),
+        (
+            np.ones((2, 3, 4), dtype=np.float64),
+            3,
+            (2, None, 4),
+            1,
+            "axis must be the first or final contract dimension",
+        ),
+        (
+            np.ones((2, 3, 4), dtype=np.float64),
+            2,
+            (3, None),
+            1,
+            "incompatible shape at axis 0",
+        ),
+        (
+            np.ones((2, 3, 4), dtype=np.float64),
+            2,
+            (None, 3),
+            0,
+            "incompatible shape at axis 2",
+        ),
+    ],
+)
+def test_array_actual_argument_abi_packer_rejects_invalid_flat_shapes(
+    values,
+    expected_rank,
+    expected_shape,
+    flat_axis,
+    message,
+):
+    with pytest.raises((TypeError, ValueError), match=message):
+        _native_array_actual_argument_for_binding_positional(
+            values,
+            expected_dtype=np.float64,
+            expected_rank=expected_rank,
+            expected_shape=expected_shape,
+            require_native_byte_order=True,
+            require_aligned=True,
+            require_contiguous=True,
+            flatten_storage=True,
+            flat_axis=flat_axis,
+        )
+
+
 def test_array_actual_argument_abi_packer_flattens_native_handle_shape():
     actual = _handoff(252)
     handle = AllocatableArray(

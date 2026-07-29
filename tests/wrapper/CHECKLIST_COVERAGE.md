@@ -47,6 +47,7 @@ recorded progression, not in the live ledger.
 | External bridge placement and module-procedure contrast | `external_routines/test_external_procedures.py::test_classic_external_bridge_uses_implicit_declaration_and_no_module_use`, `external_routines/test_external_procedures.py::test_module_procedure_bridge_uses_native_module_scope` |
 | `@external` with `@bind` and handwritten source-free contracts | `external_routines/test_external_procedures.py::test_external_bind_renames_python_export_without_changing_native_call` |
 | C-order flat storage over assumed-size native external buffers | `external_routines/test_external_procedures.py::test_handwritten_c_order_flat_contract_passes_rank_preserving_bridge_view` |
+| Handwritten flat, scalar-storage, optional-presence, and allocatable external contracts compile and run through their completed plans | `external_routines/test_external_procedures.py::test_handwritten_fortran_order_flat_contract_flattens_the_final_python_axes`, `external_routines/test_external_procedures.py::test_optional_flat_contracts_preserve_present_and_absent_calls`, `external_routines/test_external_procedures.py::test_external_allocatable_argument_accepts_a_caller_created_handle` |
 | Invalid root/module placement edits fail before code generation | `external_routines/test_external_procedures.py::test_package_entry_rejects_non_external_root_declaration_before_codegen`, `external_routines/test_external_procedures.py::test_namespace_imported_module_rejects_external_marker_before_codegen` |
 
 ## Stage 5 — Full Generated-Contract Runtime Parity

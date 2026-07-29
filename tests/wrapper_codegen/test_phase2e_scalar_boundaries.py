@@ -112,12 +112,34 @@ def test_scalar_storage_and_raw_address_lower_to_direct_named_paths():
     assert "dimension()" not in bridge_source
 
 
-def test_scalar_address_handoff_plan_edits_fail_before_lowering():
+@pytest.mark.parametrize(
+    ("edit", "diagnostic"),
+    [
+        ("native_action", "invalid-scalar-storage-native-action"),
+        ("handoff", "invalid-scalar-storage-handoff-mode"),
+        ("data_action", "invalid-scalar-storage-data-action"),
+        ("codegen", "invalid-scalar-storage-codegen-action"),
+        ("array", "invalid-scalar-storage-array"),
+    ],
+)
+def test_scalar_address_handoff_plan_edits_fail_before_lowering(edit, diagnostic):
     plan = _scalar_boundary_plan()
     storage = plan.namespaces[0].functions[0].arguments[0]
-    storage.bridge.handoff_mode = ArgumentHandoffMode.VALUE
+    if edit == "native_action":
+        storage.bridge.native_action = NativeBarrierAction.PASS_VALUE
+    elif edit == "handoff":
+        storage.bridge.handoff_mode = ArgumentHandoffMode.VALUE
+    elif edit == "data_action":
+        storage.bridge.data_action = BridgeDataAction.COPY_REPRESENTATION
+        storage.bridge.copy_reason = "edited scalar-storage copy"
+        storage.native_call_slot.bridge_data_action = BridgeDataAction.COPY_REPRESENTATION
+        storage.native_call_slot.bridge_copy_reason = "edited scalar-storage copy"
+    elif edit == "codegen":
+        storage.binding.codegen_action = CodegenAction.SNAPSHOT_COPY
+    else:
+        storage.array.rank = 1
 
-    with pytest.raises(ValueError, match="invalid-scalar-storage-handoff-mode"):
+    with pytest.raises(ValueError, match=diagnostic):
         WrapperCodeGenerator().generate(plan)
 
 

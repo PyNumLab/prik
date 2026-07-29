@@ -1017,6 +1017,7 @@ class WrapperCodeGenerator:
             *self._status_error_diagnostics(plan),
             *self._class_call_diagnostics(plan),
             *self._native_invocation_diagnostics(plan),
+            *self._optional_literal_combination_diagnostics(plan),
         ]
         slots = {slot.native_position: slot for slot in plan.native_call_slots}
         for slot in plan.native_call_slots:
@@ -1030,6 +1031,19 @@ class WrapperCodeGenerator:
         diagnostics.extend(self._writeback_phase_diagnostics(plan))
         diagnostics.extend(self._string_writeback_diagnostics(plan))
         return tuple(diagnostics)
+
+    def _optional_literal_combination_diagnostics(
+        self,
+        plan: FunctionPlan,
+    ) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Reject optional calls whose native slots also contain hidden literals."""
+        has_optional = any(
+            argument.bridge.optional_mode in {OptionalMode.NULLABLE_VALUE, OptionalMode.DESCRIPTOR}
+            for argument in plan.arguments
+        )
+        if has_optional and any(slot.source_kind == "literal" for slot in plan.native_call_slots):
+            return (self._diagnostic(plan.owner_path, "optional-native-literal-combination", None),)
+        return ()
 
     def _native_invocation_diagnostics(self, plan: FunctionPlan) -> tuple[WrapperPlanDiagnostic, ...]:
         """Require one internally consistent completed native call syntax."""

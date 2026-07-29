@@ -39,7 +39,6 @@ from x2py.semantics.wrapper_policy import (
     NativeDescriptorHandoffABI,
     NativeInvocationKind,
     OptionalMode,
-    TransformationLayer,
 )
 from x2py.wrapper_codegen.nodes import (
     CodeExpression,
@@ -92,7 +91,7 @@ class FortranBridgeGenerator(ClassVisitor):
         self._active_scoped_type_identities: frozenset[tuple[str, str]] = frozenset()
 
     def require_supported(self, plan: ModulePlan) -> None:
-        """Reject unsupported Fortran ABI actions and scalar types."""
+        """Preflight Fortran scalar types after shared plan validation."""
         for derived in self._derived_types(plan):
             self._require_derived_type_supported(derived)
         for function in self._functions(plan):
@@ -101,513 +100,47 @@ class FortranBridgeGenerator(ClassVisitor):
             self._require_variable_supported(variable)
 
     def _require_function_supported(self, function: FunctionPlan) -> None:
-        """Reject unsupported actions in one planned bridge procedure."""
-        self._require_optional_literal_combination_supported(function)
+        """Preflight primitive types after shared plan validation."""
         for argument in function.arguments:
             self._require_argument_supported(argument)
         for result in function.results:
-            self._require_plan_result_supported(result)
+            self._require_backend_type_supported(result.semantic_type_name, result.datatype_family)
         for slot in function.native_call_slots:
-            self._require_native_result_supported(function, slot)
-
-    def _require_optional_literal_combination_supported(self, function: FunctionPlan) -> None:
-        """Reject the one unsupported optional/literal native call combination."""
-        if self._has_optional_arguments(function) and any(
-            slot.source_kind == "literal" for slot in function.native_call_slots
-        ):
-            raise ValueError(f"{function.owner_path!r} mixes optional scalar arguments with hidden literals")
-
-    def _require_plan_result_supported(self, result: ResultPlan) -> None:
-        """Dispatch one binding-visible result by completed object kind."""
-        if result.scalar_descriptor is not None:
-            self._require_scalar_descriptor_plan_result_supported(result)
-            return
-        match result.object_kind:
-            case ObjectKind.SCALAR:
-                PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name)
-            case ObjectKind.STRING:
-                self._require_string_plan_result_supported(result)
-            case ObjectKind.NUMPY_ARRAY:
-                self._require_array_plan_result_supported(result)
-            case ObjectKind.DERIVED_TYPE:
-                if result.derived is None:
-                    raise ValueError(f"Missing Fortran derived result handoff for {result.owner_path!r}")
-            case _:
-                raise ValueError(
-                    f"Unsupported Fortran result object kind for {result.owner_path!r}: {result.object_kind!r}"
-                )
+            if slot.source_kind == "result":
+                self._require_backend_type_supported(slot.semantic_type_name, slot.datatype_family)
 
     def _require_argument_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Reject one unsupported native argument action."""
-        if any(item.layer is TransformationLayer.BRIDGE for item in argument.transformations):
-            raise ValueError(f"Unsupported bridge transformation for {argument.owner_path!r}")
+        """Preflight primitive argument and callback transfer types."""
         if argument.callback is not None:
-            self._require_callback_supported(argument.callback)
-            return
-        self._require_argument_action_supported(argument)
-        self._require_argument_kind_supported(argument)
-
-    @classmethod
-    def _require_callback_supported(cls, callback: CallbackHandoffPlan) -> None:
-        """Require callback transfers with concrete typed adapter storage."""
-        transfers = (
-            *callback.arguments,
-            *((callback.result.transfer,) if callback.result.transfer is not None else ()),
-        )
-        for transfer in transfers:
-            cls._require_callback_transfer_supported(transfer)
-
-    @staticmethod
-    def _require_callback_transfer_supported(transfer: CallbackTransferPlan) -> None:
-        """Validate the single storage fact required by one callback ABI kind."""
-        match transfer.abi:
-            case CallbackABIKind.DERIVED_ADDRESS:
-                if transfer.derived_backend_symbol is None:
-                    raise ValueError(f"Missing Fortran callback derived symbol for {transfer.owner_path!r}")
-            case CallbackABIKind.DATA_AND_LENGTH:
-                if transfer.character_length is None or transfer.character_length <= 0:
-                    raise ValueError(f"Missing Fortran callback string length for {transfer.owner_path!r}")
-            case CallbackABIKind.DATA_AND_SHAPE:
-                if transfer.array is None or transfer.array.rank is None:
-                    raise ValueError(f"Missing Fortran callback array shape for {transfer.owner_path!r}")
-                PrimitiveScalarTypeRegistry.type_for(transfer.semantic_type_name)
-            case _:
-                PrimitiveScalarTypeRegistry.type_for(transfer.semantic_type_name)
-
-    def _require_argument_action_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Validate native action, ABI handoff, and bridge data movement."""
-        supported = {
-            NativeBarrierAction.PASS_VALUE,
-            NativeBarrierAction.PASS_CALL_LOCAL_ADDRESS,
-            NativeBarrierAction.PASS_RAW_ADDRESS,
-            NativeBarrierAction.PASS_STORAGE_ADDRESS,
-            NativeBarrierAction.PASS_ARRAY_BUFFER,
-            NativeBarrierAction.PASS_NATIVE_DESCRIPTOR,
-            NativeBarrierAction.PASS_WRAPPER_ADDRESS,
-        }
-        if argument.bridge.native_action not in supported:
-            raise ValueError(
-                f"Unsupported Fortran argument action for {argument.owner_path!r}: {argument.bridge.native_action!r}"
+            transfers = (
+                *argument.callback.arguments,
+                *((argument.callback.result.transfer,) if argument.callback.result.transfer is not None else ()),
             )
-        if (
-            argument.bridge.native_action is NativeBarrierAction.PASS_RAW_ADDRESS
-            and argument.bridge.handoff_mode is not ArgumentHandoffMode.OPAQUE_ADDRESS
-        ):
-            raise ValueError(f"Unsupported Fortran raw-address handoff for {argument.owner_path!r}")
-        if argument.bridge.data_action is BridgeDataAction.BLOCKED:
-            raise ValueError(f"Blocked Fortran bridge data action for {argument.owner_path!r}")
-
-    def _require_argument_kind_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Dispatch datatype-family support after action validation."""
-        match argument.object_kind:
-            case ObjectKind.SCALAR:
-                self._require_scalar_argument_supported(argument)
-            case ObjectKind.STRING:
-                self._require_string_argument_supported(argument)
-            case ObjectKind.NUMPY_ARRAY:
-                self._require_array_argument_supported(argument)
-            case ObjectKind.DERIVED_TYPE:
-                if argument.derived is None or argument.bridge.handoff_mode is not ArgumentHandoffMode.OPAQUE_ADDRESS:
-                    raise ValueError(f"Unsupported Fortran derived argument for {argument.owner_path!r}")
-            case _:
-                raise ValueError(
-                    f"Unsupported Fortran argument object kind for {argument.owner_path!r}: {argument.object_kind!r}"
-                )
-
-    def _require_native_result_supported(self, function: FunctionPlan, slot: NativeCallSlotPlan) -> None:
-        """Dispatch one native result output to its family support check."""
-        if slot.source_kind != "result":
+            for transfer in transfers:
+                if transfer.semantic_type_name != "String" and transfer.derived_type_identity is None:
+                    PrimitiveScalarTypeRegistry.type_for(transfer.semantic_type_name)
             return
-        if slot.scalar_descriptor is not None:
-            self._require_scalar_descriptor_native_result_supported(function, slot)
-            return
-        match slot.object_kind:
-            case ObjectKind.SCALAR:
-                self._require_scalar_native_result_supported(slot)
-            case ObjectKind.STRING:
-                self._require_string_result_supported(function, slot)
-            case ObjectKind.NUMPY_ARRAY:
-                self._require_array_result_supported(function, slot)
-            case ObjectKind.DERIVED_TYPE:
-                if slot.derived is None:
-                    raise ValueError(f"Missing Fortran derived output handoff for {slot.owner_path!r}")
-            case _:
-                raise ValueError(
-                    f"Unsupported Fortran native result object kind for {slot.owner_path!r}: {slot.object_kind!r}"
-                )
-
-    # Scalar support checks.
-    def _require_scalar_argument_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Require one first-lane primitive scalar argument type."""
-        PrimitiveScalarTypeRegistry.type_for(argument.semantic_type_name)
-
-    def _require_scalar_native_result_supported(self, slot: NativeCallSlotPlan) -> None:
-        """Require one first-lane primitive scalar native result type."""
-        if slot.semantic_type_name is None:
-            raise ValueError(f"Missing Fortran result datatype for {slot.owner_path!r}")
-        PrimitiveScalarTypeRegistry.type_for(slot.semantic_type_name)
-
-    def _require_scalar_descriptor_native_result_supported(
-        self,
-        function: FunctionPlan,
-        slot: NativeCallSlotPlan,
-    ) -> None:
-        """Require one nullable rank-zero descriptor output slot."""
-        if not any(result.native_call_slot is slot for result in function.results):
-            raise ValueError(f"Unclaimed Fortran scalar descriptor output for {slot.owner_path!r}")
-        self._require_scalar_descriptor_copy_supported(slot, label="output")
-
-    def _require_scalar_descriptor_plan_result_supported(self, result: ResultPlan) -> None:
-        """Require one nullable rank-zero descriptor result copy."""
-        self._require_scalar_descriptor_copy_supported(result, label="result")
-
-    def _require_scalar_descriptor_copy_supported(
-        self,
-        result: ResultPlan | NativeCallSlotPlan,
-        *,
-        label: str,
-    ) -> None:
-        """Require the shared scalar/string nullable descriptor copy shape."""
-        descriptor = result.scalar_descriptor
-        if descriptor is None or not descriptor.nullable:
-            raise ValueError(f"Unsupported Fortran scalar descriptor {label} for {result.owner_path!r}")
-        data_action = result.bridge.data_action if isinstance(result, ResultPlan) else result.bridge_data_action
-        if data_action is not BridgeDataAction.COPY_REPRESENTATION:
-            raise ValueError(f"Unsupported Fortran scalar descriptor action for {result.owner_path!r}")
-        if result.object_kind is ObjectKind.STRING:
-            if not descriptor.runtime_length:
-                raise ValueError(f"Missing Fortran runtime string length for {result.owner_path!r}")
-            return
-        if result.object_kind is not ObjectKind.SCALAR or descriptor.runtime_length:
-            raise ValueError(f"Unsupported Fortran scalar descriptor family for {result.owner_path!r}")
-        if result.datatype_family is not DatatypeFamily.STRING:
-            PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name)
-
-    # Ordinary-array and native-array-handle support checks.
-    def _require_array_argument_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Dispatch one completed array buffer or raw-address view."""
-        if argument.native_array_handle is not None:
-            self._require_native_array_handle_argument_supported(argument)
-            return
-        if argument.binding.python_action is PythonBarrierAction.RAW_ADDRESS:
-            self._require_raw_array_argument_supported(argument)
-            return
-        if argument.binding.python_action is PythonBarrierAction.SCALAR_STORAGE:
-            self._require_scalar_storage_array_argument_supported(argument)
-            return
-        self._require_array_buffer_argument_supported(argument)
-
-    def _require_scalar_storage_array_argument_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Require one rank-zero NumPy storage handoff to a scalar native dummy."""
-        array = argument.array
-        if not self._is_scalar_storage_array(array):
-            raise ValueError(f"Unsupported Fortran scalar-storage array rank for {argument.owner_path!r}")
-        if argument.bridge.handoff_mode is not ArgumentHandoffMode.OPAQUE_ADDRESS:
-            raise ValueError(f"Unsupported Fortran scalar-storage handoff for {argument.owner_path!r}")
-        if argument.bridge.native_action is not NativeBarrierAction.PASS_STORAGE_ADDRESS:
-            raise ValueError(f"Unsupported Fortran scalar-storage native action for {argument.owner_path!r}")
-        if argument.bridge.data_action is not BridgeDataAction.ASSOCIATE_VIEW:
-            raise ValueError(f"Unsupported Fortran scalar-storage data action for {argument.owner_path!r}")
-        PrimitiveScalarTypeRegistry.type_for(argument.semantic_type_name)
-
-    def _require_native_array_handle_argument_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Require one typed standard-descriptor bridge argument."""
-        handle = argument.native_array_handle
-        if handle is None or handle.array.rank is None:
-            raise ValueError(f"Unsupported Fortran native array handle for {argument.owner_path!r}")
-        if argument.bridge.handoff_mode is not ArgumentHandoffMode.NATIVE_DESCRIPTOR:
-            raise ValueError(f"Unsupported Fortran native descriptor handoff for {argument.owner_path!r}")
-        if handle.handoff.abi not in {
-            NativeDescriptorHandoffABI.FACT_PACKED_CALL_LOCAL,
-            NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR,
-        }:
-            raise ValueError(f"Unsupported Fortran native descriptor ABI for {argument.owner_path!r}")
-        if argument.datatype_family is not DatatypeFamily.STRING:
-            PrimitiveScalarTypeRegistry.type_for(argument.semantic_type_name)
-
-    def _require_array_buffer_argument_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Require one completed ordinary array view."""
-        array = argument.array
-        if array is None or (array.rank is not None and not 1 <= array.rank <= 15):
-            raise ValueError(f"Unsupported Fortran array rank for {argument.owner_path!r}")
-        if array.contiguous not in {True, False}:
-            raise ValueError(f"Unsupported Fortran array layout for {argument.owner_path!r}")
-        if argument.bridge.handoff_mode is not ArgumentHandoffMode.ARRAY_BUFFER:
-            raise ValueError(f"Unsupported Fortran array handoff for {argument.owner_path!r}")
-        if argument.bridge.data_action is not BridgeDataAction.ASSOCIATE_VIEW:
-            raise ValueError(f"Unsupported Fortran array data action for {argument.owner_path!r}")
-        if argument.datatype_family is not DatatypeFamily.STRING:
-            PrimitiveScalarTypeRegistry.type_for(argument.semantic_type_name)
-
-    def _require_raw_array_argument_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Require one opaque address with a concrete dense pointee view."""
-        self._require_raw_array_shape_supported(argument)
-        self._require_raw_array_actions_supported(argument)
-        self._require_raw_array_element_supported(argument)
-
-    def _require_raw_array_shape_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Require concrete dense raw-pointee shape facts."""
-        array = argument.array
-        if array is None or array.rank is None or not 1 <= array.rank <= 15:
-            raise ValueError(f"Unsupported Fortran raw array rank for {argument.owner_path!r}")
-        if array.contiguous is not True or array.category != "raw_address":
-            raise ValueError(f"Unsupported Fortran raw array layout for {argument.owner_path!r}")
-
-    def _require_raw_array_actions_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Require the opaque non-copying raw-address action pair."""
-        if argument.bridge.handoff_mode is not ArgumentHandoffMode.OPAQUE_ADDRESS:
-            raise ValueError(f"Unsupported Fortran raw array handoff for {argument.owner_path!r}")
-        if argument.bridge.data_action is not BridgeDataAction.ASSOCIATE_VIEW:
-            raise ValueError(f"Unsupported Fortran raw array data action for {argument.owner_path!r}")
-
-    def _require_raw_array_element_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Require one supported primitive or fixed-character pointee element."""
-        array = argument.array
-        if argument.datatype_family is DatatypeFamily.STRING:
-            if array is None or array.itemsize is None or array.itemsize <= 0:
-                raise ValueError(f"Unsupported Fortran raw character array for {argument.owner_path!r}")
-            return
-        PrimitiveScalarTypeRegistry.type_for(argument.semantic_type_name)
-
-    def _require_array_plan_result_supported(self, result: ResultPlan) -> None:
-        """Require one fixed-shape ordinary array copy result."""
-        if self._is_owned_native_array_result(result):
-            self._require_owned_native_array_result_supported(result)
-            return
-        self._require_array_plan_result_shape_supported(result)
-        self._require_array_plan_result_action_supported(result)
-        self._require_array_plan_result_type_supported(result)
-
-    def _require_array_plan_result_shape_supported(self, result: ResultPlan) -> None:
-        """Require one fixed-rank non-C-oriented direct result shape."""
-        array = result.array
-        if (
-            array is None
-            or array.rank is None
-            or (not 1 <= array.rank <= 15 and not self._is_scalar_storage_array(array))
-        ):
-            raise ValueError(f"Unsupported Fortran array result rank for {result.owner_path!r}")
-        if array.native_order == "ORDER_C" and array.rank > 1:
-            raise ValueError(f"Unsupported Fortran array result order for {result.owner_path!r}")
-
-    def _require_array_plan_result_action_supported(self, result: ResultPlan) -> None:
-        """Require the explicit representation-copy action for one direct array."""
-        if result.bridge.data_action is not BridgeDataAction.COPY_REPRESENTATION:
-            raise ValueError(f"Unsupported Fortran array result data action for {result.owner_path!r}")
-
-    def _require_array_plan_result_type_supported(self, result: ResultPlan) -> None:
-        """Require one supported primitive or fixed-character result element."""
-        array = result.array
-        if result.datatype_family is DatatypeFamily.STRING:
-            if array is None or array.itemsize is None or array.itemsize <= 0:
-                raise ValueError(f"Unsupported Fortran character array result for {result.owner_path!r}")
-            return
-        PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name)
-
-    def _require_array_result_supported(self, function: FunctionPlan, slot: NativeCallSlotPlan) -> None:
-        """Require one hidden fixed-shape ordinary array copy result."""
-        if self._is_owned_native_array_slot(slot):
-            result = next((item for item in function.results if item.native_call_slot is slot), None)
-            if result is None:
-                raise ValueError(f"Unclaimed Fortran native array handle output for {slot.owner_path!r}")
-            self._require_owned_native_array_result_supported(result)
-            return
-        self._require_array_result_shape_supported(slot)
-        self._require_array_result_action_supported(slot)
-        self._require_array_result_type_supported(function, slot)
-
-    def _require_owned_native_array_result_supported(self, result: ResultPlan) -> None:
-        """Require one wrapper-owned standard descriptor result."""
-        handle = result.native_array_handle
-        if (
-            handle is None
-            or handle.handoff.abi is not NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
-            or handle.array.rank is None
-        ):
-            raise ValueError(f"Unsupported Fortran owned native array result for {result.owner_path!r}")
-        if result.datatype_family is not DatatypeFamily.STRING:
-            PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name)
-
-    def _require_array_result_shape_supported(self, slot: NativeCallSlotPlan) -> None:
-        """Require one fixed-rank non-C-oriented array result shape."""
-        array = slot.array
-        if (
-            array is None
-            or array.rank is None
-            or (not 1 <= array.rank <= 15 and not self._is_scalar_storage_array(array))
-        ):
-            raise ValueError(f"Unsupported Fortran array output rank for {slot.owner_path!r}")
-        if array.native_order == "ORDER_C" and array.rank > 1:
-            raise ValueError(f"Unsupported Fortran array output order for {slot.owner_path!r}")
-
-    def _require_array_result_action_supported(self, slot: NativeCallSlotPlan) -> None:
-        """Require the completed ordinary-array representation-copy action."""
-        if slot.bridge_data_action is not BridgeDataAction.COPY_REPRESENTATION:
-            raise ValueError(f"Unsupported Fortran array output data action for {slot.owner_path!r}")
-
-    def _require_array_result_type_supported(self, function: FunctionPlan, slot: NativeCallSlotPlan) -> None:
-        """Require one primitive non-character result owned by the function plan."""
-        if not any(result.native_call_slot is slot for result in function.results):
-            raise ValueError(f"Unsupported Fortran array output for {slot.owner_path!r}")
-        if slot.datatype_family is DatatypeFamily.STRING:
-            if slot.array is None or slot.array.itemsize is None or slot.array.itemsize <= 0:
-                raise ValueError(f"Unsupported Fortran character array output for {slot.owner_path!r}")
-            return
-        if slot.semantic_type_name is None:
-            raise ValueError(f"Missing Fortran array output datatype for {slot.owner_path!r}")
-        PrimitiveScalarTypeRegistry.type_for(slot.semantic_type_name)
-
-    # String support checks.
-    def _require_string_argument_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Require a completed string value, storage, or raw-address contract."""
-        if argument.bridge.data_action is not BridgeDataAction.COPY_REPRESENTATION:
-            raise ValueError(f"Unsupported Fortran string data action for {argument.owner_path!r}")
-        action = argument.binding.python_action
-        if action is PythonBarrierAction.STRING_VALUE:
-            self._require_string_value_argument_supported(argument)
-            return
-        if action not in {PythonBarrierAction.STRING_STORAGE, PythonBarrierAction.RAW_ADDRESS}:
-            raise ValueError(f"Unsupported Fortran string boundary for {argument.owner_path!r}: {action!r}")
-        self._require_string_address_argument_supported(argument)
-
-    def _require_string_value_argument_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Require one character-buffer value handoff."""
-        if argument.bridge.native_action is not NativeBarrierAction.PASS_CALL_LOCAL_ADDRESS:
-            raise ValueError(f"Unsupported Fortran string action for {argument.owner_path!r}")
-        if argument.bridge.handoff_mode is not ArgumentHandoffMode.CHARACTER_BUFFER:
-            raise ValueError(f"Unsupported Fortran string handoff for {argument.owner_path!r}")
-        if argument.bridge.codegen_action not in {CodegenAction.CALL_LOCAL_INPUT, CodegenAction.COPY_IN_OUT}:
-            raise ValueError(f"Unsupported Fortran string codegen action for {argument.owner_path!r}")
-
-    def _require_string_address_argument_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Require one fixed storage/raw-address handoff."""
-        if argument.bridge.handoff_mode is not ArgumentHandoffMode.OPAQUE_ADDRESS:
-            raise ValueError(f"Unsupported Fortran string address handoff for {argument.owner_path!r}")
-        if argument.bridge.codegen_action is not CodegenAction.IN_PLACE_ARGUMENT:
-            raise ValueError(f"Unsupported Fortran string address action for {argument.owner_path!r}")
-        if argument.character_length is None or argument.character_length <= 0:
-            raise ValueError(f"Unsupported Fortran string address length for {argument.owner_path!r}")
-
-    def _require_string_result_supported(self, function: FunctionPlan, slot: NativeCallSlotPlan) -> None:
-        """Require one fixed string result slot or status-message slot."""
-        if slot.character_length is None or slot.character_length <= 0:
-            raise ValueError(f"Unsupported Fortran string output for {slot.owner_path!r}")
-        if slot.bridge_data_action is not BridgeDataAction.COPY_REPRESENTATION:
-            raise ValueError(f"Unsupported Fortran string bridge data action for {slot.owner_path!r}")
-        policy = function.binding.status_error
-        if policy is not None and policy.message_role == slot.symbolic_role:
-            return
-        if any(result.native_call_slot is slot for result in function.results):
-            return
-        raise ValueError(f"Unsupported Fortran string output for {slot.owner_path!r}")
-
-    def _require_string_plan_result_supported(self, result: ResultPlan) -> None:
-        """Require one fixed string result with a justified representation copy."""
-        if result.character_length is None or result.character_length <= 0:
-            raise ValueError(f"Unsupported Fortran string result for {result.owner_path!r}")
-        if result.bridge.data_action is not BridgeDataAction.COPY_REPRESENTATION:
-            raise ValueError(f"Unsupported Fortran string result data action for {result.owner_path!r}")
+        self._require_backend_type_supported(argument.semantic_type_name, argument.datatype_family)
 
     def _require_variable_supported(self, variable: ModuleVariablePlan) -> None:
-        """Reject unsupported actions in one planned module variable."""
-        validator = {
-            ModuleGetterAction.NATIVE_ARRAY_HANDLE: self._require_module_handle_supported,
-            ModuleGetterAction.BORROWED_ARRAY_VIEW: self._require_module_array_view_supported,
-            ModuleGetterAction.DERIVED_OBJECT: self._require_module_derived_supported,
-        }.get(variable.binding.getter_action)
-        if validator is not None:
-            validator(variable)
-            return
-        self._require_module_scalar_supported(variable)
+        """Preflight only the primitive registry needed by Fortran emission."""
+        self._require_backend_type_supported(variable.semantic_type_name, variable.datatype_family)
 
-    def _require_module_handle_supported(self, variable: ModuleVariablePlan) -> None:
-        """Require one completed allocatable or pointer array handle."""
-        handle = variable.native_array_handle
-        if handle is None or handle.array.rank is None:
-            raise ValueError(f"Unsupported Fortran module handle for {variable.owner_path!r}")
-        if variable.datatype_family is not DatatypeFamily.STRING:
-            PrimitiveScalarTypeRegistry.type_for(variable.semantic_type_name)
-
-    def _require_module_array_view_supported(self, variable: ModuleVariablePlan) -> None:
-        """Require one ranked borrowed module-array view."""
-        if variable.array is None or variable.array.rank is None:
-            raise ValueError(f"Unsupported Fortran module array view for {variable.owner_path!r}")
-        PrimitiveScalarTypeRegistry.type_for(variable.semantic_type_name)
-
-    @staticmethod
-    def _require_module_derived_supported(variable: ModuleVariablePlan) -> None:
-        """Require the completed derived-object module handoff."""
-        if variable.derived is None:
-            raise ValueError(f"Unsupported Fortran derived module object for {variable.owner_path!r}")
-
-    @staticmethod
-    def _require_module_scalar_supported(variable: ModuleVariablePlan) -> None:
-        """Require ordinary scalar assignment and nullable snapshot actions."""
-        if variable.bridge.native_assignment not in {
-            AssignmentMode.NONE,
-            AssignmentMode.VALUE_COPY,
-        }:
-            raise ValueError(
-                f"Unsupported Fortran module setter assignment for {variable.owner_path!r}: "
-                f"{variable.bridge.native_assignment!r}"
-            )
-        if (
-            variable.bridge.getter_action is ModuleGetterAction.NULLABLE_SNAPSHOT
-            and variable.bridge.descriptor_kind not in {"allocatable", "pointer"}
-        ):
-            raise ValueError(
-                f"Unsupported Fortran module getter descriptor for {variable.owner_path!r}: "
-                f"{variable.bridge.descriptor_kind!r}"
-            )
-        PrimitiveScalarTypeRegistry.type_for(variable.semantic_type_name)
-
-    # Derived-type definition and field support checks.
     def _require_derived_type_supported(self, derived: DerivedTypePlan) -> None:
-        """Require field operations expressible through typed native access."""
+        """Preflight primitive field types after shared plan validation."""
         for field in derived.fields:
-            self._require_derived_field_supported(field)
-
-    def _require_derived_field_supported(self, field: DerivedFieldPlan) -> None:
-        """Dispatch validation from the completed derived-field access action."""
-        validators = {
-            DerivedFieldAccessMechanism.SCALAR_VALUE: self._require_scalar_derived_field,
-            DerivedFieldAccessMechanism.FIXED_STRING_COPY: self._require_string_derived_field,
-            DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR: self._require_array_derived_field,
-            DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE: self._require_handle_derived_field,
-            DerivedFieldAccessMechanism.NESTED_OBJECT: self._require_nested_derived_field,
-        }
-        try:
-            validators[field.access](field)
-        except KeyError as exc:
-            raise ValueError(
-                f"Unsupported Fortran derived field for {field.owner_path!r}: {field.object_kind.value}"
-            ) from exc
+            if field.semantic_type_name != "String" and field.derived is None:
+                PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name)
 
     @staticmethod
-    def _require_scalar_derived_field(field: DerivedFieldPlan) -> None:
-        PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name)
-
-    @staticmethod
-    def _require_string_derived_field(field: DerivedFieldPlan) -> None:
-        if field.character_length is None or field.character_length <= 0:
-            raise ValueError(f"Unsupported Fortran string field for {field.owner_path!r}")
-
-    @staticmethod
-    def _require_array_derived_field(field: DerivedFieldPlan) -> None:
-        if field.array is None or field.array.rank is None:
-            raise ValueError(f"Unsupported Fortran array field for {field.owner_path!r}")
-        PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name)
-
-    @staticmethod
-    def _require_handle_derived_field(field: DerivedFieldPlan) -> None:
-        if field.native_array_handle is None or field.native_array_handle.array.rank is None:
-            raise ValueError(f"Unsupported Fortran native handle field for {field.owner_path!r}")
-        PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name)
-
-    @staticmethod
-    def _require_nested_derived_field(field: DerivedFieldPlan) -> None:
-        if field.derived is None:
-            raise ValueError(f"Unsupported Fortran nested field for {field.owner_path!r}")
+    def _require_backend_type_supported(
+        semantic_type_name: str | None,
+        datatype_family: DatatypeFamily | None,
+    ) -> None:
+        """Resolve primitive types; shared validation owns every plan decision."""
+        if semantic_type_name is None or datatype_family in {DatatypeFamily.STRING, DatatypeFamily.DERIVED}:
+            return
+        PrimitiveScalarTypeRegistry.type_for(semantic_type_name)
 
     def _visit_ModulePlan(self, plan: ModulePlan) -> FortranModule:
         """Return one complete Fortran bridge module."""
@@ -3065,8 +2598,6 @@ class FortranBridgeGenerator(ClassVisitor):
     ) -> tuple[FortranParameter, ...]:
         """Receive one standard descriptor as a typed allocatable/pointer dummy."""
         handle = plan.native_array_handle
-        if handle is None or handle.array.rank is None:
-            raise ValueError(f"Native descriptor {plan.owner_path!r} has no concrete rank")
         name = plan.bridge.native_name.lower()
         attribute = "allocatable" if handle.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE else "pointer"
         parameters = [

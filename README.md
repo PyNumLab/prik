@@ -520,40 +520,6 @@ X2PY_C_DOCS_END -->
 For native projects with macros, includes, or target flags, use the
 compiler-preprocessed CLI path or an equivalent preprocessing configuration.
 
-## Supported Scope
-
-x2py preserves wrapper-relevant declarations, signatures, types, source
-locations, include/use relationships, diagnostics, and semantic metadata.
-Current support includes:
-
-- free-form and fixed-form Fortran, procedures, modules, derived types,
-  imports, arrays, and wrapper-relevant declaration attributes;
-- language-neutral semantic IR and editable `.pyi` interfaces;
-- compiled Python extensions from one or more ordered fixed-form or free-form
-  Fortran sources, with an optional GNU Make build;
-- documented runtime wrapper behavior for scalar and array calls, strings,
-  module state, derived types, generic interfaces, optional and output
-  arguments, and immediate call-scoped Python callbacks. The
-  [language feature matrix](docs/user/language-support/feature-matrix.md) is the
-  authoritative support-status summary.
-
-<!-- X2PY_C_DOCS_START
-- compiled CPython extensions from one or more ordered fixed-form or free-form
-  Fortran sources, including generated Fortran/C bridges and an optional GNU
-  Make build;
-- C declarations and definitions, variables, typedefs, aggregates, enums,
-  pointers, arrays, function pointers, includes, and preprocessing facts;
-X2PY_C_DOCS_END -->
-
-<!-- X2PY_C_DOCS_START
-Runtime wrapper generation from user C inputs is not implemented yet. It will
-reuse the shared semantic contracts after the C backend and its ownership,
-ABI, and runtime tests are complete.
-X2PY_C_DOCS_END -->
-
-x2py is not a full compiler frontend. It does not silently infer pointer
-ownership, callback lifetime, ABI shims, or Python-visible projections.
-
 ## Documentation
 
 - **[Documentation](https://pynumlab.github.io/x2py/)** — Complete published documentation

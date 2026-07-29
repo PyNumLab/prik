@@ -84,6 +84,20 @@ def alloc_state(value: Annotated[Float64, Immutable] | None = ...) -> Int32: ...
     assert "result = native_alloc_state()" in fortran_source
 
 
+def test_optional_arguments_with_hidden_literals_fail_during_shared_plan_validation():
+    module = parse_pyi_text(
+        """
+@native_call([Int32(1), Arg(0)])
+def optional_literal(value: Annotated[Float64, Immutable] | None = ...) -> Float64: ...
+""",
+        module_name="optional_literal",
+    )
+    complete_semantic_policies(module)
+
+    with pytest.raises(ValueError, match="optional-native-literal-combination"):
+        WrapperCodeGenerator().generate(WrapperPlanner().build(module))
+
+
 def test_required_descriptor_keeps_python_presence_separate_from_native_state_and_copyout():
     module = parse_pyi_text(
         """

@@ -11,9 +11,11 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+import x2py.contracts as contracts
 from tests._shared.pyi_fixture_packages import assert_generated_pyi_package_matches_fixture
 from tests.wrapper.fortran._support import (
     REPO_ROOT,
+    _sole_native_module,
     wrapper_source,
 )
 from x2py import build_pyi_extension
@@ -291,6 +293,206 @@ def test_handwritten_c_order_flat_contract_passes_rank_preserving_bridge_view(tm
     strided = np.zeros((values.shape[0], values.shape[1] * 2), dtype=np.float64, order="C")[:, ::2]
     with pytest.raises(TypeError, match=r"expected ordering \(C\)"):
         module.row_sums_c(np.int32(values.shape[0]), strided, result_values)
+
+
+def test_handwritten_fortran_order_flat_contract_flattens_the_final_python_axes(tmp_path: Path):
+    source_dir = tmp_path / "sources"
+    source_dir.mkdir()
+    source = source_dir / "column_sums_f.f90"
+    source.write_text(
+        """
+subroutine column_sums_f(rows, columns, values, result)
+  integer, intent(in) :: rows
+  integer, intent(in) :: columns
+  double precision, intent(in) :: values(rows, *)
+  double precision, intent(out) :: result(*)
+  integer :: column
+
+  do column = 1, columns
+    result(column) = sum(values(:, column))
+  end do
+end subroutine column_sums_f
+
+subroutine bump_storage(value)
+  integer, intent(inout) :: value
+  value = value + 1
+end subroutine bump_storage
+
+subroutine make_storage(value)
+  integer, intent(out) :: value
+  value = 42
+end subroutine make_storage
+
+function storage_value() result(value)
+  integer :: value
+  value = 43
+end function storage_value
+""",
+        encoding="utf-8",
+    )
+    contract = tmp_path / "column_sums_f.pyi"
+    contract.write_text(
+        """from x2py.contracts import Addr, Arg, Flat, Float64, Int32, Return, external, native_call
+
+@external
+@native_call([Addr(Arg(0)), Addr(Arg(1)), Arg(2), Arg(3)])
+def column_sums_f(
+    rows: Int32,
+    columns: Int32,
+    values: Float64[rows, Flat],
+    result: Float64[Flat],
+) -> None: ...
+
+@external
+def bump_storage(value: Int32[()]) -> None: ...
+
+@external
+@native_call([Return("value", 0)])
+def make_storage() -> Int32[()]: ...
+
+@external
+def storage_value() -> Int32[()]: ...
+""",
+        encoding="utf-8",
+    )
+    native_objects = _compile_native_objects((source,), tmp_path / "native")
+    built = build_pyi_extension(
+        contract,
+        native_objects=native_objects,
+        output_name="fortran_order_flat_api",
+        output_dir=tmp_path / "pyi_build",
+    )
+    module = _import_extension(built.module_name, built.output_dir)
+
+    values = np.arange(24, dtype=np.float64).reshape((3, 2, 4), order="F")
+    result = np.empty(8, dtype=np.float64)
+    module.column_sums_f(np.int32(3), np.int32(8), values, result)
+
+    expected = values.reshape((3, 8), order="F").sum(axis=0)
+    np.testing.assert_allclose(result, expected)
+    with pytest.raises(TypeError, match=r"expected ordering \(F\)"):
+        module.column_sums_f(np.int32(3), np.int32(8), np.ascontiguousarray(values), result)
+    with pytest.raises(TypeError, match="incompatible shape at axis 0"):
+        module.column_sums_f(np.int32(2), np.int32(8), values, result)
+
+    storage = np.array(8, dtype=np.int32)
+    assert module.bump_storage(storage) is None
+    assert storage[()] == np.int32(9)
+    assert module.make_storage()[()] == np.int32(42)
+    assert module.storage_value()[()] == np.int32(43)
+
+
+def test_external_allocatable_argument_accepts_a_caller_created_handle(tmp_path: Path):
+    source_dir = tmp_path / "sources"
+    source_dir.mkdir()
+    source = source_dir / "external_allocatable.f90"
+    source.write_text(
+        """
+subroutine replace_external(values)
+  double precision, allocatable, intent(inout) :: values(:)
+  if (allocated(values)) deallocate(values)
+  allocate(values(3))
+  values = [2.0d0, 4.0d0, 6.0d0]
+end subroutine replace_external
+""",
+        encoding="utf-8",
+    )
+    contract = tmp_path / "external_allocatable.pyi"
+    contract.write_text(
+        """from x2py.contracts import Allocatable, Float64, Returns, external
+
+@external
+def replace_external(
+    values: Allocatable[Float64[:]],
+) -> Returns["values", Allocatable[Float64[:]]]: ...
+""",
+        encoding="utf-8",
+    )
+    native_objects = _compile_native_objects((source,), tmp_path / "native")
+    built = build_pyi_extension(
+        contract,
+        native_objects=native_objects,
+        output_name="external_allocatable_api",
+        output_dir=tmp_path / "pyi_build",
+    )
+    module = _import_extension(built.module_name, built.output_dir)
+    handle = contracts.Allocatable[contracts.Float64[:]]()
+
+    returned = module.replace_external(handle)
+
+    assert returned is handle
+    assert handle.allocated is True
+    np.testing.assert_allclose(handle.to_numpy(), [2.0, 4.0, 6.0])
+    handle.close()
+
+
+def test_optional_flat_contracts_preserve_present_and_absent_calls(tmp_path: Path):
+    source_dir = tmp_path / "sources"
+    source_dir.mkdir()
+    source = source_dir / "optional_flat.f90"
+    source.write_text(
+        """
+module optional_flat
+contains
+  subroutine maybe_scale_f(rows, blocks, values)
+    integer, intent(in) :: rows
+    integer, intent(in) :: blocks
+    double precision, intent(inout), optional :: values(rows, *)
+    if (present(values)) values(:, 1:blocks) = values(:, 1:blocks) * 2.0d0
+  end subroutine maybe_scale_f
+
+  subroutine maybe_scale_c(blocks, columns, values)
+    integer, intent(in) :: blocks
+    integer, intent(in) :: columns
+    double precision, intent(inout), optional :: values(columns, *)
+    if (present(values)) values(:, 1:blocks) = values(:, 1:blocks) * 3.0d0
+  end subroutine maybe_scale_c
+end module optional_flat
+""",
+        encoding="utf-8",
+    )
+    contract = tmp_path / "optional_flat.pyi"
+    contract.write_text(
+        """from x2py.contracts import Annotated, Flat, Float64, Int32, ORDER_C
+
+def maybe_scale_f(
+    rows: Int32,
+    blocks: Int32,
+    values: Float64[rows, Flat] | None = ...,
+) -> None: ...
+
+def maybe_scale_c(
+    blocks: Int32,
+    columns: Int32,
+    values: Annotated[Float64[Flat, columns], ORDER_C] | None = ...,
+) -> None: ...
+""",
+        encoding="utf-8",
+    )
+    native_objects = _compile_native_objects((source,), tmp_path / "native")
+    built = build_pyi_extension(
+        contract,
+        native_objects=native_objects,
+        native_include_dirs=[native_objects[0].parent],
+        output_dir=tmp_path / "pyi_build",
+    )
+    module = _sole_native_module(_import_extension(built.module_name, built.output_dir))
+
+    fortran_values = np.arange(24, dtype=np.float64).reshape((3, 2, 4), order="F")
+    module.maybe_scale_f(np.int32(3), np.int32(8), fortran_values)
+    np.testing.assert_allclose(
+        fortran_values,
+        np.arange(24, dtype=np.float64).reshape((3, 2, 4), order="F") * 2.0,
+    )
+    assert module.maybe_scale_f(np.int32(3), np.int32(8)) is None
+
+    c_values = np.arange(24, dtype=np.float64).reshape((2, 3, 4), order="C")
+    module.maybe_scale_c(np.int32(6), np.int32(4), c_values)
+    np.testing.assert_allclose(
+        c_values,
+        np.arange(24, dtype=np.float64).reshape((2, 3, 4), order="C") * 3.0,
+    )
+    assert module.maybe_scale_c(np.int32(6), np.int32(4)) is None
 
 
 def test_compact_blas_like_folder_generates_one_external_entry_and_preserves_separate_objects(tmp_path: Path):

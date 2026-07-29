@@ -8,6 +8,7 @@ from x2py.runtime.handles import (
     AllocatableArray,
     PointerArray,
     _bind_contract_native_array_handle,
+    _native_array_actual_for_binding,
     _native_array_descriptor_argument_for_binding,
     _native_array_descriptor_handoff_for_binding,
 )
@@ -111,6 +112,7 @@ def test_fresh_pointer_associate_copies_association_without_following_source_des
     assert target.associated is True
     assert target.shape == (3,)
     np.testing.assert_array_equal(target.to_numpy(), value)
+    assert _native_array_actual_for_binding(target).address == value.ctypes.data
 
     source.nullify()
     assert source.associated is False
@@ -230,6 +232,107 @@ def test_writable_contract_handle_adopts_generated_storage_and_closes_once():
     handle.close()
     handle.close()
     assert calls == [("destroy", owner)]
+
+
+@pytest.mark.parametrize(
+    ("prepare", "descriptor_kind", "dtype", "rank", "error", "message"),
+    [
+        (
+            lambda: AllocatableArray(
+                dtype="float64",
+                rank=1,
+                ops={
+                    "shape": lambda _handle: None,
+                    "array_actual": lambda _handle: None,
+                    "descriptor": lambda _handle: None,
+                    "allocated": lambda _handle: False,
+                },
+                to_numpy_policy="unsupported",
+            ),
+            "allocatable",
+            "float64",
+            1,
+            TypeError,
+            "fresh contract handle",
+        ),
+        (
+            lambda: contracts.Allocatable[contracts.Float64[:]](),
+            "pointer",
+            "float64",
+            1,
+            TypeError,
+            "cannot attach pointer descriptor storage",
+        ),
+        (
+            lambda: contracts.Allocatable[contracts.Float64[:]](),
+            "allocatable",
+            "float64",
+            2,
+            ValueError,
+            "does not match generated rank 2",
+        ),
+        (
+            lambda: contracts.Allocatable[contracts.Float64[:]](),
+            "allocatable",
+            "int32",
+            1,
+            TypeError,
+            "does not match generated dtype",
+        ),
+    ],
+)
+def test_generated_storage_rejects_incompatible_contract_handles(
+    prepare,
+    descriptor_kind,
+    dtype,
+    rank,
+    error,
+    message,
+):
+    handle = prepare()
+
+    with pytest.raises(error, match=message):
+        _bind_contract_native_array_handle(
+            handle,
+            descriptor_kind,
+            dtype,
+            rank,
+            {},
+            object(),
+            "owned",
+            "unsupported",
+        )
+
+
+def test_generated_storage_rejects_a_closed_contract_handle():
+    handle = contracts.Allocatable[contracts.Float64[:]]()
+    handle.close()
+
+    with pytest.raises(ReferenceError, match="handle is closed"):
+        _bind_contract_native_array_handle(
+            handle,
+            "allocatable",
+            "float64",
+            1,
+            {},
+            object(),
+            "owned",
+            "unsupported",
+        )
+
+
+def test_pointer_association_rejects_closed_handles():
+    target = contracts.Pointer[contracts.Float64[:]]()
+    source = contracts.Pointer[contracts.Float64[:]]()
+    target.close()
+
+    with pytest.raises(ReferenceError, match="pointer handle is closed"):
+        target.associate(source)
+
+    target = contracts.Pointer[contracts.Float64[:]]()
+    source.close()
+    with pytest.raises(ReferenceError, match="source pointer handle is closed"):
+        target.associate(source)
 
 
 def test_non_array_descriptor_and_ordinary_array_annotations_are_not_factories():

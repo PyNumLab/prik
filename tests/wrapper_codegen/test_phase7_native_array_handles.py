@@ -13,8 +13,10 @@ from x2py.semantics.wrapper_policy import (
     NativeArrayDescriptorKind,
     NativeArrayDescriptorOwnership,
     NativeArrayDefaultConstruction,
+    NativeArrayDestroyBehavior,
     NativeArrayOperation,
     NativeArrayOutputProjection,
+    NativeArrayRelease,
     NativeArrayResultAllocation,
     NativeArraySourceKind,
     NativeDescriptorHandoffABI,
@@ -519,6 +521,12 @@ def invalid_argument(values: Annotated[Allocatable[Float64[:]], MaybeUnallocated
         ("projected_facts", "invalid-direct-native-descriptor-roles"),
         ("owned_storage", "invalid-owned-native-descriptor-roles"),
         ("default_storage", "inconsistent-default-handle-owner-storage-role"),
+        ("disabled_default", "invalid-disabled-default-handle-policy"),
+        ("default_ownership", "invalid-default-handle-descriptor-ownership"),
+        ("default_lifecycle", "invalid-default-handle-lifecycle"),
+        ("default_operation", "incomplete-default-handle-operations"),
+        ("default_roles", "inconsistent-default-handle-operation-roles"),
+        ("default_abi", "inconsistent-default-handle-descriptor-abi"),
         ("operation", "incomplete-native-array-operations"),
         ("header", "inconsistent-required-headers"),
     ],
@@ -534,6 +542,26 @@ def test_phase7_plan_edits_fail_central_validation(edit: str, diagnostic: str):
         functions["make"].results[0].native_array_handle.handoff.owner_storage_role = None
     elif edit == "default_storage":
         functions["replace"].arguments[0].native_array_handle.default_handle.owner_storage_role = None
+    elif edit == "disabled_default":
+        functions["replace_names"].arguments[
+            0
+        ].native_array_handle.default_handle.release = NativeArrayRelease.WRAPPER_DEALLOC
+    elif edit == "default_ownership":
+        functions["replace"].arguments[
+            0
+        ].native_array_handle.default_handle.descriptor_ownership = NativeArrayDescriptorOwnership.BORROWED
+    elif edit == "default_lifecycle":
+        default = functions["replace"].arguments[0].native_array_handle.default_handle
+        default.release = NativeArrayRelease.NONE
+        default.destroy_behavior = NativeArrayDestroyBehavior.NONE
+    elif edit == "default_operation":
+        functions["replace"].arguments[0].native_array_handle.default_handle.operations = ()
+    elif edit == "default_roles":
+        functions["replace"].arguments[0].native_array_handle.default_handle.operation_roles = ()
+    elif edit == "default_abi":
+        functions["replace"].arguments[
+            0
+        ].native_array_handle.handoff.abi = NativeDescriptorHandoffABI.FACT_PACKED_CALL_LOCAL
     elif edit == "operation":
         functions["pointer"].arguments[0].native_array_handle.operations = ()
     else:

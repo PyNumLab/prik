@@ -11,11 +11,9 @@ from x2py.semantics.ownership import (
     PythonBarrierAction,
     SetterAction,
 )
-from x2py.semantics.metadata import SCALAR_STORAGE_CATEGORY
 from x2py.semantics.wrapper_policy import (
     ArgumentConversionPhase,
     ArgumentHandoffMode,
-    BridgeDataAction,
     CallbackABIKind,
     CallbackResultAction,
     CallbackTransferAction,
@@ -30,7 +28,6 @@ from x2py.semantics.wrapper_policy import (
     DerivedOwnerRetention,
     DerivedRelease,
     DerivedWriteback,
-    LifecycleOperation,
     ModuleObjectAccessMechanism,
     ModuleGetterAction,
     NativeArrayDescriptorKind,
@@ -41,7 +38,6 @@ from x2py.semantics.wrapper_policy import (
     OptionalMode,
     PythonExceptionKind,
     TransformationAction,
-    TransformationLayer,
     WritebackPhase,
     overload_builtin_scalar_family,
 )
@@ -128,7 +124,7 @@ class CBindingGenerator(ClassVisitor):
     """Recursively lower binding plan views directly into C syntax nodes."""
 
     def require_supported(self, plan: ModulePlan) -> None:
-        """Reject unsupported C ABI actions and scalar types."""
+        """Preflight C scalar types after shared plan validation."""
         for derived in self._derived_types(plan):
             self._require_derived_type_supported(derived)
         for function in self._functions(plan):
@@ -137,497 +133,54 @@ class CBindingGenerator(ClassVisitor):
             self._require_variable_supported(variable)
 
     def _require_variable_supported(self, variable: ModuleVariablePlan) -> None:
-        """Dispatch one module variable from its completed getter action."""
-        if variable.binding.getter_action is ModuleGetterAction.NATIVE_ARRAY_HANDLE:
-            handle = variable.native_array_handle
-            if handle is None or handle.array.rank is None:
-                raise ValueError(f"Unsupported C module handle for {variable.owner_path!r}")
-            if variable.datatype_family is not DatatypeFamily.STRING:
-                PrimitiveScalarTypeRegistry.type_for(variable.semantic_type_name)
-            return
-        if variable.binding.getter_action is ModuleGetterAction.BORROWED_ARRAY_VIEW:
-            if variable.array is None or variable.array.rank is None:
-                raise ValueError(f"Unsupported C module array view for {variable.owner_path!r}")
-            PrimitiveScalarTypeRegistry.type_for(variable.semantic_type_name)
-            return
-        if variable.binding.getter_action is ModuleGetterAction.DERIVED_OBJECT:
-            if variable.derived is None:
-                raise ValueError(f"Unsupported C derived module object for {variable.owner_path!r}")
-            return
-        PrimitiveScalarTypeRegistry.type_for(variable.semantic_type_name)
+        """Preflight only the primitive registry needed by C emission."""
+        self._require_backend_type_supported(variable.semantic_type_name, variable.datatype_family)
 
     # Derived-type definition and field support checks.
     def _require_derived_type_supported(self, derived: DerivedTypePlan) -> None:
-        """Require typed field actions without inspecting native layout."""
+        """Preflight primitive field types after shared plan validation."""
         for field in derived.fields:
-            self._require_derived_field_supported(field)
-
-    def _require_derived_field_supported(self, field: DerivedFieldPlan) -> None:
-        """Dispatch validation from the completed derived-field access action."""
-        validators = {
-            DerivedFieldAccessMechanism.SCALAR_VALUE: self._require_scalar_derived_field,
-            DerivedFieldAccessMechanism.FIXED_STRING_COPY: self._require_string_derived_field,
-            DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR: self._require_array_derived_field,
-            DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE: self._require_handle_derived_field,
-            DerivedFieldAccessMechanism.NESTED_OBJECT: self._require_nested_derived_field,
-        }
-        try:
-            validators[field.access](field)
-        except KeyError as exc:
-            raise ValueError(
-                f"Unsupported C derived field for {field.owner_path!r}: {field.object_kind.value}"
-            ) from exc
+            if field.semantic_type_name != "String" and field.derived is None:
+                PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name)
 
     @staticmethod
-    def _require_scalar_derived_field(field: DerivedFieldPlan) -> None:
-        PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name)
-
-    @staticmethod
-    def _require_string_derived_field(field: DerivedFieldPlan) -> None:
-        if field.character_length is None or field.character_length <= 0:
-            raise ValueError(f"Unsupported C string field for {field.owner_path!r}")
-
-    @staticmethod
-    def _require_array_derived_field(field: DerivedFieldPlan) -> None:
-        if field.array is None or field.array.rank is None:
-            raise ValueError(f"Unsupported C array field for {field.owner_path!r}")
-        PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name)
-
-    @staticmethod
-    def _require_handle_derived_field(field: DerivedFieldPlan) -> None:
-        if field.native_array_handle is None or field.native_array_handle.array.rank is None:
-            raise ValueError(f"Unsupported C native handle field for {field.owner_path!r}")
-        PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name)
-
-    @staticmethod
-    def _require_nested_derived_field(field: DerivedFieldPlan) -> None:
-        if field.derived is None:
-            raise ValueError(f"Unsupported C nested field for {field.owner_path!r}")
+    def _require_backend_type_supported(
+        semantic_type_name: str | None,
+        datatype_family: DatatypeFamily | None,
+    ) -> None:
+        """Resolve primitive types; shared validation owns every plan decision."""
+        if semantic_type_name is None or datatype_family in {DatatypeFamily.STRING, DatatypeFamily.DERIVED}:
+            return
+        PrimitiveScalarTypeRegistry.type_for(semantic_type_name)
 
     def _require_function_supported(self, function: FunctionPlan) -> None:
-        """Reject unsupported actions and types for one binding function."""
+        """Preflight primitive types after shared plan validation."""
         for argument in function.arguments:
             self._require_argument_supported(argument)
         self._require_function_results_supported(function)
         for slot in function.native_call_slots:
-            self._require_native_result_supported(function, slot)
+            if slot.source_kind == "result":
+                self._require_backend_type_supported(slot.semantic_type_name, slot.datatype_family)
         for action in function.writeback_actions:
-            self._require_writeback_supported(action)
-        for action in (*function.cleanup_actions, *function.release_actions):
-            self._require_derived_lifecycle_supported(action)
+            self._require_backend_type_supported(action.semantic_type_name, action.datatype_family)
 
     def _require_function_results_supported(self, function: FunctionPlan) -> None:
-        """Dispatch binding-visible results from their completed object kind."""
+        """Preflight primitive binding-visible result types."""
         for result in function.results:
-            if result.scalar_descriptor is not None:
-                self._require_scalar_descriptor_binding_result_supported(result)
-                continue
-            match result.object_kind:
-                case ObjectKind.SCALAR:
-                    PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name)
-                case ObjectKind.STRING:
-                    self._require_string_binding_result_supported(result)
-                case ObjectKind.NUMPY_ARRAY:
-                    self._require_array_binding_result_supported(result)
-                case ObjectKind.DERIVED_TYPE:
-                    self._require_derived_result_supported(result)
-                case _:
-                    raise ValueError(
-                        f"Unsupported C result object kind for {result.owner_path!r}: {result.object_kind!r}"
-                    )
+            self._require_backend_type_supported(result.semantic_type_name, result.datatype_family)
 
     def _require_argument_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Reject one unsupported Python argument conversion."""
-        self._require_argument_transformations_supported(argument)
+        """Preflight primitive argument and callback transfer types."""
         if argument.callback is not None:
-            self._require_callback_supported(argument.callback)
-            return
-        if argument.binding.python_action not in {
-            PythonBarrierAction.SCALAR_VALUE,
-            PythonBarrierAction.SCALAR_STORAGE,
-            PythonBarrierAction.STRING_STORAGE,
-            PythonBarrierAction.STRING_VALUE,
-            PythonBarrierAction.RAW_ADDRESS,
-            PythonBarrierAction.ARRAY_STORAGE,
-            PythonBarrierAction.WRAPPER_INSTANCE,
-        }:
-            raise ValueError(
-                f"Unsupported C argument action for {argument.owner_path!r}: {argument.binding.python_action!r}"
+            transfers = (
+                *argument.callback.arguments,
+                *((argument.callback.result.transfer,) if argument.callback.result.transfer is not None else ()),
             )
-        if (
-            argument.binding.python_action
-            in {
-                PythonBarrierAction.SCALAR_STORAGE,
-                PythonBarrierAction.STRING_STORAGE,
-                PythonBarrierAction.RAW_ADDRESS,
-            }
-            and argument.bridge.handoff_mode is not ArgumentHandoffMode.OPAQUE_ADDRESS
-        ):
-            raise ValueError(f"Unsupported C address handoff for {argument.owner_path!r}")
-        match argument.object_kind:
-            case ObjectKind.SCALAR:
-                self._require_scalar_argument_supported(argument)
-            case ObjectKind.STRING:
-                self._require_string_argument_supported(argument)
-            case ObjectKind.NUMPY_ARRAY:
-                self._require_array_argument_supported(argument)
-            case ObjectKind.DERIVED_TYPE:
-                self._require_derived_argument_supported(argument)
-            case _:
-                raise ValueError(
-                    f"Unsupported C argument object kind for {argument.owner_path!r}: {argument.object_kind!r}"
-                )
-
-    @staticmethod
-    def _require_callback_supported(callback: CallbackHandoffPlan) -> None:
-        """Require only callback datatypes with complete typed C conversions."""
-        transfers = (
-            *callback.arguments,
-            *((callback.result.transfer,) if callback.result.transfer is not None else ()),
-        )
-        for transfer in transfers:
-            if transfer.derived_type_identity is not None:
-                if transfer.derived_backend_symbol is None:
-                    raise ValueError(f"Missing C callback derived symbol for {transfer.owner_path!r}")
-            elif transfer.semantic_type_name != "String":
-                PrimitiveScalarTypeRegistry.type_for(transfer.semantic_type_name)
-
-    @staticmethod
-    def _require_argument_transformations_supported(argument: ArgumentTransferPlan) -> None:
-        """Accept only binding-owned array representation actions in this backend."""
-        for transformation in argument.transformations:
-            if transformation.layer is not TransformationLayer.BINDING:
-                raise ValueError(
-                    f"C binding cannot lower {transformation.layer.value} transformation for {argument.owner_path!r}"
-                )
-            if transformation.action not in {
-                TransformationAction.COPY_ARRAY_REPRESENTATION,
-                TransformationAction.PUBLISH_ARRAY_REPLACEMENT,
-                TransformationAction.RELEASE_TEMPORARY,
-            }:
-                raise ValueError(
-                    f"Unsupported C binding transformation for {argument.owner_path!r}: {transformation.action.value}"
-                )
-
-    def _require_native_result_supported(self, function: FunctionPlan, slot: NativeCallSlotPlan) -> None:
-        """Dispatch one native result output to its family support check."""
-        if slot.source_kind != "result":
+            for transfer in transfers:
+                if transfer.semantic_type_name != "String" and transfer.derived_type_identity is None:
+                    PrimitiveScalarTypeRegistry.type_for(transfer.semantic_type_name)
             return
-        if slot.scalar_descriptor is not None:
-            self._require_scalar_descriptor_native_result_supported(function, slot)
-            return
-        match slot.object_kind:
-            case ObjectKind.SCALAR:
-                self._require_scalar_native_result_supported(slot)
-            case ObjectKind.STRING:
-                self._require_string_result_supported(function, slot)
-            case ObjectKind.NUMPY_ARRAY:
-                self._require_array_result_supported(function, slot)
-            case ObjectKind.DERIVED_TYPE:
-                if slot.derived is None:
-                    raise ValueError(f"Missing C derived result handoff for {slot.owner_path!r}")
-            case _:
-                raise ValueError(
-                    f"Unsupported C native result object kind for {slot.owner_path!r}: {slot.object_kind!r}"
-                )
-
-    # Derived-type argument and result support checks.
-    def _require_derived_argument_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Require one exact opaque wrapper-address handoff."""
-        if argument.derived is None or argument.bridge.handoff_mode is not ArgumentHandoffMode.OPAQUE_ADDRESS:
-            raise ValueError(f"Unsupported C derived argument for {argument.owner_path!r}")
-
-    def _require_derived_result_supported(self, result: ResultPlan) -> None:
-        """Require one wrapper-owned opaque derived result."""
-        if result.derived is None or result.binding.codegen_action is not CodegenAction.WRAPPER_INSTANCE:
-            raise ValueError(f"Unsupported C derived result for {result.owner_path!r}")
-
-    # Scalar support checks.
-    def _require_scalar_argument_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Require one first-lane primitive scalar argument type."""
-        PrimitiveScalarTypeRegistry.type_for(argument.semantic_type_name)
-
-    def _require_scalar_native_result_supported(self, slot: NativeCallSlotPlan) -> None:
-        """Require one first-lane primitive scalar native result type."""
-        if slot.semantic_type_name is None:
-            raise ValueError(f"Missing C result datatype for {slot.owner_path!r}")
-        PrimitiveScalarTypeRegistry.type_for(slot.semantic_type_name)
-
-    def _require_scalar_descriptor_native_result_supported(
-        self,
-        function: FunctionPlan,
-        slot: NativeCallSlotPlan,
-    ) -> None:
-        """Require one nullable rank-zero descriptor output slot."""
-        if slot.bridge_data_action is not BridgeDataAction.COPY_REPRESENTATION:
-            raise ValueError(f"Unsupported C scalar descriptor action for {slot.owner_path!r}")
-        if not any(result.native_call_slot is slot for result in function.results):
-            raise ValueError(f"Unclaimed C scalar descriptor output for {slot.owner_path!r}")
-        if slot.object_kind is ObjectKind.STRING:
-            if not slot.scalar_descriptor.runtime_length:
-                raise ValueError(f"Missing C runtime string length for {slot.owner_path!r}")
-            return
-        if slot.object_kind is not ObjectKind.SCALAR or slot.scalar_descriptor.runtime_length:
-            raise ValueError(f"Unsupported C scalar descriptor family for {slot.owner_path!r}")
-        if slot.semantic_type_name is None:
-            raise ValueError(f"Missing C scalar descriptor datatype for {slot.owner_path!r}")
-        PrimitiveScalarTypeRegistry.type_for(slot.semantic_type_name)
-
-    def _require_scalar_descriptor_binding_result_supported(self, result: ResultPlan) -> None:
-        """Require one nullable rank-zero descriptor Python result."""
-        descriptor = result.scalar_descriptor
-        if descriptor is None or not descriptor.nullable:
-            raise ValueError(f"Unsupported C scalar descriptor result for {result.owner_path!r}")
-        if result.bridge.data_action is not BridgeDataAction.COPY_REPRESENTATION:
-            raise ValueError(f"Unsupported C scalar descriptor copy for {result.owner_path!r}")
-        if result.object_kind is ObjectKind.STRING:
-            if not descriptor.runtime_length:
-                raise ValueError(f"Missing C runtime string length for {result.owner_path!r}")
-            return
-        if result.object_kind is not ObjectKind.SCALAR or descriptor.runtime_length:
-            raise ValueError(f"Unsupported C scalar descriptor family for {result.owner_path!r}")
-        PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name)
-
-    # Ordinary-array and native-array-handle support checks.
-    def _require_array_argument_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Dispatch one completed array buffer or raw-address handoff."""
-        if argument.native_array_handle is not None:
-            self._require_native_array_handle_argument_supported(argument)
-            return
-        if argument.binding.python_action is PythonBarrierAction.RAW_ADDRESS:
-            self._require_raw_array_argument_supported(argument)
-            return
-        if argument.binding.python_action is PythonBarrierAction.SCALAR_STORAGE:
-            self._require_scalar_storage_array_argument_supported(argument)
-            return
-        self._require_array_buffer_argument_supported(argument)
-
-    def _require_scalar_storage_array_argument_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Require one rank-zero NumPy storage handoff to a scalar native dummy."""
-        array = argument.array
-        if not self._is_scalar_storage_array(array):
-            raise ValueError(f"Unsupported C scalar-storage array rank for {argument.owner_path!r}")
-        if argument.bridge.handoff_mode is not ArgumentHandoffMode.OPAQUE_ADDRESS:
-            raise ValueError(f"Unsupported C scalar-storage handoff for {argument.owner_path!r}")
-        if argument.bridge.data_action is not BridgeDataAction.ASSOCIATE_VIEW:
-            raise ValueError(f"Unsupported C scalar-storage data action for {argument.owner_path!r}")
-        PrimitiveScalarTypeRegistry.type_for(argument.semantic_type_name)
-
-    @staticmethod
-    def _is_scalar_storage_array(array) -> bool:
-        return bool(array is not None and array.rank == 0 and array.category == SCALAR_STORAGE_CATEGORY)
-
-    def _require_native_array_handle_argument_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Require one typed standard-descriptor argument handoff."""
-        handle = argument.native_array_handle
-        if handle is None or handle.array.rank is None:
-            raise ValueError(f"Unsupported C native array handle for {argument.owner_path!r}")
-        if argument.bridge.handoff_mode is not ArgumentHandoffMode.NATIVE_DESCRIPTOR:
-            raise ValueError(f"Unsupported C native descriptor handoff for {argument.owner_path!r}")
-        if handle.handoff.abi not in {
-            NativeDescriptorHandoffABI.FACT_PACKED_CALL_LOCAL,
-            NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR,
-        }:
-            raise ValueError(f"Unsupported C native descriptor ABI for {argument.owner_path!r}")
-        if self._native_array_cfi_type(argument) is None:
-            raise ValueError(f"Missing CFI element type for {argument.owner_path!r}")
-
-    def _require_array_buffer_argument_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Require one completed ordinary array-buffer handoff."""
-        array = argument.array
-        if array is None or (array.rank is not None and not 1 <= array.rank <= 15):
-            raise ValueError(f"Unsupported C array rank for {argument.owner_path!r}")
-        if array.contiguous not in {True, False}:
-            raise ValueError(f"Unsupported C array layout for {argument.owner_path!r}")
-        if argument.bridge.handoff_mode is not ArgumentHandoffMode.ARRAY_BUFFER:
-            raise ValueError(f"Unsupported C array handoff for {argument.owner_path!r}")
-        if argument.bridge.data_action is not BridgeDataAction.ASSOCIATE_VIEW:
-            raise ValueError(f"Unsupported C array data action for {argument.owner_path!r}")
-        if argument.datatype_family is not DatatypeFamily.STRING:
-            PrimitiveScalarTypeRegistry.type_for(argument.semantic_type_name)
-
-    def _require_raw_array_argument_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Require one completed opaque address with concrete pointee layout."""
-        self._require_raw_array_shape_supported(argument)
-        self._require_raw_array_actions_supported(argument)
-        self._require_array_element_supported(argument)
-
-    def _require_raw_array_shape_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Require concrete dense raw-pointee shape facts."""
-        array = argument.array
-        if array is None or array.rank is None or not 1 <= array.rank <= 15:
-            raise ValueError(f"Unsupported C raw array rank for {argument.owner_path!r}")
-        if array.contiguous is not True or array.category != "raw_address":
-            raise ValueError(f"Unsupported C raw array layout for {argument.owner_path!r}")
-
-    def _require_raw_array_actions_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Require the opaque non-copying raw-address action pair."""
-        if argument.bridge.handoff_mode is not ArgumentHandoffMode.OPAQUE_ADDRESS:
-            raise ValueError(f"Unsupported C raw array handoff for {argument.owner_path!r}")
-        if argument.bridge.data_action is not BridgeDataAction.ASSOCIATE_VIEW:
-            raise ValueError(f"Unsupported C raw array data action for {argument.owner_path!r}")
-
-    def _require_array_element_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Require one supported primitive or fixed-character array element."""
-        array = argument.array
-        if argument.datatype_family is DatatypeFamily.STRING:
-            if array is None or array.itemsize is None or array.itemsize <= 0:
-                raise ValueError(f"Unsupported C raw character array for {argument.owner_path!r}")
-            return
-        PrimitiveScalarTypeRegistry.type_for(argument.semantic_type_name)
-
-    def _require_array_binding_result_supported(self, result: ResultPlan) -> None:
-        """Require one fixed-shape ordinary array result consumer."""
-        if result.native_array_handle is not None:
-            self._require_owned_native_array_result_supported(result)
-            return
-        if result.array is None or result.array.rank is None:
-            raise ValueError(f"Unsupported C array result for {result.owner_path!r}")
-        if result.bridge.data_action is not BridgeDataAction.COPY_REPRESENTATION:
-            raise ValueError(f"Unsupported C array result data action for {result.owner_path!r}")
-        if result.datatype_family is DatatypeFamily.STRING:
-            if result.array.itemsize is None or result.array.itemsize <= 0:
-                raise ValueError(f"Unsupported C character array result for {result.owner_path!r}")
-            return
-        PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name)
-
-    def _require_owned_native_array_result_supported(self, result: ResultPlan) -> None:
-        """Require one wrapper-owned standard result descriptor."""
-        handle = result.native_array_handle
-        if (
-            handle is None
-            or handle.handoff.abi is not NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
-            or handle.array.rank is None
-        ):
-            raise ValueError(f"Unsupported C owned native array result for {result.owner_path!r}")
-        if self._native_array_cfi_type(result) is None:
-            raise ValueError(f"Missing CFI result element type for {result.owner_path!r}")
-
-    def _require_array_result_supported(self, function: FunctionPlan, slot: NativeCallSlotPlan) -> None:
-        """Require one hidden fixed-shape array output slot."""
-        if slot.native_array_handle is not None:
-            self._require_owned_native_array_slot_supported(function, slot)
-            return
-        self._require_ordinary_array_result_slot_supported(function, slot)
-
-    def _require_owned_native_array_slot_supported(
-        self,
-        function: FunctionPlan,
-        slot: NativeCallSlotPlan,
-    ) -> None:
-        """Require one hidden wrapper-owned descriptor result slot."""
-        result = next((item for item in function.results if item.native_call_slot is slot), None)
-        if result is None:
-            raise ValueError(f"Unclaimed C native array handle output for {slot.owner_path!r}")
-        self._require_owned_native_array_result_supported(result)
-
-    def _require_ordinary_array_result_slot_supported(
-        self,
-        function: FunctionPlan,
-        slot: NativeCallSlotPlan,
-    ) -> None:
-        """Require one hidden fixed-shape ordinary-array output slot."""
-        if slot.array is None or slot.array.rank is None:
-            raise ValueError(f"Unsupported C array output for {slot.owner_path!r}")
-        if slot.bridge_data_action is not BridgeDataAction.COPY_REPRESENTATION:
-            raise ValueError(f"Unsupported C array output data action for {slot.owner_path!r}")
-        if not any(result.native_call_slot is slot for result in function.results):
-            raise ValueError(f"Unclaimed C array output for {slot.owner_path!r}")
-        if slot.datatype_family is DatatypeFamily.STRING:
-            if slot.array.itemsize is None or slot.array.itemsize <= 0:
-                raise ValueError(f"Unsupported C character array output for {slot.owner_path!r}")
-            return
-        if slot.semantic_type_name is None:
-            raise ValueError(f"Missing C array output datatype for {slot.owner_path!r}")
-        PrimitiveScalarTypeRegistry.type_for(slot.semantic_type_name)
-
-    # String support checks.
-    def _require_string_argument_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Require a completed string value, storage, or raw-address action."""
-        if argument.datatype_family is not DatatypeFamily.STRING:
-            raise ValueError(f"Unsupported C string datatype for {argument.owner_path!r}")
-        if argument.bridge.data_action is not BridgeDataAction.COPY_REPRESENTATION:
-            raise ValueError(f"Unsupported C string data action for {argument.owner_path!r}")
-        action = argument.binding.python_action
-        if action is PythonBarrierAction.STRING_VALUE:
-            self._require_string_value_argument_supported(argument)
-            return
-        if action not in {PythonBarrierAction.STRING_STORAGE, PythonBarrierAction.RAW_ADDRESS}:
-            raise ValueError(f"Unsupported C string boundary for {argument.owner_path!r}: {action!r}")
-        self._require_string_address_argument_supported(argument)
-
-    def _require_string_value_argument_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Require one character-buffer value handoff."""
-        if argument.bridge.handoff_mode is not ArgumentHandoffMode.CHARACTER_BUFFER:
-            raise ValueError(f"Unsupported C string handoff for {argument.owner_path!r}")
-        if argument.binding.codegen_action not in {CodegenAction.CALL_LOCAL_INPUT, CodegenAction.COPY_IN_OUT}:
-            raise ValueError(f"Unsupported C string codegen action for {argument.owner_path!r}")
-
-    def _require_string_address_argument_supported(self, argument: ArgumentTransferPlan) -> None:
-        """Require one fixed storage/raw-address handoff."""
-        if argument.bridge.handoff_mode is not ArgumentHandoffMode.OPAQUE_ADDRESS:
-            raise ValueError(f"Unsupported C string address handoff for {argument.owner_path!r}")
-        if argument.binding.codegen_action is not CodegenAction.IN_PLACE_ARGUMENT:
-            raise ValueError(f"Unsupported C string address action for {argument.owner_path!r}")
-        if argument.character_length is None or argument.character_length <= 0:
-            raise ValueError(f"Unsupported C string address length for {argument.owner_path!r}")
-
-    def _require_string_result_supported(self, function: FunctionPlan, slot: NativeCallSlotPlan) -> None:
-        """Require one fixed string result slot or status-message slot."""
-        if slot.character_length is None or slot.character_length <= 0:
-            raise ValueError(f"Unsupported C string output for {slot.owner_path!r}")
-        if slot.bridge_data_action is not BridgeDataAction.COPY_REPRESENTATION:
-            raise ValueError(f"Unsupported C string bridge data action for {slot.owner_path!r}")
-        policy = function.binding.status_error
-        if policy is not None and policy.message_role == slot.symbolic_role:
-            return
-        if any(result.native_call_slot is slot for result in function.results):
-            return
-        raise ValueError(f"Unsupported C string output for {slot.owner_path!r}")
-
-    def _require_string_binding_result_supported(self, result: ResultPlan) -> None:
-        """Require one fixed string result consumer with a justified bridge copy."""
-        if result.character_length is None or result.character_length <= 0:
-            raise ValueError(f"Unsupported C string result for {result.owner_path!r}")
-        if result.bridge.data_action is not BridgeDataAction.COPY_REPRESENTATION:
-            raise ValueError(f"Unsupported C string result data action for {result.owner_path!r}")
-
-    def _require_writeback_supported(self, action: LifecycleActionPlan) -> None:
-        """Require one object-kind-specific binding copy-out action."""
-        if action.phase is not WritebackPhase.COPY_OUT:
-            return
-        if action.binding is None:
-            return
-        if action.object_kind is ObjectKind.NUMPY_ARRAY:
-            if action.binding.codegen_action not in {
-                CodegenAction.COPY_IN_OUT,
-                CodegenAction.IN_PLACE_ARGUMENT,
-            }:
-                raise ValueError(f"Unsupported C array writeback for {action.owner_path!r}")
-            return
-        if action.object_kind is ObjectKind.DERIVED_TYPE:
-            if (
-                action.binding.datatype_family is not DatatypeFamily.DERIVED
-                or action.binding.codegen_action is not CodegenAction.IN_PLACE_ARGUMENT
-            ):
-                raise ValueError(f"Unsupported C derived writeback for {action.owner_path!r}")
-            return
-        if action.binding.datatype_family is DatatypeFamily.STRING:
-            if action.binding.codegen_action is not CodegenAction.COPY_IN_OUT:
-                raise ValueError(f"Unsupported C string writeback for {action.owner_path!r}")
-            return
-        PrimitiveScalarTypeRegistry.type_for(action.binding.semantic_type_name)
-
-    @staticmethod
-    def _require_derived_lifecycle_supported(action: LifecycleActionPlan) -> None:
-        """Require an explicit owned-result failure or wrapper-release action."""
-        if (
-            action.binding is None
-            or action.object_kind is not ObjectKind.DERIVED_TYPE
-            or action.datatype_family is not DatatypeFamily.DERIVED
-            or action.operation not in {LifecycleOperation.DESTROY_ON_FAILURE, LifecycleOperation.TRANSFER_TO_WRAPPER}
-        ):
-            raise ValueError(f"Unsupported C derived lifecycle action for {action.owner_path!r}")
+        self._require_backend_type_supported(argument.semantic_type_name, argument.datatype_family)
 
     def _visit_ModulePlan(self, plan: ModulePlan) -> tuple[CModule, CHeader]:
         """Return a complete C module and header from one shared plan."""
@@ -4999,21 +4552,12 @@ class CBindingGenerator(ClassVisitor):
     ) -> CFunction:
         """Attach one compiler-compatible owned descriptor to a fresh handle."""
         handle = argument.native_array_handle
-        if handle is None or handle.array.rank is None:
-            raise ValueError(f"Default handle argument {argument.owner_path!r} has no descriptor rank")
         default = handle.default_handle
-        if (
-            default.construction is not NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR
-            or default.descriptor_ownership is None
-        ):
-            raise ValueError(f"Default handle argument {argument.owner_path!r} has no lazy owner policy")
         dtype = self._native_array_dtype_for_semantic_type(
             argument.semantic_type_name,
             argument.datatype_family,
         )
         cfi_type = self._native_array_cfi_type(argument)
-        if dtype is None or cfi_type is None:
-            raise ValueError(f"Default handle argument {argument.owner_path!r} has no concrete numeric dtype")
         elem_len = f"sizeof({PrimitiveScalarTypeRegistry.type_for(argument.semantic_type_name).c_spelling})"
         nodes: list[CDeclaration | CExpressionStatement | CIf | CReturn] = [
             CDeclaration("handle_obj", "PyObject *"),
@@ -5332,13 +4876,9 @@ class CBindingGenerator(ClassVisitor):
         *,
         trailing_objects: tuple[str, ...] = (),
     ) -> tuple[CDeclaration | CExpressionStatement, ...]:
-        """Validate and decode a versioned descriptor owner capsule."""
+        """Decode a versioned descriptor owner capsule from a validated plan."""
         handle = plan.native_array_handle
-        if handle is None or handle.array.rank is None:
-            raise ValueError(f"Native array handle {plan.owner_path!r} has no descriptor metadata")
         cfi_type = self._native_array_cfi_type(plan)
-        if cfi_type is None:
-            raise ValueError(f"Native array handle {plan.owner_path!r} has no CFI element type")
         return (
             CDeclaration(f"{prefix}_obj", "PyObject *"),
             *(CDeclaration(name, "PyObject *") for name in trailing_objects),
@@ -5369,10 +4909,6 @@ class CBindingGenerator(ClassVisitor):
     ) -> tuple[CDeclaration | CExpressionStatement, ...]:
         """Establish one call-local pointer descriptor from validated source facts."""
         handle = plan.native_array_handle
-        if handle is None or handle.array.rank is None:
-            raise ValueError(f"Pointer association {plan.owner_path!r} has no descriptor rank")
-        if handle.descriptor_kind is not NativeArrayDescriptorKind.POINTER:
-            raise ValueError(f"Pointer association {plan.owner_path!r} requires a pointer descriptor")
         rank = handle.array.rank
         cfi_type = self._pointer_association_cfi_type(plan)
         expected_fields = 3 + 3 * rank
@@ -7897,13 +7433,9 @@ class CBindingGenerator(ClassVisitor):
         plan: ArgumentTransferPlan,
         names: _CArgumentNames,
     ) -> tuple[CExpressionStatement | CIf, ...]:
-        """Validate one native-handle capsule and decode its descriptor."""
+        """Validate one capsule and decode its plan-validated descriptor."""
         handle = plan.native_array_handle
-        if handle is None or handle.array.rank is None:
-            return ()
         cfi_type = self._native_array_cfi_type(plan)
-        if cfi_type is None:
-            raise ValueError(f"Native array argument {plan.owner_path!r} has no CFI element type")
         prefix = names.value_name
         condition = "1" if plan.binding.optional_mode is OptionalMode.REQUIRED else f"{names.present_name} != NULL"
         return (
@@ -10054,11 +9586,7 @@ class CBindingGenerator(ClassVisitor):
     ) -> str:
         """Create one versioned capsule around established descriptor storage."""
         handle = plan.native_array_handle
-        if handle is None or handle.array.rank is None:
-            raise ValueError(f"Native array handle {plan.owner_path!r} has no descriptor metadata")
         cfi_type = self._native_array_cfi_type(plan)
-        if cfi_type is None:
-            raise ValueError(f"Native array handle {plan.owner_path!r} has no CFI element type")
         return (
             "x2py_native_array_handle_capsule_new("
             f"{self._native_array_handle_kind_constant(handle)}, {handle.array.rank}, {cfi_type}, "
@@ -10194,8 +9722,6 @@ class CBindingGenerator(ClassVisitor):
     ) -> tuple[CExpressionStatement, ...]:
         """Release unpublished descriptor storage without releasing pointer targets."""
         handle = result.native_array_handle
-        if handle is None:
-            raise ValueError(f"Owned result {result.owner_path!r} has no descriptor policy")
         payload_release = ""
         if handle.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE:
             payload_release = f"if ({descriptor_name}->base_addr != NULL) (void)CFI_deallocate({descriptor_name}); "
@@ -10447,8 +9973,6 @@ class CBindingGenerator(ClassVisitor):
             )
         if operation is NativeArrayOperation.SHAPE:
             handle = result.native_array_handle
-            if handle is None or handle.array.rank is None:
-                raise ValueError(f"Owned result {result.owner_path!r} has no shape rank")
             return CFunctionPrototype(
                 self._owned_native_array_bridge_operation_name(result, operation),
                 "void",

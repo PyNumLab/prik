@@ -906,6 +906,32 @@ def raw_labels(n: Int32, labels: Addr(String[8][n])) -> None: ...
     assert labels.array.itemsize == 8
 
 
+def test_scalar_storage_rejects_incompatible_explicit_ownership_metadata():
+    module = parse_pyi_text(
+        """
+def invalid(
+    value: Annotated[
+        Int32[()],
+        Ownership("python"),
+        Transfer("snapshot_copy"),
+        Destruction("python_refcount"),
+    ],
+) -> None: ...
+""",
+        module_name="invalid_scalar_storage_ownership",
+    )
+    complete_semantic_policies(module)
+    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
+
+    assert policy.supported is False
+    assert policy.blockers[:4] == (
+        "argument 'value' scalar-storage owner is python, not caller",
+        "argument 'value' scalar-storage transfer is snapshot_copy, not in_place",
+        "argument 'value' scalar-storage destruction is python_refcount, not caller",
+        "argument 'value' scalar-storage action is snapshot_copy, not a storage-address action",
+    )
+
+
 def test_wrapper_policy_keeps_optional_raw_array_addresses_blocked():
     module = parse_pyi_text(
         "def optional_raw(n: Int32, values: Addr(Float64[n]) = ...) -> None: ...",
