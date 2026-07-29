@@ -19,6 +19,7 @@ VERBOSE_SOURCE = wrapper_source("verbose_api.f90")
 DEFAULT_OUTPUT_SOURCE = wrapper_source("fdefault_output.f")
 SCALE_SOURCE = wrapper_source("scale.f90")
 SCALAR_SOURCE = wrapper_source("fmath.f")
+HOME_POINTS_SOURCE = wrapper_source("home_points.f90")
 
 
 def test_verbose_mode_prints_full_direct_build_commands(tmp_path: Path):
@@ -255,6 +256,48 @@ def test_fortran_wrapper_out_names_importable_shared_library(tmp_path: Path):
     finally:
         sys.path.remove(str(tmp_path))
     assert module.scale(np.float64(3.0), np.float64(2.5)) == np.float64(7.5)
+
+
+def test_documented_homepage_points_example_builds_and_imports(tmp_path: Path):
+    source = tmp_path / "points.f90"
+    build_dir = tmp_path / "build" / "geometry"
+    shutil.copyfile(HOME_POINTS_SOURCE, source)
+
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "x2py",
+            str(source),
+            "--out",
+            "geometry",
+            "--out-dir",
+            str(build_dir),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=tmp_path,
+    )
+
+    assert (tmp_path / "geometry.so").is_file()
+    assert len(tuple(build_dir.glob("geometry.*.so"))) == 1
+
+    sys.modules.pop("geometry.points", None)
+    sys.modules.pop("geometry", None)
+    sys.path.insert(0, str(tmp_path))
+    try:
+        geometry = importlib.import_module("geometry")
+        points = geometry.points
+        item = points.point(x=np.float64(3.0), y=np.float64(4.0))
+        points.move(item, np.float64(1.0), np.float64(-2.0))
+        assert item.x == np.float64(4.0)
+        assert item.y == np.float64(2.0)
+        assert points.norm_squared(item) == np.float64(20.0)
+    finally:
+        sys.path.remove(str(tmp_path))
+        sys.modules.pop("geometry.points", None)
+        sys.modules.pop("geometry", None)
 
 
 def test_internal_preprocessing_mode_still_builds_importable_runtime_wrapper(tmp_path: Path):

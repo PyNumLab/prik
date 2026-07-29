@@ -81,8 +81,8 @@ not mislabel them as preprocessing-only options. It also keeps short examples
 for a basic source build, an explicitly named extension, and semantic contract
 generation; `--help-build` labels its basic build, semantic-contract build,
 and manifest-replay examples separately. Both help levels reuse the canonical
-`scale.f90` source and exact commands from the
-[homepage example](../../index.md#try-x2py), which contains the
+`points.f90` source and naming from the
+[homepage example](../../index.md#see-it-in-action), which contains the
 complete source, basic build, import flow, and expected result.
 
 The full build help uses the following two forms:
@@ -141,8 +141,8 @@ them:
 python3 -m x2py parse INPUT [INPUT ...] [OPTIONS]
 python3 -m x2py semantics INPUT [INPUT ...] [OPTIONS]
 
-python3 -m x2py parse scale.f90
-python3 -m x2py semantics scale.f90
+python3 -m x2py parse points.f90
+python3 -m x2py semantics points.f90
 ```
 
 Parse-report controls such as `--show-vars` and `--print-limit` appear only in
@@ -177,13 +177,13 @@ python3 -m x2py generate (--sources | --makefile)
 | `--makefile` | Writes wrapper sources, the replay manifest when applicable, and `Makefile.x2py` without compiling. |
 
 ```bash
-python3 -m x2py generate --pyi scale.f90 --out contracts
-python3 -m x2py generate --sources scale.f90 --out-dir build
-python3 -m x2py generate --makefile scale.f90 --out-dir build
+python3 -m x2py generate --pyi points.f90 --out contracts
+python3 -m x2py generate --sources points.f90 --out-dir build
+python3 -m x2py generate --makefile points.f90 --out-dir build
 ```
 
-These examples reuse `scale.f90` from the
-[homepage example](../../index.md#try-x2py).
+These examples reuse `points.f90` from the
+[homepage example](../../index.md#see-it-in-action).
 
 These modes are mutually exclusive. Source and Makefile generation still run
 the preprocessing and semantic-policy stages needed to produce a valid wrapper

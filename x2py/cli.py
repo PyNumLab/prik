@@ -60,6 +60,10 @@ _GENERATE_USAGE = (
     "                                --build-manifest PATH [OVERRIDES]"
 )
 _PROBE_USAGE = "%(prog)s --language {fortran,c} --compiler COMPILER [OPTIONS]"
+_POINTS_EXAMPLE_HELP = (
+    "  See the x2py homepage for the points.f90 source and generated Python API:\n"
+    "    https://pynumlab.github.io/x2py/#see-it-in-action\n"
+)
 _CLI_HELP_DESCRIPTION = (
     "Build Python extensions from Fortran and inspect native interface artifacts.\n\n"
     "commands:\n"
@@ -71,13 +75,13 @@ _CLI_HELP_DESCRIPTION = (
 _CLI_HELP_EPILOG = (
     f"{_HELP_DIVIDER}\n\n"
     "  Basic wrapper build:\n"
-    "    python3 -m x2py scale.f90\n"
+    "    python3 -m x2py points.f90\n"
     "\n"
     "  Name the Python extension:\n"
-    "    python3 -m x2py scale.f90 --out SCALE\n\n"
+    "    python3 -m x2py points.f90 --out geometry\n\n"
     "  Generate an editable semantic contract:\n"
-    "    python3 -m x2py generate --pyi scale.f90 --out contracts\n\n"
-    '  See README.md "Quick Start" for the scale.f90 source and expected output.\n\n'
+    "    python3 -m x2py generate --pyi points.f90 --out contracts\n\n"
+    f"{_POINTS_EXAMPLE_HELP}\n"
     "  More help:\n"
     "    python3 -m x2py --help-build\n"
     "    python3 -m x2py parse --help\n"
@@ -90,17 +94,17 @@ _CLI_HELP_EPILOG = (
 _BUILD_HELP_EPILOG = (
     f"{_HELP_DIVIDER}\n\n"
     "  Basic wrapper build:\n"
-    "    python3 -m x2py scale.f90\n"
+    "    python3 -m x2py points.f90\n"
     "\n"
     "  Name the Python extension:\n"
-    "    python3 -m x2py scale.f90 --out SCALE\n"
+    "    python3 -m x2py points.f90 --out geometry\n"
     "\n"
     "  Build from a semantic contract:\n"
-    "    python3 -m x2py contracts/__init__.pyi --native-fortran-sources scale.f90 \\\n"
-    "      --out SCALE --out-dir build/SCALE_from_pyi\n\n"
+    "    python3 -m x2py contracts/__init__.pyi --native-fortran-sources points.f90 \\\n"
+    "      --out geometry --out-dir build/geometry_from_pyi\n\n"
     "  Replay a build manifest:\n"
     "    python3 -m x2py --build-manifest build/x2py-build.json\n\n"
-    '  See README.md "Quick Start" for the scale.f90 source and expected output.\n'
+    f"{_POINTS_EXAMPLE_HELP}"
     "  See docs/user/reference/cli-commands.md for all build options.\n\n"
     "  Manifest overrides: --out, --compiler, -I/--include-dir, --json, --verbose,\n"
     "    --no-color, and --debug."
@@ -108,38 +112,38 @@ _BUILD_HELP_EPILOG = (
 _PARSE_HELP_EPILOG = (
     f"{_HELP_DIVIDER}\n\n"
     "  Basic Fortran inspection:\n"
-    "    python3 -m x2py parse scale.f90\n"
+    "    python3 -m x2py parse points.f90\n"
     "\n"
     "  Detailed Fortran report:\n"
-    "    python3 -m x2py parse scale.f90 --show-vars --print-limit 50\n"
+    "    python3 -m x2py parse points.f90 --show-vars --print-limit 50\n"
     "\n"
     "  C header as JSON:\n"
     "    python3 -m x2py parse path/to/api.h --language c --json\n\n"
-    '  See README.md "Quick Start" for the scale.f90 source.'
+    f"{_POINTS_EXAMPLE_HELP}"
 )
 _SEMANTICS_HELP_EPILOG = (
     f"{_HELP_DIVIDER}\n\n"
     "  Basic Fortran conversion:\n"
-    "    python3 -m x2py semantics scale.f90\n"
+    "    python3 -m x2py semantics points.f90\n"
     "\n"
     "  C header:\n"
     "    python3 -m x2py semantics path/to/api.h --language c\n"
     "\n"
     "  Save semantic IR:\n"
-    "    python3 -m x2py semantics scale.f90 --out semantics.json\n\n"
-    '  See README.md "Quick Start" for the scale.f90 source.'
+    "    python3 -m x2py semantics points.f90 --out semantics.json\n\n"
+    f"{_POINTS_EXAMPLE_HELP}"
 )
 _GENERATE_HELP_EPILOG = (
     f"{_HELP_DIVIDER}\n\n"
     "  Editable semantic contract:\n"
-    "    python3 -m x2py generate --pyi scale.f90 --out contracts\n"
+    "    python3 -m x2py generate --pyi points.f90 --out contracts\n"
     "\n"
     "  Wrapper sources only:\n"
-    "    python3 -m x2py generate --sources scale.f90 --out-dir build\n"
+    "    python3 -m x2py generate --sources points.f90 --out-dir build\n"
     "\n"
     "  Reproducible Makefile build:\n"
-    "    python3 -m x2py generate --makefile scale.f90 --out-dir build\n\n"
-    '  See README.md "Quick Start" for the scale.f90 source.'
+    "    python3 -m x2py generate --makefile points.f90 --out-dir build\n\n"
+    f"{_POINTS_EXAMPLE_HELP}"
 )
 _PROBE_HELP_EPILOG = (
     f"{_HELP_DIVIDER}\n\n"

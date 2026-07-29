@@ -634,10 +634,11 @@ def test_cli_help_is_concise_and_points_to_detailed_help():
     assert "Basic wrapper build:" in res.stdout
     assert "Name the Python extension:" in res.stdout
     assert "Generate an editable semantic contract:" in res.stdout
-    assert "python3 -m x2py scale.f90" in res.stdout
-    assert "python3 -m x2py scale.f90 --out SCALE" in res.stdout
-    assert "python3 -m x2py generate --pyi scale.f90 --out contracts" in res.stdout
-    assert 'See README.md "Quick Start" for the scale.f90 source and expected output.' in res.stdout
+    assert "python3 -m x2py points.f90" in res.stdout
+    assert "python3 -m x2py points.f90 --out geometry" in res.stdout
+    assert "python3 -m x2py generate --pyi points.f90 --out contracts" in res.stdout
+    assert "See the x2py homepage for the points.f90 source and generated Python API:" in res.stdout
+    assert "https://pynumlab.github.io/x2py/#see-it-in-action" in res.stdout
     assert "python3 -m x2py --help-build" in res.stdout
     assert "python3 -m x2py parse --help" in res.stdout
     assert "python3 -m x2py semantics --help" in res.stdout

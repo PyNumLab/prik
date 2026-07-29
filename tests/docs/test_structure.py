@@ -661,103 +661,89 @@ def test_deferred_c_pages_are_not_in_site_navigation() -> None:
     assert any("X2PY_C_DOCS" in line and "c-parser-reference.md" in line for line in lines)
 
 
-def test_readme_quick_start_shows_input_source_before_wrapper_build() -> None:
+def test_readme_follows_one_points_workflow_from_build_through_contract_rebuild() -> None:
     readme = _visible_documentation_source(ROOT / "README.md")
     quick_start = readme.split("## Installation & Quick Start", maxsplit=1)[1].split(
-        "The runtime wrapper mechanism is:",
+        "## How it works",
         maxsplit=1,
     )[0]
-    top_help = subprocess.run(
-        [sys.executable, "-m", "x2py", "--help"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-
-    assert "Basic wrapper build:" in top_help
-    for command in (
-        "python3 -m x2py scale.f90",
-        "python3 -m x2py scale.f90 --out SCALE",
-        "python3 -m x2py generate --pyi scale.f90 --out contracts",
-    ):
-        assert command in quick_start
-        assert command in top_help
-
+    installation_index = quick_start.index("git clone https://github.com/PyNumLab/x2py.git")
     help_index = quick_start.index("python3 -m x2py --help")
-    fortran_block_index = quick_start.index("```fortran")
     source_build_command_index = quick_start.index(
-        "python3 -m x2py scale.f90",
-        fortran_block_index,
-    )
-    default_source_build_tree_index = quick_start.index(
-        ".\n  scale.f90\n  scale.so\n  __x2py__/", source_build_command_index
-    )
-    named_source_build_command_index = quick_start.index(
-        "python3 -m x2py scale.f90 --out SCALE",
-        default_source_build_tree_index,
+        "python3 -m x2py points.f90 --out geometry",
+        help_index,
     )
     source_build_tree_index = quick_start.index(
-        ".\n  scale.f90\n  SCALE.so\n  __x2py__/",
-        named_source_build_command_index,
+        ".\n  points.f90\n  geometry.so\n  __x2py__/",
+        source_build_command_index,
     )
     explicit_source_build_command_index = quick_start.index(
-        "python3 -m x2py scale.f90 \\\n  --out SCALE \\\n  --out-dir build/SCALE",
+        "python3 -m x2py points.f90 \\\n  --out geometry \\\n  --out-dir build/geometry",
         source_build_tree_index,
     )
-    explicit_source_build_tree_index = quick_start.index("build/SCALE/", explicit_source_build_command_index)
+    explicit_source_build_tree_index = quick_start.index(
+        "build/geometry/\n    geometry.<extension-suffix>.so",
+        explicit_source_build_command_index,
+    )
     pyi_generation_command_index = quick_start.index(
-        "python3 -m x2py generate --pyi scale.f90",
+        "python3 -m x2py generate --pyi points.f90 --out contracts",
         explicit_source_build_tree_index,
     )
-    pyi_contract_tree_index = quick_start.index("contracts/\n  __init__.pyi", pyi_generation_command_index)
+    pyi_contract_tree_index = quick_start.index(
+        "contracts/\n  __init__.pyi\n  points.pyi",
+        pyi_generation_command_index,
+    )
     pyi_contract_body_index = quick_start.index(
-        "@external\n@native_call([Addr(Arg(0)), Addr(Arg(1))])\ndef scale(\n"
-        "    value: Float64,\n    factor: Float64\n) -> Float64: ...",
+        "class point:\n"
+        "    def __init__(\n"
+        "        self,\n"
+        "        *,\n"
+        "        x: Float64 = 0.0,\n"
+        "        y: Float64 = 0.0",
         pyi_contract_tree_index,
     )
-    pyi_build_command_index = quick_start.index(
-        "python3 -m x2py contracts/__init__.pyi",
+    move_contract_index = quick_start.index(
+        "@native_call([Arg(0), Addr(Arg(1)), Addr(Arg(2))])\ndef move(",
         pyi_contract_body_index,
     )
-    native_source_argument_index = quick_start.index("--native-fortran-sources scale.f90", pyi_build_command_index)
-    output_name_index = quick_start.index("--out SCALE", native_source_argument_index)
-    pyi_build_tree_index = quick_start.index("build/SCALE_from_pyi/", output_name_index)
-    direct_import_index = quick_start.index("SCALE.scale(", pyi_build_tree_index)
-    package_entry_import_section_index = quick_start.index("The package-entry `.pyi` build", direct_import_index)
-    pyi_import_index = quick_start.index("SCALE.scale(", package_entry_import_section_index)
-    runtime_output_index = quick_start.index("7.5", pyi_import_index)
+    norm_contract_index = quick_start.index("def norm_squared(", move_contract_index)
+    pyi_build_command_index = quick_start.index(
+        "python3 -m x2py contracts/__init__.pyi",
+        norm_contract_index,
+    )
+    native_source_argument_index = quick_start.index("--native-fortran-sources points.f90", pyi_build_command_index)
+    output_name_index = quick_start.index("--out geometry", native_source_argument_index)
+    pyi_build_tree_index = quick_start.index("build/geometry_from_pyi/", output_name_index)
+    import_index = quick_start.index("import geometry.points as points", pyi_build_tree_index)
+    constructor_index = quick_start.index("item = points.point(", import_index)
+    mutation_index = quick_start.index("points.move(item", constructor_index)
+    runtime_output_index = quick_start.index("# 20.0", mutation_index)
     verbose_command_index = quick_start.index(
-        "python3 -m x2py scale.f90 \\\n  --out SCALE_debug",
+        "python3 -m x2py points.f90 \\\n  --out geometry_debug",
         runtime_output_index,
     )
     verbose_fortran_flag_index = quick_start.index("--wrapper-fortran-flags=-O2", verbose_command_index)
     verbose_c_flag_index = quick_start.index("--wrapper-c-flags=-O2", verbose_fortran_flag_index)
     verbose_output_index = quick_start.index("generated Python binding", verbose_c_flag_index)
-    module_lesson_index = quick_start.index("first wrapped module", verbose_output_index)
 
-    assert help_index < fortran_block_index < source_build_command_index
-    assert source_build_command_index < default_source_build_tree_index < named_source_build_command_index
-    assert named_source_build_command_index < source_build_tree_index < explicit_source_build_command_index
+    assert installation_index < help_index < source_build_command_index
+    assert source_build_command_index < source_build_tree_index < explicit_source_build_command_index
     assert explicit_source_build_command_index < explicit_source_build_tree_index < pyi_generation_command_index
     assert pyi_generation_command_index < pyi_contract_tree_index < pyi_contract_body_index
-    assert pyi_contract_body_index < pyi_build_command_index < native_source_argument_index < output_name_index
-    assert output_name_index < pyi_build_tree_index < direct_import_index < package_entry_import_section_index
-    assert package_entry_import_section_index < pyi_import_index
-    assert pyi_import_index < runtime_output_index < verbose_command_index
+    assert pyi_contract_body_index < move_contract_index < norm_contract_index < pyi_build_command_index
+    assert pyi_build_command_index < native_source_argument_index < output_name_index < pyi_build_tree_index
+    assert pyi_build_tree_index < import_index < constructor_index < mutation_index < runtime_output_index
+    assert runtime_output_index < verbose_command_index
     assert verbose_command_index < verbose_fortran_flag_index < verbose_c_flag_index < verbose_output_index
-    assert verbose_output_index < module_lesson_index
     assert "--parse" not in readme
     assert "--semantics" not in readme
-    assert "tests/data/fortran/wrapper/scale.f90" in quick_start
-    assert "scale.f90 --json" not in quick_start
+    assert "scale.f90" not in readme
+    assert "SCALE" not in readme
     assert "python3 -m x2py solver.f90" not in quick_start
-    assert "python3 -m x2py tests/data/fortran/wrapper/scale.f90" not in quick_start
     assert "fruntime_abi_f90" not in readme
     assert "solver.f90" not in readme
     assert "add1" not in readme
     assert "distance2" not in readme
-    assert "points_api" not in readme
     assert "point_api" not in readme
     assert "build/points" not in readme
     assert "tests/data/fortran/general/basic_subroutine.f90" not in readme
@@ -1039,8 +1025,8 @@ def test_readme_opening_uses_the_homepage_message_and_showcase() -> None:
         assert content in readme_opening
 
     assert readme.count("\nmodule points\n") == 1
-    assert readme.count("python3 -m x2py points.f90 --out geometry") == 1
-    assert readme.count("import geometry.points as points") == 1
+    assert readme_opening.count("python3 -m x2py points.f90 --out geometry") == 1
+    assert readme_opening.count("import geometry.points as points") == 1
 
 
 def test_documentation_links_to_documentation_stay_on_the_website() -> None:
@@ -1139,6 +1125,7 @@ def test_beginner_workflow_reuses_scale_example_without_renaming_it() -> None:
 
     assert source_reference_index < layout_index < contract_index < build_index
     assert build_index < smoke_index < editing_index < edited_contract_index < diagnosis_index
+    assert "[First Wrapped Function](first-wrapped-function.md)" in page
     assert "scale_api" not in page
 
 
@@ -1211,8 +1198,20 @@ def test_user_guide_shows_direct_shared_library_build() -> None:
     content = "\n".join(
         _visible_documentation_source(DOCS_ROOT / relative_path) for relative_path in REQUIRED_USER_GUIDE_PAGES
     )
+    shared_library = _visible_documentation_source(DOCS_ROOT / "user/guide/building-shared-library.md")
 
     assert "python3 -m x2py src/scale.f90 --out-dir build/scale" in content
+    assert "[Common Beginner Workflow](../getting-started/beginner-workflow.md)" in shared_library
+
+
+def test_cli_reference_reuses_the_homepage_points_example() -> None:
+    content = _visible_documentation_source(CLI_REFERENCE_PATH)
+
+    assert "`points.f90` source and naming" in content
+    assert "../../index.md#see-it-in-action" in content
+    assert "python3 -m x2py parse points.f90" in content
+    assert "python3 -m x2py generate --pyi points.f90 --out contracts" in content
+    assert "scale.f90" not in content
 
 
 def test_fortran_wrapper_reference_shows_every_common_shared_library_build_input() -> None:

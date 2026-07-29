@@ -523,10 +523,17 @@ def test_x2py_command_parsers_group_options_by_user_intent():
     assert "Basic wrapper build:" in top_help
     assert "Name the Python extension:" in top_help
     assert "Generate an editable semantic contract:" in top_help
-    assert "python3 -m x2py scale.f90" in top_help
-    assert "python3 -m x2py scale.f90 --out SCALE" in top_help
-    assert "python3 -m x2py generate --pyi scale.f90 --out contracts" in top_help
-    assert 'See README.md "Quick Start" for the scale.f90 source and expected output.' in top_help
+    assert "python3 -m x2py points.f90" in top_help
+    assert "python3 -m x2py points.f90 --out geometry" in top_help
+    assert "python3 -m x2py generate --pyi points.f90 --out contracts" in top_help
+    assert "See the x2py homepage for the points.f90 source and generated Python API:" in top_help
+    assert "https://pynumlab.github.io/x2py/#see-it-in-action" in top_help
+    assert "points.f90" in build_help
+    assert "points.f90" in parse_help
+    assert "points.f90" in semantics_help
+    assert "points.f90" in generate_help
+    for help_text in (top_help, build_help, parse_help, semantics_help, generate_help, probe_help):
+        assert "scale.f90" not in help_text
     assert "Run `python3 -m x2py --help-build` for the full list of build options." in top_help
     for command in ("parse", "semantics", "generate", "probe"):
         assert f"python3 -m x2py {command} --help" in top_help

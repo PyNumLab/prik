@@ -17,7 +17,8 @@ project: edit the source, review its Python interface, build, and test.
 
 ## Recommended Project Layout
 
-This layout continues with the `scale.f90` example:
+This layout continues with `scale.f90` from
+[First Wrapped Function](first-wrapped-function.md):
 
 ```
 my-project/

@@ -2,8 +2,8 @@ module points
   implicit none
 
   type :: point
-    real(8) :: x = 0.0_8
-    real(8) :: y = 0.0_8
+    real(8) :: x = 0.0d0
+    real(8) :: y = 0.0d0
   end type point
 
 contains
