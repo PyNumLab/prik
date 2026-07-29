@@ -1,9 +1,11 @@
 # x2py
 
-x2py generates importable Python extensions from Fortran sources, extracts
-native declarations into language-neutral semantic IR, emits editable `.pyi`
-interfaces, and reports unsupported or incomplete contracts before code
-generation.
+**Turn Fortran into natural Python APIs.**
+
+Build clean, importable native extensions from supported Fortran without
+writing low-level binding code. x2py preserves modules, derived types, arrays,
+and native behavior, and generates an editable `.pyi` contract so you can
+shape the Python API.
 
 <!-- X2PY_C_DOCS_START
 Fortran-to-Python wrapper generation plus wrapper-oriented parser and semantic
@@ -19,203 +21,31 @@ X2PY_C_DOCS_END -->
 [Read the documentation](https://pynumlab.github.io/x2py/) for installation,
 the user guide, examples, and reference material.
 
-## Installation & Quick Start
-
-Requires **Python 3.10+**.
+The complete example below builds with one command:
 
 ```bash
-# Install in development mode
-pip install -e .
-
-# See all available commands
-python3 -m x2py --help
+python3 -m x2py points.f90 --out geometry
 ```
 
-Expected result: the install command completes successfully, and `--help`
-prints the CLI usage with input selection, wrapper builds, `.pyi` contracts,
-verbose mode, and output options.
+## See it in action
 
-The default user-facing action for a single Fortran source is to build a Python
-extension. Create `scale.f90` with this input:
+Create `points.f90`:
 
-<!-- x2py-doc-source: tests/data/fortran/wrapper/scale.f90 -->
-```fortran
-real(8) function scale(value, factor) result(output)
-  real(8), intent(in) :: value
-  real(8), intent(in) :: factor
-  output = value * factor
-end function scale
-```
-
-The concise `python3 -m x2py --help` examples reuse this `scale.f90`
-source. Help entries labeled "README Quick Start" refer to the complete source
-and workflow in this section.
-
-Build it with the default output locations:
-
-```bash
-python3 -m x2py scale.f90
-```
-
-By default, x2py writes generated build artifacts, including the ABI-suffixed
-extension, under `__x2py__/` in the directory where you run the command. It
-also creates a stable `scale.so` import alias alongside your source file, so
-you can simply `import scale`.
-
-```bash
-.
-  scale.f90
-  scale.so
-  __x2py__/
-    scale.<extension-suffix>.so
-    generated-wrapper sources
-    binding_support/
-```
-
-Name the Python extension and final `.so` explicitly with `--out NAME`:
-
-```bash
-python3 -m x2py scale.f90 --out SCALE
-```
-
-Expected result:
-
-```text
-.
-  scale.f90
-  SCALE.so
-  __x2py__/
-    SCALE.<extension-suffix>.so
-    generated-wrapper sources
-    binding_support/
-```
-
-For a wrapper build, `--out SCALE` selects the Python module name and the final
-shared-library filename. This first example is a standalone procedure, so it is
-exposed directly at the extension root.
-
-Use `--out-dir` when you want the ABI-specific shared library and generated
-intermediates in an explicit build directory:
-
-```bash
-python3 -m x2py scale.f90 \
-  --out SCALE \
-  --out-dir build/SCALE
-```
-
-Expected result:
-
-```text
-.
-  SCALE.so
-  build/SCALE/
-    SCALE.<extension-suffix>.so
-    generated-wrapper sources
-    binding_support/
-```
-
-Generate the semantic `.pyi` contract for the same source:
-
-```bash
-python3 -m x2py generate --pyi scale.f90 --out contracts
-```
-
-The command writes the contract package:
-
-```text
-contracts/
-  __init__.pyi
-```
-
-Expected contract (`contracts/__init__.pyi`):
-
-```python
-from x2py.contracts import Addr, Arg, Float64, external, native_call
-
-@external
-@native_call([Addr(Arg(0)), Addr(Arg(1))])
-def scale(
-    value: Float64,
-    factor: Float64
-) -> Float64: ...
-```
-
-The semantic contract does not repeat Fortran `intent`. Source `intent` helps
-x2py choose the generated Python arguments and results, while `@native_call`
-records the exact native argument order and transport. The compiled native
-procedure keeps its own `intent`; editing the `.pyi` changes the wrapper call
-contract, not the native procedure declaration.
-
-Then build the shared library from the package-entry `.pyi` contract and the
-same native implementation source:
-
-```bash
-python3 -m x2py contracts/__init__.pyi \
-  --native-fortran-sources scale.f90 \
-  --out SCALE \
-  --out-dir build/SCALE_from_pyi
-```
-
-Use `--out NAME` with wrapper builds when you want the import name and final
-`.so` filename to differ from the default inferred name.
-
-The `.pyi` build produces the same importable extension shape:
-
-```text
-.
-  SCALE.so
-  build/SCALE_from_pyi/
-    SCALE.<extension-suffix>.so
-    generated-wrapper sources
-    binding_support/
-```
-
-The direct source build exposes the standalone procedure at the extension root:
-
-```python
-import sys
-
-import numpy as np
-
-sys.path.insert(0, "build/SCALE")
-import SCALE
-
-print(SCALE.scale(np.float64(3.0), np.float64(2.5)))  # 7.5
-```
-
-The package-entry `.pyi` build exposes the same Python API:
-
-```python
-import sys
-
-import numpy as np
-
-sys.path.insert(0, "build/SCALE_from_pyi")
-import SCALE
-
-print(SCALE.scale(np.float64(3.0), np.float64(2.5)))  # 7.5
-```
-
-Both calls print:
-
-```text
-7.5
-```
-
-For a small derived-type wrapper, create `points.f90`:
-
+<!-- x2py-doc-source: tests/data/fortran/wrapper/home_points.f90 -->
 ```fortran
 module points
   implicit none
+
   type :: point
-    real(8) :: x
-    real(8) :: y
+    real(8) :: x = 0.0d0
+    real(8) :: y = 0.0d0
   end type point
+
 contains
+
   subroutine move(item, dx, dy)
     type(point), intent(inout) :: item
-    real(8), intent(in) :: dx
-    real(8), intent(in) :: dy
+    real(8), intent(in) :: dx, dy
     item%x = item%x + dx
     item%y = item%y + dy
   end subroutine move
@@ -224,16 +54,123 @@ contains
     type(point), intent(in) :: item
     value = item%x * item%x + item%y * item%y
   end function norm_squared
+
 end module points
 ```
 
-Generate its semantic contract:
+**Generated Python API:**
+
+```python
+import numpy as np
+import geometry.points as points
+
+item = points.point(x=np.float64(3.0), y=np.float64(4.0))
+points.move(item, np.float64(1.0), np.float64(-2.0))
+
+print(item.x, item.y)             # 4.0 2.0
+print(points.norm_squared(item))  # 20.0
+```
+
+No manual bindings are required. From this source, x2py creates a Python
+namespace, a class with accessible fields, a mutating procedure, and a
+function.
+
+Want a different Python API? Edit the generated `.pyi` contract to rename or
+hide exports, flatten namespaces, define constructors and methods, or create
+overloads. The
+[contract guide](https://pynumlab.github.io/x2py/user/reference/pyi-contracts/)
+shows the available edits.
+
+## Key Features
+
+- Fortran modules exposed as Python namespaces and derived types as classes
+- NumPy arrays with explicit dtype, shape, and layout checks
+- Allocatable and pointer arrays with explicit lifetime operations
+- Immediate Python callbacks and overloaded interfaces
+- Editable `.pyi` contracts and readable generated docstrings
+- Early, clear errors when a boundary cannot be wrapped
+
+## Installation & Quick Start
+
+x2py requires **Python 3.10 or newer**, GNU Fortran, Python development
+headers, NumPy, and standard build tools.
+
+Clone the repository and install x2py in a virtual environment:
+
+```bash
+git clone https://github.com/PyNumLab/x2py.git
+cd x2py
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install --upgrade pip
+python3 -m pip install -e .
+```
+
+Check the installation:
+
+```bash
+python3 -m x2py --help
+```
+
+With the `points.f90` source from above in the current directory, build the
+extension:
+
+```bash
+python3 -m x2py points.f90 --out geometry
+```
+
+`--out geometry` selects the import name and the final shared-library name.
+x2py places the stable import file beside the source and keeps generated build
+artifacts under `__x2py__/`:
+
+```text
+.
+  points.f90
+  geometry.so
+  __x2py__/
+    geometry.<extension-suffix>.so
+    generated-wrapper sources
+    binding_support/
+```
+
+The Python code shown at the top of this README can now import `geometry`
+directly.
+
+Use `--out-dir` to place the ABI-specific extension and generated files in a
+chosen build directory:
+
+```bash
+python3 -m x2py points.f90 \
+  --out geometry \
+  --out-dir build/geometry
+```
+
+```text
+.
+  geometry.so
+  build/geometry/
+    geometry.<extension-suffix>.so
+    generated-wrapper sources
+    binding_support/
+```
+
+### Inspect the generated contract
+
+Generate the editable `.pyi` contract for the same `points.f90`:
 
 ```bash
 python3 -m x2py generate --pyi points.f90 --out contracts
 ```
 
-Expected contract (`contracts/points.pyi`):
+The command preserves the Fortran module as a contract module:
+
+```text
+contracts/
+  __init__.pyi
+  points.pyi
+```
+
+Generated `contracts/points.pyi`:
 
 ```python
 from x2py.contracts import Addr, Arg, Float64, native_call
@@ -242,12 +179,12 @@ class point:
     def __init__(
         self,
         *,
-        x: Float64 = ...,
-        y: Float64 = ...
+        x: Float64 = 0.0,
+        y: Float64 = 0.0
     ) -> None: ...
 
-    x: Float64
-    y: Float64
+    x: Float64 = 0.0
+    y: Float64 = 0.0
 
 @native_call([Arg(0), Addr(Arg(1)), Addr(Arg(2))])
 def move(
@@ -261,41 +198,57 @@ def norm_squared(
 ) -> Float64: ...
 ```
 
-Build and import it with a clean Python module name:
+The contract describes the generated Python class, fields, functions, exact
+NumPy scalar types, and native argument order. Editing it changes the wrapper
+API; it does not change the Fortran implementation.
+
+### Build from the contract
+
+After editing the contract, rebuild the same Python API from the package entry
+and the original Fortran implementation:
 
 ```bash
-python3 -m x2py points.f90 --out geometry --out-dir build/geometry
+python3 -m x2py contracts/__init__.pyi \
+  --native-fortran-sources points.f90 \
+  --out geometry \
+  --out-dir build/geometry_from_pyi
 ```
+
+The contract build has the same import name and module layout:
+
+```text
+.
+  geometry.so
+  build/geometry_from_pyi/
+    geometry.<extension-suffix>.so
+    generated-wrapper sources
+    binding_support/
+```
+
+Import the extension from the explicit build directory when needed:
 
 ```python
 import sys
 
 import numpy as np
 
-sys.path.insert(0, "build/geometry")
-import geometry
+sys.path.insert(0, "build/geometry_from_pyi")
+import geometry.points as points
 
-p = geometry.points.point(x=np.float64(3.0), y=np.float64(4.0))
-geometry.points.move(p, np.float64(1.0), np.float64(-2.0))
-
-print(p.x, p.y)
-print(geometry.points.norm_squared(p))
+item = points.point(x=np.float64(3.0), y=np.float64(4.0))
+points.move(item, np.float64(1.0), np.float64(-2.0))
+print(points.norm_squared(item))  # 20.0
 ```
 
-Expected result:
-
-```text
-4.0 2.0
-20.0
-```
+### Inspect the native build
 
 Use `--verbose` when you want to see the compiler commands and confirm which
 wrapper flags reached the build:
 
 ```bash
-python3 -m x2py scale.f90 \
-  --out SCALE_debug \
-  --out-dir build/SCALE_debug \
+python3 -m x2py points.f90 \
+  --out geometry_debug \
+  --out-dir build/geometry_debug \
   --verbose \
   --compiler gfortran \
   --wrapper-fortran-flags=-O2 \
@@ -309,16 +262,10 @@ The custom wrapper flags appear in the relevant command lines:
 ```text
 <fortran compiler> ... -O2 ... generated bridge ...
 <python-binding compiler> ... -O2 ... generated Python binding ...
-<fortran compiler> -shared ... -O2 ... SCALE_debug ...
+<fortran compiler> -shared ... -O2 ... geometry_debug ...
 ```
 
-Standalone procedures are the smallest wrapper surface and therefore come
-first. Contained Fortran module procedures are preserved under Python child
-modules; continue with the
-[first wrapped module](https://pynumlab.github.io/x2py/user/getting-started/first-wrapped-module/)
-for that layout and for public module state.
-
-The runtime wrapper mechanism is:
+## How it works
 
 ```text
 Fortran sources
@@ -492,9 +439,9 @@ conversion and `.pyi` emission:
 from x2py import build_fortran_extension
 
 result = build_fortran_extension(
-    "scale.f90",
-    output_name="SCALE",
-    output_dir="build/SCALE",
+    "points.f90",
+    output_name="geometry",
+    output_dir="build/geometry_api",
 )
 print(result.module_name)
 print(result.shared_library)
@@ -520,9 +467,17 @@ X2PY_C_DOCS_END -->
 For native projects with macros, includes, or target flags, use the
 compiler-preprocessed CLI path or an equivalent preprocessing configuration.
 
+## Development
+
+Run the full suite from the repository root:
+
+```bash
+PYTHONPATH=. python3 -m pytest -q
+```
+
 ## Documentation
 
-- **[Documentation](https://pynumlab.github.io/x2py/)** — Complete published documentation
+- **[Documentation](https://pynumlab.github.io/x2py/)** — Learn how to install and use x2py
 - **[Getting Started](https://pynumlab.github.io/x2py/user/getting-started/)** — Installation, verification, standalone procedures, modules, and rebuild workflow
 - **[User Guide](https://pynumlab.github.io/x2py/user/guide/)** — Data types, functions, modules, arrays, derived types, callbacks, ownership, and runtime behavior
 <!--
@@ -533,9 +488,3 @@ compiler-preprocessed CLI path or an equivalent preprocessing configuration.
 - **[Troubleshooting](docs/user/troubleshooting/index.md)** — Solutions for installation, compiler, build, runtime, and platform issues
 - **[Changelog](docs/user/changelog/index.md)** — User-visible changes by release
 -->
-
-Run the full suite from the repository root:
-
-```bash
-PYTHONPATH=. python3 -m pytest -q
-```

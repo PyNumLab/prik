@@ -13,6 +13,9 @@ publication: reviewed
 x2py turns Fortran source into a Python extension module. The final module is a
 native shared library that Python imports directly.
 
+This page continues with `scale.f90` from the
+[Common Beginner Workflow](../getting-started/beginner-workflow.md).
+
 ## Build
 
 Run x2py on the source file and choose a build directory:

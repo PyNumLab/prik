@@ -16,7 +16,7 @@ This example shows how to build a simple scalar Fortran function and call it fro
 
 ## Source Code
 
-Use the same `scale.f90` from the homepage:
+Create `scale.f90`:
 
 ```fortran
 real(8) function scale(value, factor) result(output)

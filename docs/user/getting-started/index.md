@@ -12,7 +12,8 @@ publication: reviewed
 
 This guide takes you from a fresh clone to your first working Python extension built from Fortran code.
 
-The recommended beginner path uses the **GNU toolchain**, which offers the best compatibility right now.
+The recommended beginner path uses the **GNU toolchain**, including
+`gfortran`, which offers the best compatibility right now.
 
 ---
 
@@ -30,7 +31,9 @@ Follow these pages in order:
 
 ## What You Will Build
 
-By the end of this section you will be able to write Fortran and call it cleanly from Python:
+In [Your First Function](first-wrapped-function.md), you will create
+`scale.f90`, build it as a Python extension named `scale`, and call its
+`scale` function:
 
 ```python
 import numpy as np
@@ -41,11 +44,12 @@ result = scale.scale(np.float64(3.0), np.float64(2.5))
 print(result)        # 7.5
 ```
 
-The first example exposes a standalone Fortran function directly on the extension.  
-Later examples show how Fortran modules become Python namespaces.
+The first example exposes a standalone Fortran function directly on the extension.
+Later guides show how Fortran modules become Python namespaces and derived
+types become Python classes.
 
 ---
 
 ## Next
 
-- Start with [Installation](installation.md).
+**Ready? Start with [Installation](installation.md).**

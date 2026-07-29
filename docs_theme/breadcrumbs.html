@@ -1,0 +1,40 @@
+<div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="{{ nav.homepage.url|url }}" class="icon icon-home" aria-label="{% trans %}Docs{% endtrans %}"></a></li>
+    {%- if page %}
+      {%- for doc in page.ancestors[::-1] %}
+        {%- if doc.url %}
+          <li class="breadcrumb-item"><a href="{{ doc.url|url }}">{{ doc.title }}</a></li>
+        {%- else %}
+          <li class="breadcrumb-item">{{ doc.title }}</li>
+        {%- endif %}
+      {%- endfor %}
+      <li class="breadcrumb-item active">{{ page.title }}</li>
+    {%- endif %}
+    <li class="wy-breadcrumbs-aside">
+      <a
+        href="{{ config.repo_url }}"
+        class="x2py-repository-link"
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Open the x2py source-code repository on GitHub"
+        aria-label="Open the x2py source-code repository on GitHub in a new tab"
+      >
+        <span class="fa fa-github" aria-hidden="true"></span>
+        <span>Source Code</span>
+      </a>
+    </li>
+  </ul>
+  {%- if config.theme.prev_next_buttons_location|lower in ['top', 'both']
+        and page and (page.next_page or page.previous_page) %}
+    <div class="rst-breadcrumbs-buttons" role="navigation" aria-label="{% trans %}Breadcrumb Navigation{% endtrans %}">
+      {%- if page.previous_page %}
+        <a href="{{ page.previous_page.url|url }}" class="btn btn-neutral float-left" title="{{ page.previous_page.title }}"><span class="icon icon-circle-arrow-left" aria-hidden="true"></span> {% trans %}Previous{% endtrans %}</a>
+      {%- endif %}
+      {%- if page.next_page %}
+        <a href="{{ page.next_page.url|url }}" class="btn btn-neutral float-right" title="{{ page.next_page.title }}">{% trans %}Next{% endtrans %} <span class="icon icon-circle-arrow-right" aria-hidden="true"></span></a>
+      {%- endif %}
+    </div>
+  {%- endif %}
+  <hr/>
+</div>
