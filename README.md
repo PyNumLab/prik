@@ -1,9 +1,11 @@
 # x2py
 
-x2py generates importable Python extensions from Fortran sources, extracts
-native declarations into language-neutral semantic IR, emits editable `.pyi`
-interfaces, and reports unsupported or incomplete contracts before code
-generation.
+**Turn Fortran into natural Python APIs.**
+
+Build clean, importable native extensions from supported Fortran without
+writing low-level binding code. x2py preserves modules, derived types, arrays,
+and native behavior, and generates an editable `.pyi` contract so you can
+shape the Python API.
 
 <!-- X2PY_C_DOCS_START
 Fortran-to-Python wrapper generation plus wrapper-oriented parser and semantic
@@ -18,6 +20,75 @@ X2PY_C_DOCS_END -->
 
 [Read the documentation](https://pynumlab.github.io/x2py/) for installation,
 the user guide, examples, and reference material.
+
+The complete example below builds with one command:
+
+```bash
+python3 -m x2py points.f90 --out geometry
+```
+
+## See it in action
+
+Create `points.f90`:
+
+<!-- x2py-doc-source: tests/data/fortran/wrapper/home_points.f90 -->
+```fortran
+module points
+  implicit none
+
+  type :: point
+    real(8) :: x = 0.0_8
+    real(8) :: y = 0.0_8
+  end type point
+
+contains
+
+  subroutine move(item, dx, dy)
+    type(point), intent(inout) :: item
+    real(8), intent(in) :: dx, dy
+    item%x = item%x + dx
+    item%y = item%y + dy
+  end subroutine move
+
+  real(8) function norm_squared(item) result(value)
+    type(point), intent(in) :: item
+    value = item%x * item%x + item%y * item%y
+  end function norm_squared
+
+end module points
+```
+
+**Generated Python API:**
+
+```python
+import numpy as np
+import geometry.points as points
+
+item = points.point(x=np.float64(3.0), y=np.float64(4.0))
+points.move(item, np.float64(1.0), np.float64(-2.0))
+
+print(item.x, item.y)             # 4.0 2.0
+print(points.norm_squared(item))  # 20.0
+```
+
+No manual bindings are required. From this source, x2py creates a Python
+namespace, a class with accessible fields, a mutating procedure, and a
+function.
+
+Want a different Python API? Edit the generated `.pyi` contract to rename or
+hide exports, flatten namespaces, define constructors and methods, or create
+overloads. The
+[contract guide](https://pynumlab.github.io/x2py/user/reference/pyi-contracts/)
+shows the available edits.
+
+## Key Features
+
+- Fortran modules exposed as Python namespaces and derived types as classes
+- NumPy arrays with explicit dtype, shape, and layout checks
+- Allocatable and pointer arrays with explicit lifetime operations
+- Immediate Python callbacks and overloaded interfaces
+- Editable `.pyi` contracts and readable generated docstrings
+- Early, clear errors when a boundary cannot be wrapped
 
 ## Installation & Quick Start
 
@@ -200,93 +271,6 @@ Both calls print:
 
 ```text
 7.5
-```
-
-For a small derived-type wrapper, create `points.f90`:
-
-```fortran
-module points
-  implicit none
-  type :: point
-    real(8) :: x
-    real(8) :: y
-  end type point
-contains
-  subroutine move(item, dx, dy)
-    type(point), intent(inout) :: item
-    real(8), intent(in) :: dx
-    real(8), intent(in) :: dy
-    item%x = item%x + dx
-    item%y = item%y + dy
-  end subroutine move
-
-  real(8) function norm_squared(item) result(value)
-    type(point), intent(in) :: item
-    value = item%x * item%x + item%y * item%y
-  end function norm_squared
-end module points
-```
-
-Generate its semantic contract:
-
-```bash
-python3 -m x2py generate --pyi points.f90 --out contracts
-```
-
-Expected contract (`contracts/points.pyi`):
-
-```python
-from x2py.contracts import Addr, Arg, Float64, native_call
-
-class point:
-    def __init__(
-        self,
-        *,
-        x: Float64 = ...,
-        y: Float64 = ...
-    ) -> None: ...
-
-    x: Float64
-    y: Float64
-
-@native_call([Arg(0), Addr(Arg(1)), Addr(Arg(2))])
-def move(
-    item: point,
-    dx: Float64,
-    dy: Float64
-) -> None: ...
-
-def norm_squared(
-    item: point
-) -> Float64: ...
-```
-
-Build and import it with a clean Python module name:
-
-```bash
-python3 -m x2py points.f90 --out geometry --out-dir build/geometry
-```
-
-```python
-import sys
-
-import numpy as np
-
-sys.path.insert(0, "build/geometry")
-import geometry
-
-p = geometry.points.point(x=np.float64(3.0), y=np.float64(4.0))
-geometry.points.move(p, np.float64(1.0), np.float64(-2.0))
-
-print(p.x, p.y)
-print(geometry.points.norm_squared(p))
-```
-
-Expected result:
-
-```text
-4.0 2.0
-20.0
 ```
 
 Use `--verbose` when you want to see the compiler commands and confirm which
@@ -520,9 +504,17 @@ X2PY_C_DOCS_END -->
 For native projects with macros, includes, or target flags, use the
 compiler-preprocessed CLI path or an equivalent preprocessing configuration.
 
+## Development
+
+Run the full suite from the repository root:
+
+```bash
+PYTHONPATH=. python3 -m pytest -q
+```
+
 ## Documentation
 
-- **[Documentation](https://pynumlab.github.io/x2py/)** — Complete published documentation
+- **[Documentation](https://pynumlab.github.io/x2py/)** — Learn how to install and use x2py
 - **[Getting Started](https://pynumlab.github.io/x2py/user/getting-started/)** — Installation, verification, standalone procedures, modules, and rebuild workflow
 - **[User Guide](https://pynumlab.github.io/x2py/user/guide/)** — Data types, functions, modules, arrays, derived types, callbacks, ownership, and runtime behavior
 <!--
@@ -533,9 +525,3 @@ compiler-preprocessed CLI path or an equivalent preprocessing configuration.
 - **[Troubleshooting](docs/user/troubleshooting/index.md)** — Solutions for installation, compiler, build, runtime, and platform issues
 - **[Changelog](docs/user/changelog/index.md)** — User-visible changes by release
 -->
-
-Run the full suite from the repository root:
-
-```bash
-PYTHONPATH=. python3 -m pytest -q
-```

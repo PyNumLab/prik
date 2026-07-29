@@ -1,0 +1,40 @@
+<footer>
+  {%- block next_prev %}
+  {%- if config.theme.prev_next_buttons_location|lower in ['bottom', 'both']
+        and page and (page.next_page or page.previous_page) %}
+    <div class="rst-footer-buttons" role="navigation" aria-label="{% trans %}Footer Navigation{% endtrans %}">
+      {%- if page.previous_page %}
+        <a href="{{ page.previous_page.url|url }}" class="btn btn-neutral float-left" title="{{ page.previous_page.title }}"><span class="icon icon-circle-arrow-left"></span> {% trans %}Previous{% endtrans %}</a>
+      {%- endif %}
+      {%- if page.next_page %}
+        <a href="{{ page.next_page.url|url }}" class="btn btn-neutral float-right" title="{{ page.next_page.title }}">{% trans %}Next{% endtrans %} <span class="icon icon-circle-arrow-right"></span></a>
+      {%- endif %}
+    </div>
+  {%- endif %}
+  {%- endblock %}
+
+  {%- if page and page.edit_url %}
+    <div class="x2py-page-source">
+      <a
+        href="{{ page.edit_url }}"
+        target="_blank"
+        rel="noopener noreferrer"
+        title="View this Markdown file on GitHub; use GitHub's Edit button to propose a change"
+        aria-label="View this page's Markdown source on GitHub in a new tab"
+      >
+        <span class="fa fa-pencil" aria-hidden="true"></span>
+        <span>View page source</span>
+      </a>
+    </div>
+  {%- endif %}
+
+  <hr/>
+
+  <div role="contentinfo">
+    {%- if config.copyright %}
+      <p>{{ config.copyright }}</p>
+    {%- endif %}
+  </div>
+
+  {% trans mkdocs_link='<a href="https://www.mkdocs.org/">MkDocs</a>', sphinx_link='<a href="https://github.com/readthedocs/sphinx_rtd_theme">{}</a>'.format(gettext('theme')), rtd_link='<a href="https://readthedocs.org">Read the Docs</a>' %}Built with %(mkdocs_link)s using a %(sphinx_link)s provided by %(rtd_link)s.{% endtrans %}
+</footer>

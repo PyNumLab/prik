@@ -727,32 +727,9 @@ def test_readme_quick_start_shows_input_source_before_wrapper_build() -> None:
     package_entry_import_section_index = quick_start.index("The package-entry `.pyi` build", direct_import_index)
     pyi_import_index = quick_start.index("SCALE.scale(", package_entry_import_section_index)
     runtime_output_index = quick_start.index("7.5", pyi_import_index)
-    points_source_index = quick_start.index("For a small derived-type wrapper", runtime_output_index)
-    points_fortran_index = quick_start.index("module points", points_source_index)
-    points_pyi_command_index = quick_start.index(
-        "python3 -m x2py generate --pyi points.f90 --out contracts",
-        points_fortran_index,
-    )
-    points_contract_index = quick_start.index(
-        "class point:\n"
-        "    def __init__(\n"
-        "        self,\n"
-        "        *,\n"
-        "        x: Float64 = ...,\n"
-        "        y: Float64 = ...",
-        points_pyi_command_index,
-    )
-    points_norm_contract_index = quick_start.index("def norm_squared(", points_contract_index)
-    points_build_command_index = quick_start.index(
-        "python3 -m x2py points.f90 --out geometry --out-dir build/geometry",
-        points_norm_contract_index,
-    )
-    points_import_index = quick_start.index("import geometry", points_build_command_index)
-    points_norm_call_index = quick_start.index("geometry.points.norm_squared(p)", points_import_index)
-    points_output_index = quick_start.index("4.0 2.0\n20.0", points_norm_call_index)
     verbose_command_index = quick_start.index(
         "python3 -m x2py scale.f90 \\\n  --out SCALE_debug",
-        points_output_index,
+        runtime_output_index,
     )
     verbose_fortran_flag_index = quick_start.index("--wrapper-fortran-flags=-O2", verbose_command_index)
     verbose_c_flag_index = quick_start.index("--wrapper-c-flags=-O2", verbose_fortran_flag_index)
@@ -767,10 +744,7 @@ def test_readme_quick_start_shows_input_source_before_wrapper_build() -> None:
     assert pyi_contract_body_index < pyi_build_command_index < native_source_argument_index < output_name_index
     assert output_name_index < pyi_build_tree_index < direct_import_index < package_entry_import_section_index
     assert package_entry_import_section_index < pyi_import_index
-    assert pyi_import_index < runtime_output_index < points_source_index
-    assert points_source_index < points_fortran_index < points_pyi_command_index < points_contract_index
-    assert points_contract_index < points_norm_contract_index < points_build_command_index < points_import_index
-    assert points_import_index < points_norm_call_index < points_output_index < verbose_command_index
+    assert pyi_import_index < runtime_output_index < verbose_command_index
     assert verbose_command_index < verbose_fortran_flag_index < verbose_c_flag_index < verbose_output_index
     assert verbose_output_index < module_lesson_index
     assert "--parse" not in readme
@@ -1018,23 +992,55 @@ def test_getting_started_overview_uses_standalone_example() -> None:
 
 def test_documentation_homepage_demonstrates_x2py_before_getting_started() -> None:
     page = (DOCS_ROOT / "index.md").read_text(encoding="utf-8")
-    introduction_index = page.index("x2py turns supported Fortran source")
-    try_heading_index = page.index("## Try it in 30 seconds {#try-x2py}")
-    source_index = page.index("```fortran", try_heading_index)
-    build_index = page.index("python3 -m x2py scale.f90")
-    call_index = page.index("result = scale.scale(np.float64(3.0), np.float64(2.5))")
-    output_index = page.index("7.5", call_index)
-    docstring_index = page.index("scale(value, factor) -> float64", output_index)
-    getting_started_index = page.index("Getting Started](user/getting-started/index.md)")
+    introduction_index = page.index("Turn Fortran into natural Python APIs")
+    build_index = page.index("python3 -m x2py points.f90 --out geometry")
+    example_heading_index = page.index("## See it in action")
+    source_index = page.index("```fortran", example_heading_index)
+    generated_api_index = page.index("**Generated Python API:**", source_index)
+    constructor_index = page.index("item = points.point(", generated_api_index)
+    mutation_index = page.index("points.move(item", constructor_index)
+    result_index = page.index("# 4.0 2.0", mutation_index)
+    contract_index = page.index("Edit the generated `.pyi` contract", result_index)
+    features_index = page.index("## Key Features", contract_index)
+    getting_started_index = page.index("Getting Started Guide →", features_index)
 
-    assert introduction_index < try_heading_index < source_index < build_index < call_index < output_index
-    assert output_index < docstring_index < getting_started_index
-    assert "value : float64\nfactor : float64" in page
-    assert "result : float64" in page
-    assert "If an argument has an incompatible Python type or dtype." in page
+    assert introduction_index < build_index < example_heading_index < source_index
+    assert source_index < generated_api_index < constructor_index < mutation_index
+    assert mutation_index < result_index < contract_index < features_index < getting_started_index
+    assert "print(points.norm_squared(item))" in page
+    assert "# 20.0" in page
+    assert "[contract guide](user/reference/pyi-contracts/index.md)" in page
+    assert "{ .x2py-primary-cta }" in page
     assert "developer/index.md" not in page
     assert "maintainer/README.md" not in page
     assert "user/guide/" not in page
+
+
+def test_readme_opening_uses_the_homepage_message_and_showcase() -> None:
+    homepage = _visible_documentation_source(DOCS_ROOT / "index.md")
+    readme = _visible_documentation_source(ROOT / "README.md")
+    readme_opening = readme.split("## Installation & Quick Start", maxsplit=1)[0]
+    shared_content = (
+        "**Turn Fortran into natural Python APIs.**",
+        "Build clean, importable native extensions from supported Fortran without\nwriting low-level binding code.",
+        "python3 -m x2py points.f90 --out geometry",
+        "<!-- x2py-doc-source: tests/data/fortran/wrapper/home_points.f90 -->",
+        "import geometry.points as points",
+        "item = points.point(x=np.float64(3.0), y=np.float64(4.0))",
+        "points.move(item, np.float64(1.0), np.float64(-2.0))",
+        "print(points.norm_squared(item))  # 20.0",
+        "No manual bindings are required.",
+        "## Key Features",
+        "- Editable `.pyi` contracts and readable generated docstrings",
+    )
+
+    for content in shared_content:
+        assert content in homepage
+        assert content in readme_opening
+
+    assert readme.count("\nmodule points\n") == 1
+    assert readme.count("python3 -m x2py points.f90 --out geometry") == 1
+    assert readme.count("import geometry.points as points") == 1
 
 
 def test_documentation_links_to_documentation_stay_on_the_website() -> None:

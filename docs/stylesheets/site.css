@@ -36,6 +36,128 @@
   display: none;
 }
 
+.x2py-repository-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.15rem;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid #24292f;
+  border-radius: 0.35rem;
+  background: #24292f;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 18%);
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms ease;
+}
+
+.x2py-repository-link .fa-github {
+  font-size: 1.15rem;
+}
+
+.x2py-repository-link:visited {
+  color: #fff;
+}
+
+.x2py-repository-link:hover,
+.x2py-repository-link:focus {
+  border-color: #000;
+  background: #000;
+  box-shadow: 0 3px 7px rgb(0 0 0 / 22%);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.x2py-repository-link:focus-visible,
+.x2py-page-source a:focus-visible {
+  outline: 2px solid #f5b041;
+  outline-offset: 2px;
+}
+
+.x2py-page-source {
+  display: flex;
+  clear: both;
+  justify-content: flex-end;
+  padding-top: 2rem;
+}
+
+.x2py-page-source a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.1rem;
+  border-bottom: 1px solid transparent;
+  color: #606f7b;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.x2py-page-source a:visited {
+  color: #606f7b;
+}
+
+.x2py-page-source a:hover,
+.x2py-page-source a:focus {
+  border-color: #2980b9;
+  color: #1f618d;
+}
+
+.x2py-primary-cta {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.6rem;
+  padding: 0.65rem 1rem;
+  border: 1px solid #176b64;
+  border-radius: 0.35rem;
+  background: #176b64;
+  box-shadow: 0 2px 4px rgb(0 0 0 / 18%);
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms ease;
+}
+
+.x2py-primary-cta:visited {
+  color: #fff;
+}
+
+.x2py-primary-cta:hover,
+.x2py-primary-cta:focus {
+  border-color: #0f514c;
+  background: #0f514c;
+  box-shadow: 0 4px 9px rgb(0 0 0 / 22%);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.x2py-primary-cta:focus-visible {
+  outline: 2px solid #f5b041;
+  outline-offset: 2px;
+}
+
+@media screen and (max-width: 768px) {
+  .wy-breadcrumbs-aside {
+    display: block;
+    float: none;
+    margin-top: 0.75rem;
+  }
+}
+
 .rst-content pre {
   width: 100%;
   max-width: 56rem;

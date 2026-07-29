@@ -1,6 +1,6 @@
 ---
 title: x2py
-description: Turn Fortran into importable Python extensions with zero boilerplate
+description: Turn Fortran functions, modules, arrays, and derived types into natural Python APIs
 audience: users
 prerequisites: none
 related: user/getting-started/index.md, user/getting-started/installation.md
@@ -10,95 +10,98 @@ publication: reviewed
 
 # x2py
 
-**x2py turns supported Fortran source into fast, importable Python extensions.**
+**Turn Fortran into natural Python APIs.**
 
-It also generates a language-neutral semantic IR and editable `.pyi`
-contracts, so unsupported boundaries are reported before wrapper compilation.
+Build clean, importable native extensions from supported Fortran without
+writing low-level binding code. x2py preserves modules, derived types, arrays,
+and native behavior, and generates an editable `.pyi` contract so you can
+shape the Python API.
+
+The complete example below builds with one command:
+
+```bash
+python3 -m x2py points.f90 --out geometry
+```
 
 ---
 
-## Try it in 30 seconds {#try-x2py}
+## See it in action
 
-Create a file `scale.f90`:
+Create `points.f90`:
 
-<!-- x2py-doc-source: tests/data/fortran/wrapper/scale.f90 -->
+<!-- x2py-doc-source: tests/data/fortran/wrapper/home_points.f90 -->
 ```fortran
-real(8) function scale(value, factor) result(output)
-  real(8), intent(in) :: value
-  real(8), intent(in) :: factor
-  output = value * factor
-end function scale
+module points
+  implicit none
+
+  type :: point
+    real(8) :: x = 0.0_8
+    real(8) :: y = 0.0_8
+  end type point
+
+contains
+
+  subroutine move(item, dx, dy)
+    type(point), intent(inout) :: item
+    real(8), intent(in) :: dx, dy
+    item%x = item%x + dx
+    item%y = item%y + dy
+  end subroutine move
+
+  real(8) function norm_squared(item) result(value)
+    type(point), intent(in) :: item
+    value = item%x * item%x + item%y * item%y
+  end function norm_squared
+
+end module points
 ```
 
-Build the Python extension:
-
-```bash
-python3 -m x2py scale.f90
-```
-
-Use it from Python:
+**Generated Python API:**
 
 ```python
 import numpy as np
-import scale
+import geometry.points as points
 
-result = scale.scale(np.float64(3.0), np.float64(2.5))
-print(result)        # 7.5
+item = points.point(x=np.float64(3.0), y=np.float64(4.0))
+points.move(item, np.float64(1.0), np.float64(-2.0))
+
+print(item.x, item.y)             # 4.0 2.0
+print(points.norm_squared(item))  # 20.0
 ```
 
-Inspect the generated contract:
+No manual bindings are required. From this source, x2py creates a Python
+namespace, a class with accessible fields, a mutating procedure, and a
+function.
 
-```python
-print(scale.scale.__doc__)
-```
-
-```text
-scale(value, factor) -> float64
-
-Parameters
-----------
-value : float64
-factor : float64
-
-Returns
--------
-result : float64
-
-Raises
-------
-TypeError
-    If an argument has an incompatible Python type or dtype.
-```
+Want a different Python API? Edit the generated `.pyi` contract to rename or
+hide exports, flatten namespaces, define constructors and methods, or create
+overloads. The [contract guide](user/reference/pyi-contracts/index.md) shows
+the available edits.
 
 ---
 
 ## How it works
 
-1. You write standard Fortran
-2. `x2py` parses the interface and generates a compact native wrapper
-3. It produces a Python extension module and editable semantic `.pyi` contracts
-4. You get full NumPy scalar dtype safety and clear error messages
+1. Write standard Fortran.
+2. Run `x2py` on the source.
+3. Import the generated native extension.
+4. Optionally edit the generated `.pyi` contract to shape the Python API.
 
-No manual `f2py` signatures. No low-level boilerplate.
-
-## Next steps
-
-[Getting Started](user/getting-started/index.md){ .md-button .md-button--primary }
-
-This guide walks you through installation, compiler setup, and a deeper look at the generated artifacts.
+No manual binding code or low-level boilerplate.
 
 ---
 
-## Features
+## Key Features
 
-- Automatic generation of Python extensions from Fortran
-- Language-neutral semantic IR
-- Editable `.pyi` type stubs
-- Strict NumPy dtype checking at call time
-- Clean, readable `__doc__` strings
-- Build artifacts isolated in `__x2py__/`
+- Fortran modules exposed as Python namespaces and derived types as classes
+- NumPy arrays with explicit dtype, shape, and layout checks
+- Allocatable and pointer arrays with explicit lifetime operations
+- Immediate Python callbacks and overloaded interfaces
+- Editable `.pyi` contracts and readable generated docstrings
+- Early, clear errors when a boundary cannot be wrapped
 
 ---
 
 **Ready to wrap your Fortran code?**
-Start with the [Getting Started](user/getting-started/index.md) guide.
+
+[Getting Started Guide →](user/getting-started/index.md){ .x2py-primary-cta }
