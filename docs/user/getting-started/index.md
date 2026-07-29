@@ -12,7 +12,8 @@ publication: reviewed
 
 This guide takes you from a fresh clone to your first working Python extension built from Fortran code.
 
-The recommended beginner path uses the **GNU toolchain**, which offers the best compatibility right now.
+The recommended beginner path uses the **GNU toolchain**, including
+`gfortran`, which offers the best compatibility right now.
 
 ---
 
@@ -44,10 +45,11 @@ print(result)        # 7.5
 ```
 
 The first example exposes a standalone Fortran function directly on the extension.
-Later examples show how Fortran modules become Python namespaces.
+Later guides show how Fortran modules become Python namespaces and derived
+types become Python classes.
 
 ---
 
 ## Next
 
-- Start with [Installation](installation.md).
+**Ready? Start with [Installation](installation.md).**
