@@ -475,6 +475,17 @@ Run the full suite from the repository root:
 PYTHONPATH=. python3 -m pytest -q
 ```
 
+## License
+
+x2py is distributed under the [MIT License](LICENSE).
+Copyright (c) 2026 Said Hadjout.
+
+Using x2py does not impose the MIT License on the user's native sources or on
+wrapper code derived from those inputs. Users may distribute generated
+wrappers under terms of their choice. Files copied from x2py's
+`binding_support/` package remain MIT-licensed and must retain the included
+license notice when redistributed.
+
 ## Documentation
 
 - **[Documentation](https://pynumlab.github.io/x2py/)** — Learn how to install and use x2py

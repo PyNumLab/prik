@@ -1,5 +1,12 @@
 ## Contributing
 
+### Contribution license
+
+x2py is distributed under the MIT License. By submitting a contribution, you
+agree that your contribution is licensed under the same MIT terms and represent
+that you have the right to submit it. If an employer or another organization
+owns the work, obtain its authorization before contributing.
+
 ### Pull requests
 
 - **CI must be green before merging**: do not merge a PR unless all checks pass (including `test` and `parser-reference-guard`).

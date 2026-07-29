@@ -245,6 +245,12 @@ Typical generated artifacts are:
 | `<module>_wrapper.c` and `.h` | CPython extension binding |
 X2PY_C_DOCS_END -->
 
+Using x2py does not impose x2py's MIT License on user-supplied native sources
+or on wrapper code derived from those inputs. Users may distribute generated
+wrappers under terms of their choice. The native support files copied into
+`binding_support/` remain MIT-licensed; the copied directory includes the
+license notice that must be retained when those files are redistributed.
+
 The extension name comes from the first source filename. Contained Fortran
 modules become child Python namespaces and standalone procedures remain at the
 extension root. For example, `solver.f90` containing module `kernels` exposes

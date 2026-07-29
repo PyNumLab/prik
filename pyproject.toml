@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77.0.3", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,6 +7,11 @@ name = "x2py"
 version = "0.1.0"
 description = "Fortran-to-Python wrappers with native parser and semantic interface tooling"
 readme = "README.md"
+authors = [
+    { name = "Said Hadjout" },
+]
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
     "colorama>=0.4.6; platform_system == 'Windows'",
@@ -40,7 +45,7 @@ where = ["."]
 include = ["x2py*"]
 
 [tool.setuptools.package-data]
-"x2py.binding_support" = ["*.h"]
+"x2py.binding_support" = ["*.h", "LICENSE"]
 
 [project.scripts]
 x2py = "x2py.cli:main"

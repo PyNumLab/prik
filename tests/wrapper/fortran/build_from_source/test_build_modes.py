@@ -316,6 +316,9 @@ def test_internal_preprocessing_mode_still_builds_importable_runtime_wrapper(tmp
     assert any(
         path.name == "x2py_binding.h" and path.parent.name == "binding_support" for path in result.generated_files
     )
+    support_license = build_dir / "binding_support" / "LICENSE"
+    assert support_license in result.generated_files
+    assert "Copyright (c) 2026 Said Hadjout" in support_license.read_text(encoding="utf-8")
 
     sys.modules.pop(result.module_name, None)
     sys.path.insert(0, str(build_dir))
