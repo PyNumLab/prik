@@ -30,7 +30,9 @@ Follow these pages in order:
 
 ## What You Will Build
 
-By the end of this section you will be able to write Fortran and call it cleanly from Python:
+In [Your First Function](first-wrapped-function.md), you will create
+`scale.f90`, build it as a Python extension named `scale`, and call its
+`scale` function:
 
 ```python
 import numpy as np
@@ -41,7 +43,7 @@ result = scale.scale(np.float64(3.0), np.float64(2.5))
 print(result)        # 7.5
 ```
 
-The first example exposes a standalone Fortran function directly on the extension.  
+The first example exposes a standalone Fortran function directly on the extension.
 Later examples show how Fortran modules become Python namespaces.
 
 ---

@@ -972,8 +972,12 @@ def test_reviewed_user_pages_do_not_contain_editorial_notes(relative_path: str) 
 
 def test_getting_started_overview_uses_standalone_example() -> None:
     overview = (DOCS_ROOT / "user/getting-started/index.md").read_text(encoding="utf-8")
+    introduction_index = overview.index("you will create\n`scale.f90`")
+    import_index = overview.index("import scale")
+    call_index = overview.index("scale.scale(np.float64(3.0), np.float64(2.5))")
 
-    assert "scale.scale(np.float64(3.0), np.float64(2.5))" in overview
+    assert introduction_index < import_index < call_index
+    assert "[Your First Function](first-wrapped-function.md)" in overview
 
 
 def test_documentation_homepage_demonstrates_x2py_before_getting_started() -> None:
