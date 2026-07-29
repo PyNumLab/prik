@@ -9,7 +9,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).parents[2]
 TEST_ROOT = REPO_ROOT / "tests"
 TEST_INDEX = TEST_ROOT / "README.md"
-MIGRATION_CHECKLIST = REPO_ROOT / "docs/maintainer/roadmap/test-suite-organization-checklist.md"
+TEST_LAYOUT_ROADMAP = REPO_ROOT / "docs/maintainer/roadmap/fortran-test-suite-cleanup-checklist.md"
 QUALITY_WORKFLOW = REPO_ROOT / ".github/workflows/quality.yml"
 FULL_REAL_LIBRARY_TEST = "tests/wrapper/fortran/real_libraries/test_real_blas_lapack.py"
 
@@ -86,7 +86,7 @@ def _maintained_path_reference_files() -> list[Path]:
     return sorted(
         path
         for path in candidates
-        if path.is_file() and "old_docs" not in path.parts and path != MIGRATION_CHECKLIST and ".git" not in path.parts
+        if path.is_file() and "old_docs" not in path.parts and path != TEST_LAYOUT_ROADMAP and ".git" not in path.parts
     )
 
 
