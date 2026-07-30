@@ -71,7 +71,9 @@ manifests so replay has the same compilation inputs.
 The maintained Linux CI evidence pins IFX/ICX 2026.1.1 and Flang/Clang 22.1.8
 and executes the same profile checks and strict eight-node runtime smoke for
 both. These are reproducible evidence versions, not claimed compiler-family
-minimums.
+minimums. The rootless Intel CI environment installs the separate
+`ifx_linux-64` and `dpcpp_linux-64` compiler packages so both required drivers
+are present.
 
 Compilation must not decide semantic ownership, Python API shape, or wrapper
 policy completion. Those decisions happen before generated sources reach this package.

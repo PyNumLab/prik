@@ -37,6 +37,7 @@ def test_workflow_installs_pinned_compilers_and_exports_their_runtime() -> None:
     for snippet in (
         "https://software.repos.intel.com/python/conda/",
         '"ifx_linux-64=$X2PY_IFX_VERSION"',
+        '"dpcpp_linux-64=$X2PY_IFX_VERSION"',
         '"flang=$X2PY_FLANG_VERSION"',
         '"clang=$X2PY_FLANG_VERSION"',
         '"libflang-rt=$X2PY_FLANG_RUNTIME_VERSION"',
@@ -44,6 +45,8 @@ def test_workflow_installs_pinned_compilers_and_exports_their_runtime() -> None:
         'echo "LD_LIBRARY_PATH=$toolchain_prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"',
     ):
         assert snippet in text
+
+    assert 'cache_version: "2026.1.1-v2"' in text
 
 
 def test_every_workflow_lane_delegates_to_the_repository_owned_runner() -> None:

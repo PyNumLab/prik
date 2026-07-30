@@ -36,7 +36,7 @@ jobs:
             environment: x2py-ifx-2026.1.1
             fortran_compiler: ifx
             c_compiler: icx
-            cache_version: "2026.1.1-v1"
+            cache_version: "2026.1.1-v2"
           - toolchain: flang
             display_name: LLVM Flang 22.1.8
             environment: x2py-flang-22.1.8
@@ -71,7 +71,8 @@ jobs:
             --override-channels \
             --channel https://software.repos.intel.com/python/conda/ \
             --channel conda-forge \
-            "ifx_linux-64=$X2PY_IFX_VERSION"
+            "ifx_linux-64=$X2PY_IFX_VERSION" \
+            "dpcpp_linux-64=$X2PY_IFX_VERSION"
       - name: Install LLVM Flang and Clang
         if: matrix.toolchain == 'flang' && steps.compiler-cache.outputs.cache-hit != 'true'
         shell: bash

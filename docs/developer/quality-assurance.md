@@ -106,7 +106,9 @@ lane first runs the compiler-profile and focused preprocessing-CLI tests, then
 runs the unchanged eight-node strict `toolchain_smoke` selection. GitHub
 Actions pins IFX/ICX 2026.1.1 and Flang/Clang 22.1.8 on `ubuntu-24.04`;
 compiler runtime directories are exported for extension loading. These are
-tested CI pins, not inferred minimum supported versions.
+tested CI pins, not inferred minimum supported versions. The Intel environment
+installs both `ifx_linux-64` and `dpcpp_linux-64`: the former supplies IFX,
+while the latter supplies the required ICX binding compiler.
 
 Run property and fuzz tests:
 
