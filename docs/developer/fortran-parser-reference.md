@@ -1169,13 +1169,16 @@ Semantic conversion lives in `x2py/semantics/fortran2ir.py`. It accepts parsed `
 (or selected `FortranModule`) structures and converts metadata into semantic IR
 consumed by the `.pyi` printer and current Fortran wrapper/runtime stages.
 Compiler-backed shared-CLI semantic stages resolve compiler-dependent kind
-expressions, measure intrinsic storage with `storage_size`, attach those facts
-to semantic types, and reuse memory and persistent caches. For the maintained
-GitHub Actions `gfortran` profile, unqualified `integer`, `real`, and `complex`
-map to `Int32`, `Float32`, and `Complex64`; target-changing flags can change
-those mappings. Source-driven wrapper builds add the normalized native Fortran
-compiler flags to the internal probe configuration, so semantic type facts and
-native implementation compilation use the same default-kind profile. The
+expressions, measure numeric and logical intrinsic storage with `storage_size`,
+attach those facts to semantic types, and reuse memory and persistent caches.
+Character declarations are excluded from storage probing: their semantic type
+is `String`, while fixed or deferred element length is carried separately from
+the declaration or runtime descriptor. For the maintained GitHub Actions
+`gfortran` profile, unqualified `integer`, `real`, and `complex` map to `Int32`,
+`Float32`, and `Complex64`; target-changing flags can change those mappings.
+Source-driven wrapper builds add the normalized native Fortran compiler flags
+to the internal probe configuration, so semantic type facts and native
+implementation compilation use the same default-kind profile. The
 [generated target datatype mapping](../user/reference/semantic-ir.md#generated-linux-x86_64-mapping-example)
 measures and verifies those storage facts.
 

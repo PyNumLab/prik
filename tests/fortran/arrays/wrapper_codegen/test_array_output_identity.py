@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import pytest
+
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from x2py.semantics.ownership import CodegenAction, ObjectKind, OwnershipOwner, TransferMode
 from x2py.semantics.policy_completion import complete_semantic_policies
+from x2py.semantics.wrapper_policy import ArrayWritebackABI
 from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 from x2py.wrapper_codegen.plan import WritebackPhase
 
@@ -22,6 +25,19 @@ def fill_two(
 ) -> tuple[Returns["left", Float64[n]], Returns["right", Float64[n]]]: ...
 """,
         module_name="array_output_identity",
+    )
+    complete_semantic_policies(module)
+    return WrapperPlanner().build(module)
+
+
+def _logical_output_plan():
+    module = parse_pyi_text(
+        """
+from x2py.contracts import Bool, Int32
+
+def invert_flags(n: Int32, values: Bool[n], out: Bool[n]) -> None: ...
+""",
+        module_name="logical_arrays",
     )
     complete_semantic_policies(module)
     return WrapperPlanner().build(module)
@@ -53,3 +69,28 @@ def test_projected_array_lowering_increfs_original_objects_and_reuses_tuple_aggr
     assert "PyTuple_New(2)" in c_source
     assert "PyTuple_SET_ITEM(result_obj, 0, result_0_obj)" in c_source
     assert "PyTuple_SET_ITEM(result_obj, 1, result_1_obj)" in c_source
+
+
+def test_mutable_bool_array_writeback_normalizes_the_aliased_numpy_buffer_in_place():
+    plan = _logical_output_plan()
+    arguments = plan.namespaces[0].functions[0].arguments
+    values, out = arguments[1:]
+
+    assert values.array_writeback_abi is ArrayWritebackABI.LOGICAL_LOW_BIT_INT8
+    assert out.array_writeback_abi is ArrayWritebackABI.LOGICAL_LOW_BIT_INT8
+
+    artifacts = WrapperCodeGenerator().generate(plan)
+    bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
+
+    assert "integer(c_int8_t), pointer, dimension(:) :: out_logical_bytes" in bridge_source
+    assert "call native_invert_flags(n, values, out)" in bridge_source
+    assert "call c_f_pointer(bound_out, out_logical_bytes, [out_extent_0])" in bridge_source
+    assert "out_logical_bytes = iand(out_logical_bytes, 1_c_int8_t)" in bridge_source
+
+
+def test_generator_rejects_a_non_normalized_mutable_bool_array_writeback_abi():
+    plan = _logical_output_plan()
+    plan.namespaces[0].functions[0].arguments[-1].array_writeback_abi = ArrayWritebackABI.NATIVE_ARRAY
+
+    with pytest.raises(ValueError, match="invalid-array-writeback-abi"):
+        WrapperCodeGenerator().generate(plan)

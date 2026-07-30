@@ -152,7 +152,6 @@ def test_fortran_storage_requirements_follow_resolved_kinds_and_actual_source_ty
         ("real", None, "storage_size(real(0.0))"),
         ("real", "8", "storage_size(real(0.0,kind=8))"),
         ("logical", "8", "storage_size(logical(.false.,kind=8))"),
-        ("character", "c_char", "storage_size(char(65,kind=c_char))"),
     }
 
 
@@ -181,6 +180,4 @@ end subroutine legacy
     assert {(item["base_type"], item["kind"], item["expression"]) for item in requirements} == {
         ("real", "kind(1.0d0)", "storage_size(real(0.0,kind=kind(1.0d0)))"),
         ("complex", "kind(1.0d0)", "storage_size(cmplx(0.0,kind=kind(1.0d0)))"),
-        ("character", None, "storage_size(char(65))"),
-        ("character", "1", "storage_size(char(65,kind=1))"),
     }

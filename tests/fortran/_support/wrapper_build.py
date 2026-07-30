@@ -26,7 +26,7 @@ from x2py.pipeline.build import (
     _build_rendered_wrapper_extension,
     _fortran_source_for_pipeline,
     _merge_wrapper_modules,
-    _new_gnu_compiler,
+    _new_compiler,
 )
 from x2py.pipeline.preprocessing import PreprocessingConfig
 from x2py.pipeline.build import build_fortran_extension
@@ -178,20 +178,14 @@ def _compile_native_object(source: Path, native_dir: Path) -> Path:
     native_source = native_dir / source.name
     shutil.copyfile(source, native_source)
     native_object = native_dir / f"{source.stem}.o"
-    subprocess.run(
-        [
-            _compiler(),
-            "-fPIC",
-            "-c",
-            str(native_source),
-            "-o",
-            str(native_object),
-            "-J",
-            str(native_dir),
-            "-I",
-            str(native_dir),
-        ],
-        check=True,
+    compiler = _new_compiler(input_compiler=_compiler())
+    compiler.compile_object(
+        ObjectFile(
+            source=native_source,
+            object_path=native_object,
+            language="fortran",
+            include_dirs=(native_dir,),
+        )
     )
     return native_object
 
@@ -349,7 +343,7 @@ def _build_source_wrapper_plan_and_import(
         sources=(source,),
         native_build_plan=native_build_plan,
         native_dependencies=(native_compile_obj,),
-        compiler=_new_gnu_compiler(input_compiler=_compiler()),
+        compiler=_new_compiler(input_compiler=_compiler()),
     )
     module = _import_from_build_dir(result.module_name, result.output_dir)
     return (_sole_native_module(module) if unwrap_namespace else module), result

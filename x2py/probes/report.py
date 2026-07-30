@@ -196,7 +196,11 @@ def fortran_type_mapping_markdown(
             spelling,
             variable,
             key,
-            None if variable.declared_storage_bits is not None else fortran_type_storage_expression(*key),
+            (
+                None
+                if variable.declared_storage_bits is not None or key[0] == "character"
+                else fortran_type_storage_expression(*key)
+            ),
         )
         for spelling, variable in _FORTRAN_TYPES
         for key in [key_converter._target_type_key(variable)]

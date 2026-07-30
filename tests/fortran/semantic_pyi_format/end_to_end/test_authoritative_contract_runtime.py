@@ -11,6 +11,8 @@ import pytest
 from tests.fortran._support.pyi_fixtures import assert_generated_pyi_package_matches_fixture
 from tests.fortran._support.wrapper_build import _compiler
 from x2py import build_pyi_extension
+from x2py.compiling.objects import ObjectFile
+from x2py.pipeline.build import _new_compiler
 
 FEATURE_ROOT = Path(__file__).parents[1]
 FIXTURES = FEATURE_ROOT / "pipeline" / "fixtures"
@@ -33,18 +35,14 @@ def compiled_contract_rebuild(tmp_path: Path):
     native_dir = tmp_path / "native"
     native_dir.mkdir()
     native_object = native_dir / "contract_mixed_module_external.o"
-    subprocess.run(
-        [
-            _compiler(),
-            "-fPIC",
-            "-c",
-            str(SOURCE),
-            "-o",
-            str(native_object),
-            "-J",
-            str(native_dir),
-        ],
-        check=True,
+    compiler = _new_compiler(input_compiler=_compiler())
+    compiler.compile_object(
+        ObjectFile(
+            source=SOURCE,
+            object_path=native_object,
+            language="fortran",
+            include_dirs=(native_dir,),
+        )
     )
 
     contract_package = tmp_path / "contract"

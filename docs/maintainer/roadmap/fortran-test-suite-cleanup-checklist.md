@@ -1387,7 +1387,7 @@ Rules:
 - [x] confirms marked nodes are part of the ordinary unfiltered end-to-end
   suite.
 
-The current runtime helper hardcodes GFortran. Before alternate-compiler smoke:
+The runtime helper previously hardcoded GFortran. Alternate-compiler smoke now:
 
 - [x] add a session-level option such as
   `--x2py-fortran-compiler=<executable>`;
@@ -1404,19 +1404,25 @@ compilation, linking, loading, and the same runtime smoke all succeed.
 
 ### Compiler profiles
 
-- [ ] Inventory GNU-specific flags, diagnostics, module assumptions, symbols,
+- [x] Inventory GNU-specific flags, diagnostics, module assumptions, symbols,
   runtime libraries, and link options.
-- [ ] Keep family selection in compilation/build integration, not scattered
+- [x] Keep family selection in compilation/build integration, not scattered
   compiler-name branches.
 - [ ] Implement GNU, Intel ifx, LLVM Flang, and NVIDIA nvfortran one profile at
   a time.
-- [ ] Add focused command/capability tests under
-  `tests/fortran/infrastructure/compiling/profiles/`.
+- [x] Add focused command/capability tests under
+  `tests/fortran/building_shared_library/compiling/` and
+  `tests/fortran/source_preprocessing/preprocessing/`.
 - [ ] Carry compiler-derived target facts through semantics and the shared plan;
   bridge/binding generators do not infer semantic policy from compiler family.
-- [ ] Give unknown and unsupported compilers explicit diagnostics.
-- [ ] Add runtime smoke only after the profile tests pass.
+- [x] Give unknown and unsupported compilers explicit diagnostics.
+- [x] Add runtime smoke only after the profile tests pass.
 - [ ] Document version floors and limitations from evidence.
+
+Local Linux evidence on 2026-07-30 runs the unchanged eight-node strict smoke
+selection successfully with GNU Fortran 13.4.0, Intel ifx 2026.1.1 plus icx,
+and LLVM Flang 22.1.8 plus Clang. NVIDIA nvfortran remains unvalidated, so the
+multi-family implementation and version-floor items stay open.
 
 ### macOS
 
@@ -1444,13 +1450,18 @@ python -m pytest -q tests/fortran -m toolchain_smoke \
 
 `tests/architecture/fortran/test_ci_toolchain_lanes.py` verifies:
 
-- [ ] every compiler lane includes its profile tests;
+- [x] every compiler lane includes its profile tests;
 - [ ] every macOS lane includes macOS platform tests;
-- [ ] every compiler/platform lane includes the designated Fortran CLI nodes;
-- [ ] every referenced node collects;
-- [ ] every lane invokes strict end-to-end smoke with the requested compiler;
+- [x] every compiler/platform lane includes the designated Fortran CLI nodes;
+- [x] every referenced node collects;
+- [x] every lane invokes strict end-to-end smoke with the requested compiler;
   and
-- [ ] each explicit GitHub Actions entry delegates to the common runner.
+- [x] each explicit GitHub Actions entry delegates to the common runner.
+
+`.github/workflows/fortran-toolchain-smoke.yml` declares pinned IFX/ICX and
+Flang/Clang matrix entries. Both delegate profile, CLI, and strict smoke
+execution to `tools/run_fortran_toolchain_lane.py`; its `--plan` output is the
+dry-run contract checked before execution.
 
 ## 10. Replace the CI Cartesian product with evidence lanes
 
@@ -1467,13 +1478,13 @@ CI. Use explicit `matrix.include` records only.
 - [ ] Newest Python, Linux x86-64, GFortran: the same compatibility selection.
 - [ ] macOS ARM64, middle Python, GFortran: macOS platform tests, focused CLI,
   and toolchain smoke.
-- [ ] Linux x86-64, middle Python, Intel ifx: profile tests, focused CLI, and
+- [x] Linux x86-64, middle Python, Intel ifx: profile tests, focused CLI, and
   toolchain smoke when installation cost/licensing is acceptable; otherwise
   schedule it and document that cadence.
 
 ### Scheduled lanes
 
-- [ ] Linux x86-64, middle Python, LLVM Flang: profile tests, focused CLI, and
+- [x] Linux x86-64, middle Python, LLVM Flang: profile tests, focused CLI, and
   smoke.
 - [ ] Linux x86-64, middle Python, NVIDIA nvfortran: profile tests, focused CLI,
   and smoke.

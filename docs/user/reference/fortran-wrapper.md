@@ -251,10 +251,22 @@ python3 -m x2py solver.f90 \
 
 `--compiler` selects the input-language compiler used for preprocessing,
 datatype measurement, native and generated-bridge compilation, and extension
-linking. x2py selects the compiler for its generated binding from the active
-compiler profile. `-I` is passed to preprocessing and to native, bridge, and
-binding compilation. The library is kept separate from compiler flags because
-`--native-library openblas` must become `-lopenblas` on the final link command.
+linking. It also selects the matching C compiler profile for the generated
+binding: `gfortran` uses `gcc`, `ifx` or `ifort` uses `icx`, `flang` uses
+`clang`, `nvfortran` uses `nvc`, and `pgfortran` uses `pgcc`. x2py fails when
+the selected compiler family is unknown or the matching C compiler is
+unavailable; it does not silently build a mixed-vendor wrapper. Python supplies
+the binding headers and link metadata, while binding compiler flags come from
+the selected vendor profile rather than Python's own build compiler. `-I` is
+passed to preprocessing and to native, bridge, and binding compilation. The
+library is kept separate from compiler flags because `--native-library
+openblas` must become `-lopenblas` on the final link command.
+
+The maintained Linux alternate-toolchain smoke lanes pin Intel IFX/ICX
+2026.1.1 and LLVM Flang/Clang 22.1.8. Flang preprocessing uses `-P` and keeps
+the resulting marker-free source in memory. These versions are reproducible CI
+pins rather than minimum-version promises; other versions remain supported
+only when the same profile and strict smoke contracts pass.
 
 The current `.pyi` build subset requires the contract filename stem to match
 the native Fortran module name. Supply the native module file directory as an
@@ -1691,7 +1703,9 @@ remain blocked until an explicit field and encoding policy exists.
 ## Scalar Types And Kind Coverage
 
 Wrapper builds use compiler probing rather than assuming that a Fortran kind
-number equals a byte width.
+number equals a byte width. Character is not included in `storage_size`
+probing: its semantic family is always `String`, and its element length is
+tracked independently from the declaration or runtime descriptor.
 
 The supported scalar storage subset is:
 
@@ -1703,6 +1717,17 @@ The supported scalar storage subset is:
 - default logical results and the one-byte Boolean path used by
   `logical(c_bool)` and compiler-confirmed `logical*1` arrays;
 X2PY_C_DOCS_END -->
+
+Direct Boolean function results use a normalized bridge ABI. The native result
+is first stored as `logical(c_bool)`, then the Fortran bridge returns its low
+truth bit as `integer(c_int8_t)`. The C binding explicitly converts that `0` or
+`1` value to `bool`. This prevents processor-specific noncanonical logical bit
+patterns from being interpreted as C truth values while leaving native
+Fortran logical evaluation unchanged.
+
+Mutable ordinary Boolean array buffers use the same low-bit rule on writeback.
+After the native call, the bridge normalizes every returned byte with
+`iand(value, 1_c_int8_t)` before Python observes the NumPy buffer.
 
 <!-- X2PY_C_DOCS_START
 `iso_fortran_env` names such as `int8`, `int16`, `int32`, `int64`, `real32`, and

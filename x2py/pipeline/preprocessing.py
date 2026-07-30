@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar, Literal, Protocol
 
+from x2py.compiling.compiler_profiles import fortran_compiler_family
+
 
 PreprocessingCategory = Literal[
     "PREPROCESSOR_NOT_FOUND",
@@ -358,12 +360,39 @@ def _compiler_required(config: PreprocessingConfig, language: str) -> str:
     return config.compiler
 
 
-def _preprocessor_options(config: PreprocessingConfig, *, language: str, include_language_flag: bool) -> list[str]:
+def _fortran_preprocessor_profile(compiler: str) -> tuple[str, tuple[str, ...], dict[str, bool]]:
+    """Return vendor-specific preprocessing arguments and advertised facts."""
+    try:
+        token, _vendor, _c_compiler = fortran_compiler_family(compiler)
+    except ValueError:
+        token = ""
+    if token == "flang":
+        return (
+            "llvm-flang",
+            ("-P",),
+            {"dependency_output": False, "macro_dump": False, "linemarkers": False},
+        )
+    return (
+        "gnu-fortran",
+        (),
+        {"dependency_output": True, "macro_dump": True, "linemarkers": True},
+    )
+
+
+def _preprocessor_options(
+    config: PreprocessingConfig,
+    *,
+    language: str,
+    include_language_flag: bool,
+    compiler: str,
+) -> list[str]:
     args: list[str] = ["-E"]
     if include_language_flag and language == "c":
         args.extend(["-x", "c"])
     if language == "fortran":
         args.append("-cpp")
+        _adapter, vendor_args, _capabilities = _fortran_preprocessor_profile(compiler)
+        args.extend(vendor_args)
     for include_dir in config.include_dirs:
         args.append(f"-I{include_dir}")
     for define in config.defines:
@@ -436,18 +465,27 @@ def build_direct_preprocess_invocation(
     source = Path(source_path)
     argv = [
         compiler,
-        *_preprocessor_options(config, language=language, include_language_flag=language == "c"),
+        *_preprocessor_options(
+            config,
+            language=language,
+            include_language_flag=language == "c",
+            compiler=compiler,
+        ),
         *(_fortran_source_language_hint(source) if language == "fortran" else []),
         str(source),
     ]
-    adapter = "gnu-fortran" if language == "fortran" else "gcc-compatible-c"
+    if language == "fortran":
+        adapter, _vendor_args, capabilities = _fortran_preprocessor_profile(compiler)
+    else:
+        adapter = "gcc-compatible-c"
+        capabilities = {"dependency_output": True, "macro_dump": True, "linemarkers": True}
     return Invocation(
         argv=argv,
         cwd=None,
         adapter=adapter,
         language=language,
         compiler=compiler,
-        capabilities={"dependency_output": True, "macro_dump": True, "linemarkers": True},
+        capabilities=capabilities,
     )
 
 
@@ -611,11 +649,20 @@ def build_compile_commands_invocation(
     compile_args = _filter_compile_only_args(compile_argv[1:], source, cwd)
     argv = [
         compiler,
-        *_preprocessor_options(config, language=language, include_language_flag=False),
+        *_preprocessor_options(
+            config,
+            language=language,
+            include_language_flag=False,
+            compiler=compiler,
+        ),
         *compile_args,
         str(source),
     ]
-    adapter = "gnu-fortran" if language == "fortran" else "gcc-compatible-c"
+    if language == "fortran":
+        adapter, _vendor_args, capabilities = _fortran_preprocessor_profile(compiler)
+    else:
+        adapter = "gcc-compatible-c"
+        capabilities = {"dependency_output": True, "macro_dump": True, "linemarkers": True}
     return Invocation(
         argv=argv,
         cwd=str(cwd),
@@ -624,7 +671,7 @@ def build_compile_commands_invocation(
         compiler=compiler,
         compile_commands=str(config.compile_commands) if config.compile_commands else None,
         compile_commands_entry=dict(entry),
-        capabilities={"dependency_output": True, "macro_dump": True, "linemarkers": True},
+        capabilities=capabilities,
     )
 
 

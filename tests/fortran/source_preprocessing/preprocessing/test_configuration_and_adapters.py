@@ -65,6 +65,33 @@ def test_direct_fortran_preprocess_invocation_hints_unknown_suffix_language(tmp_
     ]
 
 
+def test_direct_flang_preprocess_invocation_suppresses_line_markers(tmp_path: Path):
+    source = tmp_path / "solver.F90"
+    config = PreprocessingConfig(
+        mode="compiler",
+        compiler="/opt/llvm/bin/flang-new",
+        defines=["USE_MPI"],
+    )
+
+    invocation = build_direct_preprocess_invocation(source, language="fortran", config=config)
+
+    assert invocation == preprocessing.Invocation(
+        argv=[
+            "/opt/llvm/bin/flang-new",
+            "-E",
+            "-cpp",
+            "-P",
+            "-DUSE_MPI",
+            str(source),
+        ],
+        cwd=None,
+        adapter="llvm-flang",
+        language="fortran",
+        compiler="/opt/llvm/bin/flang-new",
+        capabilities={"dependency_output": False, "macro_dump": False, "linemarkers": False},
+    )
+
+
 def test_preprocessing_config_internal_macros_recipe_and_validation(tmp_path: Path):
     source = tmp_path / "source.F90"
     plain = PreprocessingConfig()

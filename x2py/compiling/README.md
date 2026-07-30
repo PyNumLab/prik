@@ -38,13 +38,40 @@ header-only native support is compiled with the binding that includes it; and
 linking runs only after every required object exists. Each compiler invocation receives its
 source, target, flags, includes, and ordered link inputs explicitly.
 
-For CLI wrapper builds, the selected input-language compiler executable is
-used for native source compilation, generated bridge compilation, and the
-input-language link command, matching the executable used earlier for
-preprocessing and datatype measurement. Generated C bindings continue to use
-the C executable from the selected compiler profile. Build-wide `-I` paths are
-carried into native and generated-source object inputs; they are also recorded
-in semantic `.pyi` build manifests so replay has the same compilation inputs.
+For CLI wrapper builds, the selected input-language compiler executable
+determines one coherent vendor profile. The exact executable is used for native
+source compilation, generated bridge compilation, and the input-language link
+command, matching the executable used earlier for preprocessing and datatype
+measurement. Generated C bindings use the matching C executable from that same
+profile:
+
+| Selected Fortran family | Binding C family |
+| --- | --- |
+| GNU `gfortran` | GNU `gcc` |
+| Intel `ifx` or `ifort` | Intel `icx` |
+| LLVM `flang` | LLVM `clang` |
+| NVIDIA `nvfortran` | NVIDIA `nvc` |
+| Legacy PGI `pgfortran` | PGI `pgcc` |
+
+Versioned and target-prefixed executable names retain their corresponding
+prefix or version when a matching sibling C executable exists. Selection fails
+when the Fortran family is unknown or its matching C compiler cannot be found;
+it must not silently combine the selected Fortran compiler with GNU C flags or
+`gcc`. The active Python interpreter contributes its headers, library inputs,
+and extension suffix, but not the compiler-specific C flags with which that
+interpreter happened to be built. Binding compile flags come from the selected
+vendor profile. When the interpreter's public `pyconfig.h` delegates to a
+target-qualified multiarch header, its advertised include root is added
+explicitly so a non-system vendor C compiler resolves that header without
+borrowing the interpreter's original compiler command. Build-wide `-I` paths
+are carried into native and
+generated-source object inputs; they are also recorded in semantic `.pyi` build
+manifests so replay has the same compilation inputs.
+
+The maintained Linux CI evidence pins IFX/ICX 2026.1.1 and Flang/Clang 22.1.8
+and executes the same profile checks and strict eight-node runtime smoke for
+both. These are reproducible evidence versions, not claimed compiler-family
+minimums.
 
 Compilation must not decide semantic ownership, Python API shape, or wrapper
 policy completion. Those decisions happen before generated sources reach this package.
@@ -56,5 +83,5 @@ policy completion. Those decisions happen before generated sources reach this pa
 - Quality and static checks: `docs/developer/quality-assurance.md`
 - Source navigation: `docs/developer/source-map.md`, `docs/developer/feature-to-code-map.md`
 - Pipeline map: `docs/maintainer/internal-architecture/pipeline-map.md`
-- Build-mode tests: `tests/fortran/test_build_modes.py`
-- Runtime ABI tests: `tests/fortran/test_runtime_abi.py`
+- Build-mode tests: `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py`
+- Runtime ABI tests: `tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py`

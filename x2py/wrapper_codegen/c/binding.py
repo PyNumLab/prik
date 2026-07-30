@@ -28,6 +28,7 @@ from x2py.semantics.wrapper_policy import (
     DerivedOwnerRetention,
     DerivedRelease,
     DerivedWriteback,
+    DirectResultABI,
     ModuleObjectAccessMechanism,
     ModuleGetterAction,
     NativeArrayDescriptorKind,
@@ -4708,7 +4709,22 @@ class CBindingGenerator(ClassVisitor):
                 release_existing=operation is NativeArrayOperation.RESIZE,
             )
         handler = self._owned_native_array_operation_handler(operation)
-        return (*self._owned_native_array_owner_nodes(result, "owner"), *handler(result))
+        materialize_descriptor = operation not in {
+            NativeArrayOperation.NATIVE_BYTE_ORDER,
+            NativeArrayOperation.ALIGNED,
+            NativeArrayOperation.WRITEABLE,
+            NativeArrayOperation.LAYOUT,
+            NativeArrayOperation.DESCRIPTOR,
+            NativeArrayOperation.DESTROY,
+        }
+        return (
+            *self._owned_native_array_owner_nodes(
+                result,
+                "owner",
+                materialize_descriptor=materialize_descriptor,
+            ),
+            *handler(result),
+        )
 
     def _owned_native_array_operation_handler(self, operation: NativeArrayOperation):
         """Return one directly named operation lowerer."""
@@ -4875,6 +4891,7 @@ class CBindingGenerator(ClassVisitor):
         prefix: str,
         *,
         trailing_objects: tuple[str, ...] = (),
+        materialize_descriptor: bool = True,
     ) -> tuple[CDeclaration | CExpressionStatement, ...]:
         """Decode a versioned descriptor owner capsule from a validated plan."""
         handle = plan.native_array_handle
@@ -4883,7 +4900,11 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(f"{prefix}_obj", "PyObject *"),
             *(CDeclaration(name, "PyObject *") for name in trailing_objects),
             CDeclaration(f"{prefix}_handle", "x2py_native_array_handle *", CodeExpression("NULL")),
-            CDeclaration(f"{prefix}_descriptor", "CFI_cdesc_t *", CodeExpression("NULL")),
+            *(
+                (CDeclaration(f"{prefix}_descriptor", "CFI_cdesc_t *", CodeExpression("NULL")),)
+                if materialize_descriptor
+                else ()
+            ),
             CExpressionStatement(
                 CodeExpression(
                     f'if (!PyArg_ParseTuple(args, "{"O" * (1 + len(trailing_objects))}", '
@@ -4900,7 +4921,15 @@ class CBindingGenerator(ClassVisitor):
                 )
             ),
             CExpressionStatement(CodeExpression(f"if ({prefix}_handle == NULL) return NULL")),
-            CExpressionStatement(CodeExpression(f"{prefix}_descriptor = (CFI_cdesc_t *){prefix}_handle->descriptor")),
+            *(
+                (
+                    CExpressionStatement(
+                        CodeExpression(f"{prefix}_descriptor = (CFI_cdesc_t *){prefix}_handle->descriptor")
+                    ),
+                )
+                if materialize_descriptor
+                else ()
+            ),
         )
 
     def _pointer_association_source_nodes(
@@ -8979,11 +9008,18 @@ class CBindingGenerator(ClassVisitor):
         """Return the mechanical bridge call selected by result storage."""
         call = self._bridge_call(plan, context)
         direct_result = self._direct_result(plan)
-        expression = (
-            f"{context.result_name} = {call}"
-            if direct_result is not None and not self._is_owned_native_array_result(direct_result)
-            else call
-        )
+        if direct_result is None or self._is_owned_native_array_result(direct_result):
+            expression = call
+        elif direct_result.direct_result_abi is DirectResultABI.LOGICAL_LOW_BIT_INT8:
+            expression = f"{context.result_name} = (bool){call}"
+        elif (
+            direct_result.direct_result_abi is DirectResultABI.NATIVE_SCALAR
+            or direct_result.object_kind is not ObjectKind.SCALAR
+            or direct_result.scalar_descriptor is not None
+        ):
+            expression = f"{context.result_name} = {call}"
+        else:
+            raise ValueError(f"Scalar result {direct_result.owner_path!r} has no completed direct-result ABI")
         return CExpressionStatement(CodeExpression(expression))
 
     def _lower_native_call(
@@ -10013,7 +10049,11 @@ class CBindingGenerator(ClassVisitor):
             return "void *"
         if result.object_kind in {ObjectKind.STRING, ObjectKind.NUMPY_ARRAY, ObjectKind.DERIVED_TYPE}:
             return "void *"
-        return PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name).c_spelling
+        if result.direct_result_abi is DirectResultABI.LOGICAL_LOW_BIT_INT8:
+            return "int8_t"
+        if result.direct_result_abi is DirectResultABI.NATIVE_SCALAR:
+            return PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name).c_spelling
+        raise ValueError(f"Scalar result {result.owner_path!r} has no completed direct-result ABI")
 
     def _direct_bridge_result_parameters(self, result: ResultPlan | None) -> tuple[CParameter, ...]:
         """Return helper ABI parameters associated with one direct result."""

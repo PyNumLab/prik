@@ -1,0 +1,119 @@
+name: Fortran Toolchain Smoke
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - main
+      - release/*
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: fortran-toolchain-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  X2PY_IFX_VERSION: "2026.1.1"
+  X2PY_FLANG_VERSION: "22.1.8"
+  X2PY_FLANG_RUNTIME_VERSION: "22.1.7"
+
+jobs:
+  toolchain-smoke:
+    name: ${{ matrix.display_name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - toolchain: ifx
+            display_name: Intel IFX 2026.1.1
+            environment: x2py-ifx-2026.1.1
+            fortran_compiler: ifx
+            c_compiler: icx
+            cache_version: "2026.1.1-v1"
+          - toolchain: flang
+            display_name: LLVM Flang 22.1.8
+            environment: x2py-flang-22.1.8
+            fortran_compiler: flang
+            c_compiler: clang
+            cache_version: "22.1.8-runtime-22.1.7-v1"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[qa]"
+      - name: Cache compiler environment
+        id: compiler-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/${{ matrix.environment }}
+          key: fortran-toolchain-${{ runner.os }}-${{ matrix.toolchain }}-${{ matrix.cache_version }}
+      - name: Install Intel IFX and ICX
+        if: matrix.toolchain == 'ifx' && steps.compiler-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          conda create --yes --solver=libmamba \
+            --prefix "$RUNNER_TEMP/${{ matrix.environment }}" \
+            --override-channels \
+            --channel https://software.repos.intel.com/python/conda/ \
+            --channel conda-forge \
+            "ifx_linux-64=$X2PY_IFX_VERSION"
+      - name: Install LLVM Flang and Clang
+        if: matrix.toolchain == 'flang' && steps.compiler-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          conda create --yes --solver=libmamba \
+            --prefix "$RUNNER_TEMP/${{ matrix.environment }}" \
+            --override-channels \
+            --channel conda-forge \
+            "flang=$X2PY_FLANG_VERSION" \
+            "clang=$X2PY_FLANG_VERSION" \
+            "libflang-rt=$X2PY_FLANG_RUNTIME_VERSION"
+      - name: Export coherent compiler profile
+        shell: bash
+        run: |
+          toolchain_prefix="$RUNNER_TEMP/${{ matrix.environment }}"
+          echo "$toolchain_prefix/bin" >> "$GITHUB_PATH"
+          echo "LD_LIBRARY_PATH=$toolchain_prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+      - name: Verify compiler pair
+        shell: bash
+        run: |
+          "${RUNNER_TEMP}/${{ matrix.environment }}/bin/${{ matrix.fortran_compiler }}" --version
+          "${RUNNER_TEMP}/${{ matrix.environment }}/bin/${{ matrix.c_compiler }}" --version
+      - name: Show repository-owned lane plan
+        run: |
+          python tools/run_fortran_toolchain_lane.py \
+            --compiler "$RUNNER_TEMP/${{ matrix.environment }}/bin/${{ matrix.fortran_compiler }}" \
+            --junit-dir "$RUNNER_TEMP" \
+            --plan
+      - name: Run profile checks and strict smoke
+        env:
+          PYTHONPATH: .
+          HYPOTHESIS_PROFILE: ci
+        run: |
+          python tools/run_fortran_toolchain_lane.py \
+            --compiler "$RUNNER_TEMP/${{ matrix.environment }}/bin/${{ matrix.fortran_compiler }}" \
+            --junit-dir "$RUNNER_TEMP"
+      - name: Summarize failed pytest nodes
+        if: failure()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          reports=("$RUNNER_TEMP"/pytest-toolchain-*-results.xml)
+          for report in "${reports[@]}"; do
+            python tools/print_pytest_failures.py "$report"
+          done

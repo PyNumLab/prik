@@ -24,6 +24,7 @@ rollout work. Mutation testing and pre-commit are not part of the active stack.
 | Cadence | Tools |
 | --- | --- |
 | Pull request and protected-branch push | pytest, stable-seed pytest-randomly, Ruff, Bandit, Vulture, staged Radon policy |
+| Pull request, protected-branch push, weekly, and manual | Pinned Intel IFX/ICX and LLVM Flang/Clang profile checks plus strict Fortran toolchain smoke |
 | Main-branch push and requested coverage run | coverage.py report from the Python 3.12 test job |
 | Weekly and manual dispatch | `Fuzz` workflow with Hypothesis fuzz profile |
 | Manual triage | Full Radon reports and low-severity Bandit review |
@@ -92,6 +93,20 @@ Reproduce an order-dependent failure from the stable CI seed:
 ```bash
 pytest -q --randomly-seed=<seed-from-failing-run>
 ```
+
+Run the same alternate-compiler lane used by GitHub Actions:
+
+```bash
+python3 tools/run_fortran_toolchain_lane.py --compiler=/path/to/ifx
+python3 tools/run_fortran_toolchain_lane.py --compiler=/path/to/flang
+```
+
+Use `--plan` to inspect the two pytest commands without executing them. Every
+lane first runs the compiler-profile and focused preprocessing-CLI tests, then
+runs the unchanged eight-node strict `toolchain_smoke` selection. GitHub
+Actions pins IFX/ICX 2026.1.1 and Flang/Clang 22.1.8 on `ubuntu-24.04`;
+compiler runtime directories are exported for extension loading. These are
+tested CI pins, not inferred minimum supported versions.
 
 Run property and fuzz tests:
 

@@ -15,6 +15,7 @@ from x2py.semantics.ownership import (
 from x2py.semantics.metadata import SCALAR_STORAGE_CATEGORY
 from x2py.semantics.wrapper_policy import (
     ArgumentHandoffMode,
+    ArrayWritebackABI,
     BridgeDataAction,
     CallbackABIKind,
     CallbackResultAction,
@@ -28,6 +29,7 @@ from x2py.semantics.wrapper_policy import (
     DerivedDummyCategory,
     DerivedObjectStorage,
     DerivedRelease,
+    DirectResultABI,
     ExternalDeclarationMode,
     ModuleGetterAction,
     ModuleObjectAccessMechanism,
@@ -261,6 +263,7 @@ class FortranBridgeGenerator(ClassVisitor):
         native_body = (
             *self._derived_pointer_call_initializers(plan),
             *function_body,
+            *self._array_writeback_finalizers(plan),
             *self._derived_pointer_call_finalizers(plan),
             *self._required_descriptor_finalizers(plan),
             *self._string_value_finalizers(plan),
@@ -3474,15 +3477,92 @@ class FortranBridgeGenerator(ClassVisitor):
                 raise ValueError(f"Array argument {argument.owner_path!r} is missing its handoff")
             if array.rank is None:
                 declarations.extend(self._assumed_rank_array_declarations(argument))
-                continue
-            declarations.append(
-                FortranDeclaration(
-                    self._array_pointer_name(argument),
-                    self._array_element_fortran_type(argument),
-                    ("pointer", self._array_dimension_attribute(array.rank)),
+            else:
+                declarations.append(
+                    FortranDeclaration(
+                        self._array_pointer_name(argument),
+                        self._array_element_fortran_type(argument),
+                        ("pointer", self._array_dimension_attribute(array.rank)),
+                    )
                 )
-            )
+            if argument.array_writeback_abi is ArrayWritebackABI.LOGICAL_LOW_BIT_INT8:
+                declarations.append(
+                    FortranDeclaration(
+                        self._logical_array_byte_pointer_name(argument),
+                        "integer(c_int8_t)",
+                        ("pointer", "dimension(:)"),
+                    )
+                )
         return tuple(declarations)
+
+    def _array_writeback_finalizers(
+        self,
+        plan: FunctionPlan,
+    ) -> tuple[FortranAssignment | FortranCall | FortranIf | FortranSelectCase, ...]:
+        """Normalize mutable array bytes through their completed writeback ABI."""
+        finalizers = []
+        for argument in plan.arguments:
+            match argument.array_writeback_abi:
+                case ArrayWritebackABI.NOT_APPLICABLE | ArrayWritebackABI.NATIVE_ARRAY:
+                    continue
+                case ArrayWritebackABI.LOGICAL_LOW_BIT_INT8:
+                    nodes = self._logical_array_writeback_nodes(argument)
+                case _:
+                    raise ValueError(
+                        f"Unsupported array writeback ABI for {argument.owner_path!r}: {argument.array_writeback_abi!r}"
+                    )
+            if argument.bridge.optional_mode is OptionalMode.REQUIRED:
+                finalizers.extend(nodes)
+            else:
+                finalizers.append(FortranIf(CodeExpression(self._presence_condition(argument)), body=nodes))
+        return tuple(finalizers)
+
+    def _logical_array_writeback_nodes(
+        self,
+        argument: ArgumentTransferPlan,
+    ) -> tuple[FortranAssignment | FortranCall | FortranSelectCase, ...]:
+        """Associate raw Boolean storage and retain only each element's truth bit."""
+        array = argument.array
+        if array is None:
+            raise ValueError(f"Logical array {argument.owner_path!r} has no handoff")
+        if array.rank is not None:
+            return self._logical_array_writeback_for_rank(argument, array.rank)
+        name = argument.bridge.native_name.lower()
+        cases = tuple(
+            FortranCase(
+                rank,
+                self._logical_array_writeback_for_rank(argument, rank),
+            )
+            for rank in range(1, 16)
+        )
+        return (FortranSelectCase(CodeExpression(f"{name}_rank"), (*cases, FortranCase(None, ()))),)
+
+    def _logical_array_writeback_for_rank(
+        self,
+        argument: ArgumentTransferPlan,
+        rank: int,
+    ) -> tuple[FortranCall | FortranAssignment, ...]:
+        name = argument.bridge.native_name.lower()
+        byte_pointer = self._logical_array_byte_pointer_name(argument)
+        byte_count = " * ".join(f"{name}_extent_{axis}" for axis in range(rank))
+        return (
+            FortranCall(
+                "c_f_pointer",
+                (
+                    CodeExpression(f"bound_{name}"),
+                    CodeExpression(byte_pointer),
+                    CodeExpression(f"[{byte_count}]"),
+                ),
+            ),
+            FortranAssignment(
+                byte_pointer,
+                CodeExpression(f"iand({byte_pointer}, 1_c_int8_t)"),
+            ),
+        )
+
+    @staticmethod
+    def _logical_array_byte_pointer_name(argument: ArgumentTransferPlan) -> str:
+        return f"{argument.bridge.native_name.lower()}_logical_bytes"
 
     def _array_initializers(self, plan: FunctionPlan) -> tuple[FortranCall, ...]:
         """Associate each completed ordinary array data/extent handoff."""
@@ -3985,15 +4065,50 @@ class FortranBridgeGenerator(ClassVisitor):
         if result.scalar_descriptor is not None:
             return self._scalar_descriptor_copy_declarations(result, "result")
         if self._is_owned_native_array_result(result):
-            if self._uses_owned_direct_array_result_collector(plan):
-                return ()
-            return self._owned_array_result_declarations(result)
-        if result.object_kind is ObjectKind.NUMPY_ARRAY:
-            return self._direct_array_result_declarations(plan, result)
-        if result.object_kind is ObjectKind.DERIVED_TYPE:
-            return self._derived_result_declarations(result)
-        if result.object_kind is not ObjectKind.STRING:
+            return self._owned_direct_result_declarations(plan, result)
+        return self._ordinary_direct_result_declarations(plan, result)
+
+    def _owned_direct_result_declarations(
+        self,
+        plan: FunctionPlan,
+        result: ResultPlan,
+    ) -> tuple[FortranDeclaration, ...]:
+        """Declare storage for one completed owned direct-result plan."""
+        if self._uses_owned_direct_array_result_collector(plan):
             return ()
+        return self._owned_array_result_declarations(result)
+
+    def _ordinary_direct_result_declarations(
+        self,
+        plan: FunctionPlan,
+        result: ResultPlan,
+    ) -> tuple[FortranDeclaration, ...]:
+        """Dispatch ordinary direct-result declarations by completed object kind."""
+        match result.object_kind:
+            case ObjectKind.NUMPY_ARRAY:
+                return self._direct_array_result_declarations(plan, result)
+            case ObjectKind.DERIVED_TYPE:
+                return self._derived_result_declarations(result)
+            case ObjectKind.SCALAR:
+                return self._direct_scalar_result_declarations(result)
+            case ObjectKind.STRING:
+                return self._direct_string_result_declarations(result)
+            case _:
+                return ()
+
+    @staticmethod
+    def _direct_scalar_result_declarations(result: ResultPlan) -> tuple[FortranDeclaration, ...]:
+        """Declare storage selected by a completed scalar direct-result ABI."""
+        match result.direct_result_abi:
+            case DirectResultABI.LOGICAL_LOW_BIT_INT8:
+                return (FortranDeclaration("c_result", "logical(c_bool)"),)
+            case DirectResultABI.NATIVE_SCALAR:
+                return ()
+            case _:
+                raise ValueError(f"Scalar result {result.owner_path!r} has no completed direct-result ABI")
+
+    def _direct_string_result_declarations(self, result: ResultPlan) -> tuple[FortranDeclaration, ...]:
+        """Declare fixed-string copy storage for one direct result."""
         length = self._string_result_length(result)
         return (
             FortranDeclaration("result_value", f"character(kind=c_char, len={length})"),
@@ -4188,21 +4303,65 @@ class FortranBridgeGenerator(ClassVisitor):
             return self._scalar_descriptor_copy_nodes(result, "result")
         if self._is_owned_native_array_result(result):
             return self._owned_direct_native_array_result_finalizers(plan, result)
-        if result.object_kind is ObjectKind.NUMPY_ARRAY:
-            if result.array is None:
-                raise ValueError(f"Array result {result.owner_path!r} has no shape plan")
-            return self._fixed_array_copy_nodes(
-                result.array.native_order,
-                result.array.rank,
-                itemsize=self._array_result_itemsize(result),
-                target_name="result",
-                value_name="result_value",
-                copy_name="result_copy",
-            )
-        if result.object_kind is ObjectKind.DERIVED_TYPE:
-            return self._derived_direct_result_finalizers(result)
-        if result.object_kind is not ObjectKind.STRING:
-            return ()
+        return self._ordinary_direct_result_finalizers(plan, result)
+
+    def _ordinary_direct_result_finalizers(
+        self,
+        plan: FunctionPlan,
+        result: ResultPlan,
+    ) -> tuple[FortranAssignment | FortranCall | FortranIf, ...]:
+        """Dispatch direct-result finalization by completed object kind."""
+        match result.object_kind:
+            case ObjectKind.NUMPY_ARRAY:
+                return self._direct_array_result_finalizers(result)
+            case ObjectKind.DERIVED_TYPE:
+                return self._derived_direct_result_finalizers(result)
+            case ObjectKind.SCALAR:
+                return self._direct_scalar_result_finalizers(result)
+            case ObjectKind.STRING:
+                return self._direct_string_result_finalizers(result)
+            case _:
+                return ()
+
+    def _direct_array_result_finalizers(
+        self,
+        result: ResultPlan,
+    ) -> tuple[FortranAssignment | FortranCall | FortranIf, ...]:
+        """Copy one ordinary array result through its completed shape plan."""
+        if result.array is None:
+            raise ValueError(f"Array result {result.owner_path!r} has no shape plan")
+        return self._fixed_array_copy_nodes(
+            result.array.native_order,
+            result.array.rank,
+            itemsize=self._array_result_itemsize(result),
+            target_name="result",
+            value_name="result_value",
+            copy_name="result_copy",
+        )
+
+    @staticmethod
+    def _direct_scalar_result_finalizers(
+        result: ResultPlan,
+    ) -> tuple[FortranAssignment | FortranCall | FortranIf, ...]:
+        """Finalize one scalar through its completed direct-result ABI."""
+        match result.direct_result_abi:
+            case DirectResultABI.LOGICAL_LOW_BIT_INT8:
+                return (
+                    FortranAssignment(
+                        "result",
+                        CodeExpression("iand(transfer(c_result, 0_c_int8_t), 1_c_int8_t)"),
+                    ),
+                )
+            case DirectResultABI.NATIVE_SCALAR:
+                return ()
+            case _:
+                raise ValueError(f"Scalar result {result.owner_path!r} has no completed direct-result ABI")
+
+    def _direct_string_result_finalizers(
+        self,
+        result: ResultPlan,
+    ) -> tuple[FortranAssignment | FortranCall | FortranIf, ...]:
+        """Copy one fixed-string direct result into its bridge representation."""
         return self._fixed_string_copy_nodes(
             length=self._string_result_length(result),
             target_name="result",
@@ -4786,22 +4945,46 @@ class FortranBridgeGenerator(ClassVisitor):
 
     def _native_direct_result_name(self, plan: FunctionPlan, result_name: str | None) -> str | None:
         result = self._direct_result(plan)
-        if result is not None and result.scalar_descriptor is not None:
+        if result is None:
+            return result_name
+        if result.scalar_descriptor is not None:
             return "result_value"
-        if result is not None and self._is_owned_native_array_result(result):
+        if self._is_owned_native_array_result(result):
             return "result_value"
-        if result is not None and result.object_kind in {
-            ObjectKind.STRING,
-            ObjectKind.NUMPY_ARRAY,
-            ObjectKind.DERIVED_TYPE,
+        return self._ordinary_native_direct_result_name(result, result_name)
+
+    def _ordinary_native_direct_result_name(self, result: ResultPlan, result_name: str | None) -> str | None:
+        """Select a native-call target from completed direct-result policy."""
+        match result.object_kind:
+            case ObjectKind.STRING | ObjectKind.NUMPY_ARRAY:
+                return "result_value"
+            case ObjectKind.DERIVED_TYPE:
+                return self._native_derived_direct_result_name(result)
+            case ObjectKind.SCALAR:
+                return self._native_scalar_direct_result_name(result, result_name)
+            case _:
+                return result_name
+
+    @staticmethod
+    def _native_derived_direct_result_name(result: ResultPlan) -> str:
+        """Select the emitted temporary required by completed derived storage."""
+        if result.derived.storage in {
+            DerivedObjectStorage.ALLOCATABLE_HOLDER,
+            DerivedObjectStorage.POINTER_HOLDER,
         }:
-            if result.object_kind is ObjectKind.DERIVED_TYPE and result.derived.storage in {
-                DerivedObjectStorage.ALLOCATABLE_HOLDER,
-                DerivedObjectStorage.POINTER_HOLDER,
-            }:
-                return "result_native"
-            return "result_value"
-        return result_name
+            return "result_native"
+        return "result_value"
+
+    @staticmethod
+    def _native_scalar_direct_result_name(result: ResultPlan, result_name: str | None) -> str | None:
+        """Select the native-call target required by a completed scalar ABI."""
+        match result.direct_result_abi:
+            case DirectResultABI.LOGICAL_LOW_BIT_INT8:
+                return "c_result"
+            case DirectResultABI.NATIVE_SCALAR:
+                return result_name
+            case _:
+                raise ValueError(f"Scalar result {result.owner_path!r} has no completed direct-result ABI")
 
     def _bridge_result_type(self, plan: FunctionPlan, result: ResultPlan | None = None) -> str:
         result = result or self._direct_result(plan)
@@ -4811,7 +4994,11 @@ class FortranBridgeGenerator(ClassVisitor):
             return "type(c_ptr)"
         if result.object_kind in {ObjectKind.STRING, ObjectKind.NUMPY_ARRAY, ObjectKind.DERIVED_TYPE}:
             return "type(c_ptr)"
-        return PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name).fortran_spelling
+        if result.direct_result_abi is DirectResultABI.LOGICAL_LOW_BIT_INT8:
+            return "integer(c_int8_t)"
+        if result.direct_result_abi is DirectResultABI.NATIVE_SCALAR:
+            return PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name).fortran_spelling
+        raise ValueError(f"Scalar result {result.owner_path!r} has no completed direct-result ABI")
 
     def _direct_result(self, plan: FunctionPlan) -> ResultPlan | None:
         """Return the sole direct result used by the Fortran function ABI."""

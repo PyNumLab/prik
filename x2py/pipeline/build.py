@@ -264,19 +264,17 @@ def _compiler_flags(flags: Iterable[str] | None) -> tuple[str, ...]:
     return tuple(str(flag) for flag in (flags or ()))
 
 
-def _new_gnu_compiler(
+def _new_compiler(
     *,
     execute_commands: bool = True,
     debug: bool = False,
     input_compiler: str | None = None,
 ) -> Compiler:
-    executables = {"fortran": input_compiler} if input_compiler else None
-    return Compiler(
-        "GNU",
+    return Compiler.from_fortran_executable(
+        input_compiler or "gfortran",
         debug=debug,
         execute_commands=execute_commands,
         search_path=get_condaless_search_path("verbose"),
-        executables=executables,
     )
 
 
@@ -484,7 +482,7 @@ def _build_rendered_wrapper_extension(
     shared_output_path.mkdir(parents=True, exist_ok=True)
     _write_rendered_wrapper_sources(rendered, output_path, verbose=verbose)
 
-    compiler = compiler or _new_gnu_compiler()
+    compiler = compiler or _new_compiler()
     resolved_native_build_plan = native_build_plan or NativeBuildPlan()
     bridge_objects, binding_objects = _rendered_wrapper_object_stages(
         rendered,
@@ -1822,7 +1820,7 @@ def build_fortran_extension(
 
     wrapper_fortran_flags = _compiler_flags(wrapper_fortran_flags)
     wrapper_c_flags = _compiler_flags(wrapper_c_flags)
-    compiler = _new_gnu_compiler(
+    compiler = _new_compiler(
         execute_commands=not generation_only,
         debug=wrapper_compiler_debug,
         input_compiler=preprocessing.compiler if preprocessing.uses_compiler else None,
@@ -1963,7 +1961,7 @@ def build_pyi_extension(
         module_dir=output_path if native_source_objects else None,
     )
     _validate_native_link_paths(native_build_plan)
-    compiler = _new_gnu_compiler(
+    compiler = _new_compiler(
         execute_commands=not generation_only,
         debug=wrapper_compiler_debug,
         input_compiler=input_compiler,

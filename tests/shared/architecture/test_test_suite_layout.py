@@ -60,12 +60,13 @@ FORTRAN_OWNER_DIRECTORIES = {
     "strings",
     "subroutines",
 }
-SHARED_OWNER_DIRECTORIES = {"architecture", "benchmarks", "docs", "naming", "tools", "types", "utilities"}
+SHARED_OWNER_DIRECTORIES = {"architecture", "docs", "naming", "tools", "types", "utilities"}
 TOOLS_TEST_MODULES = {
     "test_check_benchmark_regression.py",
     "test_check_radon_policy.py",
     "test_check_static_analysis_versions.py",
     "test_print_pytest_failures.py",
+    "test_run_fortran_toolchain_lane.py",
     "test_warm_real_library_native_cache.py",
 }
 DOCS_TEST_MODULES = {"test_examples.py", "test_publication.py", "test_structure.py"}

@@ -13,7 +13,7 @@ import subprocess
 import warnings
 
 from .objects import ObjectFile
-from .compiler_profiles import available_compilers, vendors
+from .compiler_profiles import available_compilers, fortran_compiler_family, vendors
 
 __all__ = ("Compiler", "get_condaless_search_path")
 
@@ -35,6 +35,44 @@ def get_condaless_search_path(conda_warnings: str = "basic") -> str:
 
 class Compiler:
     """Compile explicit object files and link an explicit extension object list."""
+
+    @classmethod
+    def from_fortran_executable(
+        cls,
+        executable: str = "gfortran",
+        *,
+        debug: bool = False,
+        execute_commands: bool = True,
+        search_path: str | None = None,
+    ) -> Compiler:
+        """Create the coherent vendor toolchain selected by one Fortran driver."""
+        resolved_fortran = shutil.which(executable, path=search_path)
+        if resolved_fortran is None:
+            raise FileNotFoundError(f"Could not find compiler executable: {executable}")
+
+        token, vendor, default_c = fortran_compiler_family(resolved_fortran)
+        fortran_name = Path(resolved_fortran).name
+        c_names = tuple(dict.fromkeys((fortran_name.replace(token, default_c, 1), default_c)))
+        c_candidates = (
+            *(str(Path(resolved_fortran).parent / name) for name in c_names),
+            *c_names,
+        )
+        resolved_c = next(
+            (candidate for name in c_candidates if (candidate := shutil.which(name, path=search_path)) is not None),
+            None,
+        )
+        if resolved_c is None:
+            names = ", ".join(c_names)
+            raise FileNotFoundError(
+                f"Could not find the {vendor} C compiler matching {resolved_fortran}: expected {names}"
+            )
+        return cls(
+            vendor,
+            debug=debug,
+            execute_commands=execute_commands,
+            search_path=search_path,
+            executables={"fortran": resolved_fortran, "c": resolved_c},
+        )
 
     def __init__(
         self,
@@ -218,10 +256,8 @@ class Compiler:
         values = [*self._strings(language.get(profile, ())), *self._strings(language.get("general_flags", ()))]
         values.extend(self._supported_optional_flags(executable, language.get("optional_general_flags", ())))
         for tool in sorted(set(tools)):
-            flags = self._tool_mapping(language, tool).get("flags", ())
-            if tool == "python":
-                flags = tuple(flag for flag in self._strings(flags) if not self._is_python_profile_flag(flag))
-            values.extend(self._strings(flags))
+            if tool != "python":
+                values.extend(self._strings(self._tool_mapping(language, tool).get("flags", ())))
         values.extend(str(flag) for flag in requested)
         return tuple(values)
 
@@ -310,7 +346,3 @@ class Compiler:
     @staticmethod
     def _library_flags(libraries: Iterable[str]) -> tuple[str, ...]:
         return tuple(library if library.startswith("-l") else f"-l{library}" for library in libraries)
-
-    @staticmethod
-    def _is_python_profile_flag(flag: str) -> bool:
-        return flag.startswith("-O") or flag.startswith("-g") or flag == "-DNDEBUG"

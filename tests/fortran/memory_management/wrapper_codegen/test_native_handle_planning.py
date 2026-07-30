@@ -131,6 +131,13 @@ def _functions(plan):
     return {function.binding.python_name: function for function in plan.namespaces[0].functions}
 
 
+def _generated_c_function(source: str, name: str) -> str:
+    signature = f"static PyObject * {name}(PyObject * self, PyObject * args) {{"
+    start = source.index(signature)
+    end = source.index("\n}\n", start) + len("\n}\n")
+    return source[start:end]
+
+
 def _module_handle_plan():
     module = parse_pyi_text(
         """
@@ -383,6 +390,25 @@ def test_generated_native_handle_artifacts_follow_one_typed_action_vocabulary():
     assert "result_itemsize" in c_source
     assert "CFI_type_char" in c_source
     assert "character(kind=c_char, len=:), allocatable, dimension(:) :: names" in bridge_source
+
+
+def test_constant_owned_handle_operations_do_not_emit_unused_descriptor_locals():
+    artifacts = WrapperCodeGenerator().generate(_native_handle_plan())
+    c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
+
+    for operation in ("aligned", "descriptor", "destroy", "layout", "native_byte_order", "writeable"):
+        function = _generated_c_function(
+            c_source,
+            f"x2py_owned_memory_handles_make_return_{operation}",
+        )
+        assert "owner_handle" in function
+        assert "owner_descriptor" not in function
+
+    allocated = _generated_c_function(
+        c_source,
+        "x2py_owned_memory_handles_make_return_allocated",
+    )
+    assert "owner_descriptor" in allocated
 
 
 @pytest.mark.parametrize(

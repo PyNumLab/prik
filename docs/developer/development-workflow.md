@@ -474,7 +474,9 @@ Important contracts:
   controlled source in Python tests.
 - C preprocessing uses GCC/Clang-style `-E -x c` for direct compiler mode.
   Fortran direct compiler mode uses `-E -cpp` plus source-form hints where
-  needed.
+  needed. LLVM Flang additionally uses `-P` so its preprocessed parser input
+  contains no `#line` markers; provenance remains available from the recorded
+  preprocessing recipe.
 - Native Fortran `include "..."` is expanded after compiler CPP output because
   it is Fortran textual inclusion, not C/CPP include semantics.
 X2PY_C_DOCS_END -->

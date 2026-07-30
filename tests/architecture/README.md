@@ -9,7 +9,8 @@ Language-specific meta-tests use a language subdirectory:
 
 - `c/` validates the mechanically quarantined C tree and its isolation.
 - `fortran/` validates the Fortran feature/stage tree, permanent contract
-  ledger, real-library isolation, and portable smoke selection.
+  ledger, real-library isolation, portable smoke selection, and declared
+  GitHub Actions toolchain lanes.
 
 Product behavior does not belong here. Fortran behavior stays under
 `tests/fortran/`, C behavior stays under `tests/c/`, and genuinely

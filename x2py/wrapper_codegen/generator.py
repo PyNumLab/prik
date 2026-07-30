@@ -27,6 +27,7 @@ from x2py.semantics.ownership import (
 from x2py.semantics.metadata import SCALAR_STORAGE_CATEGORY
 from x2py.semantics.wrapper_policy import (
     ArgumentHandoffMode,
+    ArrayWritebackABI,
     BridgeDataAction,
     CallbackABIKind,
     CallbackFatalAction,
@@ -48,6 +49,7 @@ from x2py.semantics.wrapper_policy import (
     DerivedOwnerRetention,
     DerivedRelease,
     DerivedWriteback,
+    DirectResultABI,
     LifecycleOperation,
     FIXED_STRING_RESULT_COPY_REASON,
     NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER,
@@ -1117,6 +1119,7 @@ class WrapperCodeGenerator:
             *self._optional_argument_diagnostics(plan),
             *self._argument_family_diagnostics(plan, available_roles),
             *self._argument_transformation_diagnostics(plan),
+            *self._array_writeback_abi_diagnostics(plan),
             *self._argument_data_action_diagnostics(plan),
             *self._bridge_data_diagnostics(
                 plan.owner_path,
@@ -1125,6 +1128,30 @@ class WrapperCodeGenerator:
             ),
         ]
         return tuple(diagnostics)
+
+    def _array_writeback_abi_diagnostics(
+        self,
+        plan: ArgumentTransferPlan,
+    ) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Validate completed mutable-array normalization without selecting it."""
+        expected = ArrayWritebackABI.NOT_APPLICABLE
+        if plan.bridge.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER and (
+            plan.mutates_native or self._publishes_array_replacement(plan)
+        ):
+            expected = (
+                ArrayWritebackABI.LOGICAL_LOW_BIT_INT8
+                if plan.datatype_family is DatatypeFamily.BOOL
+                else ArrayWritebackABI.NATIVE_ARRAY
+            )
+        if plan.array_writeback_abi is expected:
+            return ()
+        return (
+            self._diagnostic(
+                plan.owner_path,
+                "invalid-array-writeback-abi",
+                f"{plan.array_writeback_abi.value}; expected {expected.value}",
+            ),
+        )
 
     # Layer-owned representation transformation validation.
     def _argument_transformation_diagnostics(
@@ -3143,8 +3170,32 @@ class WrapperCodeGenerator:
             diagnostics.extend(self._hidden_result_diagnostics(plan, function_slots))
         else:
             diagnostics.append(self._diagnostic(plan.owner_path, "unknown-result-source", plan.source_kind))
+        diagnostics.extend(self._direct_result_abi_diagnostics(plan))
         diagnostics.extend(self._result_family_diagnostics(plan))
         return tuple(diagnostics)
+
+    def _direct_result_abi_diagnostics(self, plan: ResultPlan) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Validate the completed direct scalar ABI without selecting lowering."""
+        expected = DirectResultABI.NOT_APPLICABLE
+        if (
+            plan.source_kind == "direct_return"
+            and plan.object_kind is ObjectKind.SCALAR
+            and plan.scalar_descriptor is None
+        ):
+            expected = (
+                DirectResultABI.LOGICAL_LOW_BIT_INT8
+                if plan.datatype_family is DatatypeFamily.BOOL
+                else DirectResultABI.NATIVE_SCALAR
+            )
+        if plan.direct_result_abi is expected:
+            return ()
+        return (
+            self._diagnostic(
+                plan.owner_path,
+                "invalid-direct-result-abi",
+                f"{plan.direct_result_abi.value}; expected {expected.value}",
+            ),
+        )
 
     def _result_family_diagnostics(self, plan: ResultPlan) -> tuple[WrapperPlanDiagnostic, ...]:
         """Dispatch one result from its completed object-kind decision."""

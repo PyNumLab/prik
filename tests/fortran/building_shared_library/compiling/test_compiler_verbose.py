@@ -1,10 +1,13 @@
 import sys
 from pathlib import Path
 
+import pytest
+
+import x2py.compiling.compiler_profiles as compiler_profiles
 import x2py.compiling.compilers as compiler_module
 from x2py.compiling.objects import ObjectFile
 from x2py.compiling.compilers import Compiler
-from x2py.compiling.compiler_profiles import available_compilers, vendors
+from x2py.compiling.compiler_profiles import available_compilers, fortran_compiler_family, vendors
 
 
 def test_record_only_compiler_keeps_object_command_without_executing(monkeypatch, tmp_path: Path):
@@ -61,9 +64,78 @@ def test_input_language_executable_override_controls_compilation_and_linking(tmp
     assert compiler.command_log[1][0] == sys.executable
 
 
-def test_python_sysconfig_profile_flags_do_not_override_wrapper_profile(monkeypatch, tmp_path: Path):
+@pytest.mark.parametrize(
+    ("fortran_name", "c_name", "vendor", "fortran_flag", "c_flag"),
+    (
+        ("x86_64-linux-gnu-gfortran-15", "x86_64-linux-gnu-gcc-15", "GNU", "-J", "-funroll-loops"),
+        ("ifx", "icx", "intel", "-module", "-funroll-loops"),
+        ("flang-22", "clang-22", "LLVM", "-J", "-funroll-loops"),
+        ("nvfortran", "nvc", "nvidia", "-module", "-Munroll"),
+        ("pgfortran", "pgcc", "PGI", "-module", "-Munroll"),
+    ),
+)
+def test_fortran_selection_uses_one_coherent_vendor_profile(
+    tmp_path: Path,
+    fortran_name: str,
+    c_name: str,
+    vendor: str,
+    fortran_flag: str,
+    c_flag: str,
+):
+    fortran = tmp_path / fortran_name
+    c_compiler = tmp_path / c_name
+    for executable in (fortran, c_compiler):
+        executable.touch(mode=0o755)
+
+    compiler = Compiler.from_fortran_executable(
+        str(fortran),
+        execute_commands=False,
+        search_path=str(tmp_path),
+    )
+    native = ObjectFile(tmp_path / "native.f90", tmp_path / "native.o", "fortran")
+    binding = ObjectFile(tmp_path / "binding.c", tmp_path / "binding.o", "c")
+
+    compiler.compile_object(native)
+    compiler.compile_object(binding)
+    compiler.link_extension(
+        module_name="wrapped",
+        output_dir=tmp_path,
+        language="fortran",
+        objects=(native, binding),
+    )
+
+    assert fortran_compiler_family(str(fortran))[1] == vendor
+    assert compiler.command_log[0][0] == str(fortran)
+    assert fortran_flag in compiler.command_log[0]
+    assert compiler.command_log[1][0] == str(c_compiler)
+    assert c_flag in compiler.command_log[1]
+    assert compiler.command_log[2][0] == str(fortran)
+
+
+def test_fortran_selection_rejects_an_unknown_compiler_family(tmp_path: Path):
+    compiler = tmp_path / "mystery-fortran"
+    compiler.touch(mode=0o755)
+
+    with pytest.raises(ValueError, match="Unknown Fortran compiler family"):
+        Compiler.from_fortran_executable(str(compiler), execute_commands=False)
+
+
+def test_fortran_selection_rejects_a_missing_vendor_c_compiler(tmp_path: Path):
+    compiler = tmp_path / "ifx"
+    compiler.touch(mode=0o755)
+
+    with pytest.raises(FileNotFoundError, match=r"intel C compiler.*icx"):
+        Compiler.from_fortran_executable(
+            str(compiler),
+            execute_commands=False,
+            search_path=str(tmp_path),
+        )
+
+
+def test_python_sysconfig_compile_flags_are_not_forwarded_to_vendor_compiler(monkeypatch, tmp_path: Path):
     compiler = Compiler("GNU", debug=False, execute_commands=False)
     monkeypatch.setattr(compiler, "_executable", lambda _language, _tools: "gcc")
+    monkeypatch.setitem(compiler._toolchain["c"]["python"], "flags", ("-foreign-python-build-flag",))
     object_file = ObjectFile(
         source=tmp_path / "binding.c",
         object_path=tmp_path / "binding.o",
@@ -77,6 +149,30 @@ def test_python_sysconfig_profile_flags_do_not_override_wrapper_profile(monkeypa
     assert command.count("-O3") == 1
     assert command.count("-DNDEBUG") == 1
     assert "-g" not in command
+    assert "-foreign-python-build-flag" not in command
+
+
+def test_python_include_directories_add_existing_multiarch_root(monkeypatch, tmp_path: Path):
+    numpy_headers = tmp_path / "numpy"
+    python_headers = tmp_path / "include" / "python3.14"
+    delegated = tmp_path / "include" / "x86_64-test" / "python3.14" / "pyconfig.h"
+    delegated.parent.mkdir(parents=True)
+    delegated.touch()
+    monkeypatch.setattr(compiler_profiles, "numpy_include", lambda: str(numpy_headers))
+
+    include_dirs = compiler_profiles._python_include_directories(
+        {
+            "INCLUDEPY": str(python_headers),
+            "MULTIARCH": "x86_64-test",
+        }
+    )
+
+    assert include_dirs == (
+        str(numpy_headers),
+        str(python_headers),
+        str(tmp_path / "include"),
+        str(tmp_path / "include" / "x86_64-test"),
+    )
 
 
 def test_supported_optional_profile_flags_are_used_when_executing(monkeypatch, tmp_path: Path):

@@ -21,6 +21,7 @@ from x2py.semantics.ownership import (
 from x2py.semantics.wrapper_policy import (
     ArgumentConversionPhase,
     ArgumentHandoffMode,
+    ArrayWritebackABI,
     BridgeDataAction,
     CallbackABIKind,
     CallbackFatalAction,
@@ -47,6 +48,7 @@ from x2py.semantics.wrapper_policy import (
     DerivedRelease,
     DerivedTargetLifetime,
     DerivedWriteback,
+    DirectResultABI,
     ExternalDeclarationMode,
     ModuleGetterAction,
     ModuleObjectAccessMechanism,
@@ -686,6 +688,7 @@ class ArgumentTransferPlan(StageRecord):
     semantic_type_name: str
     datatype_family: DatatypeFamily
     character_length: int | None
+    array_writeback_abi: ArrayWritebackABI
     object_kind: ObjectKind
     ownership_owner: OwnershipOwner
     transfer_mode: TransferMode
@@ -720,6 +723,7 @@ class ResultPlan(StageRecord):
     source_kind: str
     result_position: int
     character_length: int | None
+    direct_result_abi: DirectResultABI
     object_kind: ObjectKind
     ownership_owner: OwnershipOwner
     transfer_mode: TransferMode
