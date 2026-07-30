@@ -180,34 +180,6 @@ fields, and function arguments.
 
 ---
 
-## Derived Objects And Native Dummies
-
-Rank-zero derived objects keep their native owner when they cross a wrapped
-call. An object constructed or returned by x2py uses wrapper-owned native
-storage. A module variable remains native-owned, and a field handle keeps its
-containing wrapper alive.
-
-Allocatable and pointer derived module variables are different from ordinary
-objects because they can be absent. Python reads an absent variable as `None`.
-When present, Python receives a live proxy for the current payload; replacing,
-deallocating, reassociating, or nullifying the native variable makes an older
-payload proxy stale.
-
-The completed wrapper policy chooses the handoff mechanism before code
-generation:
-
-- ordinary compatible inputs use a direct or call-scoped typed address;
-- compatible allocatable dummies use a reversible `move_alloc` transaction;
-- reassociable pointer dummies use a typed pointer transaction; and
-- unsupported owner, lifetime, mutability, or native-dummy combinations stop
-  wrapper generation instead of falling back to a copy or an invented address.
-
-Each transaction restores or commits the final native state exactly once,
-including failure and rollback paths. Passing an object never transfers its
-ownership merely because the native dummy can mutate or reassociate it.
-
----
-
 ## Safety Checklist
 
 - Check `allocated` on an allocatable handle or `associated` on a pointer handle

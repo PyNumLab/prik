@@ -81,9 +81,10 @@ except RuntimeError as e:
     print(e)
 ```
 
-The projected status and message are consumed by the policy: a successful call
-returns `None`, while a non-success status raises `RuntimeError` with the native
-message instead of returning either hidden output.
+x2py uses the projected status and message to determine the Python result: a
+successful call returns `None`, while a non-success status raises
+`RuntimeError` with the native message instead of returning either hidden
+output.
 
 For the complete status and message rules, see
 [Translate Status Results into Exceptions](../reference/pyi-contracts/calls-and-results.md#translate-status-results-into-exceptions).

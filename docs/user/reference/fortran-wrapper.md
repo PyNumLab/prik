@@ -1087,7 +1087,7 @@ such a proxy raises `ReferenceError`.
 
 The full compatibility matrix includes `TARGET`, `VALUE`, empty state, pointer
 `INTENT(IN)`, and deliberate incompatibilities. See
-[Derived Objects And Native Dummies](../guide/memory-management.md#derived-objects-and-native-dummies).
+[Derived Objects And Fields](../guide/memory-management.md#derived-objects-and-fields).
 
 
 ## Pointer Arguments, Results, And Association
