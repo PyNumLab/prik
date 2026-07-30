@@ -79,6 +79,7 @@ most useful settings are near the top:
 | `FC` | Fortran compiler |
 | `X2PY_LD` | Command that creates the shared library |
 | `X2PY_FFLAGS` | Extra Fortran compiler flags |
+| `X2PY_CFLAGS` | Extra C binding compiler flags |
 | `X2PY_LDFLAGS` | Extra linker flags |
 
 The build targets and commands follow these settings and normally do not need

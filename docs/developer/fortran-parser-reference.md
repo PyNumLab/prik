@@ -136,9 +136,9 @@ The implementation inventory is maintained across these surfaces:
 - `x2py/semantics/fortran2ir.py` owns conversion from parser facts to semantic IR,
   including kind mapping, compile-time specialization, storage contracts,
   projection metadata, and wrapper-planning inputs.
-- `tests/parser/` covers parser contracts, source-unit slicing, diagnostics,
+- `tests/fortran/source_parsing/parsing/` covers parser contracts, source-unit slicing, diagnostics,
   project behavior, and fixture regressions.
-- `tests/semantics/` covers semantic conversion, datatype precision mapping,
+- `tests/fortran/semantic_ir/semantics/` covers semantic conversion, datatype precision mapping,
   wrapper planning, `.pyi` emission, and compile-time specialization.
 
 <!-- X2PY_C_DOCS_START
@@ -146,8 +146,7 @@ Parser-related pull requests should update this file when the documented
 feature inventory, public API, diagnostics, project behavior, semantic handoff,
 or maintenance workflow changes. The parser-reference guard watches C,
 Fortran, and semantic `.pyi` references independently. For Fortran, it watches
-`x2py/parsers/fortran/`, `tests/parser/fortran/`, `tests/data/fortran/`, and focused
-Fortran parser tests directly under `tests/parser/`. It expects
+`x2py/parsers/fortran/` and `tests/fortran/source_parsing/parsing/`. It expects
 `docs/developer/fortran-parser-reference.md` to change unless the PR is explicitly labeled to skip
 the guard.
 X2PY_C_DOCS_END -->
@@ -302,13 +301,13 @@ When adding another parser, keep these test layers separate:
 
 Executable references:
 
-- Fortran parser walkthrough: `tests/parsing/fortran/test_developer_tutorial.py`
-- Procedure/type parsing: `tests/parsing/fortran/`
-- Scope and project behavior: `tests/parsing/fortran/test_scope_handling.py` and
-  `tests/parsing/fortran/test_project_scope_models.py`
-- Fortran fixture workflow: `tests/parsing/fortran/test_fortran_fixture_suite.py`
-- Shared CLI behavior: `tests/cli/`
-- Fortran semantic handoff: `tests/semantics/conversion/fortran/`
+- Fortran parser walkthrough: `tests/fortran/source_parsing/parsing/test_developer_tutorial.py`
+- Procedure/type parsing: `tests/fortran/source_parsing/parsing/`
+- Scope and project behavior: `tests/fortran/modules/parsing/test_scope_handling.py` and
+  `tests/fortran/modules/parsing/test_project_scope_models.py`
+- Fortran fixture workflow: `tests/fortran/source_parsing/parsing/test_fortran_fixture_suite.py`
+- Shared CLI behavior: `tests/fortran/command_line_interface/pipeline/`
+- Fortran semantic handoff: `tests/fortran/semantic_ir/semantics/`
 
 ## 3) Terminal usage and expected outputs
 
@@ -338,9 +337,9 @@ print only the first `N` items in each repeated section.
 
 ### 3.2 Human-readable output example
 
-Input Fortran (`tests/data/fortran/general/basic_subroutine.f90`):
+Input Fortran (`tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90`):
 
-<!-- x2py-doc-source: tests/data/fortran/general/basic_subroutine.f90 -->
+<!-- x2py-doc-source: tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90 -->
 ```fortran
 module m1
 contains
@@ -355,14 +354,14 @@ Command:
 
 <!-- x2py-doc-test: exact -->
 ```bash
-python -m x2py parse tests/data/fortran/general/basic_subroutine.f90
+python -m x2py parse tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
 ```
 
 Expected output:
 
 <!-- x2py-doc-test-output -->
 ```text
-File: tests/data/fortran/general/basic_subroutine.f90
+File: tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
   Modules: 1
     - module m1 (vars=0, uses=0)
       Procedures: 1
@@ -375,12 +374,12 @@ compact:
 
 <!-- x2py-doc-test: exact -->
 ```bash
-python -m x2py parse tests/data/fortran/general/basic_subroutine.f90 --show-vars
+python -m x2py parse tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90 --show-vars
 ```
 
 <!-- x2py-doc-test-output -->
 ```text
-File: tests/data/fortran/general/basic_subroutine.f90
+File: tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
   Modules: 1
     - module m1 (vars=0, uses=0)
       Procedures: 1
@@ -468,13 +467,13 @@ File: mixed_example.f90
 Print parser JSON:
 
 ```bash
-python -m x2py tests/data/fortran/general/basic_subroutine.f90 --json
+python -m x2py tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90 --json
 ```
 
 Write parser JSON:
 
 ```bash
-python -m x2py parse tests/data/fortran/general/basic_subroutine.f90 --json --out report.json
+python -m x2py parse tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90 --json --out report.json
 ```
 
 Expected JSON layout:
@@ -553,14 +552,14 @@ X2PY_C_DOCS_END -->
 Parser output and semantic IR are separate stages. Run parser inspection with:
 
 ```bash
-python -m x2py parse tests/data/fortran/general/basic_subroutine.f90
+python -m x2py parse tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
 ```
 
 Build a wrapper with the default wrapper stage. If the completed plan cannot
 lower a contract, the build reports the precise plan owner and blocker:
 
 ```bash
-python -m x2py tests/data/fortran/general/basic_subroutine.f90
+python -m x2py tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
 ```
 
 Parser JSON stays parse-only.
@@ -569,13 +568,13 @@ Semantic IR JSON uses the same output channels, but the per-file payload is the
 semantic model projection instead of raw parser output:
 
 ```bash
-python -m x2py semantics tests/data/fortran/general/basic_subroutine.f90
+python -m x2py semantics tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
 ```
 
 Generated `.pyi` text is printed with:
 
 ```bash
-python -m x2py generate --pyi tests/data/fortran/general/basic_subroutine.f90
+python -m x2py generate --pyi tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
 ```
 
 ### 3.5 Parse-error diagnostics and debug mode
@@ -588,13 +587,13 @@ context, but it does **not** include a Python traceback.
 Example command:
 
 ```bash
-python -m x2py tests/data/fortran/errors/err_duplicate_argument_name.f90
+python -m x2py tests/fortran/source_parsing/parsing/fixtures/errors/err_duplicate_argument_name.f90
 ```
 
 Example diagnostic shape:
 
 ```text
-tests/data/fortran/errors/err_duplicate_argument_name.f90:1:1: error[PARSE_DUPLICATE_ARGUMENT]: Duplicate argument name 'x' in procedure 'dup'.
+tests/fortran/source_parsing/parsing/fixtures/errors/err_duplicate_argument_name.f90:1:1: error[PARSE_DUPLICATE_ARGUMENT]: Duplicate argument name 'x' in procedure 'dup'.
   |
 1 | subroutine dup(x, y, x)
   | ^
@@ -636,7 +635,7 @@ function that created the diagnostic.
 from x2py import parse_fortran_project
 from pathlib import Path
 
-files = [str(p) for p in Path("tests/data/fortran/general").rglob("*.f90")][:5]
+files = list(Path("tests/fortran/source_parsing/parsing/fixtures/general").glob("*.f90"))[:5]
 project = parse_fortran_project(files)
 print(len(project.files))
 print(len(project.modules))
@@ -655,7 +654,7 @@ from pathlib import Path
 from x2py import parse_fortran_file
 from semantics.fortran2ir import fortran_file_to_semantic_modules
 
-p = Path("tests/data/fortran/general/basic_subroutine.f90")
+p = Path("tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90")
 code = p.read_text()
 
 parsed = parse_fortran_file(code, filename=str(p))
@@ -707,42 +706,42 @@ PYTHONPATH=. pytest -q
 Run parser-focused tests:
 
 ```bash
-python -m x2py parse tests/data/fortran/general/basic_subroutine.f90 --language fortran --json
-PYTHONPATH=. pytest -q tests/parsing/fortran/
-PYTHONPATH=. pytest -q tests/parsing/fortran/test_fortran_fixture_suite.py
-PYTHONPATH=. pytest -q tests/cli/
+python -m x2py parse tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90 --language fortran --json
+PYTHONPATH=. pytest -q tests/fortran/source_parsing/parsing/
+PYTHONPATH=. pytest -q tests/fortran/source_parsing/parsing/test_fortran_fixture_suite.py
+PYTHONPATH=. pytest -q tests/fortran/command_line_interface/pipeline/
 ```
 
 Focused test files by implementation area:
 
 - Parser walkthrough and expected developer flow:
-  `tests/parsing/fortran/test_developer_tutorial.py`
+  `tests/fortran/source_parsing/parsing/test_developer_tutorial.py`
 - Procedure headers, declarations, derived types, interfaces, and type-bound
   procedures:
-  `tests/parsing/fortran/`
+  `tests/fortran/source_parsing/parsing/`
 - Function header edge cases:
-  `tests/parsing/fortran/test_function_headers.py`
+  `tests/fortran/functions/parsing/test_function_headers.py`
 - Scope handling and project namespace behavior:
-  `tests/parsing/fortran/test_scope_handling.py` and
-  `tests/parsing/fortran/test_project_scope_models.py`
+  `tests/fortran/modules/parsing/test_scope_handling.py` and
+  `tests/fortran/modules/parsing/test_project_scope_models.py`
 - Preprocessing, native includes, and execution-boundary skipping:
-  `tests/pipeline/preprocessing/test_parser_boundaries.py`
+  `tests/fortran/source_preprocessing/preprocessing/test_parser_boundaries.py`
 - Parser diagnostics and fatal error contracts:
-  `tests/parsing/fortran/test_error_handling.py`
+  `tests/fortran/source_parsing/parsing/test_error_handling.py`
 - Regression contracts:
-  `tests/parsing/fortran/`
+  `tests/fortran/source_parsing/parsing/`
 - Public entrypoints:
-  `tests/parsing/fortran/test_public_entrypoints.py`
+  `tests/fortran/source_parsing/parsing/test_public_entrypoints.py`
 - Parser fixture goldens:
-  `tests/parsing/fortran/test_fortran_fixture_suite.py`
+  `tests/fortran/source_parsing/parsing/test_fortran_fixture_suite.py`
 - Parser error fixture goldens:
-  `tests/parsing/fortran/test_error_fixture_suite.py`
+  `tests/fortran/source_parsing/parsing/test_error_fixture_suite.py`
 - Parser JSON shape:
-  `tests/parsing/fortran/test_json_sanity.py`
+  `tests/fortran/source_parsing/parsing/test_json_sanity.py`
 - Cached Fortran compiler/type and intrinsic-storage probing:
-  `tests/probes/test_fortran_types.py`
+  `tests/fortran/data_types/probes/test_fortran_type_probes.py`
 - Shared CLI behavior:
-  `tests/cli/`
+  `tests/fortran/command_line_interface/pipeline/`
 
 When adding or changing a Fortran parser feature, add a focused parser test
 near the implementation concern first, then update fixture goldens only when
@@ -751,26 +750,26 @@ the serialized parser contract intentionally changes.
 Update golden JSON fixtures:
 
 ```bash
-python tests/parser/fortran/generate_fortran_parser_goldens.py
+python tests/fortran/source_parsing/parsing/generate_parser_goldens.py
 ```
 
 Update selected fixture(s):
 
 ```bash
-python tests/parser/fortran/generate_fortran_parser_goldens.py tests/data/fortran/general/basic_subroutine.f90
+python tests/fortran/source_parsing/parsing/generate_parser_goldens.py tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
 ```
 
 In-test auto-update mode:
 
 ```bash
-FORTRAN_PARSER_UPDATE_GOLDENS=1 PYTHONPATH=. pytest -q tests/parsing/fortran/test_fortran_fixture_suite.py --confcutdir=tests/
+FORTRAN_PARSER_UPDATE_GOLDENS=1 PYTHONPATH=. pytest -q tests/fortran/source_parsing/parsing/test_fortran_fixture_suite.py --confcutdir=tests/
 ```
 
 Semantic and `.pyi` fixtures have separate generators:
 
 ```bash
-python tests/semantics/generate_semantic_fixtures.py
-python tests/pyi/generate_pyi_fixtures.py
+python tests/fortran/semantic_ir/semantics/generate_semantic_fixtures.py
+WRAPPER_UPDATE_PYI_FIXTURES=1 python3 -m pytest -q tests/fortran/semantic_pyi_format/pipeline/test_contract_package_generation.py
 ```
 
 ## 6) Error handling

@@ -267,13 +267,14 @@ X2PY_C_DOCS_END -->
 
 ## Test Organization
 
-- Unit tests: keep narrow behavior tests near existing domain folders such as
-  `tests/parser`, `tests/semantics`, and `tests/pyi`.
+- Unit tests: keep narrow behavior tests under the owning language, feature,
+  and pipeline-stage directory.
 - Regression tests: add focused tests next to the subsystem that failed. Mark
   with `@pytest.mark.regression` when useful.
-- Property tests: put generated invariant tests in `tests/property`.
-- Fuzz-like parser tests: keep bounded generators in `tests/property`, mark
-  with `@pytest.mark.fuzz`, and run with the `fuzz` Hypothesis profile.
+- Property tests: keep generated invariants beside the domain they exercise.
+- Fuzz-like parser tests: keep bounded generators beside the owning parser
+  tests, mark with `@pytest.mark.fuzz`, and run with the `fuzz` Hypothesis
+  profile.
 
 Good invariants for this codebase:
 

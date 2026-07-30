@@ -53,7 +53,7 @@ Compiler/preprocessed input is parsed by the same route after linemarkers are
 mapped back to original source locations.
 
 Executable walkthroughs live in
-``tests/parsing/c/test_c_parser_developer_tutorial.py``.
+``tests/c/parsing/test_c_parser_developer_tutorial.py``.
 """
 
 from __future__ import annotations

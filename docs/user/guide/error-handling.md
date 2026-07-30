@@ -59,11 +59,15 @@ subroutine solve(value, status, message)
 end subroutine
 ```
 
-In your edited `.pyi`:
+In your edited `.pyi`, project the hidden native outputs and then name those
+projected results in `@raises`:
 
 ```python
+from x2py.contracts import Addr, Arg, Int32, Return, String, native_call, raises
+
 @raises(status="status", message="message", success=0)
-def solve(value: Int32) -> None: ...
+@native_call([Addr(Arg(0)), Return("status", 0), Return("message", 1)])
+def solve(value: Int32) -> tuple[Int32, String[32]]: ...
 ```
 
 Then:
@@ -76,6 +80,10 @@ try:
 except RuntimeError as e:
     print(e)
 ```
+
+The projected status and message are consumed by the policy: a successful call
+returns `None`, while a non-success status raises `RuntimeError` with the native
+message instead of returning either hidden output.
 
 For the complete status and message rules, see
 [Translate Status Results into Exceptions](../reference/pyi-contracts/calls-and-results.md#translate-status-results-into-exceptions).

@@ -1,0 +1,32 @@
+"""Native-call runtime-envelope lowering tests."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from x2py.pipeline.pyi import pyi_file_to_semantic_module
+from x2py.semantics.policy_completion import complete_semantic_policies
+from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+
+
+RECURSION_CONTRACT = (
+    Path("tests/fortran/error_handling/end_to_end/fixtures/runtime/contracts")
+    / "fruntime_recursion_f90"
+    / "fruntime_recursion_f90.pyi"
+)
+
+
+def _rendered_source(artifacts, suffix: str) -> str:
+    return next(source.text for source in artifacts.sources if source.path.name.endswith(suffix))
+
+
+def test_recursive_runtime_contract_keeps_release_policy_in_the_plan():
+    module = pyi_file_to_semantic_module(RECURSION_CONTRACT, module_name="fruntime_recursion_f90")
+    complete_semantic_policies(module)
+    plan = WrapperPlanner().build(module)
+
+    assert plan.namespaces[0].functions
+    assert all(function.binding.hold_gil is False for function in plan.namespaces[0].functions)
+    c_source = _rendered_source(WrapperCodeGenerator().generate(plan), ".c")
+    assert c_source.count("Py_BEGIN_ALLOW_THREADS") == len(plan.namespaces[0].functions)
+    assert c_source.count("Py_END_ALLOW_THREADS") == len(plan.namespaces[0].functions)

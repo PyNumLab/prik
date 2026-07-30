@@ -1,0 +1,7 @@
+# Intentional difference: flatten the non-colliding public names.
+from x2py.contracts import Int32, external
+from .module1 import *
+from .module2 import *
+
+@external
+def standalone() -> Int32: ...

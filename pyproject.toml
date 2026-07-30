@@ -57,10 +57,13 @@ python_files = ["test_*.py"]
 addopts = "-ra --strict-config --strict-markers"
 markers = [
     "benchmark: parked performance tests; enable when benchmark adoption resumes",
+    "fortran_end_to_end: compiled, imported, and called Fortran feature tests",
     "fuzz: randomized parser robustness tests",
     "property: Hypothesis property-based tests",
+    "real_library: dedicated BLAS/LAPACK native-source end-to-end tests",
     "regression: tests that pin previously fixed bugs",
     "slow: tests that are useful but too expensive for the default inner loop",
+    "toolchain_smoke: portable compiled Fortran end-to-end cases reused across compiler, OS, and architecture lanes",
 ]
 xfail_strict = true
 
@@ -81,13 +84,12 @@ target-version = "py310"
 line-length = 120
 force-exclude = true
 extend-exclude = [
-    "tests/data",
-    "tests/pyi/fixtures",
-    "tests/wrapper/fortran/*/contracts",
-    "tests/wrapper/fortran/*/handwritten_contracts",
-    "tests/wrapper/fortran/*/invalid_contracts",
-    "tests/wrapper/fortran/*/modified_contracts",
-    "tests/wrapper/fortran/pyi",
+    "tests/c/fixtures/pyi",
+    "tests/fortran/*/end_to_end/fixtures",
+    "tests/fortran/*/pipeline/fixtures",
+    "tests/fortran/building_shared_library/end_to_end/real_libraries/*/contracts",
+    "tests/fortran/pyi_contracts/*/end_to_end/fixtures",
+    "tests/fortran/semantic_pyi_format/pipeline/fixtures",
     "x2py.egg-info",
 ]
 
@@ -125,13 +127,12 @@ exclude_dirs = ["tests", "docs", "x2py.egg-info"]
 [tool.vulture]
 paths = ["x2py", "tests"]
 exclude = [
-    "tests/data/",
-    "tests/pyi/fixtures/",
-    "tests/wrapper/fortran/*/contracts/",
-    "tests/wrapper/fortran/*/handwritten_contracts/",
-    "tests/wrapper/fortran/*/invalid_contracts/",
-    "tests/wrapper/fortran/*/modified_contracts/",
-    "tests/wrapper/fortran/pyi/",
+    "tests/c/fixtures/pyi/",
+    "tests/fortran/*/end_to_end/fixtures/",
+    "tests/fortran/*/pipeline/fixtures/",
+    "tests/fortran/building_shared_library/end_to_end/real_libraries/*/contracts/",
+    "tests/fortran/pyi_contracts/*/end_to_end/fixtures/",
+    "tests/fortran/semantic_pyi_format/pipeline/fixtures/",
     "x2py.egg-info/",
 ]
 min_confidence = 80

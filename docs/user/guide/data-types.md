@@ -147,6 +147,8 @@ The wrapper handles the native call details. Python still passes and receives
 array, and results return a 0-D NumPy array. Raw integer addresses are an
 advanced boundary covered later in the guide.
 
+## Unsupported Widths And Forms
+
 The semantic format can represent wider types such as `Float128` and
 `Complex256`, but the current Fortran wrapper blocks real storage wider than 64
 bits and complex storage wider than 128 total bits instead of narrowing it.

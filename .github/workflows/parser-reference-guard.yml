@@ -70,18 +70,17 @@ jobs:
 
           while IFS= read -r changed_file; do
             case "$changed_file" in
-              x2py/parsers/c/*|tests/parser/c/*|tests/parsing/c/*|tests/data/c/*|tests/probes/test_c_types.py)
+              x2py/parsers/c/*|tests/c/parsing/*|tests/c/fixtures/*|tests/c/probes/test_c_types.py)
                 C_PARSER_CHANGED=true
                 ;;
-              x2py/parsers/fortran/*|tests/parser/fortran/*|tests/parsing/fortran/*|tests/data/fortran/*|tests/probes/test_fortran_types.py)
+              x2py/parsers/fortran/*|tests/fortran/source_parsing/parsing/*|tests/fortran/data_types/probes/test_fortran_type_probes.py)
                 FORTRAN_PARSER_CHANGED=true
                 ;;
-              x2py/parsers/pyi/*|tests/parsing/pyi/*|tests/pipeline/pyi_builds/*)
+              x2py/parsers/pyi/*|tests/fortran/semantic_pyi_format/*)
                 PYI_PARSER_CHANGED=true
                 ;;
-              tests/parser/conftest.py|\
-              tests/cli/*|\
-              tests/pipeline/preprocessing/*|\
+              tests/fortran/command_line_interface/pipeline/*|\
+              tests/fortran/source_preprocessing/preprocessing/*|\
               x2py/parsers/__init__.py|\
               x2py/preprocessing.py)
                 SHARED_PARSER_CHANGED=true

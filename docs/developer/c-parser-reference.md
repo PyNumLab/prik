@@ -34,8 +34,8 @@ X2PY_C_DOCS_END &#45;&#45;>
 Parser-related pull requests should update this file when the documented
 feature inventory, public API, diagnostics, project behavior, semantic handoff,
 or maintenance workflow changes. The parser-reference guard checks C, Fortran,
-and semantic `.pyi` references independently. It watches `x2py/parsers/c/`, `tests/parser/c/`,
-`tests/data/c/`, and C standard-type probe tests and expects
+and semantic `.pyi` references independently. It watches `x2py/parsers/c/`, `tests/c/fixtures/parser/`,
+`tests/c/fixtures/native/`, and C standard-type probe tests and expects
 `docs/developer/c-parser-reference.md` to change unless the PR is explicitly labeled to skip the
 guard.
 X2PY_C_DOCS_END &#45;&#45;>
@@ -174,10 +174,10 @@ X2PY_C_DOCS_END &#45;&#45;>
 - unsupported K&R function-definition diagnostics
 - legacy C parser project JSON schema snapshots and active fatal diagnostic
   goldens generated from stable `CParseError` output
-- C fixture inputs under `tests/data/c/general/`, diagnostic inputs under
-  `tests/data/c/errors/parser/`, and partial-parser regression inputs under
-  `tests/data/c/json/`, `tests/data/c/tinyexpr/`, `tests/data/c/linmath/`,
-  `tests/data/c/nanosvg/`, and top-level C inputs from `tests/data/c/stb/`
+- C fixture inputs under `tests/c/fixtures/native/general/`, diagnostic inputs under
+  `tests/c/fixtures/native/errors/parser/`, and partial-parser regression inputs under
+  `tests/c/fixtures/native/json/`, `tests/c/fixtures/native/tinyexpr/`, `tests/c/fixtures/native/linmath/`,
+  `tests/c/fixtures/native/nanosvg/`, and top-level C inputs from `tests/c/fixtures/native/stb/`
 - `semantics.c2ir` conversion for the first identity subset: scalar
   functions, const/mutable pointer storage contracts, declared arrays,
   structs/opaque structs, enums, numeric macro constants, local typedef
@@ -836,7 +836,7 @@ X2PY_C_DOCS_END &#45;&#45;>
 
 <!&#45;&#45; X2PY_C_DOCS_START
 The C test area contains active partial-parser/raw-metadata tests, including
-parse-only cJSON regression coverage under `tests/parser/c/`. The active tests cover
+parse-only cJSON regression coverage under `tests/c/fixtures/parser/`. The active tests cover
 public entrypoints, empty model serialization, CLI discovery, JSON/output-file
 behavior, unsupported C stages, comment stripping, line-continuation folding,
 top-level splitting, include collection, pragma metadata, raw preprocessing
@@ -857,11 +857,11 @@ Useful local checks for the parse-only frontend:
 
 <!&#45;&#45; X2PY_C_DOCS_START
 ```bash
-python -m x2py tests/data/c/general/math_api.h &#45;&#45;language c &#45;&#45;parse &#45;&#45;json
-python tests/parser/c/generate_c_parser_goldens.py tests/data/c/general/math_api.h
-pytest -q tests/parsing/c/test_c_declarations_and_declarators.py
-pytest -q tests/parsing/c/test_c_fixture_suite.py
-pytest -q tests/parser/c tests/probes/test_c_types.py tests/pipeline/preprocessing/ tests/cli/ tests/probes/test_fortran_types.py tests/semantics tests/pyi
+python -m x2py tests/c/fixtures/native/general/math_api.h &#45;&#45;language c &#45;&#45;parse &#45;&#45;json
+python tests/c/fixtures/parser/generate_c_parser_goldens.py tests/c/fixtures/native/general/math_api.h
+pytest -q tests/c/parsing/test_c_declarations_and_declarators.py
+pytest -q tests/c/parsing/test_c_fixture_suite.py
+pytest -q tests/c
 pytest -q
 ```
 X2PY_C_DOCS_END &#45;&#45;>
@@ -870,30 +870,30 @@ Focused test files by implementation area:
 
 <!&#45;&#45; X2PY_C_DOCS_START
 - Lexer, comments, continuations, raw directive handling:
-  `tests/parsing/c/test_c_lexer_preprocessor.py`
+  `tests/c/parsing/test_c_lexer_preprocessor.py`
 - Declaration specifiers, qualifiers, declarators, arrays, pointers,
   callbacks, and variables:
-  `tests/parsing/c/test_c_declarations_and_declarators.py`
+  `tests/c/parsing/test_c_declarations_and_declarators.py`
 - Function prototypes and definitions:
-  `tests/parsing/c/test_c_functions.py`
+  `tests/c/parsing/test_c_functions.py`
 - Structs, unions, enums, typedefs, and aggregate members:
-  `tests/parsing/c/test_c_structs_unions_enums_typedefs.py`
+  `tests/c/parsing/test_c_structs_unions_enums_typedefs.py`
 - Project assembly, include graph facts, typedef/tag resolution, and
   redeclarations:
-  `tests/parsing/c/test_c_project_resolution.py`
+  `tests/c/parsing/test_c_project_resolution.py`
 - Compiler extension tolerance and diagnostics:
-  `tests/parsing/c/test_c_compiler_extensions.py`
+  `tests/c/parsing/test_c_compiler_extensions.py`
 - Corpus/third-party-style fixtures:
-  `tests/parsing/c/test_c_corpus.py`
+  `tests/c/parsing/test_c_corpus.py`
 - Project golden fixtures:
-  `tests/parsing/c/test_c_fixture_suite.py`
+  `tests/c/parsing/test_c_fixture_suite.py`
 - Parser JSON shape:
-  `tests/parsing/c/test_c_json_sanity.py`
+  `tests/c/parsing/test_c_json_sanity.py`
 - Fatal parser diagnostic goldens:
-  `tests/parsing/c/test_c_error_fixture_suite.py`
+  `tests/c/parsing/test_c_error_fixture_suite.py`
 - Public API and developer tutorial:
-  `tests/parsing/c/test_c_public_api_skeleton.py` and
-  `tests/parsing/c/test_c_parser_developer_tutorial.py`
+  `tests/c/parsing/test_c_public_api_skeleton.py` and
+  `tests/c/parsing/test_c_parser_developer_tutorial.py`
 X2PY_C_DOCS_END &#45;&#45;>
 
 <!&#45;&#45; X2PY_C_DOCS_START
@@ -971,7 +971,7 @@ X2PY_C_DOCS_END &#45;&#45;>
 <!&#45;&#45; X2PY_C_DOCS_START
 For an executable maintainer walkthrough of the parser gateway and
 preprocessed source path, read
-`tests/parsing/c/test_c_parser_developer_tutorial.py`.
+`tests/c/parsing/test_c_parser_developer_tutorial.py`.
 X2PY_C_DOCS_END &#45;&#45;>
 
 ## CLI Workflow
@@ -1122,20 +1122,20 @@ Testing should grow in this order:
 
 Executable references:
 
-- Shared CLI behavior: `tests/cli/`
+- Shared CLI behavior: `tests/fortran/command_line_interface/pipeline/`
 
 <!&#45;&#45; X2PY_C_DOCS_START
-- C parser walkthrough: `tests/parsing/c/test_c_parser_developer_tutorial.py`
-- C declaration coverage: `tests/parsing/c/test_c_declarations_and_declarators.py`
-- C project/golden workflow: `tests/parsing/c/test_c_fixture_suite.py`
-- C semantic handoff: `tests/semantics/conversion/c/`
+- C parser walkthrough: `tests/c/parsing/test_c_parser_developer_tutorial.py`
+- C declaration coverage: `tests/c/parsing/test_c_declarations_and_declarators.py`
+- C project/golden workflow: `tests/c/parsing/test_c_fixture_suite.py`
+- C semantic handoff: `tests/c/semantics/conversion/`
 X2PY_C_DOCS_END &#45;&#45;>
 
 Fixture layout should be separate from Fortran:
 
 <!&#45;&#45; X2PY_C_DOCS_START
 ```text
-tests/data/c/
+tests/c/fixtures/native/
   general/
   json/
   tinyexpr/
@@ -1146,7 +1146,7 @@ tests/data/c/
   corpus/
   scientific/
 
-tests/parser/c/
+tests/c/fixtures/parser/
   fixtures/
     general/
     json/
@@ -1156,15 +1156,15 @@ tests/parser/c/
 X2PY_C_DOCS_END &#45;&#45;>
 
 <!&#45;&#45; X2PY_C_DOCS_START
-Checked-in project JSON files under `tests/parser/c/fixtures/` are active
+Checked-in project JSON files under `tests/c/fixtures/parser/fixtures/` are active
 compiler-preprocessed project goldens. They are generated by
-`python tests/parser/c/generate_c_parser_goldens.py`, filter system-header
+`python tests/c/fixtures/parser/generate_c_parser_goldens.py`, filter system-header
 declaration spillover, and normalize source-text whitespace so compiler/libc
 formatting differences do not make CI flaky.
 The fixture suite also checks same-stem grouping order and representative raw
 preprocessing failures.
 Fatal diagnostic goldens are regenerated with
-`C_PARSER_UPDATE_GOLDENS=1 PYTHONPATH=. pytest -q tests/parsing/c/test_c_error_fixture_suite.py`.
+`C_PARSER_UPDATE_GOLDENS=1 PYTHONPATH=. pytest -q tests/c/parsing/test_c_error_fixture_suite.py`.
 The standalone error generator remains available for targeted refreshes.
 By policy, a paired project records source-to-header include edges but parses
 each supplied `.c`, `.h`, or `.i` member separately; include traversal is not
@@ -1179,9 +1179,9 @@ The first real-world corpus target should be cJSON, pinned to an exact release
 or commit with license and source provenance. cJSON is small enough for early
 stabilization while still covering typedef structs, recursive pointers, public
 macro declaration wrappers, constants, `const char *` APIs, `size_t`, and
-callback hook members. Library files currently under `tests/data/c/json/`,
-`tests/data/c/tinyexpr/`, `tests/data/c/linmath/`, and
-`tests/data/c/nanosvg/`, plus STB top-level inputs under `tests/data/c/stb/`,
+callback hook members. Library files currently under `tests/c/fixtures/native/json/`,
+`tests/c/fixtures/native/tinyexpr/`, `tests/c/fixtures/native/linmath/`, and
+`tests/c/fixtures/native/nanosvg/`, plus STB top-level inputs under `tests/c/fixtures/native/stb/`,
 are regression inputs only until corresponding corpus provenance requirements
 are met.
 X2PY_C_DOCS_END &#45;&#45;>

@@ -132,11 +132,11 @@ target without replacing that linked contract.
 ## Evidence And Maintenance
 
 Function and subroutine call surfaces are covered by
-[`test_native_call_examples.py`](../../../tests/wrapper/fortran/function_calls/test_native_call_examples.py),
-[`test_output_arguments.py`](../../../tests/wrapper/fortran/function_calls/test_output_arguments.py),
-[`test_optional_arguments.py`](../../../tests/wrapper/fortran/function_calls/test_optional_arguments.py), and
-[`test_generic_interfaces.py`](../../../tests/wrapper/fortran/naming/test_generic_interfaces.py).
+[`test_edited_call_surfaces.py`](../../../tests/fortran/pyi_contracts/calls_and_results/end_to_end/test_edited_call_surfaces.py),
+[`test_documented_function_journeys.py`](../../../tests/fortran/functions/end_to_end/test_documented_function_journeys.py),
+[`test_optional_runtime.py`](../../../tests/fortran/optional_arguments/end_to_end/test_optional_runtime.py), and
+[`test_generic_interfaces.py`](../../../tests/fortran/generic_interfaces/end_to_end/test_generic_interfaces.py).
 
 When a callable signature rule changes, update this page together with the
-semantic `.pyi` reference, generated contract fixtures under
-`tests/wrapper/fortran/*/contracts/`, and the relevant user-guide workflow.
+semantic `.pyi` reference, the owning feature's reviewed contract fixtures,
+and the relevant user-guide workflow.

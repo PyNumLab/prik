@@ -29,7 +29,7 @@ python3 -m x2py points.f90 --out geometry
 
 Create `points.f90`:
 
-<!-- x2py-doc-source: tests/data/fortran/wrapper/home_points.f90 -->
+<!-- x2py-doc-source: tests/fortran/building_shared_library/end_to_end/fixtures/native/home_points.f90 -->
 ```fortran
 module points
   implicit none

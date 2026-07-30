@@ -24,9 +24,9 @@ callers may also use the stable parser functions and models exported from the
 - Public reference: `docs/developer/fortran-parser-reference.md`
 - User recipe: `docs/user/examples/recipes/inspect-fortran-api.md`
 - Source navigation: `docs/developer/source-map.md`, `docs/developer/feature-to-code-map.md`
-- Parser tests: `tests/parser/`
-- Fixture suite: `tests/parsing/fortran/test_fortran_fixture_suite.py`
-- Semantic handoff tests: `tests/semantics/conversion/fortran/`
+- Parser tests: `tests/fortran/source_parsing/parsing/`
+- Fixture suite: `tests/fortran/source_parsing/parsing/test_fortran_fixture_suite.py`
+- Semantic handoff tests: `tests/fortran/semantic_ir/semantics/`
 
 Parser support alone does not establish native binding support. Wrapper
 features need semantic lowering, completed policy, codegen, compilation, and

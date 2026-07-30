@@ -77,6 +77,6 @@ completion remains the next shared stage after those converters produce
 - `.pyi` wrapper checklist: `docs/maintainer/roadmap/semantic-pyi-wrapper-checklist.md`
 - Source navigation: `docs/developer/source-map.md`, `docs/developer/feature-to-code-map.md`
 - Pipeline map: `docs/maintainer/internal-architecture/pipeline-map.md`
-- Semantic tests: `tests/semantics/`
-- `.pyi` tests: `tests/pyi/`
-- Wrapper behavior that reaches `ir2ast.py`: `tests/wrapper/fortran/`
+- Semantic tests: `tests/fortran/semantic_ir/semantics/`
+- `.pyi` tests: `tests/fortran/semantic_pyi_format/`
+- Wrapper behavior that reaches `ir2ast.py`: `tests/fortran/`

@@ -1,95 +1,121 @@
 # Test Suite Map
 
-Pytest modules have one primary owner. Unit and stage tests follow the pipeline
-and source package that owns the behavior; compiled wrapper tests follow the
-user-visible feature that a contributor is changing.
+Product-behavior tests are organized language first. Fortran tests are then
+organized by documented feature and pipeline stage:
 
-## Pipeline and stage map
+```text
+tests/fortran/<documented-feature>/<owning-stage>/
+```
 
-| Change area | Test directory | Focused command |
+Meta-tests that validate the test suite itself live under
+`tests/architecture/`; they are outside the tree whose structure they enforce.
+Only genuinely language-neutral product behavior belongs under `tests/shared/`.
+Generated C and CPython binding code used by a Fortran wrapper remains evidence
+for the Fortran input contract; `tests/c/` means C is the user-owned input
+language.
+
+| Owner | Contract | Focused command |
 | --- | --- | --- |
-| Repository dependency and layout rules | `tests/architecture/` | `python3 -m pytest -q tests/architecture` |
-| Command-line behavior | `tests/cli/` | `python3 -m pytest -q tests/cli` |
-| C parsing | `tests/parsing/c/` | `python3 -m pytest -q tests/parsing/c` |
-| Fortran parsing | `tests/parsing/fortran/` | `python3 -m pytest -q tests/parsing/fortran` |
-| Semantic `.pyi` Python-AST parsing | `tests/parsing/pyi/` | `python3 -m pytest -q tests/parsing/pyi` |
-| Compiler-derived target facts | `tests/probes/` | `python3 -m pytest -q tests/probes` |
-| Preprocessing | `tests/pipeline/preprocessing/` | `python3 -m pytest -q tests/pipeline/preprocessing` |
-| Semantic `.pyi` build orchestration | `tests/pipeline/pyi_builds/` | `python3 -m pytest -q tests/pipeline/pyi_builds` |
-| C source-to-semantic conversion | `tests/semantics/conversion/c/` | `python3 -m pytest -q tests/semantics/conversion/c` |
-| Fortran source-to-semantic conversion | `tests/semantics/conversion/fortran/` | `python3 -m pytest -q tests/semantics/conversion/fortran` |
-| `.pyi` AST-to-semantic conversion | `tests/semantics/conversion/pyi/` | `python3 -m pytest -q tests/semantics/conversion/pyi` |
-| Completed semantic policy | `tests/semantics/policy/` | `python3 -m pytest -q tests/semantics/policy` |
-| Wrapper-plan support diagnostics | `tests/wrapper_codegen/` | `python3 -m pytest -q tests/wrapper_codegen` |
-| Wrapper planning, bridge/binding generation, and source/`.pyi` printing | `tests/wrapper_codegen/` | `python3 -m pytest -q tests/wrapper_codegen` |
-| Naming policy | `tests/naming/` | `python3 -m pytest -q tests/naming` |
-| Shared Python utilities | `tests/utilities/` | `python3 -m pytest -q tests/utilities` |
-| NumPy and semantic type mapping | `tests/types/` | `python3 -m pytest -q tests/types` |
-| Runtime handles | `tests/runtime/handles/` | `python3 -m pytest -q tests/runtime/handles` |
-| Documentation structure, publication, and examples | `tests/docs/` | `python3 -m pytest -q tests/docs` |
-| Repository tools | `tests/tools/` | `python3 -m pytest -q tests/tools` |
-| Parked performance lane | `tests/benchmarks/` | `python3 -m pytest -q tests/benchmarks` |
+| [`tests/architecture/`](architecture/README.md) | Test-suite ownership, evidence-ledger, selection, and collection invariants | `python3 -m pytest -q tests/architecture` |
+| [`tests/fortran/`](fortran/README.md) | Fortran input, semantic `.pyi` wrapper contracts, generated bridge/binding behavior, and Fortran runtime features | `python3 -m pytest -q tests/fortran` |
+| [`tests/c/`](c/README.md) | C input-language inspection behavior | `python3 -m pytest -q tests/c` |
+| [`tests/shared/`](shared/README.md) | Behavior that neither imports nor selects a native input language | `python3 -m pytest -q tests/shared` |
 
-Only destinations containing real tests are created. A missing directory in a
-checkout means that stage has no dedicated pytest module yet; do not create an
-empty directory merely to mirror this table.
+The Fortran feature index maps each maintained User Guide and semantic `.pyi`
+page to its final directory and focused command. The cleanup contract and
+progress gates live in
+[`../docs/maintainer/roadmap/fortran-test-suite-cleanup-checklist.md`](../docs/maintainer/roadmap/fortran-test-suite-cleanup-checklist.md).
 
-## Source-package map
+## Ownership contract
 
-| Source package or surface | Primary test owner |
+Every pytest module and checked fixture has one owner below
+`tests/{architecture,fortran,c,shared}/`. `tests/architecture/` contains only
+meta-tests of this ownership and evidence system; it is not a compatibility
+root for old stage-first tests. No legacy stage-first root, shared fixture
+corpus, forwarding fixture, collection shim, import alias, or path fallback is
+part of the maintained suite.
+
+## Final Fortran stage ownership
+
+Within one Fortran feature, use only the stages that own real evidence:
+
+| Stage | What it proves |
 | --- | --- |
-| `x2py.parsers.c` | `tests/parsing/c/` |
-| `x2py.parsers.fortran` | `tests/parsing/fortran/` |
-| `x2py.parsers.pyi` | `tests/parsing/pyi/` |
-| `x2py.probes` | `tests/probes/` |
-| `x2py.pipeline` | matching subject under `tests/pipeline/` |
-| `x2py.semantics.c2ir`, `fortran2ir`, `pyi2ir` | matching language under `tests/semantics/conversion/` |
-| semantic ownership and policy completion | `tests/semantics/policy/` |
-| `x2py.wrapper_codegen` | `tests/wrapper_codegen/` plus compiled behavior under `tests/wrapper/` |
-| `x2py.compiling` | compiled build and runtime feature evidence under `tests/wrapper/fortran/` |
-| `x2py.naming` | `tests/naming/` |
-| `x2py.utilities` | `tests/utilities/` |
-| `x2py.types` | `tests/types/` |
-| `x2py.runtime.handles` | `tests/runtime/handles/` |
-| `x2py.cli` and parser CLIs | `tests/cli/` |
-| repository scripts in `tools/` | `tests/tools/` |
+| `parsing/` | Source becomes the intended parser model or stops with its intended diagnostic |
+| `probes/` | Compiler-derived target facts are correct |
+| `preprocessing/` | Source processing, dependencies, and mappings are correct |
+| `semantics/` | Parser or `.pyi` facts become the intended semantic IR |
+| `policy/` | Ownership, lifetime, projection, mutation, nullability, storage, and accessor decisions are complete |
+| `wrapper_codegen/` | Completed policy selects a typed plan and named bridge/binding mechanisms |
+| `compiling/` | Commands, objects, libraries, and link inputs are correct |
+| `pipeline/` | Build stages and generated artifacts transition correctly |
+| `runtime/` | Runtime support mechanisms behave correctly without owning a complete feature journey |
+| `end_to_end/` | Source or intentional `.pyi` input produces an imported extension whose public behavior is called and verified |
 
-## Stage tests versus wrapper feature tests
+Public cross-feature capabilities have explicit owners:
+`source_parsing/`, `source_preprocessing/`, `command_line_interface/`, and
+`semantic_ir/`. Only internal frameworks with no honest public-capability owner
+belong under `tests/fortran/infrastructure/`. A user-visible behavior stays
+with its feature even when its test crosses several pipeline stages. Minimized
+real-world parser interactions belong under `source_parsing/parsing/`; full
+third-party snapshots are temporary analysis inputs, not permanent fixtures.
 
-Stage tests answer “I changed this pipeline stage; which focused suite should I
-run?” They should not be filed by roadmap stage number or duplicated with a
-stage marker.
+## Independent suite gates
 
-Compiled integration/runtime tests answer “I changed this user-visible wrapper
-feature; where is its runtime evidence?” They remain feature-oriented under
-[`tests/wrapper/fortran/`](wrapper/fortran/README.md). Use
-[`tests/wrapper/CHECKLIST_COVERAGE.md`](wrapper/CHECKLIST_COVERAGE.md) when you
-know roadmap wording but not the feature module. Source-build,
-generated-`.pyi`, and modified-`.pyi` scenarios for one feature stay together;
-identical source/generated behavior uses one shared assertion body.
+The final roots must collect and execute independently:
 
-The legacy lowering AST and `x2py.codegen` implementation are removed. Their
-handler maps and emitted-source details have no compatibility tests. Behavior
-still required by users belongs either in `tests/wrapper_codegen/` against the
-canonical plan/generator or in compiled `tests/wrapper/` coverage against the
-public build APIs.
+```bash
+python3 -m pytest -q tests/fortran -m "not real_library"
+python3 -m pytest -q tests/c
+python3 -m pytest -q tests/shared
+python3 -m pytest -q tests/architecture
+```
 
-During the wrapper-plan migration, do not run the full BLAS or LAPACK
-real-library wrapper tests locally or in GitHub Actions. Exclude
-`wrapper/fortran/real_libraries/test_real_blas_lapack.py`; keep the general
-native-bundle tests active. Re-enable both corpora only after every other
-migration row is complete.
+BLAS and LAPACK remain in the dedicated real-library job. LAPACK is not part
+of the default local verification command.
 
-## Adding a test or helper
+## Markers
 
-Add a test to the directory owning the behavior it verifies. A deliberately
-cross-stage compiled behavior belongs under `tests/wrapper/`; a build workflow
-without feature runtime behavior belongs under `tests/pipeline/`.
+Directory ownership is primary. Markers provide orthogonal or cross-feature
+selection:
 
-Keep a helper in its sole consuming module. Put helpers shared by modules in
-the nearest `conftest.py` when they are pytest fixtures/hooks, or `_support.py`
-when they are ordinary test utilities. Use `tests/_shared/` only for genuinely
-cross-stage utilities; do not make distant tests depend on it for convenience.
+- `fortran_end_to_end` selects every compiled, imported, and called Fortran
+  feature test, and nothing else;
+- `real_library` selects only the dedicated BLAS/LAPACK native-source
+  end-to-end tests;
+- `property`, `regression`, `benchmark`, and `slow` retain their ordinary
+  meanings; and
+- `toolchain_smoke` selects only the bounded portable compiler-profile subset
+  documented in `tests/architecture/fortran/`.
 
-Retain orthogonal markers such as `property`, `regression`, `benchmark`, `slow`,
-or compiler/tool requirements. Directory ownership replaces stage markers.
+The smoke suite is eight exact nodes reused from ordinary feature end-to-end
+tests. Strict mode requires a resolved compiler, rejects skips and xfails, and
+prints the selected nodes with their mechanism and compilation fixture:
+
+```bash
+python3 -m pytest -q tests/fortran \
+  -m toolchain_smoke \
+  --require-toolchain-smoke \
+  --x2py-fortran-compiler=gfortran
+```
+
+`--x2py-fortran-compiler` is authoritative for preprocessing, type probes,
+native compilation, generated bridge and binding compilation, and linking.
+The test session resolves it once and does not substitute another executable.
+
+## Adding or moving a test
+
+Give each test one primary invariant. Put exhaustive syntax and policy
+combinations at the earliest stage that can prove them. Add end-to-end evidence
+only when generation, compilation, import, or runtime behavior contributes a
+distinct claim.
+
+Unsupported behavior belongs at the first decisive stage. Preserve a later
+CLI/API diagnostic test only when propagation is itself public behavior.
+Feature-local fixtures live below their feature; cross-feature helpers require
+an explicit infrastructure or shared owner.
+
+After moving or splitting tests, run collection before execution and compare
+node IDs, parametrized suffixes, markers, skips, and xfails. Then run every
+destination touched by the move. Run complete CI-style coverage only for an
+explicit pre-merge or coverage gate, not for feature inner loops.

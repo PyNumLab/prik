@@ -56,5 +56,5 @@ policy completion. Those decisions happen before generated sources reach this pa
 - Quality and static checks: `docs/developer/quality-assurance.md`
 - Source navigation: `docs/developer/source-map.md`, `docs/developer/feature-to-code-map.md`
 - Pipeline map: `docs/maintainer/internal-architecture/pipeline-map.md`
-- Build-mode tests: `tests/wrapper/fortran/test_build_modes.py`
-- Runtime ABI tests: `tests/wrapper/fortran/test_runtime_abi.py`
+- Build-mode tests: `tests/fortran/test_build_modes.py`
+- Runtime ABI tests: `tests/fortran/test_runtime_abi.py`

@@ -202,10 +202,10 @@ whether the transfer itself is a scalar, string, or array.
 Inspect the real records directly with normal Python prints. The primary path
 is `complete_semantic_policies()` -> `WrapperPlanner.build()` ->
 `WrapperCodeGenerator.generate()`. Generated artifacts from real passing
-`tests/wrapper` cases are the behavioral oracle; plan unit tests cover action
-and graph invariants. Production source and semantic-`.pyi` builds both use
-this one path; unsupported completed policy is an error before lowering, not a
-request to retry a legacy generator.
+feature-local `tests/fortran/*/end_to_end/` cases are the behavioral
+oracle; plan unit tests cover action and graph invariants. Production source
+and semantic-`.pyi` builds both use this one path; unsupported completed policy
+is an error before lowering, not a request to retry a legacy generator.
 
 A wrapper-generation change is acceptable when:
 

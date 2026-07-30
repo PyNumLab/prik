@@ -10,7 +10,7 @@ on:
       - "docs_theme/**"
       - "mkdocs.yml"
       - "pyproject.toml"
-      - "tests/docs/**"
+      - "tests/shared/docs/**"
       - "tools/mkdocs_publication.py"
   pull_request:
     paths:
@@ -20,7 +20,7 @@ on:
       - "docs_theme/**"
       - "mkdocs.yml"
       - "pyproject.toml"
-      - "tests/docs/**"
+      - "tests/shared/docs/**"
       - "tools/mkdocs_publication.py"
   workflow_dispatch:
 
@@ -52,7 +52,7 @@ jobs:
         run: python -m pip install -e ".[docs,qa]"
 
       - name: Run documentation tests
-        run: python -m pytest -q tests/docs
+        run: python -m pytest -q tests/shared/docs
 
       - name: Build reviewed documentation
         run: python -m mkdocs build --strict

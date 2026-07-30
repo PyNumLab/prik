@@ -37,15 +37,15 @@ X2PY_C_DOCS_END -->
 
 | Stage | Main source | Input | Output | Primary evidence |
 | --- | --- | --- | --- | --- |
-| CLI request | `x2py/cli.py` | source paths and stage flags | selected stage or wrapper build options | `tests/cli/` |
+| CLI request | `x2py/cli.py` | source paths and stage flags | selected stage or wrapper build options | `tests/fortran/command_line_interface/pipeline/` |
 | Build orchestration | `x2py/pipeline/build.py` | ordered Fortran sources or `.pyi` contracts plus explicit native artifacts | `WrapperBuildResult`, `NativeBuildPlan`, and generated artifact plan | wrapper build-mode tests |
 | Preprocessing | `x2py/pipeline/preprocessing.py` | source path, compiler config | preprocessed source and dependency facts | preprocessing tests |
 | Parser project model | `x2py/parsers/fortran/parser.py` | preprocessed Fortran source | parser project with modules, procedures, types, visibility | Fortran parser fixture tests |
 | Target probes | `x2py/probes/fortran_types.py` | semantic type requirements and compiler flags | resolved kind/storage facts | Fortran type probe tests |
 | Semantic IR | `x2py/semantics/fortran2ir.py` | parser project and target facts | `SemanticModule` objects | semantic Fortran tests |
 | Semantic policy completion | `x2py/semantics/policy_completion.py`, `x2py/semantics/ownership.py` | full semantic modules with signatures and `.pyi` overrides | semantic modules annotated with every ownership, transfer, destruction, mutability, storage, accessor, and projection decision needed by wrapper generation | ownership-policy tests |
-| Wrapper planning | `x2py/wrapper_codegen/planner.py`, `x2py/wrapper_codegen/plan.py` | policy-completed semantic modules | typed wrapper plans consuming completed decisions without a separate support-analysis traversal | `tests/wrapper_codegen/`, wrapper tests |
-| Direct bridge and binding lowering | `x2py/wrapper_codegen/fortran/bridge.py`, `x2py/wrapper_codegen/c/binding.py`, `x2py/wrapper_codegen/generator.py` | validated typed wrapper plans | Fortran, C, and header syntax nodes | `tests/wrapper_codegen/`, wrapper tests |
+| Wrapper planning | `x2py/wrapper_codegen/planner.py`, `x2py/wrapper_codegen/plan.py` | policy-completed semantic modules | typed wrapper plans consuming completed decisions without a separate support-analysis traversal | `tests/fortran/infrastructure/wrapper_codegen/`, wrapper tests |
+| Direct bridge and binding lowering | `x2py/wrapper_codegen/fortran/bridge.py`, `x2py/wrapper_codegen/c/binding.py`, `x2py/wrapper_codegen/generator.py` | validated typed wrapper plans | Fortran, C, and header syntax nodes | `tests/fortran/infrastructure/wrapper_codegen/`, wrapper tests |
 | Wrapper and semantic-contract printing | `x2py/wrapper_codegen/printers/` | wrapper syntax nodes or semantic IR | wrapper source files or semantic `.pyi` text | printer, generated-contract, and wrapper artifact tests |
 | Compile and link | `x2py/compiling/`, `x2py/pipeline/build.py` | explicit native objects, then generated bridge objects, then runtime/binding objects and ordered link inputs | shared library | wrapper runtime and build-mode tests |
 

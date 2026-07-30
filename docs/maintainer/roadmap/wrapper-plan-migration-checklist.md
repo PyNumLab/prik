@@ -563,7 +563,7 @@ route easier to exercise.
   may be `not-applicable` but must still pass.
 - During active migration, every local and GitHub Actions pytest invocation
   excludes
-  `tests/wrapper/fortran/real_libraries/test_real_blas_lapack.py`. Mark its BLAS
+  `tests/fortran/building_shared_library/end_to_end/real_libraries/test_full_libraries.py`. Mark its BLAS
   and LAPACK rows `deferred-real-library`; do not use either corpus for lane
   parity or general migration verification. General native-bundle tests in
   `test_stage7_native_bundles.py` remain active because they test linker/build
@@ -694,29 +694,28 @@ already covered by the new generator.
 | `tests/wrapper/fortran/build_from_pyi/test_pyi_wrapper_builds.py::test_reduced_entry_generates_only_reachable_module_variable_bindings` | direct wrapper/build route | semantic .pyi generation/parsing; build/compile/link orchestration; scalar inputs/results; module variables/state | `wrapper-plan` |
 | `tests/wrapper/fortran/build_from_pyi/test_pyi_wrapper_builds.py::test_scale_runtime_contract[*]` | source/generated-.pyi parity or parametrized route | semantic .pyi generation/parsing; build/compile/link orchestration; scalar inputs/results | `wrapper-plan` |
 | `tests/wrapper/fortran/build_from_pyi/test_pyi_wrapper_builds.py::test_source_named_root_discovers_and_builds_module_leaf` | direct wrapper/build route | semantic .pyi generation/parsing; build/compile/link orchestration; scalar inputs/results; module variables/state | `wrapper-plan` |
-| `tests/wrapper/fortran/build_from_source/test_build_modes.py::test_documented_homepage_points_example_builds_and_imports` | direct wrapper/build route | build/compile/link orchestration; module namespace and derived-type inputs/results | `wrapper-plan` |
-| `tests/wrapper/fortran/build_from_source/test_build_modes.py::test_fortran_wrapper_default_module_name_does_not_collide_with_root_function` | direct wrapper/build route | build/compile/link orchestration | `wrapper-plan` |
-| `tests/wrapper/fortran/build_from_source/test_build_modes.py::test_fortran_wrapper_default_places_artifacts_in_invocation_directory` | direct wrapper/build route | build/compile/link orchestration | `wrapper-plan` |
-| `tests/wrapper/fortran/build_from_source/test_build_modes.py::test_fortran_wrapper_out_dir_separates_abi_artifact_from_cli_alias` | direct wrapper/build route | build/compile/link orchestration | `wrapper-plan` |
-| `tests/wrapper/fortran/build_from_source/test_build_modes.py::test_fortran_wrapper_out_names_importable_shared_library` | direct wrapper/build route | build/compile/link orchestration; scalar inputs/results | `wrapper-plan` |
-| `tests/wrapper/fortran/build_from_source/test_build_modes.py::test_generate_sources_cli_writes_wrapper_sources_without_native_outputs` | source-only wrapper generation route | build integration through the completed wrapper plan without compile/link execution | `wrapper-plan` |
-| `tests/wrapper/fortran/build_from_source/test_build_modes.py::test_internal_preprocessing_mode_still_builds_importable_runtime_wrapper` | direct wrapper/build route | build/compile/link orchestration; scalar inputs/results | `wrapper-plan` |
-| `tests/wrapper/fortran/build_from_source/test_build_modes.py::test_native_link_plan_serializes_interleaved_item_kinds` | direct wrapper/build route | build/compile/link orchestration | `wrapper-plan` |
-| `tests/wrapper/fortran/build_from_source/test_build_modes.py::test_source_build_reuses_native_plan_for_additional_compile_and_link_inputs` | source-only wrapper generation route | shared source/contract native build plan; implementation compiler flags; supplemental sources; objects; libraries; include and link directories; ordered link items | `wrapper-plan` |
-| `tests/wrapper/fortran/build_from_source/test_build_modes.py::test_source_build_result_records_structured_native_plan` | direct wrapper/build route | build/compile/link orchestration | `wrapper-plan` |
-| `tests/wrapper/fortran/build_from_source/test_build_modes.py::test_verbose_mode_prints_custom_wrapper_flags` | direct wrapper/build route | build/compile/link orchestration | `wrapper-plan` |
-| `tests/wrapper/fortran/build_from_source/test_build_modes.py::test_verbose_mode_prints_full_direct_build_commands` | direct wrapper/build route | build/compile/link orchestration | `wrapper-plan` |
-| `tests/wrapper/fortran/build_from_source/test_build_modes.py::test_wrapper_build_rejects_empty_source_list` | non-generating: validation/failure-path assertion | build/compile/link orchestration | `not-applicable` |
-| `tests/wrapper/fortran/build_from_source/test_build_modes.py::test_wrapper_build_rejects_generation_verbose_combination[*]` | non-generating: validation/failure-path assertion | build/compile/link orchestration | `not-applicable` |
-| `tests/wrapper/fortran/build_from_source/test_build_modes.py::test_wrapper_build_rejects_missing_source` | non-generating: validation/failure-path assertion | build/compile/link orchestration | `not-applicable` |
+| `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py::test_documented_homepage_points_example_builds_and_imports` | direct wrapper/build route | build/compile/link orchestration; module namespace and derived-type inputs/results | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py::test_fortran_wrapper_default_module_name_does_not_collide_with_root_function` | direct wrapper/build route | build/compile/link orchestration | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py::test_fortran_wrapper_default_places_artifacts_in_invocation_directory` | direct wrapper/build route | build/compile/link orchestration | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py::test_fortran_wrapper_out_dir_separates_abi_artifact_from_cli_alias` | direct wrapper/build route | build/compile/link orchestration | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py::test_fortran_wrapper_out_names_importable_shared_library` | direct wrapper/build route | build/compile/link orchestration; scalar inputs/results | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py::test_generate_sources_cli_writes_wrapper_sources_without_native_outputs` | source-only wrapper generation route | build integration through the completed wrapper plan without compile/link execution | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py::test_internal_preprocessing_mode_still_builds_importable_runtime_wrapper` | direct wrapper/build route | build/compile/link orchestration; scalar inputs/results | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py::test_native_link_plan_serializes_interleaved_item_kinds` | direct wrapper/build route | build/compile/link orchestration | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py::test_source_build_reuses_native_plan_for_additional_compile_and_link_inputs` | source-only wrapper generation route | shared source/contract native build plan; implementation compiler flags; supplemental sources; objects; libraries; include and link directories; ordered link items | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py::test_source_build_result_records_structured_native_plan` | direct wrapper/build route | build/compile/link orchestration | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py::test_verbose_mode_prints_custom_wrapper_flags` | direct wrapper/build route | build/compile/link orchestration | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py::test_verbose_mode_prints_full_direct_build_commands` | direct wrapper/build route | build/compile/link orchestration | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py::test_wrapper_build_rejects_empty_source_list` | non-generating: validation/failure-path assertion | build/compile/link orchestration | `not-applicable` |
+| `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py::test_wrapper_build_rejects_generation_verbose_combination[*]` | non-generating: validation/failure-path assertion | build/compile/link orchestration | `not-applicable` |
+| `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py::test_wrapper_build_rejects_missing_source` | non-generating: validation/failure-path assertion | build/compile/link orchestration | `not-applicable` |
 | `tests/wrapper/fortran/build_from_source/test_compiler_verbose.py::*` | direct wrapper/build route | build/compile/link orchestration | `wrapper-plan` |
-| `tests/wrapper/fortran/build_from_source/test_runtime_abi.py::*` | direct wrapper/build route | build/compile/link orchestration | `wrapper-plan` |
-| `tests/wrapper/fortran/build_from_source/test_source_generated_pyi_contracts.py::*` | non-generating: generated semantic .pyi fixture parity | semantic .pyi generation/parsing | `not-applicable` |
-| `tests/wrapper/fortran/callbacks/test_all_callback_shapes.py::*` | source/generated-.pyi parity or parametrized route | callbacks/trampolines | `wrapper-plan` |
-| `tests/wrapper/fortran/callbacks/test_array_callbacks.py::*` | source/generated-.pyi parity or parametrized route | callbacks/trampolines; ordinary arrays | `wrapper-plan` |
-| `tests/wrapper/fortran/callbacks/test_callback_generated_pyi_contracts.py::*` | non-generating: generated semantic .pyi fixture parity | semantic .pyi generation/parsing | `not-applicable` |
-| `tests/wrapper/fortran/callbacks/test_derived_callbacks.py::*` | source/generated-.pyi parity or parametrized route | callbacks/trampolines; derived types/object lifetimes | `wrapper-plan` |
-| `tests/wrapper/fortran/callbacks/test_scalar_callbacks.py::*` | source/generated-.pyi parity or parametrized route | callbacks/trampolines; scalar inputs/results | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py::*` | direct wrapper/build route | build/compile/link orchestration | `wrapper-plan` |
+| `tests/fortran/building_shared_library/pipeline/test_source_generated_contracts.py::*` | non-generating: generated semantic .pyi fixture parity | semantic .pyi generation/parsing | `not-applicable` |
+| `tests/fortran/callbacks/end_to_end/test_supported_callback_shapes.py::*` | source/generated-.pyi parity or parametrized route | callbacks/trampolines; derived types/object lifetimes | `wrapper-plan` |
+| `tests/fortran/callbacks/end_to_end/test_array_callbacks.py::*` | source/generated-.pyi parity or parametrized route | callbacks/trampolines; ordinary arrays | `wrapper-plan` |
+| `tests/fortran/callbacks/end_to_end/test_scalar_callbacks.py::*` | source/generated-.pyi parity or parametrized route | callbacks/trampolines; scalar inputs/results | `wrapper-plan` |
+| `tests/fortran/callbacks/pipeline/test_generated_callback_contracts.py::*` | non-generating: generated semantic .pyi fixture parity | semantic .pyi generation/parsing | `not-applicable` |
 | `tests/wrapper/fortran/derived_types/test_borrowed_finalizers.py::*` | source/generated-.pyi parity or parametrized route | derived types/object lifetimes; classes/methods/properties/overloads | `wrapper-plan` |
 | `tests/wrapper/fortran/derived_types/test_constructors_and_finalizers.py::*` | source/generated-.pyi parity or parametrized route | derived types/object lifetimes; classes/methods/properties/overloads | `wrapper-plan` |
 | `tests/wrapper/fortran/derived_types/test_derived_layout.py::*` | source/generated-.pyi parity or parametrized route | derived types/object lifetimes | `wrapper-plan` |
@@ -734,9 +733,8 @@ already covered by the new generator.
 | `tests/wrapper/fortran/derived_types/test_pointers.py::test_pointer_array_results_use_owned_descriptors_without_owning_targets[*]` | source/generated-.pyi parity or parametrized route | owned pointer result descriptors; associated and unassociated state; borrowed target lifetime | `wrapper-plan` |
 | `tests/wrapper/fortran/derived_types/test_pointers.py::test_pointer_descriptor_views_preserve_slice_shape_strides_and_parent_lifetime` | direct wrapper/build route | derived types/object lifetimes; native handles/descriptors | `wrapper-plan` |
 | `tests/wrapper/fortran/edit_pyi_contracts/test_native_order_contracts.py::test_editable_contract_can_use_native_order_arguments_without_native_call` | direct wrapper/build route | semantic .pyi generation/parsing; raw array addresses completed by Phase 6G; derived result remains Phase 8 | `wrapper-plan` |
-| `tests/wrapper/fortran/edit_pyi_contracts/test_native_order_contracts.py::test_raw_array_addresses_use_canonical_plan` | reduced edited semantic `.pyi` entries over existing vector/matrix native routines | raw numeric addresses; visible scalar-storage extents; rank one/two; default C and explicit Fortran orientation; mutation; integer-only conversion | `wrapper-plan` |
+| `tests/fortran/raw_addresses/end_to_end/test_raw_native_addresses.py::test_primitive_array_and_fixed_string_raw_addresses_share_one_native_build` | reduced edited semantic `.pyi` entries over existing scalar, vector, matrix, and fixed-string native routines | raw primitive, numeric-array, and fixed-string addresses; checked fixed-string storage; visible scalar-storage extents; rank one/two; default C and explicit Fortran orientation; mutation; integer-only conversion | `wrapper-plan` |
 | `tests/wrapper/fortran/edit_pyi_contracts/test_native_order_contracts.py::test_copy_f_preserves_logical_axes_through_binding_owned_temporary` | reduced edited semantic `.pyi` entries over the existing matrix native routine | explicit C-to-Fortran representation copy; native-input and inout calls; projected original identity; binding-owned copyback and cleanup | `wrapper-plan` |
-| `tests/wrapper/fortran/edit_pyi_contracts/test_native_order_contracts.py::test_fixed_string_storage_and_raw_address_use_canonical_plan` | reduced edited semantic `.pyi` entry over the existing `fnative_call_examples_f90` native unit | fixed mutable rank-zero NumPy bytes storage; raw fixed-string addresses; in-place mutation; rank/dtype/itemsize/writability/type validation | `wrapper-plan` |
 | `tests/wrapper/fortran/edit_pyi_contracts/test_ownership_contracts.py::*` | direct wrapper/build route | semantic .pyi generation/parsing; native handles/descriptors; derived types/object lifetimes; optional/presence/writeback | `wrapper-plan` |
 | `tests/wrapper/fortran/edit_pyi_contracts/test_policy_dispatch_contracts.py::test_contradictory_ownership_contract_fails_before_bridge_generation` | non-generating: policy validation before bridge generation | semantic .pyi generation/parsing; native handles/descriptors; derived types/object lifetimes; optional/presence/writeback | `not-applicable` |
 | `tests/wrapper/fortran/edit_pyi_contracts/test_policy_dispatch_contracts.py::test_immutable_array_policy_copies_in_and_returns_replacement` | direct wrapper/build route | semantic .pyi generation/parsing; native handles/descriptors; derived types/object lifetimes; optional/presence/writeback | `wrapper-plan` |
@@ -784,36 +782,36 @@ already covered by the new generator.
 | `tests/wrapper/fortran/module_state/test_module_state.py::test_scalar_module_variables_use_attributes_and_parameters_have_no_native_setter[*]` | source/generated-.pyi parity or parametrized route | module variables/state | `wrapper-plan` |
 | `tests/wrapper/fortran/module_state/test_module_state_generated_pyi_contracts.py::*` | non-generating: generated semantic .pyi fixture parity | semantic .pyi generation/parsing | `not-applicable` |
 | `tests/wrapper/fortran/module_state/test_scalar_module_variable_plan.py::test_whole_scalar_module_variable_behavior_uses_canonical_plan` | canonical production plan route | scalar inputs/results; scalar module variables/state; build/artifact integration | `wrapper-plan` |
-| `tests/wrapper/fortran/multiple_files/test_multi_source_builds.py::test_makefile_mode_reproduces_multi_source_build` | direct wrapper/build route | build/compile/link orchestration; external symbols/native linkage; module variables/state | `wrapper-plan` |
-| `tests/wrapper/fortran/multiple_files/test_multi_source_builds.py::test_multi_file_modules_build_one_merged_extension` | direct wrapper/build route | scalar multi-source build/link orchestration; module variables/state | `wrapper-plan` |
-| `tests/wrapper/fortran/multiple_files/test_multi_source_builds.py::test_multi_file_standalone_procedures_build_one_merged_extension` | direct wrapper/build route | scalar multi-source external symbols and link orchestration | `wrapper-plan` |
-| `tests/wrapper/fortran/multiple_files/test_multi_source_builds.py::test_generated_child_modules_are_importable_submodules` | direct wrapper/build route | generated child-module imports and namespace preservation | `wrapper-plan` |
-| `tests/wrapper/fortran/multiple_files/test_multi_source_builds.py::test_multi_source_generated_contract_build_matches_source_runtime_and_link_order` | direct wrapper/build route | build/compile/link orchestration; external symbols/native linkage; module variables/state; semantic .pyi generation/parsing | `wrapper-plan` |
-| `tests/wrapper/fortran/multiple_files/test_multi_source_builds.py::test_multi_source_modified_entry_preserves_modules_and_adds_documented_alias` | direct wrapper/build route | build/compile/link orchestration; external symbols/native linkage; module variables/state | `wrapper-plan` |
-| `tests/wrapper/fortran/multiple_files/test_multi_source_builds.py::test_multi_source_pyi_out_writes_one_flat_combined_package` | direct wrapper/build route | build/compile/link orchestration; external symbols/native linkage; module variables/state; semantic .pyi generation/parsing | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_multi_source_builds.py::test_makefile_mode_reproduces_multi_source_build` | direct wrapper/build route | build/compile/link orchestration; external symbols/native linkage; module variables/state | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_multi_source_builds.py::test_multi_file_modules_build_one_merged_extension` | direct wrapper/build route | scalar multi-source build/link orchestration; module variables/state | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_multi_source_builds.py::test_multi_file_standalone_procedures_build_one_merged_extension` | direct wrapper/build route | scalar multi-source external symbols and link orchestration | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_multi_source_builds.py::test_generated_child_modules_are_importable_submodules` | direct wrapper/build route | generated child-module imports and namespace preservation | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_multi_source_builds.py::test_multi_source_generated_contract_build_matches_source_runtime_and_link_order` | direct wrapper/build route | build/compile/link orchestration; external symbols/native linkage; module variables/state; semantic .pyi generation/parsing | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_multi_source_builds.py::test_multi_source_modified_entry_preserves_modules_and_adds_documented_alias` | direct wrapper/build route | build/compile/link orchestration; external symbols/native linkage; module variables/state | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_multi_source_builds.py::test_multi_source_pyi_out_writes_one_flat_combined_package` | direct wrapper/build route | build/compile/link orchestration; external symbols/native linkage; module variables/state; semantic .pyi generation/parsing | `wrapper-plan` |
 | `tests/wrapper/fortran/naming/test_defined_operators.py::*` | source/generated-.pyi parity or parametrized route | naming/visibility/dispatch; classes/methods/properties/overloads; operators; generic dispatch | `wrapper-plan` |
 | `tests/wrapper/fortran/naming/test_generic_interfaces.py::*` | source/generated-.pyi parity or parametrized route | naming/visibility/dispatch; classes/methods/properties/overloads; generic dispatch | `wrapper-plan` |
 | `tests/wrapper/fortran/naming/test_naming_generated_pyi_contracts.py::*` | non-generating: generated semantic .pyi fixture parity | semantic .pyi generation/parsing | `not-applicable` |
 | `tests/wrapper/fortran/naming/test_phase9_class_overloads.py::*` | reduced direct-plan constructor and method overload runtime proof | class-owned exact predicates; constructor ownership; no speculative calls | `wrapper-plan` |
 | `tests/wrapper/fortran/naming/test_visibility_naming.py::test_strict_wrapper_names_reject_python_name_fixes` | direct wrapper/build route | naming/visibility/dispatch; classes/methods/properties/overloads | `wrapper-plan` |
 | `tests/wrapper/fortran/naming/test_visibility_naming.py::test_visibility_and_default_python_name_fixing_policy[*]` | source/generated-.pyi parity or parametrized route | naming/visibility/dispatch; classes/methods/properties/overloads | `wrapper-plan` |
-| `tests/wrapper/fortran/real_libraries/test_real_blas_lapack.py::*` | canonical full BLAS/LAPACK wrapper generation; BLAS runs locally and both exact nodes run together in the dedicated GitHub Actions job | external symbols/native linkage; build/compile/link orchestration; broad wrapper corpus | `wrapper-plan` |
-| `tests/wrapper/fortran/real_libraries/test_stage7_native_bundles.py::test_duplicate_native_definitions_report_linker_error` | direct wrapper/build route | scalar external symbols; linker failure propagation | `wrapper-plan` |
-| `tests/wrapper/fortran/real_libraries/test_stage7_native_bundles.py::test_imported_contracts_resolve_from_one_archive_or_shared_library[*]` | source/generated-.pyi parity or parametrized route | external symbols/native linkage; build/compile/link orchestration | `wrapper-plan` |
-| `tests/wrapper/fortran/real_libraries/test_stage7_native_bundles.py::test_incompatible_native_artifact_reports_linker_error` | non-generating: validation/failure-path assertion | external symbols/native linkage; build/compile/link orchestration | `not-applicable` |
-| `tests/wrapper/fortran/real_libraries/test_stage7_native_bundles.py::test_missing_module_directory_reports_compile_error` | non-generating: validation/failure-path assertion | external symbols/native linkage; build/compile/link orchestration | `not-applicable` |
-| `tests/wrapper/fortran/real_libraries/test_stage7_native_bundles.py::test_missing_symbol_reports_native_link_or_loader_error` | non-generating: validation/failure-path assertion | external symbols/native linkage; build/compile/link orchestration | `not-applicable` |
-| `tests/wrapper/fortran/real_libraries/test_stage7_native_bundles.py::test_mixed_module_external_bundle_resolves_all_native_input_kinds` | direct wrapper/build route | scalar module/external symbols; ordered native inputs and library directories | `wrapper-plan` |
-| `tests/wrapper/fortran/real_libraries/test_stage7_native_bundles.py::test_required_transitive_named_library_resolves_runtime_symbol` | direct wrapper/build route | scalar external symbol; transitive named library | `wrapper-plan` |
-| `tests/wrapper/fortran/real_libraries/test_stage7_native_bundles.py::test_static_archive_dependency_order_resolves_transitive_library` | direct wrapper/build route | scalar external symbol; ordered archive linkage | `wrapper-plan` |
-| `tests/wrapper/fortran/real_libraries/test_stage7_native_bundles.py::test_static_archive_groups_resolve_cyclic_archive_dependencies` | direct wrapper/build route | scalar external symbol; archive-group linkage | `wrapper-plan` |
-| `tests/wrapper/fortran/real_libraries/test_stage7_native_bundles.py::test_unavailable_dependent_shared_library_reports_loader_error` | non-generating: validation/failure-path assertion | external symbols/native linkage; build/compile/link orchestration | `not-applicable` |
+| `tests/fortran/building_shared_library/end_to_end/real_libraries/test_full_libraries.py::*` | canonical full BLAS/LAPACK wrapper generation; BLAS runs locally and both exact nodes run together in the dedicated GitHub Actions job | external symbols/native linkage; build/compile/link orchestration; broad wrapper corpus | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_native_bundles.py::test_duplicate_native_definitions_report_linker_error` | direct wrapper/build route | scalar external symbols; linker failure propagation | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_native_bundles.py::test_imported_contracts_resolve_from_one_archive_or_shared_library[*]` | source/generated-.pyi parity or parametrized route | external symbols/native linkage; build/compile/link orchestration | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_native_bundles.py::test_incompatible_native_artifact_reports_linker_error` | non-generating: validation/failure-path assertion | external symbols/native linkage; build/compile/link orchestration | `not-applicable` |
+| `tests/fortran/building_shared_library/end_to_end/test_native_bundles.py::test_missing_module_directory_reports_compile_error` | non-generating: validation/failure-path assertion | external symbols/native linkage; build/compile/link orchestration | `not-applicable` |
+| `tests/fortran/building_shared_library/end_to_end/test_native_bundles.py::test_missing_symbol_reports_native_link_or_loader_error` | non-generating: validation/failure-path assertion | external symbols/native linkage; build/compile/link orchestration | `not-applicable` |
+| `tests/fortran/building_shared_library/end_to_end/test_native_bundles.py::test_mixed_module_external_bundle_resolves_all_native_input_kinds` | direct wrapper/build route | scalar module/external symbols; ordered native inputs and library directories | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_native_bundles.py::test_required_transitive_named_library_resolves_runtime_symbol` | direct wrapper/build route | scalar external symbol; transitive named library | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_native_bundles.py::test_static_archive_dependency_order_resolves_transitive_library` | direct wrapper/build route | scalar external symbol; ordered archive linkage | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_native_bundles.py::test_static_archive_groups_resolve_cyclic_archive_dependencies` | direct wrapper/build route | scalar external symbol; archive-group linkage | `wrapper-plan` |
+| `tests/fortran/building_shared_library/end_to_end/test_native_bundles.py::test_unavailable_dependent_shared_library_reports_loader_error` | non-generating: validation/failure-path assertion | external symbols/native linkage; build/compile/link orchestration | `not-applicable` |
 | `tests/wrapper/fortran/runtime_behavior/test_openmp_runtime.py::*` | direct wrapper/build route | runtime policies/errors/GIL; build/compile/link orchestration | `wrapper-plan` |
 | `tests/wrapper/fortran/runtime_behavior/test_runtime_behavior_generated_pyi_contracts.py::*` | non-generating: generated semantic .pyi fixture parity | semantic .pyi generation/parsing | `not-applicable` |
-| `tests/wrapper/fortran/runtime_behavior/test_runtime_policies.py::*` | source and edited-.pyi canonical production plan route | runtime policies/errors/GIL | `wrapper-plan` |
+| `tests/fortran/error_handling/end_to_end/test_status_projection.py::*` | edited-.pyi canonical production plan route with focused semantic and lowering evidence | runtime status projection, errors, cleanup, and GIL envelope | `wrapper-plan` |
 | `tests/wrapper/fortran/runtime_behavior/test_runtime_recursion.py::*` | source/generated-.pyi parity or parametrized route | runtime policies/errors/GIL; scalar inputs/results | `wrapper-plan` |
-| `tests/wrapper/fortran/scalars/test_fortran_enums.py::test_fortran_enums_preserve_integer_runtime_surface[*]` | source/generated-.pyi parity or parametrized route | scalar inputs/results; module variables/state | `wrapper-plan` |
-| `tests/wrapper/fortran/scalars/test_fortran_enums.py::test_fortran_enums_preserve_values_in_generated_pyi_contract` | direct wrapper/build route | scalar inputs/results; module variables/state | `wrapper-plan` |
+| `tests/fortran/enumerations/end_to_end/test_enum_runtime.py::test_fortran_enums_preserve_integer_runtime_surface[*]` | source/generated-.pyi parity or parametrized route | scalar inputs/results; module variables/state | `wrapper-plan` |
+| `tests/fortran/enumerations/semantics/test_enum_semantics.py::test_fortran_enums_preserve_values_in_generated_pyi_contract` | non-generating semantic and contract-emission evidence | scalar inputs/results; module constants/state | `not-applicable` |
 | `tests/wrapper/fortran/scalars/test_scalar_boundary_plan.py::*` | scalar-only copied native routines with deliberate legacy/direct-plan parity | primitive scalar kinds; value and `Addr(Arg(i))` inputs; hidden output; copy-in/copy-out; rank-zero storage; raw `Addr(T)`; native slot reordering; direct-plus-hidden result tuple assembly | `wrapper-plan` |
 | `tests/wrapper/fortran/scalars/test_scalar_generated_pyi_contracts.py::*` | non-generating: generated semantic .pyi fixture parity | semantic .pyi generation/parsing | `not-applicable` |
 | `tests/wrapper/fortran/scalars/test_scalar_kinds.py::*` | source/generated-.pyi parity or parametrized route | scalar inputs/results | `wrapper-plan` |
@@ -1142,12 +1140,12 @@ Excluded from this phase:
 - general Python exception translation that is not selected by a completed
   native status policy.
 
-The existing legacy/runtime oracle is
-`tests/wrapper/fortran/runtime_behavior/test_runtime_policies.py` in both its
-source-driven and semantic-`.pyi`-driven forms. It proves that an ordinary
-native pause releases the GIL, `@hold_gil` keeps it held, successful status
-returns produce the declared Python result, failing status returns raise the
-selected exception with the native message, and emitted C places
+The final runtime oracle is
+`tests/fortran/error_handling/end_to_end/test_status_projection.py`,
+backed by focused semantic and lowering evidence in the same feature. It proves
+that successful status returns produce the declared Python result, failing
+status returns raise the selected exception with the native message, cleanup
+completes on repeated failures, and emitted C places
 `Py_BEGIN_ALLOW_THREADS` / `Py_END_ALLOW_THREADS` only around eligible native
 calls. `test_recursive_native_runtime_calls` is the scalar regression unit to
 run after the call envelope works. Do not use the OpenMP or callback fixtures
@@ -1211,9 +1209,9 @@ and scalar external explicit interfaces; no legacy retry was added.
 - [x] Add direct binding lowering for the released-call and held-call envelopes
   plus post-call status projection. Keep the bridge call and result-slot
   lowering on their existing paths.
-- [x] Replay both source and semantic-`.pyi` forms of
-  `test_runtime_policies.py` through legacy and wrapper-plan routes using the
-  same concurrency, exception, artifact, and generated-C assertions.
+- [x] Replay the semantic-`.pyi` runtime policy through the production wrapper
+  plan, with focused concurrency, exception, artifact, cleanup, and generated-C
+  assertions under `tests/fortran/error_handling/`.
 - [x] Run `test_recursive_native_runtime_calls` through the wrapper-plan route
   as the scalar recursion regression; leave OpenMP and callbacks in their
   later lanes.
@@ -2136,12 +2134,13 @@ generated shape without dereferencing an invalid address.
 ##### Phase 6G5 — Prove The Route Before Widening It
 
 - [x] Retain semantic conversion coverage in
-  `tests/semantics/conversion/pyi/test_calls_and_projections.py` for round-trip,
+  `tests/fortran/semantic_pyi_format/semantics/test_calls_and_projections.py`
+  for round-trip,
   visible extent sources, primitive pointees, and rejection of unresolved or
   wrapped forms.
 - [x] Add focused completed-policy tests for every authoritative action and
   blocker, plus `array-raw-address-inputs` support classification.
-- [x] Add `tests/wrapper_codegen/test_phase6g_raw_array_addresses.py` for plan
+- [x] Add `tests/fortran/raw_addresses/wrapper_codegen/test_raw_array_lowering.py` for plan
   shape, edits, validation, C nodes, Fortran nodes, native order, and the
   absence of buffer/descriptor/lifecycle nodes.
 - [x] Extract `fill_vector_raw` from
@@ -2869,7 +2868,7 @@ Phase 7 rows were split, proved through both routes, and then recorded as
 | Existing node or group | Current role/status | Phase 7 owner and target |
 | --- | --- | --- |
 | `arrays/test_array_results.py::test_array_results_follow_data_buffer_and_descriptor_handle_contracts[*]` | ordinary/allocatable result generation unit; `wrapper-plan` | Phase 6 ordinary and Phase 7E allocatable results now share the production plan route |
-| `build_from_pyi/test_pyi_wrapper_builds.py::test_pyi_manifest_records_pointer_descriptor_interop_requirements` | non-generating manifest policy; `not-applicable` | Phase 7G plan/header union is covered by direct generated-artifact tests |
+| `../../fortran/pointers/pipeline/test_pointer_build_manifest.py::test_pyi_manifest_records_pointer_descriptor_interop_requirements` | non-generating manifest policy; `not-applicable` | Phase 7G plan/header union is covered by direct generated-artifact tests |
 | `derived_types/test_pointers.py::test_module_and_derived_pointer_handles_track_native_association[*]` | module, normal-array actual, and field mix; `legacy` | split Phase 7A/7F module subsets; field subset remains Phase 8/9 |
 | `derived_types/test_pointers.py::test_pointer_descriptor_views_preserve_slice_shape_strides_and_parent_lifetime` | module/field descriptor views; `legacy` | Phase 7B/7G module subset; field owner remains Phase 8/9 |
 | `derived_types/test_pointers.py::test_pointer_array_results_use_owned_descriptors_without_owning_targets[*]` | owned pointer-result descriptor support; `wrapper-plan` | replaces the former owner-policy blocker after descriptor ownership and target lifetime became explicit |
@@ -3147,7 +3146,7 @@ The existing wrapper tests decompose as follows:
 | `derived_types/test_derived_layout.py::test_bind_c_derived_types_use_accessors_and_fortran_value_copy[*]` | opaque `bind(C)` wrapper, field accessors, and typed native `value` copy | Phase 8 owns the handoff and field properties; constructor orchestration remains Phase 9 |
 | former `module_state/contracts/fmodule_derived_snapshot_f90/` snapshot fixture | obsolete detached-object behavior | remove the `Snapshot[box]` fixture and snapshot-only runtime assertions; reuse the native unit only for reduced live module-proxy evidence where applicable |
 | `derived_types/test_constructors_and_finalizers.py::*`, `derived_types/test_derived_type_methods.py::*`, and `derived_types/test_inheritance.py::*` | owned-instance finalizer and type facts may inform Phase 8 | production migration remains Phase 9 because the observable unit is constructor/method/property/inheritance owned |
-| `callbacks/test_derived_callbacks.py::*` | none | remain Phase 10 even after ordinary derived transfers are complete |
+| `tests/fortran/callbacks/end_to_end/test_supported_callback_shapes.py::*` | none | callback-derived transfers remain callback-owned after ordinary derived transfers are complete |
 
 The plain non-target module-object row has one recorded intentional correction:
 the legacy whole-object getter attempts `c_loc` on storage without the required
@@ -4090,8 +4089,8 @@ when the documented contract says so; do not preserve legacy architecture.
 | `derived_types/test_borrowed_finalizers.py::test_borrowed_child_wrapper_never_finalizes_native_component[*]` | borrowed child retains parent; only the owned parent finalizes | class assembly over the completed Phase 8 borrowed-field owner path |
 | `derived_types/test_derived_layout.py::test_bind_c_derived_types_use_accessors_and_fortran_value_copy[*]` | default class creation and methods coexist with opaque field access and typed native value copy | class surface only; Phase 8 retains layout and handoff ownership |
 | `derived_types/test_inheritance.py::test_fortran_extension_types_generate_python_inheritance[*]` | Python subclass relationships, inherited field/method access, overridden methods, unbound base calls, and scalar polymorphic input dispatch | base/extension class graph first, polymorphic call second |
-| `tests/semantics/conversion/pyi/test_classes_and_overloads.py` | generated versus bound constructors, removed constructors, direct constructor targets, explicit overload links, type-bound root targets, and invalid metadata diagnostics | semantic-policy fixtures before planner/backend work |
-| `edit_pyi_contracts/test_surface_edit_contracts.py` | edited contracts can remove constructors/methods/candidates and add explicit bindings without resurrecting source declarations | absence/export validation and source/generated/edited parity |
+| `tests/fortran/derived_types/semantics/test_pyi_class_semantics.py` and `tests/fortran/generic_interfaces/semantics/test_pyi_overload_semantics.py` | generated versus bound constructors, removed constructors, direct constructor targets, explicit overload links, type-bound root targets, and invalid metadata diagnostics | semantic-policy fixtures before planner/backend work |
+| `../../fortran/pyi_contracts/functions_and_classes/end_to_end/test_edited_class_surfaces.py` | edited contracts can remove constructors/methods/candidates and add explicit bindings without resurrecting source declarations | absence/export validation and source/generated/edited parity |
 | `naming/test_defined_operators.py` and `naming/test_generic_interfaces.py` | exact candidate matching and Python export naming | reuse candidate-match vocabulary; broad module/generic units remain Phase 11 |
 
 Inventory these legacy owners without importing them into the direct package:
@@ -4434,13 +4433,11 @@ existing source/generated-`.pyi` runtime assertions are the behavioral oracle.
 
 | Existing unit | Phase 10 behavior to preserve | Required reduced slice |
 | --- | --- | --- |
-| `callbacks/test_scalar_callbacks.py::test_immediate_scalar_dummy_procedure_calls_python_callback[*]` | scalar result/void callbacks, callable validation, balanced references, nested same-thread re-entry, held-GIL wrapper envelope, and thread-local context | first context, trampoline, scalar-value, and cleanup slice |
-| `callbacks/test_scalar_callbacks.py::test_callback_exception_prints_traceback_and_aborts_host_process[*]` | callback exception, wrong result, and wrong signature print a Python error and terminate the subprocess | fatal-boundary slice after scalar success |
-| `callbacks/test_array_callbacks.py::test_immediate_dummy_procedure_converts_array_arguments_and_results[*]` | writable array view, shaped array result, outer-output identity, and reference writeback | array argument/result slice |
-| `callbacks/test_all_callback_shapes.py::test_immediate_callbacks_cover_all_supported_argument_shapes[*]` | scalar values, fixed strings, arrays, derived values, non-scalar reference writeback, and one combined call envelope | cross-kind closure slice |
-| `callbacks/test_derived_callbacks.py::test_immediate_dummy_procedure_converts_derived_arguments_and_results[*]` | callback-local borrowed derived input plus wrapper-owned derived result conversion | derived slice after Phase 9 construction |
-| `callbacks/test_callback_generated_pyi_contracts.py` | named prototypes, primitive value defaults, explicit primitive `Addr(T)` references, non-primitive `Value(T)` transport, shape, character storage, cross-module identity, and result annotations round-trip exactly | semantic-contract parity slice |
-| `semantics/conversion/pyi/test_types_and_values.py` callback cases | prototype declarations and references, primitive `Addr(T)`, non-primitive `Value(T)`, exact argument names used by shapes, and invalid prototype transport forms | policy completion before planner work |
+| `tests/fortran/callbacks/end_to_end/test_scalar_callbacks.py::test_immediate_scalar_dummy_procedure_calls_python_callback[*]` | scalar result/void callbacks, callable validation, balanced references, nested same-thread re-entry, held-GIL wrapper envelope, thread-local context, and fatal callback conversion failures | first context, trampoline, scalar-value, cleanup, and fatal-boundary slice |
+| `tests/fortran/callbacks/end_to_end/test_array_callbacks.py::test_immediate_dummy_procedure_converts_array_arguments_and_results[*]` | writable array view, shaped array result, outer-output identity, and reference writeback | array argument/result slice |
+| `tests/fortran/callbacks/end_to_end/test_supported_callback_shapes.py::test_immediate_callbacks_cover_all_supported_argument_shapes[*]` | scalar values, fixed strings, arrays, derived values, non-scalar reference writeback, and one combined call envelope | cross-kind and derived closure slice |
+| `tests/fortran/callbacks/pipeline/test_generated_callback_contracts.py` | named prototypes, primitive value defaults, explicit primitive `Addr(T)` references, non-primitive `Value(T)` transport, shape, character storage, cross-module identity, and result annotations round-trip exactly | semantic-contract parity slice |
+| `tests/fortran/callbacks/semantics/test_pyi_callback_semantics.py` | prototype declarations and references, primitive `Addr(T)`, non-primitive `Value(T)`, exact argument names used by shapes, and invalid prototype transport forms | policy completion before planner work |
 
 ### Phase 10 Plan Shape And Action Vocabulary
 

@@ -10,25 +10,25 @@ owns the work, obtain its authorization before contributing.
 ### Pull requests
 
 - **CI must be green before merging**: do not merge a PR unless all checks pass (including `test` and `parser-reference-guard`).
-- **Explain fixture/golden updates**: if you update any JSON under `tests/data/fortran/` or `tests/parser/fortran/fixtures/`, include a short note in the PR describing why the expected output changed.
-- **Run the QA stack for parser/compiler changes**: install `python -m pip install -e ".[qa]"`, use the workflows in `docs/quality.md`, and update that file when a staged adoption task or scheduled triage item changes.
+- **Explain fixture/golden updates**: if you update a parser source or JSON model under `tests/fortran/source_parsing/parsing/fixtures/`, include a short note in the PR describing why the expected output changed.
+- **Run the QA stack for parser/compiler changes**: install `python -m pip install -e ".[qa]"` and use the workflows in `docs/developer/quality-assurance.md`.
 
 ### Parser reference guard
 
 This repo includes a CI guard that may require updating parser reference docs
 when parser-related files change.
 
-- **C parser changes**: if you change `x2py/parsers/c/`, `tests/parser/c/`, or
-  `tests/data/c/`, update `docs/c_parser.md` when the change affects the
+- **C parser changes**: if you change `x2py/parsers/c/`, `tests/c/fixtures/parser/`, or
+  `tests/c/fixtures/native/`, update `docs/c_parser.md` when the change affects the
   documented feature inventory, public API, diagnostics, fixtures, semantic
   handoff, or maintenance workflow. The guard also treats
-  `tests/probes/test_c_types.py` as C parser related.
-- **Fortran parser changes**: if you change `x2py/parsers/fortran/`,
-  `tests/parser/fortran/`, or `tests/data/fortran/`, update
-  `docs/fortran_parser.md` when the change affects the documented feature
+  `tests/c/probes/test_c_types.py` as C parser related.
+- **Fortran parser changes**: if you change `x2py/parsers/fortran/` or
+  `tests/fortran/source_parsing/parsing/`, update
+  `docs/developer/fortran-parser-reference.md` when the change affects the documented feature
   inventory, public API, diagnostics, fixtures, semantic handoff, or
   maintenance workflow. The guard also tracks focused Fortran parser tests
-  directly under `tests/parser/`.
+  under `tests/fortran/source_parsing/parsing/`.
 - **Shared parser workflow changes**: if you change shared parser CLI or
   preprocessing behavior, update `docs/c_parser.md` or
   `docs/fortran_parser.md`, whichever parser behavior changed.

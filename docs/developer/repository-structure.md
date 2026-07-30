@@ -46,17 +46,15 @@ through `x2py/__init__.py`.
 
 | Path | Purpose |
 | --- | --- |
-| `tests/parsing/` | Parser and parser fixture tests grouped by source language. |
-| `tests/pipeline/` | Preprocessing and semantic `.pyi` build-orchestration tests. |
-| `tests/semantics/` | Semantic conversion and completed-policy tests. |
-| `tests/wrapper_codegen/` | Typed planning, direct bridge/binding generation, and source-printer tests. |
-| `tests/utilities/` | Shared Python utility tests. |
-| `tests/wrapper/fortran/` | Runtime wrapper tests that compile, import, call, and check failure paths. |
-| `tests/docs/` | Documentation example, structure, and website-publication checks. |
-| `tests/tools/` | Repository tooling tests. |
+| `tests/architecture/` | Meta-tests for test-suite ownership, evidence-ledger integrity, collection, and bounded selections; language-specific meta-tests use a language subdirectory. |
+| `tests/fortran/<feature>/` | User-visible Fortran and semantic `.pyi` behavior, with documented features directly below the language root and stages below each feature. |
+| `tests/fortran/{source_parsing,source_preprocessing,command_line_interface,semantic_ir}/` | Public cross-feature capabilities that begin from source or expose an inspection/reporting surface. |
+| `tests/fortran/infrastructure/` | Internal cross-feature policy, wrapper-generation, compiler, and runtime frameworks with no honest public-capability owner. |
+| `tests/c/` | C input-language parsing, preprocessing, probe, semantic, CLI, and fixture evidence. |
+| `tests/shared/` | Language-neutral product architecture, documentation, naming, tools, type mapping, and utility checks. |
 
 <!-- X2PY_C_DOCS_START
-| `tests/parser/c/` | C parser-specific tests and fixture maintenance. |
+| `tests/c/fixtures/parser/` | C parser-specific tests and fixture maintenance. |
 X2PY_C_DOCS_END -->
 
 ## Documentation
@@ -78,9 +76,9 @@ Source navigation is considered maintained when these files agree:
   docs, implementation files, tests, and support evidence.
 - `x2py/README.md` and package README files: local entry points for developers
   already browsing the source tree.
-- `tests/docs/test_structure.py`: mechanical coverage for the
+- `tests/shared/docs/test_structure.py`: mechanical coverage for the
   navigation pages and README links.
-- `tests/docs/test_publication.py`: fail-closed website publication, lane
+- `tests/shared/docs/test_publication.py`: fail-closed website publication, lane
   gating, navigation filtering, and repository-evidence link coverage.
 
 ## Generated And Fixture Areas
@@ -93,8 +91,7 @@ Source navigation is considered maintained when these files agree:
   not source ownership boundaries.
 
 <!-- X2PY_C_DOCS_START
-- Native source fixtures live under the shared `tests/data/fortran/` and
-  `tests/data/c/` corpora; wrapper runtime tests should reference those shared
-  fixtures instead of owning duplicate native sources. Runtime semantic `.pyi`
-  contracts stay with the wrapper tests that consume them.
+- Native Fortran sources and semantic `.pyi` contracts live below the feature
+  or infrastructure test that owns their behavior. C fixtures remain below
+  `tests/c/fixtures/`.
 X2PY_C_DOCS_END -->

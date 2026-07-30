@@ -1,0 +1,186 @@
+"""Positive ownership and navigation contracts for the pytest tree."""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).parents[3]
+TEST_ROOT = REPO_ROOT / "tests"
+TEST_INDEX = TEST_ROOT / "README.md"
+QUALITY_WORKFLOW = REPO_ROOT / ".github/workflows/quality.yml"
+FULL_REAL_LIBRARY_TEST = "tests/fortran/building_shared_library/end_to_end/real_libraries/test_full_libraries.py"
+
+LEGACY_TEST_ROOTS = {
+    "benchmarks",
+    "cli",
+    "data",
+    "docs",
+    "naming",
+    "parser",
+    "parsing",
+    "pipeline",
+    "probes",
+    "pyi",
+    "runtime",
+    "semantics",
+    "tools",
+    "types",
+    "utilities",
+    "wrapper",
+    "wrapper_codegen",
+}
+LANGUAGE_DIRECTORIES = {"c", "fortran", "shared"}
+PRIMARY_OWNER_DIRECTORIES = {"architecture", *LANGUAGE_DIRECTORIES}
+ARCHITECTURE_OWNER_DIRECTORIES = {"c", "fortran"}
+FORTRAN_OWNER_DIRECTORIES = {
+    "allocatables",
+    "arrays",
+    "building_shared_library",
+    "callbacks",
+    "command_line_interface",
+    "data_types",
+    "derived_types",
+    "enumerations",
+    "error_handling",
+    "functions",
+    "generic_interfaces",
+    "infrastructure",
+    "memory_management",
+    "modules",
+    "optional_arguments",
+    "pointers",
+    "pyi_contracts",
+    "raw_addresses",
+    "semantic_pyi_format",
+    "semantic_ir",
+    "source_parsing",
+    "source_preprocessing",
+    "strings",
+    "subroutines",
+}
+SHARED_OWNER_DIRECTORIES = {"architecture", "benchmarks", "docs", "naming", "tools", "types", "utilities"}
+TOOLS_TEST_MODULES = {
+    "test_check_benchmark_regression.py",
+    "test_check_radon_policy.py",
+    "test_check_static_analysis_versions.py",
+    "test_print_pytest_failures.py",
+    "test_warm_real_library_native_cache.py",
+}
+DOCS_TEST_MODULES = {"test_examples.py", "test_publication.py", "test_structure.py"}
+ARCHITECTURE_TEST_MODULES = {
+    "test_dependency_boundaries.py",
+    "test_package_structure.py",
+    "test_test_suite_layout.py",
+    "test_visitor_protocol.py",
+}
+STALE_PYTEST_PATH_PATTERNS = (
+    *(re.compile(rf"\btests/{re.escape(root)}(?=/|\b)") for root in sorted(LEGACY_TEST_ROOTS)),
+    re.compile(r"\btests/_shared(?=/|\b)"),
+)
+
+
+def _pytest_modules() -> list[Path]:
+    return sorted(TEST_ROOT.rglob("test_*.py"))
+
+
+def _maintained_path_reference_files() -> list[Path]:
+    candidates = [REPO_ROOT / "README.md", *REPO_ROOT.glob(".github/workflows/*"), *REPO_ROOT.rglob("*.md")]
+    return sorted(
+        path
+        for path in candidates
+        if path.is_file()
+        and path.name != "AGENTS.md"
+        and "old_docs" not in path.parts
+        and "_migration" not in path.parts
+        and "docs/maintainer/roadmap" not in path.as_posix()
+        and ".git" not in path.parts
+    )
+
+
+def test_pytest_modules_have_one_allowed_primary_owner() -> None:
+    root_modules = sorted(path.name for path in TEST_ROOT.glob("test_*.py"))
+    assert root_modules == []
+
+    assert {
+        path.name for path in TEST_ROOT.iterdir() if path.is_dir() and path.name != "__pycache__"
+    } == PRIMARY_OWNER_DIRECTORIES
+    assert all(path.relative_to(TEST_ROOT).parts[0] in PRIMARY_OWNER_DIRECTORIES for path in _pytest_modules())
+
+
+def test_primary_roots_use_only_documented_owner_directories() -> None:
+    for root, expected in (
+        (TEST_ROOT / "architecture", ARCHITECTURE_OWNER_DIRECTORIES),
+        (TEST_ROOT / "fortran", FORTRAN_OWNER_DIRECTORIES),
+        (TEST_ROOT / "shared", SHARED_OWNER_DIRECTORIES),
+    ):
+        actual = {
+            path.name for path in root.iterdir() if path.is_dir() and path.name not in {"__pycache__", "_support"}
+        }
+        assert actual == expected
+
+
+def test_stage_modules_have_unique_basenames_for_default_pytest_import_mode() -> None:
+    by_name: dict[str, list[str]] = {}
+    for path in _pytest_modules():
+        by_name.setdefault(path.name, []).append(path.relative_to(TEST_ROOT).as_posix())
+    duplicates = {name: paths for name, paths in by_name.items() if len(paths) > 1}
+    assert duplicates == {}
+
+
+def test_language_first_roots_have_documented_existing_owners() -> None:
+    text = TEST_INDEX.read_text(encoding="utf-8")
+    for language in LANGUAGE_DIRECTORIES:
+        test_directory = f"tests/{language}/"
+        assert test_directory in text
+        assert (REPO_ROOT / test_directory).is_dir()
+
+
+def test_specialized_test_lanes_contain_only_owned_modules() -> None:
+    assert {path.name for path in (TEST_ROOT / "shared" / "tools").glob("test_*.py")} == TOOLS_TEST_MODULES
+    assert {path.name for path in (TEST_ROOT / "shared" / "docs").glob("test_*.py")} == DOCS_TEST_MODULES
+    assert {
+        path.name for path in (TEST_ROOT / "shared" / "architecture").glob("test_*.py")
+    } == ARCHITECTURE_TEST_MODULES
+
+
+def test_fortran_support_directory_contains_no_pytest_modules() -> None:
+    assert sorted((TEST_ROOT / "fortran" / "_support").rglob("test_*.py")) == []
+
+
+def test_test_index_links_and_language_directories_exist() -> None:
+    text = TEST_INDEX.read_text(encoding="utf-8")
+    for target in re.findall(r"\[[^]]+\]\(([^)#]+)", text):
+        assert (TEST_INDEX.parent / target).resolve().exists(), target
+
+    assert all((TEST_ROOT / language).is_dir() for language in LANGUAGE_DIRECTORIES)
+
+
+def test_maintained_docs_do_not_name_deprecated_pytest_locations() -> None:
+    stale = []
+    for path in _maintained_path_reference_files():
+        text = path.read_text(encoding="utf-8")
+        for pattern in STALE_PYTEST_PATH_PATTERNS:
+            if pattern.search(text):
+                stale.append(f"{path.relative_to(REPO_ROOT)}: {pattern.pattern}")
+    assert stale == []
+
+
+def test_full_real_library_nodes_have_one_dedicated_quality_job() -> None:
+    text = QUALITY_WORKFLOW.read_text(encoding="utf-8")
+    ordinary_jobs, dedicated_and_later = text.split("  real-library-wrappers:", maxsplit=1)
+    dedicated_job, _later_jobs = dedicated_and_later.split("\n  coverage-report:", maxsplit=1)
+
+    assert '-m "not real_library and not toolchain_smoke"' in ordinary_jobs
+    assert FULL_REAL_LIBRARY_TEST not in ordinary_jobs
+    assert (
+        f'"{FULL_REAL_LIBRARY_TEST}::test_full_library_wrapper_imports_every_root_procedure_from_cached_shared_library[blas]"'
+        in dedicated_job
+    )
+    assert (
+        f'"{FULL_REAL_LIBRARY_TEST}::test_full_library_wrapper_imports_every_root_procedure_from_cached_shared_library[lapack]"'
+        in dedicated_job
+    )
+    assert "ignore-real-library-wrappers" in dedicated_job
+    assert "matrix.library" not in dedicated_job
