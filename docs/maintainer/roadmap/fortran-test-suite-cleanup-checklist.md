@@ -38,7 +38,7 @@ Test-suite migration through smoke (batches 1-7)
 [███████] 7/7 batches
 
 Fortran feature migration
-[█████████████████████] 21/21 features
+[█████████████████████████] 25/25 features
 
 Complete roadmap (batches 1-10)
 [███████░░░] 7/10 batches
