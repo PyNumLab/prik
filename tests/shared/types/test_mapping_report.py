@@ -93,3 +93,9 @@ def test_target_profile_normalizes_common_machine_names(monkeypatch):
     monkeypatch.setattr(type_mapping_report.platform, "machine", lambda: "AMD64")
 
     assert type_mapping_report.target_profile() == "linux-x86_64"
+
+
+def test_character_mapping_fact_is_modeled_without_compiler_probe_metadata():
+    semantic_type = type("SemanticType", (), {"metadata": {}})()
+
+    assert type_mapping_report._fortran_fact_text(semantic_type, ("character", "c_char")) == "8-bit storage"

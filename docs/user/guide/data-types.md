@@ -145,7 +145,9 @@ The wrapper handles the native call details. Python still passes and receives
 
 `T[()]` represents rank-zero NumPy storage: arguments accept a 0-D NumPy
 array, and results return a 0-D NumPy array. Raw integer addresses are an
-advanced boundary covered later in the guide.
+advanced boundary covered later in the guide. A direct `T[()]` result therefore
+uses the planned array-copy representation; it is not lowered through the
+native scalar-value result ABI used by a bare `T` result.
 
 ## Unsupported Widths And Forms
 

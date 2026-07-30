@@ -225,18 +225,25 @@ def fortran_type_mapping_markdown(
     ]
     converter = FortranToIRConverter(type_facts=evaluate_fortran_type_facts(config, requirements, report=report))
     rows = []
-    for spelling, variable, _key, _expression in entries:
+    for spelling, variable, key, _expression in entries:
         semantic_type = converter.visit(variable)
-        fact = semantic_type.metadata["fortran_type_fact"]
         rows.append(
             (
                 spelling,
-                f"{fact['bits']}-bit storage",
+                _fortran_fact_text(semantic_type, key),
                 _semantic_text(semantic_type),
                 _numpy_dtype(semantic_type.dtype),
             )
         )
     return _markdown_table("Fortran type", rows)
+
+
+def _fortran_fact_text(semantic_type, key: tuple[str, str | None]) -> str:
+    """Describe probed storage or the modeled character code unit."""
+    if key[0] == "character":
+        return "8-bit storage"
+    fact = semantic_type.metadata["fortran_type_fact"]
+    return f"{fact['bits']}-bit storage"
 
 
 def _c_fact_text(fact: dict[str, object]) -> str:

@@ -43,6 +43,20 @@ def invert_flags(n: Int32, values: Bool[n], out: Bool[n]) -> None: ...
     return WrapperPlanner().build(module)
 
 
+def _high_rank_logical_output_plan():
+    shape = ", ".join(":" for _ in range(15))
+    module = parse_pyi_text(
+        f"""
+from x2py.contracts import Bool
+
+def normalize(values: Bool[{shape}]) -> None: ...
+""",
+        module_name="high_rank_logical_array",
+    )
+    complete_semantic_policies(module)
+    return WrapperPlanner().build(module)
+
+
 def test_projected_array_identity_uses_one_completed_in_place_copy_out_action():
     function = _output_plan().namespaces[0].functions[0]
     argument = function.arguments[-1]
@@ -86,6 +100,15 @@ def test_mutable_bool_array_writeback_normalizes_the_aliased_numpy_buffer_in_pla
     assert "call native_invert_flags(n, values, out)" in bridge_source
     assert "call c_f_pointer(bound_out, out_logical_bytes, [out_extent_0])" in bridge_source
     assert "out_logical_bytes = iand(out_logical_bytes, 1_c_int8_t)" in bridge_source
+
+
+def test_high_rank_bool_array_writeback_wraps_the_flattened_shape_product():
+    artifacts = WrapperCodeGenerator().generate(_high_rank_logical_output_plan())
+    bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
+
+    assert "values_extent_0 * &" in bridge_source
+    assert "& values_extent_14])" in bridge_source
+    assert max(map(len, bridge_source.splitlines())) <= 132
 
 
 def test_generator_rejects_a_non_normalized_mutable_bool_array_writeback_abi():

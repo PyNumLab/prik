@@ -1173,7 +1173,9 @@ expressions, measure numeric and logical intrinsic storage with `storage_size`,
 attach those facts to semantic types, and reuse memory and persistent caches.
 Character declarations are excluded from storage probing: their semantic type
 is `String`, while fixed or deferred element length is carried separately from
-the declaration or runtime descriptor. For the maintained GitHub Actions
+the declaration or runtime descriptor. The generated mapping report describes
+the modeled eight-bit character code unit directly and does not manufacture a
+compiler probe fact for character rows. For the maintained GitHub Actions
 `gfortran` profile, unqualified `integer`, `real`, and `complex` map to `Int32`,
 `Float32`, and `Complex64`; target-changing flags can change those mappings.
 Source-driven wrapper builds add the normalized native Fortran compiler flags

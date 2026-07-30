@@ -2899,7 +2899,7 @@ def _result_policies(
         owner_path=f"{owner_path}.return",
         semantic_type_name=function.return_type.name,
         rank=int(function.return_type.rank or 0),
-        direct_result_abi=_direct_result_abi(function.return_type, scalar_descriptor),
+        direct_result_abi=_direct_result_abi(function.return_type, decision, scalar_descriptor),
         ownership=decision,
         codegen_action=decision.codegen_action,
         python_barrier_action=decision.python_barrier_action,
@@ -4555,10 +4555,11 @@ def _derived_result_blockers(
 # Scalar result policy.
 def _direct_result_abi(
     semantic_type: models.SemanticType,
+    decision: OwnershipDecision,
     scalar_descriptor: ScalarDescriptorResultPolicy | None,
 ) -> DirectResultABI:
     """Complete the direct scalar return ABI before wrapper planning."""
-    if scalar_descriptor is not None or int(semantic_type.rank or 0) != 0:
+    if scalar_descriptor is not None or decision.kind is not ObjectKind.SCALAR or int(semantic_type.rank or 0) != 0:
         return DirectResultABI.NOT_APPLICABLE
     if semantic_type.name == "Bool":
         return DirectResultABI.LOGICAL_LOW_BIT_INT8

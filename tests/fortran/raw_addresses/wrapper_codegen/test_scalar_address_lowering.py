@@ -6,7 +6,7 @@ from __future__ import annotations
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from x2py.semantics.ownership import CodegenAction, NativeBarrierAction, ObjectKind, PythonBarrierAction
 from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import ArgumentHandoffMode, BridgeDataAction
+from x2py.semantics.wrapper_policy import ArgumentHandoffMode, BridgeDataAction, DirectResultABI
 from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
 
@@ -59,6 +59,7 @@ def test_scalar_storage_and_raw_address_plans_keep_explicit_boundary_facts():
     assert direct_result.binding.codegen_action is CodegenAction.COPY_OUT
     assert direct_result.bridge.native_action is NativeBarrierAction.NONE
     assert direct_result.bridge.data_action is BridgeDataAction.COPY_REPRESENTATION
+    assert direct_result.direct_result_abi is DirectResultABI.NOT_APPLICABLE
     assert hidden_result.object_kind is ObjectKind.NUMPY_ARRAY
     assert hidden_result.array.rank == 0
     assert hidden_result.array.category == "scalar_storage"
