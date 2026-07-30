@@ -16,15 +16,18 @@ WORKFLOW = REPO_ROOT / ".github/workflows/fortran-toolchain-smoke.yml"
 def test_workflow_declares_pinned_ifx_and_flang_pairs_on_ubuntu_2404() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
 
+    assert text.startswith("name: Smoke Tests\n")
     assert "runs-on: ubuntu-24.04" in text
     assert 'X2PY_IFX_VERSION: "2026.1.1"' in text
     assert 'X2PY_FLANG_VERSION: "22.1.8"' in text
     assert 'X2PY_FLANG_RUNTIME_VERSION: "22.1.7"' in text
     for snippet in (
         "- toolchain: ifx",
+        "display_name: Intel IFX 2026.1.1 · Python 3.12",
         "fortran_compiler: ifx",
         "c_compiler: icx",
         "- toolchain: flang",
+        "display_name: LLVM Flang 22.1.8 · Python 3.12",
         "fortran_compiler: flang",
         "c_compiler: clang",
     ):

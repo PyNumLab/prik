@@ -1,0 +1,66 @@
+name: BLAS + LAPACK
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  push:
+    branches:
+      - main
+      - release/*
+  workflow_call:
+
+env:
+  X2PY_GFORTRAN_BINARY: gfortran-13
+  X2PY_GFORTRAN_PACKAGE: gfortran-13
+
+jobs:
+  real-library-wrappers:
+    name: Python 3.12
+    if: >-
+      ${{
+        github.event_name != 'pull_request' ||
+        !contains(github.event.pull_request.labels.*.name, 'ignore-real-library-wrappers')
+      }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[qa]"
+      - name: Install pinned GFortran
+        shell: bash
+        run: |
+          if ! command -v "$X2PY_GFORTRAN_BINARY" >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --yes "$X2PY_GFORTRAN_PACKAGE"
+          fi
+          compiler_dir="$RUNNER_TEMP/x2py-gfortran"
+          mkdir -p "$compiler_dir"
+          ln -sf "$(command -v "$X2PY_GFORTRAN_BINARY")" "$compiler_dir/gfortran"
+          echo "$compiler_dir" >> "$GITHUB_PATH"
+          "$compiler_dir/gfortran" --version
+      - name: Restore compiled native library cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/x2py-real-library-native
+          key: real-libraries-${{ runner.os }}-gfortran13-${{ hashFiles('tests/fortran/building_shared_library/end_to_end/real_libraries/blas/native/**', 'tests/fortran/building_shared_library/end_to_end/real_libraries/lapack/native/**') }}
+      - name: Run full BLAS and LAPACK wrapper tests
+        env:
+          PYTHONPATH: .
+          HYPOTHESIS_PROFILE: ci
+          X2PY_REAL_LIBRARY_NATIVE_CACHE_DIR: ${{ runner.temp }}/x2py-real-library-native
+        run: |
+          python -m pytest -q --randomly-seed=1 \
+            "tests/fortran/building_shared_library/end_to_end/real_libraries/test_full_libraries.py::test_full_library_wrapper_imports_every_root_procedure_from_cached_shared_library[blas]" \
+            "tests/fortran/building_shared_library/end_to_end/real_libraries/test_full_libraries.py::test_full_library_wrapper_imports_every_root_procedure_from_cached_shared_library[lapack]"

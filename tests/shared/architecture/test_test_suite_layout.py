@@ -9,7 +9,13 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).parents[3]
 TEST_ROOT = REPO_ROOT / "tests"
 TEST_INDEX = TEST_ROOT / "README.md"
-QUALITY_WORKFLOW = REPO_ROOT / ".github/workflows/quality.yml"
+BLAS_LAPACK_WORKFLOW = REPO_ROOT / ".github/workflows/blas-lapack.yml"
+CLAUDE_WORKFLOW = REPO_ROOT / ".github/workflows/claude.yml"
+COVERAGE_WORKFLOW = REPO_ROOT / ".github/workflows/coverage.yml"
+DOCS_WORKFLOW = REPO_ROOT / ".github/workflows/docs.yml"
+PARSER_REFERENCE_WORKFLOW = REPO_ROOT / ".github/workflows/parser-reference-guard.yml"
+STATIC_ANALYSIS_WORKFLOW = REPO_ROOT / ".github/workflows/static-analysis.yml"
+TESTS_WORKFLOW = REPO_ROOT / ".github/workflows/tests.yml"
 FULL_REAL_LIBRARY_TEST = "tests/fortran/building_shared_library/end_to_end/real_libraries/test_full_libraries.py"
 
 LEGACY_TEST_ROOTS = {
@@ -168,10 +174,9 @@ def test_maintained_docs_do_not_name_deprecated_pytest_locations() -> None:
     assert stale == []
 
 
-def test_full_real_library_nodes_have_one_dedicated_quality_job() -> None:
-    text = QUALITY_WORKFLOW.read_text(encoding="utf-8")
-    ordinary_jobs, dedicated_and_later = text.split("  real-library-wrappers:", maxsplit=1)
-    dedicated_job, _later_jobs = dedicated_and_later.split("\n  coverage-report:", maxsplit=1)
+def test_full_real_library_nodes_have_one_dedicated_workflow() -> None:
+    ordinary_jobs = TESTS_WORKFLOW.read_text(encoding="utf-8")
+    dedicated_job = BLAS_LAPACK_WORKFLOW.read_text(encoding="utf-8")
 
     assert '-m "not real_library and not toolchain_smoke"' in ordinary_jobs
     assert FULL_REAL_LIBRARY_TEST not in ordinary_jobs
@@ -185,3 +190,63 @@ def test_full_real_library_nodes_have_one_dedicated_quality_job() -> None:
     )
     assert "ignore-real-library-wrappers" in dedicated_job
     assert "matrix.library" not in dedicated_job
+
+
+def test_coverage_workflow_reuses_the_canonical_test_selections() -> None:
+    ordinary = TESTS_WORKFLOW.read_text(encoding="utf-8")
+    coverage = COVERAGE_WORKFLOW.read_text(encoding="utf-8")
+
+    for snippet in (
+        "tests/architecture",
+        "tests/c",
+        "tests/fortran",
+        "tests/shared",
+        "-m toolchain_smoke",
+        '-m "not real_library and not toolchain_smoke"',
+        "--require-toolchain-smoke",
+        "--x2py-fortran-compiler=gfortran",
+    ):
+        assert snippet in ordinary
+        assert snippet in coverage
+    assert coverage.count("python -m coverage run -m pytest") == 2
+    assert "python -m coverage combine" in coverage
+    assert "python -m coverage report" in coverage
+
+
+def test_active_github_action_jobs_use_purpose_first_display_names() -> None:
+    expected = {
+        DOCS_WORKFLOW: (
+            "name: Documentation",
+            "    name: Build",
+            "    name: Deploy",
+        ),
+        PARSER_REFERENCE_WORKFLOW: (
+            "name: Parser Reference",
+            "    name: Guard",
+        ),
+        STATIC_ANALYSIS_WORKFLOW: (
+            "name: Static Analysis",
+            "    name: Python 3.12",
+        ),
+        TESTS_WORKFLOW: (
+            "name: Tests",
+            "    name: Python ${{ matrix.python-version }}",
+        ),
+        BLAS_LAPACK_WORKFLOW: (
+            "name: BLAS + LAPACK",
+            "    name: Python 3.12",
+        ),
+        COVERAGE_WORKFLOW: (
+            "name: Coverage",
+            "    name: Python 3.12",
+        ),
+        CLAUDE_WORKFLOW: (
+            "name: Claude Code",
+            "    name: Respond",
+        ),
+    }
+
+    for workflow, names in expected.items():
+        text = workflow.read_text(encoding="utf-8")
+        for name in names:
+            assert name in text

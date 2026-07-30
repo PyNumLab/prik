@@ -1,4 +1,4 @@
-name: Parser Reference Guard
+name: Parser Reference
 
 on:
   pull_request:
@@ -6,6 +6,7 @@ on:
 
 jobs:
   parser-reference-guard:
+    name: Guard
     if: >
       !contains(github.event.pull_request.labels.*.name, 'ignore-parser-reference-guard') &&
       (github.event.action == 'opened' ||

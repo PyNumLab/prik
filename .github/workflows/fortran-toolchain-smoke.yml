@@ -1,4 +1,4 @@
-name: Fortran Toolchain Smoke
+name: Smoke Tests
 
 on:
   pull_request:
@@ -32,13 +32,13 @@ jobs:
       matrix:
         include:
           - toolchain: ifx
-            display_name: Intel IFX 2026.1.1
+            display_name: Intel IFX 2026.1.1 · Python 3.12
             environment: x2py-ifx-2026.1.1
             fortran_compiler: ifx
             c_compiler: icx
             cache_version: "2026.1.1-v2"
           - toolchain: flang
-            display_name: LLVM Flang 22.1.8
+            display_name: LLVM Flang 22.1.8 · Python 3.12
             environment: x2py-flang-22.1.8
             fortran_compiler: flang
             c_compiler: clang

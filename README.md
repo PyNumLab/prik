@@ -15,7 +15,8 @@ semantic IR, emits editable `.pyi` interfaces, and reports unsupported or
 incomplete contracts before code generation.
 X2PY_C_DOCS_END -->
 
-[![Quality](https://github.com/PyNumLab/x2py/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/PyNumLab/x2py/actions/workflows/quality.yml)
+[![Tests](https://github.com/PyNumLab/x2py/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/PyNumLab/x2py/actions/workflows/tests.yml)
+[![Static Analysis](https://github.com/PyNumLab/x2py/actions/workflows/static-analysis.yml/badge.svg?branch=main)](https://github.com/PyNumLab/x2py/actions/workflows/static-analysis.yml)
 [![codecov](https://codecov.io/gh/PyNumLab/x2py/graph/badge.svg?token=QZRRCS5YO6)](https://codecov.io/gh/PyNumLab/x2py)
 
 [Read the documentation](https://pynumlab.github.io/x2py/) for installation,
