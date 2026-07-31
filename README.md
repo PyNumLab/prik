@@ -94,8 +94,9 @@ shows the available edits.
 ## Installation & Quick Start
 
 x2py requires **Python 3.10 or newer**, NumPy, Python development headers,
-standard build tools, and Fortran and C compilers. GNU Fortran is the default.
-Intel IFX and LLVM Flang are also tested on Linux.
+standard build tools, and Fortran and C compilers. GNU Fortran is the default
+and is tested on Linux and macOS. LLVM Flang is tested on both platforms;
+Intel IFX is tested on Linux.
 
 Clone the repository and install x2py in a virtual environment:
 

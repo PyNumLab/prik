@@ -48,7 +48,9 @@ VISIBLE_C_DOCUMENTATION_EXCEPTIONS = {
     "docs/user/getting-started/installation.md": (
         "matching C\ncompiler",
         "C compiler",
+        "brew install gcc@13",
         "`gcc`",
+        "`gcc-13`",
         "`clang`",
     ),
     "docs/user/getting-started/verification.md": ("gcc --version", "clang --version"),
@@ -1237,9 +1239,9 @@ def test_user_compiler_docs_distinguish_runtime_evidence_from_configured_profile
     shared_library = _visible_documentation_source(DOCS_ROOT / "user/guide/building-shared-library.md")
 
     for compiler_pair in (
-        "| `gfortran` | `gcc` | Default; fully tested on Linux |",
+        "| `gfortran` | `gcc` | Default; tested on Linux and macOS |",
         "| `ifx` | `icx` | Tested on Linux with version 2026.1.1 |",
-        "| `flang` | `clang` | Tested on Linux with version 22.1.8 |",
+        "| `flang` | `clang` | Tested on Linux and macOS with version 22.1.8 |",
     ):
         assert compiler_pair in installation
 

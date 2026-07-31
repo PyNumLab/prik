@@ -46,6 +46,14 @@ sudo apt-get update
 sudo apt-get install build-essential gfortran python3-dev
 ```
 
+On **macOS** with Homebrew:
+
+```bash
+brew install gcc@13
+```
+
+Homebrew provides versioned commands such as `gfortran-13` and `gcc-13`.
+
 ## Compiler Toolchains
 
 `gfortran` is the default. Use `--compiler` to choose another option. Install
@@ -53,9 +61,9 @@ the matching C compiler shown below as well.
 
 | Fortran compiler | Required C compiler | Test status |
 | --- | --- | --- |
-| `gfortran` | `gcc` | Default; fully tested on Linux |
+| `gfortran` | `gcc` | Default; tested on Linux and macOS |
 | `ifx` | `icx` | Tested on Linux with version 2026.1.1 |
-| `flang` | `clang` | Tested on Linux with version 22.1.8 |
+| `flang` | `clang` | Tested on Linux and macOS with version 22.1.8 |
 | `ifort` | `icx` | Recognized; not routinely tested |
 | `nvfortran` | `nvc` | Recognized; not yet tested |
 | `pgfortran` | `pgcc` | Legacy option; not yet tested |
@@ -103,7 +111,7 @@ python3 -m pip install -e ".[qa]"
 | --- | --- |
 | Ubuntu Linux x86-64 | Tested with GNU Fortran, Intel IFX, and LLVM Flang |
 | Other Linux | Expected to work; compiler coverage varies |
-| macOS | Not yet in CI matrix |
+| macOS 15 on Apple Silicon | Full suite with GNU Fortran 13; smoke tests with LLVM Flang |
 | Windows | Not yet supported |
 
 ---

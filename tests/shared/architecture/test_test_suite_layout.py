@@ -179,6 +179,7 @@ def test_full_real_library_nodes_have_one_dedicated_workflow() -> None:
     dedicated_job = BLAS_LAPACK_WORKFLOW.read_text(encoding="utf-8")
 
     assert '-m "not real_library and not toolchain_smoke"' in ordinary_jobs
+    assert ordinary_jobs.count('-m "not real_library and not toolchain_smoke"') == 2
     assert FULL_REAL_LIBRARY_TEST not in ordinary_jobs
     assert (
         f'"{FULL_REAL_LIBRARY_TEST}::test_full_library_wrapper_imports_every_root_procedure_from_cached_shared_library[blas]"'
@@ -231,6 +232,7 @@ def test_active_github_action_jobs_use_purpose_first_display_names() -> None:
         TESTS_WORKFLOW: (
             "name: Tests",
             "    name: Python ${{ matrix.python-version }}",
+            "    name: macOS 15 ARM64 · Python 3.12",
         ),
         BLAS_LAPACK_WORKFLOW: (
             "name: BLAS + LAPACK",

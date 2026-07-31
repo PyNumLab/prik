@@ -32,13 +32,13 @@ jobs:
       matrix:
         include:
           - toolchain: ifx
-            display_name: Intel IFX 2026.1.1 · Python 3.12
+            display_name: Linux · Intel IFX 2026.1.1 · Python 3.12
             environment: x2py-ifx-2026.1.1
             fortran_compiler: ifx
             c_compiler: icx
             cache_version: "2026.1.1-v2"
           - toolchain: flang
-            display_name: LLVM Flang 22.1.8 · Python 3.12
+            display_name: Linux · LLVM Flang 22.1.8 · Python 3.12
             environment: x2py-flang-22.1.8
             fortran_compiler: flang
             c_compiler: clang
@@ -108,6 +108,76 @@ jobs:
         run: |
           python tools/run_fortran_toolchain_lane.py \
             --compiler "$RUNNER_TEMP/${{ matrix.environment }}/bin/${{ matrix.fortran_compiler }}" \
+            --junit-dir "$RUNNER_TEMP"
+      - name: Summarize failed pytest nodes
+        if: failure()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          reports=("$RUNNER_TEMP"/pytest-toolchain-*-results.xml)
+          for report in "${reports[@]}"; do
+            python tools/print_pytest_failures.py "$report"
+          done
+
+  macos-flang-smoke:
+    name: macOS 15 ARM64 · LLVM Flang · Python 3.12
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      X2PY_MACOS_FLANG_ENVIRONMENT: x2py-flang-macos
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[qa]"
+      - name: Install LLVM Flang and Clang
+        shell: bash
+        run: |
+          brew install flang
+          toolchain_prefix="$RUNNER_TEMP/$X2PY_MACOS_FLANG_ENVIRONMENT"
+          flang_prefix="$(brew --prefix flang)"
+          llvm_prefix="$(brew --prefix llvm)"
+          mkdir -p "$toolchain_prefix/bin"
+          ln -sf "$flang_prefix/bin/flang" "$toolchain_prefix/bin/flang"
+          ln -sf "$llvm_prefix/bin/clang" "$toolchain_prefix/bin/clang"
+          echo "$toolchain_prefix/bin" >> "$GITHUB_PATH"
+          echo "DYLD_LIBRARY_PATH=$flang_prefix/lib:$llvm_prefix/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" \
+            >> "$GITHUB_ENV"
+      - name: Verify macOS compiler pair
+        shell: bash
+        run: |
+          echo "runner image: ${ImageOS:-unknown} ${ImageVersion:-unknown}"
+          sw_vers
+          uname -m
+          python --version
+          command -v flang
+          flang --version
+          command -v clang
+          clang --version
+      - name: Show repository-owned lane plan
+        run: |
+          python tools/run_fortran_toolchain_lane.py \
+            --compiler flang \
+            --junit-dir "$RUNNER_TEMP" \
+            --plan
+      - name: Run profile checks and strict smoke
+        env:
+          PYTHONPATH: .
+          HYPOTHESIS_PROFILE: ci
+        run: |
+          python tools/run_fortran_toolchain_lane.py \
+            --compiler flang \
             --junit-dir "$RUNNER_TEMP"
       - name: Summarize failed pytest nodes
         if: failure()

@@ -1436,6 +1436,16 @@ multi-family implementation and version-floor items stay open.
   justifies a more frequent lane.
 - [ ] Log runner image, architecture, Python, compiler path, and version.
 
+The `Tests` workflow now declares one macOS 15 ARM64 lane with Python 3.12 and
+GNU Fortran/GCC 13. It logs the hosted environment, delegates focused compiler,
+CLI, and strict smoke checks to the shared lane runner, then runs the complete
+ordinary suite with BLAS/LAPACK excluded. The execution and platform-audit
+items above remain open until the first hosted run provides evidence.
+
+The `Smoke Tests` workflow also declares an LLVM Flang/Clang lane on the same
+macOS runner. Intel IFX remains Linux-only because Intel does not distribute
+IFX for macOS or Apple Silicon.
+
 ### Toolchain lane contract
 
 Focused CLI, profile, and platform tests are not marked `toolchain_smoke`.
