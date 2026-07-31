@@ -6,6 +6,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+from tests.fortran._support.wrapper_build import _run_captured_command
 from tools.run_fortran_toolchain_lane import FOCUSED_FORTRAN_CLI_NODES, PROFILE_TEST_PATHS, lane_commands
 
 
@@ -147,3 +150,24 @@ def test_every_profile_and_cli_reference_collects() -> None:
     for reference in (*PROFILE_TEST_PATHS, *FOCUSED_FORTRAN_CLI_NODES):
         path = reference.partition("::")[0]
         assert path in completed.stdout
+
+
+def test_failed_wrapper_build_command_exposes_captured_diagnostics(tmp_path: Path) -> None:
+    command = [
+        sys.executable,
+        "-c",
+        (
+            "import sys; "
+            "print('partial build output'); "
+            "print('flang: actionable compiler error', file=sys.stderr); "
+            "raise SystemExit(7)"
+        ),
+    ]
+
+    with pytest.raises(RuntimeError) as caught:
+        _run_captured_command(command, cwd=tmp_path)
+
+    message = str(caught.value)
+    assert "Captured command failed with exit code 7" in message
+    assert "partial build output" in message
+    assert "flang: actionable compiler error" in message

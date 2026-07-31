@@ -401,12 +401,16 @@ def test_missing_symbol_reports_native_link_or_loader_error(tmp_path: Path):
         _write_source(tmp_path / "sources", "unrelated.f90", _simple_external_source("unrelated", "value")),
         tmp_path / "native",
     )
-    result = build_pyi_extension(
-        entry,
-        native_objects=[native_object],
-        output_name="missing_symbol",
-        output_dir=tmp_path / "build",
-    )
+    try:
+        result = build_pyi_extension(
+            entry,
+            native_objects=[native_object],
+            output_name="missing_symbol",
+            output_dir=tmp_path / "build",
+        )
+    except RuntimeError as exc:
+        assert "missing_symbol" in str(exc)
+        return
 
     with pytest.raises(ImportError, match="missing_symbol"):
         _import_from_build(result)

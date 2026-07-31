@@ -4,9 +4,11 @@ import gc
 import importlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
+from collections.abc import Sequence
 from functools import cache
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -97,6 +99,25 @@ def _sole_native_module(module):
     return children[0] if len(children) == 1 else module
 
 
+def _run_captured_command(
+    command: Sequence[str],
+    *,
+    cwd: Path | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run a test build command while preserving actionable failure output."""
+    result = subprocess.run(command, capture_output=True, text=True, check=False, cwd=cwd)
+    if result.returncode:
+        stdout = result.stdout.rstrip() or "<empty>"
+        stderr = result.stderr.rstrip() or "<empty>"
+        raise RuntimeError(
+            f"Captured command failed with exit code {result.returncode}:\n"
+            f"{shlex.join(command)}\n"
+            f"stdout:\n{stdout}\n"
+            f"stderr:\n{stderr}"
+        )
+    return result
+
+
 def _build_and_import(source_template: Path, workdir: Path, expected_generated_sources: set[str]):
     source = workdir / source_template.name
     module_name = source_template.stem
@@ -113,7 +134,7 @@ def _build_and_import(source_template: Path, workdir: Path, expected_generated_s
         _compiler(),
         "--json",
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True, cwd=workdir)
+    result = _run_captured_command(cmd, cwd=workdir)
     payload = json.loads(result.stdout)
 
     shared_library = Path(payload["shared_library"])
@@ -191,7 +212,7 @@ def _compile_native_object(source: Path, native_dir: Path) -> Path:
 
 
 def _generate_checked_pyi_contract(source: Path, package_dir: Path, expected_package: Path) -> Path:
-    subprocess.run(
+    _run_captured_command(
         [
             sys.executable,
             "-m",
@@ -204,9 +225,6 @@ def _generate_checked_pyi_contract(source: Path, package_dir: Path, expected_pac
             "--compiler",
             _compiler(),
         ],
-        capture_output=True,
-        text=True,
-        check=True,
     )
     assert_generated_pyi_package_matches_fixture(package_dir, expected_package)
     return package_dir / "__init__.pyi"
@@ -365,7 +383,7 @@ def _build_text_and_import(source_text: str, filename: str, workdir: Path, expec
         _compiler(),
         "--json",
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True, cwd=workdir)
+    result = _run_captured_command(cmd, cwd=workdir)
     payload = json.loads(result.stdout)
 
     shared_library = Path(payload["shared_library"])
@@ -398,7 +416,7 @@ def _build_sources_and_import(source_texts: list[tuple[str, str]], workdir: Path
         _compiler(),
         "--json",
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True, cwd=workdir)
+    result = _run_captured_command(cmd, cwd=workdir)
     payload = json.loads(result.stdout)
     module_name = payload["module_name"]
 
