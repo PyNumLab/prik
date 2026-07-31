@@ -12,8 +12,9 @@ publication: reviewed
 
 This guide takes you from a fresh clone to your first working Python extension built from Fortran code.
 
-The recommended beginner path uses the **GNU toolchain**, including
-`gfortran`, which offers the best compatibility right now.
+Start with GNU (`gfortran` and `gcc`). x2py is also tested with Intel IFX and
+LLVM Flang on Linux. See [Installation](installation.md#compiler-toolchains)
+for every compiler option.
 
 ---
 

@@ -43,12 +43,34 @@ C_DOCS_START = "<!-- X2PY_C_DOCS_START"
 C_DOCS_END = "X2PY_C_DOCS_END -->"
 C_DOCS_DISABLED = "<!-- X2PY_C_DOCS_DISABLED:"
 VISIBLE_C_DOCUMENTATION_EXCEPTIONS = {
+    "README.md": ("Fortran and C compilers",),
+    "docs/user/getting-started/index.md": ("`gcc`",),
+    "docs/user/getting-started/installation.md": (
+        "matching C\ncompiler",
+        "C compiler",
+        "`gcc`",
+        "`clang`",
+    ),
+    "docs/user/getting-started/verification.md": ("gcc --version", "clang --version"),
+    "docs/user/troubleshooting/compiler-issues.md": (
+        "C binding",
+        "C compiler",
+        "matching C\ncompiler",
+        "gcc --version",
+        "`clang`",
+    ),
     "docs/user/reference/cli-commands.md": ("C INCLUDE OPTIONS", "{fortran,c}"),
     "docs/user/guide/enumerations.md": ("bind(C)",),
     "docs/user/guide/wrapping-derived-types.md": ("bind(C)",),
     "docs/user/guide/arrays.md": ("ORDER_C", "C-contiguous", "C-order", "C-oriented", 'order="C"'),
     "docs/user/guide/raw-addresses.md": ("C-order", "C ordering"),
-    "docs/user/guide/building-shared-library.md": ("X2PY_CFLAGS", "C binding"),
+    "docs/user/guide/building-shared-library.md": (
+        "X2PY_CFLAGS",
+        "C binding",
+        "C compiler",
+        "`gcc`",
+        "`clang`",
+    ),
     "docs/user/reference/semantic-pyi-format.md": (
         "ORDER_C",
         "C-contiguous",
@@ -1208,6 +1230,26 @@ def test_user_guide_shows_direct_shared_library_build() -> None:
 
     assert "python3 -m x2py src/scale.f90 --out-dir build/scale" in content
     assert "[Common Beginner Workflow](../getting-started/beginner-workflow.md)" in shared_library
+
+
+def test_user_compiler_docs_distinguish_runtime_evidence_from_configured_profiles() -> None:
+    installation = _visible_documentation_source(DOCS_ROOT / "user/getting-started/installation.md")
+    shared_library = _visible_documentation_source(DOCS_ROOT / "user/guide/building-shared-library.md")
+
+    for compiler_pair in (
+        "| `gfortran` | `gcc` | Default; fully tested on Linux |",
+        "| `ifx` | `icx` | Tested on Linux with version 2026.1.1 |",
+        "| `flang` | `clang` | Tested on Linux with version 22.1.8 |",
+    ):
+        assert compiler_pair in installation
+
+    assert "| `ifort` | `icx` | Recognized; not routinely tested |" in installation
+    assert "| `nvfortran` | `nvc` | Recognized; not yet tested |" in installation
+    assert "| `pgfortran` | `pgcc` | Legacy option; not yet tested |" in installation
+    assert "For the best-tested experience, use GNU, IFX, or Flang." in installation
+    assert "--compiler ifx" in shared_library
+    assert "--compiler flang" in shared_library
+    assert "keeps both compilers in the same family" in shared_library
 
 
 def test_cli_reference_reuses_the_homepage_points_example() -> None:
