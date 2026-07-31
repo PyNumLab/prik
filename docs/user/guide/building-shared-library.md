@@ -32,6 +32,32 @@ The shared library and the generated build files are written to
 python3 -m x2py src/scale.f90 --out scale_api --out-dir build/scale_api
 ```
 
+## Choose a Compiler
+
+GNU Fortran is the default. Use `--compiler` to choose Intel IFX or LLVM Flang:
+
+```bash
+# Intel IFX + ICX
+python3 -m x2py src/scale.f90 \
+  --compiler ifx \
+  --out scale_ifx \
+  --out-dir build/scale_ifx
+
+# LLVM Flang + Clang
+python3 -m x2py src/scale.f90 \
+  --compiler flang \
+  --out scale_flang \
+  --out-dir build/scale_flang
+```
+
+The executable may be an absolute path or a versioned name such as
+`gfortran-13` or `flang-22`. Its matching C compiler—`gcc`, `icx`, or
+`clang`—must also be available. x2py keeps both compilers in the same family.
+
+GNU, IFX, and Flang are tested on Linux. See
+[Compiler Toolchains](../getting-started/installation.md#compiler-toolchains)
+for versions and other recognized options.
+
 ## Import
 
 Add the build directory to Python's search path, then import the module by its
@@ -79,6 +105,7 @@ most useful settings are near the top:
 | `FC` | Fortran compiler |
 | `X2PY_LD` | Command that creates the shared library |
 | `X2PY_FFLAGS` | Extra Fortran compiler flags |
+| `X2PY_CFLAGS` | Extra C binding compiler flags |
 | `X2PY_LDFLAGS` | Extra linker flags |
 
 The build targets and commands follow these settings and normally do not need

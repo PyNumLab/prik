@@ -1,0 +1,6 @@
+from .fnative_call_examples_f90 import fill_vector_raw
+from .fnative_call_examples_f90 import fixed_inout_raw
+from .fnative_call_examples_f90 import fixed_inout_storage
+from .fnative_call_examples_f90 import scalar_status_raw
+from .fnative_call_examples_f90 import shift_matrix_raw_c
+from .fnative_call_examples_f90 import shift_matrix_raw_f

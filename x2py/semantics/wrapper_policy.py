@@ -118,6 +118,22 @@ class BridgeDataAction(str, Enum):
     BLOCKED = "blocked"
 
 
+class DirectResultABI(str, Enum):
+    """Completed scalar ABI used for one direct native function result."""
+
+    NOT_APPLICABLE = "not_applicable"
+    NATIVE_SCALAR = "native_scalar"
+    LOGICAL_LOW_BIT_INT8 = "logical_low_bit_int8"
+
+
+class ArrayWritebackABI(str, Enum):
+    """Completed post-call element ABI for one mutable ordinary array."""
+
+    NOT_APPLICABLE = "not_applicable"
+    NATIVE_ARRAY = "native_array"
+    LOGICAL_LOW_BIT_INT8 = "logical_low_bit_int8"
+
+
 _ARRAY_VALUE_OPTIONAL_MODES = frozenset({OptionalMode.REQUIRED, OptionalMode.NULLABLE_VALUE})
 _ARRAY_DESCRIPTOR_OPTIONAL_MODES = frozenset({OptionalMode.REQUIRED, OptionalMode.DESCRIPTOR})
 _ARRAY_VIEW_CODEGEN_ACTIONS = frozenset(
@@ -1030,6 +1046,7 @@ class ArgumentPolicy:
     native_position: int
     semantic_type_name: str
     rank: int
+    array_writeback_abi: ArrayWritebackABI
     optional: bool
     optional_mode: OptionalMode
     conversion_phase: ArgumentConversionPhase
@@ -1085,6 +1102,7 @@ class ResultPolicy:
     owner_path: str
     semantic_type_name: str
     rank: int
+    direct_result_abi: DirectResultABI
     ownership: OwnershipDecision
     codegen_action: CodegenAction
     python_barrier_action: PythonBarrierAction
@@ -2591,6 +2609,12 @@ def _argument_policy(
             native_position=native_position,
             semantic_type_name=argument.semantic_type.name,
             rank=int(argument.semantic_type.rank or 0),
+            array_writeback_abi=_array_writeback_abi(
+                argument.semantic_type,
+                decision,
+                boundary.handoff_mode,
+                array_policy,
+            ),
             optional=argument.optional,
             optional_mode=boundary.optional_mode,
             conversion_phase=boundary.conversion_phase,
@@ -2875,6 +2899,7 @@ def _result_policies(
         owner_path=f"{owner_path}.return",
         semantic_type_name=function.return_type.name,
         rank=int(function.return_type.rank or 0),
+        direct_result_abi=_direct_result_abi(function.return_type, decision, scalar_descriptor),
         ownership=decision,
         codegen_action=decision.codegen_action,
         python_barrier_action=decision.python_barrier_action,
@@ -2968,6 +2993,7 @@ def _hidden_result_policies(
                     owner_path=f"{owner_path}.{argument.name}",
                     semantic_type_name=argument.semantic_type.name,
                     rank=int(argument.semantic_type.rank or 0),
+                    direct_result_abi=DirectResultABI.NOT_APPLICABLE,
                     ownership=decision,
                     codegen_action=decision.codegen_action,
                     python_barrier_action=decision.python_barrier_action,
@@ -4527,6 +4553,21 @@ def _derived_result_blockers(
 
 
 # Scalar result policy.
+def _direct_result_abi(
+    semantic_type: models.SemanticType,
+    decision: OwnershipDecision,
+    scalar_descriptor: ScalarDescriptorResultPolicy | None,
+) -> DirectResultABI:
+    """Complete the direct scalar return ABI before wrapper planning."""
+    if scalar_descriptor is not None or decision.kind is not ObjectKind.SCALAR or int(semantic_type.rank or 0) != 0:
+        return DirectResultABI.NOT_APPLICABLE
+    if semantic_type.name == "Bool":
+        return DirectResultABI.LOGICAL_LOW_BIT_INT8
+    if semantic_type.name in _PLAN_PRIMITIVE_SCALAR_TYPES:
+        return DirectResultABI.NATIVE_SCALAR
+    return DirectResultABI.NOT_APPLICABLE
+
+
 def _scalar_result_blockers(
     semantic_type: models.SemanticType,
     decision: OwnershipDecision,
@@ -6047,6 +6088,20 @@ def _argument_handoff_mode(decision: OwnershipDecision) -> ArgumentHandoffMode:
 
 
 # Ordinary-array handoff policy.
+def _array_writeback_abi(
+    semantic_type: models.SemanticType,
+    decision: OwnershipDecision,
+    handoff_mode: ArgumentHandoffMode,
+    array: ArrayHandoffPolicy | None,
+) -> ArrayWritebackABI:
+    """Complete mutable ordinary-array byte normalization before planning."""
+    if array is None or handoff_mode is not ArgumentHandoffMode.ARRAY_BUFFER or not decision.mutates_native:
+        return ArrayWritebackABI.NOT_APPLICABLE
+    if semantic_type.name == "Bool":
+        return ArrayWritebackABI.LOGICAL_LOW_BIT_INT8
+    return ArrayWritebackABI.NATIVE_ARRAY
+
+
 def _array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandoffPolicy | None:
     """Copy structured buffer or raw-pointee facts into completed wrapper policy."""
     if _is_raw_array_address_type(semantic_type):

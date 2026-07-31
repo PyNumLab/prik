@@ -9,25 +9,39 @@ publication: draft
 
 # Quality Assurance
 
-Last reviewed: 2026-06-20
+Last reviewed: 2026-07-31
 
-This project uses a staged Python QA stack. Fast bug-focused checks run on pull
-requests, while the separate `Fuzz` workflow runs deeper Hypothesis discovery
-on schedule or by manual dispatch.
+This project uses a staged Python QA stack. Fast bug-focused checks, including
+the bounded parser fuzz cases, run on pull requests. Maintainers can rerun the
+fuzz-marked cases manually with the deeper Hypothesis profile.
 
-The selected active quality stack is adopted. Scheduled workflow review and
-future Ruff/Radon threshold ratchets are ongoing maintenance, not unfinished
-rollout work. Mutation testing and pre-commit are not part of the active stack.
+The selected active quality stack is adopted. Future Ruff/Radon threshold
+ratchets are ongoing maintenance, not unfinished rollout work. Mutation
+testing and pre-commit are not part of the active stack.
 
 ## Active Cadence
 
 | Cadence | Tools |
 | --- | --- |
-| Pull request and protected-branch push | pytest, stable-seed pytest-randomly, Ruff, Bandit, Vulture, staged Radon policy |
+| Pull request and protected-branch push | pytest, bounded property/fuzz cases, stable-seed pytest-randomly, Ruff, Bandit, Vulture, staged Radon policy |
+| Pull request, protected-branch push, weekly, and manual | Pinned Intel IFX/ICX and LLVM Flang/Clang profile checks plus strict Fortran toolchain smoke |
 | Main-branch push and requested coverage run | coverage.py report from the Python 3.12 test job |
-| Weekly and manual dispatch | `Fuzz` workflow with Hypothesis fuzz profile |
+| Manual discovery | Fuzz-marked parser tests with the deeper Hypothesis fuzz profile |
 | Manual triage | Full Radon reports and low-severity Bandit review |
 | Annual dependency review | Dependency vulnerability audit outside the routine per-change gate |
+
+Active GitHub Actions checks use short `workflow / job` names:
+
+- `Documentation / Build` and `Documentation / Deploy`;
+- `Smoke Tests / Intel IFX 2026.1.1 · Python 3.12` and
+  `Smoke Tests / LLVM Flang 22.1.8 · Python 3.12`;
+- `Parser Reference / Guard`;
+- `Static Analysis / Python 3.12`;
+- `Tests / Python 3.10`, `Tests / Python 3.11`, and
+  `Tests / Python 3.12`;
+- `BLAS + LAPACK / Python 3.12`;
+- `Coverage / Python 3.12`; and
+- `Claude Code / Respond` when the optional `@claude` integration is invoked.
 
 ## Install
 
@@ -68,16 +82,17 @@ python -m coverage report
 
 For subprocess coverage investigations, mirror that command shape before
 deciding a fix. A plain local coverage run can miss subprocess data.
-GitHub Actions runs ordinary PR tests without coverage overhead. During the
-wrapper-plan migration, every Python version excludes the full BLAS/LAPACK
-real-library wrapper test while retaining general native-bundle coverage.
-One separate Python 3.12 job runs the full BLAS and LAPACK nodes together. A
-pull request may use the `ignore-real-library-wrappers` label to skip that
-expensive job without disabling the ordinary Python-version matrix.
-Pushes to `main` always run the remaining Python 3.12 test job under coverage
-and publish the coverage report. Add the `run-coverage` PR label, or pass
-`coverage: true` to the reusable workflow, to request the same coverage gate
-outside the main branch.
+GitHub Actions runs ordinary PR tests without coverage overhead. Every Python
+version excludes the full BLAS/LAPACK real-library wrapper test while retaining
+general native-bundle coverage. The separate `BLAS + LAPACK` workflow runs the
+two full real-library nodes together on Python 3.12. A pull request may use the
+`ignore-real-library-wrappers` label to skip that expensive workflow without
+disabling the ordinary Python-version matrix.
+
+Pushes to `main` run the same canonical Python 3.12 smoke and ordinary-suite
+selections in the separate `Coverage` workflow, then combine and publish their
+coverage data. Add the `run-coverage` PR label, manually dispatch that workflow,
+or call it as a reusable workflow to request the same coverage gate elsewhere.
 
 Every matrix test run also writes a path-aware JUnit report. If pytest fails, the final
 workflow step reads that report and prints a compact `Failed pytest nodes`
@@ -92,6 +107,22 @@ Reproduce an order-dependent failure from the stable CI seed:
 ```bash
 pytest -q --randomly-seed=<seed-from-failing-run>
 ```
+
+Run the same alternate-compiler lane used by GitHub Actions:
+
+```bash
+python3 tools/run_fortran_toolchain_lane.py --compiler=/path/to/ifx
+python3 tools/run_fortran_toolchain_lane.py --compiler=/path/to/flang
+```
+
+Use `--plan` to inspect the two pytest commands without executing them. Every
+lane first runs the compiler-profile and focused preprocessing-CLI tests, then
+runs the unchanged eight-node strict `toolchain_smoke` selection. GitHub
+Actions pins IFX/ICX 2026.1.1 and Flang/Clang 22.1.8 on `ubuntu-24.04`;
+compiler runtime directories are exported for extension loading. These are
+tested CI pins, not inferred minimum supported versions. The Intel environment
+installs both `ifx_linux-64` and `dpcpp_linux-64`: the former supplies IFX,
+while the latter supplies the required ICX binding compiler.
 
 Run property and fuzz tests:
 
@@ -267,13 +298,14 @@ X2PY_C_DOCS_END -->
 
 ## Test Organization
 
-- Unit tests: keep narrow behavior tests near existing domain folders such as
-  `tests/parser`, `tests/semantics`, and `tests/pyi`.
+- Unit tests: keep narrow behavior tests under the owning language, feature,
+  and pipeline-stage directory.
 - Regression tests: add focused tests next to the subsystem that failed. Mark
   with `@pytest.mark.regression` when useful.
-- Property tests: put generated invariant tests in `tests/property`.
-- Fuzz-like parser tests: keep bounded generators in `tests/property`, mark
-  with `@pytest.mark.fuzz`, and run with the `fuzz` Hypothesis profile.
+- Property tests: keep generated invariants beside the domain they exercise.
+- Fuzz-like parser tests: keep bounded generators beside the owning parser
+  tests, mark with `@pytest.mark.fuzz`, and run with the `fuzz` Hypothesis
+  profile.
 
 Good invariants for this codebase:
 
@@ -290,10 +322,10 @@ Good invariants for this codebase:
 Full adoption for the selected stack means:
 
 - fast PR gates are blocking and stable;
-- scheduled/manual fuzzing exists;
+- fuzz-marked parser robustness tests run in the ordinary matrix and remain
+  available with a deeper manual profile;
 - Ruff baseline ignores are removed or deliberately retained with a reason;
-- Radon has a documented blocking policy for new or materially changed code;
-- scheduled workflow failures have a documented triage path.
+- Radon has a documented blocking policy for new or materially changed code.
 
 Current status by area:
 
@@ -304,24 +336,24 @@ Current status by area:
 | Dead-code detection | Complete for adoption | Vulture is clean and blocking; future public API additions should keep exclusions narrow. |
 | Security and dependency scanning | Complete for adoption | Bandit is blocking; dependency vulnerability review is annual/manual or tied to dependency changes. |
 | Complexity tracking | Complete for adoption | The staged Radon policy is blocking in CI; future hotspot decomposition can ratchet thresholds further. |
-| Scheduled workflow triage | Complete for adoption | Jobs exist and the triage process is documented; scheduled failures remain ordinary maintenance. |
 
 Ongoing maintenance:
 
-1. Review scheduled workflow results regularly and record actionable failures
-   until fixed.
+1. Save minimized examples from actionable fuzz failures as focused regression
+   tests.
 2. Lower Ruff/Radon complexity thresholds after hotspot refactors make that
    safe.
 
-## Scheduled Workflow Triage
+## Manual Fuzz Triage
 
-The `Fuzz` workflow runs deeper discovery every Monday and by manual dispatch:
+Run deeper discovery explicitly with the documented `HYPOTHESIS_PROFILE=fuzz`
+command:
 
-1. Re-run a failing job once to separate actionable failures from transient
-   runner or package-index failures.
-2. Reproduce actionable fuzz failures with the logged Hypothesis profile and
+1. Re-run a failing example to separate actionable failures from transient
+   local-environment failures.
+2. Reproduce actionable failures with the logged Hypothesis profile and
    save minimized examples as focused regression tests.
-3. Record each actionable scheduled failure here or in the relevant issue until
+3. Record each actionable failure here or in the relevant issue until
    the regression test and fix pass.
 
 ## Progress Log
@@ -336,6 +368,7 @@ The `Fuzz` workflow runs deeper discovery every Monday and by manual dispatch:
 | 2026-06-02 | Historical mutation-derived tests | Added direct Fortran parser contracts and fixed the directory namespace encoding bug. | Keep the tests as normal regression coverage. |
 | 2026-06-03 | Manual Quality workflow review | Reviewed workflow run `26832679820`: fuzz passed, changing random-order pytest passed, static analysis exposed Ruff fixes, and full-project mutation exceeded the `3h` Actions limit. | Mutation was removed from active adoption; scheduled fuzz moved to its own workflow. |
 | 2026-06-03 | Quality workflow triage | Reviewed latest Quality runs; run `26856679038` for `remove mutmut` completed successfully. | No actionable scheduled or PR quality failure remains. |
+| 2026-07-31 | Workflow naming and fuzz consolidation | Split the mixed workflow into purpose-named static-analysis, tests, BLAS/LAPACK, and coverage workflows; removed the stale scheduled fuzz workflow, whose pre-migration `tests/property` target no longer existed. | Keep the two fuzz-marked parser tests in the ordinary matrix and use the deeper profile manually when needed. |
 
 <!-- X2PY_C_DOCS_START
 | 2026-06-03 | Final active-stack cleanup | Consolidated quality docs, removed mutation and pre-commit from the active stack, restored the C parser golden generator, and regenerated C parser goldens. | Treat scheduled review and threshold ratchets as ongoing maintenance. |

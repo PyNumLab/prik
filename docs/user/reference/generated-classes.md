@@ -150,15 +150,14 @@ form instead of generating a partial class.
 ## Evidence And Maintenance
 
 Generated class behavior is covered by
-[`test_derived_type_boundaries.py`](../../../tests/wrapper/fortran/derived_types/test_derived_type_boundaries.py),
-[`test_derived_type_methods.py`](../../../tests/wrapper/fortran/derived_types/test_derived_type_methods.py),
-[`test_constructors_and_finalizers.py`](../../../tests/wrapper/fortran/derived_types/test_constructors_and_finalizers.py),
-[`test_borrowed_finalizers.py`](../../../tests/wrapper/fortran/derived_types/test_borrowed_finalizers.py), and
-[`test_inheritance.py`](../../../tests/wrapper/fortran/derived_types/test_inheritance.py).
-Exact class-method and constructor overloads are covered by
-[`test_phase9_class_overloads.py`](../../../tests/wrapper/fortran/naming/test_phase9_class_overloads.py),
-and explicit bound construction by
-[`test_phase9_bound_constructors.py`](../../../tests/wrapper/fortran/derived_types/test_phase9_bound_constructors.py).
+[`test_derived_boundaries.py`](../../../tests/fortran/derived_types/end_to_end/test_derived_boundaries.py),
+[`test_type_bound_methods.py`](../../../tests/fortran/derived_types/end_to_end/test_type_bound_methods.py),
+[`test_default_constructors_and_finalizers.py`](../../../tests/fortran/derived_types/end_to_end/test_default_constructors_and_finalizers.py),
+[`test_borrowed_components.py`](../../../tests/fortran/derived_types/end_to_end/test_borrowed_components.py), and
+[`test_inheritance_and_polymorphism.py`](../../../tests/fortran/derived_types/end_to_end/test_inheritance_and_polymorphism.py).
+Exact class-method and constructor overloads, including explicit bound
+construction, are covered by
+[`test_edited_class_surfaces.py`](../../../tests/fortran/pyi_contracts/functions_and_classes/end_to_end/test_edited_class_surfaces.py).
 
 When class behavior changes, update this page with the derived-type user guide,
 semantic `.pyi` reference, generated contract fixtures, and ownership evidence.

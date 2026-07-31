@@ -15,7 +15,9 @@ def _real_library_cache_module():
     repo_root = Path(__file__).resolve().parents[1]
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
-    return importlib.import_module("tests.wrapper.fortran.real_libraries.test_real_blas_lapack")
+    return importlib.import_module(
+        "tests.fortran.building_shared_library.end_to_end.real_libraries.test_full_libraries"
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:

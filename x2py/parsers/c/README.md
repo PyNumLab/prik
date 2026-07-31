@@ -24,8 +24,8 @@ the package root.
 - Public reference: `docs/developer/c-parser-reference.md`
 - User recipe: `docs/user/examples/recipes/inspect-c-api.md`
 - Source navigation: `docs/developer/source-map.md`, `docs/developer/feature-to-code-map.md`
-- Parser tests: `tests/parser/c/`
-- Semantic handoff tests: `tests/semantics/conversion/c/`
+- Parser tests: `tests/c/fixtures/parser/`
+- Semantic handoff tests: `tests/c/semantics/conversion/`
 
 Runtime C-input wrapping is future backend work. Keep C docs clear about the
 current boundary: parse, semantic IR, and `.pyi` are implemented;

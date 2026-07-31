@@ -120,8 +120,8 @@ Runtime wrapper tests are organized by stable subjects under
   `tests/wrapper/fortran/README.md`.
 - [x] Native wrapper source fixtures live under shared `tests/data/fortran/`
   corpora: ordinary wrapper fixtures use `tests/data/fortran/wrapper/`, and
-  real-library evidence reads `tests/data/fortran/blas/` and
-  `tests/data/fortran/lapack/` directly. The wrapper test tree contains no
+  real-library evidence reads `tests/fortran/building_shared_library/end_to_end/real_libraries/blas/native/` and
+  `tests/fortran/building_shared_library/end_to_end/real_libraries/lapack/native/` directly. The wrapper test tree contains no
   Fortran source files.
 - [x] Runtime wrapper tests resolve native fixtures through
   `tests/wrapper/fortran/_support.py`, so moved tests no longer depend on
@@ -131,23 +131,27 @@ Runtime wrapper tests are organized by stable subjects under
   `build_from_pyi/contracts/runtime_abi/fruntime_abi_f90.pyi`,
   `build_from_pyi/modified_contracts/basic_subroutine/flatten_m1.pyi`,
   `build_from_pyi/modified_contracts/basic_subroutine/alias_increment.pyi`,
-  and `build_from_pyi/invalid_contracts/projection_metadata/incomplete_native_call.pyi`.
+  and
+  `tests/fortran/semantic_pyi_format/pipeline/fixtures/invalid/projection_metadata/incomplete_native_call.pyi`.
 - [x] Generated `.pyi` packages are checked fixtures. Runtime wrapper contract
   packages live under
   `tests/wrapper/fortran/<subject>/contracts/<case>/`; explicit
   `--pyi --out` package-shape fixtures that do not compile wrappers live under
-  `tests/pyi/fixtures/wrapper_contracts/`. Refresh is explicit through
+  `tests/fortran/semantic_pyi_format/pipeline/fixtures/contracts/`.
+  Refresh is explicit through
   `WRAPPER_UPDATE_PYI_FIXTURES=1`.
 - [x] Modified runtime fixtures use `.pyi`, record their intentional difference
   in the fixture text, and have runtime assertions for both the changed export
   contract and unaffected native behavior.
 - [x] `.py` files are rejected as semantic `.pyi` contract inputs by the Python
   API.
-- [x] `tests/pyi/fixtures/general/` remains the canonical exact `.pyi`
-  generation-regression suite and is not used for compiled runtime contract
-  fixtures.
+- [x] The reviewed packages under
+  `tests/fortran/semantic_pyi_format/pipeline/fixtures/contracts/`
+  are the canonical exact `.pyi` generation-regression corpus and are not used
+  as edited runtime contracts.
 - [x] Explicit Fortran `--pyi --out` package-shape fixtures that do not compile
-  runtime wrappers live under `tests/pyi/fixtures/wrapper_contracts/`.
+  runtime wrappers live under the owning semantic-format feature's `pipeline/`
+  fixture tree.
 - [x] `tests/wrapper/CHECKLIST_COVERAGE.md` maps roadmap subjects to exact test
   paths.
 - [x] `tests/wrapper/fortran/layout_rules/test_wrapper_guide_layout.py`
@@ -307,8 +311,9 @@ X2PY_C_DOCS_END -->
 ### Stage 6 — Replayable JSON, Native Compilation, And Makefiles
 
 Runtime evidence lives in
-`tests/wrapper/fortran/build_from_pyi/test_pyi_wrapper_builds.py` and CLI
-surface evidence lives in `tests/cli/`.
+`tests/fortran/building_shared_library/pipeline/test_pyi_build_modes.py`,
+`tests/fortran/semantic_pyi_format/end_to_end/`, and CLI surface
+evidence lives in `tests/cli/`.
 
 - [x] Python API `.pyi` builds accept output directory, extension naming,
   Makefile, verbose, and strict-wrapper-name controls. `--makefile` and
@@ -346,17 +351,19 @@ surface evidence lives in `tests/cli/`.
 ### Stage 7 — Library-Scale And Mixed-Bundle Evidence
 
 Real BLAS/LAPACK artifact-shape evidence lives in
-`tests/wrapper/fortran/real_libraries/test_real_blas_lapack.py`. Native
+`tests/fortran/building_shared_library/end_to_end/real_libraries/test_full_libraries.py`. Native
 bundle, order, transitive-library, and failure-path evidence lives in
-`tests/wrapper/fortran/real_libraries/test_stage7_native_bundles.py`.
+`tests/fortran/building_shared_library/end_to_end/test_native_bundles.py`.
 
-- [x] Full real BLAS and LAPACK source corpora under `tests/data/fortran/blas/`
-  and `tests/data/fortran/lapack/` each generate a checked, importable
-  contract package.
-- [x] The full generated BLAS and LAPACK contracts are compared against checked
-  wrapper fixtures under `tests/wrapper/fortran/real_libraries/contracts/blas/`
-  and `tests/wrapper/fortran/real_libraries/contracts/lapack/`; refresh is
-  explicit through `WRAPPER_UPDATE_PYI_FIXTURES=1`.
+- [x] Full real BLAS and LAPACK source corpora under `tests/fortran/building_shared_library/end_to_end/real_libraries/blas/native/`
+  and `tests/fortran/building_shared_library/end_to_end/real_libraries/lapack/native/`
+  each generate an importable intermediate contract package inside the pytest
+  temporary directory.
+- [x] The full generated BLAS and LAPACK contracts are audited dynamically for
+  root procedure counts, sentinel declarations, source-stem coverage, known
+  helper declarations, imported symbols, and representative runtime behavior.
+  Real-library evidence keeps no checked generated `.pyi`, edited `.pyi`, or
+  source-free replay fixture.
 - [x] The full-library evidence builds each full root procedure contract with
   `build_pyi_extension`, links it against a cached full native shared library,
   imports every generated root procedure through the normalized Python names,
@@ -419,7 +426,7 @@ X2PY_C_DOCS_END -->
   `x2py/parsers/pyi/parser.py` parses text/files to Python AST, and
   `x2py/semantics/pyi2ir.py` converts that AST into `SemanticModule` objects
   before semantic policy completion runs. Evidence:
-  `tests/parsing/pyi/test_python_ast_contracts.py::test_pyi_parser_returns_python_ast_only`,
+  `tests/fortran/semantic_pyi_format/parsing/test_python_ast_contracts.py::test_pyi_parser_returns_python_ast_only`,
   `x2py/semantics/README.md`, and
   `docs/maintainer/internal-architecture/pipeline-map.md`.
 - [x] Risky-but-explicit identity contracts document their exact behavior
@@ -434,7 +441,7 @@ X2PY_C_DOCS_END -->
   `Transfer("borrowed_view")` means no-copy shared storage; combining them on a
   writable native argument reports a direct `.pyi` contract error. Evidence:
   `docs/user/reference/semantic-pyi-format.md` and
-  `tests/semantics/conversion/pyi/test_types_and_values.py::test_convert_pyi_to_ir_rejects_immutable_writable_borrowed_view_argument`.
+  `tests/fortran/memory_management/semantics/test_memory_contract_semantics.py::test_convert_pyi_to_ir_rejects_immutable_writable_borrowed_view_argument`.
 - [x] Edited-contract misuse has a documented diagnostic model: loader errors,
   structural contract errors, wrapper-planning errors, and native artifact failures
   are separated, and diagnostics identify the contract path, declaration,
@@ -442,12 +449,13 @@ X2PY_C_DOCS_END -->
   loader semantic errors prefix messages with the `.pyi` contract path while
   syntax errors keep Python's filename field. Evidence:
   `docs/user/reference/semantic-pyi-format.md` and
-  `tests/semantics/conversion/pyi/test_pyi_conversion_imports_and_packages.py::test_pyi_file_to_semantic_module_and_modules_forward_module_name_encoding_and_filename`.
+  `tests/fortran/semantic_pyi_format/semantics/test_imports_and_packages.py::test_pyi_file_to_semantic_module_and_modules_forward_module_name_encoding_and_filename`.
 - [x] A modified module `.pyi` can remove a public function and hide public
   declarations with `@private` or `private[...]` while preserving unaffected
   runtime behavior. Evidence:
-  `tests/wrapper/fortran/edit_pyi_contracts/test_visibility_contracts.py` and
-  `tests/wrapper/fortran/edit_pyi_contracts/modified_contracts/module_variables_visibility/`.
+  `tests/fortran/pyi_contracts/exports_and_modules/end_to_end/test_visibility_and_initialization.py`
+  and
+  `tests/fortran/pyi_contracts/exports_and_modules/end_to_end/fixtures/edited_contracts/module_variables_visibility/`.
 - [x] A dedicated user guide documents the supported editable contract surface,
   including what users may remove, hide, add, rename, project, validate, make
   immutable, and declare as ownership/lifetime policy. It separates editable
@@ -460,40 +468,37 @@ X2PY_C_DOCS_END -->
   member, and individual overload candidate from the Python API. They can also
   add renamed `@bind(...)` declarations and a renamed module overload group
   without reparsing native source. Evidence:
-  `tests/wrapper/fortran/edit_pyi_contracts/test_surface_edit_contracts.py`,
-  `tests/wrapper/fortran/edit_pyi_contracts/modified_contracts/foverloads_pruned_surface/`,
-  `tests/wrapper/fortran/edit_pyi_contracts/modified_contracts/foverloads_without_constructor_member/`,
+  `tests/fortran/pyi_contracts/functions_and_classes/end_to_end/test_edited_class_surfaces.py`
   and
-  `tests/wrapper/fortran/edit_pyi_contracts/modified_contracts/foverloads_added_bindings/`.
+  `tests/fortran/pyi_contracts/functions_and_classes/end_to_end/fixtures/edited_contracts/`.
 - [x] Module overload candidates can override the linked specific's native call
   with `@bind("native_generic")`, and the printer round-trips that metadata.
   Evidence:
-  `tests/semantics/conversion/pyi/test_classes_and_overloads.py::test_convert_pyi_to_ir_applies_module_overload_bind_and_round_trips_native_name`
+  `tests/fortran/pyi_contracts/functions_and_classes/semantics/test_method_and_constructor_contracts.py::test_bind_selects_module_method_and_constructor_overload_targets`
   and `docs/user/reference/semantic-pyi-format.md`.
 - [x] Explicit owner, transfer, and destruction triples are validated as a
   complete lifetime policy instead of independent switches. Supported triples
   remain codegen-ready; contradictory triples normalize to a blocked policy and
   fail before bridge source is emitted. Evidence:
-  `tests/semantics/policy/test_native_array_ownership.py::test_explicit_supported_ownership_triples_remain_codegen_ready`,
-  `tests/semantics/policy/test_native_array_ownership.py::test_contradictory_ownership_triples_fail_closed`,
-  `tests/wrapper/fortran/edit_pyi_contracts/test_policy_dispatch_contracts.py::test_contradictory_ownership_contract_fails_before_bridge_generation`,
+  `tests/fortran/pointers/policy/test_pointer_ownership_policy.py::test_explicit_supported_ownership_triples_remain_codegen_ready`,
+  `tests/fortran/pointers/policy/test_pointer_ownership_policy.py::test_contradictory_ownership_triples_fail_closed`,
   and
-  `tests/wrapper/fortran/edit_pyi_contracts/invalid_contracts/contradictory_ownership/`.
+  `tests/fortran/memory_management/policy/test_memory_ownership_policy.py::test_contradictory_ownership_contract_fails_before_lowering`.
 - [x] Every ownership transfer mode and destruction responsibility documented
   in
   [Semantic `.pyi` format](../../user/reference/semantic-pyi-format.md#ownership-transfer-and-destruction-policies)
   resolves during policy completion to either a concrete codegen action or a
   fail-closed blocker. Evidence:
-  `tests/semantics/policy/test_native_array_ownership.py::test_documented_transfer_and_destruction_modes_resolve_or_fail_closed`.
+  `tests/fortran/pointers/policy/test_pointer_ownership_policy.py::test_documented_transfer_and_destruction_modes_resolve_or_fail_closed`.
 - [x] One editable ownership fixture proves three lifetimes for the same
   rank-one `Float64` array concept: native-owned borrowed module storage,
   wrapper-owned borrowed component storage, and Python/NumPy-owned copy-return
   storage. A second fixture proves wrapper-owned borrowed children retain the
   owner and finalize exactly once. Evidence:
-  `tests/wrapper/fortran/edit_pyi_contracts/test_ownership_contracts.py`,
-  `tests/wrapper/fortran/edit_pyi_contracts/modified_contracts/fallocatable_views_explicit_ownership/`,
+  `tests/fortran/allocatables/end_to_end/test_edited_ownership.py`,
+  `tests/fortran/allocatables/end_to_end/fixtures/edited_contracts/explicit_ownership/`,
   and
-  `tests/wrapper/fortran/edit_pyi_contracts/modified_contracts/fborrowed_finalizer_explicit_ownership/`.
+  `tests/fortran/memory_management/end_to_end/test_explicit_borrowed_owner.py`.
 - [x] `Immutable` writable scalar, string, array, and supported derived-type
   output contracts use policy-selected mutable native temporaries, return
   replacements, and do not mutate the original Python-visible value. Immutable
@@ -521,8 +526,11 @@ X2PY_C_DOCS_END -->
   `docs/user/reference/pyi-contracts/`,
   `tests/wrapper/fortran/edit_pyi_contracts/`,
   `tests/semantics/policy/`,
-  `tests/wrapper/fortran/runtime_behavior/test_runtime_policy_decorators.py`,
-  `tests/wrapper/fortran/build_from_pyi/test_pyi_wrapper_builds.py`, and
+  `tests/fortran/error_handling/semantics/test_status_contract_semantics.py`,
+  `tests/fortran/error_handling/wrapper_codegen/test_status_error_lowering.py`,
+  `tests/fortran/error_handling/end_to_end/test_status_projection.py`,
+  `tests/fortran/building_shared_library/pipeline/test_pyi_build_modes.py`,
+  `tests/fortran/pyi_contracts/exports_and_modules/`, and
   `tests/wrapper/CHECKLIST_COVERAGE.md`.
 
 <!-- X2PY_C_DOCS_START
@@ -548,7 +556,7 @@ X2PY_C_DOCS_END -->
   `tests/semantics/policy/`,
   `tests/wrapper_codegen/`,
   `tests/wrapper/fortran/derived_types/test_derived_layout.py`, and
-  `tests/wrapper/fortran/edit_pyi_contracts/test_ownership_contracts.py`.
+  `tests/fortran/memory_management/end_to_end/test_explicit_borrowed_owner.py`.
 X2PY_C_DOCS_END -->
 
 ### Immutable Native Contract
@@ -622,14 +630,13 @@ Make generated contracts complete and reproducible before composing them.
   declarations. That root contract is the sole wrapper input.
 - [x] Standalone fixed-form and free-form procedures emit non-empty `.pyi`
   contracts with explicit `@external` placement.
-- [x] General parser fixtures check in generated source-owned contract
-  directories under `tests/pyi/fixtures/general/`; explicit `--pyi --out`
-  package fixtures live under `tests/pyi/fixtures/wrapper_contracts/`; runtime
-  parity fixtures live under the consuming `tests/wrapper/fortran/<subject>/`
-  `contracts/` tree as they are added.
-- [x] The general fixture suite and runtime parity baseline compare regenerated
-  `.pyi` text exactly with the checked-in contract, so generator drift is
-  explicit in review.
+- [x] The semantic-format feature checks in representative source-owned
+  contract packages under its `pipeline/fixtures/contracts/` tree; runtime
+  parity fixtures live under the consuming feature's `contracts/` tree as they
+  are added.
+- [x] The reviewed semantic-format package corpus and runtime parity baselines
+  compare regenerated `.pyi` text exactly with the checked-in contract, so
+  generator drift is explicit in review.
 ### Single-Entry Assembly And Extension Identity
 
 Compose complete contract graphs from one explicit entry. The old plan for

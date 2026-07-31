@@ -572,7 +572,14 @@ class FortranSourcePrinter(ClassVisitor):
             opening = "[" if item_index == 0 else ""
             closing = "]" if item_index == last_item_index else ""
             ending = self._continued_item_ending(item_index == last_item_index, last_argument, suffix)
-            lines.append(f"  & {opening}{item}{closing}{ending}")
+            rendered = f"  & {opening}{item}{closing}{ending}"
+            factors = tuple(factor.strip() for factor in item.split(" * "))
+            if len(rendered) <= self._LINE_LIMIT or len(factors) == 1:
+                lines.append(rendered)
+                continue
+            lines.append(f"  & {opening}{factors[0]} * &")
+            lines.extend(f"  & {factor} * &" for factor in factors[1:-1])
+            lines.append(f"  & {factors[-1]}{closing}{ending}")
         return tuple(lines)
 
     def _continued_parenthesized_lines(
@@ -599,9 +606,12 @@ class FortranSourcePrinter(ClassVisitor):
 
     def _array_constructor_items(self, expression: str) -> tuple[str, ...] | None:
         """Return simple array-constructor items that need their own lines."""
-        if not (expression.startswith("[") and expression.endswith("]") and "," in expression):
+        if not (expression.startswith("[") and expression.endswith("]")):
             return None
-        return tuple(item.strip() for item in expression[1:-1].split(","))
+        content = expression[1:-1]
+        if not content:
+            return None
+        return tuple(item.strip() for item in content.split(","))
 
     def _parenthesized_items(
         self,

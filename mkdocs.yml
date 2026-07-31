@@ -162,8 +162,8 @@ nav:
           - Symbol Tables: maintainer/internal-architecture/symbol-tables.md
       - Roadmaps:
           - Overview: maintainer/roadmap/index.md
+          - Language-First Test Suite and Fortran Cleanup: maintainer/roadmap/fortran-test-suite-cleanup-checklist.md
           - Documentation Content: maintainer/roadmap/documentation-content-checklist.md
           - Semantic .pyi Wrapper: maintainer/roadmap/semantic-pyi-wrapper-checklist.md
           - Native Array Handles: maintainer/roadmap/native-array-handle-checklist.md
           - Wrapper Plan Migration: maintainer/roadmap/wrapper-plan-migration-checklist.md
-          - Test Suite Organization: maintainer/roadmap/test-suite-organization-checklist.md

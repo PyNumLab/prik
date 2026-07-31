@@ -1,0 +1,53 @@
+name: Static Analysis
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - main
+      - release/*
+  workflow_call:
+
+jobs:
+  static-analysis:
+    name: Python 3.12
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install QA dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[qa]"
+      - name: Verify static-analysis versions
+        run: python tools/check_static_analysis_versions.py
+      - name: Ruff lint
+        run: python -m ruff check .
+      - name: Ruff format
+        run: python -m ruff format --check .
+      - name: Wrapper-plan generator contracts
+        run: python tools/check_wrapper_codegen_complexity.py
+      - name: Bandit security scan
+        run: python -m bandit -c pyproject.toml -r c_parser fortran_parser semantics x2py --severity-level medium --confidence-level medium
+      - name: Vulture dead-code scan
+        run: python -m vulture
+      - name: Radon complexity policy
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: python tools/check_radon_policy.py --base-ref auto
+      - name: Radon complexity report
+        continue-on-error: true
+        run: python -m radon cc c_parser fortran_parser semantics x2py -n C -s --total-average
+      - name: Radon maintainability report
+        continue-on-error: true
+        run: python -m radon mi c_parser fortran_parser semantics x2py -s

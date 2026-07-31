@@ -1,0 +1,13 @@
+from x2py.contracts import Addr, Arg, Float64, Int32, Returns, native_call
+
+@native_call([Arg(0), Addr(Arg(1))])
+def mutate_optional(
+    values: Float64[::] = ...,
+    amount: Float64 = ...
+) -> None: ...
+
+@native_call([Addr(Arg(0)), Arg(1)])
+def fill_optional(
+    n: Int32,
+    values: Float64[::] = ...
+) -> Returns["values", Float64[::]] | None: ...

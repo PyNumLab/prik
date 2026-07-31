@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from pathlib import Path
+import re
 import sys
 import sysconfig
 
@@ -35,17 +36,31 @@ def _python_library_name(config: dict[str, object]) -> str | None:
     return None
 
 
+def _python_include_directories(config: dict[str, object]) -> tuple[str, ...]:
+    """Return Python header roots, including a delegated multiarch root."""
+    include_dirs = [numpy_include()]
+    include = config.get("INCLUDEPY")
+    if not isinstance(include, str) or not include:
+        return tuple(include_dirs)
+
+    include_path = Path(include)
+    include_dirs.append(include)
+    multiarch = config.get("MULTIARCH")
+    if isinstance(multiarch, str) and multiarch:
+        multiarch_root = include_path.parent / multiarch
+        delegated = multiarch_root / include_path.name / "pyconfig.h"
+        if delegated.is_file():
+            include_dirs.extend((str(include_path.parent), str(multiarch_root)))
+    return tuple(dict.fromkeys(include_dirs))
+
+
 def _python_build_settings() -> dict[str, object]:
     """Collect the active interpreter's headers, extension suffix, and link input."""
     config = dict(sysconfig.get_config_vars())
-    include_dirs = [numpy_include()]
-    include = config.get("INCLUDEPY")
-    if isinstance(include, str) and include:
-        include_dirs.append(include)
 
     python_settings: dict[str, object] = {
         "flags": (*_words(config.get("CFLAGS")), *_words(config.get("CC"))[1:]),
-        "include": tuple(include_dirs),
+        "include": _python_include_directories(config),
         "shared_suffix": str(config.get("EXT_SUFFIX") or ".so"),
     }
     settings: dict[str, object] = {"libs": _words(config.get("LIBM")), "python": python_settings}
@@ -271,3 +286,22 @@ available_compilers = {
 }
 
 vendors = tuple(available_compilers)
+
+_FORTRAN_COMPILER_FAMILIES = (
+    ("nvfortran", "nvidia", "nvc"),
+    ("pgfortran", "PGI", "pgcc"),
+    ("gfortran", "GNU", "gcc"),
+    ("flang", "LLVM", "clang"),
+    ("ifort", "intel", "icx"),
+    ("ifx", "intel", "icx"),
+)
+
+
+def fortran_compiler_family(executable: str) -> tuple[str, str, str]:
+    """Return the compiler token, profile, and matching C executable name."""
+    name = Path(executable).name
+    for token, vendor, c_executable in _FORTRAN_COMPILER_FAMILIES:
+        if re.search(rf"(?:^|-){re.escape(token)}(?:-|$)", name):
+            return token, vendor, c_executable
+    supported = ", ".join(token for token, _vendor, _c_executable in _FORTRAN_COMPILER_FAMILIES)
+    raise ValueError(f"Unknown Fortran compiler family for {executable!r}; expected one of: {supported}")

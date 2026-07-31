@@ -15,7 +15,8 @@ semantic IR, emits editable `.pyi` interfaces, and reports unsupported or
 incomplete contracts before code generation.
 X2PY_C_DOCS_END -->
 
-[![Quality](https://github.com/PyNumLab/x2py/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/PyNumLab/x2py/actions/workflows/quality.yml)
+[![Tests](https://github.com/PyNumLab/x2py/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/PyNumLab/x2py/actions/workflows/tests.yml)
+[![Static Analysis](https://github.com/PyNumLab/x2py/actions/workflows/static-analysis.yml/badge.svg?branch=main)](https://github.com/PyNumLab/x2py/actions/workflows/static-analysis.yml)
 [![codecov](https://codecov.io/gh/PyNumLab/x2py/graph/badge.svg?token=QZRRCS5YO6)](https://codecov.io/gh/PyNumLab/x2py)
 
 [Read the documentation](https://pynumlab.github.io/x2py/) for installation,
@@ -31,7 +32,7 @@ python3 -m x2py points.f90 --out geometry
 
 Create `points.f90`:
 
-<!-- x2py-doc-source: tests/data/fortran/wrapper/home_points.f90 -->
+<!-- x2py-doc-source: tests/fortran/building_shared_library/end_to_end/fixtures/native/home_points.f90 -->
 ```fortran
 module points
   implicit none
@@ -92,8 +93,10 @@ shows the available edits.
 
 ## Installation & Quick Start
 
-x2py requires **Python 3.10 or newer**, GNU Fortran, Python development
-headers, NumPy, and standard build tools.
+x2py requires **Python 3.10 or newer**, NumPy, Python development headers,
+standard build tools, and Fortran and C compilers. GNU Fortran is the default
+and is tested on Linux and macOS. LLVM Flang is tested on both platforms;
+Intel IFX is tested on Linux.
 
 Clone the repository and install x2py in a virtual environment:
 
@@ -315,10 +318,10 @@ fixture, inspect semantic IR, and generate its `.pyi`:
 X2PY_C_DOCS_END -->
 
 <!-- X2PY_C_DOCS_START
-Input (`tests/data/c/general/math_api.h`):
+Input (`tests/c/fixtures/native/general/math_api.h`):
 X2PY_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_DISABLED: x2py-doc-source: tests/data/c/general/math_api.h -->
+<!-- X2PY_C_DOCS_DISABLED: x2py-doc-source: tests/c/fixtures/native/general/math_api.h -->
 <!-- X2PY_C_DOCS_START
 ```c
 #ifndef X2PY_GENERAL_MATH_API_H
@@ -336,14 +339,14 @@ X2PY_C_DOCS_END -->
 <!-- X2PY_C_DOCS_DISABLED: x2py-doc-test: exact -->
 <!-- X2PY_C_DOCS_START
 ```bash
-python3 -m x2py tests/data/c/general/math_api.h &#45;&#45;language c &#45;&#45;parse
+python3 -m x2py tests/c/fixtures/native/general/math_api.h &#45;&#45;language c &#45;&#45;parse
 ```
 X2PY_C_DOCS_END -->
 
 <!-- X2PY_C_DOCS_DISABLED: x2py-doc-test-output -->
 <!-- X2PY_C_DOCS_START
 ```text
-File: tests/data/c/general/math_api.h
+File: tests/c/fixtures/native/general/math_api.h
   Language: c
   Functions: 4
   Structs: 0
@@ -360,14 +363,14 @@ X2PY_C_DOCS_END -->
 <!-- X2PY_C_DOCS_DISABLED: x2py-doc-test: run -->
 <!-- X2PY_C_DOCS_START
 ```bash
-python3 -m x2py tests/data/c/general/math_api.h &#45;&#45;language c &#45;&#45;semantics
+python3 -m x2py tests/c/fixtures/native/general/math_api.h &#45;&#45;language c &#45;&#45;semantics
 ```
 X2PY_C_DOCS_END -->
 
 <!-- X2PY_C_DOCS_DISABLED: x2py-doc-test: run -->
 <!-- X2PY_C_DOCS_START
 ```bash
-python3 -m x2py tests/data/c/general/math_api.h &#45;&#45;language c &#45;&#45;pyi
+python3 -m x2py tests/c/fixtures/native/general/math_api.h &#45;&#45;language c &#45;&#45;pyi
 ```
 X2PY_C_DOCS_END -->
 
@@ -380,7 +383,7 @@ X2PY_C_DOCS_END -->
 <!-- X2PY_C_DOCS_DISABLED: x2py-doc-test-output -->
 <!-- X2PY_C_DOCS_START
 ```text
-File: tests/data/c/general/math_api.h
+File: tests/c/fixtures/native/general/math_api.h
   Source: c
   Semantic modules: math_api
 ```
@@ -474,6 +477,17 @@ Run the full suite from the repository root:
 ```bash
 PYTHONPATH=. python3 -m pytest -q
 ```
+
+## License
+
+x2py is distributed under the [MIT License](LICENSE).
+Copyright (c) 2026 Said Hadjout.
+
+Using x2py does not impose the MIT License on the user's native sources or on
+wrapper code derived from those inputs. Users may distribute generated
+wrappers under terms of their choice. Files copied from x2py's
+`binding_support/` package remain MIT-licensed and must retain the included
+license notice when redistributed.
 
 ## Documentation
 

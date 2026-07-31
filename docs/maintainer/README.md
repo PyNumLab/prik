@@ -27,6 +27,7 @@ not part of the user learning sequence or the ordinary contributor workflow.
 ## Planning
 
 - [Roadmap](roadmap/index.md)
+- [Language-first test suite and Fortran pipeline cleanup](roadmap/fortran-test-suite-cleanup-checklist.md)
 - [Semantic `.pyi` wrapper checklist](roadmap/semantic-pyi-wrapper-checklist.md)
 - [Native array handle checklist](roadmap/native-array-handle-checklist.md)
 - [Documentation content checklist](roadmap/documentation-content-checklist.md)

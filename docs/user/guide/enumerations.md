@@ -66,9 +66,11 @@ print(result)                    # 10
 
 ## Key Points
 
-- Enumerators become **read-only** constants on the module.
+- Enumerators become module constants declared with `Final[...]` in the
+  generated semantic `.pyi`; the native enumerator value cannot change.
 - They use the resolved integer dtype (usually `Int32`).
-- Assigning to them in Python only creates a local shadow — it does **not** change the native value.
+- Rebinding an imported name in Python only creates a local shadow — it does
+  **not** change the native value.
 - No automatic runtime validation — passing any integer of the correct dtype works.
 - Static type checkers see them as integer constants.
 

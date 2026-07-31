@@ -21,75 +21,10 @@ to see.
 This reference covers the implemented wrapper for Fortran source inputs.
 
 <!--
-Current wrapper runtime subject paths. This hidden inventory keeps the reference's
-support map tied to the checked runtime suite without adding test-maintenance
-detail to the user page.
-
-build_from_source/test_build_modes.py
-build_from_source/test_compiler_verbose.py
-build_from_source/test_source_generated_pyi_contracts.py
-build_from_source/test_runtime_abi.py
-build_from_pyi/test_contract_package_runtime.py
-build_from_pyi/test_pyi_wrapper_builds.py
-multiple_files/test_multi_source_builds.py
-external_routines/test_external_procedures.py
-real_libraries/test_real_blas_lapack.py
-real_libraries/test_stage7_native_bundles.py
-edit_pyi_contracts/test_native_order_contracts.py
-edit_pyi_contracts/test_ownership_contracts.py
-edit_pyi_contracts/test_policy_dispatch_contracts.py
-edit_pyi_contracts/test_surface_edit_contracts.py
-edit_pyi_contracts/test_visibility_contracts.py
-arrays/test_array_contracts.py
-arrays/test_array_results.py
-arrays/test_assumed_rank_arrays.py
-arrays/test_array_generated_pyi_contracts.py
-arrays/test_multidimensional_arrays.py
-scalars/test_fortran_enums.py
-scalars/test_scalar_boundary_plan.py
-scalars/test_scalar_generated_pyi_contracts.py
-scalars/test_scalar_kinds.py
-scalars/test_value_and_bind_c.py
-scalars/test_verified_baseline.py
-function_calls/test_function_call_generated_pyi_contracts.py
-function_calls/test_native_call_examples.py
-function_calls/test_optional_arguments.py
-function_calls/test_output_arguments.py
-function_calls/test_scalar_writeback_plan.py
-strings/test_character_arguments.py
-strings/test_character_edge_cases.py
-strings/test_string_generated_pyi_contracts.py
-derived_types/test_borrowed_finalizers.py
-derived_types/test_constructors_and_finalizers.py
-derived_types/test_derived_layout.py
-derived_types/test_derived_type_boundaries.py
-derived_types/test_derived_type_generated_pyi_contracts.py
-derived_types/test_derived_type_methods.py
-derived_types/test_phase8_derived_plan.py
-derived_types/test_phase9_bound_constructors.py
-derived_types/test_scalar_derived_actual_dummy_matrix.py
-derived_types/test_inheritance.py
-derived_types/test_pointers.py
-callbacks/test_all_callback_shapes.py
-callbacks/test_array_callbacks.py
-callbacks/test_callback_generated_pyi_contracts.py
-callbacks/test_derived_callbacks.py
-callbacks/test_scalar_callbacks.py
-module_state/test_allocatable_replacement.py
-module_state/test_allocatable_views.py
-module_state/test_common_blocks.py
-module_state/test_module_state_generated_pyi_contracts.py
-module_state/test_module_state.py
-module_state/test_scalar_module_variable_plan.py
-runtime_behavior/test_openmp_runtime.py
-runtime_behavior/test_runtime_behavior_generated_pyi_contracts.py
-runtime_behavior/test_runtime_policies.py
-runtime_behavior/test_runtime_recursion.py
-naming/test_defined_operators.py
-naming/test_generic_interfaces.py
-naming/test_naming_generated_pyi_contracts.py
-naming/test_phase9_class_overloads.py
-naming/test_visibility_naming.py
+Exact evidence for every maintained subject is indexed by
+../../../tests/fortran/CONTRACT_COVERAGE.md. Runtime cases live under
+../../../tests/fortran/<feature>/end_to_end/, while stage-specific
+evidence lives beside them under the documented pipeline-stage directories.
 -->
 
 <!-- X2PY_C_DOCS_START
@@ -159,7 +94,7 @@ X2PY_C_DOCS_END -->
 Build the checked scalar example:
 
 ```bash
-python3 -m x2py tests/data/fortran/wrapper/fruntime_abi_f90.f90 \
+python3 -m x2py tests/fortran/building_shared_library/end_to_end/fixtures/native/fruntime_abi_f90.f90 \
   --out-dir build/fruntime_abi
 ```
 
@@ -245,6 +180,12 @@ Typical generated artifacts are:
 | `<module>_wrapper.c` and `.h` | CPython extension binding |
 X2PY_C_DOCS_END -->
 
+Using x2py does not impose x2py's MIT License on user-supplied native sources
+or on wrapper code derived from those inputs. Users may distribute generated
+wrappers under terms of their choice. The native support files copied into
+`binding_support/` remain MIT-licensed; the copied directory includes the
+license notice that must be retained when those files are redistributed.
+
 The extension name comes from the first source filename. Contained Fortran
 modules become child Python namespaces and standalone procedures remain at the
 extension root. For example, `solver.f90` containing module `kernels` exposes
@@ -310,10 +251,22 @@ python3 -m x2py solver.f90 \
 
 `--compiler` selects the input-language compiler used for preprocessing,
 datatype measurement, native and generated-bridge compilation, and extension
-linking. x2py selects the compiler for its generated binding from the active
-compiler profile. `-I` is passed to preprocessing and to native, bridge, and
-binding compilation. The library is kept separate from compiler flags because
-`--native-library openblas` must become `-lopenblas` on the final link command.
+linking. It also selects the matching C compiler profile for the generated
+binding: `gfortran` uses `gcc`, `ifx` or `ifort` uses `icx`, `flang` uses
+`clang`, `nvfortran` uses `nvc`, and `pgfortran` uses `pgcc`. x2py fails when
+the selected compiler family is unknown or the matching C compiler is
+unavailable; it does not silently build a mixed-vendor wrapper. Python supplies
+the binding headers and link metadata, while binding compiler flags come from
+the selected vendor profile rather than Python's own build compiler. `-I` is
+passed to preprocessing and to native, bridge, and binding compilation. The
+library is kept separate from compiler flags because `--native-library
+openblas` must become `-lopenblas` on the final link command.
+
+The maintained Linux alternate-toolchain smoke lanes pin Intel IFX/ICX
+2026.1.1 and LLVM Flang/Clang 22.1.8. Flang preprocessing uses `-P` and keeps
+the resulting marker-free source in memory. These versions are reproducible CI
+pins rather than minimum-version promises; other versions remain supported
+only when the same profile and strict smoke contracts pass.
 
 The current `.pyi` build subset requires the contract filename stem to match
 the native Fortran module name. Supply the native module file directory as an
@@ -407,7 +360,7 @@ The equivalent Python entrypoint returns structured artifact paths:
 from x2py import build_fortran_extension
 
 result = build_fortran_extension(
-    "tests/data/fortran/wrapper/fruntime_abi_f90.f90",
+    "tests/fortran/building_shared_library/end_to_end/fixtures/native/fruntime_abi_f90.f90",
     output_dir="build/fruntime_abi",
 )
 print(result.module_name)
@@ -699,8 +652,8 @@ values: Annotated[
 Metadata describes policy; it does not create backend support. Pointer metadata,
 for example, must still provide the required shape, nullability, target owner,
 lifetime, and release facts. It can select implemented descriptor extraction or
-policy-gated operations, but it cannot manufacture stable owner storage for a
-pointer-array result.
+policy-gated operations, but it cannot extend a pointer target's lifetime or
+manufacture proof of target ownership.
 
 The Semantic `.pyi` Format reference later gives canonical spellings and
 examples for every `Transfer(...)` and `Destruction(...)` mode.
@@ -1134,7 +1087,7 @@ such a proxy raises `ReferenceError`.
 
 The full compatibility matrix includes `TARGET`, `VALUE`, empty state, pointer
 `INTENT(IN)`, and deliberate incompatibilities. See
-[Derived Objects And Native Dummies](../guide/memory-management.md#derived-objects-and-native-dummies).
+[Derived Objects And Fields](../guide/memory-management.md#derived-objects-and-fields).
 
 
 ## Pointer Arguments, Results, And Association
@@ -1647,13 +1600,11 @@ covered in [Runtime Errors, The GIL, OpenMP, And Concurrency](#runtime-errors-th
 
 ## Fortran Enums
 
-<!-- X2PY_C_DOCS_START
 `enum, bind(C)` enumerators become ordinary typed integer constants. x2py does
-not generate Python `Enum` or `IntEnum` classes, and enum-typed arguments,
-results, fields, and variables remain ordinary integer types.
-X2PY_C_DOCS_END -->
+not generate Python `Enum` or `IntEnum` classes. Procedure arguments, results,
+fields, and variables that carry enumerator values remain ordinary integer
+types.
 
-<!-- X2PY_C_DOCS_START
 ```fortran
 enum, bind(C)
   enumerator :: red = 1
@@ -1661,7 +1612,6 @@ enum, bind(C)
   enumerator :: invalid = -1
 end enum
 ```
-X2PY_C_DOCS_END -->
 
 The generated semantic stub preserves the values:
 
@@ -1673,9 +1623,11 @@ blue: Final[Int32] = 2
 invalid: Final[Int32] = -1
 ```
 
-<!-- X2PY_C_DOCS_START
 The underlying `bind(C)` integer representation is retained as metadata. The
-same integer-constant surface applies to C enums.
+underlying procedure and field surface remains the resolved integer dtype.
+
+<!-- X2PY_C_DOCS_START
+The same integer-constant surface applies to C enums.
 X2PY_C_DOCS_END -->
 
 
@@ -1751,7 +1703,9 @@ remain blocked until an explicit field and encoding policy exists.
 ## Scalar Types And Kind Coverage
 
 Wrapper builds use compiler probing rather than assuming that a Fortran kind
-number equals a byte width.
+number equals a byte width. Character is not included in `storage_size`
+probing: its semantic family is always `String`, and its element length is
+tracked independently from the declaration or runtime descriptor.
 
 The supported scalar storage subset is:
 
@@ -1763,6 +1717,17 @@ The supported scalar storage subset is:
 - default logical results and the one-byte Boolean path used by
   `logical(c_bool)` and compiler-confirmed `logical*1` arrays;
 X2PY_C_DOCS_END -->
+
+Direct Boolean function results use a normalized bridge ABI. The native result
+is first stored as `logical(c_bool)`, then the Fortran bridge returns its low
+truth bit as `integer(c_int8_t)`. The C binding explicitly converts that `0` or
+`1` value to `bool`. This prevents processor-specific noncanonical logical bit
+patterns from being interpreted as C truth values while leaving native
+Fortran logical evaluation unchanged.
+
+Mutable ordinary Boolean array buffers use the same low-bit rule on writeback.
+After the native call, the bridge normalizes every returned byte with
+`iand(value, 1_c_int8_t)` before Python observes the NumPy buffer.
 
 <!-- X2PY_C_DOCS_START
 `iso_fortran_env` names such as `int8`, `int16`, `int32`, `int64`, `real32`, and
@@ -2236,7 +2201,7 @@ This chapter groups behavior for which implementation or policy is incomplete.
 These items are not enabled by parser support or by editing metadata unless the
 backend contract described here is also implemented.
 
-### Pointer Views, Results, And Reassociation
+### Pointer Views And Reassociation
 
 Module and derived-field pointer handles can expose borrowed NumPy views when
 completed policy proves descriptor extraction, target owner, lifetime, shape,
@@ -2245,10 +2210,12 @@ The handle retains the descriptor owner, but x2py cannot invalidate an existing
 NumPy view after native reassociation, nullification, owner destruction, or
 target reallocation. Discard old views after those operations.
 
-Pointer-array results remain blocked until stable owner storage and target
-lifetime are available. Persistent reassociation and pointer-driven allocation,
-deallocation, or resize require explicit completed policy; wrapper planning blocks an
-unproved request instead of guessing ownership.
+Pointer-array results use wrapper-owned persistent descriptor storage without
+claiming ownership of the target. The native API must still provide a target
+whose lifetime outlives every use through the returned handle. Persistent
+reassociation and pointer-driven allocation, deallocation, or resize require
+explicit completed policy; wrapper planning blocks an unproved request instead
+of guessing ownership.
 
 ### Advanced Multi-Source Integration
 
@@ -2257,12 +2224,12 @@ The basic caller-ordered multi-source build is supported, but x2py does not yet:
 - resolve every renamed or `only` import collision while merging wrapped
   modules;
 - expose submodule and separate-module procedures as additional public API; or
-- accept prebuilt Fortran module and library search paths as part of wrapper
-  compilation.
+- discover or infer prebuilt Fortran module and library search paths.
 
-Callers currently provide compilable source files in valid order. A separate
-build system remains responsible for source discovery, dependency resolution,
-prebuilt module paths, and external library integration.
+Callers currently provide compilable source files in valid order and pass
+required module, include, library, and runtime-search paths explicitly. A
+separate build system remains responsible for source discovery, dependency
+resolution, and locating external artifacts.
 
 ### Persistent Callbacks And Procedure Pointers
 
@@ -2289,7 +2256,7 @@ wrappers:
 | Arrays | Assumed type `type(*)` | Runtime dtype and descriptor policy. |
 | Arrays | Character arrays not representable as fixed-width bytes dtype | Encoding, ABI, allocation, and ownership. |
 | Arrays | Derived-type arrays | Element layout, construction, destruction, aliasing, and copy/view behavior. |
-| Pointers | Pointer-array or scalar-derived pointer results and unproved reassociation or ownership-changing operations | Stable result owner storage, target lifetime, descriptor identity, or explicit operation policy. |
+| Pointers | Scalar-derived pointer results without stable typed holder storage, expired-target results, and unproved reassociation or ownership-changing operations | Stable target lifetime, descriptor identity, typed holder storage, or explicit operation policy. |
 | Polymorphism | Results, mutable dummies, arrays, allocatable/pointer scalars, `class(*)` | Dynamic type, allocation, replacement, and ownership. |
 | Constructors | Incomplete or indistinguishable constructor overload sets | Every candidate needs a complete exact runtime signature and compatible owner lifecycle. |
 | Characters | Mutable scalar allocatable character dummies and deferred-length mutable fields | Allocation, encoding, replacement, and destruction. |

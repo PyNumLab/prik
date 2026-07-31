@@ -14,6 +14,17 @@ deployment. The documentation workflow builds the same filtered MkDocs site
 that maintainers can preview locally, uploads the generated `site/` directory,
 and deploys it through GitHub Pages.
 
+## Test Platforms
+
+The `Tests` workflow runs the ordinary suite on Ubuntu with every supported
+Python version. It also runs the complete ordinary suite on macOS 15 with
+Python 3.12 and GNU Fortran 13, preceded by the portable compiler smoke tests.
+Both selections exclude `real_library`; BLAS and LAPACK run only in their
+dedicated Ubuntu workflow.
+
+The `Smoke Tests` workflow also runs LLVM Flang on macOS 15. Intel IFX remains
+Linux-only because Intel does not provide IFX for macOS.
+
 ## Documentation Publication
 
 The `Documentation` workflow runs for relevant pull requests, pushes to

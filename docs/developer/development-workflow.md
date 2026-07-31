@@ -32,7 +32,7 @@ python3 -m pip install -e ".[qa]"
 Run the smallest relevant test while iterating, then run the full suite:
 
 ```bash
-PYTHONPATH=. python3 -m pytest -q tests/cli/
+PYTHONPATH=. python3 -m pytest -q tests/fortran/command_line_interface/pipeline/
 PYTHONPATH=. python3 -m pytest -q
 ```
 
@@ -53,7 +53,7 @@ X2PY_C_DOCS_END -->
 
 For example, a new CLI stage option normally requires:
 
-1. A focused contract test in `tests/cli/`.
+1. A focused contract test in `tests/fortran/command_line_interface/pipeline/`.
 2. Dispatch or output routing in `x2py/cli.py`.
 3. Preprocessing tests if the option changes source loading.
 4. A copy-paste command in the relevant user guide or checked example.
@@ -101,7 +101,7 @@ X2PY_C_DOCS_END -->
 
 ### Automatically Verify Markdown Examples
 
-`tests/docs/test_examples.py` executes explicitly marked
+`tests/shared/docs/test_examples.py` executes explicitly marked
 `bash` CLI examples and `python` API snippets from `README.md` and Markdown
 files under `docs/`. Bash examples must be `python3 -m x2py` commands; the test replaces `python3`
 with the active test interpreter and runs them without a shell. It rejects
@@ -118,7 +118,7 @@ Mark a command that only needs to exit successfully:
 ````markdown
 <!-- x2py-doc-test: run -->
 ```bash
-python3 -m x2py semantics tests/data/fortran/general/basic_subroutine.f90
+python3 -m x2py semantics tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
 ```
 ````
 
@@ -127,12 +127,12 @@ Mark a command whose stdout must match the documentation exactly:
 ````markdown
 <!-- x2py-doc-test: exact -->
 ```bash
-python3 -m x2py parse tests/data/fortran/general/basic_subroutine.f90
+python3 -m x2py parse tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
 ```
 
 <!-- x2py-doc-test-output -->
 ```text
-File: tests/data/fortran/general/basic_subroutine.f90
+File: tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
 ...
 ```
 ````
@@ -148,7 +148,7 @@ When a command reads a checked fixture, include its source input in the user
 documentation and verify the displayed source against the fixture:
 
 ````markdown
-<!-- x2py-doc-source: tests/data/fortran/general/basic_subroutine.f90 -->
+<!-- x2py-doc-source: tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90 -->
 ```fortran
 module m1
 ...
@@ -169,7 +169,7 @@ and compare its complete output.
 Run the documentation checks directly:
 
 ```bash
-PYTHONPATH=. python3 -m pytest -q tests/docs/test_examples.py
+PYTHONPATH=. python3 -m pytest -q tests/shared/docs/test_examples.py
 ```
 
 ## References
@@ -205,26 +205,26 @@ implementation files.
 
 | User-visible area | Main implementation files | Main tests |
 | --- | --- | --- |
-| Fortran parse output | `x2py/parsers/fortran/parser.py`, `x2py/parsers/fortran/models.py`, `x2py/parsers/fortran/lexer.py` | `tests/parsing/fortran/`, `tests/parsing/fortran/test_fortran_fixture_suite.py`, `tests/parsing/fortran/test_error_handling.py` |
-| CLI stage selection and output | `x2py/cli.py`, `x2py/parsers/fortran/cli.py` | `tests/cli/` |
-| Fortran target type probing and cache | `x2py/probes/fortran_types.py` | `tests/probes/test_fortran_types.py` |
-| Generated target datatype mapping examples | `x2py/probes/report.py` | `tests/types/test_mapping_report.py`, `tests/docs/test_examples.py` |
-| Fortran to semantic IR | `x2py/semantics/fortran2ir.py`, `x2py/semantics/models.py` | `tests/semantics/conversion/fortran/` |
-| `.pyi` printing | `x2py/wrapper_codegen/printers/pyi_printer.py` | `tests/wrapper_codegen/printers/`, `tests/wrapper_codegen/printers/test_modern_example.py` |
-| `.pyi` parsing/loading/editing | `x2py/parsers/pyi/parser.py`, `x2py/pipeline/pyi.py`, `x2py/semantics/pyi2ir.py` | `tests/parsing/pyi/`, `tests/pipeline/pyi_builds/test_contract_fixtures.py` |
-| Semantic policy completion | `x2py/semantics/policy_completion.py`, `x2py/semantics/ownership.py` | `tests/semantics/policy/` |
-| Fortran wrapper orchestration | `x2py/pipeline/build.py` | `tests/wrapper/fortran/build_from_source/test_build_modes.py`, `tests/wrapper/fortran/multiple_files/test_multi_source_builds.py` |
-| Wrapper planning, owner-local errors, and direct lowering | `x2py/wrapper_codegen/plan.py`, `x2py/wrapper_codegen/planner.py`, `x2py/wrapper_codegen/generator.py` | `tests/wrapper_codegen/`, `tests/wrapper/` |
-| Native compilation and binding support | `x2py/compiling/`, `x2py/binding_support/` | `tests/wrapper/fortran/build_from_source/test_runtime_abi.py`, `tests/wrapper/fortran/build_from_source/test_build_modes.py` |
-| Executable Markdown examples | `README.md`, `docs/*.md` | `tests/docs/test_examples.py` |
+| Fortran parse output | `x2py/parsers/fortran/parser.py`, `x2py/parsers/fortran/models.py`, `x2py/parsers/fortran/lexer.py` | `tests/fortran/source_parsing/parsing/`, `tests/fortran/source_parsing/parsing/test_fortran_fixture_suite.py`, `tests/fortran/source_parsing/parsing/test_error_handling.py` |
+| CLI stage selection and output | `x2py/cli.py`, `x2py/parsers/fortran/cli.py` | `tests/fortran/command_line_interface/pipeline/` |
+| Fortran target type probing and cache | `x2py/probes/fortran_types.py` | `tests/fortran/data_types/probes/test_fortran_type_probes.py` |
+| Generated target datatype mapping examples | `x2py/probes/report.py` | `tests/shared/types/test_mapping_report.py`, `tests/shared/docs/test_examples.py` |
+| Fortran to semantic IR | `x2py/semantics/fortran2ir.py`, `x2py/semantics/models.py` | `tests/fortran/semantic_ir/semantics/` |
+| `.pyi` printing | `x2py/wrapper_codegen/printers/pyi_printer.py` | `tests/fortran/semantic_pyi_format/pipeline/`, `tests/fortran/semantic_pyi_format/pipeline/test_modern_example.py` |
+| `.pyi` parsing/loading/editing | `x2py/parsers/pyi/parser.py`, `x2py/pipeline/pyi.py`, `x2py/semantics/pyi2ir.py` | `tests/fortran/semantic_pyi_format/` |
+| Semantic policy completion | `x2py/semantics/policy_completion.py`, `x2py/semantics/ownership.py` | `tests/fortran/infrastructure/policy/` and feature-local `policy/` directories |
+| Fortran wrapper orchestration | `x2py/pipeline/build.py` | `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py`, `tests/fortran/building_shared_library/end_to_end/test_multi_source_builds.py` |
+| Wrapper planning, owner-local errors, and direct lowering | `x2py/wrapper_codegen/plan.py`, `x2py/wrapper_codegen/planner.py`, `x2py/wrapper_codegen/generator.py` | `tests/fortran/infrastructure/wrapper_codegen/`, feature-local `wrapper_codegen/` stages |
+| Native compilation and binding support | `x2py/compiling/`, `x2py/binding_support/` | `tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py`, `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py` |
+| Executable Markdown examples | `README.md`, `docs/*.md` | `tests/shared/docs/test_examples.py` |
 
 <!-- X2PY_C_DOCS_START
-| C parse output | `x2py/parsers/c/parser.py`, `x2py/parsers/c/models.py`, `x2py/parsers/c/lexer.py` | `tests/parsing/c/test_c_declarations_and_declarators.py`, `tests/parsing/c/test_c_fixture_suite.py`, `tests/parsing/c/test_c_error_fixture_suite.py` |
-| Compiler preprocessing | `x2py/pipeline/preprocessing.py` | `tests/pipeline/preprocessing/`, `tests/pipeline/preprocessing/test_parser_boundaries.py`, `tests/parsing/c/test_c_lexer_preprocessor.py` |
-| C target ABI probing and cache | `x2py/probes/c_types.py` | `tests/probes/test_c_types.py` |
-| C to semantic IR | `x2py/semantics/c2ir.py`, `x2py/semantics/models.py` | `tests/semantics/conversion/c/` |
-| Fortran-to-C bridge and CPython binding | `x2py/wrapper_codegen/fortran/bridge.py`, `x2py/wrapper_codegen/c/binding.py` | `tests/wrapper_codegen/`, `tests/wrapper/` subject suites |
-| Public API exports | `x2py/__init__.py` | `tests/parsing/fortran/test_public_entrypoints.py`, `tests/parsing/c/test_c_public_api_skeleton.py` |
+| C parse output | `x2py/parsers/c/parser.py`, `x2py/parsers/c/models.py`, `x2py/parsers/c/lexer.py` | `tests/c/parsing/test_c_declarations_and_declarators.py`, `tests/c/parsing/test_c_fixture_suite.py`, `tests/c/parsing/test_c_error_fixture_suite.py` |
+| Compiler preprocessing | `x2py/pipeline/preprocessing.py` | `tests/fortran/source_preprocessing/preprocessing/`, `tests/fortran/source_preprocessing/preprocessing/test_parser_boundaries.py`, `tests/c/parsing/test_c_lexer_preprocessor.py` |
+| C target ABI probing and cache | `x2py/probes/c_types.py` | `tests/c/probes/test_c_types.py` |
+| C to semantic IR | `x2py/semantics/c2ir.py`, `x2py/semantics/models.py` | `tests/c/semantics/conversion/` |
+| Fortran-to-C bridge and CPython binding | `x2py/wrapper_codegen/fortran/bridge.py`, `x2py/wrapper_codegen/c/binding.py` | `tests/fortran/infrastructure/wrapper_codegen/`, feature-local `wrapper_codegen/` stages |
+| Public API exports | `x2py/__init__.py` | `tests/fortran/source_parsing/parsing/test_public_entrypoints.py`, `tests/c/parsing/test_c_public_api_skeleton.py` |
 X2PY_C_DOCS_END -->
 
 ### Wrapper Generator Class Organization
@@ -319,8 +319,8 @@ X2PY_C_DOCS_END -->
 
 When changing `.pyi` syntax:
 
-1. Add or update parser tests in `tests/parsing/pyi/`.
-2. Add or update printer tests in `tests/wrapper_codegen/printers/`.
+1. Add or update parser tests in `tests/fortran/semantic_pyi_format/parsing/`.
+2. Add or update printer tests in `tests/fortran/semantic_pyi_format/pipeline/`.
 3. Update fixture tests only if the public generated contract changes.
 4. Update the relevant [User Guide](../user/guide/index.md) or checked
    [example](../user/examples/index.md) if users need to write or read the new
@@ -347,7 +347,7 @@ X2PY_C_DOCS_END -->
 When changing datatype mapping:
 
 1. Add focused Fortran conversion tests in
-   `tests/semantics/conversion/fortran/`.
+   `tests/fortran/semantic_ir/semantics/`.
 2. Add `.pyi` printer/loader coverage if the emitted syntax changes.
 3. Update semantic fixtures only when serialized semantic IR intentionally
    changes.
@@ -360,8 +360,8 @@ When changing datatype mapping:
    the complete output of:
 
 <!-- X2PY_C_DOCS_START
-1. Add focused conversion tests in `tests/semantics/conversion/fortran/` or
-   `tests/semantics/conversion/c/`.
+1. Add focused conversion tests in `tests/fortran/semantic_ir/semantics/` or
+   `tests/c/semantics/conversion/`.
 X2PY_C_DOCS_END -->
 
    ```bash
@@ -446,7 +446,7 @@ X2PY_C_DOCS_END -->
 <!-- X2PY_C_DOCS_START
 Recognizable Fortran files and `.pyi` wrapper inputs can omit `&#45;&#45;language`.
 C files and directories require explicit language selection. Keep this behavior
-tested in `tests/cli/` whenever stage selection changes.
+tested in `tests/fortran/command_line_interface/pipeline/` whenever stage selection changes.
 X2PY_C_DOCS_END -->
 
 The package-specific `x2py/parsers/fortran/cli.py` remains for the Fortran parser
@@ -474,16 +474,18 @@ Important contracts:
   controlled source in Python tests.
 - C preprocessing uses GCC/Clang-style `-E -x c` for direct compiler mode.
   Fortran direct compiler mode uses `-E -cpp` plus source-form hints where
-  needed.
+  needed. LLVM Flang additionally uses `-P` so its preprocessed parser input
+  contains no `#line` markers; provenance remains available from the recorded
+  preprocessing recipe.
 - Native Fortran `include "..."` is expanded after compiler CPP output because
   it is Fortran textual inclusion, not C/CPP include semantics.
 X2PY_C_DOCS_END -->
 
 <!-- X2PY_C_DOCS_START
 When changing preprocessing behavior, update
-`tests/pipeline/preprocessing/`, source-boundary tests in
-`tests/pipeline/preprocessing/test_parser_boundaries.py`, and C raw
-directive tests in `tests/parsing/c/test_c_lexer_preprocessor.py`.
+`tests/fortran/source_preprocessing/preprocessing/`, source-boundary tests in
+`tests/fortran/source_preprocessing/preprocessing/test_parser_boundaries.py`, and C raw
+directive tests in `tests/c/parsing/test_c_lexer_preprocessor.py`.
 X2PY_C_DOCS_END -->
 
 ### Source Loading To Semantic IR Paths
@@ -882,11 +884,14 @@ inputs currently stop at semantic conversion; their runtime backend is future
 work even though the Fortran wrapper internally emits C source.
 X2PY_C_DOCS_END -->
 
-Runtime verification belongs in `tests/wrapper`. The subject index in
-[`tests/wrapper/fortran/README.md`](../../tests/wrapper/fortran/README.md) maps generated behavior
-to compiled/imported tests. Build-mode changes should at least cover
-`test_build_modes.py`, `multiple_files/test_multi_source_builds.py`, and
-the affected runtime subject test.
+Runtime verification belongs under the relevant
+`tests/fortran/<feature>/end_to_end/` owner. The
+[`tests/fortran` index](../../tests/fortran/README.md) and permanent
+[contract ledger](../../tests/fortran/CONTRACT_COVERAGE.md) map generated
+behavior to compiled/imported tests. Build-mode changes should at least cover
+`tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py`,
+`tests/fortran/building_shared_library/end_to_end/test_multi_source_builds.py`,
+and the affected runtime subject test.
 
 ### Parser Model Internals
 
@@ -982,13 +987,13 @@ status-return policy, ownership conversion, or coercion execution.
 
 The test ownership is:
 
-- loader syntax and error behavior: `tests/parsing/pyi/`;
-- printer round-trip shape: `tests/wrapper_codegen/printers/`;
-- policy-completion decisions: `tests/semantics/policy/`;
-- wrapper-plan diagnostics: `tests/wrapper_codegen/`.
+- loader syntax and error behavior: `tests/fortran/semantic_pyi_format/parsing/`;
+- printer round-trip shape: `tests/fortran/semantic_pyi_format/pipeline/`;
+- policy-completion decisions: `tests/fortran/infrastructure/policy/` and feature-local `policy/` directories;
+- wrapper-plan diagnostics: `tests/fortran/infrastructure/wrapper_codegen/`.
 
 <!-- X2PY_C_DOCS_START
-- C semantic conversion: `tests/semantics/conversion/c/`.
+- C semantic conversion: `tests/c/semantics/conversion/`.
 X2PY_C_DOCS_END -->
 
 When adding projection syntax, first add loader tests that prove the accepted
@@ -1004,24 +1009,24 @@ coverage only when the public contract changes.
 
 | Layer | Purpose | Typical files |
 | --- | --- | --- |
-| Focused parser tests | One construct, diagnostic, or model field | `tests/parsing/fortran/test_*.py` |
-| Parser fixture goldens | Serialized Fortran parser contracts | `tests/parsing/fortran/test_fortran_fixture_suite.py` |
-| Semantic tests | Fortran parser facts converted to wrapper-neutral IR | `tests/semantics/conversion/fortran/` |
-| Policy tests | Completed policy decisions | `tests/semantics/policy/` |
-| Wrapper-plan tests | Unsupported plan diagnostics and generated plan shape | `tests/wrapper_codegen/` |
-| `.pyi` tests | Editable contract loader/printer behavior | `tests/parsing/pyi/`, `tests/wrapper_codegen/printers/` |
-| CLI tests | User commands, output routing, diagnostics | `tests/cli/`, `tests/pipeline/preprocessing/` |
-| Wrapper build tests | Artifact placement, direct/Makefile modes, multi-source ordering | `tests/wrapper/fortran/build_from_source/test_build_modes.py`, `tests/wrapper/fortran/multiple_files/` |
-| Wrapper runtime tests | Imported extension behavior, ownership, lifetime, and failures | `tests/wrapper/` subject suites indexed by `tests/wrapper/fortran/README.md` |
-| Property/fuzz tests | Broad parser robustness invariants | `tests/parsing/`, `tests/semantics/conversion/` |
+| Focused parser tests | One construct, diagnostic, or model field | `tests/fortran/source_parsing/parsing/test_*.py` |
+| Parser fixture goldens | Serialized Fortran parser contracts | `tests/fortran/source_parsing/parsing/test_fortran_fixture_suite.py` |
+| Semantic tests | Fortran parser facts converted to wrapper-neutral IR | `tests/fortran/semantic_ir/semantics/` |
+| Policy tests | Completed policy decisions | `tests/fortran/infrastructure/policy/` and feature-local `policy/` directories |
+| Wrapper-plan tests | Unsupported plan diagnostics and generated plan shape | `tests/fortran/infrastructure/wrapper_codegen/` |
+| `.pyi` tests | Editable contract loader/printer behavior | `tests/fortran/semantic_pyi_format/`, `tests/fortran/semantic_pyi_format/pipeline/` |
+| CLI tests | User commands, output routing, diagnostics | `tests/fortran/command_line_interface/pipeline/`, `tests/fortran/source_preprocessing/preprocessing/` |
+| Wrapper build tests | Artifact placement, direct/Makefile modes, multi-source ordering | `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py`, `tests/fortran/building_shared_library/end_to_end/test_multi_source_builds.py` |
+| Wrapper runtime tests | Imported extension behavior, ownership, lifetime, and failures | Feature-local `tests/fortran/*/end_to_end/` suites indexed by `tests/fortran/README.md` |
+| Property/fuzz tests | Broad parser robustness invariants | `tests/fortran/source_parsing/parsing/` and feature-local semantic property tests |
 
 <!-- X2PY_C_DOCS_START
-| Semantic tests | Parser facts converted to wrapper-neutral IR | `tests/semantics/conversion/fortran/`, `tests/semantics/conversion/c/` |
+| Semantic tests | Parser facts converted to wrapper-neutral IR | `tests/fortran/semantic_ir/semantics/`, `tests/c/semantics/conversion/` |
 X2PY_C_DOCS_END -->
 
 <!-- X2PY_C_DOCS_START
-| Focused parser tests | One construct, diagnostic, or model field | `tests/parsing/fortran/test_*.py`, `tests/parsing/c/test_*.py` |
-| Parser fixture goldens | Serialized parser contract over curated files | `tests/parsing/fortran/test_fortran_fixture_suite.py`, `tests/parsing/c/test_c_fixture_suite.py` |
+| Focused parser tests | One construct, diagnostic, or model field | `tests/fortran/source_parsing/parsing/test_*.py`, `tests/c/parsing/test_*.py` |
+| Parser fixture goldens | Serialized parser contract over curated files | `tests/fortran/source_parsing/parsing/test_fortran_fixture_suite.py`, `tests/c/parsing/test_c_fixture_suite.py` |
 X2PY_C_DOCS_END -->
 
 ### Choosing Tests For A Change
@@ -1038,9 +1043,9 @@ X2PY_C_DOCS_END -->
   the stage that detects it.
 - Preprocessing behavior: preprocessing CLI tests and at least one parser path
   that consumes the recipe.
-- Wrapper orchestration or codegen behavior: the focused `tests/wrapper`
-  build-mode or subject suite, including an imported runtime assertion rather
-  than build success alone.
+- Wrapper orchestration or codegen behavior: the focused feature-local
+  `end_to_end/` or `wrapper_codegen/` owner, including an imported runtime
+  assertion rather than build success alone.
 
 ### Golden Fixture Rules
 
@@ -1052,10 +1057,10 @@ Useful commands:
 
 <!-- X2PY_C_DOCS_START
 ```bash
-python tests/parser/c/generate_c_parser_goldens.py tests/data/c/general/math_api.h
-python tests/parser/fortran/generate_fortran_parser_goldens.py tests/data/fortran/general/basic_subroutine.f90
-python tests/semantics/generate_semantic_fixtures.py
-python tests/pyi/generate_pyi_fixtures.py
+python tests/c/fixtures/parser/generate_c_parser_goldens.py tests/c/fixtures/native/general/math_api.h
+python tests/fortran/source_parsing/parsing/generate_parser_goldens.py tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
+python tests/fortran/semantic_ir/semantics/generate_semantic_fixtures.py
+WRAPPER_UPDATE_PYI_FIXTURES=1 python3 -m pytest -q tests/fortran/semantic_pyi_format/pipeline/test_contract_package_generation.py
 ```
 X2PY_C_DOCS_END -->
 
@@ -1090,31 +1095,31 @@ X2PY_C_DOCS_END -->
 
 <!-- X2PY_C_DOCS_START
 1. Add the smallest source example to a focused C parser test:
-   `tests/parsing/c/test_c_declarations_and_declarators.py`,
-   `tests/parsing/c/test_c_compiler_extensions.py`, or
-   `tests/parsing/c/test_c_structs_unions_enums_typedefs.py`.
+   `tests/c/parsing/test_c_declarations_and_declarators.py`,
+   `tests/c/parsing/test_c_compiler_extensions.py`, or
+   `tests/c/parsing/test_c_structs_unions_enums_typedefs.py`.
 2. Implement the parser change in `x2py/parsers/c/parser.py`. Add or update model
    fields in `x2py/parsers/c/models.py` only if the serialized parser contract needs
    new facts.
 3. If source splitting or raw directive handling changes, update
-   `x2py/parsers/c/lexer.py` and `tests/parsing/c/test_c_lexer_preprocessor.py`.
+   `x2py/parsers/c/lexer.py` and `tests/c/parsing/test_c_lexer_preprocessor.py`.
 4. If project-level resolution changes, update
-   `tests/parsing/c/test_c_project_resolution.py`.
+   `tests/c/parsing/test_c_project_resolution.py`.
 5. If parser JSON changes intentionally, regenerate the relevant project
    golden:
 X2PY_C_DOCS_END -->
 
 <!-- X2PY_C_DOCS_START
    ```bash
-   python tests/parser/c/generate_c_parser_goldens.py tests/data/c/general/math_api.h
+   python tests/c/fixtures/parser/generate_c_parser_goldens.py tests/c/fixtures/native/general/math_api.h
    ```
 X2PY_C_DOCS_END -->
 
 <!-- X2PY_C_DOCS_START
 6. If the new parser fact affects semantic conversion, update
-   `x2py/semantics/c2ir.py` and add coverage in `tests/semantics/conversion/c/`.
-7. If the generated `.pyi` changes, update `tests/wrapper_codegen/printers/`
-   or `tests/pipeline/pyi_builds/test_contract_fixtures.py`.
+   `x2py/semantics/c2ir.py` and add coverage in `tests/c/semantics/conversion/`.
+7. If the generated `.pyi` changes, update `tests/fortran/semantic_pyi_format/pipeline/`
+   or `tests/fortran/semantic_pyi_format/pipeline/test_contract_loading.py`.
 8. Update [C parser reference](c-parser-reference.md), the relevant
    [User Guide](../user/guide/index.md), checked
    [example](../user/examples/index.md), or
@@ -1128,9 +1133,9 @@ X2PY_C_DOCS_END -->
 
 <!-- X2PY_C_DOCS_START
 ```bash
-PYTHONPATH=. pytest -q tests/parsing/c/test_c_declarations_and_declarators.py
-PYTHONPATH=. pytest -q tests/parsing/c/test_c_project_resolution.py
-PYTHONPATH=. pytest -q tests/semantics/conversion/c/
+PYTHONPATH=. pytest -q tests/c/parsing/test_c_declarations_and_declarators.py
+PYTHONPATH=. pytest -q tests/c/parsing/test_c_project_resolution.py
+PYTHONPATH=. pytest -q tests/c/semantics/conversion/
 ```
 X2PY_C_DOCS_END -->
 
@@ -1140,27 +1145,27 @@ Example target: preserve a new declaration attribute, source fact, or argument
 metadata item.
 
 1. Add a focused parser test in the file that owns the behavior:
-   `tests/parsing/fortran/`,
-   `tests/parsing/fortran/test_scope_handling.py`, or
-   `tests/pipeline/preprocessing/test_parser_boundaries.py`.
+   `tests/fortran/source_parsing/parsing/`,
+   `tests/fortran/modules/parsing/test_scope_handling.py`, or
+   `tests/fortran/source_preprocessing/preprocessing/test_parser_boundaries.py`.
 2. Implement parsing in `x2py/parsers/fortran/parser.py`. Add model fields in
    `x2py/parsers/fortran/models.py` only if the parser output needs to expose the
    new fact.
-3. Add parser diagnostic coverage in `tests/parsing/fortran/test_error_handling.py` if
+3. Add parser diagnostic coverage in `tests/fortran/source_parsing/parsing/test_error_handling.py` if
    malformed source should now fail differently.
 4. If project ordering, imports, or compile-time values change, update
-   `tests/parsing/fortran/test_project_scope_models.py` or
-   `tests/probes/test_fortran_types.py`.
+   `tests/fortran/modules/parsing/test_project_scope_models.py` or
+   `tests/fortran/data_types/probes/test_fortran_type_probes.py`.
 5. If serialized parser JSON changes intentionally, regenerate the selected
    fixture:
 
    ```bash
-   python tests/parser/fortran/generate_fortran_parser_goldens.py tests/data/fortran/general/basic_subroutine.f90
+   python tests/fortran/source_parsing/parsing/generate_parser_goldens.py tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
    ```
 
 6. If the new fact affects semantic output, update `x2py/semantics/fortran2ir.py`
-   and `tests/semantics/conversion/fortran/`.
-7. If generated `.pyi` changes, update `tests/wrapper_codegen/printers/`
+   and `tests/fortran/semantic_ir/semantics/`.
+7. If generated `.pyi` changes, update `tests/fortran/semantic_pyi_format/pipeline/`
    and the relevant fixture tests.
 8. Update [Fortran parser reference](fortran-parser-reference.md), the relevant
    [User Guide](../user/guide/index.md), checked
@@ -1170,9 +1175,9 @@ metadata item.
 Focused verification:
 
 ```bash
-PYTHONPATH=. pytest -q tests/parsing/fortran/
-PYTHONPATH=. pytest -q tests/parsing/fortran/test_fortran_fixture_suite.py
-PYTHONPATH=. pytest -q tests/semantics/conversion/fortran/
+PYTHONPATH=. pytest -q tests/fortran/source_parsing/parsing/
+PYTHONPATH=. pytest -q tests/fortran/source_parsing/parsing/test_fortran_fixture_suite.py
+PYTHONPATH=. pytest -q tests/fortran/semantic_ir/semantics/
 ```
 
 ### Add Or Change Datatype Mapping
@@ -1183,20 +1188,21 @@ Example target: map a new Fortran kind or compiler-probed storage fact.
 Example target: map a new Fortran kind, C typedef, or target-probed C type.
 X2PY_C_DOCS_END -->
 
-1. Add conversion coverage in `tests/semantics/conversion/fortran/`.
+1. Add conversion coverage in `tests/fortran/semantic_ir/semantics/`.
 2. Implement the mapping in `x2py/semantics/fortran2ir.py`.
 3. Keep the public semantic dtype names in `x2py/semantics/models.py` stable unless
    there is a deliberate schema decision.
 4. If the emitted `.pyi` annotation changes, update
-   `tests/wrapper_codegen/printers/` and `tests/parsing/pyi/`.
+   `tests/fortran/semantic_pyi_format/pipeline/` and
+   `tests/fortran/semantic_pyi_format/parsing/`.
 5. Update the datatype tables in
    [Semantic IR reference](../user/reference/semantic-ir.md), and update the
    relevant [User Guide](../user/guide/index.md) or checked
    [example](../user/examples/index.md) when a visible example changes.
 
 <!-- X2PY_C_DOCS_START
-1. Add conversion coverage in `tests/semantics/conversion/fortran/` or
-   `tests/semantics/conversion/c/`.
+1. Add conversion coverage in `tests/fortran/semantic_ir/semantics/` or
+   `tests/c/semantics/conversion/`.
 X2PY_C_DOCS_END -->
 
 <!-- X2PY_C_DOCS_START
@@ -1206,14 +1212,14 @@ X2PY_C_DOCS_END -->
 Focused verification:
 
 ```bash
-PYTHONPATH=. pytest -q tests/semantics/conversion/fortran/
-PYTHONPATH=. pytest -q tests/wrapper_codegen/printers/ tests/parsing/pyi/
+PYTHONPATH=. pytest -q tests/fortran/semantic_ir/semantics/
+PYTHONPATH=. pytest -q tests/fortran/semantic_pyi_format/pipeline/ tests/fortran/semantic_pyi_format/parsing/
 ```
 
 <!-- X2PY_C_DOCS_START
 ```bash
-PYTHONPATH=. pytest -q tests/semantics/conversion/fortran/ tests/semantics/conversion/c/
-PYTHONPATH=. pytest -q tests/wrapper_codegen/printers/ tests/parsing/pyi/
+PYTHONPATH=. pytest -q tests/fortran/semantic_ir/semantics/ tests/c/semantics/conversion/
+PYTHONPATH=. pytest -q tests/fortran/semantic_pyi_format/pipeline/ tests/fortran/semantic_pyi_format/parsing/
 ```
 X2PY_C_DOCS_END -->
 
@@ -1221,12 +1227,12 @@ X2PY_C_DOCS_END -->
 
 Example target: add a new `Annotated[...]` metadata item or projection helper.
 
-1. Add loader tests in `tests/parsing/pyi/`.
+1. Add loader tests in `tests/fortran/semantic_pyi_format/parsing/`.
 2. Update `x2py/semantics/pyi2ir.py`. Update `x2py/pipeline/pyi.py`
    when loading or cross-file reconciliation changes. Update
    `x2py/parsers/pyi/parser.py` only when the raw Python AST parsing boundary
    changes.
-3. Add printer tests in `tests/wrapper_codegen/printers/`.
+3. Add printer tests in `tests/fortran/semantic_pyi_format/pipeline/`.
 4. Update `x2py/wrapper_codegen/printers/pyi_printer.py`.
 5. Update semantic models in `x2py/semantics/models.py` only if the IR needs a new
    field or constraint.
@@ -1240,9 +1246,9 @@ Example target: add a new `Annotated[...]` metadata item or projection helper.
 Focused verification:
 
 ```bash
-PYTHONPATH=. pytest -q tests/parsing/pyi/
-PYTHONPATH=. pytest -q tests/wrapper_codegen/printers/
-PYTHONPATH=. pytest -q tests/semantics/policy/ tests/wrapper_codegen/
+PYTHONPATH=. pytest -q tests/fortran/semantic_pyi_format/parsing/
+PYTHONPATH=. pytest -q tests/fortran/semantic_pyi_format/pipeline/
+PYTHONPATH=. pytest -q tests/fortran/semantic_ir/semantics/ tests/fortran/infrastructure/wrapper_codegen/
 ```
 
 ### Add A Stage-Owned Error
@@ -1267,15 +1273,15 @@ X2PY_C_DOCS_END -->
 Focused verification:
 
 ```bash
-PYTHONPATH=. pytest -q tests/semantics/conversion/fortran/
-PYTHONPATH=. pytest -q tests/semantics/policy/
-PYTHONPATH=. pytest -q tests/wrapper_codegen/
+PYTHONPATH=. pytest -q tests/fortran/semantic_ir/semantics/
+PYTHONPATH=. pytest -q tests/fortran/semantic_ir/semantics/
+PYTHONPATH=. pytest -q tests/fortran/infrastructure/wrapper_codegen/
 ```
 
 <!-- X2PY_C_DOCS_START
 ```bash
-PYTHONPATH=. pytest -q tests/semantics/conversion/c/
-PYTHONPATH=. pytest -q tests/wrapper_codegen/
+PYTHONPATH=. pytest -q tests/c/semantics/conversion/
+PYTHONPATH=. pytest -q tests/fortran/infrastructure/wrapper_codegen/
 ```
 X2PY_C_DOCS_END -->
 
@@ -1284,7 +1290,7 @@ X2PY_C_DOCS_END -->
 Example target: add a stage option, change output routing, or improve
 diagnostic formatting.
 
-1. Add CLI tests in `tests/cli/` first.
+1. Add CLI tests in `tests/fortran/command_line_interface/pipeline/` first.
 2. Implement shared dispatch and output behavior in `x2py/cli.py`.
 3. Keep Fortran package-specific CLI behavior in `x2py/parsers/fortran/cli.py`.
 4. If compiler preprocessing behavior changes, update `x2py/pipeline/preprocessing.py`
@@ -1296,8 +1302,8 @@ diagnostic formatting.
 Focused verification:
 
 ```bash
-PYTHONPATH=. pytest -q tests/cli/
-PYTHONPATH=. pytest -q tests/pipeline/preprocessing/
+PYTHONPATH=. pytest -q tests/fortran/command_line_interface/pipeline/
+PYTHONPATH=. pytest -q tests/fortran/source_preprocessing/preprocessing/
 ```
 
 ## Testing Map
@@ -1308,19 +1314,20 @@ more executable examples. Run the broader suite before merging.
 
 ### Pre-Merge Checks
 
-Run the full suite from the repository root before merging:
+Run the ordinary suite from the repository root before merging. Full
+BLAS/LAPACK cases belong to their designated real-library lane:
 
 ```bash
-PYTHONPATH=. pytest -q
+PYTHONPATH=. pytest -q -m "not real_library" \
+  tests/architecture tests/c tests/fortran tests/shared
 ```
 
 Run the major suites individually while iterating:
 
 ```bash
-PYTHONPATH=. pytest -q tests/parser
-PYTHONPATH=. pytest -q tests/semantics
-PYTHONPATH=. pytest -q tests/pyi
-PYTHONPATH=. pytest -q tests/wrapper
+PYTHONPATH=. pytest -q tests/c
+PYTHONPATH=. pytest -q -m "not real_library" tests/fortran
+PYTHONPATH=. pytest -q tests/shared
 ```
 
 As a project policy, do not merge pull requests unless all checks are green.
@@ -1333,7 +1340,7 @@ X2PY_C_DOCS_END -->
 
 <!-- X2PY_C_DOCS_START
 ```bash
-python tests/parser/c/generate_c_parser_goldens.py
+python tests/c/fixtures/parser/generate_c_parser_goldens.py
 ```
 X2PY_C_DOCS_END -->
 
@@ -1343,39 +1350,41 @@ X2PY_C_DOCS_END -->
 
 <!-- X2PY_C_DOCS_START
 ```bash
-python tests/parser/c/generate_c_parser_goldens.py tests/data/c/general/math_api.h
+python tests/c/fixtures/parser/generate_c_parser_goldens.py tests/c/fixtures/native/general/math_api.h
 ```
 X2PY_C_DOCS_END -->
 
 Refresh all Fortran parser goldens:
 
 ```bash
-python tests/parser/fortran/generate_fortran_parser_goldens.py
+python tests/fortran/source_parsing/parsing/generate_parser_goldens.py
 ```
 
 Refresh one Fortran fixture:
 
 ```bash
-python tests/parser/fortran/generate_fortran_parser_goldens.py tests/data/fortran/general/basic_subroutine.f90
+python tests/fortran/source_parsing/parsing/generate_parser_goldens.py tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
 ```
 
 In-test Fortran parser fixture update mode:
 
 ```bash
-FORTRAN_PARSER_UPDATE_GOLDENS=1 PYTHONPATH=. pytest -q tests/parser --confcutdir=tests/
+FORTRAN_PARSER_UPDATE_GOLDENS=1 PYTHONPATH=. pytest -q \
+  tests/fortran/source_parsing/parsing/test_fortran_fixture_suite.py
 ```
 
 Refresh semantic and `.pyi` fixtures:
 
 ```bash
-python tests/semantics/generate_semantic_fixtures.py
-python tests/pyi/generate_pyi_fixtures.py
+python tests/fortran/semantic_ir/semantics/generate_semantic_fixtures.py
+WRAPPER_UPDATE_PYI_FIXTURES=1 python3 -m pytest -q tests/fortran/semantic_pyi_format/pipeline/test_contract_package_generation.py
 ```
 
 When parser model output changes, include the regenerated parser goldens and a
 short explanation in the PR. For `.pyi`, semantic IR, policy, or wrapper-planning behavior
-changes, update the corresponding fixtures under `tests/pyi/fixtures` or
-`tests/semantics/fixtures`.
+changes, update the reviewed contracts under
+`tests/fortran/semantic_pyi_format/pipeline/fixtures/contracts/` or
+the semantic fixtures under `tests/fortran/semantic_ir/semantics/fixtures`.
 
 <!-- X2PY_C_DOCS_START
 ### C Parser
@@ -1387,7 +1396,7 @@ X2PY_C_DOCS_END -->
 
 <!-- X2PY_C_DOCS_START
 ```bash
-python -m x2py tests/data/c/general/math_api.h &#45;&#45;language c &#45;&#45;parse &#45;&#45;json
+python -m x2py tests/c/fixtures/native/general/math_api.h &#45;&#45;language c &#45;&#45;parse &#45;&#45;json
 ```
 X2PY_C_DOCS_END -->
 
@@ -1410,21 +1419,21 @@ X2PY_C_DOCS_END -->
 
 <!-- X2PY_C_DOCS_START
 - Lexer/preprocessor mechanics:
-  `PYTHONPATH=. pytest -q tests/parsing/c/test_c_lexer_preprocessor.py`
+  `PYTHONPATH=. pytest -q tests/c/parsing/test_c_lexer_preprocessor.py`
 - Declarations and declarators:
-  `PYTHONPATH=. pytest -q tests/parsing/c/test_c_declarations_and_declarators.py`
+  `PYTHONPATH=. pytest -q tests/c/parsing/test_c_declarations_and_declarators.py`
 - Functions:
-  `PYTHONPATH=. pytest -q tests/parsing/c/test_c_functions.py`
+  `PYTHONPATH=. pytest -q tests/c/parsing/test_c_functions.py`
 - Structs, unions, enums, and typedefs:
-  `PYTHONPATH=. pytest -q tests/parsing/c/test_c_structs_unions_enums_typedefs.py`
+  `PYTHONPATH=. pytest -q tests/c/parsing/test_c_structs_unions_enums_typedefs.py`
 - Project resolution and cross-file facts:
-  `PYTHONPATH=. pytest -q tests/parsing/c/test_c_project_resolution.py`
+  `PYTHONPATH=. pytest -q tests/c/parsing/test_c_project_resolution.py`
 - Compiler extensions:
-  `PYTHONPATH=. pytest -q tests/parsing/c/test_c_compiler_extensions.py`
+  `PYTHONPATH=. pytest -q tests/c/parsing/test_c_compiler_extensions.py`
 - Fixture project goldens:
-  `PYTHONPATH=. pytest -q tests/parsing/c/test_c_fixture_suite.py`
+  `PYTHONPATH=. pytest -q tests/c/parsing/test_c_fixture_suite.py`
 - Fatal parser diagnostics:
-  `PYTHONPATH=. pytest -q tests/parsing/c/test_c_error_fixture_suite.py`
+  `PYTHONPATH=. pytest -q tests/c/parsing/test_c_error_fixture_suite.py`
 X2PY_C_DOCS_END -->
 
 <!-- X2PY_C_DOCS_START
@@ -1433,12 +1442,12 @@ X2PY_C_DOCS_END -->
 
 <!-- X2PY_C_DOCS_START
 ```bash
-python tests/parser/c/generate_c_parser_goldens.py tests/data/c/general/math_api.h
+python tests/c/fixtures/parser/generate_c_parser_goldens.py tests/c/fixtures/native/general/math_api.h
 ```
 X2PY_C_DOCS_END -->
 
 <!-- X2PY_C_DOCS_START
-Executable tutorial: `tests/parsing/c/test_c_parser_developer_tutorial.py`.
+Executable tutorial: `tests/c/parsing/test_c_parser_developer_tutorial.py`.
 X2PY_C_DOCS_END -->
 
 ### Fortran Parser
@@ -1446,7 +1455,7 @@ X2PY_C_DOCS_END -->
 Manual call for one Fortran fixture:
 
 ```bash
-python -m x2py parse tests/data/fortran/general/basic_subroutine.f90 --language fortran --json
+python -m x2py parse tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90 --language fortran --json
 ```
 
 Manual Python API call:
@@ -1455,7 +1464,7 @@ Manual Python API call:
 from x2py import parse_fortran_file
 
 parsed = parse_fortran_file(
-    "tests/data/fortran/general/basic_subroutine.f90",
+    "tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90",
 )
 print([module.name for module in parsed.modules])
 ```
@@ -1463,27 +1472,27 @@ print([module.name for module in parsed.modules])
 Focused tests by concern:
 
 - Parser walkthrough:
-  `PYTHONPATH=. pytest -q tests/parsing/fortran/test_developer_tutorial.py`
+  `PYTHONPATH=. pytest -q tests/fortran/source_parsing/parsing/test_developer_tutorial.py`
 - Procedures, declarations, derived types, and interfaces:
-  `PYTHONPATH=. pytest -q tests/parsing/fortran/`
+  `PYTHONPATH=. pytest -q tests/fortran/source_parsing/parsing/`
 - Scope and project behavior:
-  `PYTHONPATH=. pytest -q tests/parsing/fortran/test_scope_handling.py tests/parsing/fortran/test_project_scope_models.py`
+  `PYTHONPATH=. pytest -q tests/fortran/modules/parsing/test_scope_handling.py tests/fortran/modules/parsing/test_project_scope_models.py`
 - Preprocessing and execution-boundary behavior:
-  `PYTHONPATH=. pytest -q tests/pipeline/preprocessing/test_parser_boundaries.py`
+  `PYTHONPATH=. pytest -q tests/fortran/source_preprocessing/preprocessing/test_parser_boundaries.py`
 - Parser diagnostics:
-  `PYTHONPATH=. pytest -q tests/parsing/fortran/test_error_handling.py`
+  `PYTHONPATH=. pytest -q tests/fortran/source_parsing/parsing/test_error_handling.py`
 - Fixture goldens:
-  `PYTHONPATH=. pytest -q tests/parsing/fortran/test_fortran_fixture_suite.py`
+  `PYTHONPATH=. pytest -q tests/fortran/source_parsing/parsing/test_fortran_fixture_suite.py`
 - Parser error fixtures:
-  `PYTHONPATH=. pytest -q tests/parsing/fortran/test_error_fixture_suite.py`
+  `PYTHONPATH=. pytest -q tests/fortran/source_parsing/parsing/test_error_fixture_suite.py`
 
 Regenerate one Fortran fixture:
 
 ```bash
-python tests/parser/fortran/generate_fortran_parser_goldens.py tests/data/fortran/general/basic_subroutine.f90
+python tests/fortran/source_parsing/parsing/generate_parser_goldens.py tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
 ```
 
-Executable tutorial: `tests/parsing/fortran/test_developer_tutorial.py`.
+Executable tutorial: `tests/fortran/source_parsing/parsing/test_developer_tutorial.py`.
 
 ### Semantics And `.pyi`
 
@@ -1491,39 +1500,40 @@ Manual calls:
 
 <!-- X2PY_C_DOCS_START
 ```bash
-python -m x2py tests/data/fortran/general/basic_subroutine.f90 &#45;&#45;semantics
-python -m x2py tests/data/fortran/general/basic_subroutine.f90 &#45;&#45;pyi
-python -m x2py tests/data/c/general/math_api.h &#45;&#45;language c &#45;&#45;semantics
-python -m x2py tests/data/c/general/math_api.h &#45;&#45;language c &#45;&#45;pyi
+python -m x2py tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90 &#45;&#45;semantics
+python -m x2py tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90 &#45;&#45;pyi
+python -m x2py tests/c/fixtures/native/general/math_api.h &#45;&#45;language c &#45;&#45;semantics
+python -m x2py tests/c/fixtures/native/general/math_api.h &#45;&#45;language c &#45;&#45;pyi
 ```
 X2PY_C_DOCS_END -->
 
 Focused tests by concern:
 
 - Fortran parser-to-IR conversion:
-  `PYTHONPATH=. pytest -q tests/semantics/conversion/fortran/`
+  `PYTHONPATH=. pytest -q tests/fortran/semantic_ir/semantics/`
 - Wrapper-plan support diagnostics:
-  `PYTHONPATH=. pytest -q tests/wrapper_codegen/`
+  `PYTHONPATH=. pytest -q tests/fortran/infrastructure/wrapper_codegen/`
 - `.pyi` printer:
-  `PYTHONPATH=. pytest -q tests/wrapper_codegen/printers/`
+  `PYTHONPATH=. pytest -q tests/fortran/semantic_pyi_format/pipeline/`
 - `.pyi` loader and edited stub behavior:
-  `PYTHONPATH=. pytest -q tests/parsing/pyi/`
+  `PYTHONPATH=. pytest -q tests/fortran/semantic_pyi_format/parsing/`
 - Semantic and `.pyi` fixtures:
-  `PYTHONPATH=. pytest -q tests/pipeline/pyi_builds/test_contract_fixtures.py`
+  `PYTHONPATH=. pytest -q tests/fortran/semantic_pyi_format/pipeline/test_contract_loading.py`
 
 <!-- X2PY_C_DOCS_START
 - C parser-to-IR conversion:
-  `PYTHONPATH=. pytest -q tests/semantics/conversion/c/`
+  `PYTHONPATH=. pytest -q tests/c/semantics/conversion/`
 X2PY_C_DOCS_END -->
 
 Regenerate semantic and `.pyi` fixtures:
 
 ```bash
-python tests/semantics/generate_semantic_fixtures.py
-python tests/pyi/generate_pyi_fixtures.py
+python tests/fortran/semantic_ir/semantics/generate_semantic_fixtures.py
+WRAPPER_UPDATE_PYI_FIXTURES=1 python3 -m pytest -q tests/fortran/semantic_pyi_format/pipeline/test_contract_package_generation.py
 ```
 
-Executable examples: `tests/wrapper_codegen/printers/` and `tests/parsing/pyi/`.
+Executable examples: `tests/fortran/semantic_pyi_format/pipeline/` and
+`tests/fortran/semantic_pyi_format/parsing/`.
 
 ### CLI
 
@@ -1531,20 +1541,20 @@ Manual calls:
 
 <!-- X2PY_C_DOCS_START
 ```bash
-python -m x2py tests/data/fortran/general/basic_subroutine.f90 &#45;&#45;parse
-python -m x2py tests/data/fortran/general/basic_subroutine.f90 &#45;&#45;semantics
-python -m x2py tests/data/fortran/general/basic_subroutine.f90 &#45;&#45;pyi
-python -m x2py tests/data/c/general/math_api.h &#45;&#45;language c &#45;&#45;parse
+python -m x2py tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90 &#45;&#45;parse
+python -m x2py tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90 &#45;&#45;semantics
+python -m x2py tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90 &#45;&#45;pyi
+python -m x2py tests/c/fixtures/native/general/math_api.h &#45;&#45;language c &#45;&#45;parse
 ```
 X2PY_C_DOCS_END -->
 
 Focused tests:
 
 - Full CLI behavior:
-  `PYTHONPATH=. pytest -q tests/cli/`
+  `PYTHONPATH=. pytest -q tests/fortran/command_line_interface/pipeline/`
 - Stage dispatch:
-  `PYTHONPATH=. pytest -q tests/cli/ -k "parse or semantics or pyi or wrap"`
+  `PYTHONPATH=. pytest -q tests/fortran/command_line_interface/pipeline/ -k "parse or semantics or pyi or wrap"`
 - Language and preprocessing selection:
-  `PYTHONPATH=. pytest -q tests/cli/ -k "language or preprocessing"`
+  `PYTHONPATH=. pytest -q tests/fortran/command_line_interface/pipeline/ -k "language or preprocessing"`
 
-Executable reference: `tests/cli/`.
+Executable reference: `tests/fortran/command_line_interface/pipeline/`.

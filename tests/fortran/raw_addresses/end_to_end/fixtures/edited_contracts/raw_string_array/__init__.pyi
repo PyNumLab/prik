@@ -1,0 +1,1 @@
+from .fstrings_f90 import fixed_array_extent_raw

@@ -123,6 +123,7 @@ FORTRAN_TYPE_MAP = {
 }
 
 _FORTRAN_INTRINSIC_TYPES = frozenset({"integer", "real", "complex", "logical", "character"})
+_FORTRAN_STORAGE_PROBE_TYPES = frozenset({"integer", "real", "complex", "logical"})
 _FORTRAN_STORAGE_TYPE_MAP = {
     "integer": {8: "Int8", 16: "Int16", 32: "Int32", 64: "Int64"},
     "real": {32: "Float32", 64: "Float64", 80: "Float128", 96: "Float128", 128: "Float128"},
@@ -2360,7 +2361,6 @@ def fortran_type_storage_expression(base_type: str, kind: str | None = None) -> 
         "real": "real(0.0)",
         "complex": "cmplx(0.0)",
         "logical": "logical(.false.)",
-        "character": "char(65)",
     }
     base = str(base_type).lower()
     constructor = constructors.get(base)
@@ -2382,7 +2382,7 @@ def collect_fortran_type_storage_requirements(
     seen: set[tuple[str, str | None]] = set()
     for var, context in _iter_fortran_variable_contexts(parsed):
         base_type = str(var.base_type or "").lower()
-        if base_type not in _FORTRAN_INTRINSIC_TYPES:
+        if base_type not in _FORTRAN_STORAGE_PROBE_TYPES:
             continue
         if var.declared_storage_bits is not None:
             continue

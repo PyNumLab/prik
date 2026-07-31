@@ -42,14 +42,29 @@ Both commands should print existing directories.
 
 ---
 
-## 3. Verify the Compiler
+## 3. Verify the Compiler Pair
+
+For the recommended GNU path:
 
 ```bash
 gfortran --version
+gcc --version
 ```
 
-The output should identify GNU Fortran. If the command is missing, install
-`gfortran` or add it to `PATH`.
+For Intel IFX or LLVM Flang, check both commands in the pair:
+
+```bash
+# Intel
+ifx --version
+icx --version
+
+# LLVM
+flang --version
+clang --version
+```
+
+Both commands for your chosen compiler should report a version. If either is
+missing, install it or add its `bin` directory to `PATH`.
 
 ---
 
@@ -59,7 +74,7 @@ The output should identify GNU Fortran. If the command is missing, install
 |--------------------------------|---------------------------------------------|
 | Cannot import x2py / NumPy     | Check active virtual environment            |
 | A header directory is missing  | Reinstall Python development files or NumPy |
-| Compiler not found             | Fix `PATH` or reinstall gfortran           |
+| Compiler not found             | Fix `PATH` or install both executables from a supported pair |
 
 ---
 

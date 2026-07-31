@@ -1,6 +1,6 @@
 ---
 title: Installation
-description: Install x2py from source and set up the native GNU toolchain
+description: Install x2py from source and choose a Fortran compiler
 audience: users, contributors
 prerequisites: Python 3.10 or newer, repository checkout
 related: verification.md
@@ -11,7 +11,8 @@ publication: reviewed
 # Installation
 
 x2py is currently installed from a local source checkout. Building Python
-extensions also requires GNU Fortran and standard build tools.
+extensions also requires a Fortran compiler, its matching C compiler, and
+standard build tools.
 
 ---
 
@@ -30,9 +31,10 @@ python3 --version
 
 ## Native Prerequisites
 
-Install these packages before building wrappers:
+The beginner path uses:
 
 - `gfortran` (GNU Fortran compiler)
+- `gcc` (normally provided by `build-essential`)
 - `python3-dev` (Python development headers)
 - NumPy (includes required development files)
 - `build-essential` (linker and build tools)
@@ -43,6 +45,31 @@ On **Ubuntu / Debian**:
 sudo apt-get update
 sudo apt-get install build-essential gfortran python3-dev
 ```
+
+On **macOS** with Homebrew:
+
+```bash
+brew install gcc@13
+```
+
+Homebrew provides versioned commands such as `gfortran-13` and `gcc-13`.
+
+## Compiler Toolchains
+
+`gfortran` is the default. Use `--compiler` to choose another option. Install
+the matching C compiler shown below as well.
+
+| Fortran compiler | Required C compiler | Test status |
+| --- | --- | --- |
+| `gfortran` | `gcc` | Default; tested on Linux and macOS |
+| `ifx` | `icx` | Tested on Linux with version 2026.1.1 |
+| `flang` | `clang` | Tested on Linux and macOS with version 22.1.8 |
+| `ifort` | `icx` | Recognized; not routinely tested |
+| `nvfortran` | `nvc` | Recognized; not yet tested |
+| `pgfortran` | `pgcc` | Legacy option; not yet tested |
+
+The versions shown are the versions currently tested, not minimum
+requirements. For the best-tested experience, use GNU, IFX, or Flang.
 
 ---
 
@@ -80,12 +107,12 @@ python3 -m pip install -e ".[qa]"
 
 ## Platform Support
 
-| Platform           | Current Status                          |
-|--------------------|-----------------------------------------|
-| Ubuntu Linux       | CI-verified (Ubuntu 24.04 + gfortran-13) |
-| Other Linux        | Expected to work with GNU tools         |
-| macOS              | Not yet in CI matrix                    |
-| Windows            | Not yet supported                       |
+| Platform | Current status |
+| --- | --- |
+| Ubuntu Linux x86-64 | Tested with GNU Fortran, Intel IFX, and LLVM Flang |
+| Other Linux | Expected to work; compiler coverage varies |
+| macOS 15 on Apple Silicon | Full suite with GNU Fortran 13; smoke tests with LLVM Flang |
+| Windows | Not yet supported |
 
 ---
 

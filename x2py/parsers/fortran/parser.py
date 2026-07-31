@@ -3821,6 +3821,15 @@ class FortranParser(ClassVisitor):
                 lineno=lineno,
                 source_line=source_line,
             )
+        if _REGEX["unsupported_class_star"].search(line):
+            raise FortranParseError(
+                f"Unsupported assumed-type CLASS(*) declaration for procedure "
+                f"'{proc_state['signature'].name}': {line.strip()}",
+                filename=filename,
+                line_number=lineno,
+                source_line=source_line,
+                code="PARSE_UNSUPPORTED_DECLARATION",
+            )
         if any(_REGEX[pattern_key].search(line) for pattern_key in _UNSUPPORTED_PATTERN_KEYS):
             return
         raise FortranParseError(

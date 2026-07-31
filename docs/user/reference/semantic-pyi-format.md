@@ -610,9 +610,12 @@ archives or libraries that satisfy them, and dependent libraries precede their
 providers. Cyclic static archives may require linker grouping or repeated
 archives. The completed build interface must preserve caller order across all
 native item kinds and provide an explicit ordered linker-argument mechanism for
-groups, whole-archive policy, and platform-specific flags. The current first
-slice runtime-verifies a single object only; it does not yet establish every
-mixed or cyclic ordering case.
+groups, whole-archive policy, and platform-specific flags. The maintained
+GNU/Linux runtime evidence covers mixed objects, archives, direct shared
+libraries, named libraries, transitive providers, and explicit archive groups
+for cyclic dependencies. These cases prove that the ordered plan is preserved;
+they do not imply that every linker accepts the same platform-specific control
+arguments.
 
 Directly linked objects and static archives must be position-independent when
 the platform requires PIC. All artifacts must match the active compiler ABI,
@@ -1455,10 +1458,8 @@ nmax: Final[Int32]
 answer: Final[Int32] = 42
 ```
 
-<!-- X2PY_C_DOCS_START
-C and Fortran enumerators are plain integer constants. Do not declare or expect
+Fortran enumerators are plain integer constants. Do not declare or expect
 Python `Enum`/`IntEnum` classes or semantic enum datatypes:
-X2PY_C_DOCS_END -->
 
 ```python
 from x2py.contracts import Final, Int
@@ -1470,6 +1471,10 @@ STATUS_RETRY: Final[Int] = STATUS_OK + 1
 The listed names are documentation and convenience constants. Procedure
 arguments and returns that use native enum types are emitted as the underlying
 integer type.
+
+<!-- X2PY_C_DOCS_START
+C enumerators use the same integer-constant contract.
+X2PY_C_DOCS_END -->
 
 ## Classes And Native Type Markers
 

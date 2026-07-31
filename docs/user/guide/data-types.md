@@ -145,7 +145,10 @@ The wrapper handles the native call details. Python still passes and receives
 
 `T[()]` represents rank-zero NumPy storage: arguments accept a 0-D NumPy
 array, and results return a 0-D NumPy array. Raw integer addresses are an
-advanced boundary covered later in the guide.
+advanced boundary covered later in the guide. A `T[()]` result is a 0-D NumPy
+array, while a bare `T` result is a NumPy scalar.
+
+## Unsupported Widths And Forms
 
 The semantic format can represent wider types such as `Float128` and
 `Complex256`, but the current Fortran wrapper blocks real storage wider than 64

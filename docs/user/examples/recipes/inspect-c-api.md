@@ -21,7 +21,7 @@ X2PY_C_DOCS_END -->
 ## Input
 X2PY_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_DISABLED: x2py-doc-source: tests/data/c/general/math_api.h -->
+<!-- X2PY_C_DOCS_DISABLED: x2py-doc-source: tests/c/fixtures/native/general/math_api.h -->
 <!-- X2PY_C_DOCS_START
 ```c
 #ifndef X2PY_GENERAL_MATH_API_H
@@ -43,7 +43,7 @@ X2PY_C_DOCS_END -->
 <!-- X2PY_C_DOCS_DISABLED: x2py-doc-test: exact -->
 <!-- X2PY_C_DOCS_START
 ```bash
-python3 -m x2py tests/data/c/general/math_api.h &#45;&#45;language c &#45;&#45;parse
+python3 -m x2py tests/c/fixtures/native/general/math_api.h &#45;&#45;language c &#45;&#45;parse
 ```
 X2PY_C_DOCS_END -->
 
@@ -54,7 +54,7 @@ X2PY_C_DOCS_END -->
 <!-- X2PY_C_DOCS_DISABLED: x2py-doc-test-output -->
 <!-- X2PY_C_DOCS_START
 ```text
-File: tests/data/c/general/math_api.h
+File: tests/c/fixtures/native/general/math_api.h
   Language: c
   Functions: 4
   Structs: 0
@@ -75,14 +75,14 @@ X2PY_C_DOCS_END -->
 <!-- X2PY_C_DOCS_DISABLED: x2py-doc-test: run -->
 <!-- X2PY_C_DOCS_START
 ```bash
-python3 -m x2py tests/data/c/general/math_api.h &#45;&#45;language c &#45;&#45;semantics
+python3 -m x2py tests/c/fixtures/native/general/math_api.h &#45;&#45;language c &#45;&#45;semantics
 ```
 X2PY_C_DOCS_END -->
 
 <!-- X2PY_C_DOCS_DISABLED: x2py-doc-test: run -->
 <!-- X2PY_C_DOCS_START
 ```bash
-python3 -m x2py tests/data/c/general/math_api.h &#45;&#45;language c &#45;&#45;pyi
+python3 -m x2py tests/c/fixtures/native/general/math_api.h &#45;&#45;language c &#45;&#45;pyi
 ```
 X2PY_C_DOCS_END -->
 

@@ -2,7 +2,7 @@
 title: Roadmap
 audience: maintainers
 prerequisites: user language support, developer documentation
-related: ../../user/language-support/feature-matrix.md, wrapper-plan-migration-checklist.md, semantic-pyi-wrapper-checklist.md, native-array-handle-checklist.md, documentation-content-checklist.md
+related: ../../user/language-support/feature-matrix.md, fortran-test-suite-cleanup-checklist.md, wrapper-plan-migration-checklist.md, semantic-pyi-wrapper-checklist.md, native-array-handle-checklist.md, documentation-content-checklist.md
 status: active-roadmap
 publication: draft
 ---
@@ -22,7 +22,7 @@ maintainers. Public support status remains in User documentation.
 
 ## In-Progress Features
 
-- TODO: Link active work to feature pages and support evidence.
+- [Language-first test suite and Fortran pipeline cleanup](fortran-test-suite-cleanup-checklist.md)
 
 ## Future Ideas
 

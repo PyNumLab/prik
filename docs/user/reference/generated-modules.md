@@ -97,7 +97,7 @@ absent and otherwise exposes the generated fields. Compatible allocatable
 dummies use a reversible typed `move_alloc` transaction; reassociable pointer
 dummies use a typed pointer transaction and restore the final association.
 Payload-only calls use direct or synchronous scoped addresses. See the
-[derived-object compatibility matrix](../guide/memory-management.md#derived-objects-and-native-dummies).
+[derived-object lifetime rules](../guide/memory-management.md#derived-objects-and-fields).
 
 ## Visibility, Binding Names, And Imports
 
@@ -124,10 +124,10 @@ requests; colliding names fail.
 
 Module package shape, child namespaces, variable access, and import policy are
 covered by
-[`test_module_state.py`](../../../tests/wrapper/fortran/module_state/test_module_state.py),
-[`test_contract_package_runtime.py`](../../../tests/wrapper/fortran/build_from_pyi/test_contract_package_runtime.py),
-[`test_multi_source_builds.py`](../../../tests/wrapper/fortran/multiple_files/test_multi_source_builds.py), and
-[`test_source_generated_pyi_contracts.py`](../../../tests/wrapper/fortran/build_from_source/test_source_generated_pyi_contracts.py).
+[`test_module_variables_and_state.py`](../../../tests/fortran/modules/end_to_end/test_module_variables_and_state.py),
+[`test_contract_package_runtime.py`](../../../tests/fortran/semantic_pyi_format/end_to_end/test_contract_package_runtime.py),
+[`test_multi_source_builds.py`](../../../tests/fortran/building_shared_library/end_to_end/test_multi_source_builds.py), and
+[`test_source_generated_pyi_contracts.py`](../../../tests/fortran/building_shared_library/pipeline/test_source_generated_contracts.py).
 
 When module namespace behavior changes, update this page, generated package
 fixtures, [Semantic `.pyi` Format](semantic-pyi-format.md), and the module

@@ -12,8 +12,9 @@ publication: reviewed
 
 This guide takes you from a fresh clone to your first working Python extension built from Fortran code.
 
-The recommended beginner path uses the **GNU toolchain**, including
-`gfortran`, which offers the best compatibility right now.
+Start with GNU (`gfortran` and `gcc`), tested on Linux and macOS. LLVM Flang
+is tested on both platforms; Intel IFX is tested on Linux. See
+[Installation](installation.md#compiler-toolchains) for every compiler option.
 
 ---
 
