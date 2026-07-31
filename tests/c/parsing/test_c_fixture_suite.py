@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -152,6 +153,10 @@ def test_c_fixture_suite_groups_dependent_headers_dependency_first():
     assert [fixture.name for fixture in fixtures] == ["nanosvg.h", "nanosvgrast.h"]
 
 
+@pytest.mark.skipif(
+    sys.platform != "linux",
+    reason="C project goldens use the Linux compiler-preprocessing reference environment",
+)
 def test_c_project_goldens_match_generated_payloads():
     if shutil.which("cc") is None:
         pytest.skip("cc is not available")

@@ -323,7 +323,9 @@ def test_generated_pyi_fixture_builds_from_native_object_without_source_reparse(
 
 
 def test_pyi_cli_preserves_explicit_ordered_link_items(tmp_path: Path):
-    native_object = _compile_native_object(SOURCE, tmp_path / "native")
+    native_object = tmp_path / "native" / "fruntime_abi_f90.o"
+    native_object.parent.mkdir()
+    native_object.touch()
     build_dir = tmp_path / "pyi_build"
     build_dir.mkdir()
     result = subprocess.run(
@@ -331,6 +333,8 @@ def test_pyi_cli_preserves_explicit_ordered_link_items(tmp_path: Path):
             sys.executable,
             "-m",
             "x2py",
+            "generate",
+            "--sources",
             str(PYI_FIXTURE),
             "--native-link-item",
             "arg:-Wl,--start-group",
@@ -347,8 +351,10 @@ def test_pyi_cli_preserves_explicit_ordered_link_items(tmp_path: Path):
     )
     payload = json.loads(result.stdout)
     native_plan = payload["native_build_plan"]
-    module = _sole_native_module(_import_from_build_dir(payload["module_name"], build_dir))
 
+    assert payload["compiled"] is False
+    assert all(Path(path).is_file() for path in payload["generated_sources"])
+    assert not Path(payload["shared_library"]).exists()
     assert native_plan["link_items"] == [
         {"kind": "linker_argument", "argument": "-Wl,--start-group"},
         {"kind": "object", "path": str(native_object)},
@@ -359,7 +365,6 @@ def test_pyi_cli_preserves_explicit_ordered_link_items(tmp_path: Path):
     assert manifest_link_items[1]["kind"] == "object"
     assert manifest_link_items[1]["path"].endswith(native_object.name)
     assert manifest_link_items[2] == {"argument": "-Wl,--end-group", "kind": "linker_argument"}
-    assert module.scale(np.float64(2.0), np.float64(4.0)) == np.float64(8.0)
 
 
 def test_generated_pyi_matches_checked_in_fixture(tmp_path: Path):

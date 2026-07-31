@@ -14,20 +14,21 @@ Guidelines:
 
 ## Active cJSON Regression
 
-The normal parser test run has no intentionally skipped C parser tests.
 `tests/c/fixtures/native/json/cJSON.h` and `cJSON.c` exercise the header, source and
 project paths in `test_c_corpus.py`; a separately pinned copy with license and
 source provenance remains documentation work rather than a disabled test.
+The exact compiler-preprocessed project snapshot is a Linux reference golden
+and is skipped on other platforms. Portable parser and preprocessing behavior
+continues to run there.
 
-## Legacy Parser Snapshots
+## Project Goldens
 
 Checked-in compatibility snapshots cover grouped projects from `tests/c/fixtures/native/general/`,
 `tests/c/fixtures/native/json/`, `tests/c/fixtures/native/tinyexpr/`, `tests/c/fixtures/native/linmath/`, and
 `tests/c/fixtures/native/nanosvg/`, plus top-level C inputs from `tests/c/fixtures/native/stb/`.
-They preserve historical JSON shape for schema sanity checks. They are not
-active parser output goldens: macro-heavy inputs now require compiler
-preprocessing, and reproducible compiler-recipe snapshots need a separate
-curated fixture workflow.
+They preserve the compiler-preprocessed Linux reference payload and historical
+JSON shape. Do not refresh them from macOS or another compiler/libc reference
+environment.
 
 ## Developer Walkthrough
 
