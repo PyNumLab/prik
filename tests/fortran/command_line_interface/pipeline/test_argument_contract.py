@@ -465,7 +465,7 @@ def test_prik_command_parsers_group_options_by_user_intent():
     assert "python3 -m prik points.f90" in top_help
     assert "python3 -m prik points.f90 --out geometry" in top_help
     assert "python3 -m prik generate --pyi points.f90 --out contracts" in top_help
-    assert "See the prik homepage for the points.f90 source and generated Python API:" in top_help
+    assert "See the PRIK homepage for the points.f90 source and generated Python API:" in top_help
     assert "https://pynumlab.github.io/prik/#see-it-in-action" in top_help
     assert "points.f90" in build_help
     assert "points.f90" in parse_help

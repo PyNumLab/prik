@@ -587,7 +587,7 @@ def test_cli_help_is_concise_and_points_to_detailed_help():
     assert "python3 -m prik points.f90" in res.stdout
     assert "python3 -m prik points.f90 --out geometry" in res.stdout
     assert "python3 -m prik generate --pyi points.f90 --out contracts" in res.stdout
-    assert "See the prik homepage for the points.f90 source and generated Python API:" in res.stdout
+    assert "See the PRIK homepage for the points.f90 source and generated Python API:" in res.stdout
     assert "https://pynumlab.github.io/prik/#see-it-in-action" in res.stdout
     assert "python3 -m prik --help-build" in res.stdout
     assert "python3 -m prik parse --help" in res.stdout
