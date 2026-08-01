@@ -50,8 +50,8 @@ def test_multiple_scalar_results_lower_to_binding_tuple_and_one_bridge_function_
 
     assert "int32_t bind_c_with_scalar(int32_t * n, int32_t * status);" in c_source
     assert "result = bind_c_with_scalar(&bound_n, &status);" in c_source
-    assert "PyObject * result_0_obj = x2py_scalar_to_python(NPY_INT32, &result);" in c_source
-    assert "PyObject * result_1_obj = x2py_scalar_to_python(NPY_INT32, &status);" in c_source
+    assert "PyObject * result_0_obj = x2py_int32_to_python(&result);" in c_source
+    assert "PyObject * result_1_obj = x2py_int32_to_python(&status);" in c_source
     assert "PyObject * result_obj = PyTuple_New(2);" in c_source
     assert "PyTuple_SET_ITEM(result_obj, 0, result_0_obj);" in c_source
     assert "PyTuple_SET_ITEM(result_obj, 1, result_1_obj);" in c_source

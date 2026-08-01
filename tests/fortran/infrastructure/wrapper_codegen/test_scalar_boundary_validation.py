@@ -95,10 +95,10 @@ def test_scalar_copy_in_out_reuses_one_binding_local_without_bridge_copy():
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
     assert c_source.count("int32_t bound_value;") == 1
-    assert "x2py_scalar_unpack(bound_value_obj, NPY_INT32, &bound_value)" in c_source
+    assert "x2py_int32_unpack_exact(bound_value_obj, &bound_value)" in c_source
     assert "bind_c_bump(&bound_value);" in c_source
     assert "PyObject * result_obj = NULL;" in c_source
-    assert "result_obj = x2py_scalar_to_python(NPY_INT32, &bound_value);" in c_source
+    assert "result_obj = x2py_int32_to_python(&bound_value);" in c_source
     assert "integer(c_int32_t) :: value" in bridge_source
     assert "call native_bump(value)" in bridge_source
     assert "value =" not in bridge_source

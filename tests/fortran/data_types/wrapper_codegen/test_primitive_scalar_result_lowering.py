@@ -27,7 +27,8 @@ def test_direct_scalar_result_registry_projects_supported_type_facts(type_name, 
     artifacts = WrapperCodeGenerator().generate(WrapperPlanner().build(module))
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
 
-    assert f"PyObject * result_obj = x2py_scalar_to_{result_kind}({numpy_type}, &result);" in c_source
+    helper_suffix = numpy_type.casefold().removeprefix("npy_")
+    assert f"PyObject * result_obj = x2py_{helper_suffix}_to_{result_kind}(&result);" in c_source
     assert "return result_obj;" in c_source
 
 

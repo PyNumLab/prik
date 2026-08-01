@@ -21,15 +21,31 @@ def test_native_binding_support_is_header_only_and_exposes_the_small_x2py_api():
         "x2py_native_array_handle_capsule_destructor",
         "x2py_native_array_handle_capsule_new",
         "x2py_native_array_handle_from_capsule",
-        "x2py_scalar_matches",
-        "x2py_scalar_unpack",
-        "x2py_scalar_to_python",
-        "x2py_scalar_to_numpy",
+        "x2py_array_actual_unpack",
         "x2py_release_owned_memory",
     )
     for name in expected_api:
         assert name in header
-    assert header.count("static inline") == len(expected_api)
+    assert "X2PY_NO_INLINE static int x2py_array_actual_unpack(" in header
+    assert "x2py_array_actual" in header
+
+    scalar_suffixes = (
+        "bool",
+        "int8",
+        "int16",
+        "int32",
+        "int64",
+        "float32",
+        "float64",
+        "complex64",
+        "complex128",
+    )
+    for suffix in scalar_suffixes:
+        assert f"x2py_{suffix}_unpack_exact" in header
+        assert f"x2py_{suffix}_unpack" in header
+        assert f"x2py_{suffix}_to_python" in header
+        assert f"x2py_{suffix}_to_numpy" in header
+    assert header.count("static inline") == 41
 
     removed_compatibility_names = (
         "PyInt32_to_Int32",

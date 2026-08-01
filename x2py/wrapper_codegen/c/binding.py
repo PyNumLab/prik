@@ -202,7 +202,7 @@ class CBindingGenerator(ClassVisitor):
         needs_free = self._module_needs_allocator(plan)
         return CModule(
             name=f"{plan.binding.owner_path}_wrapper",
-            defines=self._module_defines(needs_native_support),
+            defines=self._module_defines(plan, needs_native_support),
             includes=self._module_includes(plan, needs_native_support, needs_free),
             declarations=self._module_declarations(plan),
             functions=(
@@ -235,26 +235,46 @@ class CBindingGenerator(ClassVisitor):
             raise ValueError(f"Scalar type {scalar.semantic_name!r} has no NumPy type")
         return scalar.numpy_type_macro
 
-    def _scalar_matches_expression(self, scalar, object_name: str) -> str:
-        """Return one side-effect-free scalar type predicate."""
-        return f"x2py_scalar_matches({object_name}, {self._scalar_numpy_type(scalar)})"
+    def _scalar_helper_suffix(self, scalar) -> str:
+        """Return the typed native-support suffix selected by scalar policy."""
+        numpy_type = self._scalar_numpy_type(scalar)
+        if not numpy_type.startswith("NPY_"):
+            raise ValueError(f"Unsupported NumPy scalar type macro {numpy_type!r}")
+        return numpy_type.removeprefix("NPY_").casefold()
 
     def _scalar_unpack_expression(self, scalar, object_name: str, value_name: str) -> str:
-        """Return one checked Python-to-native scalar conversion."""
-        return f"x2py_scalar_unpack({object_name}, {self._scalar_numpy_type(scalar)}, &{value_name})"
+        """Return one typed coercive Python-to-native scalar conversion."""
+        suffix = self._scalar_helper_suffix(scalar)
+        return f"x2py_{suffix}_unpack({object_name}, &{value_name})"
+
+    def _scalar_exact_unpack_expression(self, scalar, object_name: str, value_name: str) -> str:
+        """Return one fused exact-type validation and scalar conversion."""
+        suffix = self._scalar_helper_suffix(scalar)
+        return f"x2py_{suffix}_unpack_exact({object_name}, &{value_name})"
+
+    def _scalar_exact_unpack_statement(
+        self,
+        scalar,
+        object_name: str,
+        value_name: str,
+        mismatch_error: str,
+        failure_return: str,
+    ) -> CExpressionStatement:
+        """Return one exact scalar transfer with its boundary-specific error."""
+        unpack = self._scalar_exact_unpack_expression(scalar, object_name, value_name)
+        return CExpressionStatement(
+            CodeExpression(
+                f"if ({unpack} < 0) {{ if (!PyErr_Occurred()) {{ {mismatch_error}; }} return {failure_return}; }}"
+            )
+        )
 
     def _scalar_result_expression(self, scalar, value_pointer: str, *, module: bool = False) -> str:
         """Return one native scalar conversion selected by completed result policy."""
         result_kind = scalar.python_module_result_kind if module else scalar.python_result_kind
-        converters = {
-            "python": "x2py_scalar_to_python",
-            "numpy": "x2py_scalar_to_numpy",
-        }
-        try:
-            converter = converters[result_kind]
-        except KeyError:
+        if result_kind not in {"python", "numpy"}:
             raise ValueError(f"Unsupported Python result kind for {scalar.semantic_name!r}: {result_kind!r}") from None
-        return f"{converter}({self._scalar_numpy_type(scalar)}, {value_pointer})"
+        suffix = self._scalar_helper_suffix(scalar)
+        return f"x2py_{suffix}_to_{result_kind}({value_pointer})"
 
     def _visit_NamespacePlan(self, plan: NamespacePlan) -> tuple[CFunction, ...]:
         """Return binding functions directly owned by one Python namespace."""
@@ -301,12 +321,18 @@ class CBindingGenerator(ClassVisitor):
             )
         )
 
-    @staticmethod
-    def _module_defines(needs_native_support: bool) -> tuple[CMacroDefinition, ...]:
-        """Select the generated translation unit that initializes NumPy's C API."""
+    def _module_defines(self, plan: ModulePlan, needs_native_support: bool) -> tuple[CMacroDefinition, ...]:
+        """Select native-support sections required by the completed module plan."""
         if not needs_native_support:
             return ()
-        return (CMacroDefinition("X2PY_BINDING_IMPORT_ARRAY", "1"),)
+        definitions = [CMacroDefinition("X2PY_BINDING_IMPORT_ARRAY", "1")]
+        if any(
+            argument.native_array_actual is not None
+            for function in self._functions(plan)
+            for argument in function.arguments
+        ):
+            definitions.append(CMacroDefinition("X2PY_BINDING_NATIVE_ARRAY_ACTUAL", "1"))
+        return tuple(definitions)
 
     def _module_includes(
         self,
@@ -581,7 +607,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(
                 target,
                 "PyObject *",
-                CodeExpression(f"x2py_scalar_to_numpy({self._scalar_numpy_type(scalar)}, {value_pointer})"),
+                CodeExpression(f"x2py_{self._scalar_helper_suffix(scalar)}_to_numpy({value_pointer})"),
             ),
         )
 
@@ -2507,13 +2533,8 @@ class CBindingGenerator(ClassVisitor):
             self._allocatable_holder_field_method_name(derived, field, "set"),
             (
                 *self._allocatable_holder_owner_nodes(derived.backend_symbol, setter=True),
-                self._scalar_field_type_check(field, scalar, "value_obj"),
                 CDeclaration("value", scalar.c_spelling),
-                CExpressionStatement(
-                    CodeExpression(
-                        "if (" + self._scalar_unpack_expression(scalar, "value_obj", "value") + " < 0) return NULL"
-                    )
-                ),
+                self._scalar_field_unpack_statement(field, scalar, "value_obj", "value"),
                 CExpressionStatement(
                     CodeExpression(
                         f"{self._allocatable_holder_field_bridge_name(derived, field, 'set')}(owner_address, value)"
@@ -2600,13 +2621,8 @@ class CBindingGenerator(ClassVisitor):
             self._pointer_holder_field_method_name(derived, field, "set"),
             (
                 *self._pointer_holder_owner_nodes(derived.backend_symbol, setter=True),
-                self._scalar_field_type_check(field, scalar, "value_obj"),
                 CDeclaration("value", scalar.c_spelling),
-                CExpressionStatement(
-                    CodeExpression(
-                        "if (" + self._scalar_unpack_expression(scalar, "value_obj", "value") + " < 0) return NULL"
-                    )
-                ),
+                self._scalar_field_unpack_statement(field, scalar, "value_obj", "value"),
                 CExpressionStatement(
                     CodeExpression(
                         f"{self._pointer_holder_field_bridge_name(derived, field, 'set')}(owner_address, value)"
@@ -3227,13 +3243,8 @@ class CBindingGenerator(ClassVisitor):
         scalar = PrimitiveScalarTypeRegistry.type_for(field.semantic_type_name)
         body = (
             *self._derived_owner_and_value_nodes(derived),
-            self._scalar_field_type_check(field, scalar, "value_obj"),
             CDeclaration("value", scalar.c_spelling),
-            CExpressionStatement(
-                CodeExpression(
-                    "if (" + self._scalar_unpack_expression(scalar, "value_obj", "value") + " < 0) return NULL"
-                )
-            ),
+            self._scalar_field_unpack_statement(field, scalar, "value_obj", "value"),
             CExpressionStatement(
                 CodeExpression(f"{self._derived_field_bridge_name(derived, field, 'set')}(owner_address, value)")
             ),
@@ -3274,13 +3285,8 @@ class CBindingGenerator(ClassVisitor):
             CExpressionStatement(
                 CodeExpression('if (!PyArg_ParseTuple(args, "OO", &owner_obj, &value_obj)) return NULL')
             ),
-            self._scalar_field_type_check(field, scalar, "value_obj"),
             CDeclaration("value", scalar.c_spelling),
-            CExpressionStatement(
-                CodeExpression(
-                    "if (" + self._scalar_unpack_expression(scalar, "value_obj", "value") + " < 0) return NULL"
-                )
-            ),
+            self._scalar_field_unpack_statement(field, scalar, "value_obj", "value"),
             CExpressionStatement(CodeExpression(f"{self._module_member_bridge_name(variable, member, 'set')}(value)")),
             CExpressionStatement(CodeExpression("Py_RETURN_NONE")),
         )
@@ -3525,13 +3531,23 @@ class CBindingGenerator(ClassVisitor):
             CExpressionStatement(CodeExpression(f"Py_DECREF({expected})")),
         )
 
-    def _scalar_field_type_check(self, field: DerivedFieldPlan, scalar, object_name: str) -> CExpressionStatement:
-        return CExpressionStatement(
-            CodeExpression(
-                f"if (!{self._scalar_matches_expression(scalar, object_name)}) {{ "
+    def _scalar_field_unpack_statement(
+        self,
+        field: DerivedFieldPlan,
+        scalar,
+        object_name: str,
+        value_name: str,
+    ) -> CExpressionStatement:
+        """Validate and unpack one exact scalar field replacement."""
+        return self._scalar_exact_unpack_statement(
+            scalar,
+            object_name,
+            value_name,
+            (
                 f'PyErr_Format(PyExc_TypeError, "Expected {scalar.python_type_name} for field {field.name}. '
-                f"Received <class '%s'>\", Py_TYPE({object_name})->tp_name); return NULL; }}"
-            )
+                f"Received <class '%s'>\", Py_TYPE({object_name})->tp_name)"
+            ),
+            "NULL",
         )
 
     def _derived_field_c_type(self, field: DerivedFieldPlan) -> str:
@@ -5743,18 +5759,11 @@ class CBindingGenerator(ClassVisitor):
                 parameters=(CParameter("value_obj", "PyObject *"),),
                 storage="static",
                 body=(
-                    self._module_setter_type_check(plan, scalar_type),
                     CDeclaration(
                         "value",
                         scalar_type.c_spelling,
                     ),
-                    CExpressionStatement(
-                        CodeExpression(
-                            "if ("
-                            + self._scalar_unpack_expression(scalar_type, "value_obj", "value")
-                            + " < 0) return -1"
-                        )
-                    ),
+                    self._module_setter_unpack_statement(plan, scalar_type),
                     CExpressionStatement(CodeExpression(f"{self._module_bridge_setter_name(plan)}(value)")),
                     CReturn(CodeExpression("0")),
                 ),
@@ -5769,14 +5778,18 @@ class CBindingGenerator(ClassVisitor):
         """Constants use ordinary Python module-dictionary rebinding."""
         return ()
 
-    def _module_setter_type_check(self, plan, scalar_type) -> CExpressionStatement:
-        return CExpressionStatement(
-            CodeExpression(
-                f"if (!{self._scalar_matches_expression(scalar_type, 'value_obj')}) {{ "
+    def _module_setter_unpack_statement(self, plan, scalar_type) -> CExpressionStatement:
+        """Validate and unpack one exact scalar module-variable replacement."""
+        return self._scalar_exact_unpack_statement(
+            scalar_type,
+            "value_obj",
+            "value",
+            (
                 f'PyErr_Format(PyExc_TypeError, "Expected an argument of type '
                 f"{scalar_type.python_type_name} for module variable {plan.binding.python_names[0]}. "
-                "Received <class '%s'>\", Py_TYPE(value_obj)->tp_name); return -1; }"
-            )
+                "Received <class '%s'>\", Py_TYPE(value_obj)->tp_name)"
+            ),
+            "-1",
         )
 
     def _visit_FunctionPlan(self, plan: FunctionPlan) -> CFunction:
@@ -6038,8 +6051,7 @@ class CBindingGenerator(ClassVisitor):
             CIf(
                 CodeExpression(f"{names.object_name} != Py_None"),
                 body=(
-                    self._type_check_statement(plan, names.object_name, scalar_type),
-                    self._conversion_statement(names, scalar_type),
+                    self._argument_scalar_unpack_statement(plan, names, scalar_type),
                     CExpressionStatement(CodeExpression(f"{names.nullable_name} = &{names.value_name}")),
                 ),
             ),
@@ -6286,20 +6298,16 @@ class CBindingGenerator(ClassVisitor):
         return (
             CDeclaration(names.object_name, "PyObject *"),
             CDeclaration(names.value_name, scalar_type.c_spelling),
-            CExpressionStatement(
-                CodeExpression(
-                    f"if (!{self._scalar_matches_expression(scalar_type, names.object_name)}) {{ "
+            self._scalar_exact_unpack_statement(
+                scalar_type,
+                names.object_name,
+                names.value_name,
+                (
                     f'PyErr_Format(PyExc_TypeError, "Expected an argument of type '
                     f"{scalar_type.python_type_name} for argument {plan.binding.python_name}. "
-                    f"Received <class '%s'>\", Py_TYPE({names.object_name})->tp_name); return NULL; }}"
-                )
-            ),
-            CExpressionStatement(
-                CodeExpression(
-                    "if ("
-                    + self._scalar_unpack_expression(scalar_type, names.object_name, names.value_name)
-                    + " < 0) return NULL"
-                )
+                    f"Received <class '%s'>\", Py_TYPE({names.object_name})->tp_name)"
+                ),
+                "NULL",
             ),
         )
 
@@ -6507,11 +6515,8 @@ class CBindingGenerator(ClassVisitor):
             *self._array_extraction_nodes(plan, names, array_object),
         )
         handle_nodes = (
-            CDeclaration(f"{prefix}_runtime", "PyObject *", CodeExpression("NULL")),
-            CDeclaration(f"{prefix}_helper", "PyObject *", CodeExpression("NULL")),
             CDeclaration(f"{prefix}_shape", "PyObject *", CodeExpression("NULL")),
-            CDeclaration(f"{prefix}_layout", "PyObject *", CodeExpression("NULL")),
-            CDeclaration(f"{prefix}_packed", "PyObject *", CodeExpression("NULL")),
+            CDeclaration(f"{prefix}_actual", "x2py_array_actual"),
             *self._native_array_actual_call_nodes(plan, context, names),
             *self._native_array_actual_unpack_nodes(plan, names),
         )
@@ -6530,41 +6535,28 @@ class CBindingGenerator(ClassVisitor):
         context: _CFunctionContext,
         names: _CArgumentNames,
     ) -> tuple[CExpressionStatement, ...]:
-        """Call the completed normal-array runtime packer."""
+        """Call the shared normal-array native-handle slow path."""
         actual = plan.native_array_actual
         if actual is None:
             return ()
         prefix = names.value_name
+        layout = "NULL" if actual.order is None else f'"{actual.order}"'
         nodes = [
-            CExpressionStatement(CodeExpression(f'{prefix}_runtime = PyImport_ImportModule("x2py.runtime.handles")')),
-            CExpressionStatement(CodeExpression(f"if ({prefix}_runtime == NULL) return NULL")),
-            CExpressionStatement(
-                CodeExpression(
-                    f"{prefix}_helper = PyObject_GetAttrString({prefix}_runtime, "
-                    '"_native_array_actual_argument_for_binding_positional")'
-                )
-            ),
-            CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_runtime)")),
-            CExpressionStatement(CodeExpression(f"if ({prefix}_helper == NULL) return NULL")),
             *self._native_array_actual_shape_object_nodes(plan, names),
             *self._native_array_actual_shape_nodes(plan, context, names),
-            *self._native_array_actual_layout_nodes(plan, names),
             CExpressionStatement(
                 CodeExpression(
-                    f'{prefix}_packed = PyObject_CallFunction({prefix}_helper, "OsiOOiiiiiiiii", '
-                    f'{names.object_name}, "{actual.dtype}", {self._native_array_actual_expected_rank(actual)}, '
-                    f"{prefix}_shape, {prefix}_layout, "
+                    f'if (x2py_array_actual_unpack({names.object_name}, "{actual.dtype}", '
+                    f"{self._native_array_actual_expected_rank(actual)}, {prefix}_shape, {layout}, "
                     f"{int(actual.writable)}, {int(actual.require_native_byte_order)}, {int(actual.require_aligned)}, "
                     f"{int(plan.array.runtime_rank_role is not None)}, "
                     f"{int(plan.array.itemsize_role is not None)}, {int(bool(plan.array.stride_roles))}, "
                     f"{int(actual.require_contiguous)}, {int(actual.flatten_storage)}, "
-                    f"{self._native_array_actual_flat_axis(actual)})"
+                    f"{self._native_array_actual_flat_axis(actual)}, &{prefix}_actual) < 0) {{ "
+                    f"Py_DECREF({prefix}_shape); return NULL; }}"
                 )
             ),
-            CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_helper)")),
             CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_shape)")),
-            CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_layout)")),
-            CExpressionStatement(CodeExpression(f"if ({prefix}_packed == NULL) return NULL")),
         ]
         return tuple(nodes)
 
@@ -6580,9 +6572,7 @@ class CBindingGenerator(ClassVisitor):
         prefix = names.value_name
         return (
             CExpressionStatement(CodeExpression(f"{prefix}_shape = PyTuple_New({actual.rank})")),
-            CExpressionStatement(
-                CodeExpression(f"if ({prefix}_shape == NULL) {{ Py_DECREF({prefix}_helper); return NULL; }}")
-            ),
+            CExpressionStatement(CodeExpression(f"if ({prefix}_shape == NULL) return NULL")),
         )
 
     @staticmethod
@@ -6620,97 +6610,41 @@ class CBindingGenerator(ClassVisitor):
                 CExpressionStatement(
                     CodeExpression(
                         f"if (PyTuple_GET_ITEM({prefix}_shape, {axis}) == NULL) {{ "
-                        f"Py_DECREF({prefix}_helper); Py_DECREF({prefix}_shape); return NULL; }}"
+                        f"Py_DECREF({prefix}_shape); return NULL; }}"
                     )
                 )
             )
         return tuple(nodes)
-
-    def _native_array_actual_layout_nodes(
-        self,
-        plan: ArgumentTransferPlan,
-        names: _CArgumentNames,
-    ) -> tuple[CExpressionStatement, ...]:
-        """Materialize the planned runtime layout marker."""
-        actual = plan.native_array_actual
-        if actual is None:
-            return ()
-        prefix = names.value_name
-        if actual.order is None:
-            return (
-                CExpressionStatement(CodeExpression(f"{prefix}_layout = Py_None")),
-                CExpressionStatement(CodeExpression("Py_INCREF(Py_None)")),
-            )
-        return (
-            CExpressionStatement(CodeExpression(f'{prefix}_layout = PyUnicode_FromString("{actual.order}")')),
-            CExpressionStatement(
-                CodeExpression(
-                    f"if ({prefix}_layout == NULL) {{ Py_DECREF({prefix}_helper); "
-                    f"Py_DECREF({prefix}_shape); return NULL; }}"
-                )
-            ),
-        )
 
     def _native_array_actual_unpack_nodes(
         self,
         plan: ArgumentTransferPlan,
         names: _CArgumentNames,
     ) -> tuple[CExpressionStatement, ...]:
-        """Unpack the completed pointer, rank, itemsize, and axis fact roles."""
+        """Assign planned ABI roles from the shared native-handle result."""
         prefix = names.value_name
         nodes = [
-            CExpressionStatement(
-                CodeExpression(f"{names.value_name} = PyLong_AsVoidPtr(PyTuple_GetItem({prefix}_packed, 0))")
-            ),
-            CExpressionStatement(
-                CodeExpression(
-                    f"if ({names.value_name} == NULL && PyErr_Occurred()) {{ Py_DECREF({prefix}_packed); "
-                    "return NULL; }"
-                )
-            ),
+            CExpressionStatement(CodeExpression(f"{names.value_name} = {prefix}_actual.data")),
         ]
-        position = 1
         array = plan.array
         if array is None:
             raise ValueError(f"Array actual {plan.owner_path!r} is missing its handoff")
-        scalar_fields = (
-            *((names.runtime_rank_name,) if array.runtime_rank_role is not None else ()),
-            *((names.itemsize_name,) if array.itemsize_role is not None else ()),
+        if array.runtime_rank_role is not None:
+            nodes.append(CExpressionStatement(CodeExpression(f"{names.runtime_rank_name} = {prefix}_actual.rank")))
+        if array.itemsize_role is not None:
+            nodes.append(CExpressionStatement(CodeExpression(f"{names.itemsize_name} = {prefix}_actual.itemsize")))
+        nodes.extend(
+            CExpressionStatement(CodeExpression(f"{field_name} = {prefix}_actual.extents[{axis}]"))
+            for axis, field_name in enumerate(names.extent_names)
         )
-        for field_name in scalar_fields:
-            nodes.extend(
-                (
-                    CExpressionStatement(
-                        CodeExpression(
-                            f"{field_name} = (int64_t)PyLong_AsLongLong(PyTuple_GetItem({prefix}_packed, {position}))"
-                        )
-                    ),
-                    CExpressionStatement(
-                        CodeExpression(f"if (PyErr_Occurred()) {{ Py_DECREF({prefix}_packed); return NULL; }}")
-                    ),
-                )
-            )
-            position += 1
-        axis_fields = (
-            *names.extent_names,
-            *names.upper_bound_names[: len(array.upper_bound_roles)],
-            *names.stride_names[: len(array.stride_roles)],
+        nodes.extend(
+            CExpressionStatement(CodeExpression(f"{field_name} = {prefix}_actual.upper_bounds[{axis}]"))
+            for axis, field_name in enumerate(names.upper_bound_names[: len(array.upper_bound_roles)])
         )
-        for field_name in axis_fields:
-            nodes.extend(
-                (
-                    CExpressionStatement(
-                        CodeExpression(
-                            f"{field_name} = (int64_t)PyLong_AsLongLong(PyTuple_GetItem({prefix}_packed, {position}))"
-                        )
-                    ),
-                    CExpressionStatement(
-                        CodeExpression(f"if (PyErr_Occurred()) {{ Py_DECREF({prefix}_packed); return NULL; }}")
-                    ),
-                )
-            )
-            position += 1
-        nodes.append(CExpressionStatement(CodeExpression(f"Py_DECREF({prefix}_packed)")))
+        nodes.extend(
+            CExpressionStatement(CodeExpression(f"{field_name} = {prefix}_actual.strides[{axis}]"))
+            for axis, field_name in enumerate(names.stride_names[: len(array.stride_roles)])
+        )
         return tuple(nodes)
 
     def _array_type_and_rank_check(
@@ -7805,8 +7739,7 @@ class CBindingGenerator(ClassVisitor):
             CIf(
                 CodeExpression(f"{names.object_name} != Py_None"),
                 body=(
-                    self._type_check_statement(plan, names.object_name, scalar_type),
-                    self._conversion_statement(names, scalar_type),
+                    self._argument_scalar_unpack_statement(plan, names, scalar_type),
                     CExpressionStatement(CodeExpression(f"{names.nullable_name} = &{names.value_name}")),
                 ),
             ),
@@ -7907,32 +7840,29 @@ class CBindingGenerator(ClassVisitor):
             CIf(
                 CodeExpression(f"({names.object_name} != NULL) && ({names.object_name} != Py_None)"),
                 body=(
-                    self._type_check_statement(plan, names.object_name, scalar_type),
-                    self._conversion_statement(names, scalar_type),
+                    self._argument_scalar_unpack_statement(plan, names, scalar_type),
                     CExpressionStatement(CodeExpression(f"{names.nullable_name} = &{names.value_name}")),
                 ),
             ),
         )
 
-    def _type_check_statement(self, plan, object_name, scalar_type) -> CExpressionStatement:
-        """Return one scalar type check with the established error surface."""
-        return CExpressionStatement(
-            CodeExpression(
-                f"if (!{self._scalar_matches_expression(scalar_type, object_name)}) {{ "
+    def _argument_scalar_unpack_statement(
+        self,
+        plan: ArgumentTransferPlan,
+        names: _CArgumentNames,
+        scalar_type,
+    ) -> CExpressionStatement:
+        """Validate and unpack one exact scalar argument with its public error."""
+        return self._scalar_exact_unpack_statement(
+            scalar_type,
+            names.object_name,
+            names.value_name,
+            (
                 f'PyErr_Format(PyExc_TypeError, "Expected an argument of type '
                 f"{scalar_type.python_type_name} for argument {plan.binding.python_name}. "
-                f"Received <class '%s'>\", Py_TYPE({object_name})->tp_name); return NULL; }}"
-            )
-        )
-
-    def _conversion_statement(self, names: _CArgumentNames, scalar_type) -> CExpressionStatement:
-        """Return one Python-to-native scalar conversion statement."""
-        return CExpressionStatement(
-            CodeExpression(
-                "if ("
-                + self._scalar_unpack_expression(scalar_type, names.object_name, names.value_name)
-                + " < 0) return NULL"
-            )
+                f"Received <class '%s'>\", Py_TYPE({names.object_name})->tp_name)"
+            ),
+            "NULL",
         )
 
     def _visit_ResultPlan(

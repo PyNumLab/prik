@@ -116,7 +116,7 @@ def test_fixed_string_replacement_allocation_runs_after_other_argument_conversio
     artifacts = WrapperCodeGenerator().generate(WrapperPlanner().build(module))
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
 
-    assert c_source.index("x2py_scalar_matches(bound_count_obj, NPY_INT32)") < c_source.index(
+    assert c_source.index("x2py_int32_unpack_exact(bound_count_obj, &bound_count)") < c_source.index(
         "bound_name = (char *)x2py_malloc((size_t)bound_name_length + 1)"
     )
 

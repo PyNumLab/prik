@@ -101,7 +101,7 @@ def test_replacement_writeback_dispatches_selected_scalar_result_behavior(codege
 
     assert "bind_c_bump(&bound_value);" in c_source
     if codegen_action is CodegenAction.COPY_IN_OUT:
-        assert "result_obj = x2py_scalar_to_python(NPY_INT32, &bound_value);" in c_source
+        assert "result_obj = x2py_int32_to_python(&bound_value);" in c_source
     else:
         assert "PyObject * result_obj = bound_value_obj;" in c_source
         assert "Py_INCREF(result_obj);" in c_source

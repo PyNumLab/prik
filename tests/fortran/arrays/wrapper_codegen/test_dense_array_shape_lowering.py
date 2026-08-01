@@ -158,18 +158,17 @@ def test_dense_array_lowering_uses_planned_shape_checks_and_bridge_orientation()
 
     assert "PyTuple_SET_ITEM(bound_values_shape, 0, PyLong_FromLongLong((long long)(bound_rows)))" in c_source
     assert "PyTuple_SET_ITEM(bound_values_shape, 1, PyLong_FromLongLong((long long)(bound_cols)))" in c_source
-    assert 'bound_values_layout = PyUnicode_FromString("F")' in c_source
-    assert 'bound_values_layout = PyUnicode_FromString("C")' in c_source
-    assert '"_native_array_actual_argument_for_binding_positional"' in c_source
+    assert 'x2py_array_actual_unpack(bound_values_obj, "float64", 2, bound_values_shape, "F"' in c_source
+    assert 'x2py_array_actual_unpack(bound_values_obj, "float64", 2, bound_values_shape, "C"' in c_source
     assert "bound_values_shape = PyTuple_New(1)" in c_source
     assert "PyTuple_SET_ITEM(bound_values_shape, 0, Py_None)" in c_source
     assert (
-        'PyObject_CallFunction(bound_values_helper, "OsiOOiiiiiiiii", bound_values_obj, "float64", 1, '
-        "bound_values_shape, bound_values_layout, 1, 1, 1, 0, 0, 0, 1, 1, 0)"
+        'x2py_array_actual_unpack(bound_values_obj, "float64", 1, bound_values_shape, NULL, '
+        "1, 1, 1, 0, 0, 0, 1, 1, 0, &bound_values_actual)"
     ) in c_source
     assert (
-        'PyObject_CallFunction(bound_values_helper, "OsiOOiiiiiiiii", bound_values_obj, "float64", 2, '
-        "bound_values_shape, bound_values_layout, 1, 1, 1, 0, 0, 0, 1, 1, 1)"
+        'x2py_array_actual_unpack(bound_values_obj, "float64", 2, bound_values_shape, "F", '
+        "1, 1, 1, 0, 0, 0, 1, 1, 1, &bound_values_actual)"
     ) in c_source
     assert "call c_f_pointer(bound_values, values, [values_extent_0, values_extent_1])" in bridge_source
     assert "call c_f_pointer(bound_values, values, [values_extent_1, values_extent_0])" in bridge_source

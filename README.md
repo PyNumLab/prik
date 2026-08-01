@@ -97,9 +97,15 @@ shows the available edits.
 
 The included benchmark suite runs both tools against the same Fortran kernels
 through their normal generated interfaces. Results are machine-dependent; the
-chart below is the latest committed snapshot.
+charts below are the latest committed snapshot.
+
+**Runtime-call performance** — values above `1.0×` mean x2py is faster.
 
 [![Relative performance of x2py and f2py across call, vector, and matrix workloads. Values above 1.0 mean x2py is faster.](docs/user/assets/performance-comparison.svg)](https://pynumlab.github.io/x2py/user/performance/)
+
+**Clean end-to-end build time** — lower times are better.
+
+[![Clean end-to-end build time for x2py and f2py under development and optimized compiler profiles. Lower times are better.](docs/user/assets/build-time-comparison.svg)](https://pynumlab.github.io/x2py/user/performance/#clean-build-time)
 
 [See the complete results, test environment, and one-command reproduction instructions.](https://pynumlab.github.io/x2py/user/performance/)
 

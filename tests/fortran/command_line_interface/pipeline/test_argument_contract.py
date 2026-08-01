@@ -284,6 +284,15 @@ def test_cli_native_compile_flags_split_grouped_shell_words():
     )
 
 
+@pytest.mark.parametrize("jobs", ("0", "many"))
+def test_cli_compile_jobs_rejects_non_positive_or_non_integer_values(jobs: str, capsys) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        x2py_cli.main([str(TEST_FILE), "--jobs", jobs])
+
+    assert exc_info.value.code == 2
+    assert "jobs must be a positive integer" in capsys.readouterr().err
+
+
 def test_cli_wrapper_flags_split_grouped_shell_words():
     assert x2py_cli._cli_wrapper_fortran_flags(["-O0 -g", "-DNAME='value with spaces'"]) == (
         "-O0",

@@ -113,7 +113,14 @@ kernels through their normal generated interfaces. Results are
 machine-dependent; the detailed page records the complete environment and
 reproduction method.
 
+**Runtime-call performance** — values above `1.0×` mean x2py is faster.
+
 [![Relative performance of x2py and f2py across call, vector, and matrix workloads. Values above 1.0 mean x2py is faster.](user/assets/performance-comparison.svg)](user/performance.md)
+{ .x2py-performance-chart }
+
+**Clean end-to-end build time** — lower times are better.
+
+[![Clean end-to-end build time for x2py and f2py under development and optimized compiler profiles. Lower times are better.](user/assets/build-time-comparison.svg)](user/performance.md#clean-build-time)
 { .x2py-performance-chart }
 
 [View the full results and methodology →](user/performance.md)

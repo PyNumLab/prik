@@ -168,8 +168,8 @@ def test_callback_artifacts_use_linear_context_adapter_and_trampoline_paths():
     assert 'bind(c, name="x2py_callback_trampoline' in bridge
     assert "size(values_callback_storage, dim=1, kind=c_int64_t)" in bridge
     assert "int(len(read_label_callback_storage), kind=c_int64_t)" in bridge
-    assert "x2py_scalar_to_numpy(NPY_INT32, &value)" in c_source
-    assert "x2py_scalar_to_numpy(NPY_INT32, count_data)" in c_source
+    assert "x2py_int32_to_numpy(&value)" in c_source
+    assert "x2py_int32_to_numpy(count_data)" in c_source
     assert bridge.count("call native_apply_array_storage_callback(") == 1
     assert "call callback(" not in bridge
     assert max(map(len, bridge.splitlines())) <= 132

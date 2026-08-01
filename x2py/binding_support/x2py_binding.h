@@ -27,6 +27,14 @@
 #define X2PY_NATIVE_ARRAY_KIND_ALLOCATABLE 1u
 #define X2PY_NATIVE_ARRAY_KIND_POINTER 2u
 
+#if defined(_MSC_VER)
+#define X2PY_NO_INLINE __declspec(noinline)
+#elif defined(__GNUC__) || defined(__clang__)
+#define X2PY_NO_INLINE __attribute__((noinline))
+#else
+#define X2PY_NO_INLINE
+#endif
+
 typedef void (*x2py_native_array_release_fn)(void *descriptor);
 
 /*
@@ -48,6 +56,20 @@ typedef struct {
     void *descriptor;
     x2py_native_array_release_fn release;
 } x2py_native_array_handle;
+
+#ifdef X2PY_BINDING_NATIVE_ARRAY_ACTUAL
+#  define X2PY_MAX_ARRAY_RANK 15
+
+/* Mechanical result of the normal-array native-handle slow path. */
+typedef struct {
+    void *data;
+    int64_t rank;
+    int64_t itemsize;
+    int64_t extents[X2PY_MAX_ARRAY_RANK];
+    int64_t upper_bounds[X2PY_MAX_ARRAY_RANK];
+    int64_t strides[X2PY_MAX_ARRAY_RANK];
+} x2py_array_actual;
+#endif
 
 /* Release descriptor payload and storage at most once while retaining the record. */
 static inline void x2py_native_array_handle_release(x2py_native_array_handle *handle)
@@ -192,142 +214,441 @@ static inline x2py_native_array_handle *x2py_native_array_handle_from_capsule(
     return handle;
 }
 
-/* Return whether value is exactly the NumPy scalar required by numpy_type. */
-static inline bool x2py_scalar_matches(PyObject *value, int numpy_type)
+/*
+ * Execute the Python native-handle handoff once per slow-path call site.
+ * The completed wrapper plan supplies every contract selector; this helper
+ * only performs reference management and decodes the returned ABI fields.
+ */
+#ifdef X2PY_BINDING_NATIVE_ARRAY_ACTUAL
+X2PY_NO_INLINE static int x2py_array_actual_unpack(
+    PyObject *value,
+    const char *dtype,
+    int expected_rank,
+    PyObject *expected_shape,
+    const char *expected_layout,
+    int require_writeable,
+    int require_native_byte_order,
+    int require_aligned,
+    int include_rank,
+    int include_itemsize,
+    int include_strides,
+    int require_contiguous,
+    int flatten_storage,
+    int flat_axis,
+    x2py_array_actual *actual)
 {
-    switch (numpy_type) {
-    case NPY_BOOL:
-        return PyBool_Check(value) || PyArray_IsScalar(value, Bool);
-    case NPY_INT8:
-        return PyArray_IsScalar(value, Int8);
-    case NPY_INT16:
-        return PyArray_IsScalar(value, Int16);
-    case NPY_INT32:
-        return PyArray_IsScalar(value, Int);
-    case NPY_INT64:
-        return PyArray_IsScalar(value, Int64);
-    case NPY_FLOAT32:
-        return PyArray_IsScalar(value, Float);
-    case NPY_FLOAT64:
-        return PyArray_IsScalar(value, Double);
-    case NPY_COMPLEX64:
-        return PyArray_IsScalar(value, CFloat);
-    case NPY_COMPLEX128:
-        return PyArray_IsScalar(value, CDouble);
-    default:
-        return false;
-    }
-}
+    PyObject *runtime = NULL;
+    PyObject *helper = NULL;
+    PyObject *layout = NULL;
+    PyObject *packed = NULL;
+    PyObject *item;
+    Py_ssize_t expected_fields;
+    Py_ssize_t position;
+    int axis;
 
-/* Copy one Python scalar into caller-owned native storage after boundary checks. */
-static inline int x2py_scalar_unpack(PyObject *value, int numpy_type, void *destination)
-{
-    if (destination == NULL) {
-        PyErr_SetString(PyExc_RuntimeError, "x2py generated a null scalar destination");
+    if (expected_shape == NULL || actual == NULL) {
+        PyErr_SetString(PyExc_RuntimeError, "x2py generated an incomplete native array actual");
+        return -1;
+    }
+    if (expected_rank < 1 || expected_rank > X2PY_MAX_ARRAY_RANK) {
+        PyErr_SetString(PyExc_RuntimeError, "x2py generated an invalid native array rank");
         return -1;
     }
 
-    if (numpy_type == NPY_BOOL) {
-        int truth = PyObject_IsTrue(value);
-        if (truth < 0) {
+    actual->data = NULL;
+    actual->rank = 0;
+    actual->itemsize = 0;
+    for (axis = 0; axis < X2PY_MAX_ARRAY_RANK; axis++) {
+        actual->extents[axis] = 0;
+        actual->upper_bounds[axis] = 0;
+        actual->strides[axis] = 1;
+    }
+
+    if (expected_layout == NULL) {
+        layout = Py_None;
+        Py_INCREF(layout);
+    } else {
+        layout = PyUnicode_FromString(expected_layout);
+        if (layout == NULL) {
             return -1;
         }
-        *(bool *)destination = truth != 0;
-        return 0;
     }
-    if (x2py_scalar_matches(value, numpy_type)) {
-        PyArray_ScalarAsCtype(value, destination);
-        return PyErr_Occurred() == NULL ? 0 : -1;
+    runtime = PyImport_ImportModule("x2py.runtime.handles");
+    if (runtime == NULL) {
+        Py_DECREF(layout);
+        return -1;
+    }
+    helper = PyObject_GetAttrString(runtime, "_native_array_actual_argument_for_binding_positional");
+    Py_DECREF(runtime);
+    if (helper == NULL) {
+        Py_DECREF(layout);
+        return -1;
+    }
+    packed = PyObject_CallFunction(
+        helper,
+        "OsiOOiiiiiiiii",
+        value,
+        dtype,
+        expected_rank,
+        expected_shape,
+        layout,
+        require_writeable,
+        require_native_byte_order,
+        require_aligned,
+        include_rank,
+        include_itemsize,
+        include_strides,
+        require_contiguous,
+        flatten_storage,
+        flat_axis);
+    Py_DECREF(helper);
+    Py_DECREF(layout);
+    if (packed == NULL) {
+        return -1;
     }
 
-    switch (numpy_type) {
-    case NPY_INT8:
-        *(int8_t *)destination = (int8_t)PyLong_AsLong(value);
-        break;
-    case NPY_INT16:
-        *(int16_t *)destination = (int16_t)PyLong_AsLong(value);
-        break;
-    case NPY_INT32:
-        *(int32_t *)destination = (int32_t)PyLong_AsLong(value);
-        break;
-    case NPY_INT64:
-        *(int64_t *)destination = (int64_t)PyLong_AsLongLong(value);
-        break;
-    case NPY_FLOAT32:
-        *(float *)destination = (float)PyFloat_AsDouble(value);
-        break;
-    case NPY_FLOAT64:
-        *(double *)destination = PyFloat_AsDouble(value);
-        break;
-    case NPY_COMPLEX64: {
-        float real = (float)PyComplex_RealAsDouble(value);
-        float imaginary = (float)PyComplex_ImagAsDouble(value);
-        *(float complex *)destination = real + imaginary * I;
-        break;
+    expected_fields = 1 + include_rank + include_itemsize + expected_rank;
+    if (include_strides) {
+        expected_fields += 2 * expected_rank;
     }
-    case NPY_COMPLEX128: {
-        double real = PyComplex_RealAsDouble(value);
-        double imaginary = PyComplex_ImagAsDouble(value);
-        *(double complex *)destination = real + imaginary * I;
-        break;
-    }
-    default:
-        PyErr_Format(PyExc_TypeError, "unsupported x2py scalar type %d", numpy_type);
+    if (!PyTuple_Check(packed) || PyTuple_GET_SIZE(packed) != expected_fields) {
+        PyErr_SetString(PyExc_RuntimeError, "x2py native array handoff returned invalid ABI fields");
+        Py_DECREF(packed);
         return -1;
+    }
+
+    position = 0;
+    actual->data = PyLong_AsVoidPtr(PyTuple_GET_ITEM(packed, position++));
+    if (actual->data == NULL && PyErr_Occurred()) {
+        Py_DECREF(packed);
+        return -1;
+    }
+    if (include_rank) {
+        actual->rank = (int64_t)PyLong_AsLongLong(PyTuple_GET_ITEM(packed, position++));
+        if (PyErr_Occurred()) {
+            Py_DECREF(packed);
+            return -1;
+        }
+    }
+    if (include_itemsize) {
+        actual->itemsize = (int64_t)PyLong_AsLongLong(PyTuple_GET_ITEM(packed, position++));
+        if (PyErr_Occurred()) {
+            Py_DECREF(packed);
+            return -1;
+        }
+    }
+    for (axis = 0; axis < expected_rank; axis++) {
+        item = PyTuple_GET_ITEM(packed, position++);
+        actual->extents[axis] = (int64_t)PyLong_AsLongLong(item);
+        if (PyErr_Occurred()) {
+            Py_DECREF(packed);
+            return -1;
+        }
+    }
+    if (include_strides) {
+        for (axis = 0; axis < expected_rank; axis++) {
+            item = PyTuple_GET_ITEM(packed, position++);
+            actual->upper_bounds[axis] = (int64_t)PyLong_AsLongLong(item);
+            if (PyErr_Occurred()) {
+                Py_DECREF(packed);
+                return -1;
+            }
+        }
+        for (axis = 0; axis < expected_rank; axis++) {
+            item = PyTuple_GET_ITEM(packed, position++);
+            actual->strides[axis] = (int64_t)PyLong_AsLongLong(item);
+            if (PyErr_Occurred()) {
+                Py_DECREF(packed);
+                return -1;
+            }
+        }
+    }
+    Py_DECREF(packed);
+    return 0;
+}
+#endif
+
+/* Exact typed scalar input conversion. A mismatch deliberately sets no error. */
+static inline int x2py_bool_unpack_exact(PyObject *value, bool *destination)
+{
+    int truth;
+    if (!PyBool_Check(value) && !PyArray_IsScalar(value, Bool)) {
+        return -1;
+    }
+    truth = PyObject_IsTrue(value);
+    if (truth < 0) {
+        return -1;
+    }
+    *destination = truth != 0;
+    return 0;
+}
+
+static inline int x2py_int8_unpack_exact(PyObject *value, int8_t *destination)
+{
+    if (!PyArray_IsScalar(value, Int8)) {
+        return -1;
+    }
+    PyArray_ScalarAsCtype(value, destination);
+    return PyErr_Occurred() == NULL ? 0 : -1;
+}
+
+static inline int x2py_int16_unpack_exact(PyObject *value, int16_t *destination)
+{
+    if (!PyArray_IsScalar(value, Int16)) {
+        return -1;
+    }
+    PyArray_ScalarAsCtype(value, destination);
+    return PyErr_Occurred() == NULL ? 0 : -1;
+}
+
+static inline int x2py_int32_unpack_exact(PyObject *value, int32_t *destination)
+{
+    if (!PyArray_IsScalar(value, Int)) {
+        return -1;
+    }
+    PyArray_ScalarAsCtype(value, destination);
+    return PyErr_Occurred() == NULL ? 0 : -1;
+}
+
+static inline int x2py_int64_unpack_exact(PyObject *value, int64_t *destination)
+{
+    if (!PyArray_IsScalar(value, Int64)) {
+        return -1;
+    }
+    PyArray_ScalarAsCtype(value, destination);
+    return PyErr_Occurred() == NULL ? 0 : -1;
+}
+
+static inline int x2py_float32_unpack_exact(PyObject *value, float *destination)
+{
+    if (!PyArray_IsScalar(value, Float)) {
+        return -1;
+    }
+    PyArray_ScalarAsCtype(value, destination);
+    return PyErr_Occurred() == NULL ? 0 : -1;
+}
+
+static inline int x2py_float64_unpack_exact(PyObject *value, double *destination)
+{
+    if (!PyArray_IsScalar(value, Double)) {
+        return -1;
+    }
+    PyArray_ScalarAsCtype(value, destination);
+    return PyErr_Occurred() == NULL ? 0 : -1;
+}
+
+static inline int x2py_complex64_unpack_exact(PyObject *value, float complex *destination)
+{
+    if (!PyArray_IsScalar(value, CFloat)) {
+        return -1;
+    }
+    PyArray_ScalarAsCtype(value, destination);
+    return PyErr_Occurred() == NULL ? 0 : -1;
+}
+
+static inline int x2py_complex128_unpack_exact(PyObject *value, double complex *destination)
+{
+    if (!PyArray_IsScalar(value, CDouble)) {
+        return -1;
+    }
+    PyArray_ScalarAsCtype(value, destination);
+    return PyErr_Occurred() == NULL ? 0 : -1;
+}
+
+/* Type-specific coercive conversion for boundaries that permit Python scalars. */
+static inline int x2py_bool_unpack(PyObject *value, bool *destination)
+{
+    int truth = PyObject_IsTrue(value);
+    if (truth < 0) {
+        return -1;
+    }
+    *destination = truth != 0;
+    return 0;
+}
+
+static inline int x2py_int8_unpack(PyObject *value, int8_t *destination)
+{
+    if (PyArray_IsScalar(value, Int8)) {
+        PyArray_ScalarAsCtype(value, destination);
+    } else {
+        *destination = (int8_t)PyLong_AsLong(value);
     }
     return PyErr_Occurred() == NULL ? 0 : -1;
 }
 
-/* Create a normal Python scalar from native storage. */
-static inline PyObject *x2py_scalar_to_python(int numpy_type, const void *value)
+static inline int x2py_int16_unpack(PyObject *value, int16_t *destination)
 {
-    if (value == NULL) {
-        PyErr_SetString(PyExc_RuntimeError, "x2py generated a null scalar value");
-        return NULL;
+    if (PyArray_IsScalar(value, Int16)) {
+        PyArray_ScalarAsCtype(value, destination);
+    } else {
+        *destination = (int16_t)PyLong_AsLong(value);
     }
-
-    switch (numpy_type) {
-    case NPY_BOOL:
-        return PyBool_FromLong(*(const bool *)value);
-    case NPY_INT8:
-        return PyLong_FromLong(*(const int8_t *)value);
-    case NPY_INT16:
-        return PyLong_FromLong(*(const int16_t *)value);
-    case NPY_INT32:
-        return PyLong_FromLong(*(const int32_t *)value);
-    case NPY_INT64:
-        return PyLong_FromLongLong(*(const int64_t *)value);
-    case NPY_FLOAT32:
-        return PyFloat_FromDouble(*(const float *)value);
-    case NPY_FLOAT64:
-        return PyFloat_FromDouble(*(const double *)value);
-    case NPY_COMPLEX64: {
-        float complex number = *(const float complex *)value;
-        return PyComplex_FromDoubles(crealf(number), cimagf(number));
-    }
-    case NPY_COMPLEX128: {
-        double complex number = *(const double complex *)value;
-        return PyComplex_FromDoubles(creal(number), cimag(number));
-    }
-    default:
-        PyErr_Format(PyExc_TypeError, "unsupported x2py scalar type %d", numpy_type);
-        return NULL;
-    }
+    return PyErr_Occurred() == NULL ? 0 : -1;
 }
 
-/* Create a NumPy scalar from native storage. */
-static inline PyObject *x2py_scalar_to_numpy(int numpy_type, const void *value)
+static inline int x2py_int32_unpack(PyObject *value, int32_t *destination)
 {
-    if (value == NULL) {
-        PyErr_SetString(PyExc_RuntimeError, "x2py generated a null scalar value");
-        return NULL;
+    if (PyArray_IsScalar(value, Int)) {
+        PyArray_ScalarAsCtype(value, destination);
+    } else {
+        *destination = (int32_t)PyLong_AsLong(value);
     }
+    return PyErr_Occurred() == NULL ? 0 : -1;
+}
 
-    PyArray_Descr *descriptor = PyArray_DescrFromType(numpy_type);
-    if (descriptor == NULL) {
-        return NULL;
+static inline int x2py_int64_unpack(PyObject *value, int64_t *destination)
+{
+    if (PyArray_IsScalar(value, Int64)) {
+        PyArray_ScalarAsCtype(value, destination);
+    } else {
+        *destination = (int64_t)PyLong_AsLongLong(value);
     }
-    return PyArray_Scalar((void *)value, descriptor, NULL);
+    return PyErr_Occurred() == NULL ? 0 : -1;
+}
+
+static inline int x2py_float32_unpack(PyObject *value, float *destination)
+{
+    if (PyArray_IsScalar(value, Float)) {
+        PyArray_ScalarAsCtype(value, destination);
+    } else {
+        *destination = (float)PyFloat_AsDouble(value);
+    }
+    return PyErr_Occurred() == NULL ? 0 : -1;
+}
+
+static inline int x2py_float64_unpack(PyObject *value, double *destination)
+{
+    if (PyArray_IsScalar(value, Double)) {
+        PyArray_ScalarAsCtype(value, destination);
+    } else {
+        *destination = PyFloat_AsDouble(value);
+    }
+    return PyErr_Occurred() == NULL ? 0 : -1;
+}
+
+static inline int x2py_complex64_unpack(PyObject *value, float complex *destination)
+{
+    if (PyArray_IsScalar(value, CFloat)) {
+        PyArray_ScalarAsCtype(value, destination);
+    } else {
+        float real = (float)PyComplex_RealAsDouble(value);
+        float imaginary = (float)PyComplex_ImagAsDouble(value);
+        *destination = real + imaginary * I;
+    }
+    return PyErr_Occurred() == NULL ? 0 : -1;
+}
+
+static inline int x2py_complex128_unpack(PyObject *value, double complex *destination)
+{
+    if (PyArray_IsScalar(value, CDouble)) {
+        PyArray_ScalarAsCtype(value, destination);
+    } else {
+        double real = PyComplex_RealAsDouble(value);
+        double imaginary = PyComplex_ImagAsDouble(value);
+        *destination = real + imaginary * I;
+    }
+    return PyErr_Occurred() == NULL ? 0 : -1;
+}
+
+/* Create normal Python scalars without a runtime dtype switch. */
+static inline PyObject *x2py_bool_to_python(const bool *value)
+{
+    return PyBool_FromLong(*value);
+}
+
+static inline PyObject *x2py_int8_to_python(const int8_t *value)
+{
+    return PyLong_FromLong(*value);
+}
+
+static inline PyObject *x2py_int16_to_python(const int16_t *value)
+{
+    return PyLong_FromLong(*value);
+}
+
+static inline PyObject *x2py_int32_to_python(const int32_t *value)
+{
+    return PyLong_FromLong(*value);
+}
+
+static inline PyObject *x2py_int64_to_python(const int64_t *value)
+{
+    return PyLong_FromLongLong(*value);
+}
+
+static inline PyObject *x2py_float32_to_python(const float *value)
+{
+    return PyFloat_FromDouble(*value);
+}
+
+static inline PyObject *x2py_float64_to_python(const double *value)
+{
+    return PyFloat_FromDouble(*value);
+}
+
+static inline PyObject *x2py_complex64_to_python(const float complex *value)
+{
+    return PyComplex_FromDoubles(crealf(*value), cimagf(*value));
+}
+
+static inline PyObject *x2py_complex128_to_python(const double complex *value)
+{
+    return PyComplex_FromDoubles(creal(*value), cimag(*value));
+}
+
+/* Create typed NumPy scalars without a runtime dtype argument. */
+static inline PyObject *x2py_bool_to_numpy(const bool *value)
+{
+    PyArray_Descr *descriptor = PyArray_DescrFromType(NPY_BOOL);
+    return descriptor == NULL ? NULL : PyArray_Scalar((void *)value, descriptor, NULL);
+}
+
+static inline PyObject *x2py_int8_to_numpy(const int8_t *value)
+{
+    PyArray_Descr *descriptor = PyArray_DescrFromType(NPY_INT8);
+    return descriptor == NULL ? NULL : PyArray_Scalar((void *)value, descriptor, NULL);
+}
+
+static inline PyObject *x2py_int16_to_numpy(const int16_t *value)
+{
+    PyArray_Descr *descriptor = PyArray_DescrFromType(NPY_INT16);
+    return descriptor == NULL ? NULL : PyArray_Scalar((void *)value, descriptor, NULL);
+}
+
+static inline PyObject *x2py_int32_to_numpy(const int32_t *value)
+{
+    PyArray_Descr *descriptor = PyArray_DescrFromType(NPY_INT32);
+    return descriptor == NULL ? NULL : PyArray_Scalar((void *)value, descriptor, NULL);
+}
+
+static inline PyObject *x2py_int64_to_numpy(const int64_t *value)
+{
+    PyArray_Descr *descriptor = PyArray_DescrFromType(NPY_INT64);
+    return descriptor == NULL ? NULL : PyArray_Scalar((void *)value, descriptor, NULL);
+}
+
+static inline PyObject *x2py_float32_to_numpy(const float *value)
+{
+    PyArray_Descr *descriptor = PyArray_DescrFromType(NPY_FLOAT32);
+    return descriptor == NULL ? NULL : PyArray_Scalar((void *)value, descriptor, NULL);
+}
+
+static inline PyObject *x2py_float64_to_numpy(const double *value)
+{
+    PyArray_Descr *descriptor = PyArray_DescrFromType(NPY_FLOAT64);
+    return descriptor == NULL ? NULL : PyArray_Scalar((void *)value, descriptor, NULL);
+}
+
+static inline PyObject *x2py_complex64_to_numpy(const float complex *value)
+{
+    PyArray_Descr *descriptor = PyArray_DescrFromType(NPY_COMPLEX64);
+    return descriptor == NULL ? NULL : PyArray_Scalar((void *)value, descriptor, NULL);
+}
+
+static inline PyObject *x2py_complex128_to_numpy(const double complex *value)
+{
+    PyArray_Descr *descriptor = PyArray_DescrFromType(NPY_COMPLEX128);
+    return descriptor == NULL ? NULL : PyArray_Scalar((void *)value, descriptor, NULL);
 }
 
 /* Release a bridge-owned allocation transferred through a NumPy base capsule. */

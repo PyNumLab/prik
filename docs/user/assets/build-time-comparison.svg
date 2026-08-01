@@ -27,31 +27,31 @@
       <text x="28" y="131" font-weight="600">Development · small module</text>
       <text x="28" y="155" font-size="12" fill="#607080">f2py</text>
       <rect x="390" y="141" width="31.3" height="20" rx="5" fill="#b45309"/>
-      <text x="431.3" y="156" fill="#8a3f08" font-weight="700">2.36 sec</text>
+      <text x="431.3" y="156" fill="#8a3f08" font-weight="700">2.37 sec</text>
       <text x="28" y="183" font-size="12" fill="#607080">x2py</text>
-      <rect x="390" y="169" width="11.9" height="20" rx="5" fill="#0f766e"/>
-      <text x="411.9" y="184" fill="#0b5e58" font-weight="700">895 ms</text>
+      <rect x="390" y="169" width="11.5" height="20" rx="5" fill="#0f766e"/>
+      <text x="411.5" y="184" fill="#0b5e58" font-weight="700">867 ms</text>
       <text x="28" y="223" font-weight="600">Development · full reference BLAS</text>
       <text x="28" y="247" font-size="12" fill="#607080">f2py</text>
-      <rect x="390" y="233" width="141.4" height="20" rx="5" fill="#b45309"/>
-      <text x="541.4" y="248" fill="#8a3f08" font-weight="700">10.7 sec</text>
+      <rect x="390" y="233" width="142.5" height="20" rx="5" fill="#b45309"/>
+      <text x="542.5" y="248" fill="#8a3f08" font-weight="700">10.8 sec</text>
       <text x="28" y="275" font-size="12" fill="#607080">x2py</text>
-      <rect x="390" y="261" width="141.6" height="20" rx="5" fill="#0f766e"/>
-      <text x="541.6" y="276" fill="#0b5e58" font-weight="700">10.7 sec</text>
+      <rect x="390" y="261" width="123.1" height="20" rx="5" fill="#0f766e"/>
+      <text x="523.1" y="276" fill="#0b5e58" font-weight="700">9.29 sec</text>
       <text x="28" y="315" font-weight="600">Optimized · small module</text>
       <text x="28" y="339" font-size="12" fill="#607080">f2py</text>
       <rect x="390" y="325" width="38.2" height="20" rx="5" fill="#b45309"/>
-      <text x="438.2" y="340" fill="#8a3f08" font-weight="700">2.89 sec</text>
+      <text x="438.2" y="340" fill="#8a3f08" font-weight="700">2.88 sec</text>
       <text x="28" y="367" font-size="12" fill="#607080">x2py</text>
-      <rect x="390" y="353" width="13.8" height="20" rx="5" fill="#0f766e"/>
-      <text x="413.8" y="368" fill="#0b5e58" font-weight="700">1.04 sec</text>
+      <rect x="390" y="353" width="13.6" height="20" rx="5" fill="#0f766e"/>
+      <text x="413.6" y="368" fill="#0b5e58" font-weight="700">1.03 sec</text>
       <text x="28" y="407" font-weight="600">Optimized · full reference BLAS</text>
       <text x="28" y="431" font-size="12" fill="#607080">f2py</text>
-      <rect x="390" y="417" width="287.6" height="20" rx="5" fill="#b45309"/>
-      <text x="687.6" y="432" fill="#8a3f08" font-weight="700">21.7 sec</text>
+      <rect x="390" y="417" width="295.7" height="20" rx="5" fill="#b45309"/>
+      <text x="695.7" y="432" fill="#8a3f08" font-weight="700">22.3 sec</text>
       <text x="28" y="459" font-size="12" fill="#607080">x2py</text>
-      <rect x="390" y="445" width="516.2" height="20" rx="5" fill="#0f766e"/>
-      <text x="916.2" y="460" fill="#0b5e58" font-weight="700">39.0 sec</text>
+      <rect x="390" y="445" width="437.9" height="20" rx="5" fill="#0f766e"/>
+      <text x="837.9" y="460" fill="#0b5e58" font-weight="700">33.1 sec</text>
     </g>
     <g font-size="13">
       <rect x="28" y="473" width="18" height="12" rx="3" fill="#0f766e"/>

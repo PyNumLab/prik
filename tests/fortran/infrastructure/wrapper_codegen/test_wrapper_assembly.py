@@ -57,9 +57,9 @@ def swap_args(x: Float64, y: Float64) -> Float64: ...
     assert "double bind_c_swap_args(double * y, double * x);" in c_source
     assert 'static char * kwlist[] = {"x", "y", NULL};' in c_source
     assert 'PyArg_ParseTupleAndKeywords(args, kwargs, "OO", kwlist, &bound_x_obj, &bound_y_obj)' in c_source
-    assert "x2py_scalar_unpack(bound_x_obj, NPY_FLOAT64, &bound_x)" in c_source
+    assert "x2py_float64_unpack_exact(bound_x_obj, &bound_x)" in c_source
     assert "result = bind_c_swap_args(&bound_y, &bound_x);" in c_source
-    assert "PyObject * result_obj = x2py_scalar_to_python(NPY_FLOAT64, &result);" in c_source
+    assert "PyObject * result_obj = x2py_float64_to_python(&result);" in c_source
     assert "PyMODINIT_FUNC PyInit_render_demo(void)" in c_source
     assert "static PyObject * wrap_swap_args" in c_header
     assert "module bind_c_render_demo_wrapper" in fortran_source

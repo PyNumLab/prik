@@ -83,15 +83,27 @@ extension includes `binding_support/x2py_binding.h`. This header is an
 implementation detail of the generated extension, but its name is intentionally
 x2py-specific so it does not look like user source or a generic C wrapper.
 
-The support header is header-only: each helper has internal linkage and is
-eligible for inlining when the generated binding translation unit is compiled.
-There is no separately compiled or linked support object. It exposes a
-deliberately small `x2py_*` mechanical API: scalar type matching, scalar
-unpacking, scalar creation as a Python or NumPy object, and release of a
-bridge-owned allocation. The generated binding passes the completed NumPy type,
-layout, ownership, and mutation decisions into those operations. Native support
-must not infer a layout, accept a different dtype, or choose ownership behavior
-from a value at runtime; those are completed wrapper-plan decisions.
+The support header is header-only and there is no separately compiled or linked
+support object. Small scalar helpers have internal linkage and are eligible for
+inlining when the generated binding translation unit is compiled. They are
+specialized by the completed scalar dtype instead of accepting a runtime dtype
+selector. Exact scalar inputs use one fused validation-and-unpack operation;
+the distinct coercive unpack operation is reserved for a completed boundary
+that permits Python scalar conversion, such as a callback result.
+
+The normal-array native-handle fallback is also emitted once through this
+header, but remains out of line within each generated translation unit. Each
+array call site supplies the completed dtype, rank, shape, layout, mutability,
+and ABI-field selectors and receives one mechanical data/extent/stride result.
+This keeps the direct NumPy-array path local and small while avoiding a copy of
+the Python runtime import, call, reference cleanup, and tuple-unpack machinery
+for every array argument.
+
+Together these helpers expose a deliberately small `x2py_*` mechanical API:
+typed scalar unpacking, scalar creation as a Python or NumPy object, native
+array-actual extraction, and release of a bridge-owned allocation. Native
+support must not infer a layout, accept a different dtype, or choose ownership
+behavior from a value at runtime; those are completed wrapper-plan decisions.
 X2PY_C_DOCS_END -->
 
 <!-- X2PY_C_DOCS_START

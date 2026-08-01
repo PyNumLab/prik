@@ -10,7 +10,7 @@ from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
 
 @pytest.mark.parametrize(
-    ("type_name", "c_type", "numpy_type"),
+    ("type_name", "c_type", "helper_suffix"),
     [
         ("Bool", "bool", "NPY_BOOL"),
         ("Int8", "int8_t", "NPY_INT8"),
@@ -23,7 +23,7 @@ from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
         ("Complex128", "double complex", "NPY_COMPLEX128"),
     ],
 )
-def test_scalar_input_registry_lowers_completed_type_into_the_native_support_api(type_name, c_type, numpy_type):
+def test_scalar_input_registry_lowers_completed_type_into_the_native_support_api(type_name, c_type, helper_suffix):
     module = parse_pyi_text(f"def identity(x: {type_name}) -> {type_name}: ...", module_name="scalar_input")
     complete_semantic_policies(module)
     plan = WrapperPlanner().build(module)
@@ -32,8 +32,10 @@ def test_scalar_input_registry_lowers_completed_type_into_the_native_support_api
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
 
     assert f"{c_type} bound_x;" in c_source
-    assert f"if (!x2py_scalar_matches(bound_x_obj, {numpy_type}))" in c_source
-    assert f"if (x2py_scalar_unpack(bound_x_obj, {numpy_type}, &bound_x) < 0) return NULL;" in c_source
+    assert (
+        f"if (x2py_{helper_suffix.casefold().removeprefix('npy_')}_unpack_exact(bound_x_obj, &bound_x) < 0)" in c_source
+    )
+    assert "if (!PyErr_Occurred())" in c_source
 
 
 def test_binding_locals_are_isolated_from_identifiers_imported_by_c_headers():
@@ -48,5 +50,5 @@ def test_binding_locals_are_isolated_from_identifiers_imported_by_c_headers():
 
     assert '#include "binding_support/x2py_binding.h"' in c_source
     assert "double bound_complex;" in c_source
-    assert "x2py_scalar_unpack(bound_complex_obj, NPY_FLOAT64, &bound_complex)" in c_source
+    assert "x2py_float64_unpack_exact(bound_complex_obj, &bound_complex)" in c_source
     assert "double complex;" not in c_source

@@ -13,17 +13,17 @@ publication: reviewed
 **Low-overhead Python calls for real Fortran workloads.**
 
 <!-- x2py-performance-summary:start -->
-On the benchmark system, the normal x2py interface delivered a **1.09× geometric-mean
-speedup over NumPy's f2py**. Across 13 workloads, x2py was faster in 10 and f2py in 3;
-all comparisons were statistically significant.
+On the benchmark system, the normal x2py interface delivered a **1.05× geometric-mean
+speedup over NumPy's f2py**. Across 13 workloads, x2py was faster in 7 and f2py in 5; 1
+workload showed no statistically significant difference.
 
 <div class="x2py-performance-summary" role="group" aria-label="Benchmark summary">
   <div class="x2py-performance-metric">
-    <strong>1.09×</strong>
+    <strong>1.05×</strong>
     <span>x2py geometric-mean speedup</span>
   </div>
   <div class="x2py-performance-metric">
-    <strong>10 of 13</strong>
+    <strong>7 of 13</strong>
     <span>workloads faster with x2py</span>
   </div>
   <div class="x2py-performance-metric">
@@ -48,20 +48,20 @@ the normal generated interface of each tool.
 <!-- x2py-performance-table:start -->
 | Workload | f2py | x2py | Relative result |
 | --- | ---: | ---: | ---: |
-| Empty function call | 44.6 ns | **41.2 ns** | x2py 1.08× faster |
-| Add two scalars | 436 ns | **426 ns** | x2py 1.02× faster |
-| Increment vector, 1 element | 140 ns | **93.7 ns** | x2py 1.49× faster |
-| Increment vector, 16 elements | 151 ns | **107 ns** | x2py 1.41× faster |
-| Increment vector, 1,024 elements | **283 ns** | 301 ns | f2py 1.07× faster |
-| Increment vector, 1,000,000 elements | 1.27 ms | **1.16 ms** | x2py 1.10× faster |
-| Sum 4×4 F-order matrix | 168 ns | **162 ns** | x2py 1.04× faster |
-| Sum 32×32 F-order matrix | **1.14 µs** | 1.15 µs | f2py 1.008× faster |
-| Sum 256×256 F-order matrix | **64.1 µs** | 65.9 µs | f2py 1.03× faster |
-| Sum 1,024×1,024 F-order matrix | 1.22 ms | **1.19 ms** | x2py 1.02× faster |
-| Update 4×4 F-order matrix | 343 ns | **330 ns** | x2py 1.04× faster |
-| Update 256×256 F-order matrix | 26.1 µs | **25.8 µs** | x2py 1.009× faster |
-| Update 1,024×1,024 F-order matrix | 1.38 ms | **1.15 ms** | x2py 1.21× faster |
-| **Geometric mean** | reference | — | **x2py 1.09× faster** |
+| Empty function call | 46.2 ns | **42.9 ns** | x2py 1.08× faster |
+| Add two scalars | **426 ns** | 440 ns | f2py 1.03× faster |
+| Increment vector, 1 element | 134 ns | **89.9 ns** | x2py 1.49× faster |
+| Increment vector, 16 elements | 145 ns | **101 ns** | x2py 1.43× faster |
+| Increment vector, 1,024 elements | **283 ns** | 299 ns | f2py 1.06× faster |
+| Increment vector, 1,000,000 elements | 1.19 ms | 1.21 ms | No significant difference |
+| Sum 4×4 F-order matrix | 166 ns | **148 ns** | x2py 1.13× faster |
+| Sum 32×32 F-order matrix | 1.15 µs | **1.13 µs** | x2py 1.02× faster |
+| Sum 256×256 F-order matrix | **63.5 µs** | 64.1 µs | f2py 1.009× faster |
+| Sum 1,024×1,024 F-order matrix | **1.09 ms** | 1.22 ms | f2py 1.12× faster |
+| Update 4×4 F-order matrix | 346 ns | **324 ns** | x2py 1.07× faster |
+| Update 256×256 F-order matrix | 26.0 µs | **25.7 µs** | x2py 1.01× faster |
+| Update 1,024×1,024 F-order matrix | **1.13 ms** | 1.42 ms | f2py 1.25× faster |
+| **Geometric mean** | reference | — | **x2py 1.05× faster** |
 <!-- x2py-performance-table:end -->
 
 The smallest workloads expose wrapper overhead most clearly. As more time is
@@ -90,10 +90,10 @@ Each value is the mean of 6 clean builds after 1 untimed warm-up.
 
 | Clean build workload | f2py | x2py | Relative result |
 | --- | ---: | ---: | ---: |
-| Development (`-O0`) · small module (1 source, 5 procedures) | 2.36 sec | **895 ms** | x2py 2.64× faster |
-| Development (`-O0`) · full reference BLAS (155 sources) | 10.7 sec | 10.7 sec | No significant difference |
-| Optimized (`-O3 -march=native -mtune=native`) · small module (1 source, 5 procedures) | 2.89 sec | **1.04 sec** | x2py 2.77× faster |
-| Optimized (`-O3 -march=native -mtune=native`) · full reference BLAS (155 sources) | **21.7 sec** | 39.0 sec | f2py 1.80× faster |
+| Development (`-O0`) · small module (1 source, 5 procedures) | 2.37 sec | **867 ms** | x2py 2.73× faster |
+| Development (`-O0`) · full reference BLAS (155 sources) | 10.8 sec | **9.29 sec** | x2py 1.16× faster |
+| Optimized (`-O3 -march=native -mtune=native`) · small module (1 source, 5 procedures) | 2.88 sec | **1.03 sec** | x2py 2.80× faster |
+| Optimized (`-O3 -march=native -mtune=native`) · full reference BLAS (155 sources) | **22.3 sec** | 33.1 sec | f2py 1.48× faster |
 <!-- x2py-performance-build:end -->
 
 ## Fair, Like-for-Like Setup
@@ -120,7 +120,7 @@ them. No benchmark-only wrapper mode is used.
 - NumPy/f2py: 2.5.1.
 - Fortran compiler: GNU Fortran 15.2.0.
 - pyperf: 2.10.0.
-- x2py revision: `working-tree`.
+- x2py revision: `0bcaafdf162d`.
 
 These results were recorded on August 1, 2026. Performance depends on the CPU,
 compiler, operating system, and background activity, so comparisons should use

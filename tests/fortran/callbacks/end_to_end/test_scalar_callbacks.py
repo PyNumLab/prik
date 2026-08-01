@@ -44,7 +44,7 @@ def test_immediate_scalar_dummy_procedure_calls_python_callback(compiled_scalar_
 
     def triple(value):
         assert isinstance(value, np.float64)
-        return value * 3.0
+        return float(value) * 3.0
 
     def decrement(value):
         assert isinstance(value, np.float64)
