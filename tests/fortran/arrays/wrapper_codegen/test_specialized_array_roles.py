@@ -6,7 +6,7 @@ from __future__ import annotations
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from x2py.semantics.policy_completion import complete_semantic_policies
 from x2py.semantics.wrapper_policy import OptionalMode
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from x2py.wrapper_codegen import CBindingGenerator, WrapperCodeGenerator, WrapperPlanner
 
 
 def _later_array_plan():
@@ -64,9 +64,9 @@ def test_optional_assumed_rank_and_character_lowering_follow_named_plan_fields()
 
     assert "PyObject * bound_values_obj = Py_None;" in c_source
     assert "if (bound_values_obj != Py_None)" in c_source
-    assert "PyArray_NDIM((PyArrayObject *)bound_values_obj) < 1" in c_source
+    assert "NPY_FLOAT64, 1, 15, X2PY_ARRAY_LAYOUT_F_CONTIGUOUS" in c_source
     assert "bound_values_rank = (int64_t)PyArray_NDIM" in c_source
-    assert "PyArray_TYPE((PyArrayObject *)bound_values_obj) != NPY_STRING" in c_source
+    assert "NPY_STRING, 1, 1, X2PY_ARRAY_LAYOUT_ANY_CONTIGUOUS" in c_source
     assert "bound_values_itemsize != 8" in c_source
     assert "if (c_associated(bound_values)) then" in bridge_source
     assert "select case (values_rank)" in bridge_source
@@ -74,3 +74,23 @@ def test_optional_assumed_rank_and_character_lowering_follow_named_plan_fields()
     assert "case (15)" in bridge_source
     assert "character(kind=c_char, len=8), pointer, contiguous, dimension(:) :: values" in bridge_source
     assert max(map(len, bridge_source.splitlines())) <= 132
+
+
+def test_native_array_fallback_unpacks_planned_runtime_rank_and_itemsize_roles():
+    functions = {function.binding.python_name: function for function in _later_array_plan().namespaces[0].functions}
+    generator = CBindingGenerator()
+
+    rank_function = functions["any_rank"]
+    rank_argument = rank_function.arguments[0]
+    rank_names = generator._function_context(rank_function).arguments[rank_argument.owner_path]
+    rank_nodes = generator._native_array_actual_unpack_nodes(rank_argument, rank_names)
+
+    itemsize_function = functions["labels"]
+    itemsize_argument = itemsize_function.arguments[0]
+    itemsize_names = generator._function_context(itemsize_function).arguments[itemsize_argument.owner_path]
+    itemsize_nodes = generator._native_array_actual_unpack_nodes(itemsize_argument, itemsize_names)
+
+    assert any(node.expression.text == "bound_values_rank = bound_values_actual.rank" for node in rank_nodes)
+    assert any(
+        node.expression.text == "bound_values_itemsize = bound_values_actual.itemsize" for node in itemsize_nodes
+    )

@@ -56,16 +56,30 @@ python3 build_time.py \
     --first "$benchmark_first"
 
 echo "Benchmark order: ${binding_tools[*]}"
+runtime_groups=(
+    calls
+    vector-latency
+    vector-bulk
+    matrix-sum-latency
+    matrix-sum-bulk
+    matrix-update-latency
+    matrix-update-bulk
+)
 for binding_tool in "${binding_tools[@]}"; do
-    BINDING_TOOL="$binding_tool" \
-    OMP_NUM_THREADS=1 \
-    OPENBLAS_NUM_THREADS=1 \
-    MKL_NUM_THREADS=1 \
-    python3 runtime.py \
-        --rigorous \
-        --affinity=0 \
-        --inherit-environ=BINDING_TOOL,OMP_NUM_THREADS,OPENBLAS_NUM_THREADS,MKL_NUM_THREADS \
-        -o "results/$binding_tool.json"
+    result_args=(-o "results/$binding_tool.json")
+    for runtime_group in "${runtime_groups[@]}"; do
+        BINDING_TOOL="$binding_tool" \
+        X2PY_RUNTIME_BENCHMARK_GROUP="$runtime_group" \
+        OMP_NUM_THREADS=1 \
+        OPENBLAS_NUM_THREADS=1 \
+        MKL_NUM_THREADS=1 \
+        python3 runtime.py \
+            --rigorous \
+            --affinity=0 \
+            --inherit-environ=BINDING_TOOL,X2PY_RUNTIME_BENCHMARK_GROUP,OMP_NUM_THREADS,OPENBLAS_NUM_THREADS,MKL_NUM_THREADS \
+            "${result_args[@]}"
+        result_args=(--append "results/$binding_tool.json")
+    done
 done
 
 python3 -m pyperf compare_to \

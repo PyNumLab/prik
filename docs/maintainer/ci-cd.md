@@ -46,7 +46,10 @@ the workflow uses the pinned Ubuntu 24.04 GitHub-hosted image and publishes its
 recorded platform details. Pull requests verify the generator against fixtures
 but do not replace the public snapshot. The workflow pins the benchmark
 toolchain and alternates whether x2py or f2py is measured first to avoid a
-systematic ordering advantage.
+systematic ordering advantage. Runtime cases use separate latency, medium, and
+bulk sampling budgets and are merged into one pyperf result per tool;
+this gives nanosecond-scale calls more independent samples without multiplying
+the cost of the largest array workloads.
 
 Enable the repository once through **Settings > Pages > Build and deployment >
 Source > GitHub Actions**. Then open **Actions > Documentation > Run workflow**,

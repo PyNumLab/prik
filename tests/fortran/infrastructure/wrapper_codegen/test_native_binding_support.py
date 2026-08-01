@@ -22,11 +22,14 @@ def test_native_binding_support_is_header_only_and_exposes_the_small_x2py_api():
         "x2py_native_array_handle_capsule_new",
         "x2py_native_array_handle_from_capsule",
         "x2py_array_actual_unpack",
+        "x2py_array_validate",
         "x2py_release_owned_memory",
     )
     for name in expected_api:
         assert name in header
     assert "X2PY_NO_INLINE static int x2py_array_actual_unpack(" in header
+    assert "static inline int x2py_array_validate(" in header
+    assert "X2PY_ARRAY_LAYOUT_POSITIVE_STRIDED_F" in header
     assert "x2py_array_actual" in header
 
     scalar_suffixes = (
@@ -45,7 +48,7 @@ def test_native_binding_support_is_header_only_and_exposes_the_small_x2py_api():
         assert f"x2py_{suffix}_unpack" in header
         assert f"x2py_{suffix}_to_python" in header
         assert f"x2py_{suffix}_to_numpy" in header
-    assert header.count("static inline") == 41
+    assert header.count("static inline") == 42
 
     removed_compatibility_names = (
         "PyInt32_to_Int32",

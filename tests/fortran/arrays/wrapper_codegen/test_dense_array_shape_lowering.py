@@ -225,7 +225,7 @@ def test_copy_f_lowering_keeps_numpy_copy_in_and_copy_out_out_of_the_bridge():
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
-    assert "!PyArray_IS_C_CONTIGUOUS((PyArrayObject *)bound_values_obj)" in c_source
+    assert "X2PY_ARRAY_LAYOUT_C_CONTIGUOUS, 1, 1" in c_source
     assert (
         "bound_values_representation = PyArray_NewCopy((PyArrayObject *)bound_values_obj, NPY_FORTRANORDER)" in c_source
     )

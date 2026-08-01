@@ -91,13 +91,42 @@ selector. Exact scalar inputs use one fused validation-and-unpack operation;
 the distinct coercive unpack operation is reserved for a completed boundary
 that permits Python scalar conversion, such as a callback result.
 
-The normal-array native-handle fallback is also emitted once through this
-header, but remains out of line within each generated translation unit. Each
-array call site supplies the completed dtype, rank, shape, layout, mutability,
-and ABI-field selectors and receives one mechanical data/extent/stride result.
-This keeps the direct NumPy-array path local and small while avoiding a copy of
-the Python runtime import, call, reference cleanup, and tuple-unpack machinery
-for every array argument.
+The normal-array native-handle fallback is emitted once through this header and
+remains out of line within each generated translation unit. Each call site
+supplies the completed dtype, rank, shape, layout, mutability, flattening, and
+ABI-field selectors and receives one mechanical data/extent/stride result. This
+avoids copying runtime imports, reference cleanup, and tuple unpacking for every
+array argument while keeping the ordinary NumPy path independent of the slow
+fallback.
+
+Helper linkage follows execution frequency rather than size alone. Small
+operations on the successful NumPy and scalar paths may remain `static inline`
+so the compiler can specialize completed dtype, rank, layout, and mutability
+selectors without an extra C call. Error construction, cleanup, and native
+handle fallback operations may be non-inlined because normal successful calls
+do not execute them. Substantial stride or flattening helpers require measured
+call-time and build-time evidence before moving out of line; reducing generated
+source size is not sufficient if the normal Python-call boundary regresses.
+
+Ordinary NumPy-array validation uses one compact `static inline` support
+helper. Each wrapper supplies its completed dtype, rank bounds, layout,
+contiguity, and writeability selectors; the helper performs the repeated type,
+access, and layout checks, including the positive-stride contract. Concrete
+shape expressions and ABI-field extraction remain in the wrapper because they
+refer to call-local symbolic roles. Constant selectors allow the compiler to
+specialize the successful path without requiring a separate helper call.
+
+Procedure-only modules with at least 128 Python-call wrappers split them across
+multiple generated binding translation units. The module-initialization unit
+owns NumPy C-API import and the CPython method tables; worker units contain
+stable, balanced groups of externally linked wrapper functions and reuse the
+generated binding header. A 128-wrapper module begins with four worker units;
+larger modules add workers around a target of 32 wrappers each. Sharding is
+automatic only for the mechanically independent
+function surface: module variables, classes, overload dispatch, callbacks,
+derived runtime state, and persistent native-array handles retain one binding
+translation unit. This is a compilation mechanism, not semantic policy, and
+does not alter the completed call plan or the inlining of hot support helpers.
 
 Together these helpers expose a deliberately small `x2py_*` mechanical API:
 typed scalar unpacking, scalar creation as a Python or NumPy object, native

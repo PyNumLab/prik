@@ -137,8 +137,8 @@ class WrapperCodeGenerator:
         if progress is not None:
             progress("Generate binding source", None)
             started = time.perf_counter()
-        c_module = self._c_generator.binding_module(plan)
-        c_source = self._c_printer.doprint(c_module)
+        c_modules = self._c_generator.binding_modules(plan)
+        c_sources = tuple(self._c_printer.doprint(module) for module in c_modules)
         if progress is not None:
             progress("Generate binding source", time.perf_counter() - started)
 
@@ -160,7 +160,7 @@ class WrapperCodeGenerator:
 
         return self._rendered_artifacts(
             plan.owner_path,
-            c_source,
+            c_sources,
             c_header_source,
             fortran_source,
             native_support_keys=(("binding_support",) if self._c_generator.requires_native_support(plan) else ()),
@@ -4363,16 +4363,20 @@ class WrapperCodeGenerator:
     def _rendered_artifacts(
         self,
         module_name: str,
-        c_source: str,
+        c_sources: tuple[str, ...],
         c_header: str,
         fortran_source: str,
         native_support_keys: tuple[str, ...],
         required_headers: tuple[str, ...],
     ) -> RenderedGeneratedWrapperArtifacts:
+        binding_sources = (
+            Path(f"{module_name}_wrapper.c"),
+            *(Path(f"{module_name}_wrapper_{index:03d}.c") for index in range(1, len(c_sources))),
+        )
         artifacts = GeneratedWrapperArtifacts(
             module_name=module_name,
             bridge_sources=(Path(f"bind_c_{module_name}_wrapper.f90"),),
-            binding_sources=(Path(f"{module_name}_wrapper.c"),),
+            binding_sources=binding_sources,
             header_files=(Path(f"{module_name}_wrapper.h"),),
             native_support_keys=native_support_keys,
             required_headers=required_headers,
@@ -4382,7 +4386,10 @@ class WrapperCodeGenerator:
             extension_init_name=f"PyInit_{module_name}",
             sources=(
                 GeneratedSourceFile(artifacts.bridge_sources[0], fortran_source),
-                GeneratedSourceFile(artifacts.binding_sources[0], c_source),
+                *(
+                    GeneratedSourceFile(path, source)
+                    for path, source in zip(artifacts.binding_sources, c_sources, strict=True)
+                ),
                 GeneratedSourceFile(artifacts.header_files[0], c_header),
             ),
         )

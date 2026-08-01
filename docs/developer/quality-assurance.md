@@ -93,6 +93,12 @@ Pushes to `main` run the same canonical Python 3.12 smoke and ordinary-suite
 selections in the separate `Coverage` workflow, then combine and publish their
 coverage data. Add the `run-coverage` PR label, manually dispatch that workflow,
 or call it as a reusable workflow to request the same coverage gate elsewhere.
+The combined coverage.py report is the blocking project gate and must remain at
+or above 90%. Codecov repeats that project target for hosted reporting. Its
+patch status is informational: changed-line coverage remains visible for
+review, but a tiny defensive branch cannot independently fail an otherwise
+passing project report. New reachable behavior should still receive focused
+tests instead of relying on that reporting policy.
 
 Every matrix test run also writes a path-aware JUnit report. If pytest fails, the final
 workflow step reads that report and prints a compact `Failed pytest nodes`
@@ -379,6 +385,7 @@ X2PY_C_DOCS_END -->
 - Ruff configuration: https://docs.astral.sh/ruff/configuration/
 - Pytest configuration: https://docs.pytest.org/en/latest/reference/customize.html
 - Coverage subprocess behavior: https://coverage.readthedocs.io/en/latest/config.html
+- Codecov commit-status configuration: https://docs.codecov.com/docs/commit-status
 - Hypothesis settings profiles: https://hypothesis.readthedocs.io/en/latest/tutorial/settings.html
 - Vulture configuration: https://pypi.org/project/vulture/
 - Radon command line: https://radon.readthedocs.io/en/stable/commandline.html

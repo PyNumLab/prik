@@ -12,6 +12,7 @@ TEST_INDEX = TEST_ROOT / "README.md"
 BLAS_LAPACK_WORKFLOW = REPO_ROOT / ".github/workflows/blas-lapack.yml"
 CLAUDE_WORKFLOW = REPO_ROOT / ".github/workflows/claude.yml"
 COVERAGE_WORKFLOW = REPO_ROOT / ".github/workflows/coverage.yml"
+CODECOV_CONFIG = REPO_ROOT / "codecov.yml"
 DOCS_WORKFLOW = REPO_ROOT / ".github/workflows/docs.yml"
 PARSER_REFERENCE_WORKFLOW = REPO_ROOT / ".github/workflows/parser-reference-guard.yml"
 STATIC_ANALYSIS_WORKFLOW = REPO_ROOT / ".github/workflows/static-analysis.yml"
@@ -74,6 +75,7 @@ TOOLS_TEST_MODULES = {
     "test_check_static_analysis_versions.py",
     "test_generate_performance_docs.py",
     "test_print_pytest_failures.py",
+    "test_runtime_benchmark.py",
     "test_run_fortran_toolchain_lane.py",
     "test_warm_real_library_native_cache.py",
 }
@@ -214,6 +216,20 @@ def test_coverage_workflow_reuses_the_canonical_test_selections() -> None:
     assert coverage.count("python -m coverage run -m pytest") == 2
     assert "python -m coverage combine" in coverage
     assert "python -m coverage report" in coverage
+
+
+def test_codecov_keeps_project_coverage_blocking_and_patch_coverage_informational() -> None:
+    assert CODECOV_CONFIG.read_text(encoding="utf-8") == (
+        "coverage:\n"
+        "  status:\n"
+        "    project:\n"
+        "      default:\n"
+        "        target: 90%\n"
+        "    patch:\n"
+        "      default:\n"
+        "        target: 90%\n"
+        "        informational: true\n"
+    )
 
 
 def test_active_github_action_jobs_use_purpose_first_display_names() -> None:

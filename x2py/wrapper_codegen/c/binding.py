@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+import math
 import re
 
 from x2py.semantics.ownership import (
@@ -126,6 +127,9 @@ class _CFunctionContext:
 class CBindingGenerator(ClassVisitor):
     """Recursively lower binding plan views directly into C syntax nodes."""
 
+    _SHARD_MIN_FUNCTIONS = 128
+    _SHARD_TARGET_FUNCTIONS = 32
+
     def require_supported(self, plan: ModulePlan) -> None:
         """Preflight C scalar types after shared plan validation."""
         for derived in self._derived_types(plan):
@@ -220,12 +224,135 @@ class CBindingGenerator(ClassVisitor):
             ),
         )
 
+    def binding_modules(self, plan: ModulePlan) -> tuple[CModule, ...]:
+        """Lower one or more independently compilable binding units."""
+        module = self.binding_module(plan)
+        function_groups = self._binding_function_shards(plan)
+        if not function_groups:
+            return (module,)
+        return self._sharded_binding_modules(plan, module, function_groups)
+
+    def _sharded_binding_modules(
+        self,
+        plan: ModulePlan,
+        module: CModule,
+        function_groups: tuple[tuple[FunctionPlan, ...], ...],
+    ) -> tuple[CModule, ...]:
+        """Move independently planned wrappers into balanced worker units."""
+        wrapper_names = {self._binding_function_name(function) for function in self._functions(plan)}
+        wrappers = self._external_binding_wrappers(module, wrapper_names)
+        main_module = replace(
+            module,
+            functions=tuple(function for function in module.functions if function.name not in wrapper_names),
+        )
+        worker_defines = tuple(
+            definition for definition in module.defines if definition.name != "X2PY_BINDING_IMPORT_ARRAY"
+        )
+        workers = self._binding_worker_modules(module, function_groups, wrappers, worker_defines)
+        return (main_module, *workers)
+
+    @staticmethod
+    def _external_binding_wrappers(module: CModule, wrapper_names: set[str]) -> dict[str, CFunction]:
+        """Return externally linked copies of the selected wrapper functions."""
+        return {
+            function.name: replace(function, storage=None)
+            for function in module.functions
+            if function.name in wrapper_names
+        }
+
+    def _binding_worker_modules(
+        self,
+        module: CModule,
+        function_groups: tuple[tuple[FunctionPlan, ...], ...],
+        wrappers: dict[str, CFunction],
+        worker_defines: tuple[CMacroDefinition, ...],
+    ) -> tuple[CModule, ...]:
+        """Assemble the independently compilable wrapper worker units."""
+        return tuple(
+            CModule(
+                name=f"{module.name}_{index:03d}",
+                defines=worker_defines,
+                includes=module.includes,
+                declarations=tuple(self._bridge_prototype(function) for function in group),
+                functions=tuple(wrappers[self._binding_function_name(function)] for function in group),
+            )
+            for index, group in enumerate(function_groups, start=1)
+        )
+
+    def _binding_function_shards(self, plan: ModulePlan) -> tuple[tuple[FunctionPlan, ...], ...]:
+        """Return balanced groups when wrappers are safe to compile independently."""
+        functions = self._functions(plan)
+        if not self._can_shard_binding_functions(plan, functions):
+            return ()
+        shard_count = max(2, math.ceil(len(functions) / self._SHARD_TARGET_FUNCTIONS))
+        base_size, larger_groups = divmod(len(functions), shard_count)
+        groups = []
+        offset = 0
+        for index in range(shard_count):
+            size = base_size + (index < larger_groups)
+            groups.append(functions[offset : offset + size])
+            offset += size
+        return tuple(groups)
+
+    def _can_shard_binding_functions(
+        self,
+        plan: ModulePlan,
+        functions: tuple[FunctionPlan, ...],
+    ) -> bool:
+        """Keep runtime-coupled surfaces in one binding translation unit."""
+        if len(functions) < self._SHARD_MIN_FUNCTIONS:
+            return False
+        if not self._has_shardable_namespace(plan):
+            return False
+        if self._module_has_shard_runtime_state(plan):
+            return False
+        return not self._functions_use_native_array_handles(functions)
+
+    @staticmethod
+    def _has_shardable_namespace(plan: ModulePlan) -> bool:
+        """Return whether one root procedure namespace owns the module."""
+        if len(plan.namespaces) != 1:
+            return False
+        namespace = plan.namespaces[0]
+        runtime_surfaces = (
+            namespace.python_path,
+            namespace.variables,
+            namespace.classes,
+            namespace.derived_types,
+            namespace.overloads,
+        )
+        return not any(runtime_surfaces)
+
+    def _module_has_shard_runtime_state(self, plan: ModulePlan) -> bool:
+        """Return whether wrappers call helpers that must share one unit."""
+        return any(
+            (
+                self._module_needs_allocator(plan),
+                self._module_uses_callbacks(plan),
+                self._module_uses_derived_calls(plan),
+            )
+        )
+
+    @staticmethod
+    def _functions_use_native_array_handles(functions: tuple[FunctionPlan, ...]) -> bool:
+        """Return whether persistent descriptor helpers couple the wrappers."""
+        arguments_use_handles = any(
+            argument.native_array_handle is not None for function in functions for argument in function.arguments
+        )
+        results_use_handles = any(
+            result.native_array_handle is not None for function in functions for result in function.results
+        )
+        return any((arguments_use_handles, results_use_handles))
+
     def binding_header(self, plan: ModulePlan) -> CHeader:
         """Lower the binding header from one completed wrapper plan."""
+        external_wrappers = bool(self._binding_function_shards(plan))
         return CHeader(
             guard=f"{plan.binding.owner_path.upper()}_WRAPPER_H",
             includes=(CInclude("Python.h"),),
-            prototypes=tuple(self._binding_prototype(function) for function in self._functions(plan)),
+            prototypes=tuple(
+                self._binding_prototype(function, external=external_wrappers) for function in self._functions(plan)
+            ),
         )
 
     @staticmethod
@@ -6442,9 +6569,7 @@ class CBindingGenerator(ClassVisitor):
         array = f"(PyArrayObject *){names.object_name}"
         nodes = [
             *self._ordinary_array_argument_declarations(plan, names),
-            self._array_type_and_rank_check(plan, names, array),
-            *self._array_layout_checks(plan, array),
-            *self._array_access_checks(plan, array),
+            self._array_validation_statement(plan, names),
             *self._array_shape_checks(plan, context, array),
         ]
         nodes.extend(self._array_extraction_nodes(plan, names, array))
@@ -6508,9 +6633,7 @@ class CBindingGenerator(ClassVisitor):
         prefix = names.value_name
         array_object = f"(PyArrayObject *){names.object_name}"
         direct_nodes = (
-            self._array_type_and_rank_check(plan, names, array_object),
-            *self._array_layout_checks(plan, array_object),
-            *self._array_access_checks(plan, array_object),
+            self._array_validation_statement(plan, names),
             *self._array_shape_checks(plan, context, array_object),
             *self._array_extraction_nodes(plan, names, array_object),
         )
@@ -6647,142 +6770,58 @@ class CBindingGenerator(ClassVisitor):
         )
         return tuple(nodes)
 
-    def _array_type_and_rank_check(
+    def _array_validation_statement(
         self,
         plan: ArgumentTransferPlan,
         names: _CArgumentNames,
-        array: str,
     ) -> CExpressionStatement:
-        """Require the exact NumPy element type and completed rank shape."""
+        """Call compact validation with selectors from the completed plan."""
         handoff = plan.array
         if handoff is None:
             raise ValueError(f"Array argument {plan.owner_path!r} is missing its handoff")
-        if plan.datatype_family is DatatypeFamily.STRING:
-            numpy_type = "NPY_STRING"
-            python_type = f"numpy.bytes_[{handoff.itemsize}]"
-        else:
-            scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
-            if scalar_type.numpy_type_macro is None:
-                raise ValueError(f"Unsupported array element type {plan.semantic_type_name!r}")
-            numpy_type = scalar_type.numpy_type_macro
-            python_type = scalar_type.python_type_name
-        rank_check = self._array_rank_check_expression(handoff, array)
+        numpy_type, python_type = self._array_dtype_selectors(plan, handoff)
+        minimum_rank, maximum_rank = self._array_rank_bounds(handoff)
+        layout = self._array_layout_selector(handoff)
         return CExpressionStatement(
             CodeExpression(
-                f"if (!PyArray_Check({names.object_name}) || PyArray_TYPE({array}) != {numpy_type} || "
-                f'{rank_check}) {{ PyErr_Format(PyExc_TypeError, "Expected a compatible numpy.ndarray of '
-                f"dtype {python_type} for argument {plan.binding.python_name}. Received <class '%s'>\", "
-                f"Py_TYPE({names.object_name})->tp_name); return NULL; }}"
+                f"if (x2py_array_validate({names.object_name}, {numpy_type}, {minimum_rank}, {maximum_rank}, "
+                f'{layout}, {int(handoff.contiguous is True)}, {int(plan.binding.writable)}, "{python_type}", '
+                f'"{plan.binding.python_name}") < 0) return NULL'
             )
         )
 
     @staticmethod
-    def _array_rank_check_expression(handoff, array: str) -> str:
-        """Render the Python-rank predicate selected by completed array policy."""
+    def _array_dtype_selectors(
+        plan: ArgumentTransferPlan,
+        handoff: ArrayHandoffPlan,
+    ) -> tuple[str, str]:
+        """Return compact helper dtype selectors from completed array facts."""
+        if plan.datatype_family is DatatypeFamily.STRING:
+            return "NPY_STRING", f"numpy.bytes_[{handoff.itemsize}]"
+        scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
+        if scalar_type.numpy_type_macro is None or scalar_type.python_type_name is None:
+            raise ValueError(f"Unsupported array element type {plan.semantic_type_name!r}")
+        return scalar_type.numpy_type_macro, scalar_type.python_type_name
+
+    @staticmethod
+    def _array_rank_bounds(handoff: ArrayHandoffPlan) -> tuple[int, int]:
+        """Return inclusive runtime-rank bounds selected by array policy."""
         if handoff.rank is None:
-            return f"PyArray_NDIM({array}) < 1 || PyArray_NDIM({array}) > 15"
+            return 1, 15
         if handoff.flatten_python_storage:
-            return f"PyArray_NDIM({array}) < {handoff.rank} || PyArray_NDIM({array}) > 15"
-        return f"PyArray_NDIM({array}) != {handoff.rank}"
+            return handoff.rank, 15
+        return handoff.rank, handoff.rank
 
-    def _array_access_checks(
-        self,
-        plan: ArgumentTransferPlan,
-        array: str,
-    ) -> tuple[CExpressionStatement, ...]:
-        """Require native byte order, alignment, and planned writeability."""
-        checks = [
-            CExpressionStatement(
-                CodeExpression(
-                    f"if (!PyArray_ISNOTSWAPPED({array})) {{ PyErr_SetString(PyExc_TypeError, "
-                    f'"Argument {plan.binding.python_name} must use native byte order"); return NULL; }}'
-                )
-            ),
-            CExpressionStatement(
-                CodeExpression(
-                    f"if (!PyArray_ISALIGNED({array})) {{ PyErr_SetString(PyExc_TypeError, "
-                    f'"Argument {plan.binding.python_name} must be aligned"); return NULL; }}'
-                )
-            ),
-        ]
-        if plan.binding.writable:
-            checks.append(
-                CExpressionStatement(
-                    CodeExpression(
-                        f"if (!PyArray_ISWRITEABLE({array})) {{ PyErr_SetString(PyExc_TypeError, "
-                        f'"Argument {plan.binding.python_name} must be writeable"); return NULL; }}'
-                    )
-                )
-            )
-        return tuple(checks)
-
-    def _array_layout_checks(
-        self,
-        plan: ArgumentTransferPlan,
-        array: str,
-    ) -> tuple[CExpressionStatement, ...]:
-        """Dispatch dense or positive-strided layout validation."""
-        handoff = plan.array
-        if handoff is None:
-            return ()
+    @staticmethod
+    def _array_layout_selector(handoff: ArrayHandoffPlan) -> str:
+        """Return the compact helper layout selector chosen by the plan."""
         if handoff.contiguous is False:
-            return self._positive_strided_array_checks(plan, array)
+            return "X2PY_ARRAY_LAYOUT_POSITIVE_STRIDED_F"
         if handoff.order == "ORDER_C":
-            condition = f"!PyArray_IS_C_CONTIGUOUS({array})"
-            expected_order = "C"
-        elif handoff.order == "ORDER_F" or (handoff.rank is not None and handoff.rank > 1):
-            condition = f"!PyArray_IS_F_CONTIGUOUS({array})"
-            expected_order = "F"
-        else:
-            condition = f"!(PyArray_IS_C_CONTIGUOUS({array}) || PyArray_IS_F_CONTIGUOUS({array}))"
-            expected_order = "C or F"
-        contiguous_requirement = "; array must be contiguous" if handoff.contiguous is True else ""
-        return (
-            CExpressionStatement(
-                CodeExpression(
-                    f"if ({condition}) {{ PyErr_SetString(PyExc_TypeError, "
-                    f'"Argument {plan.binding.python_name} has incompatible layout; expected ordering '
-                    f'({expected_order}){contiguous_requirement}"); return NULL; }}'
-                )
-            ),
-        )
-
-    def _positive_strided_array_checks(
-        self,
-        plan: ArgumentTransferPlan,
-        array: str,
-    ) -> tuple[CExpressionStatement, ...]:
-        """Require positive non-overlapping Fortran-oriented element strides."""
-        handoff = plan.array
-        if handoff is None or handoff.rank is None:
-            raise ValueError(f"Strided array {plan.owner_path!r} requires a concrete rank")
-        checks = []
-        for axis in range(handoff.rank):
-            stride = f"PyArray_STRIDE({array}, {axis})"
-            checks.append(
-                CExpressionStatement(
-                    CodeExpression(
-                        f"if (({stride} % PyArray_ITEMSIZE({array})) != 0 || "
-                        f"(PyArray_SIZE({array}) > 0 && PyArray_DIM({array}, {axis}) > 1 && {stride} <= 0)) {{ "
-                        f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} has incompatible '
-                        f'layout; expected ordering (F)"); return NULL; }}'
-                    )
-                )
-            )
-            if axis:
-                previous_stride = f"PyArray_STRIDE({array}, {axis - 1})"
-                previous_extent = f"PyArray_DIM({array}, {axis - 1})"
-                checks.append(
-                    CExpressionStatement(
-                        CodeExpression(
-                            f"if (PyArray_SIZE({array}) > 0 && {previous_extent} > 0 && "
-                            f"{stride} < {previous_stride} * {previous_extent}) {{ "
-                            f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} has incompatible '
-                            f'layout; expected ordering (F)"); return NULL; }}'
-                        )
-                    )
-                )
-        return tuple(checks)
+            return "X2PY_ARRAY_LAYOUT_C_CONTIGUOUS"
+        if handoff.order == "ORDER_F" or (handoff.rank is not None and handoff.rank > 1):
+            return "X2PY_ARRAY_LAYOUT_F_CONTIGUOUS"
+        return "X2PY_ARRAY_LAYOUT_ANY_CONTIGUOUS"
 
     def _array_shape_checks(
         self,
@@ -10404,12 +10443,12 @@ class CBindingGenerator(ClassVisitor):
             entries=entries,
         )
 
-    def _binding_prototype(self, plan: FunctionPlan) -> CFunctionPrototype:
+    def _binding_prototype(self, plan: FunctionPlan, *, external: bool = False) -> CFunctionPrototype:
         return CFunctionPrototype(
             self._binding_function_name(plan),
             "PyObject *",
             self._binding_parameters(),
-            "static",
+            None if external else "static",
         )
 
     @staticmethod

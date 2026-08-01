@@ -57,8 +57,9 @@ typedef struct {
     x2py_native_array_release_fn release;
 } x2py_native_array_handle;
 
+#define X2PY_MAX_ARRAY_RANK 15
+
 #ifdef X2PY_BINDING_NATIVE_ARRAY_ACTUAL
-#  define X2PY_MAX_ARRAY_RANK 15
 
 /* Mechanical result of the normal-array native-handle slow path. */
 typedef struct {
@@ -367,6 +368,116 @@ X2PY_NO_INLINE static int x2py_array_actual_unpack(
     return 0;
 }
 #endif
+
+/* Completed selectors for compact ordinary NumPy-array validation. */
+#define X2PY_ARRAY_LAYOUT_ANY_CONTIGUOUS 0
+#define X2PY_ARRAY_LAYOUT_C_CONTIGUOUS 1
+#define X2PY_ARRAY_LAYOUT_F_CONTIGUOUS 2
+#define X2PY_ARRAY_LAYOUT_POSITIVE_STRIDED_F 3
+
+/*
+ * Validate mechanics shared by every ordinary NumPy-array argument. The
+ * generated wrapper supplies completed policy selectors and retains its
+ * call-local shape and ABI-field lowering.
+ */
+static inline int x2py_array_validate(
+    PyObject *value,
+    int numpy_type,
+    int minimum_rank,
+    int maximum_rank,
+    int layout,
+    int require_contiguous,
+    int require_writeable,
+    const char *python_type,
+    const char *argument_name)
+{
+    PyArrayObject *array;
+    int axis;
+    int rank;
+    const char *expected_order;
+    const char *contiguous_suffix;
+
+    if (minimum_rank < 0 || maximum_rank < minimum_rank || maximum_rank > X2PY_MAX_ARRAY_RANK
+        || layout < X2PY_ARRAY_LAYOUT_ANY_CONTIGUOUS
+        || layout > X2PY_ARRAY_LAYOUT_POSITIVE_STRIDED_F
+        || python_type == NULL || argument_name == NULL) {
+        PyErr_SetString(PyExc_RuntimeError, "x2py generated invalid NumPy-array validation selectors");
+        return -1;
+    }
+    if (!PyArray_Check(value)) {
+        PyErr_Format(
+            PyExc_TypeError,
+            "Expected a compatible numpy.ndarray of dtype %s for argument %s. Received <class '%s'>",
+            python_type,
+            argument_name,
+            Py_TYPE(value)->tp_name);
+        return -1;
+    }
+    array = (PyArrayObject *)value;
+    rank = PyArray_NDIM(array);
+    if (PyArray_TYPE(array) != numpy_type || rank < minimum_rank || rank > maximum_rank) {
+        PyErr_Format(
+            PyExc_TypeError,
+            "Expected a compatible numpy.ndarray of dtype %s for argument %s. Received <class '%s'>",
+            python_type,
+            argument_name,
+            Py_TYPE(value)->tp_name);
+        return -1;
+    }
+    if (layout == X2PY_ARRAY_LAYOUT_POSITIVE_STRIDED_F) {
+        for (axis = 0; axis < rank; axis++) {
+            npy_intp stride = PyArray_STRIDE(array, axis);
+            if ((stride % PyArray_ITEMSIZE(array)) != 0
+                || (PyArray_SIZE(array) > 0 && PyArray_DIM(array, axis) > 1 && stride <= 0)) {
+                PyErr_Format(
+                    PyExc_TypeError,
+                    "Argument %s has incompatible layout; expected ordering (F)",
+                    argument_name);
+                return -1;
+            }
+            if (axis > 0 && PyArray_SIZE(array) > 0 && PyArray_DIM(array, axis - 1) > 0
+                && stride < PyArray_STRIDE(array, axis - 1) * PyArray_DIM(array, axis - 1)) {
+                PyErr_Format(
+                    PyExc_TypeError,
+                    "Argument %s has incompatible layout; expected ordering (F)",
+                    argument_name);
+                return -1;
+            }
+        }
+    } else {
+        int valid_layout =
+            (layout == X2PY_ARRAY_LAYOUT_C_CONTIGUOUS && PyArray_IS_C_CONTIGUOUS(array))
+            || (layout == X2PY_ARRAY_LAYOUT_F_CONTIGUOUS && PyArray_IS_F_CONTIGUOUS(array))
+            || (layout == X2PY_ARRAY_LAYOUT_ANY_CONTIGUOUS
+                && (PyArray_IS_C_CONTIGUOUS(array) || PyArray_IS_F_CONTIGUOUS(array)));
+        if (!valid_layout) {
+            expected_order = layout == X2PY_ARRAY_LAYOUT_C_CONTIGUOUS ? "C"
+                : layout == X2PY_ARRAY_LAYOUT_F_CONTIGUOUS ? "F" : "C or F";
+            contiguous_suffix = require_contiguous ? "; array must be contiguous" : "";
+            PyErr_Format(
+                PyExc_TypeError,
+                "Argument %s has incompatible layout; expected ordering (%s)%s",
+                argument_name,
+                expected_order,
+                contiguous_suffix);
+            return -1;
+        }
+    }
+
+    if (!PyArray_ISNOTSWAPPED(array)) {
+        PyErr_Format(PyExc_TypeError, "Argument %s must use native byte order", argument_name);
+        return -1;
+    }
+    if (!PyArray_ISALIGNED(array)) {
+        PyErr_Format(PyExc_TypeError, "Argument %s must be aligned", argument_name);
+        return -1;
+    }
+    if (require_writeable && !PyArray_ISWRITEABLE(array)) {
+        PyErr_Format(PyExc_TypeError, "Argument %s must be writeable", argument_name);
+        return -1;
+    }
+    return 0;
+}
 
 /* Exact typed scalar input conversion. A mismatch deliberately sets no error. */
 static inline int x2py_bool_unpack_exact(PyObject *value, bool *destination)

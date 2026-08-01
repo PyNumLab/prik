@@ -109,6 +109,14 @@ with `COVERAGE_PROCESS_START=pyproject.toml`, combine parallel data, then
 report. The maintained workflow is documented in
 [Quality Assurance](../../developer/quality-assurance.md#pytest-and-coveragepy).
 
+## `codecov.yml`
+
+The repository-level `codecov.yml` mirrors the blocking 90% coverage.py
+project floor for Codecov reporting. Changed-line, or patch, coverage is
+reported as informational so a very small patch is not judged by an implicit
+100% target. This does not relax the local or CI project gate, and reachable
+new behavior is still expected to have focused tests.
+
 Do not treat `pyproject.toml` as a user wrapper-build configuration file.
 Wrapper users select inputs through CLI flags, Python API arguments, semantic
 `.pyi` contracts, and generated manifests.

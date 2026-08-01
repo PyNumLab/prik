@@ -48,6 +48,7 @@ def test_strided_array_lowering_validates_and_passes_one_explicit_bridge_slice()
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
     assert 'x2py_array_actual_unpack(bound_values_obj, "float64", 2, bound_values_shape, "F"' in c_source
+    assert "NPY_FLOAT64, 2, 2, X2PY_ARRAY_LAYOUT_POSITIVE_STRIDED_F, 0, 1" in c_source
     assert "bound_values_upper_bound_0 = bound_values_actual.upper_bounds[0]" in c_source
     assert "bound_values_stride_1 = bound_values_actual.strides[1]" in c_source
     assert "bound_values_upper_bound_0" in c_source

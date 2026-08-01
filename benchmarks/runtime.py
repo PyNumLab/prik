@@ -21,6 +21,21 @@ def get_function(api: Any, name: str) -> Callable[..., Any]:
 
 
 tool = os.environ.get("BINDING_TOOL")
+benchmark_group = os.environ.get("X2PY_RUNTIME_BENCHMARK_GROUP", "all")
+group_settings = {
+    "all": (20, 3),
+    "calls": (64, 4),
+    "vector-latency": (64, 4),
+    "vector-bulk": (16, 3),
+    "matrix-sum-latency": (64, 4),
+    "matrix-sum-bulk": (4, 3),
+    "matrix-update-latency": (64, 4),
+    "matrix-update-bulk": (32, 3),
+}
+
+if benchmark_group not in group_settings:
+    choices = ", ".join(group_settings)
+    raise RuntimeError(f"Unknown X2PY_RUNTIME_BENCHMARK_GROUP {benchmark_group!r}; choose one of: {choices}.")
 
 if tool == "x2py":
     extension = importlib.import_module("bench_x2py")
@@ -37,31 +52,39 @@ sum_matrix = get_function(api, "sum_matrix")
 matrix_update = get_function(api, "matrix_update")
 
 
+processes, values = group_settings[benchmark_group]
 runner = pyperf.Runner(
+    processes=processes,
+    values=values,
     metadata={
         "binding_tool": tool,
+        "benchmark_group": benchmark_group,
         "python_version": sys.version,
         "numpy_version": np.__version__,
         "platform_details": platform.platform(),
-    }
+    },
 )
 
-# Duplicate extremely small statements to reduce timing-loop overhead.
-runner.timeit(
-    "call.noop",
-    stmt="fn()",
-    globals={"fn": noop},
-    duplicate=100,
-)
+if benchmark_group in {"all", "calls"}:
+    # Duplicate extremely small statements to reduce timing-loop overhead.
+    runner.timeit(
+        "call.noop",
+        stmt="fn()",
+        globals={"fn": noop},
+        duplicate=100,
+    )
 
-runner.timeit(
-    "call.add_scalars",
-    stmt="fn(np.float64(1.25), np.float64(2.75))",
-    globals={"fn": add_scalars, "np": np},
-    duplicate=50,
-)
+    runner.timeit(
+        "call.add_scalars",
+        stmt="fn(np.float64(1.25), np.float64(2.75))",
+        globals={"fn": add_scalars, "np": np},
+        duplicate=50,
+    )
 
 for size in (1, 16, 1024, 1000000):
+    group = "vector-latency" if size <= 16 else "vector-bulk"
+    if benchmark_group not in {"all", group}:
+        continue
     vector = np.zeros(size, dtype=np.float64)
 
     runner.timeit(
@@ -75,6 +98,9 @@ for size in (1, 16, 1024, 1000000):
 
 for shape in ((4, 4), (32, 32), (256, 256), (1024, 1024)):
     rows, columns = shape
+    group = "matrix-sum-latency" if rows == 4 else "matrix-sum-bulk"
+    if benchmark_group not in {"all", group}:
+        continue
 
     for order in ("F",):
         matrix = np.ones(shape, dtype=np.float64, order=order)
@@ -90,8 +116,11 @@ for shape in ((4, 4), (32, 32), (256, 256), (1024, 1024)):
 
 # Native in-place Fortran-contiguous path.
 for shape in ((4, 4), (256, 256), (1024, 1024)):
-    matrix = np.zeros(shape, dtype=np.float64, order="F")
     rows, columns = shape
+    group = "matrix-update-bulk" if rows == 1024 else "matrix-update-latency"
+    if benchmark_group not in {"all", group}:
+        continue
+    matrix = np.zeros(shape, dtype=np.float64, order="F")
 
     runner.timeit(
         f"matrix.update.{rows}x{columns}.order=F",

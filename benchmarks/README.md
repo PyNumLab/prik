@@ -43,7 +43,12 @@ bash run.sh
 The script rebuilds both runtime extensions, runs both clean-build profiles,
 and applies each profile consistently to the native Fortran source, generated
 Fortran wrapper, and generated C binding. Runtime extensions use the optimized
-profile. It retains f2py's generated sources under `build/f2py` for local
+profile. Runtime cases use latency, medium, and bulk sampling budgets: the
+short and noisier cases use more pyperf worker processes and values, while
+expensive matrix cases use fewer. Contiguous case groups preserve the table's
+call, vector, matrix-sum, and matrix-update order as their results are appended to the same per-tool
+JSON suite, so comparison and publication commands remain unchanged. The
+script retains f2py's generated sources under `build/f2py` for local
 inspection.
 
 To compare existing results without rebuilding:

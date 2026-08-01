@@ -81,7 +81,10 @@ def test_required_array_buffer_dispatches_through_named_binding_and_bridge_metho
     assert "bound_values = bound_values_actual.data;" in c_source
     assert "bound_values_extent_0 = bound_values_actual.extents[0];" in c_source
     assert "if (PyArray_Check(bound_values_obj)) {" in c_source
-    assert "PyArray_TYPE((PyArrayObject *)bound_values_obj) != NPY_FLOAT64" in c_source
+    assert (
+        "x2py_array_validate(bound_values_obj, NPY_FLOAT64, 1, 1, "
+        'X2PY_ARRAY_LAYOUT_ANY_CONTIGUOUS, 1, 1, "numpy.float64", "values")'
+    ) in c_source
     assert "bound_values = PyArray_DATA((PyArrayObject *)bound_values_obj);" in c_source
     assert "result = bind_c_sum_values(bound_values, bound_values_extent_0);" in c_source
 

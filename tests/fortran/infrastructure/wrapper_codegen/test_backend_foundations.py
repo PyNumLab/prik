@@ -37,6 +37,7 @@ from x2py.wrapper_codegen import (
     NamespacePlan,
     UnsupportedWrapperCodegenNodeError,
 )
+from x2py.wrapper_codegen.c.binding import CBindingGenerator
 
 
 def test_source_printers_render_complete_c_header_and_fortran_modules():
@@ -114,6 +115,18 @@ def test_source_printers_reject_wrapper_plan_models():
         CSourcePrinter().doprint(plan)
     with pytest.raises(UnsupportedWrapperCodegenNodeError):
         FortranSourcePrinter().doprint(plan)
+
+
+def test_c_binding_rejects_an_unprefixed_numpy_scalar_macro():
+    scalar = BackendScalarType(
+        semantic_name="Invalid",
+        c_spelling="double",
+        fortran_spelling="real(c_double)",
+        numpy_type_macro="FLOAT64",
+    )
+
+    with pytest.raises(ValueError, match="Unsupported NumPy scalar type macro 'FLOAT64'"):
+        CBindingGenerator()._scalar_helper_suffix(scalar)
 
 
 def test_fortran_source_printer_wraps_long_parenthesized_call_arguments():
