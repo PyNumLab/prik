@@ -1168,7 +1168,7 @@ class FunctionWrapperPolicy:
     external_declaration: ExternalDeclarationMode
     native_module: str | None
     native_is_subroutine: bool
-    hold_gil: bool
+    release_gil: bool
     status_error: NativeStatusErrorPolicy | None
     class_call: ClassMethodPolicy | None
     module_export: bool
@@ -2409,8 +2409,7 @@ def build_function_wrapper_policy(
         ),
         native_module=native_module,
         native_is_subroutine=_native_is_subroutine(function),
-        hold_gil=bool(function.metadata.get(models.RUNTIME_HOLD_GIL_METADATA))
-        or any(argument.callback is not None for argument in arguments),
+        release_gil=bool(function.metadata.get(models.RUNTIME_RELEASE_GIL_METADATA)),
         status_error=status_error,
         class_call=class_call,
         module_export=(

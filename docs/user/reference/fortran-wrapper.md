@@ -518,6 +518,10 @@ A wrapper feature is considered supported only when all applicable layers agree:
 - the default wrapper build emits a precise error when a declaration is
   unsupported or lacks policy;
 - semantic lowering preserves the contract without reconstructing source text;
+- the source formatter wraps generated free-form Fortran at syntax-safe token
+  boundaries, including character-literal continuations that preserve their
+  exact value, so every bridge line stays within the standard 132-column limit;
+  generation fails before compilation when no safe continuation point exists;
 - runtime behavior is covered by the project verification policy before it is
   presented as supported; and
 - fixed-form and free-form behavior are both considered when the source feature
@@ -2146,31 +2150,37 @@ process abort, or a callback failure crossing a native callback boundary.
 ### GIL Policy
 
 <!-- X2PY_C_DOCS_START
-Ordinary callback-free procedure calls release the CPython GIL around the
-C-compatible native call. Argument parsing, NumPy validation, ownership work,
-result conversion, and exception handling execute with the GIL held.
+Procedure calls keep the CPython GIL by default. Argument parsing, NumPy
+validation, ownership work, result conversion, and exception handling always
+execute with the GIL held.
 X2PY_C_DOCS_END -->
 
 Module-variable and class-property accessors, constructors, destructors, and
-callback-taking calls keep the GIL automatically. An edited `.pyi` can keep it
-for another procedure:
+other generated procedures keep the GIL automatically. An edited `.pyi` can
+explicitly release it around one native procedure call:
 
 ```python
-from x2py.contracts import Int32, hold_gil
+from x2py.contracts import Int32, nogil
 
-@hold_gil
-def update_shared_state(value: Int32) -> None: ...
+@nogil
+def update_disjoint_state(value: Int32) -> None: ...
 ```
 
-`@hold_gil` accepts no arguments. It serializes against ordinary Python threads
-in the same interpreter; it is not a lock against native threads, OpenMP
-workers, external libraries, or another interpreter.
+`@nogil` accepts no arguments. It releases the GIL only around the native
+bridge call; conversion, writeback, cleanup, and exception projection keep it.
+Use it only when the native call is safe while other Python threads execute.
+For callback-taking calls, the callback trampoline reacquires the GIL during
+Python execution.
+
+Keeping the GIL serializes against ordinary Python threads in the same
+interpreter; it is not a lock against native threads, OpenMP workers, external
+libraries, or another interpreter.
 
 ### OpenMP
 
-OpenMP is an explicit build/runtime choice. A callback-free OpenMP procedure
-uses the normal GIL-release policy. For GNU Fortran, pass OpenMP flags to both
-compile and link steps:
+OpenMP is an explicit build/runtime choice. Add `@nogil` when a callback-free
+OpenMP procedure should run concurrently with Python threads. For GNU Fortran,
+pass OpenMP flags to both compile and link steps:
 
 ```bash
 python3 -m x2py generate --makefile parallel_api.f90 --out-dir build
@@ -2187,8 +2197,8 @@ print(parallel_sum(values))  # 528.0
 x2py does not infer host-memory synchronization. Callers must protect arrays,
 module variables, object state, and aliases touched by concurrent Python calls,
 OpenMP workers, or external native code. Use native locks, Python locks around
-the whole call, disjoint storage, or `@hold_gil` where its limited serialization
-scope is sufficient.
+the whole call, disjoint storage, or the default held-GIL policy where its
+limited serialization scope is sufficient.
 
 The verified compiler path includes GNU Fortran and debug/optimized ABI builds.
 Other compilers and platforms require their own ABI validation; support is not

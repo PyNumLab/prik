@@ -29,6 +29,8 @@ artifacts used by tests. Navigate by ownership boundary first, then by file.
 | `x2py/binding_support/` | Bundled header-only native support copied into generated wrapper builds. |
 | `x2py/naming/` | Unified public-name and generated-symbol policy. |
 | `x2py/utilities/` | Small shared Python utilities. |
+| `benchmarks/` | Local x2py/f2py correctness and performance comparison harness. Benchmark sources and scripts are maintained; native builds and result files are generated locally. |
+| `tools/generate_performance_docs.py` | Validates paired `pyperf` results and generates the bounded public Performance snapshot and chart. |
 
 The major source packages have local README files under `x2py/` for
 developers reading directly in the source tree. Those README files should link
@@ -85,6 +87,10 @@ Source navigation is considered maintained when these files agree:
 
 - `__x2py__/` directories are wrapper build artifacts and should not be
   hand-edited as source.
+- `benchmarks/build/f2py/` and `benchmarks/results/` contain generated
+  comparison artifacts and are not repository sources. CI retains paired
+  result files as workflow artifacts and generates the website snapshot from
+  them without committing the raw files.
 - Parser and `.pyi` fixture files should be regenerated with the documented
   fixture commands instead of edited loosely.
 - `x2py.egg-info/`, caches, and benchmark output are generated local artifacts,

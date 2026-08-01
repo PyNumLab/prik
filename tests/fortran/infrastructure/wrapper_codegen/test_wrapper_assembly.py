@@ -33,7 +33,7 @@ def _rendered_source(artifacts, suffix: str) -> str:
 def test_public_generator_directly_returns_complete_rendered_artifacts():
     plan = _plan(
         """
-@hold_gil
+@nogil
 @bind("SWAP_ARGS")
 @external
 @native_call([Addr(Arg(1)), Addr(Arg(0))])

@@ -28,12 +28,12 @@ def scalar_status(base: Int32[()], status: Int32[()]) -> None: ...
 
     _, projected = _completed_policy(
         """
-@hold_gil
+@nogil
 @native_call([Return("status", 0), Addr(Arg(0))])
 def scalar_status(base: Int32) -> Returns["status", Int32]: ...
 """
     )
-    assert projected.hold_gil is True
+    assert projected.release_gil is True
     assert [(slot.source_kind, slot.native_position) for slot in projected.native_call_slots] == [
         ("result", 0),
         ("projection", 1),

@@ -55,7 +55,7 @@ instead of competing with that first task.
 
 | Lane | Primary reader | Publication | Content |
 | --- | --- | --- | --- |
-| `user/` | People using x2py | Documentation website after review | Getting Started, guides, tutorials, examples, public reference, support status, FAQ, troubleshooting, changelog |
+| `user/` | People using x2py | Documentation website after review | Getting Started, guides, performance benchmarks, tutorials, examples, public reference, support status, FAQ, troubleshooting, changelog |
 | `developer/` | People changing x2py | Documentation website after review | Source orientation, implementation maps, testing, coding standards, feature work, contribution workflow |
 | `maintainer/` | People governing x2py | Documentation website after review | Documentation policy, design decisions, internal architecture, CI administration, releases, roadmaps |
 
@@ -153,6 +153,7 @@ docs/
   index.md
   user/
     index.md
+    performance.md
     getting-started/
     guide/
     tutorials/
@@ -186,6 +187,15 @@ behavior and presentation assets live in `javascripts/` and `stylesheets/`.
 Do not restore top-level topic directories or place maintainer rules beside the
 website landing page. Historical `old_docs/` material is never eligible for
 website publication.
+
+The Performance page keeps its explanatory text and reproduction workflow in
+reviewed Markdown. Result-dependent summary, table, and environment blocks are
+bounded by `x2py-performance-*` comments and are generated from paired `pyperf`
+files by `tools/generate_performance_docs.py`. The same tool owns the
+performance SVG. Generation must fail when a marker is missing or duplicated;
+it must not rewrite prose outside those blocks. The environment block records
+both the operating-system distribution and the lower-level platform string so
+published results identify the benchmark host clearly.
 
 ## Continuous Documentation Quality
 

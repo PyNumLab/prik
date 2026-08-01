@@ -3,13 +3,13 @@
 import pytest
 
 from x2py.pipeline.pyi import pyi_text_to_semantic_module
-from x2py.semantics.models import RUNTIME_HOLD_GIL_METADATA, RUNTIME_STATUS_ERROR_METADATA
+from x2py.semantics.models import RUNTIME_RELEASE_GIL_METADATA, RUNTIME_STATUS_ERROR_METADATA
 from x2py.semantics.policy_completion import complete_semantic_policies
 from x2py.wrapper_codegen.printers import emit_module
 
 
 _CONTRACT_IMPORTS = """from x2py.contracts import (
-    Float64, Int32, Returns, String, hold_gil, raises
+    Float64, Int32, Returns, String, nogil, raises
 )
 """
 
@@ -26,8 +26,8 @@ def solve(
     x: Float64
 ) -> tuple[Float64, Returns["status", Int32], Returns["message", String]]: ...
 
-@hold_gil
-def serialized(x: Float64) -> Float64: ...
+@nogil
+def concurrent(x: Float64) -> Float64: ...
 """,
         module_name="runtime_policy",
     )
@@ -38,11 +38,11 @@ def serialized(x: Float64) -> Float64: ...
         "message": "message",
         "success": 0,
     }
-    assert loaded.functions[1].metadata[RUNTIME_HOLD_GIL_METADATA] is True
+    assert loaded.functions[1].metadata[RUNTIME_RELEASE_GIL_METADATA] is True
 
     code = emit_module(loaded)
     assert '@raises(status="status", message="message", success=0)' in code
-    assert "@hold_gil" in code
+    assert "@nogil" in code
     assert emit_module(pyi_text_to_semantic_module(code, module_name="runtime_policy")) == code
 
 

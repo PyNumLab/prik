@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from x2py.pipeline.pyi import pyi_file_to_semantic_module
+from x2py.pipeline.pyi import pyi_file_to_semantic_module, pyi_text_to_semantic_module
 from x2py.semantics import models
 from x2py.semantics.ownership import PythonBarrierAction
 from x2py.semantics.policy_completion import complete_semantic_policies
@@ -104,7 +104,7 @@ def test_callback_plan_projects_one_explicit_site_and_stable_roles_per_argument(
         )
     )
     assert all(
-        _function(plan, function).binding.hold_gil
+        not _function(plan, function).binding.release_gil
         for function in (
             "apply_value_callback",
             "apply_scalar_storage_callback",
@@ -173,6 +173,29 @@ def test_callback_artifacts_use_linear_context_adapter_and_trampoline_paths():
     assert bridge.count("call native_apply_array_storage_callback(") == 1
     assert "call callback(" not in bridge
     assert max(map(len, bridge.splitlines())) <= 132
+
+
+def test_nogil_callback_call_releases_outer_envelope_and_reacquires_in_trampoline():
+    source = CONTRACT.read_text(encoding="utf-8")
+    source = source.replace("native_call, prototype", "native_call, nogil, prototype", 1)
+    source = source.replace(
+        "@native_call([Arg(0), Addr(Arg(1))])\ndef apply_value_callback",
+        "@nogil\n@native_call([Arg(0), Addr(Arg(1))])\ndef apply_value_callback",
+        1,
+    )
+    module = pyi_text_to_semantic_module(source, module_name="fcallback_all_f90")
+    complete_semantic_policies(module)
+    plan = WrapperPlanner().build(module)
+
+    assert _function(plan, "apply_value_callback").binding.release_gil is True
+    c_source, _ = _sources(plan)
+    function_start = c_source.index("static PyObject * wrap_apply_value_callback")
+    function_end = c_source.index("static PyObject * wrap_apply_scalar_storage_callback")
+    function_source = c_source[function_start:function_end]
+    assert "Py_BEGIN_ALLOW_THREADS" in function_source
+    assert "Py_END_ALLOW_THREADS" in function_source
+    assert "PyGILState_Ensure()" in c_source
+    assert "PyGILState_Release(" in c_source
 
 
 def test_callback_declaration_uses_external_unless_prototype_requires_explicit_interface():

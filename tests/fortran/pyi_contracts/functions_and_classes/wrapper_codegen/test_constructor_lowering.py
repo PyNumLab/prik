@@ -33,5 +33,5 @@ class state:
     assert "state__default_init_wrapper" not in sources[".c"]
     assert 'static char * kwlist[] = {"self", "seed", NULL};' in sources[".c"]
     assert 'PyArg_ParseTupleAndKeywords(args, kwargs, "OO", kwlist, &bound_self_obj, &bound_seed_obj)' in sources[".c"]
-    assert "Py_BEGIN_ALLOW_THREADS" in sources[".c"]
-    assert "Py_END_ALLOW_THREADS" in sources[".c"]
+    assert "Py_BEGIN_ALLOW_THREADS" not in sources[".c"]
+    assert "Py_END_ALLOW_THREADS" not in sources[".c"]

@@ -33,6 +33,21 @@ strict production build without deploying. A push to `main` runs those checks
 and deploys the reviewed site when GitHub Pages is configured to use GitHub
 Actions.
 
+Every push to `main` first runs the x2py/f2py correctness and rigorous
+performance suite. The job extracts its platform and toolchain metadata,
+generates the result-dependent Performance page sections and SVG, and uploads
+the generated documentation together with the raw `pyperf` files. The website
+build overlays that artifact before testing and building MkDocs. Generated
+results are deployment inputs, not automated commits to `main`.
+
+Set the repository variable `X2PY_BENCHMARK_RUNNER` to the label of a dedicated
+Linux x86-64 runner for stable published measurements. Without that variable,
+the workflow uses the pinned Ubuntu 24.04 GitHub-hosted image and publishes its
+recorded platform details. Pull requests verify the generator against fixtures
+but do not replace the public snapshot. The workflow pins the benchmark
+toolchain and alternates whether x2py or f2py is measured first to avoid a
+systematic ordering advantage.
+
 Enable the repository once through **Settings > Pages > Build and deployment >
 Source > GitHub Actions**. Then open **Actions > Documentation > Run workflow**,
 select `main`, and run it. Later documentation changes deploy automatically

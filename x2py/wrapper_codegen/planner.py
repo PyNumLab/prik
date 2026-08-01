@@ -941,7 +941,7 @@ class WrapperPlanner(ClassVisitor):
                     results,
                     status_error=status_error,
                 ),
-                hold_gil=policy.hold_gil,
+                release_gil=policy.release_gil,
                 status_error=status_error,
                 public=public,
             ),
@@ -1346,10 +1346,12 @@ class WrapperPlanner(ClassVisitor):
 
     def _native_slot_plan(self, slot: NativeCallSlotPolicy, role: str) -> NativeCallSlotPlan:
         """Return one shared ABI slot without selecting backend behavior."""
+        include_buffer_roles = slot.native_barrier_action is NativeBarrierAction.PASS_ARRAY_BUFFER
         array = self._array_plan(
             slot.array,
             slot.owner_path,
-            include_buffer_roles=slot.native_barrier_action is NativeBarrierAction.PASS_ARRAY_BUFFER,
+            include_buffer_roles=include_buffer_roles,
+            include_dense_actual_role=include_buffer_roles and slot.python_position is not None,
         )
         return NativeCallSlotPlan(
             owner_path=slot.owner_path,
@@ -1609,6 +1611,7 @@ class WrapperPlanner(ClassVisitor):
         owner_path: str,
         *,
         include_buffer_roles: bool = True,
+        include_dense_actual_role: bool = False,
     ) -> ArrayHandoffPlan | None:
         """Mechanically add only the ABI roles selected by completed transport."""
         if policy is None:
@@ -1634,9 +1637,25 @@ class WrapperPlanner(ClassVisitor):
             extent_reference_roles=self._array_extent_reference_roles(owner_path, policy.extent_references),
             upper_bound_roles=self._array_layout_roles(owner_path, abi_rank, policy.contiguous, "upper-bound"),
             stride_roles=self._array_layout_roles(owner_path, abi_rank, policy.contiguous, "stride"),
+            dense_actual_role=self._array_dense_actual_role(
+                policy,
+                owner_path,
+                include_dense_actual_role,
+            ),
             runtime_rank_role=runtime_rank_role,
             itemsize_role=itemsize_role,
         )
+
+    @staticmethod
+    def _array_dense_actual_role(
+        policy: ArrayHandoffPolicy,
+        owner_path: str,
+        enabled: bool,
+    ) -> str | None:
+        """Name the dense-view selector only for concrete strided inputs."""
+        if not enabled or policy.rank is None or policy.contiguous is not False:
+            return None
+        return f"{owner_path}:dense-actual"
 
     def _array_transport_roles(
         self,

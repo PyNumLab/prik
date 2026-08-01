@@ -64,6 +64,7 @@ def test_required_array_buffer_has_one_printable_editable_handoff_plan():
     assert argument.array.extent_roles == (f"{argument.owner_path}:extent:0",)
     assert argument.array.upper_bound_roles == ()
     assert argument.array.stride_roles == ()
+    assert argument.array.dense_actual_role is None
 
 
 def test_required_array_buffer_dispatches_through_named_binding_and_bridge_methods():
@@ -79,12 +80,14 @@ def test_required_array_buffer_dispatches_through_named_binding_and_bridge_metho
     ) in c_source
     assert "bound_values = PyLong_AsVoidPtr(PyTuple_GetItem(bound_values_packed, 0));" in c_source
     assert "bound_values_extent_0 = (int64_t)PyLong_AsLongLong(PyTuple_GetItem(bound_values_packed, 1));" in c_source
-    assert "PyArray_TYPE((PyArrayObject *)bound_values_obj)" not in c_source
+    assert "if (PyArray_Check(bound_values_obj)) {" in c_source
+    assert "PyArray_TYPE((PyArrayObject *)bound_values_obj) != NPY_FLOAT64" in c_source
+    assert "bound_values = PyArray_DATA((PyArrayObject *)bound_values_obj);" in c_source
     assert "result = bind_c_sum_values(bound_values, bound_values_extent_0);" in c_source
 
     assert "type(c_ptr), value :: bound_values" in bridge_source
     assert "integer(c_int64_t), value :: values_extent_0" in bridge_source
-    assert "real(c_double), pointer, dimension(:) :: values" in bridge_source
+    assert "real(c_double), pointer, contiguous, dimension(:) :: values" in bridge_source
     assert "call c_f_pointer(bound_values, values, [values_extent_0])" in bridge_source
     assert "result = native_sum_values(values)" in bridge_source
 

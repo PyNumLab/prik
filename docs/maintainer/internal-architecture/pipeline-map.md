@@ -145,7 +145,7 @@ Examples:
   datatypes stay out of `x2py/semantics/models.py`.
 
 <!-- X2PY_C_DOCS_START
-- `@raises`, `@hold_gil`, output projection, and ownership metadata belong to
+- `@raises`, `@nogil`, output projection, and ownership metadata belong to
   semantic policy. The generated CPython error checks, GIL calls, and
   cleanup statements belong to codegen.
 X2PY_C_DOCS_END -->

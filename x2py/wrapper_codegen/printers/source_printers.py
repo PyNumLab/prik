@@ -304,12 +304,142 @@ class FortranSourcePrinter(ClassVisitor):
     """Print isolated Fortran source nodes."""
 
     _LINE_LIMIT = 112
+    _MAX_LINE_LENGTH = 132
 
     def doprint(self, node: object) -> str:
         """Render one isolated Fortran backend node."""
         if isinstance(node, StageRecord):
             node.freeze()
-        return self.visit(node)
+        source = self._format_line_lengths(self.visit(node))
+        self._validate_line_lengths(source)
+        return source
+
+    def _format_line_lengths(self, source: str) -> str:
+        """Wrap overlong free-form lines at syntax-safe token boundaries."""
+        lines = []
+        for line in source.splitlines():
+            lines.extend(self._wrap_rendered_line(line))
+        return "\n".join(lines)
+
+    def _wrap_rendered_line(self, line: str) -> tuple[str, ...]:
+        """Add free-form continuations without splitting tokens or literals."""
+        if len(line) <= self._MAX_LINE_LENGTH:
+            return (line,)
+        indentation = line[: len(line) - len(line.lstrip())]
+        continuation_prefix = f"{indentation}  & "
+        prefix = indentation
+        remaining = line[len(indentation) :]
+        continued_quote = None
+        wrapped = []
+        while len(prefix) + len(remaining) > self._MAX_LINE_LENGTH:
+            budget = self._MAX_LINE_LENGTH - len(prefix) - len(" &")
+            split = self._safe_fortran_break(remaining, budget, initial_quote=continued_quote)
+            if split is None:
+                return (*wrapped, f"{prefix}{remaining}")
+            position, continued_quote = split
+            if continued_quote is None:
+                piece = remaining[:position].rstrip()
+                remaining = remaining[position:].lstrip()
+            else:
+                piece = remaining[:position]
+                remaining = remaining[position:]
+            if not piece or not remaining:
+                return (*wrapped, f"{prefix}{piece}{remaining}")
+            trailing = "&" if continued_quote is not None else " &"
+            wrapped.append(f"{prefix}{piece}{trailing}")
+            prefix = f"{indentation}&" if continued_quote is not None else continuation_prefix
+        wrapped.append(f"{prefix}{remaining}")
+        return tuple(wrapped)
+
+    @staticmethod
+    def _safe_fortran_break(
+        text: str,
+        budget: int,
+        *,
+        initial_quote: str | None = None,
+    ) -> tuple[int, str | None] | None:
+        """Find the preferred safe code or character-literal continuation."""
+        literal_quotes = FortranSourcePrinter._fortran_literal_quotes(text, initial_quote=initial_quote)
+        literal_positions = set(literal_quotes)
+        window = text[: budget + 1]
+        if FortranSourcePrinter._has_fortran_comment(text, literal_positions):
+            return None
+        candidates = FortranSourcePrinter._fortran_break_candidates(window, literal_positions)
+        position = max((candidate for candidate in candidates if 0 < candidate <= budget), default=None)
+        if position is not None:
+            return position, None
+        return FortranSourcePrinter._fortran_literal_break(text, budget, literal_quotes)
+
+    @staticmethod
+    def _fortran_literal_quotes(text: str, *, initial_quote: str | None = None) -> dict[int, str]:
+        """Map character offsets protected by Fortran literals to their quote."""
+        positions = {}
+        quote = initial_quote
+        index = 0
+        while index < len(text):
+            character = text[index]
+            if quote is None:
+                if character in {"'", '"'}:
+                    quote = character
+                    positions[index] = quote
+                index += 1
+                continue
+            positions[index] = quote
+            if character == quote and index + 1 < len(text) and text[index + 1] == quote:
+                positions[index + 1] = quote
+                index += 2
+                continue
+            if character == quote:
+                quote = None
+            index += 1
+        return positions
+
+    @staticmethod
+    def _fortran_literal_break(
+        text: str,
+        budget: int,
+        literal_quotes: dict[int, str],
+    ) -> tuple[int, str] | None:
+        """Find a character-literal continuation that preserves its exact value."""
+        candidates = []
+        for position in range(1, min(len(text), budget + 1)):
+            quote = literal_quotes.get(position)
+            if quote is None or literal_quotes.get(position - 1) != quote:
+                continue
+            if text[position - 1 : position + 1] == quote * 2:
+                continue
+            candidates.append(position)
+        if not candidates:
+            return None
+        position = max(candidates)
+        return position, literal_quotes[position]
+
+    @staticmethod
+    def _has_fortran_comment(text: str, literal_positions: set[int]) -> bool:
+        """Identify a comment marker that is not protected by a literal."""
+        return any(character == "!" and index not in literal_positions for index, character in enumerate(text))
+
+    @staticmethod
+    def _fortran_break_candidates(text: str, literal_positions: set[int]) -> tuple[int, ...]:
+        """Collect token boundaries that preserve free-form statement syntax."""
+        candidates = []
+        for index, character in enumerate(text):
+            if index in literal_positions:
+                continue
+            if character == ",":
+                candidates.append(index + 1)
+            elif character.isspace():
+                candidates.append(index)
+        return tuple(candidates)
+
+    def _validate_line_lengths(self, source: str) -> None:
+        """Reject generated free-form source that a standard compiler truncates."""
+        for line_number, line in enumerate(source.splitlines(), start=1):
+            if len(line) > self._MAX_LINE_LENGTH:
+                raise ValueError(
+                    f"Generated Fortran line {line_number} has {len(line)} columns; "
+                    f"the free-form limit is {self._MAX_LINE_LENGTH}: {line}"
+                )
 
     def _visit_FortranModule(self, node: FortranModule) -> str:
         """Render a complete Fortran module."""
@@ -386,18 +516,22 @@ class FortranSourcePrinter(ClassVisitor):
 
     def _visit_FortranAssignment(self, node: FortranAssignment) -> str:
         """Render one Fortran assignment."""
-        rendered = f"{node.target} = {node.expression.text}"
-        if len(rendered) <= self._LINE_LIMIT:
-            return rendered
-        call = self._parenthesized_items(node.expression.text, minimum_items=1)
-        if call is None:
-            return rendered
-        function_name, arguments = call
-        return self._continued_call(f"{node.target} = {function_name}(", arguments)
+        return self._continued_assignment(node.target, "=", node.expression.text)
 
     def _visit_FortranPointerAssignment(self, node: FortranPointerAssignment) -> str:
         """Render one Fortran pointer association."""
-        return f"{node.target} => {node.expression.text}"
+        return self._continued_assignment(node.target, "=>", node.expression.text)
+
+    def _continued_assignment(self, target: str, operator: str, expression: str) -> str:
+        """Wrap a long assignment whose expression has parenthesized items."""
+        rendered = f"{target} {operator} {expression}"
+        if len(rendered) <= self._LINE_LIMIT:
+            return rendered
+        call = self._parenthesized_items(expression, minimum_items=1)
+        if call is None:
+            return rendered
+        function_name, arguments = call
+        return self._continued_call(f"{target} {operator} {function_name}(", arguments)
 
     def _visit_FortranNullify(self, node: FortranNullify) -> str:
         """Render one pointer nullification statement."""

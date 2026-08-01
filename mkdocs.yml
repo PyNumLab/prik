@@ -58,6 +58,7 @@ nav:
           - Raw Addresses: user/guide/raw-addresses.md
           - Error Handling & Diagnostics: user/guide/error-handling.md
           - Building the Shared Library: user/guide/building-shared-library.md
+      - Performance: user/performance.md
       - Tutorials:
           - Overview: user/tutorials/index.md
           - Large Fortran Codebase: user/tutorials/large-fortran-codebase.md

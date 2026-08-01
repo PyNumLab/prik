@@ -203,7 +203,7 @@ Work = _expression
 
 bind = _decorator
 external = _decorator
-hold_gil = _decorator
+nogil = _decorator
 native_call = _decorator
 native_type = _decorator
 overload = _decorator
@@ -293,7 +293,7 @@ CONTRACT_SYMBOLS = frozenset(
         "WrappedType",
         "bind",
         "external",
-        "hold_gil",
+        "nogil",
         "native_call",
         "native_type",
         "overload",

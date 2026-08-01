@@ -72,5 +72,5 @@ def test_optional_assumed_rank_and_character_lowering_follow_named_plan_fields()
     assert "select case (values_rank)" in bridge_source
     assert "case (1)" in bridge_source
     assert "case (15)" in bridge_source
-    assert "character(kind=c_char, len=8), pointer, dimension(:) :: values" in bridge_source
+    assert "character(kind=c_char, len=8), pointer, contiguous, dimension(:) :: values" in bridge_source
     assert max(map(len, bridge_source.splitlines())) <= 132

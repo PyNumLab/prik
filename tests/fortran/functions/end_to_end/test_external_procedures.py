@@ -267,7 +267,7 @@ def test_handwritten_c_order_flat_contract_passes_rank_preserving_bridge_view(tm
 
     np.testing.assert_allclose(result_values, [6.0, 60.0])
     assert "external::row_sums_c" in compact_bridge
-    assert "real(c_double),pointer,dimension(:,:)::values" in compact_bridge
+    assert "real(c_double),pointer,contiguous,dimension(:,:)::values" in compact_bridge
 
     with pytest.raises(TypeError, match=r"expected ordering \(C\)"):
         module.row_sums_c(np.int32(values.shape[0]), np.asfortranarray(values), result_values)

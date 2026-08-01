@@ -250,7 +250,7 @@ def test_fmath_scalar_policy_records_address_projected_call_slots():
 def test_wrapper_policy_records_runtime_and_native_order_metadata():
     module = parse_pyi_text(
         """
-@hold_gil
+@nogil
 @bind("SWAP_ARGS")
 @external
 @native_call([Addr(Arg(1)), Addr(Arg(0))])
@@ -262,7 +262,7 @@ def swap_args(x: Float64, y: Float64) -> Float64: ...
 
     policy = completed_function_wrapper_policy(module.functions[0])
 
-    assert policy.hold_gil is True
+    assert policy.release_gil is True
     assert policy.external is True
     assert [argument.python_position for argument in policy.arguments] == [0, 1]
     assert [argument.native_position for argument in policy.arguments] == [1, 0]
@@ -315,7 +315,7 @@ def add(x: Float64, y: Float64) -> Float64: ...
 
     policy = completed_function_wrapper_policy(module.functions[0])
 
-    assert policy.hold_gil is False
+    assert policy.release_gil is False
     assert [argument.native_position for argument in policy.arguments] == [0, 1]
     assert [(slot.source_kind, slot.native_position, slot.python_position) for slot in policy.native_call_slots] == [
         ("implicit", 0, 0),

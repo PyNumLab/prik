@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 import pytest
@@ -26,8 +27,10 @@ from x2py.wrapper_codegen import (
     FortranAssignment,
     FortranCall,
     FortranFunction,
+    FortranIf,
     FortranModule,
     FortranParameter,
+    FortranPointerAssignment,
     FortranSourcePrinter,
     FortranUse,
     ModulePlan,
@@ -129,6 +132,79 @@ def test_fortran_source_printer_wraps_long_parenthesized_call_arguments():
     assert "&   1:values_upper_bound_3 + 1:values_stride_3), &" in source
     assert "& out_base(&" in source
     assert max(map(len, source.splitlines())) <= 124
+
+
+def test_fortran_source_printer_wraps_long_pointer_array_sections():
+    slices = ", ".join(f"1:values_upper_bound_{axis} + 1:values_stride_{axis}" for axis in range(4))
+
+    source = FortranSourcePrinter().doprint(
+        FortranPointerAssignment("values", CodeExpression(f"values_base({slices})"))
+    )
+
+    assert source.startswith("values => values_base(&")
+    assert "& 1:values_upper_bound_3 + 1:values_stride_3)" in source
+    assert max(map(len, source.splitlines())) <= 132
+
+
+def test_fortran_source_printer_formats_unstructured_long_statements_automatically():
+    expression = " + ".join(f"value_{index}" for index in range(20))
+
+    source = FortranSourcePrinter().doprint(FortranAssignment("result", CodeExpression(expression)))
+
+    assert " &\n  & " in source
+    assert max(map(len, source.splitlines())) <= 132
+
+
+def test_fortran_source_printer_formats_after_nested_indentation_is_complete():
+    expression = " + ".join(f"value_{index}" for index in range(20))
+    source = FortranSourcePrinter().doprint(
+        FortranModule(
+            "nested_lines",
+            procedures=(
+                FortranFunction(
+                    "nested",
+                    body=(
+                        FortranIf(
+                            CodeExpression("outer"),
+                            body=(
+                                FortranIf(
+                                    CodeExpression("inner"),
+                                    body=(FortranAssignment("result", CodeExpression(expression)),),
+                                ),
+                            ),
+                        ),
+                    ),
+                    is_subroutine=True,
+                ),
+            ),
+        )
+    )
+
+    assert "       & " in source
+    assert max(map(len, source.splitlines())) <= 132
+
+
+@pytest.mark.parametrize("quote", ("'", '"'))
+def test_fortran_source_printer_continues_long_literals_without_changing_their_value(quote: str):
+    encoded_value = f"{'x' * 110} literal whitespace {quote * 2}{'y' * 160}"
+    statement = f"result = {quote}{encoded_value}{quote}"
+
+    source = FortranSourcePrinter().doprint(
+        FortranAssignment("result", CodeExpression(f"{quote}{encoded_value}{quote}"))
+    )
+    reconstructed = source.replace("result = &\n  & ", "result = ")
+    reconstructed = re.sub(r"&\n\s*&", "", reconstructed)
+
+    assert reconstructed == statement
+    assert max(map(len, source.splitlines())) <= 132
+    for current, following in zip(source.splitlines(), source.splitlines()[1:], strict=False):
+        following_content = following.lstrip().removeprefix("&")
+        assert not (current[-2:-1] == quote and following_content[:1] == quote)
+
+
+def test_fortran_source_printer_rejects_an_overlong_token_without_a_safe_break():
+    with pytest.raises(ValueError, match=r"free-form limit is 132"):
+        FortranSourcePrinter().doprint(FortranAssignment("result", CodeExpression("x" * 134)))
 
 
 def test_source_printers_do_not_import_wrapper_plan_models():

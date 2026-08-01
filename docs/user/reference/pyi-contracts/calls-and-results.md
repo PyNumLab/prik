@@ -136,22 +136,27 @@ non-success status raises the generated exception before an ordinary result is
 returned. See [Error Handling](../../guide/error-handling.md#status-projection-example)
 for the Python behavior.
 
-## Keep the GIL When Required
+## Release the GIL for a Native Call
 
-Ordinary native calls release Python's Global Interpreter Lock (GIL) when
-their contract allows it. Use `@hold_gil` when the native call must invoke
-Python immediately, such as a synchronous callback:
+Native calls keep Python's Global Interpreter Lock (GIL) by default. Use
+`@nogil` only when the native call can safely run while other Python threads
+execute:
 
 ```python
-from x2py.contracts import hold_gil
+from x2py.contracts import nogil
 
-@hold_gil
-def run_engine() -> None: ...
+@nogil
+def run_parallel_engine() -> None: ...
 ```
 
-Remove `@hold_gil` to return to the normal GIL-releasing behavior when the call
-is safe without it. This changes call behavior, not the native procedure
-interface. It does not describe a callback signature; callback contracts are
+`@nogil` accepts no arguments and releases the GIL only around the native
+bridge call. Argument conversion, result conversion, writeback, cleanup, and
+exception projection still run with the GIL held. Remove `@nogil` to restore
+the default held-GIL behavior. This changes call behavior, not the native
+procedure interface.
+
+If a decorated native call invokes an x2py callback, the callback trampoline
+temporarily reacquires the GIL for Python execution. Callback contracts are
 covered in the [Callbacks](../../guide/callbacks.md) guide.
 
 ## Next

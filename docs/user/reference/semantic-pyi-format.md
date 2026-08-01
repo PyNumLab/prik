@@ -2405,7 +2405,7 @@ ambiguous, unsafe, or stale before wrapper lowering:
 - unsupported decorators other than `@private`, `@bind`, `@external`,
   `@native_call`, `@native_type`,
   `@overload("specific")`, the class-operator `generic=` form, `@raises`,
-  `@hold_gil`, and `@staticmethod`.
+  `@nogil`, and `@staticmethod`.
 - bare `@overload` or `typing.overload`; overload links require one concrete
   procedure name.
 - `@overload(...)` combined with `@native_call(...)`; the linked concrete

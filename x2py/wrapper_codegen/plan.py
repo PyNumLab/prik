@@ -299,6 +299,7 @@ class ArrayHandoffPlan(StageRecord):
     extent_reference_roles: tuple[tuple[str, ...], ...] = ()
     upper_bound_roles: tuple[str, ...] = ()
     stride_roles: tuple[str, ...] = ()
+    dense_actual_role: str | None = None
     runtime_rank_role: str | None = None
     itemsize_role: str | None = None
 
@@ -475,7 +476,7 @@ class BindingFunctionPlan(StageRecord):
 
     python_name: str
     docstring: str
-    hold_gil: bool
+    release_gil: bool
     status_error: BindingStatusErrorPlan | None
     public: bool = True
 

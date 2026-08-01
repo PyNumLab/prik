@@ -26,7 +26,7 @@ def test_plan_records_reordered_arguments_gil_behavior_and_hidden_result_slots()
     reordered = (
         _plan(
             """
-@hold_gil
+@nogil
 @bind("SWAP_ARGS")
 @external
 @native_call([Addr(Arg(1)), Addr(Arg(0))])
@@ -38,7 +38,7 @@ def swap_args(x: Float64, y: Float64) -> Float64: ...
         .functions[0]
     )
 
-    assert reordered.binding.hold_gil is True
+    assert reordered.binding.release_gil is True
     assert reordered.bridge.native_name == "SWAP_ARGS"
     assert reordered.bridge.external is True
     assert [argument.native_position for argument in reordered.arguments] == [1, 0]
