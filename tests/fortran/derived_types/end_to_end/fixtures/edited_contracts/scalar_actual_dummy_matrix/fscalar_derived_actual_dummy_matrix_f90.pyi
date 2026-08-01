@@ -10,6 +10,7 @@ from x2py.contracts import (
     Returns,
     Value,
     native_call,
+    nogil,
 )
 from matrix_left_types import item as left_item
 from matrix_right_types import item as right_item
@@ -171,6 +172,7 @@ def mutate_duplicate(
 ) -> tuple[Returns["first", item], Returns["second", item]]: ...
 
 
+@nogil
 @native_call([Allocatable(Arg(0)), Arg(1)])
 def hold_allocatable(
     value: item | None,
@@ -178,6 +180,7 @@ def hold_allocatable(
 ) -> Returns["value", item] | None: ...
 
 
+@nogil
 @native_call([Arg(0), Arg(1)])
 def hold_object(
     value: item,

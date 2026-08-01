@@ -80,12 +80,13 @@ them. No benchmark-only wrapper mode is used.
 - OpenMP, OpenBLAS, and MKL are limited to one thread.
 - `pyperf --rigorous` pins each benchmark to logical CPU `0`.
 - CPU: Intel(R) Core(TM) i7-4712MQ CPU @ 2.30GHz.
-- Platform: `Linux-7.0.0-28-generic-x86_64-with-glibc2.43`.
+- Operating system: Ubuntu 26.04 LTS.
+- Kernel/platform: `Linux-7.0.0-28-generic-x86_64-with-glibc2.43`.
 - Python: 3.14.4.
 - NumPy/f2py: 2.5.1.
-- Fortran compiler: GNU Fortran (Ubuntu 15.2.0-16ubuntu1) 15.2.0.
+- Fortran compiler: GNU Fortran 15.2.0.
 - pyperf: 2.10.0.
-- x2py revision: `031f2cc54380`.
+- x2py revision: `03d228acc6a8`.
 
 These results were recorded on August 1, 2026. Performance depends on the CPU,
 compiler, operating system, and background activity, so comparisons should use

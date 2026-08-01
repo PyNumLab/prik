@@ -9,12 +9,13 @@ from x2py.semantics.policy_completion import complete_semantic_policies
 from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
 
-def _strided_plan():
+def _strided_plan(rank: int = 2):
+    dimensions = ", ".join("::" for _ in range(rank))
     module = parse_pyi_text(
-        """
+        f"""
 from x2py.contracts import Float64
 
-def strided(values: Float64[::, ::]) -> None: ...
+def strided(values: Float64[{dimensions}]) -> None: ...
 """,
         module_name="strided_arrays",
     )
@@ -66,6 +67,15 @@ def test_strided_array_lowering_validates_and_passes_one_explicit_bridge_slice()
         "values => values_base(1:values_upper_bound_0 + 1:values_stride_0, 1:values_upper_bound_1 + 1:values_stride_1)"
     ) in bridge_source
     assert "call native_strided(values)" in bridge_source
+    assert max(map(len, bridge_source.splitlines())) <= 132
+
+
+def test_rank3_strided_array_pointer_sections_respect_free_form_line_limit():
+    artifacts = WrapperCodeGenerator().generate(_strided_plan(rank=3))
+    bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
+
+    assert "values => values_base(&" in bridge_source
+    assert "& 1:values_upper_bound_2 + 1:values_stride_2)" in bridge_source
     assert max(map(len, bridge_source.splitlines())) <= 132
 
 

@@ -47,7 +47,8 @@ python3 tools/generate_performance_docs.py
 
 Run this command from the repository root. It reads the paired `pyperf` files,
 checks that they contain the same benchmarks and compatible platform metadata,
-and updates only the marked result sections in `docs/user/performance.md` plus
+records the host operating-system distribution and compiler, and updates only
+the marked result sections in `docs/user/performance.md` plus
 `docs/user/assets/performance-comparison.svg`. Explanatory prose and the
 reproduction instructions remain hand-maintained.
 

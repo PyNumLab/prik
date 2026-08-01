@@ -9,6 +9,7 @@ from datetime import date
 from html import escape
 import math
 from pathlib import Path
+import platform
 import re
 import subprocess  # nosec B404 - fixed argv commands collect local tool versions
 import sys
@@ -60,6 +61,7 @@ class PerformanceSnapshot:
     results: tuple[BenchmarkResult, ...]
     metadata: dict[str, object]
     recorded_date: date
+    operating_system: str
     compiler_version: str
     commit: str
 
@@ -88,6 +90,15 @@ def _format_factor(factor: float) -> str:
 def _format_ratio(ratio: float) -> str:
     precision = 3 if abs(ratio - 1.0) < 0.01 else 2
     return f"{ratio:.{precision}f}{TIMES}"
+
+
+def _compiler_display_name(value: str) -> str:
+    value = value.strip()
+    if value.startswith("GNU Fortran"):
+        version = re.search(r"(\d+(?:\.\d+){1,2})$", value)
+        if version:
+            return f"GNU Fortran {version.group(1)}"
+    return value
 
 
 def _procedure_labels(name: str) -> tuple[str, str]:
@@ -153,6 +164,7 @@ def load_snapshot(
     f2py_path: Path,
     x2py_path: Path,
     *,
+    operating_system: str,
     compiler_version: str,
     commit: str,
     recorded_date: date | None = None,
@@ -195,7 +207,8 @@ def load_snapshot(
         results=tuple(results),
         metadata=_compatible_metadata(f2py_suite, x2py_suite),
         recorded_date=recorded_date or latest_date,
-        compiler_version=compiler_version,
+        operating_system=operating_system,
+        compiler_version=_compiler_display_name(compiler_version),
         commit=commit[:12],
     )
 
@@ -322,6 +335,7 @@ def _metadata_text(metadata: dict[str, object], key: str) -> str:
 def _environment_markdown(snapshot: PerformanceSnapshot) -> str:
     python_version = _metadata_text(snapshot.metadata, "python_version").split(maxsplit=1)[0]
     affinity = _metadata_text(snapshot.metadata, "cpu_affinity")
+    operating_system = snapshot.operating_system.replace("`", "'")
     compiler_version = snapshot.compiler_version.replace("`", "'")
     lines = [
         f"- Native and generated sources use `{COMPILE_FLAGS}`.",
@@ -329,7 +343,8 @@ def _environment_markdown(snapshot: PerformanceSnapshot) -> str:
         "- OpenMP, OpenBLAS, and MKL are limited to one thread.",
         f"- `pyperf --rigorous` pins each benchmark to logical CPU `{affinity}`.",
         f"- CPU: {_metadata_text(snapshot.metadata, 'cpu_model_name')}.",
-        f"- Platform: `{_metadata_text(snapshot.metadata, 'platform_details')}`.",
+        f"- Operating system: {operating_system}.",
+        f"- Kernel/platform: `{_metadata_text(snapshot.metadata, 'platform_details')}`.",
         f"- Python: {python_version}.",
         f"- NumPy/f2py: {_metadata_text(snapshot.metadata, 'numpy_version')}.",
         f"- Fortran compiler: {compiler_version}.",
@@ -508,12 +523,21 @@ def _command_first_line(argv: list[str], *, description: str) -> str:
     return first_line
 
 
+def _operating_system_name() -> str:
+    try:
+        release = platform.freedesktop_os_release()
+    except OSError:
+        return platform.platform()
+    return release.get("PRETTY_NAME") or release.get("NAME") or platform.platform()
+
+
 def generate(
     f2py_path: Path,
     x2py_path: Path,
     page_path: Path,
     chart_path: Path,
     *,
+    operating_system: str,
     compiler_version: str,
     commit: str,
     recorded_date: date | None = None,
@@ -522,6 +546,7 @@ def generate(
     snapshot = load_snapshot(
         f2py_path,
         x2py_path,
+        operating_system=operating_system,
         compiler_version=compiler_version,
         commit=commit,
         recorded_date=recorded_date,
@@ -542,6 +567,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--chart", type=Path, default=DEFAULT_CHART)
     parser.add_argument("--compiler", default="gfortran")
     parser.add_argument("--compiler-version")
+    parser.add_argument("--operating-system")
     parser.add_argument("--commit")
     parser.add_argument("--recorded-date", type=date.fromisoformat)
     return parser.parse_args(argv)
@@ -554,6 +580,7 @@ def main(argv: list[str] | None = None) -> int:
             [args.compiler, "--version"],
             description="Fortran compiler version",
         )
+        operating_system = args.operating_system or _operating_system_name()
         commit = args.commit or _command_first_line(
             ["git", "rev-parse", "HEAD"],
             description="x2py revision",
@@ -563,6 +590,7 @@ def main(argv: list[str] | None = None) -> int:
             args.x2py_results,
             args.page,
             args.chart,
+            operating_system=operating_system,
             compiler_version=compiler_version,
             commit=commit,
             recorded_date=args.recorded_date,

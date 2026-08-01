@@ -27,6 +27,7 @@ COMMON_METADATA = {
     "python_version": "3.12.11 (test build)",
     "unit": "second",
 }
+TEST_OS = "Test Linux 1.0"
 
 
 def _write_suite(
@@ -96,7 +97,8 @@ def test_load_snapshot_classifies_results_and_formats_public_values(tmp_path: Pa
     snapshot = load_snapshot(
         f2py,
         x2py,
-        compiler_version="GNU Fortran 13.3.0",
+        operating_system=TEST_OS,
+        compiler_version="GNU Fortran (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0",
         commit="1234567890abcdef",
     )
 
@@ -104,6 +106,7 @@ def test_load_snapshot_classifies_results_and_formats_public_values(tmp_path: Pa
     assert snapshot.results[0].f2py_display == "2.00 µs"
     assert snapshot.results[2].table_label == "Increment vector, 1 element"
     assert snapshot.recorded_date == date(2026, 8, 1)
+    assert snapshot.compiler_version == "GNU Fortran 13.3.0"
     assert snapshot.commit == "1234567890ab"
     assert "hostname" not in snapshot.metadata
 
@@ -119,6 +122,7 @@ def test_render_page_updates_only_marked_blocks(tmp_path: Path) -> None:
     snapshot = load_snapshot(
         f2py,
         x2py,
+        operating_system=TEST_OS,
         compiler_version="GNU Fortran 13.3.0",
         commit="1234567890abcdef",
     )
@@ -131,6 +135,7 @@ def test_render_page_updates_only_marked_blocks(tmp_path: Path) -> None:
     assert "1 of 3" in rendered
     assert "No significant difference" in rendered
     assert "private-runner-name" not in rendered
+    assert "Operating system: Test Linux 1.0" in rendered
     assert "GNU Fortran 13.3.0" in rendered
     assert "`1234567890ab`" in rendered
 
@@ -140,6 +145,7 @@ def test_render_page_rejects_missing_or_duplicate_markers(tmp_path: Path) -> Non
     snapshot = load_snapshot(
         f2py,
         x2py,
+        operating_system=TEST_OS,
         compiler_version="GNU Fortran 13.3.0",
         commit="1234567890abcdef",
     )
@@ -153,6 +159,7 @@ def test_render_chart_is_valid_accessible_svg(tmp_path: Path) -> None:
     snapshot = load_snapshot(
         f2py,
         x2py,
+        operating_system=TEST_OS,
         compiler_version="GNU Fortran 13.3.0",
         commit="1234567890abcdef",
     )
@@ -180,14 +187,26 @@ def test_load_snapshot_rejects_incompatible_platforms(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValueError, match="disagree on metadata 'platform_details'"):
-        load_snapshot(f2py, x2py, compiler_version="GNU Fortran 13.3.0", commit="12345678")
+        load_snapshot(
+            f2py,
+            x2py,
+            operating_system=TEST_OS,
+            compiler_version="GNU Fortran 13.3.0",
+            commit="12345678",
+        )
 
 
 def test_load_snapshot_rejects_swapped_tool_results(tmp_path: Path) -> None:
     f2py, x2py = _paired_suites(tmp_path)
 
     with pytest.raises(ValueError, match="expected 'f2py' results, found binding_tool='x2py'"):
-        load_snapshot(x2py, f2py, compiler_version="GNU Fortran 13.3.0", commit="12345678")
+        load_snapshot(
+            x2py,
+            f2py,
+            operating_system=TEST_OS,
+            compiler_version="GNU Fortran 13.3.0",
+            commit="12345678",
+        )
 
 
 def test_generate_writes_page_and_chart(tmp_path: Path) -> None:
@@ -201,6 +220,7 @@ def test_generate_writes_page_and_chart(tmp_path: Path) -> None:
         x2py,
         page,
         chart,
+        operating_system=TEST_OS,
         compiler_version="GNU Fortran 13.3.0",
         commit="1234567890abcdef",
         recorded_date=date(2026, 8, 2),
