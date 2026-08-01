@@ -1,4 +1,4 @@
-from x2py.contracts import Float64, Int32
+from prik.contracts import Float64, Int32
 
 def rank_weighted_sum(
     values: Float64[...]

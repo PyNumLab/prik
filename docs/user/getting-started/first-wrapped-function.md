@@ -33,13 +33,13 @@ end function scale
 Preview the Python interface before building:
 
 ```bash
-python3 -m x2py generate --pyi scale.f90
+python3 -m prik generate --pyi scale.f90
 ```
 
 The generated semantic `.pyi` contains:
 
 ```python
-from x2py.contracts import Addr, Arg, Float64, external, native_call
+from prik.contracts import Addr, Arg, Float64, external, native_call
 
 @external
 @native_call([Addr(Arg(0)), Addr(Arg(1))])
@@ -65,7 +65,7 @@ show useful edits in context.
 From the directory containing `scale.f90`, run:
 
 ```bash
-python3 -m x2py scale.f90 --out-dir build/first-function
+python3 -m prik scale.f90 --out-dir build/first-function
 ```
 
 This creates an importable `scale` extension module in the `build/first-function` directory.
@@ -74,7 +74,7 @@ This creates an importable `scale` extension module in the `build/first-function
 
 ## Inspect the Generated Docstring
 
-x2py creates NumPy-style docstrings from the same contract. Import the built
+prik creates NumPy-style docstrings from the same contract. Import the built
 extension and inspect the function:
 
 ```python

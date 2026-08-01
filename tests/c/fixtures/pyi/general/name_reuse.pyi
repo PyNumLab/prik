@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Arg, Bool, CStruct, Complex128, Float32, Int, Int8, native_call
+from prik.contracts import Addr, Arg, Bool, CStruct, Complex128, Float32, Int, Int8, native_call
 
 class same_name(CStruct):
     payload: Int

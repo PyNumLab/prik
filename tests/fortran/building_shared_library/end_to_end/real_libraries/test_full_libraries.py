@@ -16,13 +16,13 @@ import numpy as np
 import pytest
 
 from tests.fortran._support.wrapper_build import REPO_ROOT
-from x2py import build_pyi_extension
-from x2py.pipeline.pyi import pyi_paths_to_semantic_modules
+from prik import build_pyi_extension
+from prik.pipeline.pyi import pyi_paths_to_semantic_modules
 
 FORTRAN_LIBRARY_ROOT = Path(__file__).parent
-NATIVE_CACHE_ENV = "X2PY_REAL_LIBRARY_NATIVE_CACHE_DIR"
-NATIVE_JOBS_ENV = "X2PY_REAL_LIBRARY_NATIVE_JOBS"
-DEFAULT_NATIVE_CACHE_ROOT = REPO_ROOT / ".pytest_cache" / "x2py" / "real-library-native"
+NATIVE_CACHE_ENV = "PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR"
+NATIVE_JOBS_ENV = "PRIK_REAL_LIBRARY_NATIVE_JOBS"
+DEFAULT_NATIVE_CACHE_ROOT = REPO_ROOT / ".pytest_cache" / "prik" / "real-library-native"
 NATIVE_CACHE_VERSION = "full-library-v3"
 NATIVE_MODULE_SOURCE_STEMS = {"la_constants", "la_xisnan"}
 DEFAULT_NATIVE_COMPILE_JOB_LIMIT = 8
@@ -148,7 +148,7 @@ def _generate_contract(source_root: Path, package: Path) -> Path:
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "generate",
             "--pyi",
             str(source_root),
@@ -261,7 +261,7 @@ def _cached_objects(cache_dir: Path, sources: tuple[Path, ...], compiler: str) -
 
 
 def _cached_archive(cache_dir: Path, library: str, objects: tuple[Path, ...]) -> Path:
-    archive = cache_dir / f"libx2py_full_{library}.a"
+    archive = cache_dir / f"libprik_full_{library}.a"
     complete = cache_dir / "archive.complete"
     if complete.is_file() and archive.is_file():
         return archive
@@ -275,7 +275,7 @@ def _cached_archive(cache_dir: Path, library: str, objects: tuple[Path, ...]) ->
 
 
 def _cached_shared_library(cache_dir: Path, library: str, archive: Path, compiler: str) -> Path:
-    shared = cache_dir / f"libx2py_full_{library}.so"
+    shared = cache_dir / f"libprik_full_{library}.so"
     complete = cache_dir / "shared.complete"
     if complete.is_file() and shared.is_file():
         return shared
@@ -306,7 +306,7 @@ def _cached_native_shared_library(library: str) -> Path:
     sources = _native_sources(library)
     cache_dir = _native_cache_root() / f"{library}-{_native_cache_key(library, compiler, sources)}"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    shared = cache_dir / f"libx2py_full_{library}.so"
+    shared = cache_dir / f"libprik_full_{library}.so"
     if (cache_dir / "shared.complete").is_file() and shared.is_file():
         return shared
     objects = _cached_objects(cache_dir, sources, compiler)

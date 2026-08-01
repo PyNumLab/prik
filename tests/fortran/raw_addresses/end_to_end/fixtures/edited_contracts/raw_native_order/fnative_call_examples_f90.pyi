@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Float64, Int32, String, bind
+from prik.contracts import Addr, Float64, Int32, String, bind
 
 @bind("scalar_status")
 def scalar_status_raw(base: Addr(Int32), status: Addr(Int32)) -> None: ...

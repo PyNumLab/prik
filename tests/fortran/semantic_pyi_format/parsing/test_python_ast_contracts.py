@@ -51,10 +51,10 @@ def test_pyi_parser_reports_unsupported_lines_and_invalid_helpers():
     with pytest.raises(ValueError, match="expects positional arguments only"):
         parse_pyi_text("@native_call([Arg(0, name='x')])\ndef f(x: Int32) -> None: ...\n", module_name="edited")
 
-    with pytest.raises(ValueError, match="Expected imported x2py contract helper"):
+    with pytest.raises(ValueError, match="Expected imported prik contract helper"):
         parse_pyi_text("@native_call([Unknown(0)])\ndef f(x: Int32) -> None: ...\n", module_name="edited")
 
-    with pytest.raises(ValueError, match="Expected imported x2py contract helper"):
+    with pytest.raises(ValueError, match="Expected imported prik contract helper"):
         parse_pyi_text("@native_call([Len(Unknown(0))])\ndef f(x: Int32) -> None: ...\n", module_name="edited")
 
     with pytest.raises(ValueError, match="Unknown semantic type is not allowed"):

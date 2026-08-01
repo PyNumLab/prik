@@ -33,7 +33,7 @@ strict production build without deploying. A push to `main` runs those checks
 and deploys the reviewed site when GitHub Pages is configured to use GitHub
 Actions.
 
-Every push to `main` first runs the x2py/f2py correctness and rigorous
+Every push to `main` first runs the prik/f2py correctness and rigorous
 performance suite. The job extracts its platform and toolchain metadata,
 generates the result-dependent Performance page sections and SVG, and uploads
 the generated documentation together with the raw `pyperf` files. The website
@@ -50,7 +50,7 @@ generated Markdown and SVG artifact.
 
 Pull requests verify the generator and benchmark-host metadata helpers against
 fixtures but do not replace the public snapshot. The workflow pins the
-benchmark toolchain and alternates whether x2py or f2py is measured first to
+benchmark toolchain and alternates whether prik or f2py is measured first to
 avoid a systematic ordering advantage. Runtime cases use separate latency,
 medium, and bulk sampling budgets and are merged into one pyperf result per
 tool; this gives nanosecond-scale calls more independent samples without
@@ -64,7 +64,7 @@ after they are merged or pushed to `main`; maintainers do not build or upload
 
 Before changing a page to `publication: reviewed`, preview the production view
 with `python3 -m mkdocs serve`. Use
-`X2PY_DOCS_INCLUDE_DRAFTS=1 python3 -m mkdocs serve` to review unpublished
+`PRIK_DOCS_INCLUDE_DRAFTS=1 python3 -m mkdocs serve` to review unpublished
 pages with their draft warning. The lane index must also be reviewed before a
 page in that lane can enter the deployed artifact.
 

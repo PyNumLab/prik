@@ -1,6 +1,6 @@
 # Intentional invalid difference: @private hides Python declarations but does
 # not make the native specific procedures callable.
-from x2py.contracts import Addr, Arg, Float64, Int32, native_call, overload, private
+from prik.contracts import Addr, Arg, Float64, Int32, native_call, overload, private
 
 
 @private

@@ -10,8 +10,8 @@ from tests.c._support.fixture_outputs import (
     c_pyi_text_for_fixture_project,
     iter_general_c_fixture_projects,
 )
-from x2py.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
-from x2py.wrapper_codegen.printers import emit_module
+from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
+from prik.wrapper_codegen.printers import emit_module
 
 
 C_FIXTURE_PROJECTS = iter_general_c_fixture_projects()

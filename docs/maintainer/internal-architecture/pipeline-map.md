@@ -16,7 +16,7 @@ open at each stage.
 
 ## Source-Driven Fortran Wrapper Pipeline
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```text
 CLI request
   -> wrapper build orchestration
@@ -33,24 +33,24 @@ CLI request
   -> importable Python extension
   -> wrapper runtime tests
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 | Stage | Main source | Input | Output | Primary evidence |
 | --- | --- | --- | --- | --- |
-| CLI request | `x2py/cli.py` | source paths and stage flags | selected stage or wrapper build options | `tests/fortran/command_line_interface/pipeline/` |
-| Build orchestration | `x2py/pipeline/build.py` | ordered Fortran sources or `.pyi` contracts plus explicit native artifacts | `WrapperBuildResult`, `NativeBuildPlan`, and generated artifact plan | wrapper build-mode tests |
-| Preprocessing | `x2py/pipeline/preprocessing.py` | source path, compiler config | preprocessed source and dependency facts | preprocessing tests |
-| Parser project model | `x2py/parsers/fortran/parser.py` | preprocessed Fortran source | parser project with modules, procedures, types, visibility | Fortran parser fixture tests |
-| Target probes | `x2py/probes/fortran_types.py` | semantic type requirements and compiler flags | resolved kind/storage facts | Fortran type probe tests |
-| Semantic IR | `x2py/semantics/fortran2ir.py` | parser project and target facts | `SemanticModule` objects | semantic Fortran tests |
-| Semantic policy completion | `x2py/semantics/policy_completion.py`, `x2py/semantics/ownership.py` | full semantic modules with signatures and `.pyi` overrides | semantic modules annotated with every ownership, transfer, destruction, mutability, storage, accessor, and projection decision needed by wrapper generation | ownership-policy tests |
-| Wrapper planning | `x2py/wrapper_codegen/planner.py`, `x2py/wrapper_codegen/plan.py` | policy-completed semantic modules | typed wrapper plans consuming completed decisions without a separate support-analysis traversal | `tests/fortran/infrastructure/wrapper_codegen/`, wrapper tests |
-| Direct bridge and binding lowering | `x2py/wrapper_codegen/fortran/bridge.py`, `x2py/wrapper_codegen/c/binding.py`, `x2py/wrapper_codegen/generator.py` | validated typed wrapper plans | Fortran, C, and header syntax nodes | `tests/fortran/infrastructure/wrapper_codegen/`, wrapper tests |
-| Wrapper and semantic-contract printing | `x2py/wrapper_codegen/printers/` | wrapper syntax nodes or semantic IR | wrapper source files or semantic `.pyi` text | printer, generated-contract, and wrapper artifact tests |
-| Compile and link | `x2py/compiling/`, `x2py/pipeline/build.py` | dependency-batched native objects, generated bridge and binding objects, compiler-process limit, and ordered link inputs | shared library | wrapper runtime and build-mode tests |
+| CLI request | `prik/cli.py` | source paths and stage flags | selected stage or wrapper build options | `tests/fortran/command_line_interface/pipeline/` |
+| Build orchestration | `prik/pipeline/build.py` | ordered Fortran sources or `.pyi` contracts plus explicit native artifacts | `WrapperBuildResult`, `NativeBuildPlan`, and generated artifact plan | wrapper build-mode tests |
+| Preprocessing | `prik/pipeline/preprocessing.py` | source path, compiler config | preprocessed source and dependency facts | preprocessing tests |
+| Parser project model | `prik/parsers/fortran/parser.py` | preprocessed Fortran source | parser project with modules, procedures, types, visibility | Fortran parser fixture tests |
+| Target probes | `prik/probes/fortran_types.py` | semantic type requirements and compiler flags | resolved kind/storage facts | Fortran type probe tests |
+| Semantic IR | `prik/semantics/fortran2ir.py` | parser project and target facts | `SemanticModule` objects | semantic Fortran tests |
+| Semantic policy completion | `prik/semantics/policy_completion.py`, `prik/semantics/ownership.py` | full semantic modules with signatures and `.pyi` overrides | semantic modules annotated with every ownership, transfer, destruction, mutability, storage, accessor, and projection decision needed by wrapper generation | ownership-policy tests |
+| Wrapper planning | `prik/wrapper_codegen/planner.py`, `prik/wrapper_codegen/plan.py` | policy-completed semantic modules | typed wrapper plans consuming completed decisions without a separate support-analysis traversal | `tests/fortran/infrastructure/wrapper_codegen/`, wrapper tests |
+| Direct bridge and binding lowering | `prik/wrapper_codegen/fortran/bridge.py`, `prik/wrapper_codegen/c/binding.py`, `prik/wrapper_codegen/generator.py` | validated typed wrapper plans | Fortran, C, and header syntax nodes | `tests/fortran/infrastructure/wrapper_codegen/`, wrapper tests |
+| Wrapper and semantic-contract printing | `prik/wrapper_codegen/printers/` | wrapper syntax nodes or semantic IR | wrapper source files or semantic `.pyi` text | printer, generated-contract, and wrapper artifact tests |
+| Compile and link | `prik/compiling/`, `prik/pipeline/build.py` | dependency-batched native objects, generated bridge and binding objects, compiler-process limit, and ordered link inputs | shared library | wrapper runtime and build-mode tests |
 
-<!-- X2PY_C_DOCS_START
-X2PY_C_DOCS_END -->
+<!-- PRIK_C_DOCS_START
+PRIK_C_DOCS_END -->
 
 ## Concept Ownership Rules
 
@@ -62,29 +62,29 @@ The Python package layout follows those ownership boundaries:
 
 | Package | Owns | Must not become |
 | --- | --- | --- |
-| `x2py/contracts/` | The public semantic `.pyi` vocabulary | A home for semantic conversion or runtime type mapping |
-| `x2py/types/` | Mappings from resolved semantic types to Python ecosystem types | A second semantic IR model |
-| `x2py/probes/` | Compiler-derived target facts and reports built from those facts | Semantic policy or build orchestration |
-| `x2py/pipeline/` | Source preprocessing, semantic `.pyi` loading, and end-to-end wrapper build orchestration | Parser models, semantic decisions, or compiler implementation details |
-| `x2py/runtime/` | Python objects used by generated extensions at execution time | Build-time semantic or codegen policy |
-| `x2py/utilities/` | Small domain-neutral mechanisms such as class visitor dispatch | A miscellaneous home for semantic or pipeline concepts |
+| `prik/contracts/` | The public semantic `.pyi` vocabulary | A home for semantic conversion or runtime type mapping |
+| `prik/types/` | Mappings from resolved semantic types to Python ecosystem types | A second semantic IR model |
+| `prik/probes/` | Compiler-derived target facts and reports built from those facts | Semantic policy or build orchestration |
+| `prik/pipeline/` | Source preprocessing, semantic `.pyi` loading, and end-to-end wrapper build orchestration | Parser models, semantic decisions, or compiler implementation details |
+| `prik/runtime/` | Python objects used by generated extensions at execution time | Build-time semantic or codegen policy |
+| `prik/utilities/` | Small domain-neutral mechanisms such as class visitor dispatch | A miscellaneous home for semantic or pipeline concepts |
 
-Semantic metadata and ownership policy remain in `x2py/semantics/` even when
+Semantic metadata and ownership policy remain in `prik/semantics/` even when
 codegen consumes them. Downstream use does not turn semantic authority into
 cross-cutting infrastructure.
 
 | Concept family | Owner | What belongs there | What must stay out |
 | --- | --- | --- | --- |
 | Parser facts | parser packages | Source syntax, native declaration structure, source locations, and parser diagnostics | Wrapper policy, Python API projection, generated names, and compile/link decisions |
-| Semantic policy completion and ownership | `x2py/semantics/policy_completion.py` and `x2py/semantics/ownership.py` | Completed policy choices for ownership, lifetime, output projection, replacement, and ABI safety | Raw parser syntax, backend-specific statement trees, and hidden lowering-time policy decisions |
-| Typed wrapper plan | `x2py/wrapper_codegen/plan.py` and `x2py/wrapper_codegen/planner.py` | A validated, backend-neutral implementation plan projected from completed semantic decisions | Source-contract authority, policy inference, and target-language statement details |
-| Printers and compilation | `x2py/wrapper_codegen/printers/`, `x2py/compiling/`, and wrapper orchestration | Text emission, generated artifact layout, compiler commands, native objects, libraries, include directories, and link inputs | Semantic support decisions and plan rewriting policy |
+| Semantic policy completion and ownership | `prik/semantics/policy_completion.py` and `prik/semantics/ownership.py` | Completed policy choices for ownership, lifetime, output projection, replacement, and ABI safety | Raw parser syntax, backend-specific statement trees, and hidden lowering-time policy decisions |
+| Typed wrapper plan | `prik/wrapper_codegen/plan.py` and `prik/wrapper_codegen/planner.py` | A validated, backend-neutral implementation plan projected from completed semantic decisions | Source-contract authority, policy inference, and target-language statement details |
+| Printers and compilation | `prik/wrapper_codegen/printers/`, `prik/compiling/`, and wrapper orchestration | Text emission, generated artifact layout, compiler commands, native objects, libraries, include directories, and link inputs | Semantic support decisions and plan rewriting policy |
 
-<!-- X2PY_C_DOCS_START
-| Semantic IR | `x2py/semantics/models.py`, `x2py/semantics/metadata.py`, and source-to-IR converters | Language-neutral contract facts: public names, native identities, source origins, visibility, type/storage/access facts, module/class/function/variable structure, and metadata that must survive parser, policy, printer, and lowering boundaries | Generated bodies, temporaries, target-language scopes, include/import mechanics, CPython calls, and printer-only syntax |
-| Backend syntax nodes | `x2py/wrapper_codegen/nodes.py`, `x2py/wrapper_codegen/fortran/bridge.py`, and `x2py/wrapper_codegen/c/binding.py` | Fortran bridge nodes, C/CPython binding nodes, target ABI/API calls, and backend-specific adapter structure | Language-neutral semantic meaning and policy decisions |
-| Naming policy | `x2py/naming/` | Shared public-name and generated-symbol decisions for Python, C, and Fortran targets | Semantic IR ownership or codegen tree ownership |
-X2PY_C_DOCS_END -->
+<!-- PRIK_C_DOCS_START
+| Semantic IR | `prik/semantics/models.py`, `prik/semantics/metadata.py`, and source-to-IR converters | Language-neutral contract facts: public names, native identities, source origins, visibility, type/storage/access facts, module/class/function/variable structure, and metadata that must survive parser, policy, printer, and lowering boundaries | Generated bodies, temporaries, target-language scopes, include/import mechanics, CPython calls, and printer-only syntax |
+| Backend syntax nodes | `prik/wrapper_codegen/nodes.py`, `prik/wrapper_codegen/fortran/bridge.py`, and `prik/wrapper_codegen/c/binding.py` | Fortran bridge nodes, C/CPython binding nodes, target ABI/API calls, and backend-specific adapter structure | Language-neutral semantic meaning and policy decisions |
+| Naming policy | `prik/naming/` | Shared public-name and generated-symbol decisions for Python, C, and Fortran targets | Semantic IR ownership or codegen tree ownership |
+PRIK_C_DOCS_END -->
 
 Use these rules when adding a new notion:
 
@@ -101,7 +101,7 @@ Use these rules when adding a new notion:
   directories, compiler flags, link items, binding support files, and generated
   artifact paths.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 - Put it in wrapper generation when it exists because emitted wrapper code needs it:
   generated bodies, temporaries, low-level storage variables, scopes, imports,
   includes, bridge calls, CPython API calls, cleanup paths, and target-language
@@ -110,7 +110,7 @@ Use these rules when adding a new notion:
   Fortran spellings, reserved-word handling, or collision-free generated names.
   The naming layer is a shared policy service, not a semantic model and not a
   generated source-syntax node.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 Merge or move concepts only when their invariants match:
 
@@ -125,14 +125,14 @@ Merge or move concepts only when their invariants match:
   contract, native contract, completed policy, or `.pyi` representation and exists only
   to print or compile wrapper code.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 - Keep concepts split when they share a word but not an invariant. A semantic
   function is a callable contract; a codegen function is an emitted body. A
   semantic variable is a public/native value contract; a codegen variable is a
   storage location in generated code. A semantic datatype is an API/ABI fact; a
   codegen datatype can be a concrete Fortran, C, CPython, NumPy, or bridge
   representation.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 Examples:
 
@@ -142,30 +142,30 @@ Examples:
   belongs to naming policy. The chosen public spelling is stored where the
   contract needs it, while target-specific helper symbols stay generated.
 - Wrapper syntax nodes, body statements, temporaries, includes, and backend
-  datatypes stay out of `x2py/semantics/models.py`.
+  datatypes stay out of `prik/semantics/models.py`.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 - `@raises`, `@nogil`, output projection, and ownership metadata belong to
   semantic policy. The generated CPython error checks, GIL calls, and
   cleanup statements belong to codegen.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ## Stage Maintenance Map
 
 | Stage family | First files to read | Source navigation owner |
 | --- | --- | --- |
-| CLI and output routing | `x2py/cli.py`, parser CLI helpers | `docs/developer/source-map.md`, `docs/developer/feature-to-code-map.md` |
-| Source loading and preprocessing | `x2py/pipeline/preprocessing.py` | `docs/developer/source-map.md`, parser references |
-| Editable semantic contracts | `x2py/parsers/pyi/parser.py`, `x2py/pipeline/pyi.py`, `x2py/semantics/pyi2ir.py`, `x2py/wrapper_codegen/printers/pyi_printer.py` | `docs/user/reference/semantic-pyi-format.md` |
-| Semantic and wrapper-planning errors | `x2py/semantics/fortran2ir.py`, `x2py/semantics/policy_completion.py`, `x2py/semantics/wrapper_policy.py`, `x2py/wrapper_codegen/planner.py` | `docs/user/guide/error-handling.md` |
-| Wrapper policy and lowering | `x2py/semantics/policy_completion.py`, `x2py/semantics/ownership.py`, `x2py/wrapper_codegen/planner.py`, `x2py/wrapper_codegen/generator.py` | `docs/user/reference/fortran-wrapper.md`, ownership docs |
-| Native build | `x2py/pipeline/build.py`, `x2py/compiling/compilers.py`, `x2py/compiling/native_support.py` | compiling package README and build-system docs |
+| CLI and output routing | `prik/cli.py`, parser CLI helpers | `docs/developer/source-map.md`, `docs/developer/feature-to-code-map.md` |
+| Source loading and preprocessing | `prik/pipeline/preprocessing.py` | `docs/developer/source-map.md`, parser references |
+| Editable semantic contracts | `prik/parsers/pyi/parser.py`, `prik/pipeline/pyi.py`, `prik/semantics/pyi2ir.py`, `prik/wrapper_codegen/printers/pyi_printer.py` | `docs/user/reference/semantic-pyi-format.md` |
+| Semantic and wrapper-planning errors | `prik/semantics/fortran2ir.py`, `prik/semantics/policy_completion.py`, `prik/semantics/wrapper_policy.py`, `prik/wrapper_codegen/planner.py` | `docs/user/guide/error-handling.md` |
+| Wrapper policy and lowering | `prik/semantics/policy_completion.py`, `prik/semantics/ownership.py`, `prik/wrapper_codegen/planner.py`, `prik/wrapper_codegen/generator.py` | `docs/user/reference/fortran-wrapper.md`, ownership docs |
+| Native build | `prik/pipeline/build.py`, `prik/compiling/compilers.py`, `prik/compiling/native_support.py` | compiling package README and build-system docs |
 
-<!-- X2PY_C_DOCS_START
-| Parser facts | `x2py/parsers/c/parser.py`, `x2py/parsers/fortran/parser.py` | parser package README files and parser references |
-| Semantic conversion | `x2py/semantics/fortran2ir.py`, `x2py/semantics/c2ir.py`, `x2py/semantics/pyi2ir.py`, `x2py/semantics/models.py` | `docs/user/reference/semantic-ir.md` |
-| Bridge and binding generation | `x2py/wrapper_codegen/fortran/bridge.py`, `x2py/wrapper_codegen/c/binding.py` | wrapper generation docs |
-X2PY_C_DOCS_END -->
+<!-- PRIK_C_DOCS_START
+| Parser facts | `prik/parsers/c/parser.py`, `prik/parsers/fortran/parser.py` | parser package README files and parser references |
+| Semantic conversion | `prik/semantics/fortran2ir.py`, `prik/semantics/c2ir.py`, `prik/semantics/pyi2ir.py`, `prik/semantics/models.py` | `docs/user/reference/semantic-ir.md` |
+| Bridge and binding generation | `prik/wrapper_codegen/fortran/bridge.py`, `prik/wrapper_codegen/c/binding.py` | wrapper generation docs |
+PRIK_C_DOCS_END -->
 
 ## Semantic `.pyi` Wrapper Pipeline
 
@@ -175,13 +175,13 @@ the Python API.
 
 ```text
 .pyi contract
-  -> x2py/parsers/pyi/parser.py
-  -> x2py/pipeline/pyi.py
-  -> x2py/semantics/pyi2ir.py
-  -> x2py/semantics/native_contract.py
-  -> x2py/semantics/policy_completion.py
-  -> x2py/wrapper_codegen/planner.py
-  -> x2py/wrapper_codegen/generator.py
+  -> prik/parsers/pyi/parser.py
+  -> prik/pipeline/pyi.py
+  -> prik/semantics/pyi2ir.py
+  -> prik/semantics/native_contract.py
+  -> prik/semantics/policy_completion.py
+  -> prik/wrapper_codegen/planner.py
+  -> prik/wrapper_codegen/generator.py
   -> compile and link pipeline
 ```
 
@@ -193,7 +193,7 @@ generators consume that completed policy and must not invent a different one.
 
 ## Shared Semantic Policy Boundary
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 C parser facts, Fortran parser facts, and semantic `.pyi` contracts all converge
 on `SemanticModule` objects before ownership policy is decided. Semantic policy
 completion fills in ownership, transfer, destruction, mutability/writeback,
@@ -202,20 +202,20 @@ decisions from the full semantic signature. Field and module-variable accessors
 also receive separate completed getter, native assignment, and Python setter
 exposure decisions; codegen does not derive accessor behavior from datatype or
 storage representation:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```text
-C parser -> x2py/semantics/c2ir.py
-Fortran parser -> x2py/semantics/fortran2ir.py
-.pyi parser -> x2py/parsers/pyi/parser.py -> x2py/pipeline/pyi.py -> x2py/semantics/pyi2ir.py
+C parser -> prik/semantics/c2ir.py
+Fortran parser -> prik/semantics/fortran2ir.py
+.pyi parser -> prik/parsers/pyi/parser.py -> prik/pipeline/pyi.py -> prik/semantics/pyi2ir.py
   -> SemanticModule objects
-  -> x2py/semantics/policy_completion.py
+  -> prik/semantics/policy_completion.py
   -> wrapper planning and lowering
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 `pyi_parser.py` is intentionally small: it reads `.pyi` text or files and
 returns Python AST. Semantic interpretation belongs to `pyi2ir.py`, matching
 the source-parser-to-IR split used by C and Fortran. Wrapper
@@ -225,7 +225,7 @@ only meaningful after the surrounding argument, result, field, or module-variabl
 context is known. The C source path currently uses this shared boundary for
 semantic reports; the implemented source-free wrapper backend is
 Fortran-focused.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 The completed decision is also the only semantic input to bridge and binding
 behavior selection. Each backend owns an explicit dispatch table keyed by the
@@ -261,22 +261,22 @@ native source
   -> semantic .pyi
 ```
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 C source currently follows this inspection pipeline. Runtime wrapping of
 user-supplied C inputs is future backend work and must not be presented as
 implemented support.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ## Where Failures Should Happen
 
 | Failure type | Preferred owner |
 | --- | --- |
-| Source cannot be preprocessed | `x2py/pipeline/preprocessing.py` |
-| Source syntax cannot be represented by x2py's parser model | parser package |
+| Source cannot be preprocessed | `prik/pipeline/preprocessing.py` |
+| Source syntax cannot be represented by prik's parser model | parser package |
 | Source facts cannot form a semantic contract | semantic conversion |
-| Ownership, lifetime, ABI, projection, or wrapper support decision is unsafe | `x2py/semantics/ownership.py` or policy completion |
+| Ownership, lifetime, ABI, projection, or wrapper support decision is unsafe | `prik/semantics/ownership.py` or policy completion |
 | A completed policy is internally inconsistent while being projected | wrapper planner at the owner being projected |
-| Native-language validity does not affect x2py's contract | Fortran or C compiler |
+| Native-language validity does not affect prik's contract | Fortran or C compiler |
 | Generated code cannot represent a supported plan | bridge or binding generator with focused tests |
-| Compiler/linker invocation is wrong | `x2py/compiling/` or `x2py/pipeline/build.py` |
+| Compiler/linker invocation is wrong | `prik/compiling/` or `prik/pipeline/build.py` |
 | Python binding behavior is wrong | generated binding, native support, or ownership policy |

@@ -1,6 +1,6 @@
 ---
 title: Allocatables
-description: How x2py handles Fortran `allocatable` variables, arrays, and descriptors
+description: How prik handles Fortran `allocatable` variables, arrays, and descriptors
 audience: users, advanced users
 prerequisites: arrays
 related: arrays.md, pointers.md, memory-management.md
@@ -12,7 +12,7 @@ publication: reviewed
 
 A Fortran allocatable descriptor records whether storage is allocated and, for
 arrays, its address, shape, and strides. The descriptor controls the allocation,
-and an x2py handle gives Python access to that descriptor.
+and an prik handle gives Python access to that descriptor.
 
 ## Key Concepts
 
@@ -37,7 +37,7 @@ Use `Allocatable[T[...]]` when the native callable needs the allocatable
 descriptor and may inspect or change its allocation state:
 
 ```python
-from x2py.contracts import Allocatable, Float64, Int32
+from prik.contracts import Allocatable, Float64, Int32
 
 values: Allocatable[Float64[:]]
 
@@ -63,7 +63,7 @@ use an `AllocatableArray`. You can also create an unallocated handle when a
 routine needs a present descriptor that it will allocate:
 
 ```python
-import x2py.contracts as xc
+import prik.contracts as xc
 
 values = xc.Allocatable[xc.Float64[:]]()
 assert values.allocated is False
@@ -152,7 +152,7 @@ assert h.shape == (5,)
 ### Function Results
 
 An allocatable-array function result becomes an `AllocatableArray` with its own
-descriptor storage, which x2py releases automatically:
+descriptor storage, which prik releases automatically:
 
 ```python
 values = api.make_values(3)
@@ -164,7 +164,7 @@ zero-sized allocation to represent an empty result. If the native function may
 instead return an unallocated result, declare that possibility explicitly:
 
 ```python
-from x2py.contracts import Allocatable, Annotated, Float64, Int32, MaybeUnallocated
+from prik.contracts import Allocatable, Annotated, Float64, Int32, MaybeUnallocated
 
 def make_values(n: Int32) -> Allocatable[Float64[:]]: ...
 
@@ -233,7 +233,7 @@ end module storage
 Build it:
 
 ```bash
-python3 -m x2py storage.f90 --out-dir build/storage
+python3 -m prik storage.f90 --out-dir build/storage
 ```
 
 Use the generated module:

@@ -53,7 +53,7 @@ raw_pointer: Addr(Float64)
 def test_value_projection_round_trips_as_argument_specific_native_transport():
     module = parse_pyi_text(
         """
-from x2py.contracts import Arg, Float64, Value, native_call, native_type
+from prik.contracts import Arg, Float64, Value, native_call, native_type
 
 @native_type(attributes=("bind(c)",))
 class point:
@@ -74,8 +74,8 @@ def score(value: point) -> Float64: ...
 def test_convert_pyi_to_ir_follows_arbitrary_contract_aliases():
     module = pyi_text_to_semantic_module(
         """
-from x2py.contracts import Addr as AddressOf, Arg as PythonArg, Final as Frozen
-from x2py.contracts import Flat as Layout, Float64 as F64, Int32 as I32, native_call as call
+from prik.contracts import Addr as AddressOf, Arg as PythonArg, Final as Frozen
+from prik.contracts import Flat as Layout, Float64 as F64, Int32 as I32, native_call as call
 
 Flat: Frozen[I32] = 10
 
@@ -153,8 +153,8 @@ def test_convert_pyi_to_ir_forwards_filename_to_syntax_errors():
 def test_convert_pyi_to_ir_accepts_aliased_contract_wrapper_names():
     module = pyi_text_to_semantic_module(
         """
-from x2py.contracts import Annotated as Metadata, Float64 as F64, SourceName as NativeName
-from x2py.contracts import Returns as Gives
+from prik.contracts import Annotated as Metadata, Float64 as F64, SourceName as NativeName
+from prik.contracts import Returns as Gives
 
 alias: Metadata[F64[1:n], NativeName("native_alias")]
 
@@ -358,7 +358,7 @@ def fill(x: Float64[:]) -> None: ...
 def test_convert_pyi_to_ir_accepts_array_descriptor_handle_wrappers():
     module = pyi_text_to_semantic_module(
         """
-from x2py.contracts import Allocatable as A, Annotated, Float64 as F64, Pointer as P, SourceName, String as Str
+from prik.contracts import Allocatable as A, Annotated, Float64 as F64, Pointer as P, SourceName, String as Str
 
 values: A[F64[:]]
 target: Annotated[P[F64[:, :]], SourceName("target_values")]
@@ -542,13 +542,13 @@ end module solver_mod
     )
     generated = emit_module(fortran_file_to_semantic_modules(parsed)[0])
     constrained = generated.replace(
-        "from x2py.contracts import ",
-        "from x2py.contracts import Annotated, Finite, ",
+        "from prik.contracts import ",
+        "from prik.contracts import Annotated, Finite, ",
         1,
     ).replace("value: Float64", "value: Annotated[Float64, Finite]", 1)
     changed_abi = generated.replace(
-        "from x2py.contracts import ",
-        "from x2py.contracts import Int32, ",
+        "from prik.contracts import ",
+        "from prik.contracts import Int32, ",
         1,
     ).replace("value: Float64", "value: Int32", 1)
 

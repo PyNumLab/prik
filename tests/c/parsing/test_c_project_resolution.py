@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 def test_project_include_graph_tracks_local_system_missing_and_cycles(tmp_path: Path):
-    from x2py.parsers.c import parse_c_project
+    from prik.parsers.c import parse_c_project
 
     (tmp_path / "a.h").write_text('#include "b.h"\n#include "missing.h"\n', encoding="utf-8")
     (tmp_path / "b.h").write_text('#include "a.h"\n#include <stddef.h>\n', encoding="utf-8")
@@ -19,7 +19,7 @@ def test_project_include_graph_tracks_local_system_missing_and_cycles(tmp_path: 
 
 
 def test_project_resolves_quoted_includes_through_include_dirs(tmp_path: Path):
-    from x2py.parsers.c import parse_c_project
+    from prik.parsers.c import parse_c_project
 
     include_dir = tmp_path / "include"
     src_dir = tmp_path / "src"
@@ -39,7 +39,7 @@ def test_project_resolves_quoted_includes_through_include_dirs(tmp_path: Path):
 
 
 def test_project_records_local_include_without_recursively_parsing_resolved_header(tmp_path: Path):
-    from x2py.parsers.c import parse_c_project
+    from prik.parsers.c import parse_c_project
 
     include_dir = tmp_path / "generated"
     include_dir.mkdir()
@@ -57,7 +57,7 @@ def test_project_records_local_include_without_recursively_parsing_resolved_head
 
 
 def test_project_records_system_include_without_searching_or_parsing_local_copy(tmp_path: Path):
-    from x2py.parsers.c import parse_c_project
+    from prik.parsers.c import parse_c_project
 
     local_system_header = tmp_path / "stddef.h"
     api = tmp_path / "api.h"
@@ -73,7 +73,7 @@ def test_project_records_system_include_without_searching_or_parsing_local_copy(
 
 
 def test_parse_c_project_directory_discovers_preprocessed_i_files(tmp_path: Path):
-    from x2py.parsers.c import parse_c_project
+    from prik.parsers.c import parse_c_project
 
     (tmp_path / "api.c").write_text("int from_source(void);\n", encoding="utf-8")
     (tmp_path / "generated.i").write_text(
@@ -95,7 +95,7 @@ def test_parse_c_project_directory_discovers_preprocessed_i_files(tmp_path: Path
 
 
 def test_project_indexes_functions_by_file_and_enum_constants(tmp_path: Path):
-    from x2py.parsers.c import parse_c_project
+    from prik.parsers.c import parse_c_project
 
     (tmp_path / "api.h").write_text(
         "enum status { STATUS_OK = 0, STATUS_ERROR = -1 };\nint run(void);\nint stop(void);\n",
@@ -110,7 +110,7 @@ def test_project_indexes_functions_by_file_and_enum_constants(tmp_path: Path):
 
 
 def test_project_indexes_file_scope_variables(tmp_path: Path):
-    from x2py.parsers.c import parse_c_project
+    from prik.parsers.c import parse_c_project
 
     (tmp_path / "api.h").write_text(
         "extern int global_count;\n",
@@ -123,7 +123,7 @@ def test_project_indexes_file_scope_variables(tmp_path: Path):
 
 
 def test_project_function_index_prefers_definition_over_compatible_prototype(tmp_path: Path):
-    from x2py.parsers.c import parse_c_project
+    from prik.parsers.c import parse_c_project
 
     (tmp_path / "api.h").write_text("int solve(int value);\n", encoding="utf-8")
     (tmp_path / "api.c").write_text("int solve(int value) { return value; }\n", encoding="utf-8")
@@ -136,7 +136,7 @@ def test_project_function_index_prefers_definition_over_compatible_prototype(tmp
 
 
 def test_project_reports_conflicting_function_declarations(tmp_path: Path):
-    from x2py.parsers.c import parse_c_project
+    from prik.parsers.c import parse_c_project
 
     (tmp_path / "a.h").write_text("int work(int value);\n", encoding="utf-8")
     (tmp_path / "b.h").write_text("double work(double value);\n", encoding="utf-8")
@@ -147,7 +147,7 @@ def test_project_reports_conflicting_function_declarations(tmp_path: Path):
 
 
 def test_project_resolves_typedefs_and_struct_tags_across_files(tmp_path: Path):
-    from x2py.parsers.c import CComposedType, CTypedef, parse_c_project
+    from prik.parsers.c import CComposedType, CTypedef, parse_c_project
 
     (tmp_path / "types.h").write_text(
         "typedef unsigned long api_size;\nstruct state { int id; };\n",
@@ -168,7 +168,7 @@ def test_project_resolves_typedefs_and_struct_tags_across_files(tmp_path: Path):
 
 
 def test_project_completes_forward_struct_tags_regardless_of_file_order():
-    from x2py.parsers.c import CComposedType, parse_c_project
+    from prik.parsers.c import CComposedType, parse_c_project
 
     project = parse_c_project(
         {
@@ -185,7 +185,7 @@ def test_project_completes_forward_struct_tags_regardless_of_file_order():
 
 
 def test_project_keeps_complete_union_definition_when_forward_seen_later():
-    from x2py.parsers.c import CComposedType, parse_c_project
+    from prik.parsers.c import CComposedType, parse_c_project
 
     project = parse_c_project(
         {
@@ -202,7 +202,7 @@ def test_project_keeps_complete_union_definition_when_forward_seen_later():
 
 
 def test_project_resolves_typedef_chains_while_preserving_alias_objects(tmp_path: Path):
-    from x2py.parsers.c import CTypedef, CUnsignedLong, parse_c_project
+    from prik.parsers.c import CTypedef, CUnsignedLong, parse_c_project
 
     (tmp_path / "types.h").write_text(
         "typedef unsigned long raw_size;\ntypedef raw_size api_size;\n",
@@ -220,7 +220,7 @@ def test_project_resolves_typedef_chains_while_preserving_alias_objects(tmp_path
 
 
 def test_project_resolves_typedefs_for_variables_and_aggregate_members():
-    from x2py.parsers.c import parse_c_project
+    from prik.parsers.c import parse_c_project
 
     project = parse_c_project(
         {
@@ -234,7 +234,7 @@ def test_project_resolves_typedefs_for_variables_and_aggregate_members():
 
 
 def test_project_reports_each_typedef_cycle_once_with_structured_diagnostic():
-    from x2py.parsers.c import parse_c_project
+    from prik.parsers.c import parse_c_project
 
     project = parse_c_project({"cycle.h": "typedef b a;\ntypedef a b;\n"})
 
@@ -249,7 +249,7 @@ def test_project_reports_each_typedef_cycle_once_with_structured_diagnostic():
 
 
 def test_project_reports_prefixed_typedef_cycle_without_including_acyclic_alias():
-    from x2py.parsers.c import parse_c_project
+    from prik.parsers.c import parse_c_project
 
     project = parse_c_project(
         {"cycle.h": ("typedef inner_a alias;\ntypedef inner_b inner_a;\ntypedef inner_a inner_b;\n")}
@@ -262,7 +262,7 @@ def test_project_reports_prefixed_typedef_cycle_without_including_acyclic_alias(
 
 
 def test_project_resolves_function_typedef_signature_references():
-    from x2py.parsers.c import CComposedType, CFunctionType, parse_c_project
+    from prik.parsers.c import CComposedType, CFunctionType, parse_c_project
 
     project = parse_c_project(
         {
@@ -284,7 +284,7 @@ def test_project_resolves_function_typedef_signature_references():
 
 
 def test_project_resolves_parameter_declared_type_signature_references():
-    from x2py.parsers.c import CComposedType, CFunctionType, parse_c_project
+    from prik.parsers.c import CComposedType, CFunctionType, parse_c_project
 
     project = parse_c_project(
         {"callbacks.h": ("typedef unsigned long api_size;\nvoid apply(api_size callback(api_size));\n")}
@@ -300,7 +300,7 @@ def test_project_resolves_parameter_declared_type_signature_references():
 
 
 def test_project_resolves_parameter_declared_array_references():
-    from x2py.parsers.c import CComposedType, parse_c_project
+    from prik.parsers.c import CComposedType, parse_c_project
 
     project = parse_c_project({"arrays.h": ("typedef unsigned long api_size;\nvoid collect(api_size values[4]);\n")})
 
@@ -313,7 +313,7 @@ def test_project_resolves_parameter_declared_array_references():
 
 
 def test_project_reuses_typedef_cycle_state_across_resolved_use_sites():
-    from x2py.parsers.c import parse_c_project
+    from prik.parsers.c import parse_c_project
 
     project = parse_c_project(
         {
@@ -333,7 +333,7 @@ def test_project_reuses_typedef_cycle_state_across_resolved_use_sites():
 
 
 def test_project_resolves_union_and_enum_tag_references(tmp_path: Path):
-    from x2py.parsers.c import CComposedType, parse_c_project
+    from prik.parsers.c import CComposedType, parse_c_project
 
     (tmp_path / "types.h").write_text(
         "union value { int i; };\nenum status { STATUS_OK = 0 };\n",
@@ -353,7 +353,7 @@ def test_project_resolves_union_and_enum_tag_references(tmp_path: Path):
 
 
 def test_project_resolves_opaque_pointer_typedefs_across_files(tmp_path: Path):
-    from x2py.parsers.c import CComposedType, CTypedef, parse_c_project
+    from prik.parsers.c import CComposedType, CTypedef, parse_c_project
 
     (tmp_path / "types.h").write_text(
         "struct handle;\ntypedef struct handle *handle_t;\n",
@@ -371,7 +371,7 @@ def test_project_resolves_opaque_pointer_typedefs_across_files(tmp_path: Path):
 
 
 def test_project_preserves_unresolved_type_references_for_later_diagnostics():
-    from x2py.parsers.c import CTypedef, parse_c_project
+    from prik.parsers.c import CTypedef, parse_c_project
 
     project = parse_c_project({"api.h": "missing_type value(void);\n"})
 
@@ -381,7 +381,7 @@ def test_project_preserves_unresolved_type_references_for_later_diagnostics():
 
 
 def test_project_preserves_unresolved_tag_references_for_later_diagnostics():
-    from x2py.parsers.c import CComposedType, CEnum, CStruct, CUnion, parse_c_project
+    from prik.parsers.c import CComposedType, CEnum, CStruct, CUnion, parse_c_project
 
     project = parse_c_project(
         {"api.h": ("struct missing *get_struct(void);\nunion absent *get_union(void);\nenum unknown get_enum(void);\n")}
@@ -401,7 +401,7 @@ def test_project_preserves_unresolved_tag_references_for_later_diagnostics():
 
 
 def test_project_header_source_pairs_use_matching_stems_and_direct_includes(tmp_path: Path):
-    from x2py.parsers.c import parse_c_project
+    from prik.parsers.c import parse_c_project
 
     (tmp_path / "solver.h").write_text("int solve(void);\n", encoding="utf-8")
     (tmp_path / "solver.c").write_text('#include "solver.h"\n', encoding="utf-8")
@@ -415,7 +415,7 @@ def test_project_header_source_pairs_use_matching_stems_and_direct_includes(tmp_
 
 
 def test_project_header_source_pairs_preserve_many_to_many_relationships(tmp_path: Path):
-    from x2py.parsers.c import parse_c_project
+    from prik.parsers.c import parse_c_project
 
     (tmp_path / "a.h").write_text("int a(void);\n", encoding="utf-8")
     (tmp_path / "b.h").write_text("int b(void);\n", encoding="utf-8")
@@ -429,7 +429,7 @@ def test_project_header_source_pairs_preserve_many_to_many_relationships(tmp_pat
 
 
 def test_project_serialization_keeps_include_indexes_json_stable(tmp_path: Path):
-    from x2py.parsers.c import parse_c_project
+    from prik.parsers.c import parse_c_project
 
     (tmp_path / "api.h").write_text("#include <stddef.h>\nint run(void);\n", encoding="utf-8")
 

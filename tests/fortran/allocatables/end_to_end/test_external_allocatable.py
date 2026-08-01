@@ -5,12 +5,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import x2py.contracts as contracts
+import prik.contracts as contracts
 from tests.fortran._support.wrapper_build import (
     _compile_native_object,
     _import_from_build_dir,
 )
-from x2py import build_pyi_extension
+from prik import build_pyi_extension
 
 pytestmark = pytest.mark.fortran_end_to_end
 
@@ -30,7 +30,7 @@ end subroutine replace_external
     )
     contract = tmp_path / "external_allocatable.pyi"
     contract.write_text(
-        """from x2py.contracts import Allocatable, Float64, Returns, external
+        """from prik.contracts import Allocatable, Float64, Returns, external
 
 @external
 def replace_external(

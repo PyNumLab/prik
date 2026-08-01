@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.pipeline.pyi import pyi_file_to_semantic_module
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import BridgeDataAction, OptionalMode
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.pipeline.pyi import pyi_file_to_semantic_module
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.wrapper_policy import BridgeDataAction, OptionalMode
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
 
 OPTIONAL_FIXED_CONTRACT = (

@@ -21,7 +21,7 @@ from tests.fortran._support.printer_models import (
     pytest,
     rendered_source,
 )
-from x2py.semantics.metadata import MAYBE_UNALLOCATED_METADATA
+from prik.semantics.metadata import MAYBE_UNALLOCATED_METADATA
 
 
 def test_emit_optional_scalar_output_as_visible_scalar_storage():

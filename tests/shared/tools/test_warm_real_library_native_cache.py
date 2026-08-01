@@ -9,7 +9,7 @@ def test_warm_real_library_native_cache_defaults_to_all_libraries(monkeypatch, c
 
     def cached_native_shared_library(library: str) -> Path:
         calls.append(library)
-        return Path("/cache") / f"libx2py_full_{library}.so"
+        return Path("/cache") / f"libprik_full_{library}.so"
 
     monkeypatch.setattr(
         warm_real_library_native_cache,
@@ -25,8 +25,8 @@ def test_warm_real_library_native_cache_defaults_to_all_libraries(monkeypatch, c
     assert calls == ["blas", "lapack"]
     assert capsys.readouterr().out.splitlines() == [
         "native cache root: /cache",
-        "blas: /cache/libx2py_full_blas.so",
-        "lapack: /cache/libx2py_full_lapack.so",
+        "blas: /cache/libprik_full_blas.so",
+        "lapack: /cache/libprik_full_lapack.so",
     ]
 
 
@@ -35,7 +35,7 @@ def test_warm_real_library_native_cache_accepts_selected_libraries(monkeypatch, 
 
     def cached_native_shared_library(library: str) -> Path:
         calls.append(library)
-        return Path("/cache") / f"libx2py_full_{library}.so"
+        return Path("/cache") / f"libprik_full_{library}.so"
 
     monkeypatch.setattr(
         warm_real_library_native_cache,
@@ -51,7 +51,7 @@ def test_warm_real_library_native_cache_accepts_selected_libraries(monkeypatch, 
     assert calls == ["lapack"]
     assert capsys.readouterr().out.splitlines() == [
         "native cache root: /cache",
-        "lapack: /cache/libx2py_full_lapack.so",
+        "lapack: /cache/libprik_full_lapack.so",
     ]
 
 

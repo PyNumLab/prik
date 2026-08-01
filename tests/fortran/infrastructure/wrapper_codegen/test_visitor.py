@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from x2py.wrapper_codegen import ClassVisitor, UnsupportedWrapperCodegenNodeError
+from prik.wrapper_codegen import ClassVisitor, UnsupportedWrapperCodegenNodeError
 
 
 class BaseNode:

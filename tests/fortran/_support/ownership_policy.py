@@ -2,9 +2,9 @@
 
 import pytest
 
-from x2py.contracts import CONTRACT_SYMBOLS
+from prik.contracts import CONTRACT_SYMBOLS
 
-from x2py.semantics.metadata import (
+from prik.semantics.metadata import (
     ADDRESS_ROLE_METADATA,
     ADDRESS_ROLE_PROJECTION,
     ADDRESS_ROLE_RAW,
@@ -12,9 +12,9 @@ from x2py.semantics.metadata import (
     SCALAR_STORAGE_CATEGORY,
 )
 
-from x2py.wrapper_codegen.printers import PyiPrinter
+from prik.wrapper_codegen.printers import PyiPrinter
 
-from x2py.semantics.ownership import (
+from prik.semantics.ownership import (
     AssignmentMode,
     CodegenAction,
     DestructionPolicy,
@@ -35,7 +35,7 @@ from x2py.semantics.ownership import (
     set_ownership_metadata,
 )
 
-from x2py.semantics.models import (
+from prik.semantics.models import (
     POLICY_COMPLETION_PREPARED_METADATA,
     PYTHON_EXPORTS_METADATA,
     PYTHON_EXPORTS_PREPARED_METADATA,
@@ -58,7 +58,7 @@ from x2py.semantics.models import (
     SemanticVariable,
 )
 
-from x2py.semantics.native_array_handles import (
+from prik.semantics.native_array_handles import (
     ArrayInteropPolicy,
     ArrayInteropPolicyDispatcher,
     NativeArrayBuildRequirement,
@@ -68,15 +68,15 @@ from x2py.semantics.native_array_handles import (
     native_array_handle_build_requirements,
 )
 
-from x2py.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.policy_completion import complete_semantic_policies
 
-from x2py.pipeline.pyi import pyi_text_to_semantic_module as _parse_pyi_text
+from prik.pipeline.pyi import pyi_text_to_semantic_module as _parse_pyi_text
 
-CONTRACT_IMPORT = f"from x2py.contracts import {', '.join(sorted(CONTRACT_SYMBOLS))}\n"
+CONTRACT_IMPORT = f"from prik.contracts import {', '.join(sorted(CONTRACT_SYMBOLS))}\n"
 
 
 def parse_pyi_text(source: str, *args, **kwargs):
-    if "x2py.contracts" in source:
+    if "prik.contracts" in source:
         return _parse_pyi_text(source, *args, **kwargs)
     return _parse_pyi_text(f"{CONTRACT_IMPORT}{source}", *args, **kwargs)
 

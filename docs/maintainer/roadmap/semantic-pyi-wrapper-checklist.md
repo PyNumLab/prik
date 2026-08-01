@@ -41,7 +41,7 @@ the baseline `.pyi` and native artifacts, but `.pyi`-driven wrapper generation
 must not reparse source to reconstruct the Python API.
 
 Native implementation sources may still be supplied explicitly as build inputs.
-In that mode x2py compiles them without using them as a semantic input: the
+In that mode prik compiles them without using them as a semantic input: the
 entry `.pyi` remains the sole source of truth for the Python API. Precompiled
 objects and libraries remain supported and may be mixed with native sources in
 one extension-level native build plan.
@@ -97,7 +97,7 @@ argument handoff from the native barrier action.
   `fortran_array_category`; the remaining category field is ABI metadata.
 - [x] Parser grammar units, parser-model converters, `.pyi` AST conversion,
   semantic lowering, bridges, bindings, and printers now share
-  `x2py.utilities.visitor.ClassVisitor` and configured `<prefix>_<ClassName>` handlers
+  `prik.utilities.visitor.ClassVisitor` and configured `<prefix>_<ClassName>` handlers
   instead of parallel visitor implementations or local `isinstance` dispatch
   ladders.
 - [x] Structural evidence lives in `tests/architecture/test_visitor_protocol.py`
@@ -298,7 +298,7 @@ objects, archives, and libraries remain separate build-plan facts.
   import public native generics instead of private specific procedures, and
   preserve keyword-normalized type-bound binding names.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 - [x] The verified scalar baseline and legacy/F90 fmath array baseline run in
   both `source` and `generated-pyi` modes through the same assertion bodies.
   The generated contracts are compared against checked fixtures, the `.pyi`
@@ -306,7 +306,7 @@ objects, archives, and libraries remain separate build-plan facts.
   normalized Python public names with `@bind(...)` when the native Fortran name
   differs. Scalar-kind, enum-like constant, `value`, and existing `bind(C)`
   ABI cases also run from generated contracts with the same runtime assertions.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ### Stage 6 — Replayable JSON, Native Compilation, And Makefiles
 
@@ -328,18 +328,18 @@ evidence lives in `tests/cli/`.
   Python API. Produced objects and module files are recorded in
   `NativeBuildPlan` and used by the extension link.
 - [x] Grouped or repeated `--native-compile-flags` inputs are recorded in the
-  manifest and in each native compilation unit while x2py still emits its
+  manifest and in each native compilation unit while prik still emits its
   required compiler flags, including position-independent code.
 - [x] Native sources, prebuilt objects, archives, direct shared libraries, named
   libraries, and ordered native link items can be mixed without changing the
   `.pyi`-defined Python API or reparsing native implementation sources.
-- [x] `.pyi --makefile --json` writes `<out-dir>/x2py-build.json` and
-  `<out-dir>/Makefile.x2py`; JSON output reports both artifacts and the
+- [x] `.pyi --makefile --json` writes `<out-dir>/prik-build.json` and
+  `<out-dir>/Makefile.prik`; JSON output reports both artifacts and the
   normalized manifest.
 - [x] `--build-manifest PATH` validates and executes a saved manifest, and
-  `--build-manifest PATH --makefile` regenerates `Makefile.x2py`
+  `--build-manifest PATH --makefile` regenerates `Makefile.prik`
   without positional contracts or repeated native flags.
-- [x] `Makefile.x2py` tracks the manifest, complete `.pyi` graph, native
+- [x] `Makefile.prik` tracks the manifest, complete `.pyi` graph, native
   implementation inputs, compile outputs, and link target while preserving
   source compile order and native link order.
 - [x] `--native-link-item` supports grouped or repeated ordered explicit linker
@@ -370,9 +370,9 @@ bundle, order, transitive-library, and failure-path evidence lives in
   and checks that source stems and known generated helper declarations line up
   with the shared native corpora.
 - [x] Full native BLAS/LAPACK object files are compiled once into a deterministic
-  `.pytest_cache/x2py/real-library-native` cache, archived once, and linked once
+  `.pytest_cache/prik/real-library-native` cache, archived once, and linked once
   into the shared libraries reused by repeated wrapper test runs; CI can move
-  the cache with `X2PY_REAL_LIBRARY_NATIVE_CACHE_DIR`, and cold object builds
+  the cache with `PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR`, and cold object builds
   compile independent sources in parallel after required module sources.
 - [x] Selected runtime smoke calls run against the fully wrapped BLAS/LAPACK
   modules and check NumPy-style behavior for `daxpy`, `ddot`, `dasum`, `dscal`,
@@ -395,12 +395,12 @@ bundle, order, transitive-library, and failure-path evidence lives in
   native linker/compiler/loader diagnostics without falling back to source
   reparsing.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 - [x] Handwritten external-contract evidence covers C-order flat storage
   (`Annotated[Float64[Flat, 3], ORDER_C]`) by validating a multidimensional
   Python view while passing a rank-preserving bridge view to an assumed-size
   native dummy.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ### Stage 8 — Editable Contract Semantics
 
@@ -415,19 +415,19 @@ X2PY_C_DOCS_END -->
 - [x] Ownership, transfer, and destruction policy is completed after full
   signatures are known and before wrapper planning. The shared post-IR
   entrypoint is `complete_semantic_policies(...)` in
-  `x2py/semantics/policy_completion.py`; direct ownership subpasses stay behind
+  `prik/semantics/policy_completion.py`; direct ownership subpasses stay behind
   that entrypoint. Planning and lowering consume completed policy metadata
   instead of recomputing policy from raw datatypes. Evidence:
   `tests/semantics/policy/`,
   `tests/wrapper_codegen/`,
   `tests/semantics/policy/`,
-  and `x2py/semantics/README.md`.
+  and `prik/semantics/README.md`.
 - [x] `.pyi` parsing and `.pyi` semantic conversion are separate stages:
-  `x2py/parsers/pyi/parser.py` parses text/files to Python AST, and
-  `x2py/semantics/pyi2ir.py` converts that AST into `SemanticModule` objects
+  `prik/parsers/pyi/parser.py` parses text/files to Python AST, and
+  `prik/semantics/pyi2ir.py` converts that AST into `SemanticModule` objects
   before semantic policy completion runs. Evidence:
   `tests/fortran/semantic_pyi_format/parsing/test_python_ast_contracts.py::test_pyi_parser_returns_python_ast_only`,
-  `x2py/semantics/README.md`, and
+  `prik/semantics/README.md`, and
   `docs/maintainer/internal-architecture/pipeline-map.md`.
 - [x] Risky-but-explicit identity contracts document their exact behavior
   instead of being silently healed. Fixed-length `String[n]` `intent(inout)`
@@ -533,13 +533,13 @@ X2PY_C_DOCS_END -->
   `tests/fortran/pyi_contracts/exports_and_modules/`, and
   `tests/wrapper/CHECKLIST_COVERAGE.md`.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 - [x] Direct bridge and binding lowering dispatches projected outputs,
   copy-in/copy-out, native-array handles, field access, and cleanup from typed
   wrapper-plan actions completed before backend entry. The generators do not
   select semantic behavior from raw datatype, `intent`, alias, or local-memory
-  checks. Evidence: `x2py/wrapper_codegen/fortran/bridge.py`,
-  `x2py/wrapper_codegen/c/binding.py`, `tests/wrapper_codegen/`, and compiled
+  checks. Evidence: `prik/wrapper_codegen/fortran/bridge.py`,
+  `prik/wrapper_codegen/c/binding.py`, `tests/wrapper_codegen/`, and compiled
   feature evidence under `tests/wrapper/fortran/`.
 - [x] The remaining Stage 8 bridge and binding policy dispatch audit is closed
   for the current supported surface. Bridge field getters and setters dispatch
@@ -550,19 +550,19 @@ X2PY_C_DOCS_END -->
   implemented. Remaining rank, datatype, `is_alias`, and storage checks in
   bridge and binding code are local emitted-code, ABI, documentation, or
   object-model mechanics rather than semantic policy selection. Evidence:
-  `x2py/semantics/ownership.py`,
-  `x2py/wrapper_codegen/fortran/bridge.py`,
-  `x2py/wrapper_codegen/c/binding.py`,
+  `prik/semantics/ownership.py`,
+  `prik/wrapper_codegen/fortran/bridge.py`,
+  `prik/wrapper_codegen/c/binding.py`,
   `tests/semantics/policy/`,
   `tests/wrapper_codegen/`,
   `tests/wrapper/fortran/derived_types/test_derived_layout.py`, and
   `tests/fortran/memory_management/end_to_end/test_explicit_borrowed_owner.py`.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ### Immutable Native Contract
 
 Establish the source-free native facts before adding bundle or export policy.
-The guarantees in this phase apply to every wrapper construct that x2py claims
+The guarantees in this phase apply to every wrapper construct that prik claims
 to support. Validation proves that the semantic contract is complete and
 internally consistent; it cannot inspect an arbitrary object, archive, or
 shared library to prove that the supplied binary implements the declared ABI.

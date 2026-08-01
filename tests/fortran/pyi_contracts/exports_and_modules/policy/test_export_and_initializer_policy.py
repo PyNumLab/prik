@@ -14,7 +14,7 @@ from tests.fortran._support.ownership_policy import (
     _scalar_type,
     complete_semantic_policies,
 )
-from x2py.semantics.models import RESOLVED_MODULE_VARIABLE_POLICY_METADATA
+from prik.semantics.models import RESOLVED_MODULE_VARIABLE_POLICY_METADATA
 
 
 def test_module_variable_initializer_policy_is_complete_before_ir_lowering():

@@ -18,13 +18,13 @@ from pathlib import Path
 
 import pytest
 
-from x2py.parsers.fortran import cli as fortran_parser_cli
+from prik.parsers.fortran import cli as fortran_parser_cli
 
-from x2py import FortranParseError
+from prik import FortranParseError
 
-from x2py import cli as x2py_cli
+from prik import cli as prik_cli
 
-from x2py.pipeline.preprocessing import PreprocessingConfig, PreprocessingDiagnostic, PreprocessingError
+from prik.pipeline.preprocessing import PreprocessingConfig, PreprocessingDiagnostic, PreprocessingError
 
 TEST_FILE = Path(__file__).parents[2] / "source_parsing" / "parsing" / "fixtures" / "general" / "basic_subroutine.f90"
 
@@ -102,7 +102,7 @@ def _install_main_parser(monkeypatch, args):
             raise _MainParserError(message)
 
     parser = FakeParser()
-    monkeypatch.setattr(x2py_cli, "_parser_for_argv", lambda argv: (parser, argv))
+    monkeypatch.setattr(prik_cli, "_parser_for_argv", lambda argv: (parser, argv))
     return parser
 
 
@@ -115,15 +115,15 @@ def _patch_main_report_payloads(
 ):
     preprocessing = object()
     calls = []
-    monkeypatch.setattr(x2py_cli, "_resolve_language", lambda paths, _active_language, parser: language)
-    monkeypatch.setattr(x2py_cli, "_build_preprocessing_config", lambda args, parser: preprocessing)
+    monkeypatch.setattr(prik_cli, "_resolve_language", lambda paths, _active_language, parser: language)
+    monkeypatch.setattr(prik_cli, "_build_preprocessing_config", lambda args, parser: preprocessing)
     monkeypatch.setattr(
-        x2py_cli,
+        prik_cli,
         "_parse_report",
         lambda paths, active_preprocessing: calls.append(("parse", paths, active_preprocessing)) or parse_payload,
     )
     monkeypatch.setattr(
-        x2py_cli,
+        prik_cli,
         "_semantic_report",
         lambda paths, active_preprocessing, *, language: (
             calls.append(("semantic", paths, active_preprocessing, language)) or semantic_payload
@@ -148,10 +148,10 @@ __all__ = (
     "fortran_parser_cli",
     "json",
     "os",
+    "prik_cli",
     "pytest",
     "runpy",
     "subprocess",
     "sys",
     "types",
-    "x2py_cli",
 )

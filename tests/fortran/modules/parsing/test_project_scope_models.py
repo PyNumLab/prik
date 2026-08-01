@@ -2,7 +2,7 @@
 
 import pytest
 
-from x2py import FortranParseError, parse_fortran_file, parse_fortran_project
+from prik import FortranParseError, parse_fortran_file, parse_fortran_project
 
 
 def test_module_visibility_public_and_private_spec_lines_are_applied():

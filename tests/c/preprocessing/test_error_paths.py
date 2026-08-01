@@ -21,7 +21,7 @@ def test_preprocess_source_c_error_paths(monkeypatch, tmp_path: Path):
     assert exc_info.value.category == "INVALID_COMPILER_ARGUMENTS"
     assert exc_info.value.diagnostics == []
 
-    missing_name = "x2py-definitely-missing-preprocessor"
+    missing_name = "prik-definitely-missing-preprocessor"
     with pytest.raises(PreprocessingError, match="preprocessor not found") as exc_info:
         preprocessing.preprocess_source(
             c_source,

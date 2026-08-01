@@ -89,7 +89,7 @@ Supported public API:
 
 ## Parser organization notes
 
-`x2py/fortran_parser/parser.py` is now intentionally organized into clearly labeled
+`prik/fortran_parser/parser.py` is now intentionally organized into clearly labeled
 sections and carries an embedded maintainer guide. Start with the thin public
 wrappers at the bottom, then read the class from top to bottom:
 
@@ -112,11 +112,11 @@ wrappers at the bottom, then read the class from top to bottom:
 Parser methods carry focused docstrings, with examples where a compatibility
 visitor or lexical helper is easier to understand from a concrete call.
 
-The Fortran parser is now packaged under `x2py.fortran_parser` rather than a
+The Fortran parser is now packaged under `prik.fortran_parser` rather than a
 top-level parser package. The package includes its CLI module, lexer,
 JSON-compatible parse models, project parser, type resolver, and utility
-helpers. Public callers should use the stable top-level `x2py` parser exports
-or `x2py.fortran_parser` package imports.
+helpers. Public callers should use the stable top-level `prik` parser exports
+or `prik.fortran_parser` package imports.
 
 ## Implementation Inventory And Maintenance
 
@@ -126,12 +126,12 @@ testing workflow, and maintenance guard policy live here.
 
 The implementation inventory is maintained across these surfaces:
 
-- `x2py/fortran_parser/parser.py` owns source slicing, declaration extraction,
+- `prik/fortran_parser/parser.py` owns source slicing, declaration extraction,
   diagnostics, project ordering, dependency resolution, and compile-time
   expression resolution.
-- `x2py/fortran_parser/models.py` owns parse-only dataclasses and JSON-compatible
+- `prik/fortran_parser/models.py` owns parse-only dataclasses and JSON-compatible
   parser facts.
-- `x2py/semantics/fortran2ir.py` owns conversion from parser facts to semantic IR,
+- `prik/semantics/fortran2ir.py` owns conversion from parser facts to semantic IR,
   including kind mapping, compile-time specialization, storage contracts,
   projection metadata, and wrapper-planning inputs.
 - `tests/parser/` covers parser contracts, source-unit slicing, diagnostics,
@@ -143,7 +143,7 @@ Parser-related pull requests should update this file when the documented
 feature inventory, public API, diagnostics, project behavior, semantic handoff,
 or maintenance workflow changes. The parser-reference guard watches
 Fortran and C references independently. For Fortran, it watches
-`x2py/fortran_parser/`, `tests/parser/fortran/`, `tests/data/fortran/`, and focused
+`prik/fortran_parser/`, `tests/parser/fortran/`, `tests/data/fortran/`, and focused
 Fortran parser tests directly under `tests/parser/`. It expects
 `docs/fortran_parser.md` to change unless the PR is explicitly labeled to skip
 the guard.
@@ -311,14 +311,14 @@ Executable references:
 ### 3.1 Basic CLI invocation
 
 ```bash
-python -m x2py parse path/to/file.f90
+python -m prik parse path/to/file.f90
 ```
 
 Recognizable Fortran files can omit `--language`. Directories require explicit
 frontend selection:
 
 ```bash
-python -m x2py parse path/to/fortran_src --language fortran
+python -m prik parse path/to/fortran_src --language fortran
 ```
 
 Fortran directories are recursively scanned for `.f`, `.for`, `.ftn`, `.f90`,
@@ -336,7 +336,7 @@ print only the first `N` items in each repeated section.
 
 Input Fortran (`tests/data/fortran/general/basic_subroutine.f90`):
 
-<!-- x2py-doc-source: tests/data/fortran/general/basic_subroutine.f90 -->
+<!-- prik-doc-source: tests/data/fortran/general/basic_subroutine.f90 -->
 ```fortran
 module m1
 contains
@@ -349,14 +349,14 @@ end module m1
 
 Command:
 
-<!-- x2py-doc-test: exact -->
+<!-- prik-doc-test: exact -->
 ```bash
-python -m x2py parse tests/data/fortran/general/basic_subroutine.f90
+python -m prik parse tests/data/fortran/general/basic_subroutine.f90
 ```
 
 Expected output:
 
-<!-- x2py-doc-test-output -->
+<!-- prik-doc-test-output -->
 ```text
 File: tests/data/fortran/general/basic_subroutine.f90
   Modules: 1
@@ -369,12 +369,12 @@ The same command with `--show-vars` uses the variable-expanded report path.
 This fixture currently has no module variables to print, so the output remains
 compact:
 
-<!-- x2py-doc-test: exact -->
+<!-- prik-doc-test: exact -->
 ```bash
-python -m x2py parse tests/data/fortran/general/basic_subroutine.f90 --show-vars
+python -m prik parse tests/data/fortran/general/basic_subroutine.f90 --show-vars
 ```
 
-<!-- x2py-doc-test-output -->
+<!-- prik-doc-test-output -->
 ```text
 File: tests/data/fortran/general/basic_subroutine.f90
   Modules: 1
@@ -386,7 +386,7 @@ File: tests/data/fortran/general/basic_subroutine.f90
 For large files:
 
 ```bash
-python -m x2py parse path/to/file.f90 --show-vars --print-limit 50
+python -m prik parse path/to/file.f90 --show-vars --print-limit 50
 ```
 
 `--print-limit` applies independently to modules, submodules, programs, block
@@ -440,7 +440,7 @@ end module io_ops
 Command:
 
 ```bash
-python -m x2py mixed_example.f90
+python -m prik mixed_example.f90
 ```
 
 ```text
@@ -462,13 +462,13 @@ File: mixed_example.f90
 Print parser JSON:
 
 ```bash
-python -m x2py tests/data/fortran/general/basic_subroutine.f90 --json
+python -m prik tests/data/fortran/general/basic_subroutine.f90 --json
 ```
 
 Write parser JSON:
 
 ```bash
-python -m x2py parse tests/data/fortran/general/basic_subroutine.f90 --json --out report.json
+python -m prik parse tests/data/fortran/general/basic_subroutine.f90 --json --out report.json
 ```
 
 Expected JSON layout:
@@ -482,7 +482,7 @@ Expected JSON layout:
   - `programs`
   - `block_data`
 
-When `x2py parse --json` applies compiler preprocessing, the per-file payload
+When `prik parse --json` applies compiler preprocessing, the per-file payload
 also contains `preprocessing_recipe`. The CLI applies compiler preprocessing
 for file-based parsing; compiler linemarkers remain accepted for provenance.
 The recipe records the exact compiler executable or adapter, argv, include
@@ -546,13 +546,13 @@ Semantic IR JSON uses the same output channels, but the per-file payload is the
 semantic model projection instead of raw parser output:
 
 ```bash
-python -m x2py semantics tests/data/fortran/general/basic_subroutine.f90
+python -m prik semantics tests/data/fortran/general/basic_subroutine.f90
 ```
 
 Generated `.pyi` text is printed with:
 
 ```bash
-python -m x2py generate --pyi tests/data/fortran/general/basic_subroutine.f90
+python -m prik generate --pyi tests/data/fortran/general/basic_subroutine.f90
 ```
 
 ### 3.5 Parse-error diagnostics and debug mode
@@ -565,7 +565,7 @@ context, but it does **not** include a Python traceback.
 Example command:
 
 ```bash
-python -m x2py tests/data/fortran/errors/err_duplicate_argument_name.f90
+python -m prik tests/data/fortran/errors/err_duplicate_argument_name.f90
 ```
 
 Example diagnostic shape:
@@ -582,8 +582,8 @@ normal use. To disable color explicitly, pass `--no-color` or set the standard
 `NO_COLOR` environment variable:
 
 ```bash
-python -m x2py bad.f90 --no-color
-NO_COLOR=1 python -m x2py bad.f90
+python -m prik bad.f90 --no-color
+NO_COLOR=1 python -m prik bad.f90
 ```
 
 For parser development, use `--debug` to re-raise
@@ -591,14 +591,14 @@ For parser development, use `--debug` to re-raise
 error was raised internally:
 
 ```bash
-python -m x2py bad.f90 --debug
+python -m prik bad.f90 --debug
 ```
 
 The same developer mode can be enabled with the environment variable
 `FORTRAN_PARSER_DEBUG=1`:
 
 ```bash
-FORTRAN_PARSER_DEBUG=1 python -m x2py bad.f90
+FORTRAN_PARSER_DEBUG=1 python -m prik bad.f90
 ```
 
 In debug mode, the traceback's final exception message also includes a
@@ -610,7 +610,7 @@ function that created the diagnostic.
 ### 4.1 Parse folder namespace
 
 ```python
-from x2py import parse_fortran_project
+from prik import parse_fortran_project
 from pathlib import Path
 
 files = [str(p) for p in Path("tests/data/fortran/general").rglob("*.f90")][:5]
@@ -629,7 +629,7 @@ Expected behavior:
 
 ```python
 from pathlib import Path
-from x2py import parse_fortran_file
+from prik import parse_fortran_file
 from semantics.fortran2ir import fortran_file_to_semantic_modules
 
 p = Path("tests/data/fortran/general/basic_subroutine.f90")
@@ -686,7 +686,7 @@ PYTHONPATH=. pytest -q
 Run parser-focused tests:
 
 ```bash
-python -m x2py parse tests/data/fortran/general/basic_subroutine.f90 --language fortran --json
+python -m prik parse tests/data/fortran/general/basic_subroutine.f90 --language fortran --json
 PYTHONPATH=. pytest -q tests/parser/test_procedure_and_type_parsing.py
 PYTHONPATH=. pytest -q tests/parser/test_fortran_fixture_suite.py
 PYTHONPATH=. pytest -q tests/parser/test_cli.py
@@ -1145,7 +1145,7 @@ Use the stable top-level API:
 
 Lower-level unit parsers are internal `FortranParser` methods.
 
-Semantic conversion lives in `x2py/semantics/fortran2ir.py`. It accepts parsed `FortranFile`
+Semantic conversion lives in `prik/semantics/fortran2ir.py`. It accepts parsed `FortranFile`
 (or selected `FortranModule`) structures and converts metadata into semantic IR
 consumed by the `.pyi` printer and current Fortran wrapper/runtime stages.
 Compiler-backed shared-CLI semantic stages resolve compiler-dependent kind
@@ -1160,8 +1160,8 @@ measures and verifies those storage facts.
 The Fortran probe cache key includes the generated expression source, resolved
 compiler binary identity, target flags, includes, macros, requested standard,
 working directory, target-related environment, and runner. The persistent
-location is `$XDG_CACHE_HOME/x2py/fortran_type_probe` or
-`~/.cache/x2py/fortran_type_probe`; `X2PY_CACHE_DIR` changes the internal cache
+location is `$XDG_CACHE_HOME/prik/fortran_type_probe` or
+`~/.cache/prik/fortran_type_probe`; `PRIK_CACHE_DIR` changes the internal cache
 root. The standalone probe exposes `--cache-dir` and `--refresh` for explicit
 runs.
 
@@ -1169,7 +1169,7 @@ The standalone probe can create a reusable report containing the exact
 compile-time and storage expressions needed by a source:
 
 ```bash
-python3 -m x2py.fortran_type_probe --compiler gfortran \
+python3 -m prik.fortran_type_probe --compiler gfortran \
   --expr='selected_real_kind(12)' \
   --expr='storage_size(real(0.0,kind=8))' \
   > build/fortran-types.json

@@ -81,7 +81,7 @@ HYPOTHESIS_PROFILE=fuzz pytest -q -m fuzz --hypothesis-show-statistics
 Run security checks:
 
 ```bash
-bandit -c pyproject.toml -r x2py --severity-level medium --confidence-level medium
+bandit -c pyproject.toml -r prik --severity-level medium --confidence-level medium
 ```
 
 Run dead-code and complexity checks:
@@ -89,8 +89,8 @@ Run dead-code and complexity checks:
 ```bash
 vulture
 python3 tools/check_radon_policy.py --base-ref "$(git merge-base origin/main HEAD)"
-radon cc x2py -n C -s --total-average
-radon mi x2py -s
+radon cc prik -n C -s --total-average
+radon mi prik -s
 ```
 
 The Radon policy check is blocking. It prevents the reviewed C-or-worse hotspot

@@ -16,9 +16,9 @@ from tests.fortran._support.wrapper_build import (
     _require_maybe_unallocated_function_result_support,
     _sole_native_module,
 )
-from x2py import build_pyi_extension
-from x2py.contracts import Allocatable, Float64
-from x2py.runtime.handles import AllocatableArray
+from prik import build_pyi_extension
+from prik.contracts import Allocatable, Float64
+from prik.runtime.handles import AllocatableArray
 
 FIXTURES = Path(__file__).parent / "fixtures"
 ALLOCATABLE_VIEW_F90_SOURCE = FIXTURES / "fallocatable_views_f90.f90"
@@ -77,7 +77,7 @@ def _plain_allocatable_module(build_mode: str, tmp_path: Path):
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "generate",
             "--pyi",
             str(source),

@@ -1,5 +1,5 @@
-#ifndef X2PY_GENERAL_MATH_API_H
-#define X2PY_GENERAL_MATH_API_H
+#ifndef PRIK_GENERAL_MATH_API_H
+#define PRIK_GENERAL_MATH_API_H
 
 double norm2(int n, const double x[static 1]);
 void scale(int n, double alpha, double x[static 1]);

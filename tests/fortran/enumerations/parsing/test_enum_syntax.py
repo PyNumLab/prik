@@ -2,7 +2,7 @@
 
 import pytest
 
-from x2py import FortranParseError, parse_fortran_file
+from prik import FortranParseError, parse_fortran_file
 
 
 def test_valid_enum_subunit_accepts_optional_separator_and_multiple_enumerators():

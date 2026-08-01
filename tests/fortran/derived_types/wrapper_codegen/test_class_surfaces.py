@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from x2py.pipeline.pyi import pyi_file_to_semantic_module
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.pipeline.pyi import pyi_file_to_semantic_module
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
 FIXTURES = Path(__file__).parents[1] / "end_to_end" / "fixtures"
 INHERITANCE = FIXTURES / "contracts" / "finheritance_f90" / "finheritance_f90.pyi"

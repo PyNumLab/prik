@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure clean end-to-end wrapper build time for x2py and f2py."""
+"""Measure clean end-to-end wrapper build time for prik and f2py."""
 
 from __future__ import annotations
 
@@ -37,8 +37,8 @@ BLAS_SOURCE_ROOT = (
 FORTRAN_SUFFIXES = frozenset({".f", ".f90", ".f95", ".f03", ".f08", ".for", ".f77", ".ftn"})
 DEVELOPMENT_FLAGS = "-O0"
 OPTIMIZED_FLAGS = "-O3 -march=native -mtune=native"
-TOOLS = ("x2py", "f2py")
-Tool = Literal["x2py", "f2py"]
+TOOLS = ("prik", "f2py")
+Tool = Literal["prik", "f2py"]
 
 
 @dataclass(frozen=True)
@@ -116,7 +116,7 @@ def _available_build_jobs() -> int:
 
 def tool_order(first: Tool, round_index: int) -> tuple[Tool, Tool]:
     """Alternate which binding tool receives the first build in each round."""
-    second: Tool = "f2py" if first == "x2py" else "x2py"
+    second: Tool = "f2py" if first == "prik" else "prik"
     return (first, second) if round_index % 2 == 0 else (second, first)
 
 
@@ -138,11 +138,11 @@ def build_command(
     flags = case.profile.flags
     name = module_name(tool, case)
     generated = workdir / "generated"
-    if tool == "x2py":
+    if tool == "prik":
         return (
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             *sources,
             "--out",
             name,
@@ -260,7 +260,7 @@ def _write_result_suite(
         metadata = {
             "binding_tool": tool,
             "build_first_tool": first,
-            "x2py_build_jobs": jobs,
+            "prik_build_jobs": jobs,
             "build_profile": case.profile.slug,
             "build_profiles": profile_summary,
             "build_runs": runs,
@@ -274,7 +274,7 @@ def _write_result_suite(
             "platform_details": platform.platform(),
             "source_count": len(case.workload.sources),
         }
-        if cpu_model := os.environ.get("X2PY_BENCHMARK_CPU_MODEL"):
+        if cpu_model := os.environ.get("PRIK_BENCHMARK_CPU_MODEL"):
             metadata["cpu_model_name"] = cpu_model
         run = pyperf.Run(timings[(tool, case.benchmark_name)], metadata=metadata, collect_metadata=True)
         benchmarks.append(pyperf.Benchmark([run]))
@@ -297,7 +297,7 @@ def run_build_benchmarks(
     """Measure every clean-build workload and write paired pyperf suites."""
     cases = build_cases()
     timings = {(tool, case.benchmark_name): [] for tool in TOOLS for case in cases}
-    with TemporaryDirectory(prefix="x2py-build-benchmark-") as temporary:
+    with TemporaryDirectory(prefix="prik-build-benchmark-") as temporary:
         temporary_root = Path(temporary)
         for round_index in range(warmups + runs):
             measured = round_index >= warmups
@@ -342,9 +342,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runs", type=int, default=6)
     parser.add_argument("--warmups", type=int, default=1)
-    parser.add_argument("--first", choices=TOOLS, default="x2py")
+    parser.add_argument("--first", choices=TOOLS, default="prik")
     parser.add_argument("--compiler", default="gfortran")
-    parser.add_argument("--jobs", type=int, default=None, help="x2py compiler-process limit")
+    parser.add_argument("--jobs", type=int, default=None, help="prik compiler-process limit")
     parser.add_argument("--results-dir", type=Path, default=RESULTS_ROOT)
     args = parser.parse_args(argv)
     if args.runs < 2:

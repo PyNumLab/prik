@@ -8,7 +8,7 @@ from tests.fortran._support.semantic_conversion import parse_pyi_text
 
 
 def test_mutable_module_literal_defaults_are_preserved():
-    source = """from x2py.contracts import Float64, Int32, String
+    source = """from prik.contracts import Float64, Int32, String
 
 counter: Int32 = 41
 scale: Float64 = 2.5
@@ -24,9 +24,9 @@ label: String[8] = "ready"
 @pytest.mark.parametrize(
     "source",
     [
-        "from x2py.contracts import Int32\ncounter: Int32 = f(42)\n",
-        "from x2py.contracts import Int32\ncounter: Int32 = x + 1\n",
-        "from x2py.contracts import Int32\ncounter: Int32 = SOME_NAME\n",
+        "from prik.contracts import Int32\ncounter: Int32 = f(42)\n",
+        "from prik.contracts import Int32\ncounter: Int32 = x + 1\n",
+        "from prik.contracts import Int32\ncounter: Int32 = SOME_NAME\n",
     ],
 )
 def test_mutable_module_expression_defaults_are_rejected(source):

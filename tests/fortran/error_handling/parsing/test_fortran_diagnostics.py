@@ -1,6 +1,6 @@
 import pytest
 
-from x2py import FortranParseError, parse_fortran_file
+from prik import FortranParseError, parse_fortran_file
 
 
 # ---------------------------------------------------------------------------

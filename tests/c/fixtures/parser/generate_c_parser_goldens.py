@@ -309,7 +309,7 @@ def _stable_project_payload(payload: dict) -> dict:
 
 
 def _serialize_project(fixtures: list[Path]) -> dict:
-    from x2py.parsers.c import CParser
+    from prik.parsers.c import CParser
 
     parser = CParser()
     include_dirs = sorted({fixture.parent for fixture in fixtures})
@@ -322,7 +322,7 @@ def _serialize_project(fixtures: list[Path]) -> dict:
 
 
 def _parse_fixture(parser, fixture: Path, *, filename: str, include_dirs: list[Path]):
-    from x2py.pipeline.preprocessing import PreprocessingConfig, preprocess_source
+    from prik.pipeline.preprocessing import PreprocessingConfig, preprocess_source
 
     compiler = shutil.which("cc")
     if compiler is None:

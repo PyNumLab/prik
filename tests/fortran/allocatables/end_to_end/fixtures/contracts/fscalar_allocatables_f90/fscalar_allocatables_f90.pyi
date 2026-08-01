@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Allocatable, Arg, Float64, Int32, Return, Returns, native_call
+from prik.contracts import Addr, Allocatable, Arg, Float64, Int32, Return, Returns, native_call
 
 optional_scale: Allocatable[Float64]
 

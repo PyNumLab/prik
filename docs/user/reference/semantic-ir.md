@@ -9,29 +9,29 @@ publication: draft
 
 # Semantic IR Reference
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 This file is the reference for semantic type names, C-to-IR conversion, and the
 exact native C semantic stub rules. The user-facing editable `.pyi` syntax and
 roadmap live in [Semantic .pyi format](semantic-pyi-format.md); this document keeps the
 underlying semantic model and datatype policy in one place.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Sections through [Deferred C Work](#deferred-c-work) describe current semantic
 behavior. The final self-contained C runtime-contract section is explicitly a
 design proposal and is not implemented C-input wrapper support. The current
 Fortran runtime contract is documented separately in
 [Fortran wrapper reference](fortran-wrapper.md).
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ## Datatype Mapping
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 This document records the shared scalar datatype policy used when C and Fortran
 parser facts are converted to semantic IR. The semantic names are the stable
 bridge between parser-native type spellings, `.pyi` output, policy completion,
 the implemented Fortran wrapper, and a future C-input wrapper backend.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ### Semantic Names
 
@@ -48,9 +48,9 @@ X2PY_C_DOCS_END -->
 | `SizeT` | `numpy.uintp` | Target width is compiler-probed when available. |
 | `Any` | `object` | Used for void pointer pointees and intentionally opaque values. |
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 | `Int` | Target-dependent signed NumPy integer | Ordinary C `int`; the concrete `Int16`/`Int32`/`Int64` dtype and compiler fact are stored separately. |
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ### Fortran Intrinsics
 
@@ -66,11 +66,11 @@ X2PY_C_DOCS_END -->
 | Legacy `character*N`, `character*(*)` | `String`; `N`/`*` is length, not kind | `numpy.str_` or ABI byte storage |
 | `procedure(...)` | `Procedure` | Callback/interface policy |
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 | `iso_c_binding` numeric kinds | Compiler-probed interoperable storage | Matching NumPy numeric dtype |
 | `logical`, `logical(kind=1/2/4/8)`, `logical(c_bool)` | `Bool` | `numpy.bool_` |
 | `character`, `character(len=n)`, `character(kind=1)`, `character(kind=c_char)` | `String` | `numpy.str_` or ABI byte storage |
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 Compiler-backed Fortran semantic CLI stages measure the storage of every
 intrinsic type used by the source after resolving kind expressions. This is
@@ -86,11 +86,11 @@ Direct converter calls without compiler facts retain the current GitHub
 Actions `gfortran` profile as a fallback. Explicit `iso_fortran_env` kinds are
 preferred when a portable source contract needs a fixed precision.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ### C Types
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 | C spelling or parser type | Semantic dtype | NumPy equivalent |
 | &#45;&#45;- | &#45;&#45;- | &#45;&#45;- |
 | `_Bool` / `CBool` | `Bool` | `numpy.bool_` |
@@ -104,9 +104,9 @@ X2PY_C_DOCS_END -->
 | `int8_t`, `int16_t`, `int32_t`, `int64_t` | `Int8`, `Int16`, `Int32`, `Int64` | Matching signed NumPy integer |
 | `uint8_t`, `uint16_t`, `uint32_t`, `uint64_t` | `UInt8`, `UInt16`, `UInt32`, `UInt64` | Matching unsigned NumPy integer |
 | `size_t` | `SizeT` or probed unsigned width | `numpy.uintp` or matching `numpy.uint*` |
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 C primitive spellings are ABI-dependent. Compiler-backed C semantic CLI stages
 automatically probe the selected compiler target and use those facts for every
 modeled arithmetic primitive. Ordinary C `int` keeps the stable semantic
@@ -115,37 +115,37 @@ stored on `SemanticType`. Other primitive names and dtypes follow the measured
 target width and signedness. NumPy is the consumer-side dtype mapping, not the
 probe source: it describes the Python interpreter host and may differ from a
 selected compiler target or sysroot.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Direct converter calls without a supplied report retain the documented
 fallback mappings. A supplied target fact whose width has no semantic dtype
 mapping produces `c_unsupported_primitive_abi` instead of silently using a
 different width.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ### Generated Linux x86_64 Mapping Example
 
 The following mapping snapshots are generated from the same compiler-backed
-code paths used by x2py. They target the `linux-x86_64` profile used by GitHub
+code paths used by prik. They target the `linux-x86_64` profile used by GitHub
 Actions. The executable documentation test reruns the commands and compares
 their complete output, so a compiler fact or semantic mapping change must
 update these examples.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 C uses `cc` to measure primitive storage, signedness, alignment, and floating
 precision:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_DISABLED: x2py-doc-test: exact linux-x86_64 -->
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_DISABLED: prik-doc-test: exact linux-x86_64 -->
+<!-- PRIK_C_DOCS_START
 ```bash
-python3 -m x2py probe &#45;&#45;language c &#45;&#45;compiler cc &#45;&#45;format markdown
+python3 -m prik probe &#45;&#45;language c &#45;&#45;compiler cc &#45;&#45;format markdown
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_DISABLED: x2py-doc-test-output -->
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_DISABLED: prik-doc-test-output -->
+<!-- PRIK_C_DOCS_START
 ```markdown
 Target profile: `linux-x86_64`
 
@@ -171,25 +171,25 @@ Target profile: `linux-x86_64`
 | `long double _Complex` | 256-bit storage | `Complex256` | `numpy.clongdouble` |
 | `size_t` | unsigned 64-bit | `UInt64` | `numpy.uint64` |
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Fortran uses the same cached compiler probe as normal semantic conversion and
 the standard `storage_size` intrinsic to measure compiler-dependent modern and
 double-kind forms. The generated table also lists legacy spellings; numeric
 `type*N` rows use their fixed total storage, and character-star rows show
 length syntax rather than a different character kind:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_DISABLED: x2py-doc-test: exact linux-x86_64 -->
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_DISABLED: prik-doc-test: exact linux-x86_64 -->
+<!-- PRIK_C_DOCS_START
 ```bash
-python3 -m x2py probe &#45;&#45;language fortran &#45;&#45;compiler gfortran &#45;&#45;format markdown
+python3 -m prik probe &#45;&#45;language fortran &#45;&#45;compiler gfortran &#45;&#45;format markdown
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_DISABLED: x2py-doc-test-output -->
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_DISABLED: prik-doc-test-output -->
+<!-- PRIK_C_DOCS_START
 ```markdown
 Target profile: `linux-x86_64`
 
@@ -270,24 +270,24 @@ Target profile: `linux-x86_64`
 | `character*8` | 8-bit storage | `String` | `numpy.str_ / ABI bytes` |
 | `character*(*)` | 8-bit storage | `String` | `numpy.str_ / ABI bytes` |
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ## C To Semantic IR Mapping
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
-Status: first C semantic conversion subset implemented in `x2py/semantics/c2ir.py`.
+<!-- PRIK_C_DOCS_START
+Status: first C semantic conversion subset implemented in `prik/semantics/c2ir.py`.
 The converter consumes `c_parser` models and emits the same language-neutral
 semantic IR used by Fortran and edited `.pyi` files. Shared primitive dtype
 policy is documented in the datatype mapping section above.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ### Supported Identity Subset
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 - C translation unit -> one `SemanticModule` named from the source file stem.
 - C function -> `SemanticFunction`, preserving native name and parameter order.
 - C parameter -> `SemanticArgument`.
@@ -296,7 +296,7 @@ X2PY_C_DOCS_END -->
 - `void` return -> `None`.
 - `_Bool` -> `Bool`.
 - All modeled primitive integer, real, and complex spellings consume supplied
-  `x2py.probes.c_types` facts. Plain `char` signedness, integer widths, real
+  `prik.probes.c_types` facts. Plain `char` signedness, integer widths, real
   storage widths and precision metadata, and complex storage widths come from
   the selected compiler target.
 - `int` keeps semantic name `Int` while its concrete dtype follows the target.
@@ -308,7 +308,7 @@ X2PY_C_DOCS_END -->
 - Local typedef chains are resolved when their parser model definitions are
   available.
 - `size_t` maps to `SizeT` without a target probe; supplied
-  `x2py.probes.c_types` facts override standard typedefs with width-specific
+  `prik.probes.c_types` facts override standard typedefs with width-specific
   `Int*`, `UInt*`, or `Float*` semantic names.
 - Opaque standard-type probe facts such as `FILE` create named opaque semantic
   classes when referenced by converted declarations.
@@ -339,45 +339,45 @@ X2PY_C_DOCS_END -->
 - Pointers become explicit `SemanticStorageContract` pointer/address
   metadata. `const` on the pointee makes the storage read-only, and `restrict`
   is preserved as aliasing metadata.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 For example:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 enum status { STATUS_OK = 0, STATUS_ERROR = 10 };
 void set_status(enum status value);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 becomes:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Final, Int
+from prik.contracts import Final, Int
 
 STATUS_OK: Final[Int] = 0
 STATUS_ERROR: Final[Int] = 10
 
 def set_status(value: Int) -> None: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ### Conservative Blockers
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The converter does not silently invent wrapper policy. Source facts that cannot
 form a semantic contract fail during semantic conversion; unsupported completed
 policy fails during wrapper planning:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 - unresolved typedef or unknown type references;
 - legacy parser reports carrying macro-dependent declarations;
 - variadic functions;
@@ -389,9 +389,9 @@ X2PY_C_DOCS_END -->
 - incomplete or external opaque structs used by value;
 - unions used in semantic signatures;
 - `volatile`, `_Atomic`, bitfields, and unsupported declarator compositions.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The current C semantic path supports `&#45;&#45;language c &#45;&#45;semantics` and
 starter exact-contract `&#45;&#45;language c &#45;&#45;pyi` output for this supported
 subset. Generated stubs remain
@@ -399,7 +399,7 @@ conservative: ambiguous ownership, callback, ABI-extension, and Pythonic
 projection policy stays out of the generated `.pyi` until supplied by the
 semantic model or an edited interface. In particular, an unresolved typedef is
 not assumed to be opaque because its ABI representation is unknown.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ## Semantic `.pyi` Contract Surface
 
@@ -447,7 +447,7 @@ from datatype, source-declaration direction, array category, aliasing, or
 memory-storage checks.
 
 Parser-model conversion and semantic/wrapper-model traversal use the shared
-`x2py.utilities.visitor.ClassVisitor` dispatcher and one configured
+`prik.utilities.visitor.ClassVisitor` dispatcher and one configured
 `<prefix>_<ClassName>` protocol. The default prefix is `_visit`; specialized
 visitors may choose clearer names such as `_print` or `_parse` while still using
 the same MRO dispatcher. Barrier/action dispatch tables are allowed only for
@@ -457,7 +457,7 @@ nodes. These tables are separate from model-node dispatch.
 
 ### Round Trips And Provenance
 
-`x2py.parsers.pyi` parses the documented semantic `.pyi` subset into Python AST.
+`prik.parsers.pyi` parses the documented semantic `.pyi` subset into Python AST.
 `convert_pyi_to_ir` converts that AST into the same public storage contracts
 emitted by the source semantic pipelines; `pyi_file_to_semantic_module` combines file parsing
 and conversion. Focused round-trip tests cover:
@@ -468,7 +468,7 @@ Fortran parser model -> semantic IR -> .pyi -> semantic IR
 
 Generated and edited stubs must not use hidden native-source parsing as a
 fallback. If the `.pyi` contract omits native facts required for policy
-completion or lowering, x2py reports a contract or wrapper-planning error instead of
+completion or lowering, prik reports a contract or wrapper-planning error instead of
 guessing.
 
 ### External Type References
@@ -480,72 +480,72 @@ identity. Stub printing may emit owner-module dependency stubs, and
 documented in
 [Semantic `.pyi` format](semantic-pyi-format.md#classes-and-native-type-markers).
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 For C, an unresolved typedef is not automatically opaque: its ABI could be an
 integer, pointer, struct, or another representation. The C frontend emits an
 opaque class when declarations establish that contract, such as a forward
 struct declaration or a private included struct used through pointers. An
 edited `.pyi` file may also state the policy explicitly with `class
 Name(Opaque): pass`.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ### Deferred C Work
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The shared model represents the current C semantic conversion subset for
 functions, variables, fields, constants, scalar storage, pointers, arrays
 with known contracts, origin metadata, mutability and ownership facts. The C
 frontend can generate starter exact-contract stubs from that model. Remaining C
 work includes:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 - C wrapper lowering;
 - C ownership, callback or pointer policy inference beyond facts already
   present in exact contracts.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Future C conversion should use the same notation documented by the semantic
 `.pyi` format reference: by-value scalars as bare types, unrefined pointers as
 `Addr(T)`, and array notation only when a real array storage contract is known.
 C `const` qualifiers remain source provenance and policy inputs; semantic
 `.pyi` still uses the same boundary spelling as generated Fortran contracts.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ## Design Proposal: Self-Contained C Semantic `.pyi` Runtime Contract
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
-> **Status: design only, not implemented native binding support.** x2py currently
+<!-- PRIK_C_DOCS_START
+> **Status: design only, not implemented native binding support.** prik currently
 > parses C, converts the supported subset to semantic IR, emits and loads
 > semantic `.pyi`. It does not currently generate,
 > lower, compile, or execute C wrappers. Every runtime behavior, wrapper error,
 > and Phase 1/Phase 2 requirement below describes a proposed implementation
 > target unless an earlier current-contract section explicitly says otherwise.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The proposed target is Python wrappers for C libraries on a selected Linux ABI.
 Its primary design requirement is that a semantic `.pyi` file plus a compiled
 library be sufficient to generate a wrapper, with C header parsing used only as
 optional input generation. Related deferred policy is tracked in
 [wrapper design notes](../../maintainer/design/wrapper-design-notes.md).
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ### 1. Proposed Phase 1 Boundary
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The proposed Phase 1 would implement the exact callable interface first.
 Python would intentionally remain C-like at this stage:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 - Every visible Python argument corresponds to one native C parameter, in the
   same order.
 - Every direct Python return annotation corresponds to the direct C return.
@@ -556,22 +556,22 @@ X2PY_C_DOCS_END -->
   mutable storage and observes changes after the call.
 - No argument is synthesized, reordered, omitted or converted into a Python
   result by the wrapper.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Therefore, the proposed Phase 1 would not implement or emit `@native_call`.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
-The purpose of this ordering is to prove that x2py can describe, parse, lower
+<!-- PRIK_C_DOCS_START
+The purpose of this ordering is to prove that prik can describe, parse, lower
 and execute direct C signatures reliably before adding Pythonic adaptations.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ### 2. Proposed Rules
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 1. The semantic `.pyi` must be sufficient to call every supported wrapped
    symbol without reading C source at build time.
 2. Optional C parsing may generate a starter semantic `.pyi`, but generated
@@ -620,41 +620,41 @@ X2PY_C_DOCS_END -->
     work.
 12. The current target is a selected Linux ABI. Cross-platform variation and
     non-default calling conventions are deferred.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ### 3. Proposed Artifact
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The proposed compiler-facing artifact is:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```text
-module.x2py.pyi
+module.prik.pyi
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
-It may use x2py semantic types, but it would contain only identity-callable
+<!-- PRIK_C_DOCS_START
+It may use prik semantic types, but it would contain only identity-callable
 functions in Phase 1.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 A clean `.pyi` for standard type checkers is not part of the proposed Phase 1.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ### 4. Scalar Types Passed By Value
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Bare scalar types represent native by-value parameters and direct native
 returns.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 | Semantic type | C interpretation on selected target |
 | &#45;&#45;- | &#45;&#45;- |
 | `Int` | ordinary C `int` |
@@ -665,41 +665,41 @@ X2PY_C_DOCS_END -->
 | `SizeT` | `size_t` |
 | `CLong`, `CULong` | C `long`, `unsigned long` |
 | `Bool` | selected C boolean ABI type |
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Example:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 int add(int a, int b);
 double multiply(double a, double b);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Float64, Int
+from prik.contracts import Float64, Int
 
 def add(a: Int, b: Int) -> Int: ...
 def multiply(a: Float64, b: Float64) -> Float64: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 No decorator is needed or accepted for these identity calls.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ### 5. Numeric Pointer Storage
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 #### 5.1 Canonical Address And Array Notation
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 A numeric NumPy storage annotation means the caller supplies memory whose data
 address is passed directly to C. C ordinary pointer parameters contain no
 rank, extent or stride descriptor. Therefore a native `double *values` with no
@@ -709,9 +709,9 @@ contract, or completed semantic stub provides those constraints.
 A generated Fortran intermediary that prepares Fortran dummy arguments is a
 Fortran backend concern and does not change the direct C `T *` contract
 described in this document.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 | Semantic annotation | Python caller supplies | Native parameter |
 | &#45;&#45;- | &#45;&#45;- | &#45;&#45;- |
 | `T[()]` | rank-zero NumPy scalar storage | `T *` or `const T *` |
@@ -725,26 +725,26 @@ X2PY_C_DOCS_END -->
 | `Float64[...]` | writable C-contiguous NumPy array of any rank | `double *` |
 | `Float64[...][1:4]` | writable C-contiguous NumPy array with rank 1, 2, or 3 | `double *` |
 | `Float64[...][1, 2, 5]` | writable C-contiguous NumPy array with rank 1, 2, or 5 | `double *` |
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 `Float64[...]` means any rank (any number of dimensions). A following rank
 selector restricts that set: `Float64[...][1:4]` accepts ranks 1 through 3
 because the stop value is exclusive, while `Float64[...][1, 2, 5]` accepts
 only ranks 1, 2, and 5. The same forms apply to other numeric element types
 and inside shape expressions.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 An axis entry without colons is an extent. `Float64[n]` means a rank-one
 array of size `n`, and `Float64[n, m]` means an array with shape `(n, m)`;
 neither denotes element indexing. A slice entry such as `Float64[0:n]`
 expresses an explicit NumPy-style half-open range. It has the same size as
 `Float64[n]` in this simple zero-based case, but retains range semantics for
 forms with a lower bound or step.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 `Addr(T)` preserves an unrefined one-level C pointer as a raw address. For a
 known primitive scalar-storage API, use `T[()]` so the Python
 caller supplies a rank-zero NumPy array. `T[dimension-specs]` and `T[...]`
@@ -752,9 +752,9 @@ with an optional rank selector are NumPy-backed array-pointer spellings once
 an array contract is known. A shape-bearing array annotation already
 represents pointer-backed array storage; do not additionally wrap it in
 `Addr(...)`.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 For multidimensional storage, order is orthogonal to rank, dimensions and
 stride capability. `Annotated[Float64[:, :], ORDER_F]` denotes a rank-two
 dense Fortran-contiguous array, while
@@ -779,13 +779,13 @@ of the canonical public array annotation unless they produce an actual storage
 constraint. In particular, Fortran dummy bounds are established by native
 association rather than supplied as Python array metadata. The implemented C
 conversion subset is described in the C-to-semantic IR mapping section above.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Stride-aware dimensions use a slice step marker:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 | Semantic annotation | Meaning | Exact-call condition |
 | &#45;&#45;- | &#45;&#45;- | &#45;&#45;- |
 | `Float64[::]` | Rank-one array with a runtime element stride. | Any required stride argument is separately visible in the native signature. |
@@ -796,17 +796,17 @@ X2PY_C_DOCS_END -->
 | `Float64[:, ::2]` | Rank-two array whose second-axis element step is exactly two. | The native routine consumes that layout directly. |
 | `Float64[:, 0:n:]` | Rank-two array with bounded second axis and an arbitrary runtime step. | `n` and any required stride metadata are native inputs. |
 | `Float64[:, 0:n:m]` | Rank-two array with bounded second axis and exact symbolic step `m`. | `n` and `m` are native inputs or semantic constants. |
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 `Float64[:, ::]` does not select a strided representation: under Python slice
 semantics it is just `Float64[:, :]`. A stride-aware array cannot be passed
 correctly to an operation that assumes contiguous storage unless the native
 call also receives required strides or the wrapper performs an explicit
 packing/copy-back conversion.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Slice dimensions follow `lower:upper:step`. A literal bound or step is checked
 directly. A symbolic bound or step, such as `n` or `m` in
 `Float64[:, 0:n:m]`, must resolve from a visible scalar parameter or a
@@ -818,149 +818,149 @@ arithmetic expressions such as `2*n`
 can be added later without requiring a new dimension notation. Annotation
 steps use NumPy element units, while `Arg(0).strides[1]` has NumPy's byte
 units; converting between them is an explicit later mapping decision.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 #### 5.2 Pointer Depth And Opaque Pointers
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 `Addr(...)` expresses native pointer depth directly. For a one-level pointer,
 it preserves the native address form without inventing rank or shape. A known
 primitive scalar-storage use should be expressed as `T[()]` instead. For an
 opaque argument or a direct pointer return, `Addr(...)` represents a
 typed low-level native pointer object:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 | Semantic annotation | Native parameter |
 | &#45;&#45;- | &#45;&#45;- |
 | `Addr(T)` | `T *` or `const T *`; unrefined one-level pointer storage |
 | `Addr[2](T)` | `T **` direct low-level pointer object |
 | `Addr[n](T)` | `T` followed by exactly `n` native pointer layers, `n >= 2` |
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 `Addr(x)` is the only canonical depth-one spelling. `Addr[1](x)` is invalid.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 For array storage whose dimensions are known, use an array form such as
 `Int[n]` or `Float64[:, :]` rather than `Addr(Int)` or `Addr(Float64)`. When
 the only available C fact is a data pointer with no rank or extent contract,
 retain `Addr(T)`. `Addr[n](T)` is necessary for pointer graphs and for low-level
 pointer values that are not represented by a shaped NumPy storage contract.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 A direct pointer object carries a typed native address. Passing or returning
 it does not imply allocation, copying, ownership or automatic destruction.
 For example, a raw pointer returned by one native function can be passed to a
 second native function under matching `Addr(...)` annotations. Pointer-object
 construction/allocation helpers are runtime API work, not additional
 information required in a semantic function signature.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 #### 5.3 Pointer To Scalar
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 void increment(int *value);
 void read_count(const int *value);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Phase 1 interface:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Int
+from prik.contracts import Int
 
 def increment(value: Int[()]) -> None: ...
 def read_count(value: Int[()]) -> None: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Python use is intentionally storage-oriented:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
 value = np.empty((), dtype=np.intc)
 value[...] = 7
 increment(value)
 updated = value.item()
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The wrapper passes `value`'s data address. It does not construct temporary
 scalar storage and does not return the mutation.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 #### 5.4 Pointer To Array
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 void negate(int n, double *values);
 double sum_values(size_t n, const double *values);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Phase 1 interface:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Float64, Int, SizeT
+from prik.contracts import Float64, Int, SizeT
 
 def negate(n: Int, values: Float64[n]) -> None: ...
 def sum_values(n: SizeT, values: Float64[n]) -> Float64: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The caller supplies `n` explicitly because it is an actual C parameter. The
 wrapper must not derive it from `len(values)` in Phase 1.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 #### 5.5 Output Pointer Remains An Argument
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 void get_count(int *out);
 void get_values(int n, double *out);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Phase 1 interface:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Float64, Int
+from prik.contracts import Float64, Int
 
 def get_count(out: Int[()]) -> None: ...
 def get_values(n: Int, out: Float64[n]) -> None: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Example Python use:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
 out_count = np.empty((), dtype=np.intc)
 get_count(out_count)
@@ -969,47 +969,47 @@ count = out_count.item()
 out_values = np.empty(n, dtype=np.float64)
 get_values(n, out_values)
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Returning `Int` from `get_count()` or allocating and returning
 `Float64[n]` from `get_values(n)` is a later Pythonic adaptation, not an
 identity call.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ### 6. Array Constraints
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 #### 6.1 Rank, Accepted Ranks And Fixed Dimensions
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Dimensions refine valid NumPy storage while the native argument remains one
 data pointer. They are semantic/API contracts rather than metadata transported
 by a C `T *`. A bare pointer imported without such a contract remains raw:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 void process_raw(double *values);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Addr, Float64
+from prik.contracts import Addr, Float64
 
 def process_raw(values: Addr(Float64)) -> None: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Once the semantic interface records valid array contracts, it may use:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 void process_matrix(double *matrix);
 void process_any(double *values);
@@ -1017,11 +1017,11 @@ void process_vector_or_matrix(double *values);
 void use_row(int (*row)[4]);
 void use_matrix(int (*matrix)[4]);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Float64, Int
+from prik.contracts import Float64, Int
 
 def process_matrix(matrix: Float64[:, :]) -> None: ...
 def process_any(values: Float64[...]) -> None: ...
@@ -1029,9 +1029,9 @@ def process_vector_or_matrix(values: Float64[...][1, 2]) -> None: ...
 def use_row(row: Int[4]) -> None: ...
 def use_matrix(matrix: Int[:, 4]) -> None: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 - `Float64[:, :]` validates rank two and C contiguity, then passes one
   `double *`.
 - `Float64[...]` accepts any rank and passes one `double *`.
@@ -1041,33 +1041,33 @@ X2PY_C_DOCS_END -->
   address.
 - `Int[:, 4]` validates contiguous rows of fixed width four, then passes one
   address.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 For function parameters on the selected ABI, `int (*)[4]` is represented as
 one pointer plus its fixed row-width contract. It is not represented as
 `int **`.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 #### 6.2 Strided Direct Interfaces Keep Native Metadata Visible
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The semantic notation can distinguish a stride-aware view from a contiguous
 matrix while retaining the exact native parameter list:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 void process_bounded_step(int n, int m, double *values);
 void process_columns(const double *values, size_t columns, size_t stride_bytes);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Float64, Int, SizeT
+from prik.contracts import Float64, Int, SizeT
 
 def process_bounded_step(n: Int, m: Int, values: Float64[:, 0:n:m]) -> None: ...
 def process_columns(
@@ -1076,9 +1076,9 @@ def process_columns(
     stride_bytes: SizeT,
 ) -> None: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 `::` means the axis stride must be carried or checked rather than assumed
 to be contiguous. `::2` is the fixed-step equivalent. `0:n:m` validates a
 bounded axis and exact element step using visible native values or declared
@@ -1089,47 +1089,47 @@ generated. For a multidimensional array, a stride form may be combined with
 contract; leaving it unannotated retains `ORDER_C`. A later Pythonic view may
 hide that argument with
 `Arg(0).strides[1]`, or request `Pack` / `CopyBack`.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 #### 6.3 Pointer Graphs Are Different
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 void use_rows(int **rows);
 void update_value(int *****value);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Neither declaration is represented by `Int[:, :]`. NumPy array notation
 supplies one array data address, optionally accompanied by native
 extent/stride values; it does not create a pointer graph. Their exact
 low-level Phase 1 interfaces are:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Addr, Int
+from prik.contracts import Addr, Int
 
 def use_rows(rows: Addr[2](Int)) -> None: ...
 def update_value(value: Addr[5](Int)) -> None: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
-The caller supplies an x2py-compatible native pointer object with the declared
+<!-- PRIK_C_DOCS_START
+The caller supplies an prik-compatible native pointer object with the declared
 topology. The wrapper passes it unchanged. Constructing pointer rows from
 nested Python sequences and exposing `update_value(value: Int) -> Int` are
 later Pythonic adaptations.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 #### 6.4 Contiguity
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Without an explicit layout or stride form, array annotations such as `T[:]`,
 `T[:, :]`, `T[n]`, and `T[...]` require C-contiguous numeric storage; a
 generated C stub does not repeat this as `ORDER_C`. Explicit non-default
@@ -1143,60 +1143,60 @@ the implicit `ORDER_C` orientation. Automatic packing, copy-back, or
 derivation of native metadata is a later Pythonic transformation.
 For rank one, `T[:]` and `T[n]` are also the canonical Fortran-contiguous
 spelling; write `T[::]` when contiguity is not required.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ### 7. Direct Native Returns
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 #### 7.1 Scalars And `void`
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Direct scalar returns and native `void` are identity behavior:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 int status(void);
 void reset(void);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Int
+from prik.contracts import Int
 
 def status() -> Int: ...
 def reset() -> None: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 An integer return remains an integer return in Phase 1. It is not
 automatically converted to an exception.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 #### 7.2 Pointer Returns
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 A direct returned native pointer can be exposed as a low-level pointer object
 without changing the C return topology:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 double *raw_values(void);
 struct context *context_current(void);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Addr, Float64, Opaque
+from prik.contracts import Addr, Float64, Opaque
 
 class context(Opaque):
     pass
@@ -1204,24 +1204,24 @@ class context(Opaque):
 def raw_values() -> Addr(Float64): ...
 def context_current() -> context: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 If a returned pointer is exposed immediately as NumPy storage, shape and
 lifetime information is required. This also remains identity mapping because
 the C function directly returns the represented pointer:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 double *create_values(int n);
 void free_values(double *values);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Annotated, Float64, Int
+from prik.contracts import Annotated, Float64, Int
 
 def create_values(n: Int) -> Annotated[
     Float64[n],
@@ -1229,35 +1229,35 @@ def create_values(n: Int) -> Annotated[
     FreeWith("free_values"),
 ]: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 This does not require `@native_call` because the C function directly returns
 the pointer represented by the Python return annotation. Until shape and
 lifetime handling are implemented, return it as the corresponding direct
 low-level pointer object or reject the higher-level NumPy view rather than
 guessing.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ### 8. Symbol Names
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Argument and return identity is independent of symbol naming. Phase 1
 supports `@bind` without introducing `@native_call`:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 int library_add(int a, int b);
 void c_increment(int *value);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Int, bind
+from prik.contracts import Int, bind
 
 @bind("library_add")
 def add(a: Int, b: Int) -> Int: ...
@@ -1265,32 +1265,32 @@ def add(a: Int, b: Int) -> Int: ...
 @bind("c_increment")
 def increment(value: Int[()]) -> None: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 `@bind` changes only which exported symbol is loaded. It does not synthesize
 arguments, change pointers or alter results.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ### 9. Structures, Enums And Non-Numeric Pointers
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 By-value enums and by-value structures can be Phase 1 identity interfaces once
 their native representation and layout are complete in the semantic `.pyi`:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 struct point { double x; double y; };
 struct point scale_point(struct point p, double factor);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Float64
+from prik.contracts import Float64
 
 class point(Structure):
     x: Float64
@@ -1298,25 +1298,25 @@ class point(Structure):
 
 def scale_point(p: point, factor: Float64) -> point: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Opaque pointers may be represented directly without creating a Pythonic handle
 API:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 struct context;
 struct context *context_create(void);
 void context_destroy(struct context *ctx);
 int context_run(struct context *ctx);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Int, Opaque
+from prik.contracts import Int, Opaque
 
 class context(Opaque):
     pass
@@ -1325,20 +1325,20 @@ def context_create() -> context: ...
 def context_destroy(ctx: context) -> None: ...
 def context_run(ctx: context) -> Int: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 This is C-like identity behavior: Python receives and passes the native pointer
 object. Automatic ownership, destruction, status checking and output-handle
 conversion are later policies.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The following remain outside the first identity subset unless their direct
 native representations are implemented explicitly:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 - Python `str` conversion for `char *` or `const char *` (raw byte/character
   storage may be represented directly);
 - Python callables converted into native function pointers (a pre-existing
@@ -1346,22 +1346,22 @@ X2PY_C_DOCS_END -->
 - unions;
 - variadic functions;
 - `void *` beyond an explicitly selected raw/byte-storage representation.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ### 10. Transformations Excluded From Proposed Phase 1
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Phase 1 must reject, or leave unresolved during optional C import generation,
 any interface that requires the wrapper to change the native function shape.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Excluded from the proposed Phase 1:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 | Desired behavior | Example C shape | Later mechanism |
 | &#45;&#45;- | &#45;&#45;- | &#45;&#45;- |
 | Pass a Python scalar through a native pointer | `void increment(int *value)` exposed as `value = increment(value)` | `@native_call([Addr(Arg(0))])` plus readback |
@@ -1372,23 +1372,23 @@ X2PY_C_DOCS_END -->
 | Convert Python strings to C strings | `const char *` from `str` | text encoding/termination policy |
 | Generate callback thunks | function-pointer argument | callback lifetime/exception policy |
 | Pack or copy a layout the native function does not accept | pointer to accepted native storage | `Pack` / `CopyBack` coercions |
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The later syntax is retained as design direction only. It is not required by
 the Phase 1 parser, IR, printer or wrapper generator.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ### 11. Proposed Phase 1 Runtime Errors
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 A future C-input wrapper generator or optional importer would need to report
 unsupported behavior instead of silently changing the interface.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 | Code | Condition |
 | &#45;&#45;- | &#45;&#45;- |
 | `c_non_identity_call_unsupported` | A declaration or semantic interface requires synthesized, omitted, reordered or transformed parameters/results. |
@@ -1405,17 +1405,17 @@ X2PY_C_DOCS_END -->
 | `c_union_unsupported` | A callable interface includes an unsupported union. |
 | `c_variadic_function_unsupported` | A variadic native function is requested. |
 | `c_calling_convention_unsupported` | A non-default calling convention is required. |
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ### 12. Proposed Phase 1 Parser And Wrapper Requirements
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The proposed Phase 1 implementation would need to:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 1. Parse scalar annotations and direct `None`/scalar return annotations.
 2. Parse unrefined one-level pointer forms `Addr(T)` and accept raw address
    values; known scalar-storage uses should support `T[()]`.
@@ -1445,198 +1445,198 @@ X2PY_C_DOCS_END -->
     or stride arguments remain visible; deriving them from array metadata is a
     later Pythonic mapping.
 13. Never consult C source after a supported semantic `.pyi` has been parsed.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ### 13. Proposed Phase 1 Runtime Tests
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 #### 13.1 By-Value Scalar Identity
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 int add(int a, int b);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Int
+from prik.contracts import Int
 
 def add(a: Int, b: Int) -> Int: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The wrapper passes two native `int` values and returns one native `int`.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 #### 13.2 Mutable Scalar Pointer Storage
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 void increment(int *value);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Int
+from prik.contracts import Int
 
 def increment(value: Int[()]) -> None: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Tests must verify that writable rank-zero NumPy storage is accepted, its data
 address is passed to the native call, and native mutation is observed after the
 call. A plain Python `int` must be rejected for this signature.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 #### 13.3 Read-Only Scalar Pointer Storage
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 void read_count(const int *value);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Int
+from prik.contracts import Int
 
 def read_count(value: Int[()]) -> None: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Tests must verify matching rank-zero scalar storage acceptance and exact native
 pointer lowering without writable requirements.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 #### 13.4 Array Pointer With Explicit Count
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 double sum_values(size_t n, const double *values);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Float64, SizeT
+from prik.contracts import Float64, SizeT
 
 def sum_values(n: SizeT, values: Float64[n]) -> Float64: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Tests must verify that the caller passes `n`, that the wrapper passes it
 unchanged, and that no hidden `len(values)` argument is generated.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 #### 13.5 Explicit Output Storage
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 void get_count(int *out);
 void get_values(int n, double *out);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Float64, Int
+from prik.contracts import Float64, Int
 
 def get_count(out: Int[()]) -> None: ...
 def get_values(n: Int, out: Float64[n]) -> None: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Tests must verify mutation of caller-allocated output storage and that the
 functions return `None`.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 #### 13.6 Matrices And Pointer-To-Fixed-Array
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 void matrix_data(double *matrix);
 void matrix_rows(int (*matrix)[4]);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Float64, Int
+from prik.contracts import Float64, Int
 
 def matrix_data(matrix: Float64[:, :]) -> None: ...
 def array_data(values: Float64[...]) -> None: ...
 def vector_matrix_or_rank5(values: Float64[...][1, 2, 5]) -> None: ...
 def matrix_rows(matrix: Int[:, 4]) -> None: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Tests must verify one native pointer argument for each function, rank/shape
 validation, and rejection of a representation treating either argument as
 `T **`.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 #### 13.7 Direct Pointer Graph Identity
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 void use_rows(int **rows);
 void update_value(int *****value);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Addr, Int
+from prik.contracts import Addr, Int
 
 def use_rows(rows: Addr[2](Int)) -> None: ...
 def update_value(value: Addr[5](Int)) -> None: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Tests must verify exact pointer depth in the parsed ABI contract and that
 these arguments accept only matching direct low-level pointer objects. They
 must not accept `Int[:, :]` or add any `@native_call` transformation.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 #### 13.8 Raw Opaque Pointer Identity
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 struct context;
 struct context *context_create(void);
 void context_destroy(struct context *ctx);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Opaque
+from prik.contracts import Opaque
 
 class context(Opaque):
     pass
@@ -1644,81 +1644,81 @@ class context(Opaque):
 def context_create() -> context: ...
 def context_destroy(ctx: context) -> None: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Tests must verify that the returned raw native pointer object is accepted by
 `context_destroy` without handle wrapping, ownership inference or
 `@native_call`.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 #### 13.9 Symbol Binding Without Transformation
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 int library_add(int a, int b);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Int, bind
+from prik.contracts import Int, bind
 
 @bind("library_add")
 def add(a: Int, b: Int) -> Int: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Tests must verify that `@bind` changes symbol lookup only and leaves
 argument/return lowering unchanged.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 #### 13.10 Transformation Is Not Phase 1
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The Phase 1 parser or semantic conversion must reject a runnable interface using
 later transformation syntax such as:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Addr, Arg, Int, Returns, native_call
+from prik.contracts import Addr, Arg, Int, Returns, native_call
 
 @native_call([Addr(Arg(0))])
 def increment(value: Int) -> Returns["value", Int]: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The safe Phase 1 spelling for the same C function is:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Int
+from prik.contracts import Int
 
 def increment(value: Int[()]) -> None: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ### 14. Phase 2: Pythonic Adaptations After Identity Works
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 After Phase 1 can call direct signatures reliably, an optional Pythonic
 generation mode can use `@native_call` to expose APIs that differ from their
 C parameter lists. The settled design direction is:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Addr, Annotated, Arg, Float64, Int, Return, Returns, SizeT, native_call, raises
+from prik.contracts import Addr, Annotated, Arg, Float64, Int, Return, Returns, SizeT, native_call, raises
 
 # C: void increment(int *value);
 @native_call([Addr(Arg(0))])
@@ -1747,13 +1747,13 @@ def get_values(n: Int) -> Float64[n]: ...
 )
 def context_create() -> Annotated[context, Owned, FreeWith("context_destroy")]: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Phase 2 also introduces policies and coercions such as:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 - Python `str` to configured native text conversion;
 - callback thunk creation and lifetime/exception handling;
 - `Pack` and `CopyBack` for non-contiguous arrays;
@@ -1761,21 +1761,21 @@ X2PY_C_DOCS_END -->
 - status conversion and hidden native outputs;
 - derived NumPy metadata such as `Arg(i).shape`, `Arg(i).shape[...]`,
   `Arg(i).strides[...]`, `Arg(i).size` and `Arg(i).itemsize`.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 None of these transformations is necessary to complete Phase 1.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ### 15. Decisions Deferred Beyond Phase 1
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The following decisions do not block the identity-call implementation:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 1. Final implementation order within Phase 2 transformations.
 2. Bare-string convenience defaults, writable text buffers and arrays of
    strings.
@@ -1792,9 +1792,9 @@ X2PY_C_DOCS_END -->
 8. Module/library selection, platform variants and non-default calling
    conventions.
 9. Unions, writable native globals and variadic functions.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 No deferred behavior may be silently inferred by the Phase 1 wrapper
 generator.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->

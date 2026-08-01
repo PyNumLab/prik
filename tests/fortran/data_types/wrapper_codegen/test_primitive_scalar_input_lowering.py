@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
 
 @pytest.mark.parametrize(
@@ -33,7 +33,7 @@ def test_scalar_input_registry_lowers_completed_type_into_the_native_support_api
 
     assert f"{c_type} bound_x;" in c_source
     assert (
-        f"if (x2py_{helper_suffix.casefold().removeprefix('npy_')}_unpack_exact(bound_x_obj, &bound_x) < 0)" in c_source
+        f"if (prik_{helper_suffix.casefold().removeprefix('npy_')}_unpack_exact(bound_x_obj, &bound_x) < 0)" in c_source
     )
     assert "if (!PyErr_Occurred())" in c_source
 
@@ -48,7 +48,7 @@ def test_binding_locals_are_isolated_from_identifiers_imported_by_c_headers():
         if source.path.suffix == ".c"
     )
 
-    assert '#include "binding_support/x2py_binding.h"' in c_source
+    assert '#include "binding_support/prik_binding.h"' in c_source
     assert "double bound_complex;" in c_source
-    assert "x2py_float64_unpack_exact(bound_complex_obj, &bound_complex)" in c_source
+    assert "prik_float64_unpack_exact(bound_complex_obj, &bound_complex)" in c_source
     assert "double complex;" not in c_source

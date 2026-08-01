@@ -22,4 +22,4 @@ Troubleshooting pages are organized by failure mode.
 ## TODO
 
 - TODO: Add symptom-first troubleshooting entries linked to diagnostics.
-- TODO: Distinguish user environment failures from x2py bugs.
+- TODO: Distinguish user environment failures from prik bugs.

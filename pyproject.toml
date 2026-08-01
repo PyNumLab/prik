@@ -3,9 +3,9 @@ requires = ["setuptools>=77.0.3", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "x2py"
+name = "prik"
 version = "0.1.0"
-description = "Fortran-to-Python wrappers with native parser and semantic interface tooling"
+description = "Python Runtime Interop Kit for native-language Python wrappers"
 readme = "README.md"
 authors = [
     { name = "Said Hadjout" },
@@ -44,13 +44,13 @@ qa = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["x2py*"]
+include = ["prik*"]
 
 [tool.setuptools.package-data]
-"x2py.binding_support" = ["*.h", "LICENSE"]
+"prik.binding_support" = ["*.h", "LICENSE"]
 
 [project.scripts]
-x2py = "x2py.cli:main"
+prik = "prik.cli:main"
 
 [tool.pytest.ini_options]
 minversion = "7.0"
@@ -70,7 +70,7 @@ markers = [
 xfail_strict = true
 
 [tool.coverage.run]
-source = ["x2py"]
+source = ["prik"]
 branch = true
 parallel = true
 relative_files = true
@@ -92,7 +92,7 @@ extend-exclude = [
     "tests/fortran/building_shared_library/end_to_end/real_libraries/*/contracts",
     "tests/fortran/pyi_contracts/*/end_to_end/fixtures",
     "tests/fortran/semantic_pyi_format/pipeline/fixtures",
-    "x2py.egg-info",
+    "prik.egg-info",
 ]
 
 [tool.ruff.lint]
@@ -113,7 +113,7 @@ fixable = ["ALL"]
 unfixable = []
 
 [tool.ruff.lint.isort]
-known-first-party = ["x2py"]
+known-first-party = ["prik"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 45
@@ -124,10 +124,10 @@ indent-style = "space"
 line-ending = "lf"
 
 [tool.bandit]
-exclude_dirs = ["tests", "docs", "x2py.egg-info"]
+exclude_dirs = ["tests", "docs", "prik.egg-info"]
 
 [tool.vulture]
-paths = ["x2py", "tests"]
+paths = ["prik", "tests"]
 exclude = [
     "tests/c/fixtures/pyi/",
     "tests/fortran/*/end_to_end/fixtures/",
@@ -135,7 +135,7 @@ exclude = [
     "tests/fortran/building_shared_library/end_to_end/real_libraries/*/contracts/",
     "tests/fortran/pyi_contracts/*/end_to_end/fixtures/",
     "tests/fortran/semantic_pyi_format/pipeline/fixtures/",
-    "x2py.egg-info/",
+    "prik.egg-info/",
 ]
 min_confidence = 80
 sort_by_size = true

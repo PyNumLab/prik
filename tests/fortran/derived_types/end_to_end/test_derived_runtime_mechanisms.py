@@ -14,8 +14,8 @@ from tests.fortran._support.wrapper_build import (
     _import_from_build_dir,
     _sole_native_module,
 )
-from x2py import build_pyi_extension
-from x2py.runtime.handles import AllocatableArray
+from prik import build_pyi_extension
+from prik.runtime.handles import AllocatableArray
 
 FIXTURES = Path(__file__).parent / "fixtures"
 EDITED_CONTRACTS = FIXTURES / "edited_contracts"
@@ -28,7 +28,7 @@ ALIASED_MODULE_CONTRACT = EDITED_CONTRACTS / "module_aliased_proxy" / "__init__.
 DERIVED_CONSTANT_SOURCE = Path(__file__).parents[2] / "modules" / "end_to_end" / "fixtures" / "fmodule_vars_f90.f90"
 pytestmark = pytest.mark.fortran_end_to_end
 DERIVED_CONSTANT_CONTRACT = """\
-from x2py.contracts import Final, Int32
+from prik.contracts import Final, Int32
 
 class rgb_color:
     r: Int32
@@ -60,7 +60,7 @@ contains
 end module derived_string_fields
 """
 STRING_FIELD_CONTRACT = """\
-from x2py.contracts import Aliased, Annotated, String
+from prik.contracts import Aliased, Annotated, String
 
 class record:
     label: String[8]
@@ -119,7 +119,7 @@ contains
 end module derived_value_arguments
 """
 VALUE_AND_OPTIONAL_CONTRACT = """\
-from x2py.contracts import Arg, Float64, Returns, Value, native_call, native_type
+from prik.contracts import Arg, Float64, Returns, Value, native_call, native_type
 
 @native_type(attributes=("bind(c)",))
 class point:
@@ -170,7 +170,7 @@ contains
 end module derived_borrowed_finalizer
 """
 BORROWED_FINALIZER_CONTRACT = """\
-from x2py.contracts import Int32, native_type
+from prik.contracts import Int32, native_type
 
 @native_type(finalizers=("cleanup_child",))
 class child:
@@ -233,11 +233,11 @@ def test_scalar_derived_objects_use_canonical_plan(tmp_path: Path):
     generated_fortran = (result.output_dir / "bind_c_opaque_boundary_wrapper.f90").read_text(encoding="utf-8")
     assert "static PyObject * wrap_point_sum" in generated_c
     assert "@x.setter\\n    def x(self, value):" in generated_c
-    assert "bind_c_x2py_field_point_x_get" in generated_fortran
-    assert "bind_c_x2py_field_point_x_set" in generated_fortran
+    assert "bind_c_prik_field_point_x_get" in generated_fortran
+    assert "bind_c_prik_field_point_x_set" in generated_fortran
     assert "call native_make_point_out(p, x, y)" in generated_fortran
     assert "result = c_null_ptr" in generated_fortran
-    assert "allocate(result_value, stat=x2py_allocation_status)" in generated_fortran
+    assert "allocate(result_value, stat=prik_allocation_status)" in generated_fortran
 
 
 def test_plain_module_derived_proxy_reads_and_writes_live_members(tmp_path: Path):
@@ -256,8 +256,8 @@ def test_plain_module_derived_proxy_reads_and_writes_live_members(tmp_path: Path
     assert isinstance(first, module.box)
     assert isinstance(second, module.box)
     assert first is not second
-    assert first._x2py_owner is module
-    assert second._x2py_owner is module
+    assert first._prik_owner is module
+    assert second._prik_owner is module
     assert first.scalar == np.int32(7)
     first_fixed = first.fixed
     np.testing.assert_allclose(first_fixed, np.array([1.5, 2.5], dtype=np.float64))
@@ -283,7 +283,7 @@ def test_plain_module_derived_proxy_reads_and_writes_live_members(tmp_path: Path
     assert module.current_total() == np.float64(66.0)
 
     child = first.nested
-    assert child._x2py_owner is first
+    assert child._prik_owner is first
     del first
     child.id = np.int32(31)
     assert module.current.nested.id == np.int32(31)
@@ -325,8 +325,8 @@ def test_aliased_module_derived_object_uses_direct_live_field_handles(tmp_path: 
     second = module.current
     assert isinstance(first, module.box)
     assert first is not second
-    assert first._x2py_owner is module
-    assert second._x2py_owner is module
+    assert first._prik_owner is module
+    assert second._prik_owner is module
     first_values = first.values
     assert first_values.owner is first
     assert first_values.to_numpy() is None
@@ -373,7 +373,7 @@ def test_derived_module_constant_returns_independent_owned_values(tmp_path: Path
 
     bridge = (result.output_dir / "bind_c_fmodule_vars_f90_wrapper.f90").read_text(encoding="utf-8")
     assert "result = c_null_ptr" in bridge
-    assert "allocate(value, stat=x2py_allocation_status)" in bridge
+    assert "allocate(value, stat=prik_allocation_status)" in bridge
     assert "value = native_black" in bridge
     assert "result = c_loc(value)" in bridge
 
@@ -461,7 +461,7 @@ def test_value_copy_and_optional_derived_inputs_match_source_oracle(tmp_path: Pa
         direct_module.optional_sum(object())
 
     bridge = (result.output_dir / "bind_c_derived_value_arguments_wrapper.f90").read_text(encoding="utf-8")
-    assert "type(x2py_type_point), pointer :: value" in bridge
+    assert "type(prik_type_point), pointer :: value" in bridge
     assert "native_score_by_value(value)" in bridge
 
 
@@ -484,7 +484,7 @@ def test_borrowed_child_retains_owner_and_finalizes_exactly_once(tmp_path: Path)
     owner = module.make_parent()
     module.reset_final_count()
     borrowed = owner.value
-    assert borrowed._x2py_owner is owner
+    assert borrowed._prik_owner is owner
     del owner
     gc.collect()
     assert module.get_final_count() == np.int32(0)

@@ -6,7 +6,7 @@ from tests.fortran._support.semantic_conversion import (
     get_function,
     parse_fortran_source,
 )
-from x2py.semantics.metadata import PROJECTED_OUTPUT_METADATA
+from prik.semantics.metadata import PROJECTED_OUTPUT_METADATA
 
 
 def test_primitive_scalar_inout_stays_visible_and_projects_replacement_return():

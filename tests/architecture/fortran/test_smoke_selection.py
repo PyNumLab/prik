@@ -90,7 +90,7 @@ def test_toolchain_smoke_collects_exactly_the_manifest_and_reports_it_in_sorted_
         "-m",
         "toolchain_smoke",
         "--require-toolchain-smoke",
-        f"--x2py-fortran-compiler={sys.executable}",
+        f"--prik-fortran-compiler={sys.executable}",
     )
     assert nodes == set(TOOLCHAIN_SMOKE_CASES)
 
@@ -112,7 +112,7 @@ def test_toolchain_smoke_nodes_are_in_the_ordinary_end_to_end_suite() -> None:
 
 
 def test_explicit_missing_toolchain_smoke_compiler_is_an_error() -> None:
-    missing = REPO_ROOT / ".missing-x2py-fortran-compiler"
+    missing = REPO_ROOT / ".missing-prik-fortran-compiler"
     result = subprocess.run(
         [
             sys.executable,
@@ -124,7 +124,7 @@ def test_explicit_missing_toolchain_smoke_compiler_is_an_error() -> None:
             "-m",
             "toolchain_smoke",
             "--require-toolchain-smoke",
-            f"--x2py-fortran-compiler={missing}",
+            f"--prik-fortran-compiler={missing}",
         ],
         cwd=REPO_ROOT,
         capture_output=True,

@@ -5,10 +5,10 @@ from dataclasses import replace
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.ownership import CodegenAction, NativeBarrierAction, ObjectKind
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import WritebackPhase
-from x2py.wrapper_codegen import DatatypeFamily, WrapperCodeGenerator, WrapperPlanner
+from prik.semantics.ownership import CodegenAction, NativeBarrierAction, ObjectKind
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.wrapper_policy import WritebackPhase
+from prik.wrapper_codegen import DatatypeFamily, WrapperCodeGenerator, WrapperPlanner
 
 
 def _plan(source: str, *, module_name: str):
@@ -101,7 +101,7 @@ def test_replacement_writeback_dispatches_selected_scalar_result_behavior(codege
 
     assert "bind_c_bump(&bound_value);" in c_source
     if codegen_action is CodegenAction.COPY_IN_OUT:
-        assert "result_obj = x2py_int32_to_python(&bound_value);" in c_source
+        assert "result_obj = prik_int32_to_python(&bound_value);" in c_source
     else:
         assert "PyObject * result_obj = bound_value_obj;" in c_source
         assert "Py_INCREF(result_obj);" in c_source

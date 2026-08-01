@@ -2,8 +2,8 @@
 
 import pytest
 
-from x2py.naming import NamingPolicy
-from x2py.naming import normalize_public_name
+from prik.naming import NamingPolicy
+from prik.naming import normalize_public_name
 
 
 def test_public_python_names_escape_keywords_and_collisions():
@@ -50,7 +50,7 @@ def test_generated_symbols_apply_target_language_rules():
             context="function",
             parent_context="module",
         )
-        == "module_x2py"
+        == "module_prik"
     )
     assert (
         policy.generated_symbol(
@@ -88,7 +88,7 @@ def test_generated_symbols_reserve_c_entry_point_and_rewrite_special_methods():
             context="module",
             parent_context="module",
         )
-        == "main_x2py"
+        == "main_prik"
     )
     assert (
         policy.generated_symbol(
@@ -109,11 +109,11 @@ def test_generated_symbols_number_after_an_escaped_native_name():
     assert (
         policy.generated_symbol(
             "module",
-            {"MODULE_X2PY"},
+            {"MODULE_PRIK"},
             language="fortran",
             prefix="owner__",
             context="function",
             parent_context="module",
         )
-        == "module_x2py_2"
+        == "module_prik_2"
     )

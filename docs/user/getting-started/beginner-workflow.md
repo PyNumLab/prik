@@ -39,7 +39,7 @@ Keep `src/` and `tests/` under version control. Never commit the `build/` folder
 Edit the Fortran source, then preview the generated Python interface:
 
 ```bash
-python3 -m x2py generate --pyi src/scale.f90
+python3 -m prik generate --pyi src/scale.f90
 ```
 
 Check the function names, arguments, result types, and required NumPy dtypes.
@@ -50,7 +50,7 @@ This review is especially useful after changing a public Fortran declaration.
 ## 2. Build the Extension
 
 ```bash
-python3 -m x2py src/scale.f90 --out-dir build/scale
+python3 -m prik src/scale.f90 --out-dir build/scale
 ```
 
 Rerun the same command after source changes. Add `--verbose` only when you need
@@ -88,13 +88,13 @@ python3 -m pytest tests/test_scale.py -q
 Save a contract package when you want to change the Python interface:
 
 ```bash
-python3 -m x2py generate --pyi src/scale.f90 --out contracts/scale
+python3 -m prik generate --pyi src/scale.f90 --out contracts/scale
 ```
 
 Edit `contracts/scale/scale.pyi`, then build through its package entry:
 
 ```bash
-python3 -m x2py contracts/scale/__init__.pyi \
+python3 -m prik contracts/scale/__init__.pyi \
   --native-fortran-sources src/scale.f90 \
   --out-dir build/scale-edited
 ```

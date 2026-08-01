@@ -1,4 +1,4 @@
-from x2py.contracts import Final, Float64, Int32
+from prik.contracts import Final, Float64, Int32
 
 class rgb_color:
     def __init__(

@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Arg, Float64, Int, native_call
+from prik.contracts import Addr, Arg, Float64, Int, native_call
 
 def add1(
     n: Int,

@@ -10,7 +10,7 @@ from tests.fortran._support.wrapper_build import (
     _import_from_build_dir,
     _sole_native_module,
 )
-from x2py import build_pyi_extension
+from prik import build_pyi_extension
 
 STRING_FIXTURES = Path(__file__).resolve().parents[2] / "strings" / "end_to_end" / "fixtures"
 STRING_F90_SOURCE = STRING_FIXTURES / "fstrings_f90.f90"

@@ -1,14 +1,14 @@
 """Completed array extent-reference policy."""
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.models import RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA
-from x2py.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.models import RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA
+from prik.semantics.policy_completion import complete_semantic_policies
 
 
 def test_array_extent_reference_requires_a_visible_scalar_argument():
     module = parse_pyi_text(
         """
-from x2py.contracts import Float64
+from prik.contracts import Float64
 
 def values() -> Float64[missing]: ...
 """,

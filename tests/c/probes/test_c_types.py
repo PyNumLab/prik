@@ -9,8 +9,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import x2py.probes.c_types as c_type_probe
-from x2py.probes.c_types import (
+import prik.probes.c_types as c_type_probe
+from prik.probes.c_types import (
     CStandardTypeProbeRecipe,
     CStandardTypeProbeReport,
     CStandardTypeProbeError,
@@ -21,7 +21,7 @@ from x2py.probes.c_types import (
     probe_c_standard_types_cached,
     probe_c_standard_types,
 )
-from x2py.pipeline.preprocessing import PreprocessingConfig
+from prik.pipeline.preprocessing import PreprocessingConfig
 
 
 _CC = shutil.which("cc")
@@ -41,15 +41,15 @@ def test_c_standard_type_probe_source_queries_standard_headers_without_layout_cl
     assert "#include <stdint.h>" in source
     assert "#include <time.h>" in source
     assert "#include <stdio.h>" in source
-    assert 'X2PY_PRINT_ARITHMETIC("_Bool"' in source
-    assert "X2PY_PRINT_CHAR()" in source
-    assert 'X2PY_PRINT_ARITHMETIC("unsigned long"' in source
-    assert 'X2PY_PRINT_REAL("long double"' in source
-    assert 'X2PY_PRINT_ARITHMETIC("long double _Complex"' in source
-    assert 'X2PY_PRINT_ARITHMETIC("int"' in source
-    assert 'X2PY_PRINT_ARITHMETIC("size_t"' in source
-    assert 'X2PY_PRINT_ARITHMETIC("uint32_t"' in source
-    assert 'X2PY_PRINT_ARITHMETIC("time_t"' in source
+    assert 'PRIK_PRINT_ARITHMETIC("_Bool"' in source
+    assert "PRIK_PRINT_CHAR()" in source
+    assert 'PRIK_PRINT_ARITHMETIC("unsigned long"' in source
+    assert 'PRIK_PRINT_REAL("long double"' in source
+    assert 'PRIK_PRINT_ARITHMETIC("long double _Complex"' in source
+    assert 'PRIK_PRINT_ARITHMETIC("int"' in source
+    assert 'PRIK_PRINT_ARITHMETIC("size_t"' in source
+    assert 'PRIK_PRINT_ARITHMETIC("uint32_t"' in source
+    assert 'PRIK_PRINT_ARITHMETIC("time_t"' in source
     assert "sizeof(FILE *)" in source
     assert "sizeof(FILE)" not in source
 
@@ -232,8 +232,8 @@ def test_c_standard_type_probe_carries_target_relevant_user_flags(tmp_path):
             mode="compiler",
             compiler=compiler,
             include_dirs=[str(include_dir)],
-            defines=["X2PY_FEATURE=1"],
-            undefs=["X2PY_OLD_FEATURE"],
+            defines=["PRIK_FEATURE=1"],
+            undefs=["PRIK_OLD_FEATURE"],
             std="c99",
             compiler_args=["-funsigned-char"],
         )
@@ -241,14 +241,14 @@ def test_c_standard_type_probe_carries_target_relevant_user_flags(tmp_path):
 
     argv = report.recipe.compile_argv
     assert f"-I{include_dir}" in argv
-    assert "-DX2PY_FEATURE=1" in argv
-    assert "-UX2PY_OLD_FEATURE" in argv
+    assert "-DPRIK_FEATURE=1" in argv
+    assert "-UPRIK_OLD_FEATURE" in argv
     assert "-std=c11" in argv
     assert "-funsigned-char" in argv
     assert report.recipe.requested_standard == "c99"
     assert report.recipe.include_dirs == [str(include_dir)]
-    assert report.recipe.defines == ["X2PY_FEATURE=1"]
-    assert report.recipe.undefs == ["X2PY_OLD_FEATURE"]
+    assert report.recipe.defines == ["PRIK_FEATURE=1"]
+    assert report.recipe.undefs == ["PRIK_OLD_FEATURE"]
     assert report.recipe.compiler_args == ["-funsigned-char"]
     assert report.types["char"]["signed"] is False
 
@@ -306,18 +306,18 @@ def test_c_standard_type_probe_cache_directory_precedence(monkeypatch, tmp_path)
     explicit = tmp_path / "explicit"
     assert c_type_probe._probe_cache_dir(explicit) == explicit
 
-    monkeypatch.setenv("X2PY_CACHE_DIR", str(tmp_path / "x2py"))
+    monkeypatch.setenv("PRIK_CACHE_DIR", str(tmp_path / "prik"))
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
-    assert c_type_probe._probe_cache_dir(None) == tmp_path / "x2py" / "c_type_probe"
+    assert c_type_probe._probe_cache_dir(None) == tmp_path / "prik" / "c_type_probe"
 
-    monkeypatch.delenv("X2PY_CACHE_DIR")
-    assert c_type_probe._probe_cache_dir(None) == tmp_path / "xdg" / "x2py" / "c_type_probe"
+    monkeypatch.delenv("PRIK_CACHE_DIR")
+    assert c_type_probe._probe_cache_dir(None) == tmp_path / "xdg" / "prik" / "c_type_probe"
 
 
 def test_c_standard_type_probe_module_cli_emits_json_for_semantic_input():
     compiler = _required_c_compiler()
     completed = subprocess.run(
-        [sys.executable, "-m", "x2py.probes.c_types", "--compiler", compiler],
+        [sys.executable, "-m", "prik.probes.c_types", "--compiler", compiler],
         capture_output=True,
         text=True,
         check=True,

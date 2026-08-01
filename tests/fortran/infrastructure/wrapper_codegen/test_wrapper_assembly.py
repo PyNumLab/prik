@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.stage_values import FrozenStageRecordError
-from x2py.wrapper_codegen import (
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.stage_values import FrozenStageRecordError
+from prik.wrapper_codegen import (
     CBindingGenerator,
     CSourcePrinter,
     FortranBridgeGenerator,
@@ -57,9 +57,9 @@ def swap_args(x: Float64, y: Float64) -> Float64: ...
     assert "double bind_c_swap_args(double * y, double * x);" in c_source
     assert 'static char * kwlist[] = {"x", "y", NULL};' in c_source
     assert 'PyArg_ParseTupleAndKeywords(args, kwargs, "OO", kwlist, &bound_x_obj, &bound_y_obj)' in c_source
-    assert "x2py_float64_unpack_exact(bound_x_obj, &bound_x)" in c_source
+    assert "prik_float64_unpack_exact(bound_x_obj, &bound_x)" in c_source
     assert "result = bind_c_swap_args(&bound_y, &bound_x);" in c_source
-    assert "PyObject * result_obj = x2py_float64_to_python(&result);" in c_source
+    assert "PyObject * result_obj = prik_float64_to_python(&result);" in c_source
     assert "PyMODINIT_FUNC PyInit_render_demo(void)" in c_source
     assert "static PyObject * wrap_swap_args" in c_header
     assert "module bind_c_render_demo_wrapper" in fortran_source
@@ -100,10 +100,10 @@ def test_large_procedure_only_binding_is_split_into_balanced_compile_units():
         Path("large_binding_wrapper_003.c"),
         Path("large_binding_wrapper_004.c"),
     )
-    assert "#define X2PY_BINDING_IMPORT_ARRAY 1" in main_source.text
+    assert "#define PRIK_BINDING_IMPORT_ARRAY 1" in main_source.text
     assert "PyMODINIT_FUNC PyInit_large_binding(void)" in main_source.text
     assert "PyObject * wrap_value_000(" not in main_source.text
-    assert all("X2PY_BINDING_IMPORT_ARRAY" not in source.text for source in worker_sources)
+    assert all("PRIK_BINDING_IMPORT_ARRAY" not in source.text for source in worker_sources)
     assert all("PyInit_large_binding" not in source.text for source in worker_sources)
     assert sum(source.text.count("PyObject * wrap_value_") for source in worker_sources) == 128
     assert "static PyObject * wrap_value_000" not in header_source.text

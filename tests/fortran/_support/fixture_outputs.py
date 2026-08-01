@@ -2,8 +2,8 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from x2py import parse_fortran_file
-from x2py.semantics.fortran2ir import fortran_module_to_semantic_module
+from prik import parse_fortran_file
+from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 
 FORTRAN_ROOT = Path(__file__).resolve().parents[1]
 PARSER_FIXTURE_ROOT = FORTRAN_ROOT / "source_parsing" / "parsing" / "fixtures"

@@ -10,8 +10,8 @@ on:
   workflow_call:
 
 env:
-  X2PY_GFORTRAN_BINARY: gfortran-13
-  X2PY_GFORTRAN_PACKAGE: gfortran-13
+  PRIK_GFORTRAN_BINARY: gfortran-13
+  PRIK_GFORTRAN_PACKAGE: gfortran-13
 
 jobs:
   real-library-wrappers:
@@ -41,25 +41,25 @@ jobs:
       - name: Install pinned GFortran
         shell: bash
         run: |
-          if ! command -v "$X2PY_GFORTRAN_BINARY" >/dev/null 2>&1; then
+          if ! command -v "$PRIK_GFORTRAN_BINARY" >/dev/null 2>&1; then
             sudo apt-get update
-            sudo apt-get install --yes "$X2PY_GFORTRAN_PACKAGE"
+            sudo apt-get install --yes "$PRIK_GFORTRAN_PACKAGE"
           fi
-          compiler_dir="$RUNNER_TEMP/x2py-gfortran"
+          compiler_dir="$RUNNER_TEMP/prik-gfortran"
           mkdir -p "$compiler_dir"
-          ln -sf "$(command -v "$X2PY_GFORTRAN_BINARY")" "$compiler_dir/gfortran"
+          ln -sf "$(command -v "$PRIK_GFORTRAN_BINARY")" "$compiler_dir/gfortran"
           echo "$compiler_dir" >> "$GITHUB_PATH"
           "$compiler_dir/gfortran" --version
       - name: Restore compiled native library cache
         uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}/x2py-real-library-native
+          path: ${{ runner.temp }}/prik-real-library-native
           key: real-libraries-${{ runner.os }}-gfortran13-${{ hashFiles('tests/fortran/building_shared_library/end_to_end/real_libraries/blas/native/**', 'tests/fortran/building_shared_library/end_to_end/real_libraries/lapack/native/**') }}
       - name: Run full BLAS and LAPACK wrapper tests
         env:
           PYTHONPATH: .
           HYPOTHESIS_PROFILE: ci
-          X2PY_REAL_LIBRARY_NATIVE_CACHE_DIR: ${{ runner.temp }}/x2py-real-library-native
+          PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR: ${{ runner.temp }}/prik-real-library-native
         run: |
           python -m pytest -q --randomly-seed=1 \
             "tests/fortran/building_shared_library/end_to_end/real_libraries/test_full_libraries.py::test_full_library_wrapper_imports_every_root_procedure_from_cached_shared_library[blas]" \

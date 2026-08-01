@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 import pytest
-import x2py
+import prik
 
 
 ROOT = Path(__file__).parents[3]
@@ -39,9 +39,9 @@ NEXT_NAVIGATION = re.compile(r"^\s*(?:#{2,6}\s+Next|\*\*Next\*\*:?)\s*$", re.IGN
 NEXT_SECTION_BOUNDARY = re.compile(r"^\s*(?:#{2,6}\s+|---\s*$|\*\*[^*]+\*\*)")
 ALLOWED_CONTEXTUAL_FORWARD_LINK_SOURCE_PREFIXES = ("user/getting-started/", "user/guide/")
 ALLOWED_CONTEXTUAL_FORWARD_LINK_PREFIXES = ("user/reference/pyi-contracts/",)
-C_DOCS_START = "<!-- X2PY_C_DOCS_START"
-C_DOCS_END = "X2PY_C_DOCS_END -->"
-C_DOCS_DISABLED = "<!-- X2PY_C_DOCS_DISABLED:"
+C_DOCS_START = "<!-- PRIK_C_DOCS_START"
+C_DOCS_END = "PRIK_C_DOCS_END -->"
+C_DOCS_DISABLED = "<!-- PRIK_C_DOCS_DISABLED:"
 VISIBLE_C_DOCUMENTATION_EXCEPTIONS = {
     "README.md": ("Fortran and C compilers",),
     "docs/user/getting-started/index.md": ("`gcc`",),
@@ -67,7 +67,7 @@ VISIBLE_C_DOCUMENTATION_EXCEPTIONS = {
     "docs/user/guide/arrays.md": ("ORDER_C", "C-contiguous", "C-order", "C-oriented", 'order="C"'),
     "docs/user/guide/raw-addresses.md": ("C-order", "C ordering"),
     "docs/user/guide/building-shared-library.md": (
-        "X2PY_CFLAGS",
+        "PRIK_CFLAGS",
         "C binding",
         "C compiler",
         "`gcc`",
@@ -99,7 +99,7 @@ VISIBLE_C_DOCUMENTATION = re.compile(
     r"|\b(?:ORDER_C|REQUIRE_C_CONTIGUOUS|NPY_C_CONTIGUOUS)\b"
     r"|\b(?:CToIR|CFile|CProject|CParse|CDiagnostic)[A-Za-z0-9_]*\b"
     r"|\b(?:parse_c|c_file|c_project|c_function|c_parameter|c_struct|c_type)_[A-Za-z0-9_]+\b"
-    r"|(?:tests/c/fixtures/native|tests/c/fixtures/parser|x2py/parsers/c|/c/general/)"
+    r"|(?:tests/c/fixtures/native|tests/c/fixtures/parser|prik/parsers/c|/c/general/)"
     r"|(?:c-parser|inspect-c-api|c-api)"
     r"|\b(?:structs?|unions?|typedefs?|declarators?|bitfields?|K&R)\b"
     r"|--language\s+c\b"
@@ -255,45 +255,45 @@ SOURCE_NAVIGATION_CORPUS = [
     "docs/developer/feature-to-code-map.md",
     "docs/developer/repository-structure.md",
     "docs/maintainer/internal-architecture/pipeline-map.md",
-    "x2py/README.md",
-    "x2py/parsers/README.md",
-    "x2py/parsers/c/README.md",
-    "x2py/parsers/fortran/README.md",
-    "x2py/parsers/pyi/README.md",
-    "x2py/semantics/README.md",
-    "x2py/compiling/README.md",
+    "prik/README.md",
+    "prik/parsers/README.md",
+    "prik/parsers/c/README.md",
+    "prik/parsers/fortran/README.md",
+    "prik/parsers/pyi/README.md",
+    "prik/semantics/README.md",
+    "prik/compiling/README.md",
 ]
 SOURCE_NAVIGATION_HOTSPOTS = [
-    "x2py/__init__.py",
-    "x2py/cli.py",
-    "x2py/pipeline/build.py",
-    "x2py/pipeline/preprocessing.py",
-    "x2py/probes/c_types.py",
-    "x2py/probes/fortran_types.py",
-    "x2py/semantics/ownership.py",
-    "x2py/parsers/c/parser.py",
-    "x2py/parsers/c/cli.py",
-    "x2py/parsers/fortran/parser.py",
-    "x2py/parsers/fortran/cli.py",
-    "x2py/parsers/pyi/parser.py",
-    "x2py/semantics/models.py",
-    "x2py/semantics/fortran2ir.py",
-    "x2py/semantics/c2ir.py",
-    "x2py/semantics/pyi2ir.py",
-    "x2py/pipeline/pyi.py",
-    "x2py/semantics/policy_completion.py",
-    "x2py/wrapper_codegen/plan.py",
-    "x2py/wrapper_codegen/planner.py",
-    "x2py/wrapper_codegen/generator.py",
-    "x2py/wrapper_codegen/c/binding.py",
-    "x2py/wrapper_codegen/fortran/bridge.py",
-    "x2py/wrapper_codegen/printers/pyi_printer.py",
-    "x2py/wrapper_codegen/printers/source_printers.py",
-    "x2py/compiling/objects.py",
-    "x2py/compiling/compilers.py",
-    "x2py/compiling/native_support.py",
-    "x2py/naming/policy.py",
-    "x2py/binding_support/",
+    "prik/__init__.py",
+    "prik/cli.py",
+    "prik/pipeline/build.py",
+    "prik/pipeline/preprocessing.py",
+    "prik/probes/c_types.py",
+    "prik/probes/fortran_types.py",
+    "prik/semantics/ownership.py",
+    "prik/parsers/c/parser.py",
+    "prik/parsers/c/cli.py",
+    "prik/parsers/fortran/parser.py",
+    "prik/parsers/fortran/cli.py",
+    "prik/parsers/pyi/parser.py",
+    "prik/semantics/models.py",
+    "prik/semantics/fortran2ir.py",
+    "prik/semantics/c2ir.py",
+    "prik/semantics/pyi2ir.py",
+    "prik/pipeline/pyi.py",
+    "prik/semantics/policy_completion.py",
+    "prik/wrapper_codegen/plan.py",
+    "prik/wrapper_codegen/planner.py",
+    "prik/wrapper_codegen/generator.py",
+    "prik/wrapper_codegen/c/binding.py",
+    "prik/wrapper_codegen/fortran/bridge.py",
+    "prik/wrapper_codegen/printers/pyi_printer.py",
+    "prik/wrapper_codegen/printers/source_printers.py",
+    "prik/compiling/objects.py",
+    "prik/compiling/compilers.py",
+    "prik/compiling/native_support.py",
+    "prik/naming/policy.py",
+    "prik/binding_support/",
 ]
 SOURCE_NAVIGATION_PUBLIC_DOCS = [
     "README.md",
@@ -412,16 +412,16 @@ EXAMPLE_DOCUMENTATION_PAGES = [
     if path.name != "index.md"
 ]
 MAJOR_SOURCE_PACKAGES = [
-    "x2py/parsers/",
-    "x2py/semantics/",
-    "x2py/wrapper_codegen/",
-    "x2py/compiling/",
+    "prik/parsers/",
+    "prik/semantics/",
+    "prik/wrapper_codegen/",
+    "prik/compiling/",
 ]
 PACKAGE_READMES = [
-    "x2py/README.md",
-    "x2py/parsers/README.md",
-    "x2py/semantics/README.md",
-    "x2py/compiling/README.md",
+    "prik/README.md",
+    "prik/parsers/README.md",
+    "prik/semantics/README.md",
+    "prik/compiling/README.md",
 ]
 ARCHIVED_OLD_DOCS = [
     "old_docs/tutorial.md",
@@ -590,7 +590,7 @@ def _user_guide_index_order() -> list[str]:
 
 
 @cache
-def _x2py_cli_help() -> str:
+def _prik_cli_help() -> str:
     commands = [
         ["--help"],
         ["input.f90", "--help"],
@@ -602,7 +602,7 @@ def _x2py_cli_help() -> str:
     outputs = []
     for command in commands:
         result = subprocess.run(
-            [sys.executable, "-m", "x2py", *command],
+            [sys.executable, "-m", "prik", *command],
             cwd=ROOT,
             capture_output=True,
             text=True,
@@ -684,8 +684,8 @@ def test_deferred_c_pages_are_not_in_site_navigation() -> None:
     active_navigation = "\n".join(line for line in lines if not line.lstrip().startswith("#"))
     assert "Inspect a C API" not in active_navigation
     assert "C Parser Reference" not in active_navigation
-    assert any("X2PY_C_DOCS" in line and "inspect-c-api.md" in line for line in lines)
-    assert any("X2PY_C_DOCS" in line and "c-parser-reference.md" in line for line in lines)
+    assert any("PRIK_C_DOCS" in line and "inspect-c-api.md" in line for line in lines)
+    assert any("PRIK_C_DOCS" in line and "c-parser-reference.md" in line for line in lines)
 
 
 def test_readme_follows_one_points_workflow_from_build_through_contract_rebuild() -> None:
@@ -694,18 +694,18 @@ def test_readme_follows_one_points_workflow_from_build_through_contract_rebuild(
         "## How it works",
         maxsplit=1,
     )[0]
-    installation_index = quick_start.index("git clone https://github.com/PyNumLab/x2py.git")
-    help_index = quick_start.index("python3 -m x2py --help")
+    installation_index = quick_start.index("git clone https://github.com/PyNumLab/prik.git")
+    help_index = quick_start.index("python3 -m prik --help")
     source_build_command_index = quick_start.index(
-        "python3 -m x2py points.f90 --out geometry",
+        "python3 -m prik points.f90 --out geometry",
         help_index,
     )
     source_build_tree_index = quick_start.index(
-        ".\n  points.f90\n  geometry.so\n  __x2py__/",
+        ".\n  points.f90\n  geometry.so\n  __prik__/",
         source_build_command_index,
     )
     explicit_source_build_command_index = quick_start.index(
-        "python3 -m x2py points.f90 \\\n  --out geometry \\\n  --out-dir build/geometry",
+        "python3 -m prik points.f90 \\\n  --out geometry \\\n  --out-dir build/geometry",
         source_build_tree_index,
     )
     explicit_source_build_tree_index = quick_start.index(
@@ -713,7 +713,7 @@ def test_readme_follows_one_points_workflow_from_build_through_contract_rebuild(
         explicit_source_build_command_index,
     )
     pyi_generation_command_index = quick_start.index(
-        "python3 -m x2py generate --pyi points.f90 --out contracts",
+        "python3 -m prik generate --pyi points.f90 --out contracts",
         explicit_source_build_tree_index,
     )
     pyi_contract_tree_index = quick_start.index(
@@ -735,7 +735,7 @@ def test_readme_follows_one_points_workflow_from_build_through_contract_rebuild(
     )
     norm_contract_index = quick_start.index("def norm_squared(", move_contract_index)
     pyi_build_command_index = quick_start.index(
-        "python3 -m x2py contracts/__init__.pyi",
+        "python3 -m prik contracts/__init__.pyi",
         norm_contract_index,
     )
     native_source_argument_index = quick_start.index("--native-fortran-sources points.f90", pyi_build_command_index)
@@ -746,7 +746,7 @@ def test_readme_follows_one_points_workflow_from_build_through_contract_rebuild(
     mutation_index = quick_start.index("points.move(item", constructor_index)
     runtime_output_index = quick_start.index("# 20.0", mutation_index)
     verbose_command_index = quick_start.index(
-        "python3 -m x2py points.f90 \\\n  --out geometry_debug",
+        "python3 -m prik points.f90 \\\n  --out geometry_debug",
         runtime_output_index,
     )
     verbose_fortran_flag_index = quick_start.index("--wrapper-fortran-flags=-O2", verbose_command_index)
@@ -766,7 +766,7 @@ def test_readme_follows_one_points_workflow_from_build_through_contract_rebuild(
     assert "--semantics" not in readme
     assert "scale.f90" not in readme
     assert "SCALE" not in readme
-    assert "python3 -m x2py solver.f90" not in quick_start
+    assert "python3 -m prik solver.f90" not in quick_start
     assert "fruntime_abi_f90" not in readme
     assert "solver.f90" not in readme
     assert "add1" not in readme
@@ -955,7 +955,7 @@ def test_next_sections_use_linked_bullet_destinations(relative_path: str) -> Non
 @pytest.mark.parametrize("relative_path", REQUIRED_USER_GUIDE_PAGES)
 def test_user_guide_commands_do_not_expose_fixture_paths(relative_path: str) -> None:
     page = (DOCS_ROOT / relative_path).read_text(encoding="utf-8")
-    assert "python3 -m x2py tests/" not in page
+    assert "python3 -m prik tests/" not in page
 
 
 @pytest.mark.parametrize(
@@ -1007,10 +1007,10 @@ def test_getting_started_overview_uses_standalone_example() -> None:
     assert "[Your First Function](first-wrapped-function.md)" in overview
 
 
-def test_documentation_homepage_demonstrates_x2py_before_getting_started() -> None:
+def test_documentation_homepage_demonstrates_prik_before_getting_started() -> None:
     page = (DOCS_ROOT / "index.md").read_text(encoding="utf-8")
     introduction_index = page.index("Turn Fortran into natural Python APIs")
-    build_index = page.index("python3 -m x2py points.f90 --out geometry")
+    build_index = page.index("python3 -m prik points.f90 --out geometry")
     example_heading_index = page.index("## See it in action")
     source_index = page.index("```fortran", example_heading_index)
     generated_api_index = page.index("**Generated Python API:**", source_index)
@@ -1027,7 +1027,7 @@ def test_documentation_homepage_demonstrates_x2py_before_getting_started() -> No
     assert "print(points.norm_squared(item))" in page
     assert "# 20.0" in page
     assert "[contract guide](user/reference/pyi-contracts/index.md)" in page
-    assert "{ .x2py-primary-cta }" in page
+    assert "{ .prik-primary-cta }" in page
     assert "developer/index.md" not in page
     assert "maintainer/README.md" not in page
     assert "user/guide/" not in page
@@ -1040,8 +1040,8 @@ def test_readme_opening_uses_the_homepage_message_and_showcase() -> None:
     shared_content = (
         "**Turn Fortran into natural Python APIs.**",
         "Build clean, importable native extensions from supported Fortran without\nwriting low-level binding code.",
-        "python3 -m x2py points.f90 --out geometry",
-        "<!-- x2py-doc-source: tests/fortran/building_shared_library/end_to_end/fixtures/native/home_points.f90 -->",
+        "python3 -m prik points.f90 --out geometry",
+        "<!-- prik-doc-source: tests/fortran/building_shared_library/end_to_end/fixtures/native/home_points.f90 -->",
         "import geometry.points as points",
         "item = points.point(x=np.float64(3.0), y=np.float64(4.0))",
         "points.move(item, np.float64(1.0), np.float64(-2.0))",
@@ -1056,14 +1056,14 @@ def test_readme_opening_uses_the_homepage_message_and_showcase() -> None:
         assert content in readme_opening
 
     assert readme.count("\nmodule points\n") == 1
-    assert readme_opening.count("python3 -m x2py points.f90 --out geometry") == 1
+    assert readme_opening.count("python3 -m prik points.f90 --out geometry") == 1
     assert readme_opening.count("import geometry.points as points") == 1
 
 
 def test_documentation_links_to_documentation_stay_on_the_website() -> None:
     github_documentation_prefixes = (
-        "https://github.com/PyNumLab/x2py/blob/main/docs/",
-        "https://github.com/PyNumLab/x2py/tree/main/docs/",
+        "https://github.com/PyNumLab/prik/blob/main/docs/",
+        "https://github.com/PyNumLab/prik/tree/main/docs/",
     )
 
     for path in DOC_PATHS:
@@ -1101,8 +1101,8 @@ def test_documentation_links_to_documentation_stay_on_the_website() -> None:
 def test_first_wrapped_function_shows_contract_and_mentions_later_support_boundaries() -> None:
     page = (DOCS_ROOT / "user/getting-started/first-wrapped-function.md").read_text(encoding="utf-8")
     source_index = page.index("scale.f90")
-    build_index = page.index("python3 -m x2py scale.f90")
-    command_index = page.index("python3 -m x2py generate --pyi scale.f90")
+    build_index = page.index("python3 -m prik scale.f90")
+    command_index = page.index("python3 -m prik generate --pyi scale.f90")
     contract_index = page.index(
         "@external\n@native_call([Addr(Arg(0)), Addr(Arg(1))])\ndef scale(\n"
         "    value: Float64,\n    factor: Float64\n) -> Float64: ..."
@@ -1122,10 +1122,10 @@ def test_first_wrapped_function_shows_contract_and_mentions_later_support_bounda
 def test_first_wrapped_module_shows_local_input_and_generated_contract() -> None:
     page = (DOCS_ROOT / "user/getting-started/first-wrapped-module.md").read_text(encoding="utf-8")
     source_index = page.index("module_state.f90")
-    build_index = page.index("python3 -m x2py module_state.f90")
+    build_index = page.index("python3 -m prik module_state.f90")
     docstring_index = page.index("## Inspect the Generated Docstring")
     usage_index = page.index("## Usage Example")
-    inspect_index = page.index("python3 -m x2py generate --pyi module_state.f90")
+    inspect_index = page.index("python3 -m prik generate --pyi module_state.f90")
     contract_index = page.index("## Key Rules")
 
     assert source_index < build_index < docstring_index < usage_index < inspect_index < contract_index
@@ -1147,8 +1147,8 @@ def test_beginner_workflow_reuses_scale_example_without_renaming_it() -> None:
     page = (DOCS_ROOT / "user/getting-started/beginner-workflow.md").read_text(encoding="utf-8")
     source_reference_index = page.index("scale.f90")
     layout_index = page.index("src/")
-    contract_index = page.index("python3 -m x2py generate --pyi src/scale.f90")
-    build_index = page.index("python3 -m x2py src/scale.f90")
+    contract_index = page.index("python3 -m prik generate --pyi src/scale.f90")
+    build_index = page.index("python3 -m prik src/scale.f90")
     smoke_index = page.index("result = scale.scale(np.float64(3.0), np.float64(2.5))")
     editing_index = page.index("## 4. Optionally Edit the Contract")
     edited_contract_index = page.index("contracts/scale/__init__.pyi", editing_index)
@@ -1231,7 +1231,7 @@ def test_user_guide_shows_direct_shared_library_build() -> None:
     )
     shared_library = _visible_documentation_source(DOCS_ROOT / "user/guide/building-shared-library.md")
 
-    assert "python3 -m x2py src/scale.f90 --out-dir build/scale" in content
+    assert "python3 -m prik src/scale.f90 --out-dir build/scale" in content
     assert "[Common Beginner Workflow](../getting-started/beginner-workflow.md)" in shared_library
 
 
@@ -1260,8 +1260,8 @@ def test_cli_reference_reuses_the_homepage_points_example() -> None:
 
     assert "`points.f90` source and naming" in content
     assert "../../index.md#see-it-in-action" in content
-    assert "python3 -m x2py parse points.f90" in content
-    assert "python3 -m x2py generate --pyi points.f90 --out contracts" in content
+    assert "python3 -m prik parse points.f90" in content
+    assert "python3 -m prik generate --pyi points.f90 --out contracts" in content
     assert "scale.f90" not in content
 
 
@@ -1272,7 +1272,7 @@ def test_fortran_wrapper_reference_shows_every_common_shared_library_build_input
     )[0]
 
     for value in (
-        "python3 -m x2py solver.f90",
+        "python3 -m prik solver.f90",
         "--out solver",
         "--out-dir build/solver",
         "--compiler gfortran",
@@ -1304,7 +1304,7 @@ def test_array_handle_docs_keep_views_copies_and_handles_distinct() -> None:
 
 @pytest.mark.parametrize("heading", CLI_HELP_GROUP_HEADINGS)
 def test_cli_help_uses_documented_option_groups(heading: str) -> None:
-    assert heading in _x2py_cli_help()
+    assert heading in _prik_cli_help()
 
 
 @pytest.mark.parametrize("option", CLI_REFERENCE_OPTIONS)
@@ -1315,10 +1315,10 @@ def test_cli_reference_documents_public_option(option: str) -> None:
 
 @pytest.mark.parametrize("option", CLI_VISIBLE_HELP_OPTIONS)
 def test_cli_help_exposes_documented_public_option(option: str) -> None:
-    assert option in _x2py_cli_help()
+    assert option in _prik_cli_help()
 
 
-@pytest.mark.parametrize("name", sorted(x2py.__all__))
+@pytest.mark.parametrize("name", sorted(prik.__all__))
 def test_python_api_reference_documents_public_export(name: str) -> None:
     content = PYTHON_API_REFERENCE_PATH.read_text(encoding="utf-8")
     assert f"`{name}`" in content
@@ -1484,4 +1484,4 @@ def test_site_theme_keeps_sidebar_open_and_code_blocks_copyable() -> None:
     assert 'document.querySelectorAll("pre code")' in script
     assert "navigator.clipboard.writeText" in script
     assert 'button.setAttribute("aria-label", "Copy code to clipboard")' in script
-    assert ".x2py-code-copy" in stylesheet
+    assert ".prik-code-copy" in stylesheet

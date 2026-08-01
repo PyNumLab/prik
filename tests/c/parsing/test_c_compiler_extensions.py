@@ -7,7 +7,7 @@ import pytest
 
 
 def test_raw_mode_keeps_compiler_extension_declarations_conservative():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         'int exported(void) __attribute__((visibility("default")));\n',
@@ -22,7 +22,7 @@ def test_raw_mode_keeps_compiler_extension_declarations_conservative():
 
 
 def test_gnu_header_spelling_aliases_and_harmless_attributes_are_tolerated():
-    from x2py.parsers.c import CComposedType, CConst, CRestrict, parse_c_file
+    from prik.parsers.c import CComposedType, CConst, CRestrict, parse_c_file
 
     parsed = parse_c_file(
         """
@@ -52,7 +52,7 @@ struct annotated {
 
 
 def test_layout_and_abi_attributes_are_parsed_with_explicit_warnings():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """
@@ -79,7 +79,7 @@ extern int abi_call(void) __attribute__((ms_abi));
 
 
 def test_declspec_calling_conventions_asm_labels_and_top_level_asm_are_tolerated():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """
@@ -106,7 +106,7 @@ __asm__(".ident \\"compiler metadata\\"");
 
 
 def test_bare_compiler_extensions_and_comments_are_tolerated():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """
@@ -129,7 +129,7 @@ extern int renamed __asm__;
 
 
 def test_compiler_extension_normalization_preserves_coordinates_and_source_states():
-    from x2py.parsers.c import CParser
+    from prik.parsers.c import CParser
 
     source = (
         'const char *s = "__attribute__((packed))";\n'
@@ -174,7 +174,7 @@ def test_compiler_extension_normalization_preserves_coordinates_and_source_state
 
 
 def test_compiler_extension_only_segment_does_not_stop_later_declarations():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         "__attribute__((deprecated));\nint kept;\n",
@@ -187,7 +187,7 @@ def test_compiler_extension_only_segment_does_not_stop_later_declarations():
 
 
 def test_abi_pointer_qualifiers_are_accepted_with_explicit_warning():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         "int *__ptr64 global_ptr;\n",
@@ -202,7 +202,7 @@ def test_abi_pointer_qualifiers_are_accepted_with_explicit_warning():
 
 
 def test_double_bracket_attribute_scanner_ignores_quoted_closers():
-    from x2py.parsers.c import CParser
+    from prik.parsers.c import CParser
 
     text = '[[vendor::attr("escaped \\" quote and ]] text")]] int value;'
 
@@ -213,7 +213,7 @@ def test_double_bracket_attribute_scanner_ignores_quoted_closers():
 
 
 def test_typeof_bitint_and_extended_scalars_remain_parseable_as_opaque_types():
-    from x2py.parsers.c import CTypedef, CUnknownType, parse_c_file
+    from prik.parsers.c import CTypedef, CUnknownType, parse_c_file
 
     parsed = parse_c_file(
         """
@@ -242,7 +242,7 @@ _Float128 wide_float;
 
 
 def test_preprocessed_extension_diagnostics_and_declarations_use_linemarkers():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """
@@ -267,8 +267,8 @@ extern int consume_wire(struct wire_value *value)
 
 
 def test_gcc_preprocessed_standard_headers_remain_parseable(tmp_path: Path):
-    from x2py.parsers.c import parse_c_file
-    from x2py.pipeline.preprocessing import PreprocessingConfig, preprocess_source
+    from prik.parsers.c import parse_c_file
+    from prik.pipeline.preprocessing import PreprocessingConfig, preprocess_source
 
     compiler = shutil.which("cc")
     if compiler is None:

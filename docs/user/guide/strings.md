@@ -1,6 +1,6 @@
 ---
 title: Strings
-description: Immutable strings, mutable character storage, and NumPy byte arrays in x2py
+description: Immutable strings, mutable character storage, and NumPy byte arrays in prik
 audience: users
 prerequisites: data types, arrays
 related: data-types.md, arrays.md, raw-addresses.md
@@ -10,7 +10,7 @@ publication: reviewed
 
 # Strings
 
-x2py uses Python `str` for scalar character values.
+prik uses Python `str` for scalar character values.
 Mutable character storage uses fixed-width NumPy bytes arrays.
 
 The contract decides whether native mutation becomes a new `str` or changes
@@ -70,7 +70,7 @@ end module strings_api
 Generate a starter contract:
 
 ```bash
-python3 -m x2py generate --pyi strings_api.f90 --out contracts/strings
+python3 -m prik generate --pyi strings_api.f90 --out contracts/strings
 ```
 
 Edit the declarations in `contracts/strings/strings_api.pyi` to use these
@@ -78,7 +78,7 @@ Python boundaries. Keep the other generated decorators and native-call
 metadata unchanged:
 
 ```python
-from x2py.contracts import Int32, Returns, String
+from prik.contracts import Int32, Returns, String
 
 def edit_text(text: String[8]) -> Returns["text", String[8]]: ...
 
@@ -95,7 +95,7 @@ def edit_labels(
 Build from the edited contract and native source:
 
 ```bash
-python3 -m x2py contracts/strings/__init__.pyi \
+python3 -m prik contracts/strings/__init__.pyi \
   --native-fortran-sources strings_api.f90 \
   --out-dir build/strings
 ```

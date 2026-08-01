@@ -96,7 +96,7 @@ prints the selected nodes with their mechanism and compilation fixture:
 python3 -m pytest -q tests/fortran \
   -m toolchain_smoke \
   --require-toolchain-smoke \
-  --x2py-fortran-compiler=gfortran
+  --prik-fortran-compiler=gfortran
 ```
 
 The alternate-compiler GitHub Actions lanes are reproduced through one
@@ -110,7 +110,7 @@ It runs the maintained compiler-profile and focused preprocessing-CLI tests
 before invoking the exact strict smoke selection above. `--plan` prints both
 commands without running them.
 
-`--x2py-fortran-compiler` is authoritative for preprocessing, type probes,
+`--prik-fortran-compiler` is authoritative for preprocessing, type probes,
 native compilation, generated bridge compilation, and linking. It also selects
 the matching vendor C compiler for generated binding compilation: GNU/GCC,
 Intel/icx, LLVM/Clang, NVIDIA/nvc, or legacy PGI/pgcc. The test session resolves

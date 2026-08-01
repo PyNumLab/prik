@@ -13,7 +13,7 @@ from tests.fortran._support.wrapper_build import (
     _build_source_or_generated_pyi_and_import,
     _build_text_and_import,
 )
-from x2py.contracts import Allocatable, Float64
+from prik.contracts import Allocatable, Float64
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SOURCE = FIXTURES / "fallocatable_views_f90.f90"

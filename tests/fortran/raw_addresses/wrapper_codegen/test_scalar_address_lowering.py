@@ -4,10 +4,10 @@ from __future__ import annotations
 
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.ownership import CodegenAction, NativeBarrierAction, ObjectKind, PythonBarrierAction
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import ArgumentHandoffMode, BridgeDataAction, DirectResultABI
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.semantics.ownership import CodegenAction, NativeBarrierAction, ObjectKind, PythonBarrierAction
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.wrapper_policy import ArgumentHandoffMode, BridgeDataAction, DirectResultABI
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
 
 def _scalar_boundary_plan():

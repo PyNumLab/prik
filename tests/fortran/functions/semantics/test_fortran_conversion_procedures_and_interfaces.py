@@ -22,7 +22,7 @@ def test_bind_c_name_and_value_calling_convention_reach_semantic_ir():
 module c_api
   use iso_c_binding
 contains
-  integer(c_int) function renamed(n) bind(C, name="x2py_renamed") result(res)
+  integer(c_int) function renamed(n) bind(C, name="prik_renamed") result(res)
     integer(c_int), value, intent(in) :: n
     res = n
   end function renamed
@@ -34,7 +34,7 @@ end module c_api
     renamed = get_function(module, "renamed")
 
     assert renamed.metadata["fortran_bind_c"] is True
-    assert renamed.metadata["fortran_bind_c_name"] == "x2py_renamed"
+    assert renamed.metadata["fortran_bind_c_name"] == "prik_renamed"
     assert renamed.arguments[0].origin.metadata["value"] is True
     assert renamed.arguments[0].semantic_type.storage is None
 

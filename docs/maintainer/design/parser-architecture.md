@@ -16,7 +16,7 @@ diagnostics, and fixture strategy.
 
 - TODO: Document parser extension rules for new native constructs.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 - TODO: Summarize C and Fortran parser responsibilities without duplicating the
   detailed references.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->

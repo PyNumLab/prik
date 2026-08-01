@@ -1,4 +1,4 @@
-from x2py.contracts import Arg, Complex128, Float64, Int32, Value, native_call, native_type
+from prik.contracts import Arg, Complex128, Float64, Int32, Value, native_call, native_type
 
 @native_type(attributes=('bind(c)',))
 class point:

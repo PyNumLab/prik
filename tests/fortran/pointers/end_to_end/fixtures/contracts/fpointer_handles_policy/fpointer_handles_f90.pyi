@@ -1,4 +1,4 @@
-from x2py.contracts import Aliased, Allocatable, Annotated, Float64, Pointer, PointerAssociation, PointerPolicy, bind
+from prik.contracts import Aliased, Allocatable, Annotated, Float64, Pointer, PointerAssociation, PointerPolicy, bind
 
 class pointer_box:
     def __init__(self) -> None: ...

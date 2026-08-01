@@ -1,5 +1,5 @@
 # Intentional difference: add a Python declaration for an existing native procedure.
-from x2py.contracts import Int32, bind
+from prik.contracts import Int32, bind
 
 def func1() -> Int32: ...
 

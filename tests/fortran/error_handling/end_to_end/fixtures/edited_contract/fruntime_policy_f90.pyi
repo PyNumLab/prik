@@ -1,5 +1,5 @@
 # Intentional difference: exercise runtime policy decorators from an edited contract.
-from x2py.contracts import Addr, Arg, Int32, Return, String, native_call, nogil, raises
+from prik.contracts import Addr, Arg, Int32, Return, String, native_call, nogil, raises
 
 @nogil
 def pause_for_one_second() -> None: ...

@@ -1,5 +1,5 @@
-#ifndef X2PY_GENERAL_NAME_REUSE_H
-#define X2PY_GENERAL_NAME_REUSE_H
+#ifndef PRIK_GENERAL_NAME_REUSE_H
+#define PRIK_GENERAL_NAME_REUSE_H
 
 #include <stdbool.h>
 

@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Annotated, Arg, Complex128, Float64, Int32, Pass, Polymorphic, bind, native_call, overload, private
+from prik.contracts import Addr, Annotated, Arg, Complex128, Float64, Int32, Pass, Polymorphic, bind, native_call, overload, private
 
 class accumulator:
     def __init__(

@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from x2py.semantics.fortran2ir import fortran_file_to_semantic_modules
-from x2py.wrapper_codegen.printers import emit_module_stubs
-from x2py import parse_fortran_file
+from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
+from prik.wrapper_codegen.printers import emit_module_stubs
+from prik import parse_fortran_file
 
 pytestmark = pytest.mark.skip(reason="Benchmarks are parked until benchmark adoption resumes.")
 

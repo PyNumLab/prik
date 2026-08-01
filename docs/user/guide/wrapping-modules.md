@@ -1,6 +1,6 @@
 ---
 title: Wrapping Modules
-description: How x2py exposes Fortran modules as Python namespaces with procedures, variables, and state
+description: How prik exposes Fortran modules as Python namespaces with procedures, variables, and state
 audience: users
 prerequisites: data types, first wrapped module
 related: wrapping-functions.md, memory-management.md, building-shared-library.md
@@ -81,7 +81,7 @@ print(mod.nmax)         # 12 (read-only parameter)
 Small contract edits can set initial values or hide names from Python:
 
 ```python
-from x2py.contracts import Final, Float64, Int32, private
+from prik.contracts import Final, Float64, Int32, private
 
 nmax: Final[Int32] = 12
 counter: Int32 = 9
@@ -114,7 +114,7 @@ and
 ## Flatten Module Namespaces
 
 The package entry `__init__.pyi` controls the Python import layout. Suppose an
-extension named `library` contains two Fortran modules. x2py generates:
+extension named `library` contains two Fortran modules. prik generates:
 
 ```python
 # __init__.pyi

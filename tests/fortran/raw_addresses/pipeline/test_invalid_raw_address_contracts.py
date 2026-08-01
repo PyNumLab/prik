@@ -4,26 +4,26 @@ from pathlib import Path
 
 import pytest
 
-from x2py import build_pyi_extension
+from prik import build_pyi_extension
 
 
 @pytest.mark.parametrize(
     ("contract_text", "message"),
     [
         (
-            "from x2py.contracts import Addr, Float64\n\n"
+            "from prik.contracts import Addr, Float64\n\n"
             "class particle:\n    value: Float64\n\n"
             "def invalid(value: Addr(particle)) -> None: ...\n",
             r"Addr\(WrappedType\) is not allowed",
         ),
         (
-            "from x2py.contracts import Addr, Arg, Float64, native_call\n\n"
+            "from prik.contracts import Addr, Arg, Float64, native_call\n\n"
             "@native_call([Addr(Arg(0))])\n"
             "def invalid(values: Float64[:]) -> None: ...\n",
             "only valid for primitive scalar values",
         ),
         (
-            "from x2py.contracts import Addr, Float64\n\ndef invalid(values: Addr(Float64[:])) -> None: ...\n",
+            "from prik.contracts import Addr, Float64\n\ndef invalid(values: Addr(Float64[:])) -> None: ...\n",
             "raw arrays require a fully resolved rank and shape",
         ),
     ],

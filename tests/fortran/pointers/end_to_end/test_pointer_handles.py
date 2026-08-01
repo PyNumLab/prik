@@ -15,9 +15,9 @@ from tests.fortran._support.wrapper_build import (
     _import_from_build_dir,
     _sole_native_module,
 )
-from x2py import build_pyi_extension
-from x2py.contracts import Float64, Pointer
-from x2py.runtime.handles import AllocatableArray, PointerArray
+from prik import build_pyi_extension
+from prik.contracts import Float64, Pointer
+from prik.runtime.handles import AllocatableArray, PointerArray
 
 pytestmark = pytest.mark.fortran_end_to_end
 
@@ -179,7 +179,7 @@ def _build_pointer_cross_extension(
     ),
 ]"""
     (contract_dir / f"{module_name}.pyi").write_text(
-        f"""from x2py.contracts import Annotated, Float64, Pointer, PointerAssociation, PointerPolicy, Returns
+        f"""from prik.contracts import Annotated, Float64, Pointer, PointerAssociation, PointerPolicy, Returns
 
 def {select_name}(
     values: {pointer_type},
@@ -221,7 +221,7 @@ def _pointer_handle_module(build_mode: str, tmp_path: Path):
     source.write_text(POINTER_HANDLE_SOURCE, encoding="utf-8")
     contract_dir = tmp_path / "contracts" / source.stem
     subprocess.run(
-        [sys.executable, "-m", "x2py", "generate", "--pyi", str(source), "--out", str(contract_dir)],
+        [sys.executable, "-m", "prik", "generate", "--pyi", str(source), "--out", str(contract_dir)],
         capture_output=True,
         text=True,
         check=True,
@@ -444,7 +444,7 @@ def test_module_native_array_handles_use_canonical_plan(tmp_path: Path):
     contract = tmp_path / "pointer_handles" / "fpointer_handles_f90.pyi"
     contract.parent.mkdir()
     contract.write_text(
-        """from x2py.contracts import Aliased, Allocatable, Annotated, Float64, Pointer, PointerAssociation, PointerPolicy
+        """from prik.contracts import Aliased, Allocatable, Annotated, Float64, Pointer, PointerAssociation, PointerPolicy
 
 module_values: Annotated[
     Pointer[Float64[:]],
@@ -534,7 +534,7 @@ def test_caller_created_pointer_handle_tracks_native_output_association(tmp_path
     ),
 ]"""
     contract.write_text(
-        f"""from x2py.contracts import Annotated, Float64, Pointer, PointerAssociation, PointerPolicy, Returns
+        f"""from prik.contracts import Annotated, Float64, Pointer, PointerAssociation, PointerPolicy, Returns
 
 def select_module_values(
     values: {pointer_type},

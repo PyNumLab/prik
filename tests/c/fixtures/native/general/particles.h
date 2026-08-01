@@ -1,5 +1,5 @@
-#ifndef X2PY_GENERAL_PARTICLES_H
-#define X2PY_GENERAL_PARTICLES_H
+#ifndef PRIK_GENERAL_PARTICLES_H
+#define PRIK_GENERAL_PARTICLES_H
 
 struct particle {
     int id;

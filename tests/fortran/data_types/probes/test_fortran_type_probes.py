@@ -8,13 +8,13 @@ from types import SimpleNamespace
 
 import pytest
 
-import x2py.probes.fortran_types as fortran_type_probe
-from x2py.semantics.fortran2ir import (
+import prik.probes.fortran_types as fortran_type_probe
+from prik.semantics.fortran2ir import (
     collect_semantic_compile_time_requirements,
     fortran_module_to_semantic_module,
 )
-from x2py import parse_fortran_file as parse_fortran_source
-from x2py.probes.fortran_types import (
+from prik import parse_fortran_file as parse_fortran_source
+from prik.probes.fortran_types import (
     FortranTypeProbeRecipe,
     FortranTypeProbeReport,
     FortranTypeProbeError,
@@ -28,7 +28,7 @@ from x2py.probes.fortran_types import (
     probe_fortran_type_expressions,
     probe_fortran_type_expressions_cached,
 )
-from x2py.pipeline.preprocessing import PreprocessingConfig
+from prik.pipeline.preprocessing import PreprocessingConfig
 
 
 _FC = shutil.which("gfortran") or shutil.which("f95")
@@ -44,14 +44,14 @@ def test_fortran_type_probe_source_evaluates_integer_initialization_expressions(
 
     assert "use, intrinsic :: iso_fortran_env, only: real64" in source
     assert "use, intrinsic :: iso_c_binding, only: c_double" in source
-    assert "integer, parameter :: x2py_value_0 = selected_real_kind(12)" in source
-    assert "integer, parameter :: x2py_value_1 = real64" in source
-    assert "integer, parameter :: x2py_value_2 = c_double" in source
+    assert "integer, parameter :: prik_value_0 = selected_real_kind(12)" in source
+    assert "integer, parameter :: prik_value_1 = real64" in source
+    assert "integer, parameter :: prik_value_2 = c_double" in source
     assert '{"values":[' in source
 
     normalized = build_fortran_type_probe_source(["", "real64", "REAL64"])
-    assert "integer, parameter :: x2py_value_0 = real64" in normalized
-    assert "x2py_value_1" not in normalized
+    assert "integer, parameter :: prik_value_0 = real64" in normalized
+    assert "prik_value_1" not in normalized
 
 
 def test_fortran_type_probe_wraps_long_intrinsic_import_lists():
@@ -84,13 +84,13 @@ def test_fortran_type_probe_wraps_long_intrinsic_import_lists():
     assert all(len(line) <= 120 for line in source.splitlines())
 
 
-def test_x2py_public_api_lazily_exposes_type_probe_symbols_and_rejects_unknown_names():
-    import x2py
+def test_prik_public_api_lazily_exposes_type_probe_symbols_and_rejects_unknown_names():
+    import prik
 
-    assert x2py.FortranTypeProbeError is FortranTypeProbeError
-    assert x2py.FortranTypeProbeReport is FortranTypeProbeReport
+    assert prik.FortranTypeProbeError is FortranTypeProbeError
+    assert prik.FortranTypeProbeReport is FortranTypeProbeReport
     with pytest.raises(AttributeError, match="not_exported"):
-        _ = x2py.not_exported
+        _ = prik.not_exported
 
 
 def test_fortran_type_probe_rejects_statement_injection():
@@ -169,12 +169,12 @@ def test_fortran_type_probe_cache_directory_precedence(monkeypatch, tmp_path):
     explicit = tmp_path / "explicit"
     assert fortran_type_probe._probe_cache_dir(explicit) == explicit
 
-    monkeypatch.setenv("X2PY_CACHE_DIR", str(tmp_path / "x2py"))
+    monkeypatch.setenv("PRIK_CACHE_DIR", str(tmp_path / "prik"))
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
-    assert fortran_type_probe._probe_cache_dir(None) == tmp_path / "x2py" / "fortran_type_probe"
+    assert fortran_type_probe._probe_cache_dir(None) == tmp_path / "prik" / "fortran_type_probe"
 
-    monkeypatch.delenv("X2PY_CACHE_DIR")
-    assert fortran_type_probe._probe_cache_dir(None) == tmp_path / "xdg" / "x2py" / "fortran_type_probe"
+    monkeypatch.delenv("PRIK_CACHE_DIR")
+    assert fortran_type_probe._probe_cache_dir(None) == tmp_path / "xdg" / "prik" / "fortran_type_probe"
 
 
 def test_fortran_type_probe_cache_reuses_report_and_invalidates_for_flags(monkeypatch, tmp_path):
@@ -360,8 +360,8 @@ def test_fortran_type_probe_carries_target_relevant_user_flags(tmp_path):
             mode="compiler",
             compiler=compiler,
             include_dirs=[str(include_dir)],
-            defines=["X2PY_FEATURE=1"],
-            undefs=["X2PY_OLD_FEATURE"],
+            defines=["PRIK_FEATURE=1"],
+            undefs=["PRIK_OLD_FEATURE"],
             std="f2008",
             compiler_args=["-fno-range-check"],
         ),
@@ -371,14 +371,14 @@ def test_fortran_type_probe_carries_target_relevant_user_flags(tmp_path):
     argv = report.recipe.compile_argv
     assert "-cpp" in argv
     assert f"-I{include_dir}" in argv
-    assert "-DX2PY_FEATURE=1" in argv
-    assert "-UX2PY_OLD_FEATURE" in argv
+    assert "-DPRIK_FEATURE=1" in argv
+    assert "-UPRIK_OLD_FEATURE" in argv
     assert "-std=f2008" in argv
     assert "-fno-range-check" in argv
     assert report.recipe.requested_standard == "f2008"
     assert report.recipe.include_dirs == [str(include_dir)]
-    assert report.recipe.defines == ["X2PY_FEATURE=1"]
-    assert report.recipe.undefs == ["X2PY_OLD_FEATURE"]
+    assert report.recipe.defines == ["PRIK_FEATURE=1"]
+    assert report.recipe.undefs == ["PRIK_OLD_FEATURE"]
     assert report.recipe.compiler_args == ["-fno-range-check"]
 
 
@@ -441,7 +441,7 @@ def test_fortran_type_probe_module_cli_emits_json_for_semantic_input(tmp_path):
         [
             sys.executable,
             "-m",
-            "x2py.probes.fortran_types",
+            "prik.probes.fortran_types",
             "--compiler",
             compiler,
             "--expr",
@@ -461,10 +461,10 @@ def test_fortran_type_probe_module_cli_emits_json_for_semantic_input(tmp_path):
     assert payload["values"]["selected_int_kind(9)"] > 0
     assert payload["values"]["selected_real_kind(12)"] > 0
     assert payload["recipe"]["compiler"] == compiler
-    assert payload["source_text"].startswith("program x2py_fortran_type_probe")
+    assert payload["source_text"].startswith("program prik_fortran_type_probe")
 
 
-def test_x2py_semantics_cli_evaluates_collected_fortran_type_requirements(tmp_path):
+def test_prik_semantics_cli_evaluates_collected_fortran_type_requirements(tmp_path):
     compiler = _required_fortran_compiler()
     source = tmp_path / "solver.f90"
     source.write_text(
@@ -484,7 +484,7 @@ end module solver_mod
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "semantics",
             str(source),
             "--compiler",
@@ -500,7 +500,7 @@ end module solver_mod
     assert semantic_type["name"] == "Float64"
 
 
-def test_x2py_semantics_cli_uses_compiler_dependent_default_fortran_kinds(tmp_path):
+def test_prik_semantics_cli_uses_compiler_dependent_default_fortran_kinds(tmp_path):
     compiler = _required_fortran_compiler()
     source = tmp_path / "defaults.f90"
     source.write_text(
@@ -521,7 +521,7 @@ end module defaults
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "semantics",
             str(source),
             "--compiler",

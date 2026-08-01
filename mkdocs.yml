@@ -1,6 +1,6 @@
-site_name: x2py
-site_url: https://pynumlab.github.io/x2py/
-repo_url: https://github.com/PyNumLab/x2py
+site_name: PRIK
+site_url: https://pynumlab.github.io/prik/
+repo_url: https://github.com/PyNumLab/prik
 repo_name: GitHub
 edit_uri: blob/main/docs/
 docs_dir: docs
@@ -78,7 +78,7 @@ nav:
           - Recipes:
               - Build and Import With the Python API: user/examples/recipes/build-and-import-python-api.md
               - Inspect a Fortran API: user/examples/recipes/inspect-fortran-api.md
-              # X2PY_C_DOCS: - Inspect a C API: user/examples/recipes/inspect-c-api.md
+              # PRIK_C_DOCS: - Inspect a C API: user/examples/recipes/inspect-c-api.md
               - Work With Semantic .pyi Contracts: user/examples/recipes/semantic-pyi-contracts.md
               - Control CLI Output: user/examples/recipes/control-cli-output.md
               - Use Python Inspection APIs: user/examples/recipes/use-python-inspection-apis.md
@@ -118,7 +118,7 @@ nav:
       - Source Map: developer/source-map.md
       - Feature To Code Map: developer/feature-to-code-map.md
       - Repository Structure: developer/repository-structure.md
-      # X2PY_C_DOCS: - C Parser Reference: developer/c-parser-reference.md
+      # PRIK_C_DOCS: - C Parser Reference: developer/c-parser-reference.md
       - Fortran Parser Reference: developer/fortran-parser-reference.md
       - Quality Assurance: developer/quality-assurance.md
       - Build System: developer/build-system.md

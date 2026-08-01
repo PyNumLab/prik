@@ -63,14 +63,14 @@ callbacks, and the metadata needed for completed policy decisions.
 
 Generated CPython extension builds copy their bundled C/Python support header
 into a `binding_support/` directory inside the build output. The generated C
-extension includes `binding_support/x2py_binding.h`. This header is an
+extension includes `binding_support/prik_binding.h`. This header is an
 implementation detail of the generated extension, but its name is intentionally
-x2py-specific so it does not look like user source or a generic C wrapper.
+prik-specific so it does not look like user source or a generic C wrapper.
 
 The support header is header-only: each helper has internal linkage and is
 eligible for inlining when the generated binding translation unit is compiled.
 There is no separately compiled or linked support object. It exposes a
-deliberately small `x2py_*` mechanical API: scalar type matching, scalar
+deliberately small `prik_*` mechanical API: scalar type matching, scalar
 unpacking, scalar creation as a Python or NumPy object, and release of a
 bridge-owned allocation. The generated binding passes the completed NumPy type,
 layout, ownership, and mutation decisions into those operations. Native support
@@ -226,7 +226,7 @@ end subroutine
 ```
 
 The Fortran procedure may allocate or reallocate `x`. For allocatable array
-dummy arguments, x2py uses copy-return ownership: the bridge copies allocated
+dummy arguments, prik uses copy-return ownership: the bridge copies allocated
 native storage into NumPy-owned memory, deallocates the temporary Fortran
 allocation, and returns the new Python object. `None` represents an unallocated
 dummy.
@@ -283,7 +283,7 @@ type unless explicit pointer policy says so, so destroying the wrapper must not
 deallocate those targets by default.
 
 Allocatable borrowed views keep their containing derived-type wrapper alive, but
-x2py does not track views or invalidate them when native code reallocates or
+prik does not track views or invalidate them when native code reallocates or
 deallocates the storage. Users must call `.copy()` when they need independent
 lifetime. Allocatable `intent(inout)` array dummies are detached from the
 caller: an input array is copied into a temporary native allocation, Fortran may
@@ -438,7 +438,7 @@ implicit conversion:
   must be writeable.
 - NumPy inputs must be native-endian and aligned. The wrapper does not perform
   unsafe casts, byte swaps, or alignment-fixing copies.
-- Overlapping Python-visible arrays are not copied or de-aliased by x2py; the
+- Overlapping Python-visible arrays are not copied or de-aliased by prik; the
   call is forwarded to Fortran, so the native routine's aliasing contract still
   governs behavior.
 

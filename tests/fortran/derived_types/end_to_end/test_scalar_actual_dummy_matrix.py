@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 
 from tests.fortran._support.wrapper_build import _import_from_build_dir
-from x2py import build_pyi_extension
+from prik import build_pyi_extension
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SOURCE = FIXTURES / "fscalar_derived_actual_dummy_matrix_f90.f90"
@@ -261,7 +261,7 @@ def test_pointer_holder_retains_native_owner_and_tracks_allocated_target_lifetim
     module.reset_state()
     pointer = module.make_pointer_item(np.int32(0))
 
-    assert pointer._x2py_owner is module
+    assert pointer._prik_owner is module
     assert module.set_pointer(pointer, np.int32(3)) is pointer
     assert pointer.value == 70
     assert module.set_pointer(pointer, np.int32(4)) is pointer
@@ -499,14 +499,14 @@ def test_injected_first_acquisition_failure_leaves_origin_usable(scalar_matrix, 
     module.reset_state()
     value = module.allocatable_module
     monkeypatch.setenv(
-        "X2PY_WRAPPER_FAIL_DERIVED_ORIGIN",
+        "PRIK_WRAPPER_FAIL_DERIVED_ORIGIN",
         "checkout:before:allocatable_module",
     )
     with pytest.raises(RuntimeError, match=r"argument value.*status 7"):
         module.set_allocatable(value, np.int32(55))
     assert value.value == 30
 
-    monkeypatch.delenv("X2PY_WRAPPER_FAIL_DERIVED_ORIGIN")
+    monkeypatch.delenv("PRIK_WRAPPER_FAIL_DERIVED_ORIGIN")
     assert module.set_allocatable(value, np.int32(55)) is value
     assert value.value == 55
 
@@ -516,22 +516,22 @@ def test_injected_scoped_and_post_native_failures_restore_before_raising(scalar_
     module.reset_state()
     ordinary = module.ordinary_module
     monkeypatch.setenv(
-        "X2PY_WRAPPER_FAIL_DERIVED_ORIGIN",
+        "PRIK_WRAPPER_FAIL_DERIVED_ORIGIN",
         "scoped:after:ordinary_module",
     )
     with pytest.raises(RuntimeError, match=r"argument value.*status 7"):
         module.increment_object(ordinary, np.int32(2))
-    monkeypatch.delenv("X2PY_WRAPPER_FAIL_DERIVED_ORIGIN")
+    monkeypatch.delenv("PRIK_WRAPPER_FAIL_DERIVED_ORIGIN")
     assert ordinary.value == 12
     assert module.read_object(ordinary) == 12
 
     first = module.allocatable_module
     second = module.allocatable_target_module
     third = module.pointer_module
-    monkeypatch.setenv("X2PY_WRAPPER_FAIL_DERIVED_AFTER_NATIVE", "1")
+    monkeypatch.setenv("PRIK_WRAPPER_FAIL_DERIVED_AFTER_NATIVE", "1")
     with pytest.raises(RuntimeError, match="injected derived failure after native return"):
         module.mutate_three_descriptors(first, second, third, np.int32(5))
-    monkeypatch.delenv("X2PY_WRAPPER_FAIL_DERIVED_AFTER_NATIVE")
+    monkeypatch.delenv("PRIK_WRAPPER_FAIL_DERIVED_AFTER_NATIVE")
     assert (first.value, second.value, third.value) == (35, 45, 60)
 
 
@@ -567,7 +567,7 @@ except RuntimeError as exc:
     assert "status 7" in str(exc)
 else:
     raise AssertionError("restoration fault did not propagate")
-del __import__('os').environ['X2PY_WRAPPER_FAIL_DERIVED_ORIGIN']
+del __import__('os').environ['PRIK_WRAPPER_FAIL_DERIVED_ORIGIN']
 value = first if __import__('sys').argv[5] == 'read_allocatable' else third
 try:
     getattr(module, __import__('sys').argv[5])(value)
@@ -583,7 +583,7 @@ else:
 print("cleanup-complete")
 """
     environment = dict(os.environ)
-    environment["X2PY_WRAPPER_FAIL_DERIVED_ORIGIN"] = selector
+    environment["PRIK_WRAPPER_FAIL_DERIVED_ORIGIN"] = selector
     completed = subprocess.run(
         [
             sys.executable,
@@ -610,20 +610,20 @@ def test_generated_artifacts_keep_matrix_dispatch_linear_and_descriptor_free(sca
     c_source = (result.output_dir / f"{result.module_name}_wrapper.c").read_text(encoding="utf-8")
     bridge = (result.output_dir / f"bind_c_{result.module_name}_wrapper.f90").read_text(encoding="utf-8")
 
-    assert "x2py_extract_derived_argument" in c_source
-    assert "x2py_validate_derived_aliases" in c_source
+    assert "prik_extract_derived_argument" in c_source
+    assert "prik_validate_derived_aliases" in c_source
     assert "atomic_compare_exchange_strong" in c_source
-    assert "x2py_derived_ready" in bridge
+    assert "prik_derived_ready" in bridge
     assert "move_alloc" in bridge
     assert sum(line.lstrip().startswith("result = native_read_six_forms(") for line in bridge.splitlines()) == 1
     assert bridge.count("native_read_optional(") == 1
     assert bridge.count("native_read_sequence_value(") == 1
-    assert "x2py_optional_first" in bridge
-    assert "x2py_optional_second" in bridge
+    assert "prik_optional_first" in bridge
+    assert "prik_optional_second" in bridge
     type_aliases = {
         line.strip().split(" =>", maxsplit=1)[0]
         for line in bridge.splitlines()
-        if line.strip().startswith("x2py_type_") and "=> item" in line
+        if line.strip().startswith("prik_type_") and "=> item" in line
     }
     assert len(type_aliases) == 3
     assert "const char * type_symbol" in c_source

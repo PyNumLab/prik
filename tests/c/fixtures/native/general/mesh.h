@@ -1,5 +1,5 @@
-#ifndef X2PY_GENERAL_MESH_H
-#define X2PY_GENERAL_MESH_H
+#ifndef PRIK_GENERAL_MESH_H
+#define PRIK_GENERAL_MESH_H
 
 #include <stddef.h>
 

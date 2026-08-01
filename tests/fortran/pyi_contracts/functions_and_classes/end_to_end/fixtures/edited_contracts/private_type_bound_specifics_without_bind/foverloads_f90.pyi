@@ -1,6 +1,6 @@
 # Intentional invalid difference: class overloads omit @bind("add") and try to
 # call native-private specifics directly.
-from x2py.contracts import Addr, Arg, Float64, Int32, Pass, bind, native_call, overload, private
+from prik.contracts import Addr, Arg, Float64, Int32, Pass, bind, native_call, overload, private
 
 
 class accumulator:

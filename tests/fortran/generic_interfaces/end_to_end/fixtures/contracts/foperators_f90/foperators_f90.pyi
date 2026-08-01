@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Annotated, Arg, Bool, Float64, Int32, Pass, Polymorphic, Returns, bind, native_call, overload, private
+from prik.contracts import Addr, Annotated, Arg, Bool, Float64, Int32, Pass, Polymorphic, Returns, bind, native_call, overload, private
 
 class vector:
     def __init__(

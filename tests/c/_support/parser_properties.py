@@ -12,8 +12,8 @@ pytest.importorskip("hypothesis")
 
 from hypothesis import given, strategies as st
 
-from x2py.parsers.c import CParseError, parse_c_file
-from x2py.parsers.c.lexer import split_top_level_c_source, top_level_split
+from prik.parsers.c import CParseError, parse_c_file
+from prik.parsers.c.lexer import split_top_level_c_source, top_level_split
 
 
 _C_SCALAR_TYPES = st.sampled_from(["int", "double", "float", "char"])

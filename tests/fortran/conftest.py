@@ -11,8 +11,8 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-COMPILER_ENV = "X2PY_TEST_FORTRAN_COMPILER"
-COMPILER_OPTION = "--x2py-fortran-compiler"
+COMPILER_ENV = "PRIK_TEST_FORTRAN_COMPILER"
+COMPILER_OPTION = "--prik-fortran-compiler"
 
 
 @dataclass(frozen=True)
@@ -83,7 +83,7 @@ def pyi_parity_build_mode(request: pytest.FixtureRequest) -> str:
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    group = parser.getgroup("x2py Fortran")
+    group = parser.getgroup("prik Fortran")
     group.addoption(
         COMPILER_OPTION,
         action="store",
@@ -115,8 +115,8 @@ def _resolve_compiler(config: pytest.Config) -> None:
     if resolved is None:
         if strict or explicit:
             raise pytest.UsageError(f"requested Fortran compiler is unavailable: {requested}")
-        config._x2py_fortran_compiler = None
-        config._x2py_fortran_compiler_version = None
+        config._prik_fortran_compiler = None
+        config._prik_fortran_compiler_version = None
         return
 
     version_result = subprocess.run(
@@ -130,27 +130,27 @@ def _resolve_compiler(config: pytest.Config) -> None:
         message = f"requested Fortran compiler cannot report its version: {resolved}"
         if strict or explicit:
             raise pytest.UsageError(message)
-        config._x2py_fortran_compiler = None
-        config._x2py_fortran_compiler_version = None
+        config._prik_fortran_compiler = None
+        config._prik_fortran_compiler_version = None
         return
 
     compiler = str(Path(resolved).resolve())
     os.environ[COMPILER_ENV] = compiler
-    config._x2py_fortran_compiler = compiler
-    config._x2py_fortran_compiler_version = version_lines[0]
+    config._prik_fortran_compiler = compiler
+    config._prik_fortran_compiler_version = version_lines[0]
 
 
 def pytest_configure(config: pytest.Config) -> None:
     _resolve_compiler(config)
-    config._x2py_toolchain_smoke_runtime_failures = set()
-    config._x2py_toolchain_smoke_report = ()
+    config._prik_toolchain_smoke_runtime_failures = set()
+    config._prik_toolchain_smoke_report = ()
 
 
 def pytest_report_header(config: pytest.Config) -> str:
-    compiler = config._x2py_fortran_compiler
+    compiler = config._prik_fortran_compiler
     if compiler is None:
         return "Fortran compiler: unavailable (compiled tests may skip)"
-    return f"Fortran compiler: {compiler} ({config._x2py_fortran_compiler_version})"
+    return f"Fortran compiler: {compiler} ({config._prik_fortran_compiler_version})"
 
 
 def _relative_test_path(item: pytest.Item) -> Path:
@@ -235,7 +235,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 def pytest_collection_finish(session: pytest.Session) -> None:
     smoke_items = [item for item in session.items if item.get_closest_marker("toolchain_smoke") is not None]
-    session.config._x2py_toolchain_smoke_report = tuple(
+    session.config._prik_toolchain_smoke_report = tuple(
         sorted(
             (
                 item.nodeid,
@@ -262,11 +262,11 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo):
     if not item.config.getoption("--require-toolchain-smoke"):
         return
     if report.skipped or getattr(report, "wasxfail", None):
-        item.config._x2py_toolchain_smoke_runtime_failures.add(f"{report.nodeid} [{report.when}] {report.outcome}")
+        item.config._prik_toolchain_smoke_runtime_failures.add(f"{report.nodeid} [{report.when}] {report.outcome}")
 
 
 def pytest_sessionfinish(session: pytest.Session) -> None:
-    failures = session.config._x2py_toolchain_smoke_runtime_failures
+    failures = session.config._prik_toolchain_smoke_runtime_failures
     if session.config.getoption("--require-toolchain-smoke") and failures:
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
@@ -275,9 +275,9 @@ def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter, config: p
     if not config.getoption("--require-toolchain-smoke"):
         return
     terminalreporter.write_sep("=", "toolchain smoke selection")
-    compiler = config._x2py_fortran_compiler
-    terminalreporter.write_line(f"compiler: {compiler} ({config._x2py_fortran_compiler_version})")
-    for nodeid, mechanism, build_fixture in config._x2py_toolchain_smoke_report:
+    compiler = config._prik_fortran_compiler
+    terminalreporter.write_line(f"compiler: {compiler} ({config._prik_fortran_compiler_version})")
+    for nodeid, mechanism, build_fixture in config._prik_toolchain_smoke_report:
         terminalreporter.write_line(f"{nodeid} | mechanism={mechanism} | build_fixture={build_fixture}")
-    for failure in sorted(config._x2py_toolchain_smoke_runtime_failures):
+    for failure in sorted(config._prik_toolchain_smoke_runtime_failures):
         terminalreporter.write_line(f"strict failure: {failure}")

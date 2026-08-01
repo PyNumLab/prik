@@ -6,11 +6,11 @@ import shutil
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from x2py.parsers.c import CParser
-from x2py.parsers.c.cli import attach_preprocessing_recipe
-from x2py.pipeline.preprocessing import PreprocessingConfig, preprocess_source
-from x2py.semantics.c2ir import c_project_to_semantic_module
-from x2py.wrapper_codegen.printers import emit_module
+from prik.parsers.c import CParser
+from prik.parsers.c.cli import attach_preprocessing_recipe
+from prik.pipeline.preprocessing import PreprocessingConfig, preprocess_source
+from prik.semantics.c2ir import c_project_to_semantic_module
+from prik.wrapper_codegen.printers import emit_module
 
 
 C_ROOT = Path(__file__).resolve().parents[1]

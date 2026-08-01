@@ -36,7 +36,7 @@
   display: none;
 }
 
-.x2py-repository-link {
+.prik-repository-link {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
@@ -58,16 +58,16 @@
     transform 120ms ease;
 }
 
-.x2py-repository-link .fa-github {
+.prik-repository-link .fa-github {
   font-size: 1.15rem;
 }
 
-.x2py-repository-link:visited {
+.prik-repository-link:visited {
   color: #fff;
 }
 
-.x2py-repository-link:hover,
-.x2py-repository-link:focus {
+.prik-repository-link:hover,
+.prik-repository-link:focus {
   border-color: #000;
   background: #000;
   box-shadow: 0 3px 7px rgb(0 0 0 / 22%);
@@ -75,20 +75,20 @@
   transform: translateY(-1px);
 }
 
-.x2py-repository-link:focus-visible,
-.x2py-page-source a:focus-visible {
+.prik-repository-link:focus-visible,
+.prik-page-source a:focus-visible {
   outline: 2px solid #f5b041;
   outline-offset: 2px;
 }
 
-.x2py-page-source {
+.prik-page-source {
   display: flex;
   clear: both;
   justify-content: flex-end;
   padding-top: 2rem;
 }
 
-.x2py-page-source a {
+.prik-page-source a {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -103,17 +103,17 @@
     color 120ms ease;
 }
 
-.x2py-page-source a:visited {
+.prik-page-source a:visited {
   color: #606f7b;
 }
 
-.x2py-page-source a:hover,
-.x2py-page-source a:focus {
+.prik-page-source a:hover,
+.prik-page-source a:focus {
   border-color: #2980b9;
   color: #1f618d;
 }
 
-.x2py-primary-cta {
+.prik-primary-cta {
   display: inline-flex;
   align-items: center;
   min-height: 2.6rem;
@@ -132,12 +132,12 @@
     transform 120ms ease;
 }
 
-.x2py-primary-cta:visited {
+.prik-primary-cta:visited {
   color: #fff;
 }
 
-.x2py-primary-cta:hover,
-.x2py-primary-cta:focus {
+.prik-primary-cta:hover,
+.prik-primary-cta:focus {
   border-color: #0f514c;
   background: #0f514c;
   box-shadow: 0 4px 9px rgb(0 0 0 / 22%);
@@ -145,12 +145,12 @@
   transform: translateY(-1px);
 }
 
-.x2py-primary-cta:focus-visible {
+.prik-primary-cta:focus-visible {
   outline: 2px solid #f5b041;
   outline-offset: 2px;
 }
 
-.x2py-performance-summary {
+.prik-performance-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1rem;
@@ -158,7 +158,7 @@
   margin: 1.5rem 0;
 }
 
-.x2py-performance-metric {
+.prik-performance-metric {
   display: flex;
   min-height: 7rem;
   flex-direction: column;
@@ -172,26 +172,26 @@
   text-align: center;
 }
 
-.x2py-performance-metric strong {
+.prik-performance-metric strong {
   color: #176b64;
   font-size: 2rem;
   line-height: 1.1;
 }
 
-.x2py-performance-metric span {
+.prik-performance-metric span {
   margin-top: 0.4rem;
   color: #43515d;
   font-size: 0.9rem;
   font-weight: 600;
 }
 
-.x2py-performance-chart {
+.prik-performance-chart {
   max-width: 56rem;
   overflow-x: auto;
   padding-bottom: 0.25rem;
 }
 
-.x2py-performance-chart img {
+.prik-performance-chart img {
   display: block;
   min-width: 48rem;
   margin: 0;
@@ -204,7 +204,7 @@
     margin-top: 0.75rem;
   }
 
-  .x2py-performance-summary {
+  .prik-performance-summary {
     grid-template-columns: 1fr;
   }
 }

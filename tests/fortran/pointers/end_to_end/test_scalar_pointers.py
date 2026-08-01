@@ -13,7 +13,7 @@ from tests.fortran._support.wrapper_build import (
     _import_from_build_dir,
     _sole_native_module,
 )
-from x2py import build_pyi_extension
+from prik import build_pyi_extension
 
 pytestmark = pytest.mark.fortran_end_to_end
 
@@ -105,7 +105,7 @@ def _scalar_pointer_module(build_mode: str, tmp_path: Path):
     source.write_text(SCALAR_POINTER_SOURCE, encoding="utf-8")
     contract_dir = tmp_path / "contracts" / source.stem
     subprocess.run(
-        [sys.executable, "-m", "x2py", "generate", "--pyi", str(source), "--out", str(contract_dir)],
+        [sys.executable, "-m", "prik", "generate", "--pyi", str(source), "--out", str(contract_dir)],
         capture_output=True,
         text=True,
         check=True,

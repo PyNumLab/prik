@@ -1,10 +1,10 @@
-#ifndef X2PY_GENERAL_CONSTANTS_H
-#define X2PY_GENERAL_CONSTANTS_H
+#ifndef PRIK_GENERAL_CONSTANTS_H
+#define PRIK_GENERAL_CONSTANTS_H
 
 #include <stddef.h>
 
-#define X2PY_GENERAL_NMAX 100
-#define X2PY_GENERAL_ORIGIN_RANK 3
+#define PRIK_GENERAL_NMAX 100
+#define PRIK_GENERAL_ORIGIN_RANK 3
 
 typedef int c_int_like;
 typedef double c_double_like;

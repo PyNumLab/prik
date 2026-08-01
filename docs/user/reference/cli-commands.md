@@ -12,11 +12,11 @@ publication: draft
 This page documents the checked command surface exposed by:
 
 ```bash
-python3 -m x2py --help
-python3 -m x2py --help-build
+python3 -m prik --help
+python3 -m prik --help-build
 ```
 
-With no subcommand, x2py builds a wrapper from Fortran source or a semantic
+With no subcommand, prik builds a wrapper from Fortran source or a semantic
 `.pyi` contract. Four focused subcommands expose parsing, semantic inspection,
 artifact generation, and target probing. The default `--help` output is a
 concise overview of common inputs, build controls, and commands. Use
@@ -28,17 +28,17 @@ list, so users can scan directly to a basic invocation, a different frontend
 or output form, or a cross-target workflow. The examples remain illustrative;
 the option groups above them are the exhaustive command contract.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The command accepts source paths and then either builds a wrapper or runs an
 inspection stage. Fortran source files can usually be inferred from their
 suffix. C files, directories, and unknown suffixes require `&#45;&#45;language`.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ## Command shapes
 
 ```bash
-python3 -m x2py INPUT [INPUT ...] [BUILD OPTIONS]
-python3 -m x2py {parse,semantics,generate,probe} [OPTIONS] ...
+python3 -m prik INPUT [INPUT ...] [BUILD OPTIONS]
+python3 -m prik {parse,semantics,generate,probe} [OPTIONS] ...
 ```
 
 The default compiled build accepts one or more Fortran source `INPUT` values,
@@ -62,16 +62,16 @@ Accordingly, full default-build help advertises `--language {fortran}` only;
 `parse`, `semantics`, `generate --pyi`, and `probe` advertise
 `--language {fortran,c}` because those paths currently support both frontends.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```bash
-python3 -m x2py [PATH ...] [&#45;&#45;language fortran|c] [stage-or-build] [options]
+python3 -m prik [PATH ...] [&#45;&#45;language fortran|c] [stage-or-build] [options]
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 The top-level help intentionally lists only common build options. Run
-`python3 -m x2py --help-build` for the complete build surface. Each subcommand
+`python3 -m prik --help-build` for the complete build surface. Each subcommand
 has its own options; use `parse --help`, `semantics --help`, `generate --help`,
-or `probe --help` after `python3 -m x2py` to see only the options relevant to
+or `probe --help` after `python3 -m prik` to see only the options relevant to
 that command. The concise build list covers output naming and location, build
 compiler and include-directory selection, native compile flags such as `-O3`,
 native libraries, compiler job limits, and verbose build output.
@@ -89,10 +89,10 @@ complete source, basic build, import flow, and expected result.
 The full build help uses the following two forms:
 
 ```text
-usage: python3 -m x2py INPUT [INPUT ...]
+usage: python3 -m prik INPUT [INPUT ...]
        [OUTPUT OPTIONS] [COMPILER OPTIONS] [WRAPPER OPTIONS]
        [NATIVE OPTIONS] [DIAGNOSTIC OPTIONS]
-       python3 -m x2py --build-manifest PATH [MANIFEST OVERRIDES]
+       python3 -m prik --build-manifest PATH [MANIFEST OVERRIDES]
 ```
 
 Its groups are exhaustive rather than curated: `input selection` contains the
@@ -102,9 +102,9 @@ every compiler and preprocessing control; `wrapper options` contains generated
 wrapper naming and compiler behavior; `native options` contains native sources,
 flags, objects, libraries, directories, and ordered link items; and
 `diagnostic options` contains verbose, color, and traceback controls. The
-default output directory shown there is `./__x2py__`.
+default output directory shown there is `./__prik__`.
 
-`--build-manifest PATH` reads an existing `x2py-build.json` and replays the
+`--build-manifest PATH` reads an existing `prik-build.json` and replays the
 saved build; it does not generate a manifest. Manifest replay accepts only
 overrides that the replay implementation consumes:
 `--out`, `--compiler`, `-I`/`--include-dir`, `--jobs`, `--json`, `--verbose`,
@@ -127,11 +127,11 @@ silently ignoring them.
 | --- | --- |
 | `paths` | Source files, `.pyi` files, or directories. Omit only when using `--build-manifest`. |
 | `--language fortran` | Selects the Fortran frontend explicitly when suffix inference is unavailable. |
-| `--jobs N` | Limits concurrent compiler processes to `N`; the default uses the CPUs available to x2py. |
+| `--jobs N` | Limits concurrent compiler processes to `N`; the default uses the CPUs available to prik. |
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 | `&#45;&#45;language {fortran,c}` | Selects the frontend. Required for C inputs, directories, and unknown suffixes. |
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ## Parse and semantics
 
@@ -140,16 +140,16 @@ lines leave the complete command-specific option inventory to the groups below
 them:
 
 ```bash
-python3 -m x2py parse INPUT [INPUT ...] [OPTIONS]
-python3 -m x2py semantics INPUT [INPUT ...] [OPTIONS]
+python3 -m prik parse INPUT [INPUT ...] [OPTIONS]
+python3 -m prik semantics INPUT [INPUT ...] [OPTIONS]
 
-python3 -m x2py parse points.f90
-python3 -m x2py semantics points.f90
+python3 -m prik parse points.f90
+python3 -m prik semantics points.f90
 ```
 
 Parse-report controls such as `--show-vars` and `--print-limit` appear only in
-`x2py parse --help`. Target datatype measurement is internal to semantic
-conversion and wrapping. Use the separate `x2py probe` command only when you
+`prik parse --help`. Target datatype measurement is internal to semantic
+conversion and wrapping. Use the separate `prik probe` command only when you
 want to inspect or save the measured target facts yourself.
 
 The parse examples distinguish basic inspection, a detailed report, and an
@@ -166,9 +166,9 @@ each input source.
 `generate` requires exactly one output mode:
 
 ```bash
-python3 -m x2py generate (--pyi | --sources | --makefile)
+python3 -m prik generate (--pyi | --sources | --makefile)
                                 INPUT [INPUT ...] [OPTIONS]
-python3 -m x2py generate (--sources | --makefile)
+python3 -m prik generate (--sources | --makefile)
                                 --build-manifest PATH [OVERRIDES]
 ```
 
@@ -176,12 +176,12 @@ python3 -m x2py generate (--sources | --makefile)
 | --- | --- |
 | `--pyi` | Writes the editable semantic `.pyi` contract. |
 | `--sources` | Writes wrapper source files without compiling native objects or an extension. |
-| `--makefile` | Writes wrapper sources, the replay manifest when applicable, and `Makefile.x2py` without compiling. |
+| `--makefile` | Writes wrapper sources, the replay manifest when applicable, and `Makefile.prik` without compiling. |
 
 ```bash
-python3 -m x2py generate --pyi points.f90 --out contracts
-python3 -m x2py generate --sources points.f90 --out-dir build
-python3 -m x2py generate --makefile points.f90 --out-dir build
+python3 -m prik generate --pyi points.f90 --out contracts
+python3 -m prik generate --sources points.f90 --out-dir build
+python3 -m prik generate --makefile points.f90 --out-dir build
 ```
 
 These examples reuse `points.f90` from the
@@ -214,30 +214,30 @@ compiler flag separately, for example
 `--compiler-arg=-fdefault-real-8 --compiler-arg=-fdefault-integer-8`.
 
 ```bash
-python3 -m x2py probe --language {fortran,c} --compiler COMPILER [OPTIONS]
+python3 -m prik probe --language {fortran,c} --compiler COMPILER [OPTIONS]
 ```
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The same command accepts `&#45;&#45;language c`; no language-specific nested command
 is needed.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ```bash
-python3 -m x2py probe --language fortran --compiler gfortran-13
+python3 -m prik probe --language fortran --compiler gfortran-13
 ```
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```bash
-python3 -m x2py probe &#45;&#45;language c &#45;&#45;compiler gcc-13 &#45;&#45;format markdown
+python3 -m prik probe &#45;&#45;language c &#45;&#45;compiler gcc-13 &#45;&#45;format markdown
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 | Option | Purpose |
 | --- | --- |
 | `--language fortran` | Selects the Fortran target probe. |
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 | `&#45;&#45;language c` | Selects the C target probe. |
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 | `--compiler COMPILER` | Selects the exact native or cross compiler. |
 | `--format {json,markdown}` | Chooses the machine-readable report or mapping table. |
 | `--expr EXPR` | Adds a Fortran integer expression to the JSON probe; repeat for more expressions. |
@@ -255,10 +255,10 @@ source expression.
 
 These options control compiler preprocessing before Fortran parsing.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 These options control preprocessing before parsing. They are most useful for C
 headers, C source files, and preprocessed Fortran sources.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 | Option | Purpose |
 | --- | --- |
@@ -271,37 +271,37 @@ X2PY_C_DOCS_END -->
 | `--std STANDARD` | Passes a Fortran language standard such as `f2008` or `f2018`. |
 | `--compiler-arg ARG` | Passes one raw compiler preprocessing argument. Repeat for multiple arguments. |
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The C frontend defaults to `cc` when `&#45;&#45;compiler` is omitted.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 | `&#45;&#45;compile-commands PATH` | Reads project flags from a `compile_commands.json` database. |
 | `&#45;&#45;std STANDARD` | Passes a language standard such as `c11`, `c23`, `f2008`, or `f2018`. |
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 | `&#45;&#45;preprocessor-adapter {auto,gcc-compatible-c,gnu-fortran,command-template}` | Selects the compiler adapter family. |
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 Use `--compiler-arg=-target` style spelling when the value itself starts with
 `-`.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ## C include exposure
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 These options affect wrapper exposure for reachable included C files.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 | Option | Purpose |
 | &#45;&#45;- | &#45;&#45;- |
 | `&#45;&#45;include-exposure {reachable-project,roots-only}` | Selects whether reachable project includes are public by default or only root inputs are public. |
 | `&#45;&#45;public-include PATH_OR_PATTERN` | Forces matched included files to be public in wrapper output. |
 | `&#45;&#45;private-include PATH_OR_PATTERN` | Forces matched included files to be private in wrapper output. |
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ## Parse report controls
 
@@ -320,7 +320,7 @@ Generation without compilation belongs to the `generate` subcommand.
 
 | Option | Purpose |
 | --- | --- |
-| `--compiler COMPILER` | Selects the input-language compiler used throughout a wrapper build: preprocessing, datatype measurement, native and generated-bridge compilation, and extension linking. The default is `gfortran`; the generated binding continues to use x2py's binding-compiler profile. |
+| `--compiler COMPILER` | Selects the input-language compiler used throughout a wrapper build: preprocessing, datatype measurement, native and generated-bridge compilation, and extension linking. The default is `gfortran`; the generated binding continues to use prik's binding-compiler profile. |
 | `-I DIR`, `--include-dir DIR` | Adds a build-wide compiler include directory. Source builds use it during preprocessing; source and `.pyi` builds use it for native and generated wrapper compilation. Repeat to preserve search order. |
 | `--strict-wrapper-names` | Rejects Python wrapper names that require escaping or collision suffixes. |
 | `--build-manifest PATH` | Reads an existing semantic `.pyi` wrapper build manifest and replays its saved build. It does not generate the manifest. |
@@ -352,9 +352,9 @@ Important boundaries:
 - In a wrapper build, `--compiler` is a build input rather than a
   preprocessing-only setting. It selects the input-language compiler command
   used for preprocessing and datatype measurement, then for native source and
-  generated bridge compilation, and finally for extension linking. x2py still
+  generated bridge compilation, and finally for extension linking. prik still
   selects the generated binding compiler from its compiler profile.
-- `-I DIR` is build-wide: x2py preserves the supplied order in preprocessing
+- `-I DIR` is build-wide: prik preserves the supplied order in preprocessing
   and in native, bridge, and binding compilation. Use it for source includes,
   compiler-produced module files, and native interface directories.
 - `--native-compile-flags` compiles the native implementation. The public name
@@ -363,29 +363,29 @@ Important boundaries:
   `--wrapper-fortran-flags` compiles the generated Fortran bridge, and
   `--wrapper-c-flags` compiles the generated binding and supplies additional
   extension-link flags.
-- For source-driven builds, x2py also applies `--native-compile-flags` to its
+- For source-driven builds, prik also applies `--native-compile-flags` to its
   internal datatype measurement. Target-changing flags such as
   `-fdefault-integer-8` or `-fdefault-real-8` therefore affect both native
   compilation and the semantic wrapper types without separate probe options.
 - Native input options accept one or more values per occurrence and may also be
-  repeated. x2py preserves the supplied source, artifact, and link-item order.
+  repeated. prik preserves the supplied source, artifact, and link-item order.
   For compiler flags or prefixed library names that start with `-`, group them
   with the equals form, for example `--native-compile-flags="-O3 -fopenmp"` or
   `--native-library="-lblas -llapack"`.
-- In `.pyi` Makefile mode, x2py writes `<out-dir>/x2py-build.json` first and
-  generates `<out-dir>/Makefile.x2py` from that manifest.
+- In `.pyi` Makefile mode, prik writes `<out-dir>/prik-build.json` first and
+  generates `<out-dir>/Makefile.prik` from that manifest.
 - `--build-manifest PATH` reads a saved manifest and rebuilds from it; it does
   not generate the manifest. `generate --makefile
-  --build-manifest PATH` regenerates `Makefile.x2py` without positional
+  --build-manifest PATH` regenerates `Makefile.prik` without positional
   contracts or repeated native flags. Replay may override only `--out`,
   `--compiler`, `-I`/`--include-dir`, `--json`, `--verbose`, `--no-color`, and
   `--debug`; all other build settings come from the
   manifest.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 - C source inspection is supported; runtime wrapping of user-supplied C
   libraries is not part of this CLI surface yet.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ## Output and diagnostics
 
@@ -393,7 +393,7 @@ X2PY_C_DOCS_END -->
 | --- | --- |
 | `--json` | Selects JSON instead of the default human-readable output for commands that support both formats. Semantic reports are always JSON and therefore do not expose this flag. |
 | `--out [PATH]` | Writes command output, selects a generated `.pyi` package directory, or names the wrapper Python module and final `.so`. |
-| `--out-dir DIR` | Selects the wrapper build output directory. The default is `./__x2py__`. |
+| `--out-dir DIR` | Selects the wrapper build output directory. The default is `./__prik__`. |
 | `--verbose` | Announces and completes binding, bridge, and header source-text generation in order, then each written artifact, source/object compilation pair, and final extension path before printing the exact compiler or linker command; it times each non-writing operation and reports total build time last. |
 | `--wrapper-compiler-debug` | Uses the compiler debug profile for direct wrapper builds instead of the default release profile. |
 | `--wrapper-fortran-flags FLAG...` | Appends flags to generated Fortran bridge compilation commands. |
@@ -401,9 +401,9 @@ X2PY_C_DOCS_END -->
 | `--no-color` | Disables ANSI color in parse diagnostics. |
 | `--debug` | Re-raises command failures so Python prints a traceback. |
 
-When `rich-argparse` is installed, x2py uses its colored help formatter
+When `rich-argparse` is installed, prik uses its colored help formatter
 automatically. Install the optional UI dependencies for a published package
-with `python3 -m pip install 'x2py[pretty]'`, or from an editable source
+with `python3 -m pip install 'prik[pretty]'`, or from an editable source
 checkout with `python3 -m pip install -e '.[pretty]'`. Plain `argparse` help
 remains the deterministic fallback, and `--no-color` or `NO_COLOR` selects it
 explicitly.
@@ -418,29 +418,29 @@ and for semantic `.pyi` builds the normalized replay `manifest`.
 
 | Workflow | Command |
 | --- | --- |
-| Parse a compact Fortran tree | `python3 -m x2py parse path/to/file.f90` |
-| Parse with scope variables | `python3 -m x2py parse path/to/file.f90 --show-vars` |
-| Cap repeated parse sections | `python3 -m x2py parse path/to/file.f90 --print-limit 50` |
-| Write parser JSON | `python3 -m x2py parse path/to/file.f90 --json --out report.json` |
-| Print semantic IR | `python3 -m x2py semantics path/to/file.f90` |
-| Emit a semantic `.pyi` contract directory | `python3 -m x2py generate --pyi path/to/file.f90 --out contracts` |
-| Build a Fortran wrapper | `python3 -m x2py path/to/file.f` |
-| Build a Fortran wrapper with native compiler and link flags | `python3 -m x2py path/to/file.f90 --native-compile-flags="-O3 -fopenmp" --wrapper-c-flags=-fopenmp` |
-| Build from a semantic contract and native object | `python3 -m x2py contracts/module.pyi --native-objects build/module.o -I build` |
-| Build a Fortran wrapper with an explicit module and `.so` name | `python3 -m x2py path/to/file.f90 --out my_extension` |
-| Generate wrapper sources only | `python3 -m x2py generate --sources dependency.f90 api.f90 --out-dir build` |
-| Generate an editable Makefile | `python3 -m x2py generate --makefile dependency.f90 api.f90 --out-dir build` |
-| Generate a `.pyi` replay manifest and Makefile | `python3 -m x2py generate --makefile contracts/module.pyi --native-fortran-sources native/module.f90 --out-dir build --json` |
-| Replay a `.pyi` manifest | `python3 -m x2py --build-manifest build/x2py-build.json` |
+| Parse a compact Fortran tree | `python3 -m prik parse path/to/file.f90` |
+| Parse with scope variables | `python3 -m prik parse path/to/file.f90 --show-vars` |
+| Cap repeated parse sections | `python3 -m prik parse path/to/file.f90 --print-limit 50` |
+| Write parser JSON | `python3 -m prik parse path/to/file.f90 --json --out report.json` |
+| Print semantic IR | `python3 -m prik semantics path/to/file.f90` |
+| Emit a semantic `.pyi` contract directory | `python3 -m prik generate --pyi path/to/file.f90 --out contracts` |
+| Build a Fortran wrapper | `python3 -m prik path/to/file.f` |
+| Build a Fortran wrapper with native compiler and link flags | `python3 -m prik path/to/file.f90 --native-compile-flags="-O3 -fopenmp" --wrapper-c-flags=-fopenmp` |
+| Build from a semantic contract and native object | `python3 -m prik contracts/module.pyi --native-objects build/module.o -I build` |
+| Build a Fortran wrapper with an explicit module and `.so` name | `python3 -m prik path/to/file.f90 --out my_extension` |
+| Generate wrapper sources only | `python3 -m prik generate --sources dependency.f90 api.f90 --out-dir build` |
+| Generate an editable Makefile | `python3 -m prik generate --makefile dependency.f90 api.f90 --out-dir build` |
+| Generate a `.pyi` replay manifest and Makefile | `python3 -m prik generate --makefile contracts/module.pyi --native-fortran-sources native/module.f90 --out-dir build --json` |
+| Replay a `.pyi` manifest | `python3 -m prik --build-manifest build/prik-build.json` |
 
-<!-- X2PY_C_DOCS_START
-| Parse a C API | `python3 -m x2py path/to/api.h &#45;&#45;language c &#45;&#45;parse &#45;&#45;json` |
-| Parse with compiler preprocessing | `python3 -m x2py path/to/api.h &#45;&#45;language c &#45;&#45;parse &#45;&#45;compiler clang-18 -I include -D API_EXPORT= &#45;&#45;std c11` |
-X2PY_C_DOCS_END -->
+<!-- PRIK_C_DOCS_START
+| Parse a C API | `python3 -m prik path/to/api.h &#45;&#45;language c &#45;&#45;parse &#45;&#45;json` |
+| Parse with compiler preprocessing | `python3 -m prik path/to/api.h &#45;&#45;language c &#45;&#45;parse &#45;&#45;compiler clang-18 -I include -D API_EXPORT= &#45;&#45;std c11` |
+PRIK_C_DOCS_END -->
 
 ## Related pages
 
-- Use [Python API Reference](python-api.md) when calling x2py from Python.
+- Use [Python API Reference](python-api.md) when calling prik from Python.
 - Use [Fortran Wrapper Reference](fortran-wrapper.md) for wrapper
   build workflows.
 - Use [Semantic .pyi Format](semantic-pyi-format.md) when editing wrapper

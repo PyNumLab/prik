@@ -7,8 +7,8 @@ from dataclasses import replace
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import (
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.wrapper_policy import (
     DerivedActualAccess,
     DerivedCallAction,
     DerivedDummyCategory,
@@ -16,11 +16,11 @@ from x2py.semantics.wrapper_policy import (
     DerivedOwnerRetention,
     DerivedRelease,
 )
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
 
 CONTRACT = """
-from x2py.contracts import Aliased, Allocatable, Annotated, Arg, Int32, Pointer, Return, Returns, Value, native_call
+from prik.contracts import Aliased, Allocatable, Annotated, Arg, Int32, Pointer, Return, Returns, Value, native_call
 
 class item:
     value: Int32
@@ -210,7 +210,7 @@ def test_pointer_result_uses_a_persistent_holder_instead_of_the_removed_blocker(
 def test_class_only_derived_methods_do_not_emit_unreachable_scoped_trampolines():
     module = parse_pyi_text(
         """
-from x2py.contracts import Int32
+from prik.contracts import Int32
 
 class item:
     value: Int32
@@ -226,7 +226,7 @@ class item:
         if source.path.suffix == ".f90"
     )
 
-    assert "c_funloc(x2py_derived_consumer" not in bridge
+    assert "c_funloc(prik_derived_consumer" not in bridge
     assert "bound_self_access == 2_c_int" not in bridge
 
 
@@ -259,13 +259,13 @@ def test_artifacts_emit_shared_holders_typed_origin_operations_and_one_native_ca
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
-    assert bridge.count("type :: x2py_item_allocatable_holder") == 1
-    assert bridge.count("type :: x2py_item_pointer_holder") == 1
+    assert bridge.count("type :: prik_item_allocatable_holder") == 1
+    assert bridge.count("type :: prik_item_pointer_holder") == 1
     assert "abstract interface" in bridge
     assert "c_f_procpointer" in bridge
-    assert "c_funloc(x2py_derived_consumer" in bridge
+    assert "c_funloc(prik_derived_consumer" in bridge
     assert "move_alloc" in bridge
     assert bridge.count("native_object_dummy(") == 1
-    assert "x2py_derived_origin_ops" in c_source
+    assert "prik_derived_origin_ops" in c_source
     assert "atomic_compare_exchange_strong" in c_source
     assert "CFI_cdesc_t" not in bridge

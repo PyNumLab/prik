@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Arg, Float64, Int32, Returns, String, native_call
+from prik.contracts import Addr, Arg, Float64, Int32, Returns, String, native_call
 
 class sample:
     def __init__(

@@ -11,7 +11,7 @@ from tests.fortran.source_preprocessing.preprocessing._support import (
 
 def test_cli_help_documents_exact_compiler_and_preprocessing_examples():
     res = subprocess.run(
-        [sys.executable, "-m", "x2py", "parse", "--help"],
+        [sys.executable, "-m", "prik", "parse", "--help"],
         capture_output=True,
         text=True,
         check=True,
@@ -50,7 +50,7 @@ def test_cli_accepts_compile_database_for_fortran_compiler_mode(tmp_path: Path):
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "parse",
             str(source),
             "--json",
@@ -76,7 +76,7 @@ def test_cli_fortran_default_compiler_json_records_preprocessing_recipe(tmp_path
     )
 
     res = subprocess.run(
-        [sys.executable, "-m", "x2py", "parse", str(source), "--json"],
+        [sys.executable, "-m", "prik", "parse", str(source), "--json"],
         capture_output=True,
         text=True,
         check=True,
@@ -90,7 +90,7 @@ def test_cli_fortran_default_compiler_mode_accepts_include_dirs(tmp_path: Path):
     source.write_text("subroutine work()\nend subroutine work\n", encoding="utf-8")
 
     res = subprocess.run(
-        [sys.executable, "-m", "x2py", "parse", str(source), "-I", "include"],
+        [sys.executable, "-m", "prik", "parse", str(source), "-I", "include"],
         capture_output=True,
         text=True,
     )
@@ -110,7 +110,7 @@ def test_cli_fortran_compiler_mode_runs_exact_compiler_and_parses_stdout(tmp_pat
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "parse",
             str(source),
             "--json",

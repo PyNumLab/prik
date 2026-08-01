@@ -4,7 +4,7 @@ import pytest
 
 
 def test_primitive_specifiers_create_concrete_primitive_types():
-    from x2py.parsers.c import CBool, CShort, CUnsignedLongLong, parse_c_file
+    from prik.parsers.c import CBool, CShort, CUnsignedLongLong, parse_c_file
 
     parsed = parse_c_file(
         """
@@ -62,8 +62,8 @@ _Bool enabled(void);
     ],
 )
 def test_every_supported_primitive_spelling_creates_a_concrete_ctype(spelling, expected_name):
-    import x2py.parsers.c as c_parser
-    from x2py.parsers.c import CType, parse_c_file
+    import prik.parsers.c as c_parser
+    from prik.parsers.c import CType, parse_c_file
 
     function = parse_c_file(f"{spelling} primitive(void);\n", filename="primitive_table.h").functions[0]
     expected = getattr(c_parser, expected_name)
@@ -82,8 +82,8 @@ def test_every_supported_primitive_spelling_creates_a_concrete_ctype(spelling, e
     ],
 )
 def test_valid_reordered_primitive_specifiers_are_normalized(spelling, expected_name):
-    import x2py.parsers.c as c_parser
-    from x2py.parsers.c import parse_c_file
+    import prik.parsers.c as c_parser
+    from prik.parsers.c import parse_c_file
 
     function = parse_c_file(f"{spelling} primitive(void);\n", filename="reordered_primitives.h").functions[0]
 
@@ -101,7 +101,7 @@ def test_valid_reordered_primitive_specifiers_are_normalized(spelling, expected_
     ],
 )
 def test_invalid_primitive_specifier_sequences_raise_parse_errors(source, expected_column):
-    from x2py.parsers.c import CParseError, parse_c_file
+    from prik.parsers.c import CParseError, parse_c_file
 
     with pytest.raises(CParseError, match="Invalid type specifier sequence") as error:
         parse_c_file(source, filename="invalid_specifiers.h")
@@ -114,7 +114,7 @@ def test_invalid_primitive_specifier_sequences_raise_parse_errors(source, expect
 
 
 def test_unresolved_single_typedef_name_is_preserved_until_resolution():
-    from x2py.parsers.c import CTypedef, parse_c_file
+    from prik.parsers.c import CTypedef, parse_c_file
 
     parsed = parse_c_file("external_type value;\n", filename="deferred_typedef.h")
 
@@ -124,7 +124,7 @@ def test_unresolved_single_typedef_name_is_preserved_until_resolution():
 
 
 def test_pointer_qualifiers_belong_to_the_component_they_qualify():
-    from x2py.parsers.c import CComposedType, CConst, CDouble, CPointer, CRestrict, parse_c_file
+    from prik.parsers.c import CComposedType, CConst, CDouble, CPointer, CRestrict, parse_c_file
 
     parsed = parse_c_file(
         "void copy(const double * restrict src, double * restrict dst);\n",
@@ -143,7 +143,7 @@ def test_pointer_qualifiers_belong_to_the_component_they_qualify():
 
 
 def test_multi_level_qualifiers_stay_on_their_exact_type_components():
-    from x2py.parsers.c import CComposedType, CConst, CInt, CPointer, CVolatile, parse_c_file
+    from prik.parsers.c import CComposedType, CConst, CInt, CPointer, CVolatile, parse_c_file
 
     parsed = parse_c_file(
         "const int * const * volatile chain;\n",
@@ -159,7 +159,7 @@ def test_multi_level_qualifiers_stay_on_their_exact_type_components():
 
 
 def test_array_parameters_preserve_declarations_and_expose_adjusted_pointer_types():
-    from x2py.parsers.c import CArray, CComposedType, CConst, CDouble, CInt, CPointer, parse_c_file
+    from prik.parsers.c import CArray, CComposedType, CConst, CDouble, CInt, CPointer, parse_c_file
 
     parsed = parse_c_file(
         "void solve(size_t n, double a[static 4], const int shape[2], int work[const *], int matrix[3][4]);\n",
@@ -193,7 +193,7 @@ def test_array_parameters_preserve_declarations_and_expose_adjusted_pointer_type
 
 
 def test_multiple_declarators_share_specifiers_but_have_distinct_compositions():
-    from x2py.parsers.c import CArray, CComposedType, CConst, CInt, CPointer, parse_c_file
+    from prik.parsers.c import CArray, CComposedType, CConst, CInt, CPointer, parse_c_file
 
     parsed = parse_c_file("extern const int *left, right[4];\n", filename="variables.h")
 
@@ -207,7 +207,7 @@ def test_multiple_declarators_share_specifiers_but_have_distinct_compositions():
 
 
 def test_typedefs_and_typedef_references_are_concrete_types():
-    from x2py.parsers.c import CArray, CComposedType, CDouble, CPointer, CStruct, CTypedef, CUnsignedLong, parse_c_file
+    from prik.parsers.c import CArray, CComposedType, CDouble, CPointer, CStruct, CTypedef, CUnsignedLong, parse_c_file
 
     parsed = parse_c_file(
         """
@@ -236,7 +236,7 @@ void set_basis(basis3 basis);
 
 
 def test_repeated_file_scope_tentative_variable_declarations_merge():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file("int i;\nint i;\n", filename="tentative.c")
 
@@ -247,7 +247,7 @@ def test_repeated_file_scope_tentative_variable_declarations_merge():
 
 
 def test_tentative_variable_declaration_followed_by_definition_prefers_definition():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file("int i;\nint i = 1;\n", filename="definition.c")
 
@@ -259,7 +259,7 @@ def test_tentative_variable_declaration_followed_by_definition_prefers_definitio
 
 
 def test_duplicate_initialized_file_scope_variables_report_diagnostic():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file("int i = 1;\nint i = 2;\n", filename="duplicate_variables.c")
 
@@ -269,7 +269,7 @@ def test_duplicate_initialized_file_scope_variables_report_diagnostic():
 
 
 def test_conflicting_file_scope_variable_declarations_report_diagnostic():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file("int i;\ndouble i;\n", filename="conflicting_variables.c")
 
@@ -278,7 +278,7 @@ def test_conflicting_file_scope_variable_declarations_report_diagnostic():
 
 
 def test_type_key_preserves_seen_state_for_recursive_composed_types():
-    from x2py.parsers.c import CComposedType, CParser, CPointer, CTypedef
+    from prik.parsers.c import CComposedType, CParser, CPointer, CTypedef
 
     typedef = CTypedef(name="node")
     recursive = CComposedType(components=[CPointer(), typedef])
@@ -295,7 +295,7 @@ def test_type_key_preserves_seen_state_for_recursive_composed_types():
 
 
 def test_compatible_repeated_typedefs_merge_but_conflicting_typedefs_diagnose():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     compatible = parse_c_file("typedef int count_t;\ntypedef int count_t;\n", filename="typedefs.h")
     conflicting = parse_c_file("typedef int count_t;\ntypedef double count_t;\n", filename="bad_typedefs.h")
@@ -307,7 +307,7 @@ def test_compatible_repeated_typedefs_merge_but_conflicting_typedefs_diagnose():
 
 
 def test_variables_preserve_initializer_text_arrays_and_concrete_tag_types():
-    from x2py.parsers.c import CArray, CEnum, CInt, CStruct, CUnion, parse_c_file
+    from prik.parsers.c import CArray, CEnum, CInt, CStruct, CUnion, parse_c_file
 
     parsed = parse_c_file(
         """
@@ -334,7 +334,7 @@ int answer = 42;
 
 
 def test_parameters_preserve_concrete_struct_union_and_enum_uses():
-    from x2py.parsers.c import CEnum, CStruct, CUnion, parse_c_file
+    from prik.parsers.c import CEnum, CStruct, CUnion, parse_c_file
 
     parsed = parse_c_file(
         "void consume(const struct state *s, union scalar *u, enum status status);\n",
@@ -349,7 +349,7 @@ def test_parameters_preserve_concrete_struct_union_and_enum_uses():
 
 
 def test_incomplete_structs_and_pointer_uses_are_concrete_objects():
-    from x2py.parsers.c import CComposedType, CPointer, CStruct, parse_c_file
+    from prik.parsers.c import CComposedType, CPointer, CStruct, parse_c_file
 
     parsed = parse_c_file(
         """
@@ -375,7 +375,7 @@ void close_handle(struct handle *handle);
 
 
 def test_storage_is_declaration_metadata_and_qualifiers_are_type_metadata():
-    from x2py.parsers.c import CAtomic, CConst, CUnsignedLong, CVolatile, parse_c_file
+    from prik.parsers.c import CAtomic, CConst, CUnsignedLong, CVolatile, parse_c_file
 
     parsed = parse_c_file(
         """
@@ -400,7 +400,7 @@ _Atomic int atomic_counter;
 
 
 def test_atomic_type_specifier_qualifies_the_declared_outermost_type():
-    from x2py.parsers.c import CAtomic, CComposedType, CInt, CPointer, parse_c_file
+    from prik.parsers.c import CAtomic, CComposedType, CInt, CPointer, parse_c_file
 
     parsed = parse_c_file(
         """
@@ -437,7 +437,7 @@ _Atomic(int) *pointer_to_atomic;
     ],
 )
 def test_invalid_atomic_type_specifiers_raise_focused_errors(source, message):
-    from x2py.parsers.c import CParseError, parse_c_file
+    from prik.parsers.c import CParseError, parse_c_file
 
     with pytest.raises(CParseError, match=message) as exc_info:
         parse_c_file(source, filename="invalid_atomic.h")
@@ -446,7 +446,7 @@ def test_invalid_atomic_type_specifiers_raise_focused_errors(source, message):
 
 
 def test_function_bodies_do_not_contribute_local_variables():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """
@@ -460,7 +460,7 @@ extern int exported_value;
 
 
 def test_declarations_return_concrete_objects_instead_of_kind_fields():
-    from x2py.parsers.c import (
+    from prik.parsers.c import (
         CArray,
         CFunction,
         CFunctionType,
@@ -498,7 +498,7 @@ void sort_items(int (*fallback)(const void *, const void *));
 
 
 def test_composite_definitions_are_concrete_objects_and_static_assert_is_diagnostic():
-    from x2py.parsers.c import CEnum, CStruct, CUnion, CVariable, parse_c_file
+    from prik.parsers.c import CEnum, CStruct, CUnion, CVariable, parse_c_file
 
     parsed = parse_c_file(
         """
@@ -519,7 +519,7 @@ _Static_assert(sizeof(int) == 4, "expected int width");
 
 
 def test_parenthesized_declarators_preserve_pointer_array_order():
-    from x2py.parsers.c import CArray, CInt, CPointer, parse_c_file
+    from prik.parsers.c import CArray, CInt, CPointer, parse_c_file
 
     parsed = parse_c_file("extern int *values[4];\nextern int (*matrix)[4];\n", filename="paren_decl.h")
     variables = {variable.name: variable for variable in parsed.variables}
@@ -529,7 +529,7 @@ def test_parenthesized_declarators_preserve_pointer_array_order():
 
 
 def test_function_type_discards_placeholder_parameter_names():
-    from x2py.parsers.c import CFunctionType, CPointer, parse_c_file
+    from prik.parsers.c import CFunctionType, CPointer, parse_c_file
 
     parsed = parse_c_file(
         "typedef int (*compare_fn)(const void *left, const void *right);\n",
@@ -544,7 +544,7 @@ def test_function_type_discards_placeholder_parameter_names():
 
 
 def test_conflicting_function_pointer_typedefs_report_diagnostic():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         "typedef int (*callback_fn)(int);\ntypedef double (*callback_fn)(double);\n",
@@ -558,7 +558,7 @@ def test_conflicting_function_pointer_typedefs_report_diagnostic():
 
 
 def test_recursive_compositions_cover_tables_callback_arrays_and_function_results():
-    from x2py.parsers.c import CArray, CFunctionType, CInt, CPointer, parse_c_file
+    from prik.parsers.c import CArray, CFunctionType, CInt, CPointer, parse_c_file
 
     parsed = parse_c_file(
         """
@@ -589,7 +589,7 @@ int direct(void), *value;
 
 
 def test_declaration_attributes_are_tolerated_and_layout_omissions_are_diagnosed():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """
@@ -608,7 +608,7 @@ _Alignas(16) int aligned_value;
 
 
 def test_unsupported_top_level_declarator_is_reported_with_source_location():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file("int value @@;\nint kept;\n", filename="bad_declarator.h")
 
@@ -643,8 +643,8 @@ def test_unsupported_top_level_declarator_is_reported_with_source_location():
     ],
 )
 def test_unsupported_declaration_diagnostic_classifies_known_shapes(text, unit_kind, message):
-    from x2py.parsers.c import CParser
-    from x2py.parsers.c.lexer import CTopLevelSegment
+    from prik.parsers.c import CParser
+    from prik.parsers.c.lexer import CTopLevelSegment
 
     segment = CTopLevelSegment(
         text=text,
@@ -671,8 +671,8 @@ def test_unsupported_declaration_diagnostic_classifies_known_shapes(text, unit_k
 
 
 def test_unsupported_declaration_diagnostic_ignores_empty_and_plain_declarations():
-    from x2py.parsers.c import CParser
-    from x2py.parsers.c.lexer import CTopLevelSegment
+    from prik.parsers.c import CParser
+    from prik.parsers.c.lexer import CTopLevelSegment
 
     parser = CParser()
 
@@ -689,7 +689,7 @@ def test_unsupported_declaration_diagnostic_ignores_empty_and_plain_declarations
     ],
 )
 def test_non_c_top_level_grammar_is_rejected_without_language_guessing(source):
-    from x2py.parsers.c import CParseError, parse_c_file
+    from prik.parsers.c import CParseError, parse_c_file
 
     with pytest.raises(CParseError, match="Invalid C syntax") as exc_info:
         parse_c_file(source, filename="invalid_top_level.h")
@@ -706,7 +706,7 @@ def test_non_c_top_level_grammar_is_rejected_without_language_guessing(source):
     ],
 )
 def test_identifier_spelling_does_not_trigger_foreign_language_detection(source, name, type_name):
-    from x2py.parsers.c import CTypedef, parse_c_file
+    from prik.parsers.c import CTypedef, parse_c_file
 
     parsed = parse_c_file(source, filename="identifier_spelling.h")
 
@@ -716,7 +716,7 @@ def test_identifier_spelling_does_not_trigger_foreign_language_detection(source,
 
 
 def test_braced_and_designated_initializer_declarations_preserve_source_text():
-    from x2py.parsers.c import CArray, CComposedType, parse_c_file
+    from prik.parsers.c import CArray, CComposedType, parse_c_file
 
     parsed = parse_c_file(
         "struct config;\nint values[3] = {1, 2, 3};\nstruct config cfg = {.enabled = 1};\nint scalar = 1;\n",
@@ -734,7 +734,7 @@ def test_braced_and_designated_initializer_declarations_preserve_source_text():
 
 
 def test_asm_declarator_suffixes_are_tolerated_with_symbol_identity_diagnostics():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         'extern int retained, pinned asm("r0");\nint run(int value asm("r0"));\n',
@@ -751,7 +751,7 @@ def test_asm_declarator_suffixes_are_tolerated_with_symbol_identity_diagnostics(
 
 
 def test_storage_class_and_inline_specifiers_are_recorded_on_functions():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         "static inline int local_add(int a, int b) { return a + b; }\nextern int exported_add(int a, int b);\n",

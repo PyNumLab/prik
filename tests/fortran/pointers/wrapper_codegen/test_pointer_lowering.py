@@ -1,21 +1,21 @@
 """Pointer descriptor lowering from completed wrapper policy."""
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import (
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.wrapper_policy import (
     NativeArrayDescriptorKind,
     NativeArrayDescriptorOwnership,
     NativeArrayOperation,
     NativeArrayResultAllocation,
     NativeDescriptorHandoffABI,
 )
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
 
 def _pointer_plan():
     module = parse_pyi_text(
         """
-from x2py.contracts import Annotated, Arg, Float64, Int32, Pointer, PointerAssociation, PointerPolicy, Return, native_call
+from prik.contracts import Annotated, Arg, Float64, Int32, Pointer, PointerAssociation, PointerPolicy, Return, native_call
 
 module_pointer: Annotated[
     Pointer[Float64[:]],

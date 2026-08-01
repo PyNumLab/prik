@@ -1,6 +1,6 @@
 # Intentional difference: remove class sample, accumulator.add, and the complex
 # overload candidate while leaving the integer and real generic candidates.
-from x2py.contracts import Addr, Arg, Float64, Int32, bind, native_call, overload, private
+from prik.contracts import Addr, Arg, Float64, Int32, bind, native_call, overload, private
 
 
 class accumulator:

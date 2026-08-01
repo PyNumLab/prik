@@ -58,7 +58,7 @@ end module module_state
 Run the following command:
 
 ```bash
-python3 -m x2py module_state.f90 --out-dir build/first-module
+python3 -m prik module_state.f90 --out-dir build/first-module
 ```
 
 The extension will be named `module_state`, and the Fortran module will be available as `module_state.module_state`.
@@ -140,7 +140,7 @@ print(mod.next_local())   # 2
 Preview the generated interface without building:
 
 ```bash
-python3 -m x2py generate --pyi module_state.f90
+python3 -m prik generate --pyi module_state.f90
 ```
 
 ---

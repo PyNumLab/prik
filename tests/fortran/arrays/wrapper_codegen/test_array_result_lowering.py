@@ -5,16 +5,16 @@ from __future__ import annotations
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.ownership import CodegenAction, NativeBarrierAction, ObjectKind, OwnershipOwner, TransferMode
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import BridgeDataAction, ORDINARY_ARRAY_RESULT_COPY_REASON
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.semantics.ownership import CodegenAction, NativeBarrierAction, ObjectKind, OwnershipOwner, TransferMode
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.wrapper_policy import BridgeDataAction, ORDINARY_ARRAY_RESULT_COPY_REASON
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
 
 def _result_plan():
     module = parse_pyi_text(
         """
-from x2py.contracts import Float64, Int32, Return, native_call
+from prik.contracts import Float64, Int32, Return, native_call
 
 def direct(n: Int32) -> Float64[n]: ...
 
@@ -61,7 +61,7 @@ def test_array_result_lowering_transfers_bridge_copy_to_capsule_owned_numpy_stor
         "PyArray_New(&PyArray_Type, 1, result_obj_dims, NPY_FLOAT64, NULL, result, 0, "
         "NPY_ARRAY_C_CONTIGUOUS | NPY_ARRAY_WRITEABLE, NULL)" in c_source
     )
-    assert "PyCapsule_New(result, NULL, x2py_release_owned_memory)" in c_source
+    assert "PyCapsule_New(result, NULL, prik_release_owned_memory)" in c_source
     assert "PyArray_SetBaseObject((PyArrayObject *)result_obj, result_obj_base)" in c_source
     assert "memcpy(PyArray_DATA((PyArrayObject *)result_obj), result" not in c_source
     base_failure = c_source.split(
@@ -71,7 +71,7 @@ def test_array_result_lowering_transfers_bridge_copy_to_capsule_owned_numpy_stor
     assert "Py_DECREF(result_obj_base)" not in base_failure
     assert "free(result)" not in base_failure
     assert "void bind_c_hidden(void ** out);" in c_source
-    assert "PyCapsule_New(out, NULL, x2py_release_owned_memory)" in c_source
+    assert "PyCapsule_New(out, NULL, prik_release_owned_memory)" in c_source
     assert "real(c_double), dimension(n) :: result_value" in bridge_source
     assert "result = c_malloc(max(1_c_size_t, c_sizeof(result_value)))" in bridge_source
     assert "result_copy = reshape(result_value, [size(result_value)])" in bridge_source

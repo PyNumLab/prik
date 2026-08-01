@@ -106,11 +106,11 @@ def apply_transform(
 
 
 def test_imported_prototype_resolves_as_module_interface_definition(tmp_path):
-    from x2py.pipeline.pyi import pyi_paths_to_semantic_modules
-    from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+    from prik.pipeline.pyi import pyi_paths_to_semantic_modules
+    from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
     (tmp_path / "callback_shapes.pyi").write_text(
-        """from x2py.contracts import Float64, Int32, prototype
+        """from prik.contracts import Float64, Int32, prototype
 
 @prototype
 def transform(count: Int32, values: Float64[count]) -> Float64[count]: ...
@@ -118,7 +118,7 @@ def transform(count: Int32, values: Float64[count]) -> Float64[count]: ...
         encoding="utf-8",
     )
     (tmp_path / "api.pyi").write_text(
-        """from x2py.contracts import Float64, Int32
+        """from prik.contracts import Float64, Int32
 from .callback_shapes import transform
 
 def apply(callback: transform, count: Int32, values: Float64[count]) -> None: ...
@@ -140,7 +140,7 @@ def apply(callback: transform, count: Int32, values: Float64[count]) -> None: ..
     bridge = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
     assert "use callback_shapes, only:" in bridge
     assert "_prototype => transform" in bridge
-    assert "procedure(x2py_callback_adapter_callback_" in bridge
+    assert "procedure(prik_callback_adapter_callback_" in bridge
 
 
 @pytest.mark.parametrize(

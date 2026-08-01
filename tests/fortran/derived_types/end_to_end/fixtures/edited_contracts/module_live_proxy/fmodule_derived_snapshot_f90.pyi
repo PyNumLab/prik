@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Allocatable, Arg, Float64, Int32, native_call
+from prik.contracts import Addr, Allocatable, Arg, Float64, Int32, native_call
 
 class child:
     id: Int32

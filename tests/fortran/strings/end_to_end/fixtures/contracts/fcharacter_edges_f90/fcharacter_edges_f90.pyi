@@ -1,4 +1,4 @@
-from x2py.contracts import Return, Returns, String, native_call
+from prik.contracts import Return, Returns, String, native_call
 
 def fixed_inout(
     name: String[8]

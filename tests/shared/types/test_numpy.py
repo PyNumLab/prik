@@ -2,8 +2,8 @@
 
 import pytest
 
-from x2py.semantics.models import SemanticType
-from x2py.types.numpy import (
+from prik.semantics.models import SemanticType
+from prik.types.numpy import (
     SEMANTIC_DTYPE_TO_NUMPY_DTYPE,
     numpy_dtype_expression,
     semantic_dtype_to_numpy_dtype,

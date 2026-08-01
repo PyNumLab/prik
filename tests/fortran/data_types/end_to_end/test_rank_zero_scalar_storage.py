@@ -64,7 +64,7 @@ contains
 end module scalar_storage_contract
 """,
         contract_text="""
-from x2py.contracts import Annotated, Final, Immutable, Int32, Float64, Return, Returns, native_call
+from prik.contracts import Annotated, Final, Immutable, Int32, Float64, Return, Returns, native_call
 
 counter: Int32
 answer: Final[Int32] = 42

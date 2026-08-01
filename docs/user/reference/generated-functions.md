@@ -9,7 +9,7 @@ publication: draft
 
 # Generated Functions Reference
 
-x2py exposes supported Fortran functions, subroutines, and type-bound
+prik exposes supported Fortran functions, subroutines, and type-bound
 procedures as Python callables. The generated semantic `.pyi` contract is the
 authoritative signature: it records the Python-visible argument list, return
 shape, native argument projection, dtype, rank, mutability, and visibility.
@@ -56,7 +56,7 @@ contract uses `@native_call(...)` and `Returns[...]` to preserve the native call
 shape:
 
 ```python
-from x2py.contracts import Addr, Arg, Float64, Int32, Return, native_call
+from prik.contracts import Addr, Arg, Float64, Int32, Return, native_call
 
 @native_call([Addr(Arg(0)), Return("status", 0)])
 def check_status(n: Int32) -> Int32: ...
@@ -97,12 +97,12 @@ message outputs follow the behavior described in
 
 ## Overloads
 
-x2py overload metadata is not `typing.overload`. The generated semantic
+prik overload metadata is not `typing.overload`. The generated semantic
 contract keeps one public name and links each public implementation back to a
 specific native procedure:
 
 ```python
-from x2py.contracts import Float64, Int32, bind, overload, private
+from prik.contracts import Float64, Int32, bind, overload, private
 
 @private
 def convert_integer(value: Int32) -> Int32: ...

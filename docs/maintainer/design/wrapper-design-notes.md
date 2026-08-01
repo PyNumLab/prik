@@ -9,14 +9,14 @@ publication: draft
 
 # Wrapper Design Notes
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 This file records policy decisions that are not settled by the implemented
 Fortran wrapper contract. The parser and semantic layers should keep collecting
 source facts, emitting blockers where policy is missing, and leaving runtime
 behavior to the owning wrapper backend. User-supplied C inputs do not yet have a
 runtime backend; the generated C binding used by the Fortran path does not
 change that boundary.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 Reference details live in:
 
@@ -24,9 +24,9 @@ Reference details live in:
 - `docs/user/reference/fortran-wrapper.md`
 - `docs/user/reference/semantic-ir.md`
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 - `docs/developer/c-parser-reference.md`
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ## Known Semantic Gaps To Track
 
@@ -34,11 +34,11 @@ These are source-language concepts that the parser or semantic layer can often
 see today, but that still need a stronger `.pyi`, semantic, or wrapper policy
 before generated wrappers should treat them as supported behavior.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ### C Gaps
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 | Gap | Current risk | Proposed direction |
 | &#45;&#45;- | &#45;&#45;- | &#45;&#45;- |
 | Function pointers and callbacks | The parser can capture function-pointer shape, but some C callback declarations still lack a complete wrapper policy. | Round-trip callback signatures as named `@prototype` declarations and make wrapper planning fail until lifetime, threading, exception, context-pointer, and unregister policy is supplied. |
@@ -47,7 +47,7 @@ X2PY_C_DOCS_END -->
 | Bitfields | Bit width is parser-visible, but Python field access needs target layout, signedness, padding, and read/write rules. | Preserve bit width, declared base type, containing aggregate, and layout-sensitive attributes. Generate access through a compiled C shim or target layout probe; block direct field projection when layout cannot be proven. |
 | ABI and layout attributes | Attributes such as `packed`, `aligned`, `vector_size`, `stdcall`, `ms_abi`, asm labels, and compiler-specific qualifiers can change layout or calls. | Normalize ABI facts into semantic metadata on functions, fields, and classes. Let wrappers accept only the default ABI directly; use generated shims or explicit target support for non-default calling conventions and layout-sensitive attributes. |
 | `volatile`, `_Atomic`, and extended scalar types | These require memory-order, side-effect, or target-specific scalar policy that ordinary scalar mapping cannot express. | Add explicit semantic wrappers or metadata for volatile and atomic access, defaulting to a wrapper-planning error. Extend compiler probing for target scalar spellings such as `_BitInt`, `__int128`, and `_Float128` before assigning stable dtypes. |
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ### Fortran Gaps
 
@@ -59,29 +59,29 @@ X2PY_C_DOCS_END -->
 | Generic interfaces and operators | Named generics, defined operators, named operators, and defined assignment now preserve explicit concrete-target links. Python cannot intercept `=`, arbitrary named operators, or infer safe in-place mutation. Static extension-type inheritance is represented in Python, and scalar polymorphic input dispatch reuses the same generated overload selection path. | Use Python data-model slots for intrinsic operators, `operator_name`/`r_operator_name` methods for named operators, and mutating `assign` methods for defined assignment. Keep exact dtype/rank/extension-class dispatch and reject indistinguishable signatures during generation. |
 | Coarrays, teams, events, and directive-driven device/offload behavior | These introduce parallel runtime or device-memory semantics outside normal host wrappers. | Treat as out of the initial wrapper scope. Preserve diagnostics where detected and require a separate runtime design before claiming support. |
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 | `character(len=...)` and character ABI | Mapping all character forms to `String` loses length, kind, hidden length arguments, fixed buffers, and `bind(c)` byte-string behavior. | Represent character storage with length expression, kind, assumed-length status, array shape, and C-interoperability metadata. Require explicit encoding, termination, copy, and hidden-length ABI handling in wrapper policy. |
 | Polymorphic `class(...)` and unlimited polymorphism | Static extension-type inheritance is represented by Python C-type inheritance. Scalar `class(base), intent(in)` dummies are safe when the accepted dynamic types are the closed set of known wrapped base/descendant classes, but replacement, allocation, pointer association, results, and unlimited polymorphism still need stronger contracts. | Preserve the `class(...)` source fact for ordinary arguments. Infer it for the passed-object dummy of a resolved type-bound binding so generated `.pyi` does not repeat `Polymorphic` there. For scalar `class(base), intent(in)` arguments, generate concrete dispatch candidates through the normal overload dispatcher, ordered from descendants to base. Block polymorphic results, arrays, `intent(out)`/`intent(inout)`, allocatable scalars, pointer scalars, and `class(*)` until wrapper policy defines accepted dynamic types, allocation behavior, and ownership. Keep `class(*)` under the assumed-type descriptor blocker. |
 | Advanced type-bound procedure details | Default `pass`, explicit `pass(name)`, `nopass`, concrete type-bound generics, concrete type-bound operators, and concrete overrides are preserved and wrapped. Finalizers and deferred bindings still need stronger contracts. | Preserve complete binding metadata on semantic classes. Type-bound generics and operators use explicit `.pyi` `@overload("specific")` links and generated C-extension dispatch; unresolved or deferred targets fail at semantic conversion or wrapper planning. |
 | Derived-type layout and interoperability | `sequence`, `bind(c)`, component order, and layout remain semantic facts, but all Python wrappers are opaque. Exact monomorphic by-value dummies are called by typed Fortran bridge code; the C boundary never mirrors or byte-copies the aggregate. | Preserve the exact qualified native type and by-value fact before lowering. Keep component access in typed Fortran operations. Require compiler-proved layout only for a future direct C view, never for the opaque typed-value path. |
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ## Settled Scope
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The C frontend is a declaration and signature parser for wrapper-relevant
 interfaces. It does not need to become a full compiler-grade C implementation.
 The supported target is the API surface needed to produce or validate wrappers:
 functions, variables, structs, enums, typedefs, constants, arrays, pointers,
 callbacks, and the metadata needed for completed policy decisions.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Generated CPython extension builds copy their bundled C/Python support header
 into a `binding_support/` directory inside the build output. The generated C
-extension includes `binding_support/x2py_binding.h`. This header is an
+extension includes `binding_support/prik_binding.h`. This header is an
 implementation detail of the generated extension, but its name is intentionally
-x2py-specific so it does not look like user source or a generic C wrapper.
+prik-specific so it does not look like user source or a generic C wrapper.
 
 The support header is header-only and there is no separately compiled or linked
 support object. Small scalar helpers have internal linkage and are eligible for
@@ -128,14 +128,14 @@ derived runtime state, and persistent native-array handles retain one binding
 translation unit. This is a compilation mechanism, not semantic policy, and
 does not alter the completed call plan or the inlining of hot support helpers.
 
-Together these helpers expose a deliberately small `x2py_*` mechanical API:
+Together these helpers expose a deliberately small `prik_*` mechanical API:
 typed scalar unpacking, scalar creation as a Python or NumPy object, native
 array-actual extraction, and release of a bridge-owned allocation. Native
 support must not infer a layout, accept a different dtype, or choose ownership
 behavior from a value at runtime; those are completed wrapper-plan decisions.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Generated CPython extensions should expose useful NumPy-style docstrings on the
 Python-visible API. The CPython wrapper layer owns this generation because it has
 the final callable signatures, hidden projection decisions, class/property
@@ -165,7 +165,7 @@ public type, whether replacement assignment is supported, and relevant borrowed
 or descriptor-handle lifetime. Because CPython modules do not provide portable
 per-variable descriptors, module-variable documentation belongs in the
 namespace docstring.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 Verbose wrapper builds should print the exact compiler command lines they run,
 not only the source or target being compiled. The printed command should be
@@ -173,33 +173,33 @@ shell-quoted so users can copy it to reproduce object compilation, generated
 wrapper compilation (including its header-only native binding support), and
 final shared-library linking.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Normal C parsing uses a real compiler preprocessor first. Macro expansion,
 conditional compilation, token paste, stringify, and include resolution belong
 to that compiler preprocessing step. The parser should consume the resulting C
 translation unit and preserve provenance where useful.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 Raw macro-generated declarations are not a separate parser target. If a macro
 creates a declaration, that declaration should be visible after preprocessing:
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 #define DECLARE_SCALE(T) void scale_##T(T *values, int n)
 
 DECLARE_SCALE(double);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 After preprocessing, the parser should see the expanded declaration and does not
 need to understand `DECLARE_SCALE` itself.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 C compiler extensions are supported when they appear in C declarations that we
 need for wrappers. Unsupported or policy-sensitive extension semantics can still
 be represented as diagnostics or wrapper-planning errors. C++ is a separate frontend
 problem; C-compatible declarations that survive C preprocessing remain C work.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ## Wrapper Decisions To Revisit
 
@@ -211,7 +211,7 @@ versus delegate to a compiled shim or backend compiler.
 
 Example:
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 struct Packet {
     unsigned tag : 3;
@@ -221,14 +221,14 @@ struct Packet {
 
 void send_packet(struct Packet packet);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The parser can preserve struct members, bitfield facts, attributes, and the
 function signature. The wrapper phase must decide whether this can be passed
 directly, needs a generated C shim, or should be blocked because exact layout or
 calling convention is not safe enough.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ### Pointer Ownership And Lifetime
 
@@ -239,14 +239,14 @@ wrapper contract.
 
 Example:
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 double *make_values(size_t n);
 void free_values(double *values);
 void scale(double *values, size_t n);
 const double *borrow_values(void);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 These signatures alone do not prove who owns the memory, how long it lives, or
 whether Python should copy, borrow, mutate, or free it. The wrapper design
@@ -254,20 +254,20 @@ should make that explicit in `.pyi` or another policy layer.
 
 ### Pointer, Size, And Output Projections
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Explicit projections are allowed. Automatic hidden projection is not. If a C API
 uses pointer/size pairs or output buffers, the wrapper can expose a Pythonic
 shape only when the user supplies the projection policy, such as through
 `@native_call`.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 Example:
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 int read_samples(double *out, size_t capacity, size_t *written);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 The exact native contract is `out`, `capacity`, and `written`. A wrapper could
 project this to `list[float]` or `np.ndarray`, but only after the user says how
@@ -284,14 +284,14 @@ works.
 
 Example:
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```c
 typedef void (*event_callback)(int code, void *ctx);
 
 void register_callback(event_callback callback, void *ctx);
 void unregister_callback(event_callback callback, void *ctx);
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 The parser can record the callback signature. The wrapper phase must decide the
 lifetime, context pairing, threading, exception, and unregistration behavior
@@ -314,7 +314,7 @@ end subroutine
 ```
 
 The Fortran procedure may allocate or reallocate `x`. For allocatable array
-dummy arguments, x2py uses copy-return ownership: the bridge copies allocated
+dummy arguments, prik uses copy-return ownership: the bridge copies allocated
 native storage into NumPy-owned memory, deallocates the temporary Fortran
 allocation, and returns the new Python object. `None` represents an unallocated
 dummy.
@@ -357,7 +357,7 @@ array policy: the object may be returned, but the pointer component remains
 unavailable until explicit descriptor extraction, target lifetime, and release
 policy exists.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Returned derived-type wrappers own the native instance they wrap. If a
 procedure produces the value through a Fortran temporary, the bridge must move
 or copy that value into wrapper-owned native storage before the temporary goes
@@ -370,11 +370,11 @@ array views keep the owning wrapper alive and never destroy native storage
 themselves. Pointer component targets are not owned by the containing derived
 type unless explicit pointer policy says so, so destroying the wrapper must not
 deallocate those targets by default.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Allocatable borrowed views keep their containing derived-type wrapper alive, but
-x2py does not track views or invalidate them when native code reallocates or
+prik does not track views or invalidate them when native code reallocates or
 deallocates the storage. Users must call `.copy()` when they need independent
 lifetime. Allocatable `intent(inout)` array dummies are detached from the
 caller: an input array is copied into a temporary native allocation, Fortran may
@@ -384,7 +384,7 @@ attribute because the bridge uses `c_loc`; otherwise wrapper planning reports a
 blocker rather than generating a copying fallback. Allocatable scalar
 derived-type replacement remains blocked until construction, replacement, and
 destruction policy is explicit.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 Pointer reassociation has similar policy questions:
 
@@ -448,7 +448,7 @@ Python behavior.
 Semantic `.pyi` expresses these facts in one keyword-only annotation:
 
 ```python
-from x2py.contracts import Annotated, Float64, Pointer, PointerPolicy
+from prik.contracts import Annotated, Float64, Pointer, PointerPolicy
 
 value: Annotated[
     Pointer[Float64[:]],
@@ -475,14 +475,14 @@ reassociation or reallocation.
 
 ### Fortran Assumed-Rank Wrappers
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Assumed-rank numeric array arguments use a fixed generated bridge policy. The
 Python layer accepts NumPy array ranks 1 through 15, records the runtime rank
 and descriptor metadata, and rejects rank 0 scalars or higher-rank arrays before
 entering the bridge. The Fortran bridge then dispatches on each assumed-rank
 argument's runtime rank, creates a rank-specific Fortran pointer view with
 `c_f_pointer`, and calls the native procedure with fixed-rank actual arguments.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 Example:
 
@@ -525,17 +525,17 @@ implicit conversion:
   must be writeable.
 - NumPy inputs must be native-endian and aligned. The wrapper does not perform
   unsafe casts, byte swaps, or alignment-fixing copies.
-- Overlapping Python-visible arrays are not copied or de-aliased by x2py; the
+- Overlapping Python-visible arrays are not copied or de-aliased by prik; the
   call is forwarded to Fortran, so the native routine's aliasing contract still
   governs behavior.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 - Numeric array function results are copy-return values. Explicit-shape and
   automatic-shape results are copied out of the Fortran temporary into
   Python-owned C storage. Allocatable function results use the same copy-return
   policy and return `None` only when the Fortran result is unallocated.
   Zero-sized allocated results remain zero-sized NumPy arrays.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 Assumed-type `type(*)`, character arrays, and derived-type arrays remain
 blocked until explicit dtype, descriptor, ABI, layout, construction, and

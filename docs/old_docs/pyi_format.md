@@ -8,7 +8,7 @@ status: maintained
 
 # Semantic `.pyi` Format
 
-Semantic `.pyi` files are x2py's editable wrapper contract. They are valid
+Semantic `.pyi` files are prik's editable wrapper contract. They are valid
 Python stub files, but they are not meant to be clean static-type-checker stubs.
 They preserve native type, storage, ownership, shape and visibility facts that a
 wrapper generator needs. The implemented Fortran wrapper uses the same semantic
@@ -28,7 +28,7 @@ The full parity plan is tracked in
 Status terms used below:
 
 - **Generated**: emitted today by `--pyi` or `codegen.printers.pyi_printer`.
-- **Loaded**: accepted today by `x2py.pyi_parser` and converted back to
+- **Loaded**: accepted today by `prik.pyi_parser` and converted back to
   semantic IR.
 - **Planning**: can be lowered once semantic policy is complete.
 - **Build input**: accepted by the `.pyi` wrapper build for the implemented
@@ -173,7 +173,7 @@ a public runtime namespace.
 
 ### Native Artifacts And Link Resolution
 
-Semantic contracts do not map to native artifacts by filename. x2py must never
+Semantic contracts do not map to native artifacts by filename. prik must never
 assume that `name.pyi` is implemented by `name.o`:
 
 - one `.pyi` may require several objects and libraries;
@@ -324,13 +324,13 @@ extension name.
 Target CLI shapes are:
 
 ```bash
-python3 -m x2py contracts/library \
+python3 -m prik contracts/library \
   --out library \
   --native-objects native.a
 ```
 
 ```bash
-python3 -m x2py module1.pyi module2.pyi \
+python3 -m prik module1.pyi module2.pyi \
   --root-contract api.pyi \
   --out library \
   --native-library native \
@@ -340,7 +340,7 @@ python3 -m x2py module1.pyi module2.pyi \
 For a single standalone fragment, no `__init__.pyi` is required:
 
 ```bash
-python3 -m x2py dgesv.pyi \
+python3 -m prik dgesv.pyi \
   --out lapack_dgesv \
   --native-objects dgesv.o
 ```
@@ -628,9 +628,9 @@ method and is not treated as a native argument.
 
 ## Generic Procedure Overloads
 
-The x2py semantic `.pyi` format uses `@overload("specific_name")` to link one
+The prik semantic `.pyi` format uses `@overload("specific_name")` to link one
 Python-visible declaration to an ordinary concrete procedure declaration. This
-decorator is x2py metadata; it is not `typing.overload` and must not be imported
+decorator is prik metadata; it is not `typing.overload` and must not be imported
 from `typing`.
 
 ```python
@@ -754,7 +754,7 @@ Mappings:
 | `operator(.and.)`, `operator(.or.)`, `operator(.not.)` | `__and__`/`__rand__`, `__or__`/`__ror__`, `__invert__` |
 | `operator(.eqv.)`, `operator(.neqv.)` | `__eq__`, `__ne__` |
 
-x2py does not infer in-place methods such as `__iadd__`. Python's fallback
+prik does not infer in-place methods such as `__iadd__`. Python's fallback
 therefore applies: an expression such as `value += other` may replace the
 Python reference with the ordinary operator result rather than invoking
 Fortran defined assignment.
@@ -890,7 +890,7 @@ unallocated storage can be represented as `None`:
 def get_module_values() -> Annotated[Float64[:], Allocatable, Aliased] | None: ...
 ```
 
-`@module_variable("name")` is x2py metadata linking the getter to the native
+`@module_variable("name")` is prik metadata linking the getter to the native
 module variable. The getter must take no arguments and must return an
 allocatable array type unioned with `None`. `Aliased` marks native storage
 that may be exposed as a borrowed view. Plain module allocatable arrays are
@@ -925,7 +925,7 @@ the Fortran allocatable. If the Fortran value remains unallocated, Python
 receives `None`.
 
 Allocatable writable arguments remain blocked. They need a replacement policy
-for the caller-visible object before x2py can safely expose them.
+for the caller-visible object before prik can safely expose them.
 
 ## Pointer Procedure Snapshot Subset
 

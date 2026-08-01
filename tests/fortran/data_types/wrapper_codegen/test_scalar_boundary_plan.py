@@ -11,7 +11,7 @@ from tests.fortran._support.wrapper_build import (
     _import_from_build_dir,
     _sole_native_module,
 )
-from x2py import build_pyi_extension
+from prik import build_pyi_extension
 
 
 def _build_contract_module(
@@ -57,7 +57,7 @@ contains
 end module multiple_scalar_results_plan
 """,
             contract_text="""
-from x2py.contracts import Addr, Arg, Int32, Return, native_call
+from prik.contracts import Addr, Arg, Int32, Return, native_call
 
 @native_call([Addr(Arg(0)), Return("status", 1)])
 def with_scalar(n: Int32) -> tuple[Int32, Int32]: ...

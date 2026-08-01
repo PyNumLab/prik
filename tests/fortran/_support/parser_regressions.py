@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from x2py.parsers.fortran.models import FortranArgument, FortranDerivedType, FortranModule, FortranProcedureSignature
+from prik.parsers.fortran.models import FortranArgument, FortranDerivedType, FortranModule, FortranProcedureSignature
 
-from x2py.parsers.fortran.parser import (
+from prik.parsers.fortran.parser import (
     FortranParser,
     SourceUnit,
     _ParserScope,
@@ -17,7 +17,7 @@ from x2py.parsers.fortran.parser import (
     parse_fortran_project,
 )
 
-from x2py import FortranParseError, parse_fortran_file
+from prik import FortranParseError, parse_fortran_file
 
 
 def _lines(*values: str) -> list[tuple[str, int, str]]:

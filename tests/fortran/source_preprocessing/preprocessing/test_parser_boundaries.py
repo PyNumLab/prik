@@ -6,11 +6,11 @@ import re
 
 import pytest
 
-from x2py import FortranParseError, parse_fortran_file
+from prik import FortranParseError, parse_fortran_file
 
 
 def test_fortran_lexer_strip_comment_preserves_directives_and_quoted_bangs():
-    from x2py.parsers.fortran.lexer import strip_comment
+    from prik.parsers.fortran.lexer import strip_comment
 
     assert strip_comment("  !$OMP parallel do", "free") == "!$OMP parallel do"
     assert strip_comment("C$OMP PARALLEL DO", "fixed") == "!$omp PARALLEL DO"
@@ -28,7 +28,7 @@ def test_fortran_lexer_strip_comment_preserves_directives_and_quoted_bangs():
 
 
 def test_fortran_lexer_preprocess_lines_folds_free_and_fixed_continuations():
-    from x2py.parsers.fortran.lexer import preprocess_lines
+    from prik.parsers.fortran.lexer import preprocess_lines
 
     free = "alpha = one &\n  & + two ! removed\n\nbeta = 3\n! removed\n"
     assert preprocess_lines(free, filename="free.f90") == [

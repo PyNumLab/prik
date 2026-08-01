@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Arg, Float64, Int32, Return, Returns, String, native_call, prototype
+from prik.contracts import Addr, Arg, Float64, Int32, Return, Returns, String, native_call, prototype
 
 class point_t:
     def __init__(

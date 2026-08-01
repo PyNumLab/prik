@@ -9,7 +9,7 @@ publication: draft
 
 # Generated Modules Reference
 
-x2py preserves the native module namespace in the generated Python extension.
+prik preserves the native module namespace in the generated Python extension.
 Standalone procedures are exported from the extension root. Procedures,
 variables, constants, and classes declared inside a Fortran module are exported
 from that generated child module.
@@ -65,7 +65,7 @@ Module procedures are attributes of the child module and follow
 variables are direct module attributes:
 
 ```python
-from x2py.contracts import Final, Int32
+from prik.contracts import Final, Int32
 
 nmax: Final[Int32] = 12
 

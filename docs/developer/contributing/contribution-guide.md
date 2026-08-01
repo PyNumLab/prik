@@ -14,7 +14,7 @@ submission and verification requirements.
 
 ## Contribution license
 
-x2py is distributed under the MIT License. Contributions are accepted under
+prik is distributed under the MIT License. Contributions are accepted under
 the same MIT terms. By submitting a contribution, a contributor agrees to
 license it under those terms and represents that they have the right to do so.
 Contributors whose work is owned by an employer or another organization must

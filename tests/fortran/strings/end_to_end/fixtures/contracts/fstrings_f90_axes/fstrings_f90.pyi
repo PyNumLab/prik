@@ -1,4 +1,4 @@
-from x2py.contracts import Allocatable, Int32, Returns, String
+from prik.contracts import Allocatable, Int32, Returns, String
 
 def string_len_assumed(
     text: String

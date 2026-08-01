@@ -8,7 +8,7 @@ import pytest
 from tests.fortran._support.wrapper_build import (
     _build_source_or_generated_pyi_and_import,
 )
-from x2py.runtime.handles import _NativeArrayHandoff, AllocatableArray, PointerArray
+from prik.runtime.handles import _NativeArrayHandoff, AllocatableArray, PointerArray
 
 FIXTURES = Path(__file__).parent / "fixtures"
 ASSUMED_RANK_F90_SOURCE = FIXTURES / "fassumed_rank_f90.f90"

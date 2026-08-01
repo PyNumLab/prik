@@ -11,8 +11,8 @@ from types import ModuleType
 import numpy as np
 import pytest
 
-from x2py import build_pyi_extension
-from x2py.pipeline.build import build_fortran_extension
+from prik import build_pyi_extension
+from prik.pipeline.build import build_fortran_extension
 from tests.fortran._support.pyi_fixtures import assert_generated_pyi_package_matches_fixture
 
 FEATURE_ROOT = Path(__file__).resolve().parents[1]
@@ -61,7 +61,7 @@ def _build_pyi_cli(pyi_path: Path, native_object: Path, build_dir: Path):
     cmd = [
         sys.executable,
         "-m",
-        "x2py",
+        "prik",
         str(pyi_path),
         "--native-objects",
         str(native_object),
@@ -82,7 +82,7 @@ def _generate_pyi(source: Path, output_parent: Path, expected_package: Path | No
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "generate",
             "--pyi",
             str(source),
@@ -125,7 +125,7 @@ def scale_runtime_module(pyi_parity_build_mode: str, tmp_path: Path):
 
 def test_pyi_cli_requires_a_native_link_input(tmp_path: Path):
     result = subprocess.run(
-        [sys.executable, "-m", "x2py", str(PYI_FIXTURE), "--out-dir", str(tmp_path)],
+        [sys.executable, "-m", "prik", str(PYI_FIXTURE), "--out-dir", str(tmp_path)],
         capture_output=True,
         text=True,
         check=False,
@@ -153,7 +153,7 @@ def test_pyi_makefile_manifest_and_replay_workflows(tmp_path: Path):
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "generate",
             "--makefile",
             str(PYI_FIXTURE),
@@ -183,8 +183,8 @@ def test_pyi_makefile_manifest_and_replay_workflows(tmp_path: Path):
     makefile_text = makefile_path.read_text(encoding="utf-8")
 
     assert payload["compiled"] is False
-    assert manifest_path == build_dir / "x2py-build.json"
-    assert makefile_path == build_dir / "Makefile.x2py"
+    assert manifest_path == build_dir / "prik-build.json"
+    assert makefile_path == build_dir / "Makefile.prik"
     assert manifest == payload["manifest"]
     assert manifest["schema_version"] == 2
     assert manifest["build_kind"] == "pyi-wrapper"
@@ -209,7 +209,7 @@ def test_pyi_makefile_manifest_and_replay_workflows(tmp_path: Path):
     assert "-g0" in makefile_text
     assert "-fno-range-check" in makefile_text
     assert "-O0" in makefile_text
-    assert "x2py-build.json" in makefile_text
+    assert "prik-build.json" in makefile_text
     assert str(PYI_FIXTURE) in makefile_text
     assert not Path(payload["shared_library"]).exists()
 
@@ -223,7 +223,7 @@ def test_pyi_makefile_manifest_and_replay_workflows(tmp_path: Path):
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "generate",
             "--makefile",
             "--build-manifest",
@@ -245,7 +245,7 @@ def test_pyi_makefile_manifest_and_replay_workflows(tmp_path: Path):
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "--build-manifest",
             str(manifest_path),
             "--json",
@@ -269,7 +269,7 @@ def test_pyi_cli_accepts_exactly_one_entry_contract(tmp_path: Path):
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             str(PYI_FIXTURE),
             str(other),
             "--native-objects",
@@ -332,7 +332,7 @@ def test_pyi_cli_preserves_explicit_ordered_link_items(tmp_path: Path):
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "generate",
             "--sources",
             str(PYI_FIXTURE),

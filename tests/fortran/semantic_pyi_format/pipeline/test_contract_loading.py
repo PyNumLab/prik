@@ -4,12 +4,12 @@ from pathlib import Path
 
 import pytest
 
-import x2py.pipeline.pyi as pyi_pipeline
-from x2py import build_pyi_extension
-from x2py.pipeline import build as build_pipeline
-from x2py.pipeline.build import _discover_pyi_imports, _pyi_contract_bundle, _pyi_dependency_path
-from x2py.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
-from x2py.wrapper_codegen.printers import emit_module
+import prik.pipeline.pyi as pyi_pipeline
+from prik import build_pyi_extension
+from prik.pipeline import build as build_pipeline
+from prik.pipeline.build import _discover_pyi_imports, _pyi_contract_bundle, _pyi_dependency_path
+from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
+from prik.wrapper_codegen.printers import emit_module
 
 FIXTURES = Path(__file__).parent / "fixtures"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
@@ -60,7 +60,7 @@ def test_pyi_contract_bundle_reuses_import_discovery_conversion_cache(monkeypatc
     dependency = tmp_path / "types_mod.pyi"
     entry.write_text(
         """
-from x2py.contracts import Float64
+from prik.contracts import Float64
 from .types_mod import particle
 
 def inspect(item: particle) -> Float64: ...
@@ -69,7 +69,7 @@ def inspect(item: particle) -> Float64: ...
     )
     dependency.write_text(
         """
-from x2py.contracts import Float64
+from prik.contracts import Float64
 
 class particle:
     mass: Float64
@@ -105,7 +105,7 @@ def test_pyi_contract_bundle_checks_native_contract_before_returning_modules(mon
     contract = tmp_path / "native_contract.pyi"
     contract.write_text(
         """
-from x2py.contracts import Float64
+from prik.contracts import Float64
 
 def scale(x: Float64) -> Float64: ...
 """,

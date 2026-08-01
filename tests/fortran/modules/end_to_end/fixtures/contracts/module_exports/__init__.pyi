@@ -1,4 +1,4 @@
-from x2py.contracts import Int32, external
+from prik.contracts import Int32, external
 from . import module1
 from . import module2
 

@@ -10,16 +10,16 @@ from types import SimpleNamespace
 
 import pytest
 
-from x2py.parsers.c import CParseError
-from x2py.parsers.c import cli as c_parser_cli
-from x2py import cli as x2py_cli
-from x2py.pipeline.preprocessing import PreprocessingConfig
+from prik.parsers.c import CParseError
+from prik.parsers.c import cli as c_parser_cli
+from prik import cli as prik_cli
+from prik.pipeline.preprocessing import PreprocessingConfig
 
-CONTRACT_IMPORT = "from x2py.contracts import Int32\n\n"
+CONTRACT_IMPORT = "from prik.contracts import Int32\n\n"
 
 
 def test_cli_parse_help_shows_explicit_c_language_mode():
-    cmd = [sys.executable, "-m", "x2py", "parse", "--help"]
+    cmd = [sys.executable, "-m", "prik", "parse", "--help"]
 
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
@@ -30,7 +30,7 @@ def test_cli_parse_help_shows_explicit_c_language_mode():
 def test_cli_c_parse_human_tree_output_for_header(tmp_path: Path):
     header = tmp_path / "api.h"
     header.write_text("int add(int a, int b);\n", encoding="utf-8")
-    cmd = [sys.executable, "-m", "x2py", "parse", str(header), "--language", "c"]
+    cmd = [sys.executable, "-m", "prik", "parse", str(header), "--language", "c"]
 
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
@@ -84,7 +84,7 @@ def test_cli_c_parse_json_stdout_for_header(tmp_path: Path):
     cmd = [
         sys.executable,
         "-m",
-        "x2py",
+        "prik",
         "parse",
         str(header),
         "--language",
@@ -117,7 +117,7 @@ def test_cli_c_parse_preprocesses_macros_by_default(tmp_path: Path):
         '#include "api_types.h"\n#define API_DECL(ret) ret\nAPI_DECL(api_int) run(void);\n',
         encoding="utf-8",
     )
-    cmd = [sys.executable, "-m", "x2py", "parse", str(header), "--language", "c", "--json"]
+    cmd = [sys.executable, "-m", "prik", "parse", str(header), "--language", "c", "--json"]
 
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
     payload = json.loads(res.stdout)[str(header)]
@@ -180,7 +180,7 @@ def test_c_parser_cli_helpers_errors_and_module_entrypoint(monkeypatch, capsys):
 
     monkeypatch.setattr(c_parser_cli, "main", lambda _argv=None: 0)
     with pytest.raises(SystemExit) as exc_info:
-        runpy.run_module("x2py.parsers.c.__main__", run_name="__main__")
+        runpy.run_module("prik.parsers.c.__main__", run_name="__main__")
     assert exc_info.value.code == 0
 
 
@@ -191,7 +191,7 @@ def test_cli_c_parse_json_out_writes_file_and_suppresses_stdout(tmp_path: Path):
     cmd = [
         sys.executable,
         "-m",
-        "x2py",
+        "prik",
         "parse",
         str(header),
         "--language",
@@ -216,7 +216,7 @@ def test_cli_c_parse_out_without_json_writes_json_and_suppresses_stdout(tmp_path
     cmd = [
         sys.executable,
         "-m",
-        "x2py",
+        "prik",
         "parse",
         str(header),
         "--language",
@@ -235,7 +235,7 @@ def test_cli_c_parse_out_without_json_writes_json_and_suppresses_stdout(tmp_path
 def test_cli_c_semantics_stdout_for_header(tmp_path: Path):
     header = tmp_path / "api.h"
     header.write_text("int add(int a, int b);\n", encoding="utf-8")
-    cmd = [sys.executable, "-m", "x2py", "semantics", str(header), "--language", "c"]
+    cmd = [sys.executable, "-m", "prik", "semantics", str(header), "--language", "c"]
 
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
     payload = json.loads(res.stdout)
@@ -252,7 +252,7 @@ def test_cli_c_semantics_stdout_for_header(tmp_path: Path):
 def test_cli_c_pyi_human_output_for_header(tmp_path: Path):
     header = tmp_path / "api.h"
     header.write_text("int add(int a, int b);\n", encoding="utf-8")
-    cmd = [sys.executable, "-m", "x2py", "generate", "--pyi", str(header), "--language", "c"]
+    cmd = [sys.executable, "-m", "prik", "generate", "--pyi", str(header), "--language", "c"]
 
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
@@ -267,7 +267,7 @@ def test_cli_c_pyi_out_requires_explicit_language_and_writes_when_selected(tmp_p
     header.write_text("int add(int a, int b);\n", encoding="utf-8")
 
     omitted = subprocess.run(
-        [sys.executable, "-m", "x2py", "generate", "--pyi", str(header), "--out"],
+        [sys.executable, "-m", "prik", "generate", "--pyi", str(header), "--out"],
         capture_output=True,
         text=True,
     )
@@ -277,7 +277,7 @@ def test_cli_c_pyi_out_requires_explicit_language_and_writes_when_selected(tmp_p
     assert not output.exists()
 
     selected = subprocess.run(
-        [sys.executable, "-m", "x2py", "generate", "--pyi", str(header), "--out", "--language", "c"],
+        [sys.executable, "-m", "prik", "generate", "--pyi", str(header), "--out", "--language", "c"],
         capture_output=True,
         text=True,
         check=True,
@@ -296,7 +296,7 @@ def test_cli_c_pyi_out_writes_explicit_multi_header_owner_stubs(tmp_path: Path):
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "generate",
             "--pyi",
             str(types),
@@ -325,7 +325,7 @@ def test_cli_c_input_rejects_explicit_fortran_frontend(tmp_path: Path):
     header.write_text("int add(int a, int b);\n", encoding="utf-8")
 
     result = subprocess.run(
-        [sys.executable, "-m", "x2py", "generate", "--pyi", str(header), "--language", "fortran", "--out"],
+        [sys.executable, "-m", "prik", "generate", "--pyi", str(header), "--language", "fortran", "--out"],
         capture_output=True,
         text=True,
     )
@@ -343,7 +343,7 @@ def test_cli_c_pyi_rejects_invalid_c_syntax(tmp_path: Path):
         encoding="utf-8",
     )
     result = subprocess.run(
-        [sys.executable, "-m", "x2py", "generate", "--pyi", str(header), "--language", "c"],
+        [sys.executable, "-m", "prik", "generate", "--pyi", str(header), "--language", "c"],
         capture_output=True,
         text=True,
     )
@@ -356,7 +356,7 @@ def test_cli_c_pyi_rejects_invalid_c_syntax(tmp_path: Path):
 def test_cli_c_rejects_fortran_only_parse_flags(tmp_path: Path):
     header = tmp_path / "api.h"
     header.write_text("int add(int a, int b);\n", encoding="utf-8")
-    cmd = [sys.executable, "-m", "x2py", "parse", str(header), "--language", "c", "--show-vars"]
+    cmd = [sys.executable, "-m", "prik", "parse", str(header), "--language", "c", "--show-vars"]
 
     res = subprocess.run(cmd, capture_output=True, text=True)
 
@@ -371,7 +371,7 @@ def test_cli_c_no_color_and_debug_flags_are_accepted(tmp_path: Path):
     cmd = [
         sys.executable,
         "-m",
-        "x2py",
+        "prik",
         "parse",
         str(header),
         "--language",
@@ -399,7 +399,7 @@ int b;
         encoding="utf-8",
     )
 
-    base_cmd = [sys.executable, "-m", "x2py", "parse", str(source), "--language", "c"]
+    base_cmd = [sys.executable, "-m", "prik", "parse", str(source), "--language", "c"]
     no_color_res = subprocess.run(
         [*base_cmd, "--no-color"],
         capture_output=True,
@@ -419,7 +419,7 @@ int b;
 def test_cli_c_invalid_primitive_specifier_sequence_is_fatal(tmp_path: Path):
     header = tmp_path / "invalid_specifiers.h"
     header.write_text("unsigned float value;\n", encoding="utf-8")
-    cmd = [sys.executable, "-m", "x2py", "parse", str(header), "--language", "c", "--no-color"]
+    cmd = [sys.executable, "-m", "prik", "parse", str(header), "--language", "c", "--no-color"]
 
     res = subprocess.run(cmd, capture_output=True, text=True)
 
@@ -434,7 +434,7 @@ def test_cli_c_debug_reraises_parse_errors(tmp_path: Path):
     cmd = [
         sys.executable,
         "-m",
-        "x2py",
+        "prik",
         "parse",
         str(header),
         "--language",
@@ -452,7 +452,7 @@ def test_cli_c_debug_reraises_parse_errors(tmp_path: Path):
 def test_cli_c_debug_env_reraises_parse_errors(tmp_path: Path):
     header = tmp_path / "invalid_specifiers.h"
     header.write_text("unsigned float value;\n", encoding="utf-8")
-    cmd = [sys.executable, "-m", "x2py", "parse", str(header), "--language", "c"]
+    cmd = [sys.executable, "-m", "prik", "parse", str(header), "--language", "c"]
 
     res = subprocess.run(
         cmd,
@@ -492,13 +492,13 @@ def test_c_parser_cli_module_handles_directory_loader_and_output_modes(tmp_path:
 
 
 def test_c_parser_module_entrypoint_and_exports(tmp_path: Path):
-    import x2py.parsers.c.__main__ as c_module_entrypoint
-    from x2py.parsers.c.parser import parse_c_project
+    import prik.parsers.c.__main__ as c_module_entrypoint
+    from prik.parsers.c.parser import parse_c_project
 
     header = tmp_path / "api.h"
     header.write_text("int run(void);\n", encoding="utf-8")
     result = subprocess.run(
-        [sys.executable, "-m", "x2py.parsers.c", str(header), "--json"],
+        [sys.executable, "-m", "prik.parsers.c", str(header), "--json"],
         capture_output=True,
         text=True,
         check=True,
@@ -514,7 +514,7 @@ def test_c_parser_module_formats_parse_errors_without_traceback(tmp_path: Path):
     header.write_text("@@@;\n", encoding="utf-8")
 
     result = subprocess.run(
-        [sys.executable, "-m", "x2py.parsers.c", str(header), "--no-color"],
+        [sys.executable, "-m", "prik.parsers.c", str(header), "--no-color"],
         capture_output=True,
         text=True,
     )
@@ -529,7 +529,7 @@ def test_c_parser_module_debug_reraises_parse_errors(tmp_path: Path):
     header.write_text("@@@;\n", encoding="utf-8")
 
     result = subprocess.run(
-        [sys.executable, "-m", "x2py.parsers.c", str(header), "--debug"],
+        [sys.executable, "-m", "prik.parsers.c", str(header), "--debug"],
         capture_output=True,
         text=True,
     )
@@ -539,7 +539,7 @@ def test_c_parser_module_debug_reraises_parse_errors(tmp_path: Path):
     assert "CParseError" in result.stderr
 
 
-def test_x2py_c_compiler_source_loader_drives_semantics_and_pyi(tmp_path: Path, monkeypatch):
+def test_prik_c_compiler_source_loader_drives_semantics_and_pyi(tmp_path: Path, monkeypatch):
     header = tmp_path / "api.h"
     header.write_text("API(int) add(int a, int b);\n", encoding="utf-8")
     calls: list[Path] = []
@@ -553,10 +553,10 @@ def test_x2py_c_compiler_source_loader_drives_semantics_and_pyi(tmp_path: Path, 
             SimpleNamespace(to_dict=lambda: {"mode": "compiler", "compiler": config.compiler}),
         )
 
-    monkeypatch.setattr(x2py_cli, "run_compiler_preprocessor_with_recipe", preprocess)
+    monkeypatch.setattr(prik_cli, "run_compiler_preprocessor_with_recipe", preprocess)
     config = PreprocessingConfig(mode="compiler", compiler="cc")
 
-    semantics = x2py_cli._semantic_report([str(header)], config, language="c")
+    semantics = prik_cli._semantic_report([str(header)], config, language="c")
     assert semantics[str(header)]["semantic_modules"][0]["functions"][0]["name"] == "add"
     assert calls == [header]
 
@@ -566,7 +566,7 @@ def test_cli_c_default_build_rejects_the_unsupported_build_language(tmp_path: Pa
     header.write_text("int add(int a, int b);\n", encoding="utf-8")
 
     no_stage = subprocess.run(
-        [sys.executable, "-m", "x2py", str(header), "--language", "c"],
+        [sys.executable, "-m", "prik", str(header), "--language", "c"],
         capture_output=True,
         text=True,
     )

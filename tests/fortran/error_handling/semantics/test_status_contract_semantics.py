@@ -2,13 +2,13 @@
 
 import pytest
 
-from x2py.pipeline.pyi import pyi_text_to_semantic_module
-from x2py.semantics.models import RUNTIME_RELEASE_GIL_METADATA, RUNTIME_STATUS_ERROR_METADATA
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.wrapper_codegen.printers import emit_module
+from prik.pipeline.pyi import pyi_text_to_semantic_module
+from prik.semantics.models import RUNTIME_RELEASE_GIL_METADATA, RUNTIME_STATUS_ERROR_METADATA
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.wrapper_codegen.printers import emit_module
 
 
-_CONTRACT_IMPORTS = """from x2py.contracts import (
+_CONTRACT_IMPORTS = """from prik.contracts import (
     Float64, Int32, Returns, String, nogil, raises
 )
 """

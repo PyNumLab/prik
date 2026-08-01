@@ -26,7 +26,7 @@ def test_lane_commands_run_profile_and_cli_evidence_before_strict_smoke(tmp_path
         "-m",
         "toolchain_smoke",
         "--require-toolchain-smoke",
-        "--x2py-fortran-compiler=/opt/toolchains/bin/ifx",
+        "--prik-fortran-compiler=/opt/toolchains/bin/ifx",
     )
     assert f"--junitxml={tmp_path / 'pytest-toolchain-smoke-results.xml'}" in smoke
 
@@ -37,4 +37,4 @@ def test_plan_prints_both_commands_without_resolving_the_compiler(capsys):
     lines = capsys.readouterr().out.splitlines()
     assert lines[0].startswith("profile-and-cli: ")
     assert lines[1].startswith("strict-smoke: ")
-    assert "--x2py-fortran-compiler=/missing/flang" in lines[1]
+    assert "--prik-fortran-compiler=/missing/flang" in lines[1]

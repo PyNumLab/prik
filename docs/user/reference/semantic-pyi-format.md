@@ -13,14 +13,14 @@ For the supported edit workflow and runtime consequences of changing a
 contract, including ownership and destruction examples, see
 [Editing `.pyi` contracts](pyi-contracts/index.md).
 
-<!-- X2PY_C_DOCS_START
-Semantic `.pyi` files are x2py's editable wrapper contract. They are valid
+<!-- PRIK_C_DOCS_START
+Semantic `.pyi` files are prik's editable wrapper contract. They are valid
 Python stub files, but they are not meant to be clean static-type-checker stubs.
 They preserve native type, storage, ownership, shape and visibility facts that a
 wrapper generator needs. The implemented Fortran wrapper uses the same semantic
 contract internally; the wrapper backend for user-supplied C inputs remains
 future work.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 The normal wrapper workflow accepts recognizable Fortran source without a
 stage flag. A `.pyi`-driven wrapper workflow is also available for the
@@ -37,7 +37,7 @@ Status terms used below:
 
 - **Generated**: emitted today by `--pyi` or
   `wrapper_codegen.printers.pyi_printer`.
-- **Loaded**: accepted today by `x2py.parsers.pyi` and converted back to
+- **Loaded**: accepted today by `prik.parsers.pyi` and converted back to
   semantic IR.
 - **Planning**: can be lowered by the implemented wrapper planner once its
   semantic policy is complete.
@@ -45,17 +45,17 @@ Status terms used below:
   subset when the required native artifacts are supplied.
 - **Roadmap**: design direction, not implemented wrapper behavior.
 
-Parser-related pull requests that change `x2py/parsers/pyi/` or its focused
+Parser-related pull requests that change `prik/parsers/pyi/` or its focused
 loading tests must update this reference. The parser-reference guard checks
 that contract independently from the language parser references.
 
 ## Contract Imports
 
-Every semantic `.pyi` control name is imported from `x2py.contracts`. This
+Every semantic `.pyi` control name is imported from `prik.contracts`. This
 single namespace also re-exports the typing forms used by the contract:
 
 ```python
-from x2py.contracts import Addr, Arg, Final, Flat, Float64, Int32, native_call
+from prik.contracts import Addr, Arg, Final, Flat, Float64, Int32, native_call
 
 max_colors: Final[Int32] = 256
 
@@ -70,7 +70,7 @@ instead of matching the final spelling. For example, importing
 has the same name, generated contracts alias only the imported control name:
 
 ```python
-from x2py.contracts import Final, Flat as LayoutFlat, Float64, Int32
+from prik.contracts import Final, Flat as LayoutFlat, Float64, Int32
 
 Flat: Final[Int32] = 10
 values: Float64[LayoutFlat]
@@ -78,10 +78,10 @@ values: Float64[LayoutFlat]
 
 The alias spelling in generated files is an implementation detail; edited
 contracts may use any non-conflicting local alias imported from
-`x2py.contracts`.
+`prik.contracts`.
 
 Bare-name compatibility is not part of the format. Contract files must import
-every x2py or re-exported typing form they use.
+every prik or re-exported typing form they use.
 
 The user-facing Fortran, semantic `.pyi`, Python, and NumPy mapping is documented
 in [Data Types](../guide/data-types.md). The underlying semantic model is
@@ -90,7 +90,7 @@ documented in [Semantic IR reference](semantic-ir.md).
 ## Misuse, Diagnostics And Risk
 
 Semantic `.pyi` files are ordinary Python syntax, so a user can write many
-things that are syntactically valid but not meaningful to x2py. The wrapper
+things that are syntactically valid but not meaningful to prik. The wrapper
 build accepts only the documented semantic subset. Unsupported syntax, unknown
 metadata, missing native facts, contradictory projection metadata, and unsupported
 runtime policy must never be ignored and must never trigger a hidden fallback to
@@ -109,15 +109,15 @@ Failures should happen at the earliest layer that has enough information:
   file shape.
 - **Unsupported policy** fails during wrapper planning or lowering: ownership,
   lifetime, replacement, pointer reassociation, callback lifetime, coercion, or
-  allocation behavior that x2py cannot yet express safely.
+  allocation behavior that prik cannot yet express safely.
 - **Native artifact mismatches** fail during compile, link, import, or runtime
-  execution. x2py can validate the `.pyi` contract structure; it cannot prove
+  execution. prik can validate the `.pyi` contract structure; it cannot prove
   that an arbitrary caller-supplied object, archive, or shared library implements
   the declared ABI.
 
 Actionable diagnostics should name the contract path when available, the
 declaration or import being processed, the invalid fact, and the expected
-documented form. When x2py can continue only by guessing, it should report an
+documented form. When prik can continue only by guessing, it should report an
 error instead of guessing.
 
 When a `.pyi` file is converted from disk, syntax diagnostics use Python's
@@ -136,7 +136,7 @@ behavior, write a projected return contract such as
 `Returns["name", String[n]]`.
 
 Future unsafe, coercion, or copy/readback modes must be explicit `.pyi` metadata.
-x2py must not infer them from malformed syntax or from a declaration that merely
+prik must not infer them from malformed syntax or from a declaration that merely
 looks risky.
 
 `Immutable` marks a Python-visible value as replace-only: native code may write a
@@ -146,7 +146,7 @@ place. `Transfer("borrowed_view")` requests no-copy shared storage. Combining
 loading the `.pyi` contract:
 
 ```python
-from x2py.contracts import Annotated, Float64, Immutable, Transfer
+from prik.contracts import Annotated, Float64, Immutable, Transfer
 
 def normalize(
     values: Annotated[Float64[:], Immutable, Transfer("borrowed_view")]
@@ -180,7 +180,7 @@ fails closed for missing handlers.
 Loaded files support imports, classes, enums, variables and stub functions:
 
 ```python
-from x2py.contracts import Addr, Arg, Final, Float64, Int32, native_call
+from prik.contracts import Addr, Arg, Final, Float64, Int32, native_call
 
 from types_mod import particle
 
@@ -280,7 +280,7 @@ The ordinary module-procedure form is intentionally small when the Python
 signature already describes the native argument order:
 
 ```python
-from x2py.contracts import Float64
+from prik.contracts import Float64
 
 def update(value: Float64[()]) -> None: ...
 ```
@@ -288,7 +288,7 @@ def update(value: Float64[()]) -> None: ...
 Only standalone procedures carry `@external`:
 
 ```python
-from x2py.contracts import Float64, external
+from prik.contracts import Float64, external
 
 @external
 def update(value: Float64[()]) -> None: ...
@@ -310,7 +310,7 @@ is emitted only when a derived type has irreducible attributes or finalizers.
 
 These facts are structurally validated before `.pyi` wrapper code generation.
 They are declarations about the supplied native artifacts, not binary
-introspection: x2py cannot prove that an arbitrary opaque binary actually uses
+introspection: prik cannot prove that an arbitrary opaque binary actually uses
 the declared ABI.
 
 ### Contained Module Procedures
@@ -320,7 +320,7 @@ declared without `@external` in that module contract is contained in the native
 Fortran module:
 
 ```python
-from x2py.contracts import Float64
+from prik.contracts import Float64
 
 # module1.pyi
 def update(value: Float64[()]) -> None: ...
@@ -343,7 +343,7 @@ A procedure outside every Fortran module is marked explicitly with
 `@external`:
 
 ```python
-from x2py.contracts import Float64, Int32, external
+from prik.contracts import Float64, Int32, external
 
 # externals/dgesv.pyi
 @external
@@ -361,7 +361,7 @@ Python-visible renaming is separate from placement. `@bind` retains the native
 Fortran procedure name while the declaration uses a wrapper name:
 
 ```python
-from x2py.contracts import Float64, Int32, bind, external
+from prik.contracts import Float64, Int32, bind, external
 
 @external
 @bind("dgesv")
@@ -407,7 +407,7 @@ The entry file is the only wrapper input. It recursively discovers its native
 leaves:
 
 ```bash
-python3 -m x2py contracts/basic_subroutine/__init__.pyi \
+python3 -m prik contracts/basic_subroutine/__init__.pyi \
   --native-objects basic_subroutine.o
 ```
 
@@ -423,7 +423,7 @@ A mixed source keeps standalone procedures in the entry contract and marks each
 one with `@external`:
 
 ```python
-from x2py.contracts import Float64, external
+from prik.contracts import Float64, external
 
 from . import m1
 
@@ -439,7 +439,7 @@ For several ordered sources, the requested output directory is still the package
 itself. If two sources each define two modules, then:
 
 ```bash
-python3 -m x2py generate --pyi first_api.f90 second_api.f90 --out contracts
+python3 -m prik generate --pyi first_api.f90 second_api.f90 --out contracts
 ```
 
 emits exactly this shape when no extra dependency stubs are needed:
@@ -478,7 +478,7 @@ For legacy BLAS/LAPACK-style assumed-size arrays such as `DX(*)`, generated
 contracts use `Flat`:
 
 ```python
-from x2py.contracts import Addr, Flat, Float64, Int32, external
+from prik.contracts import Addr, Flat, Float64, Int32, external
 
 @external
 def DAXPY(
@@ -505,16 +505,16 @@ assumed-size declaration, source-generated contracts use declared prefix
 extents such as `Float64[n, Flat]`; edited contracts may use `:` when the Python
 actual should provide that prefix extent.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 C-order flat storage can be expressed for native routines that consume a raw
 flat buffer while the Python contract validates a multidimensional C-contiguous
 view:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
 
-from x2py.contracts import Addr, Annotated, Flat, Float64, Int32, ORDER_C, external
+from prik.contracts import Addr, Annotated, Flat, Float64, Int32, ORDER_C, external
 
 @external
 def row_sums(
@@ -523,20 +523,20 @@ def row_sums(
     result: Float64[Flat],
 ) -> None: ...
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Here `values` is not a literal Fortran dummy declaration such as `real ::
 values(*, 3)`, which Fortran does not allow. It is a Python storage contract:
 the wrapper validates a C-contiguous `(n, 3)` view, constructs the corresponding
 rank-2 Fortran bridge view over the same storage, and passes it to the native
 assumed-size dummy. The native routine's `values(*)` dummy receives the
 flattened element sequence and interprets the elements in row-major order.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ### Native Artifacts And Link Resolution
 
-Semantic contracts do not map to native artifacts by filename. x2py must never
+Semantic contracts do not map to native artifacts by filename. prik must never
 assume that `name.pyi` is implemented by `name.o`:
 
 - one entry `.pyi` may require several objects and libraries;
@@ -704,7 +704,7 @@ from .module2 import *
 
 The entry filename chooses the compiled extension and shared-library name by
 default. For `__init__.pyi`, the resolved containing directory name is used;
-calling x2py as either `foo/__init__.pyi` or `__init__.pyi` from inside `foo/`
+calling prik as either `foo/__init__.pyi` or `__init__.pyi` from inside `foo/`
 therefore selects `foo`. Wrapper `--out NAME`
 overrides that inference and controls the extension filename,
 `PyInit_<name>` symbol, and Python import name.
@@ -712,13 +712,13 @@ overrides that inference and controls the extension filename,
 Target CLI shapes are:
 
 ```bash
-python3 -m x2py contracts/library/__init__.pyi \
+python3 -m prik contracts/library/__init__.pyi \
   --out library \
   --native-objects native.a
 ```
 
 ```bash
-python3 -m x2py api.pyi \
+python3 -m prik api.pyi \
   --out library \
   --native-library native \
   --native-library-dir /path/to/libs
@@ -727,7 +727,7 @@ python3 -m x2py api.pyi \
 For a single standalone fragment, no `__init__.pyi` is required:
 
 ```bash
-python3 -m x2py dgesv.pyi \
+python3 -m prik dgesv.pyi \
   --out lapack_dgesv \
   --native-objects dgesv.o
 ```
@@ -739,7 +739,7 @@ arguments.
 
 ### Contract Import Graph
 
-x2py parses the entry as a restricted semantic stub; it does not execute Python
+prik parses the entry as a restricted semantic stub; it does not execute Python
 code. Every relative import is resolved recursively to a sibling `.pyi` or a
 package `__init__.pyi`, producing the complete transitive contract graph before
 wrapper planning or code generation. Files that both declare native objects and import
@@ -767,7 +767,7 @@ extension binding surface. Declarations in imported leaf files that are not
 reachable from that policy do not get standalone public wrapper bindings; they
 remain native contract facts only when an exported declaration depends on them.
 
-Absolute support imports such as `from x2py.contracts import prototype` or
+Absolute support imports such as `from prik.contracts import prototype` or
 `from types import SimpleNamespace` may support annotation parsing, but they are
 not contract graph edges and never create runtime exports. Generated references
 to declarations in another contract package file use relative imports.
@@ -779,9 +779,9 @@ builds must not disagree about namespace placement.
 
 ## Semantic Type Names
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The public annotations use semantic names, not raw C or Fortran spellings:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 | Family | Names |
 | --- | --- |
@@ -796,7 +796,7 @@ X2PY_C_DOCS_END -->
 | Prototype primitive reference | `Addr(T)` inside a `@prototype` declaration |
 | Prototype non-primitive value override | `Value(T)` inside a `@prototype` declaration |
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 `Unknown` is intentionally rejected in `.pyi` annotations. Generated stubs must
 resolve or block unsupported source types instead of emitting unknown contracts.
 Current C callback placeholders such as `CFunctionPointer` can appear in
@@ -807,7 +807,7 @@ type, rank, shape, character length, result shape, and value/reference passing.
 It does not repeat native callback direction:
 
 ```python
-from x2py.contracts import Addr, Float64, Int32, prototype
+from prik.contracts import Addr, Float64, Int32, prototype
 
 @prototype
 def update_values(count: Addr(Int32), scale: Float64, values: Float64[:]) -> None: ...
@@ -846,14 +846,14 @@ the explicit interface.
 Optional callback dummies and allocatable, pointer, or polymorphic callback
 dummies and results are currently rejected during policy completion.
 
-Before wrapper planning, x2py completes these declarations into explicit
+Before wrapper planning, prik completes these declarations into explicit
 callback ABI, primitive-scalar value projection, non-scalar reference
 writeback, result, context-lifecycle, thread/GIL, cleanup,
 and fatal-error actions. The generated C trampoline and Fortran adapter consume
 that completed record directly.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Character annotations have two axes. The first `String[...]` subscription is
 the character length, and any second subscription is scalar-storage or array
 shape:
@@ -869,14 +869,14 @@ use `String` for a scalar non-fixed string, `String[:][:]` for an array of
 non-fixed strings, or `String[n]` for a scalar fixed-length string. Source kind
 names are already resolved into semantic dtypes, so generated contracts do not
 import `iso_c_binding`, `iso_fortran_env`, or their kind constants.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ## Python And Native Boundaries
 
 Semantic `.pyi` annotations describe two related but separate boundaries:
 
 - the Python boundary: what the caller passes to the generated wrapper;
-- the native boundary: how x2py lowers that value into the native call.
+- the native boundary: how prik lowers that value into the native call.
 
 Some types have one normal native representation. Array storage, scalar storage,
 and scalar character values are always lowered as storage addresses. Bare numeric
@@ -889,10 +889,10 @@ arguments, or scalar by-address projection differs from the default lowering.
 | Contract | Python boundary | Default native boundary |
 | --- | --- | --- |
 | `Float64` | `np.float64(...)` | scalar value |
-| `@native_call([Addr(Arg(i))])` with `Float64` | `np.float64(...)` | address of x2py's call-local native scalar slot |
+| `@native_call([Addr(Arg(i))])` with `Float64` | `np.float64(...)` | address of prik's call-local native scalar slot |
 | `Float64[()]` | rank-zero NumPy array with dtype `np.float64` | storage address |
 | `Float64[n]`, `Float64[:]`, `Float64[:, :]` | NumPy array storage | data address |
-| `String[n]` | Python `str` whose encoded length is exactly `n` | address of x2py's call-local fixed-width character storage |
+| `String[n]` | Python `str` whose encoded length is exactly `n` | address of prik's call-local fixed-width character storage |
 | `String[n][:]`, `String[:][:]` | NumPy bytes array storage | character array descriptor/data contract |
 | `String[n][()]` | rank-zero NumPy bytes array with dtype `S<n>` | fixed-width character storage copied back into the NumPy array when native code mutates it |
 | `Addr(Float64)`, `Addr(Float64[n])`, `Addr(String[n])` | integer raw address such as `array.ctypes.data` or a `ctypes` buffer address | that raw address |
@@ -914,19 +914,19 @@ storage and visible optional array storage for arrays.
 Bare scalar types are direct values:
 
 ```python
-from x2py.contracts import Float64
+from prik.contracts import Float64
 
 def dot(a: Float64, b: Float64) -> Float64: ...
 ```
 
 `T[()]` represents rank-zero NumPy storage. For arguments, the caller passes an
-addressable rank-0 NumPy array with the declared dtype; x2py validates the
+addressable rank-0 NumPy array with the declared dtype; prik validates the
 object and uses its data storage for the native call. For direct or projected
-results, x2py returns a rank-0 NumPy array instead of collapsing the contract to
+results, prik returns a rank-0 NumPy array instead of collapsing the contract to
 a scalar value:
 
 ```python
-from x2py.contracts import Float64, Int32
+from prik.contracts import Float64, Int32
 
 def update_storage(value: Float64[()]) -> None: ...
 def inspect_storage(value: Int32[()]) -> None: ...
@@ -956,7 +956,7 @@ bounds. Native lower bounds, upper bounds, and source-dimension spellings are
 not part of the semantic `.pyi` format.
 
 `String[n]` represents a Python `str` at the Python boundary. Its encoded byte
-length must be exactly `n`; x2py does not pad or truncate the public value. x2py
+length must be exactly `n`; prik does not pad or truncate the public value. prik
 converts it to call-local fixed-width character storage and passes that storage
 address to native code. If a returned `Returns["name", String[n]]` item is
 present, native mutation is copied back into a replacement Python `str`;
@@ -966,7 +966,7 @@ otherwise the mutation is discarded.
 caller passes a rank-zero NumPy fixed-width bytes array:
 
 ```python
-from x2py.contracts import String
+from prik.contracts import String
 
 def rewrite_label(label: String[8][()]) -> None: ...
 
@@ -981,18 +981,18 @@ arrays are rejected.
 Type-level `Addr(T)` represents an integer raw address supplied by the Python
 caller. It is valid only for a primitive scalar pointee, a fixed-length
 `String[n]`, or an array whose rank and every extent are resolved by literals
-or visible scalar arguments. It is an advanced unsafe contract: x2py casts the
+or visible scalar arguments. It is an advanced unsafe contract: prik casts the
 address according to the declared pointee type, but it cannot prove the address
 lifetime, true dtype, alignment, length, or ownership. The pointer value itself
 does not carry string length or array shape. Integer zero becomes a null
 pointer without a conversion error, negative integers are forwarded through
 the platform pointer conversion, and an out-of-range integer raises
-`OverflowError`. x2py likewise resolves raw-array extent expressions without a
+`OverflowError`. prik likewise resolves raw-array extent expressions without a
 positivity check. Calling native code with an invalid address or pointee shape
 is the caller's responsibility and may crash the process:
 
 ```python
-from x2py.contracts import Addr, Float64, Int32, String
+from prik.contracts import Addr, Float64, Int32, String
 
 def update_raw(value: Addr(Float64)) -> None: ...
 def inspect_raw(value: Addr(Int32)) -> None: ...
@@ -1028,7 +1028,7 @@ projected output policy is added.
 Pointer depth is explicit for low-level pointer graphs:
 
 ```python
-from x2py.contracts import Addr, Int8, OpaqueHandle
+from prik.contracts import Addr, Int8, OpaqueHandle
 
 handle: Addr[2](OpaqueHandle)
 argv: Addr[3](Int8)
@@ -1038,9 +1038,9 @@ argv: Addr[3](Int8)
 
 Array storage uses NumPy-style subscriptions:
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```python
-from x2py.contracts import Annotated, Flat, Float64, ORDER_C
+from prik.contracts import Annotated, Flat, Float64, ORDER_C
 
 vector: Float64[:]
 fixed: Float64[3]
@@ -1051,7 +1051,7 @@ flat_matrix: Float64[3, Flat]
 c_flat_matrix: Annotated[Float64[Flat, 3], ORDER_C]
 rank_polymorphic: Float64[...]
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 Dimension entries have the following meaning:
 
@@ -1074,7 +1074,7 @@ symbols when they occur in native extent expressions. Called Fortran shape
 intrinsics such as `size(v)` are recognized only after visible symbols are
 resolved; the referenced value `v` must still be visible in the interface.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 `Flat` must appear exactly once at either edge of a concrete-rank array.
 `Float64[Flat]` is the rank-one assumed-size storage contract: the Python side
 accepts any contiguous rank from 1 through 15 and flattens that storage sequence
@@ -1095,7 +1095,7 @@ the symmetric multidimensional forms are `Float64[rows, Flat]` for
 Fortran-contiguous storage and
 `Annotated[Float64[Flat, columns], ORDER_C]` for C-contiguous storage. The
 bridge reverses the latter's extents to construct its Fortran storage view.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 The Python argument may provide more storage than the declared explicit
 dimensions describe, but the wrapper passes it to native code without a stride
@@ -1120,7 +1120,7 @@ object in both cases; the generated Fortran bridge performs the typed call, and
 the binding never exposes or guesses aggregate layout.
 
 ```python
-from x2py.contracts import Annotated, COPY_F, Float64, ORDER_C
+from prik.contracts import Annotated, COPY_F, Float64, ORDER_C
 
 def fill(
     a: Float64[:, :],
@@ -1144,9 +1144,9 @@ Generated canonical metadata:
 | `Destruction("python_refcount" | "wrapper_dealloc" | "native_owner" | "caller" | "call_local" | "none" | "blocked")` | explicit destruction override for the wrapper ownership policy |
 | `PointerPolicy(...)` | complete pointer policy: `nullable`, `transfer`, `target_owner`, `lifetime`, `deallocation`, `shape_source`, `contiguity`, `reassociation`, `aliasing`, and `mutability` |
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 | `ORDER_ANY` | edited contract accepts either C or Fortran orientation |
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 Loaded compatibility metadata:
 
@@ -1156,12 +1156,12 @@ Loaded compatibility metadata:
 | `ArrayCategory("...")` | source array category provenance |
 | `FortranAllocatable` | older scalar character allocatable metadata; generated contracts use `Allocatable[String]` |
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 | `ORDER_F` | explicit Fortran-oriented storage in a C contract |
 | `ORDER_C` | explicit C-oriented storage in a Fortran contract |
 Plain multidimensional C contracts default to `ORDER_C`; generated contracts
 omit that marker and retain only an intentional alternate layout.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 Without `COPY_F`, `ORDER_C` is zero-copy and native Fortran observes the
 reversed-axis storage view. With `COPY_F`, the binding performs both copy-in and
@@ -1190,7 +1190,7 @@ Persistent native descriptors use wrapper type syntax instead of descriptor
 metadata inside `Annotated[...]`:
 
 ```python
-from x2py.contracts import Allocatable, Float64, Int32, Pointer
+from prik.contracts import Allocatable, Float64, Int32, Pointer
 
 scratch: Allocatable[Float64]
 current: Pointer[Int32]
@@ -1234,7 +1234,7 @@ descriptor for the call. An unallocated or unassociated projected result returns
 `None`.
 
 ```python
-from x2py.contracts import Allocatable, Arg, Float64, Pointer, Return, Returns, native_call
+from prik.contracts import Allocatable, Arg, Float64, Pointer, Return, Returns, native_call
 
 @native_call(
     [
@@ -1301,7 +1301,7 @@ allocation, deallocation, nullification, or resize APIs.
 Plain nullable Python projections are separate from native descriptors:
 
 ```python
-from x2py.contracts import Float64
+from prik.contracts import Float64
 
 maybe_value: Float64 | None
 ```
@@ -1340,7 +1340,7 @@ Transfer modes:
 | --- | --- | --- | --- |
 | `Transfer("by_value")` | A scalar value crosses as a Python value; no shared native storage is exposed. | `Destruction("python_refcount")` for the returned Python object. | `def count() -> Annotated[Int32, Ownership("python"), Transfer("by_value"), Destruction("python_refcount")]: ...` |
 | `Transfer("call_local")` | The wrapper creates or associates storage only for one native call. Python does not receive persistent native storage. | `Destruction("call_local")` for bridge temporaries, or `Destruction("none")` when no generated storage is owned. | `def use_value(value: Annotated[Float64, Ownership("temporary"), Transfer("call_local"), Destruction("call_local")]) -> None: ...` |
-| `Transfer("in_place")` | Native code writes through caller-provided mutable Python storage. The same Python object observes the mutation. | `Destruction("caller")`; x2py must not free caller storage. | `def scale(values: Annotated[Float64[:], Ownership("caller"), Transfer("in_place"), Destruction("caller")]) -> None: ...` |
+| `Transfer("in_place")` | Native code writes through caller-provided mutable Python storage. The same Python object observes the mutation. | `Destruction("caller")`; prik must not free caller storage. | `def scale(values: Annotated[Float64[:], Ownership("caller"), Transfer("in_place"), Destruction("caller")]) -> None: ...` |
 | `Transfer("copy_return")` | Native output is copied or read back into a fresh Python-visible return value. The original Python object is not mutated unless separately declared. | `Destruction("python_refcount")` after Python owns the copy. | `def read_values() -> Annotated[Float64[:], Ownership("python"), Transfer("copy_return"), Destruction("python_refcount")]: ...` |
 | `Transfer("snapshot_copy")` | Python receives a detached copy of current native state. Later native changes do not update it, and Python writes do not mutate native storage. This transfer name does not by itself make a returned NumPy array read-only. | `Destruction("python_refcount")` for the detached copy. | `def read_values() -> Annotated[Float64[:], Ownership("python"), Transfer("snapshot_copy"), Destruction("python_refcount")]: ...` |
 | `Transfer("borrowed_view")` | Python receives a no-copy view of storage owned somewhere else. Writes may mutate that storage when the value is mutable and the backend supports writable views. | Usually `Destruction("native_owner")` or `Destruction("wrapper_dealloc")`; Python does not free the borrowed target. | `module_values: Annotated[Allocatable[Float64[:]], Aliased, Ownership("native"), Transfer("borrowed_view"), Destruction("native_owner")]` |
@@ -1354,9 +1354,9 @@ Destruction policies:
 | `Destruction("python_refcount")` | Python, NumPy, or a generated base capsule releases the Python-owned copy when references are gone. |
 | `Destruction("wrapper_dealloc")` | The generated wrapper deallocator releases the native instance or storage owned by that wrapper. |
 | `Destruction("native_owner")` | Native module state or an external native owner releases the storage; Python only borrows it. |
-| `Destruction("caller")` | The Python caller owns the object passed into the wrapper; x2py may mutate it but must not destroy it. |
+| `Destruction("caller")` | The Python caller owns the object passed into the wrapper; prik may mutate it but must not destroy it. |
 | `Destruction("call_local")` | The generated bridge releases the temporary before the wrapped call returns. |
-| `Destruction("none")` | No persistent owned storage is created by x2py for this boundary value. This is not a claim that no native storage exists. |
+| `Destruction("none")` | No persistent owned storage is created by prik for this boundary value. This is not a claim that no native storage exists. |
 | `Destruction("blocked")` | Release ownership is unknown, contradictory, or unimplemented, so wrapper generation must stop. |
 
 Contradictions are contract errors, not implementation choices. For example,
@@ -1380,7 +1380,7 @@ available. `allocate(shape)` is permitted only when `reassociation` is
 `deallocate`, `deallocate_resize`, `owner_deallocate`,
 `unsafe_deallocate`, or `wrapper_dealloc`.
 Use `unsafe_deallocate` only when the contract intentionally makes the caller
-responsible for requesting deallocation without x2py-proven target ownership.
+responsible for requesting deallocation without prik-proven target ownership.
 `resize(shape)` is permitted only when the policy opts into resize through both
 reassociation and deallocation, using `resize`, `allocate_resize`, or
 `deallocate_resize` as appropriate. Other values keep those operations absent
@@ -1398,7 +1398,7 @@ field-record objects, the shared runtime can build live NumPy views for positive
 or negative descriptor stride multipliers.
 
 ```python
-from x2py.contracts import Annotated, Float64, Pointer, PointerPolicy
+from prik.contracts import Annotated, Float64, Pointer, PointerPolicy
 
 value: Annotated[
     Pointer[Float64[:]],
@@ -1428,7 +1428,7 @@ Derived module objects use the normal generated class in both plain and
 `Aliased` declarations:
 
 ```python
-from x2py.contracts import Aliased, Allocatable, Annotated, Float64
+from prik.contracts import Aliased, Allocatable, Annotated, Float64
 
 class box:
     values: Allocatable[Float64[:]]
@@ -1452,7 +1452,7 @@ Constants use `Final[T]`. Literal values are optional unless the value is needed
 as a compile-time expression or enumerator initializer:
 
 ```python
-from x2py.contracts import Final, Int32
+from prik.contracts import Final, Int32
 
 nmax: Final[Int32]
 answer: Final[Int32] = 42
@@ -1462,7 +1462,7 @@ Fortran enumerators are plain integer constants. Do not declare or expect
 Python `Enum`/`IntEnum` classes or semantic enum datatypes:
 
 ```python
-from x2py.contracts import Final, Int
+from prik.contracts import Final, Int
 
 STATUS_OK: Final[Int] = 0
 STATUS_RETRY: Final[Int] = STATUS_OK + 1
@@ -1472,28 +1472,28 @@ The listed names are documentation and convenience constants. Procedure
 arguments and returns that use native enum types are emitted as the underlying
 integer type.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 C enumerators use the same integer-constant contract.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ## Classes And Native Type Markers
 
 Fortran derived types and ordinary semantic classes use normal class syntax:
 
 ```python
-from x2py.contracts import Float64, Int32
+from prik.contracts import Float64, Int32
 
 class particle:
     id: Int32
     position: Float64[3]
 ```
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 C aggregate identity is explicit through base markers:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ```python
-from x2py.contracts import CStruct, CUnion, Float64, Int32, Opaque, UInt32
+from prik.contracts import CStruct, CUnion, Float64, Int32, Opaque, UInt32
 
 class packet(CStruct):
     tag: UInt32
@@ -1510,19 +1510,19 @@ class context(CStruct, Opaque):
 | --- | --- |
 | `Opaque` | type identity is known, but fields/layout are intentionally hidden |
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 | `CStruct` | native C `struct` |
 | `CUnion` | native C `union` |
 | `CAnonymous` | generated nested anonymous C aggregate type |
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Anonymous C aggregate members are represented as nested classes plus a generated
 field that marks the anonymous member:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ```python
-from x2py.contracts import Annotated, CAnonymous, CAnonymousMember, CStruct, CUnion, Float32, Int
+from prik.contracts import Annotated, CAnonymous, CAnonymousMember, CStruct, CUnion, Float32, Int
 
 class flags(CStruct):
     class anonymous_union_0_type(CUnion, CAnonymous):
@@ -1533,15 +1533,15 @@ class flags(CStruct):
     tag: Int
 ```
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The generated field preserves that the anonymous union is a real C member even
 though C exposes its fields through the containing aggregate.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 External opaque types can live in separate owner stubs:
 
 ```python
-from x2py.contracts import Opaque
+from prik.contracts import Opaque
 
 # types_mod.pyi
 class particle(Opaque):
@@ -1591,7 +1591,7 @@ discard-initial-value semantics.
 Loaded return forms:
 
 ```python
-from x2py.contracts import Float64, Int32, Returns
+from prik.contracts import Float64, Int32, Returns
 
 def f() -> None: ...
 def g(x: Float64) -> Float64: ...
@@ -1616,12 +1616,12 @@ native argument list. The list itself is exhaustive: once `@native_call` is
 present, every native dummy position must have exactly one entry in native
 order; native arguments are never inferred from leftovers.
 
-For bare numeric scalar values, `Addr(Arg(i))` means x2py first converts the
+For bare numeric scalar values, `Addr(Arg(i))` means prik first converts the
 Python argument to its native scalar representation and then passes the address
 of that native slot. It does not mean the user passed a reference.
 
 ```python
-from x2py.contracts import Addr, Arg, Float64, Returns, native_call
+from prik.contracts import Addr, Arg, Float64, Returns, native_call
 
 @native_call([Addr(Arg(0))])
 def read_ref(x: Float64) -> None: ...
@@ -1640,7 +1640,7 @@ projected replacement result, use scalar storage to expose an addressable Python
 object:
 
 ```python
-from x2py.contracts import Float64
+from prik.contracts import Float64
 
 def legacy_update(x: Float64[()]) -> None: ...
 ```
@@ -1667,12 +1667,12 @@ compiler performs any required copy when the typed bridge makes the call. It
 never asks the binding to pass aggregate bytes through the foreign ABI.
 
 ```python
-from x2py.contracts import Returns, String
+from prik.contracts import Returns, String
 
 def string_inout(label: String[8]) -> Returns["label", String[8]]: ...
 ```
 
-The caller passes a Python `str`; x2py creates fixed-width character storage,
+The caller passes a Python `str`; prik creates fixed-width character storage,
 passes its address, and returns a replacement string because the signature asks
 for one.
 
@@ -1680,7 +1680,7 @@ For example, a native subroutine ordered as `(a, status, b)` with hidden scalar
 `status` output is represented as:
 
 ```python
-from x2py.contracts import Addr, Arg, Float64, Int32, Return, native_call
+from prik.contracts import Addr, Arg, Float64, Int32, Return, native_call
 
 @native_call([Addr(Arg(0)), Return("status", 0), Addr(Arg(1))])
 def solve(
@@ -1714,7 +1714,7 @@ not native `intent`.
 The same native routine can be edited into an identity call without projection:
 
 ```python
-from x2py.contracts import Addr, Float64, Int32
+from prik.contracts import Addr, Float64, Int32
 
 def solve(
     a: Addr(Float64),
@@ -1724,7 +1724,7 @@ def solve(
 ```
 
 This form exposes the native argument order directly. Python callers allocate
-`status` as a rank-0 NumPy array and inspect it after the call; x2py does not
+`status` as a rank-0 NumPy array and inspect it after the call; prik does not
 synthesize a return value for that output slot. The raw `Addr(Float64)`
 arguments require callers to pass addresses directly; use visible `T`
 plus `@native_call([Addr(Arg(i))])` when callers should pass ordinary scalar
@@ -1741,13 +1741,13 @@ Python method name requires `@bind("native_name")`.
 
 ## Generic Procedure Overloads
 
-The x2py semantic `.pyi` format uses `@overload("specific_name")` to link one
+The prik semantic `.pyi` format uses `@overload("specific_name")` to link one
 Python-visible declaration to an ordinary concrete procedure declaration. This
-decorator is x2py metadata; it is not `typing.overload` and must not be imported
+decorator is prik metadata; it is not `typing.overload` and must not be imported
 from `typing`.
 
 ```python
-from x2py.contracts import Addr, Arg, Float64, Int32, Pass, bind, native_call, overload, private
+from prik.contracts import Addr, Arg, Float64, Int32, Pass, bind, native_call, overload, private
 
 @private
 @native_call([Addr(Arg(0))])
@@ -1804,7 +1804,7 @@ This is required when a public generic is the only native entry point for a
 private specific:
 
 ```python
-from x2py.contracts import Int32, bind, overload, private
+from prik.contracts import Int32, bind, overload, private
 
 @private
 def convert_integer(value: Int32) -> Int32: ...
@@ -1815,7 +1815,7 @@ def convert_number(value: Int32) -> Int32: ...
 ```
 
 `@private` controls Python visibility only. For edited standalone contracts,
-x2py cannot infer whether the linked native procedure is accessible. A direct
+prik cannot infer whether the linked native procedure is accessible. A direct
 call to a Fortran-private specific therefore fails during the native build.
 
 Python method names recover the native generic for ordinary operators. When
@@ -1823,7 +1823,7 @@ two distinct Fortran generics share one Python method, the decorator also
 carries the otherwise unrecoverable operator spelling:
 
 ```python
-from x2py.contracts import Bool, overload
+from prik.contracts import Bool, overload
 
 @overload("equivalent_values", generic="operator(.eqv.)")
 def __eq__(self, other: value) -> Bool: ...
@@ -1833,14 +1833,14 @@ For class methods, `generic=` is restricted to a compatible operator or
 assignment generic. It is emitted for `.eqv.` and `.neqv.`, which would
 otherwise be indistinguishable from `operator(==)` and `operator(/=)`.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The generated C extension exposes one callable for each generic name. It
 dispatches before conversion using the wrapped scalar dtype, array element
 dtype and rank, or wrapped derived-type class. It does not use implicit numeric
 coercion to choose an overload. Array shape, bounds, and layout are validated
 by the selected concrete wrapper, but they do not distinguish overloads;
 overloads that differ only in those properties are rejected during generation.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 Each specific keeps its declared Python call shape. The generated dispatcher
 normalizes positional and keyword arguments against each candidate, then uses
@@ -1848,14 +1848,14 @@ the candidate's exact typed predicates. A call that matches no specific raises
 `TypeError`; duplicate runtime dtype/rank/class signatures are a deterministic
 generation error.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Wrapped derived types dispatch by their generated extension class. Fortran
 `extends` relationships create the corresponding Python extension-type
 inheritance graph. Ordinary overload predicates remain exact-class predicates;
 closed scalar `class(base), intent(in)` dispatch separately enumerates the
 supported descendants most-derived first. User-defined Python subclasses are
 not part of this runtime contract.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ## Defined Operators And Assignment
 
@@ -1864,7 +1864,7 @@ full Fortran operand list, while the class declaration describes the Python
 method call:
 
 ```python
-from x2py.contracts import Addr, Arg, Float64, Pass, native_call, overload, private
+from prik.contracts import Addr, Arg, Float64, Pass, native_call, overload, private
 
 @private
 @native_call([Arg(0), Addr(Arg(1))])
@@ -1891,7 +1891,7 @@ Operand positions are fixed:
 | unary method | `self` is the only operand |
 | comparison method | `self` is the Python left operand; reflected comparison metadata restores native order |
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Return annotations must equal the concrete procedure result. The generated C
 extension dispatches the Python slot before conversion by dtype, rank, and
 wrapped extension class. Operator slots also accept a native Python scalar when
@@ -1900,7 +1900,7 @@ family; this is needed when Python or NumPy invokes a reflected slot with a
 built-in scalar. No match raises `TypeError`, and indistinguishable candidates
 fail during generation. Three-argument `pow(value, exponent, modulus)` is not a
 Fortran operator form and raises `TypeError`.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 Mappings:
 
@@ -1916,7 +1916,7 @@ Mappings:
 | `operator(.and.)`, `operator(.or.)`, `operator(.not.)` | `__and__`/`__rand__`, `__or__`/`__ror__`, `__invert__` |
 | `operator(.eqv.)`, `operator(.neqv.)` | `__eq__`, `__ne__` |
 
-x2py does not infer in-place methods such as `__iadd__`. Python's fallback
+prik does not infer in-place methods such as `__iadd__`. Python's fallback
 therefore applies: an expression such as `value += other` may replace the
 Python reference with the ordinary operator result rather than invoking
 Fortran defined assignment.
@@ -1930,7 +1930,7 @@ Python assignment cannot be intercepted. Fortran `assignment(=)` is exposed as
 explicit mutation:
 
 ```python
-from x2py.contracts import Addr, Arg, Float64, Pass, Returns, native_call, overload, private
+from prik.contracts import Addr, Arg, Float64, Pass, Returns, native_call, overload, private
 
 @private
 @native_call([Arg(0), Addr(Arg(1))])
@@ -1980,7 +1980,7 @@ obj.reset_values()               # may invalidate x; y remains valid
 Derived-type allocatable fields remain fields in `.pyi`:
 
 ```python
-from x2py.contracts import Allocatable, Float64
+from prik.contracts import Allocatable, Float64
 
 class buffer:
     values: Allocatable[Float64[:]]
@@ -1996,7 +1996,7 @@ keyword is optional: omitted components keep the native allocation state,
 including any Fortran default component initializer.
 
 ```python
-from x2py.contracts import Float64, Int32
+from prik.contracts import Float64, Int32
 
 class state:
     def __init__(
@@ -2032,7 +2032,7 @@ It may also be removed when only construction should expose the initializer.
 The `__init__` declaration remains sufficient to generate the native call.
 
 ```python
-from x2py.contracts import Addr, Arg, Float64, Int32, Pass, bind, native_call
+from prik.contracts import Addr, Arg, Float64, Int32, Pass, bind, native_call
 
 class state:
     @bind("init_state")
@@ -2073,7 +2073,7 @@ module variables expose handles; unallocated state is represented by the handle,
 not by making the module attribute `None`:
 
 ```python
-from x2py.contracts import Aliased, Allocatable, Annotated, Float64
+from prik.contracts import Aliased, Allocatable, Annotated, Float64
 
 module_values: Annotated[Allocatable[Float64[:]], Aliased]
 plain_values: Allocatable[Float64[:]]
@@ -2090,7 +2090,7 @@ derived-type module object. Plain derived module objects remain live but use a
 different bridge mechanism:
 
 ```python
-from x2py.contracts import Aliased, Allocatable, Annotated, Float64
+from prik.contracts import Aliased, Allocatable, Annotated, Float64
 
 class box:
     values: Allocatable[Float64[:]]
@@ -2099,7 +2099,7 @@ live_current: Annotated[box, Aliased]
 plain_current: box
 ```
 
-The annotation belongs to the module variable, not to `box`. An x2py-created
+The annotation belongs to the module variable, not to `box`. An prik-created
 `box()` is addressable because its generated constructor allocates
 pointer-backed native storage. A native module declaration is a different object
 origin. `Annotated[box, Aliased]` lets the wrapper retain that object's native
@@ -2112,7 +2112,7 @@ Public scalar Fortran module variables are emitted directly with their resolved
 semantic type:
 
 ```python
-from x2py.contracts import Int32, String
+from prik.contracts import Int32, String
 
 counter: Int32
 label: String[8]
@@ -2122,7 +2122,7 @@ Scalar allocatable and pointer module variables keep their descriptor spelling
 in the contract while reads expose copied Python values or `None`:
 
 ```python
-from x2py.contracts import Allocatable, Float64, Pointer
+from prik.contracts import Allocatable, Float64, Pointer
 
 optional_scale: Allocatable[Float64]
 selected_scale: Pointer[Float64]
@@ -2141,13 +2141,13 @@ A mutable scalar module variable may include a literal default in an edited
 `.pyi` contract:
 
 ```python
-from x2py.contracts import Int32
+from prik.contracts import Int32
 
 counter: Int32 = 41
 ```
 
 The default is an import-time native initializer, not a `Final` constant. When
-the extension module is imported, x2py applies the value through the completed
+the extension module is imported, prik applies the value through the completed
 native setter policy. Later reads and writes still use the current native module
 storage. This initializer form is only for scalar module variables with a
 write-through setter; non-scalar or read-only declarations remain explicit
@@ -2158,13 +2158,13 @@ Fortran `parameter` declarations are emitted as `Final[...]` constants when
 their literal value can be represented in `.pyi`:
 
 ```python
-from x2py.contracts import Final, Int32
+from prik.contracts import Final, Int32
 
 nmax: Final[Int32] = 12
 ```
 
 If a Fortran `parameter` initializer is an expression, generated `.pyi` emits a
-default only after x2py has resolved that expression to a literal. Unresolved
+default only after prik has resolved that expression to a literal. Unresolved
 native expressions are kept out of the active `.pyi` default:
 
 ```fortran
@@ -2172,7 +2172,7 @@ real, parameter :: c = cos(0.0)
 ```
 
 ```python
-from x2py.contracts import Final, Float32
+from prik.contracts import Final, Float32
 
 c: Final[Float32]
 ```
@@ -2191,7 +2191,7 @@ no native setter. Mutating that Python wrapper cannot modify the Fortran
 parameter. Derived constants whose fields cannot be copied safely fail policy
 completion explicitly instead of being treated as `Aliased` module variables.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Allocatable array function results and non-optional allocatable output array
 arguments use owned-handle policy. The generated binding transfers the native
 result into persistent standard C descriptor storage and the handle releases
@@ -2199,7 +2199,7 @@ that storage on `close()` or finalization; it does not return or copy a
 compiler-private Fortran descriptor record. Optional allocatable output dummies
 remain visible so the caller can omit them and make native `present(...)`
 false.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 Supported top-level allocatable writable descriptor arguments use
 `Allocatable[T[...]]` handle policy. `| None` on the annotation means the handle
@@ -2214,7 +2214,7 @@ Fortran pointer array facts are emitted and loaded with `Pointer[T[...]]`
 handles:
 
 ```python
-from x2py.contracts import Float64, Int32, Pointer
+from prik.contracts import Float64, Int32, Pointer
 
 def sum_values(values: Pointer[Float64[:]]) -> Float64: ...
 def choose_values(flag: Int32) -> Pointer[Float64[:]]: ...
@@ -2250,7 +2250,7 @@ descriptor layout.
 `@private` marks classes, functions and methods private:
 
 ```python
-from x2py.contracts import Int32, private
+from prik.contracts import Int32, private
 
 @private
 def helper(x: Int32) -> None: ...
@@ -2259,7 +2259,7 @@ def helper(x: Int32) -> None: ...
 `private[T]` marks a variable or argument private:
 
 ```python
-from x2py.contracts import Float64, Int32, private
+from prik.contracts import Float64, Int32, private
 
 hidden_value: private[Float64]
 def consume(value: private[Int32]) -> None: ...
@@ -2275,7 +2275,7 @@ data declarations, or with `Annotated[..., SourceName("native-name")]` for calla
 arguments:
 
 ```python
-from x2py.contracts import Annotated, Int32, SourceName
+from prik.contracts import Annotated, Int32, SourceName
 
 var["class"]: Int32
 def f(class_: Annotated[Int32, SourceName("class")]) -> None: ...
@@ -2288,7 +2288,7 @@ differs from the exact native signature, whether the projection was generated
 from native projected-output behavior or written by the user:
 
 ```python
-from x2py.contracts import Arg, Float64, Return, native_call
+from prik.contracts import Arg, Float64, Return, native_call
 
 @native_call([Arg(0), Arg(0).shape[0], Return("result", 0)])
 def normalize(values: Float64[:]) -> Float64: ...
@@ -2298,7 +2298,7 @@ Scalar address inputs use a Python-visible value type and an explicit native
 address projection:
 
 ```python
-from x2py.contracts import Addr, Arg, Int32, native_call
+from prik.contracts import Addr, Arg, Int32, native_call
 
 @native_call([Addr(Arg(0))])
 def add_one(value: Int32) -> Int32: ...
@@ -2364,14 +2364,14 @@ Generated `.pyi` currently covers these exact-contract areas:
 | Imports | retained contract dependencies with aliases; source kind modules are omitted after dtype resolution |
 | Callbacks | named `@prototype` declarations when source interfaces resolve |
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 | C primitive scalars | compiler-probed semantic dtype names when a target report is supplied |
 | C and Fortran enums | module-level `Final[...]` integer constants |
 | Fortran generic interfaces | explicit `@overload("specific")` links with C-extension dtype/rank dispatch |
 | C structs/unions | `CStruct` and `CUnion` classes |
 | C anonymous aggregate members | nested `CAnonymous` classes plus `CAnonymousMember` fields |
 | Incomplete C callbacks | placeholder type that wrapper planning reports as incomplete |
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 Loaded but usually not generated from source today:
 
@@ -2423,7 +2423,7 @@ IDE/type-checker stubs that do not lose the semantic wrapper contract. The
 [language feature matrix](../language-support/feature-matrix.md) is the
 authoritative current support summary.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 1. Make C and Fortran callbacks/procedure pointers first-class by preserving
    complete named prototypes from source.
 2. Add explicit pointer ownership, borrow, nullability, output-buffer and
@@ -2432,4 +2432,4 @@ authoritative current support summary.
    byte-string metadata beyond the existing `String[n]` fixed-length contract.
 4. Expand aggregate layout metadata for C bitfields, C attributes, Fortran
    `bind(c)`, `sequence`, and by-value aggregate ABI checks.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->

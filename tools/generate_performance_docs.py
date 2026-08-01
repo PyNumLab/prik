@@ -22,9 +22,9 @@ from pyperf._compare import is_significant_benchs
 
 REPOSITORY_ROOT = Path(__file__).parents[1]
 DEFAULT_F2PY_RESULTS = REPOSITORY_ROOT / "benchmarks/results/f2py.json"
-DEFAULT_X2PY_RESULTS = REPOSITORY_ROOT / "benchmarks/results/x2py.json"
+DEFAULT_PRIK_RESULTS = REPOSITORY_ROOT / "benchmarks/results/prik.json"
 DEFAULT_F2PY_BUILD_RESULTS = REPOSITORY_ROOT / "benchmarks/results/f2py-build.json"
-DEFAULT_X2PY_BUILD_RESULTS = REPOSITORY_ROOT / "benchmarks/results/x2py-build.json"
+DEFAULT_PRIK_BUILD_RESULTS = REPOSITORY_ROOT / "benchmarks/results/prik-build.json"
 DEFAULT_PAGE = REPOSITORY_ROOT / "docs/user/performance.md"
 DEFAULT_CHART = REPOSITORY_ROOT / "docs/user/assets/performance-comparison.svg"
 DEFAULT_BUILD_CHART = REPOSITORY_ROOT / "docs/user/assets/build-time-comparison.svg"
@@ -51,9 +51,9 @@ BUILD_SHARED_METADATA = (
     "perf_version",
     "platform_details",
     "python_version",
-    "x2py_build_jobs",
+    "prik_build_jobs",
 )
-Outcome = Literal["x2py", "f2py", "parity"]
+Outcome = Literal["prik", "f2py", "parity"]
 
 
 @dataclass(frozen=True)
@@ -62,9 +62,9 @@ class BenchmarkResult:
     table_label: str
     chart_label: str
     f2py_value: float
-    x2py_value: float
+    prik_value: float
     f2py_display: str
-    x2py_display: str
+    prik_display: str
     ratio: float
     outcome: Outcome
 
@@ -87,8 +87,8 @@ class PerformanceSnapshot:
         return math.exp(sum(math.log(result.ratio) for result in self.results) / len(self.results))
 
     @property
-    def x2py_wins(self) -> tuple[BenchmarkResult, ...]:
-        return tuple(result for result in self.results if result.outcome == "x2py")
+    def prik_wins(self) -> tuple[BenchmarkResult, ...]:
+        return tuple(result for result in self.results if result.outcome == "prik")
 
     @property
     def f2py_wins(self) -> tuple[BenchmarkResult, ...]:
@@ -158,11 +158,11 @@ def _procedure_labels(name: str) -> tuple[str, str]:
     return readable, readable
 
 
-def _outcome(f2py_benchmark: pyperf.Benchmark, x2py_benchmark: pyperf.Benchmark) -> Outcome:
-    significant, _score = is_significant_benchs(f2py_benchmark, x2py_benchmark)
+def _outcome(f2py_benchmark: pyperf.Benchmark, prik_benchmark: pyperf.Benchmark) -> Outcome:
+    significant, _score = is_significant_benchs(f2py_benchmark, prik_benchmark)
     if not significant:
         return "parity"
-    return "x2py" if f2py_benchmark.mean() > x2py_benchmark.mean() else "f2py"
+    return "prik" if f2py_benchmark.mean() > prik_benchmark.mean() else "f2py"
 
 
 def _format_benchmark_value(benchmark: pyperf.Benchmark, value: float) -> str:
@@ -171,18 +171,18 @@ def _format_benchmark_value(benchmark: pyperf.Benchmark, value: float) -> str:
 
 def _compatible_metadata(
     f2py_suite: pyperf.BenchmarkSuite,
-    x2py_suite: pyperf.BenchmarkSuite,
+    prik_suite: pyperf.BenchmarkSuite,
     keys: tuple[str, ...],
 ) -> dict[str, object]:
     f2py_metadata = f2py_suite.get_metadata()
-    x2py_metadata = x2py_suite.get_metadata()
+    prik_metadata = prik_suite.get_metadata()
     shared: dict[str, object] = {}
     for key in keys:
         f2py_value = f2py_metadata.get(key)
-        x2py_value = x2py_metadata.get(key)
-        if f2py_value is None or x2py_value is None:
+        prik_value = prik_metadata.get(key)
+        if f2py_value is None or prik_value is None:
             raise ValueError(f"paired pyperf results are missing required metadata {key!r}")
-        if f2py_value != x2py_value:
+        if f2py_value != prik_value:
             raise ValueError(f"paired pyperf results disagree on metadata {key!r}")
         shared[key] = f2py_value
     return shared
@@ -196,7 +196,7 @@ def _validate_suite_identity(suite: pyperf.BenchmarkSuite, expected: str) -> Non
 
 def load_snapshot(
     f2py_path: Path,
-    x2py_path: Path,
+    prik_path: Path,
     *,
     operating_system: str,
     compiler_version: str,
@@ -206,12 +206,12 @@ def load_snapshot(
 ) -> PerformanceSnapshot:
     """Load and validate one paired benchmark snapshot."""
     f2py_suite = pyperf.BenchmarkSuite.load(str(f2py_path))
-    x2py_suite = pyperf.BenchmarkSuite.load(str(x2py_path))
+    prik_suite = pyperf.BenchmarkSuite.load(str(prik_path))
     _validate_suite_identity(f2py_suite, "f2py")
-    _validate_suite_identity(x2py_suite, "x2py")
+    _validate_suite_identity(prik_suite, "prik")
     f2py_names = f2py_suite.get_benchmark_names()
-    x2py_names = x2py_suite.get_benchmark_names()
-    if f2py_names != x2py_names:
+    prik_names = prik_suite.get_benchmark_names()
+    if f2py_names != prik_names:
         raise ValueError("paired pyperf results must contain the same benchmarks in the same order")
     if not f2py_names:
         raise ValueError("paired pyperf results contain no benchmarks")
@@ -219,9 +219,9 @@ def load_snapshot(
     results = []
     for name in f2py_names:
         f2py_benchmark = f2py_suite.get_benchmark(name)
-        x2py_benchmark = x2py_suite.get_benchmark(name)
+        prik_benchmark = prik_suite.get_benchmark(name)
         f2py_value = f2py_benchmark.mean()
-        x2py_value = x2py_benchmark.mean()
+        prik_value = prik_benchmark.mean()
         table_label, chart_label = _procedure_labels(name)
         results.append(
             BenchmarkResult(
@@ -229,18 +229,18 @@ def load_snapshot(
                 table_label=table_label,
                 chart_label=chart_label,
                 f2py_value=f2py_value,
-                x2py_value=x2py_value,
+                prik_value=prik_value,
                 f2py_display=_format_benchmark_value(f2py_benchmark, f2py_value),
-                x2py_display=_format_benchmark_value(x2py_benchmark, x2py_value),
-                ratio=f2py_value / x2py_value,
-                outcome=_outcome(f2py_benchmark, x2py_benchmark),
+                prik_display=_format_benchmark_value(prik_benchmark, prik_value),
+                ratio=f2py_value / prik_value,
+                outcome=_outcome(f2py_benchmark, prik_benchmark),
             )
         )
 
-    latest_date = max(f2py_suite.get_dates()[1], x2py_suite.get_dates()[1]).date()
+    latest_date = max(f2py_suite.get_dates()[1], prik_suite.get_dates()[1]).date()
     return PerformanceSnapshot(
         results=tuple(results),
-        metadata=_compatible_metadata(f2py_suite, x2py_suite, metadata_keys),
+        metadata=_compatible_metadata(f2py_suite, prik_suite, metadata_keys),
         recorded_date=recorded_date or latest_date,
         operating_system=operating_system,
         compiler_version=_compiler_display_name(compiler_version),
@@ -253,25 +253,25 @@ def _geometric_result(snapshot: PerformanceSnapshot) -> tuple[str, str]:
     if math.isclose(ratio, 1.0, rel_tol=0.005):
         return f"1.00{TIMES}", "geometric-mean parity"
     if ratio > 1.0:
-        return f"{ratio:.2f}{TIMES}", "x2py geometric-mean speedup"
+        return f"{ratio:.2f}{TIMES}", "PRIK geometric-mean speedup"
     return f"{1.0 / ratio:.2f}{TIMES}", "f2py geometric-mean speedup"
 
 
 def _geometric_sentence(snapshot: PerformanceSnapshot) -> str:
     ratio = snapshot.geometric_mean_ratio
     if math.isclose(ratio, 1.0, rel_tol=0.005):
-        return "the geometric-mean runtime of x2py and NumPy's f2py was at parity"
+        return "the geometric-mean runtime of PRIK and NumPy's f2py was at parity"
     if ratio > 1.0:
-        return f"the normal x2py interface delivered a **{ratio:.2f}{TIMES} geometric-mean speedup over NumPy's f2py**"
-    return f"NumPy's f2py delivered a **{1.0 / ratio:.2f}{TIMES} geometric-mean speedup over x2py**"
+        return f"the normal PRIK interface delivered a **{ratio:.2f}{TIMES} geometric-mean speedup over NumPy's f2py**"
+    return f"NumPy's f2py delivered a **{1.0 / ratio:.2f}{TIMES} geometric-mean speedup over PRIK**"
 
 
 def _outcome_sentence(snapshot: PerformanceSnapshot) -> str:
     total = len(snapshot.results)
-    x2py_count = len(snapshot.x2py_wins)
+    prik_count = len(snapshot.prik_wins)
     f2py_count = len(snapshot.f2py_wins)
     parity_count = len(snapshot.parity_results)
-    comparison = f"Across {total} workloads, x2py was faster in {x2py_count} and f2py in {f2py_count}"
+    comparison = f"Across {total} workloads, PRIK was faster in {prik_count} and f2py in {f2py_count}"
     if parity_count:
         noun = "workload" if parity_count == 1 else "workloads"
         return f"{comparison}; {parity_count} {noun} showed no statistically significant difference."
@@ -280,9 +280,9 @@ def _outcome_sentence(snapshot: PerformanceSnapshot) -> str:
 
 def _summary_markdown(snapshot: PerformanceSnapshot) -> str:
     geometric_value, geometric_label = _geometric_result(snapshot)
-    best = max(snapshot.x2py_wins, key=lambda result: result.factor, default=None)
+    best = max(snapshot.prik_wins, key=lambda result: result.factor, default=None)
     best_value = _format_factor(best.factor) if best else "—"
-    best_label = "best measured x2py speedup" if best else "no measured x2py speedup"
+    best_label = "best measured PRIK speedup" if best else "no measured PRIK speedup"
     total = len(snapshot.results)
     summary = textwrap.fill(
         f"On the benchmark system, {_geometric_sentence(snapshot)}. {_outcome_sentence(snapshot)}",
@@ -294,16 +294,16 @@ def _summary_markdown(snapshot: PerformanceSnapshot) -> str:
         [
             summary,
             "",
-            '<div class="x2py-performance-summary" role="group" aria-label="Benchmark summary">',
-            '  <div class="x2py-performance-metric">',
+            '<div class="prik-performance-summary" role="group" aria-label="Benchmark summary">',
+            '  <div class="prik-performance-metric">',
             f"    <strong>{geometric_value}</strong>",
             f"    <span>{geometric_label}</span>",
             "  </div>",
-            '  <div class="x2py-performance-metric">',
-            f"    <strong>{len(snapshot.x2py_wins)} of {total}</strong>",
-            "    <span>workloads faster with x2py</span>",
+            '  <div class="prik-performance-metric">',
+            f"    <strong>{len(snapshot.prik_wins)} of {total}</strong>",
+            "    <span>workloads faster with PRIK</span>",
             "  </div>",
-            '  <div class="x2py-performance-metric">',
+            '  <div class="prik-performance-metric">',
             f"    <strong>{best_value}</strong>",
             f"    <span>{best_label}</span>",
             "  </div>",
@@ -315,7 +315,7 @@ def _summary_markdown(snapshot: PerformanceSnapshot) -> str:
 def _relative_result(result: BenchmarkResult) -> str:
     if result.outcome == "parity":
         return "No significant difference"
-    winner = result.outcome
+    winner = "PRIK" if result.outcome == "prik" else result.outcome
     return f"{winner} {_format_factor(result.factor)} faster"
 
 
@@ -328,19 +328,19 @@ def _geometric_table_result(snapshot: PerformanceSnapshot) -> str:
     if math.isclose(ratio, 1.0, rel_tol=0.005):
         return "**At parity**"
     if ratio > 1.0:
-        return f"**x2py {ratio:.2f}{TIMES} faster**"
+        return f"**PRIK {ratio:.2f}{TIMES} faster**"
     return f"**f2py {1.0 / ratio:.2f}{TIMES} faster**"
 
 
 def _table_markdown(snapshot: PerformanceSnapshot) -> str:
     rows = [
-        "| Workload | f2py | x2py | Relative result |",
+        "| Workload | f2py | PRIK | Relative result |",
         "| --- | ---: | ---: | ---: |",
     ]
     for result in snapshot.results:
         f2py_value = _table_value(result.f2py_display, winner=result.outcome == "f2py")
-        x2py_value = _table_value(result.x2py_display, winner=result.outcome == "x2py")
-        rows.append(f"| {result.table_label} | {f2py_value} | {x2py_value} | {_relative_result(result)} |")
+        prik_value = _table_value(result.prik_display, winner=result.outcome == "prik")
+        rows.append(f"| {result.table_label} | {f2py_value} | {prik_value} | {_relative_result(result)} |")
     rows.append(f"| **Geometric mean** | reference | — | {_geometric_table_result(snapshot)} |")
     return "\n".join(rows)
 
@@ -351,13 +351,13 @@ def _build_markdown(snapshot: PerformanceSnapshot) -> str:
     rows = [
         f"Each value is the mean of {runs} clean builds after {warmups} untimed warm-up{'s' if warmups != 1 else ''}.",
         "",
-        "| Clean build workload | f2py | x2py | Relative result |",
+        "| Clean build workload | f2py | PRIK | Relative result |",
         "| --- | ---: | ---: | ---: |",
     ]
     for result in snapshot.results:
         f2py_value = _table_value(result.f2py_display, winner=result.outcome == "f2py")
-        x2py_value = _table_value(result.x2py_display, winner=result.outcome == "x2py")
-        rows.append(f"| {result.table_label} | {f2py_value} | {x2py_value} | {_relative_result(result)} |")
+        prik_value = _table_value(result.prik_display, winner=result.outcome == "prik")
+        rows.append(f"| {result.table_label} | {f2py_value} | {prik_value} | {_relative_result(result)} |")
     return "\n".join(rows)
 
 
@@ -401,7 +401,7 @@ def _environment_markdown(snapshot: PerformanceSnapshot, build_snapshot: Perform
         "- Both interfaces keep the GIL held.",
         "- OpenMP, OpenBLAS, and MKL are limited to one thread.",
         f"- `pyperf --rigorous` pins each benchmark to logical CPU `{affinity}`.",
-        f"- x2py build timings use up to {int(build_snapshot.metadata['x2py_build_jobs'])} concurrent compiler",
+        f"- PRIK build timings use up to {int(build_snapshot.metadata['prik_build_jobs'])} concurrent compiler",
         "  processes; f2py uses its normal Meson/Ninja scheduler.",
         "- Build timings alternate tool order, use clean output directories, and exclude",
         "  post-build import checks.",
@@ -412,7 +412,7 @@ def _environment_markdown(snapshot: PerformanceSnapshot, build_snapshot: Perform
         f"- NumPy/f2py: {_metadata_text(snapshot.metadata, 'numpy_version')}.",
         f"- Fortran compiler: {compiler_version}.",
         f"- pyperf: {_metadata_text(snapshot.metadata, 'perf_version')}.",
-        f"- x2py revision: `{snapshot.commit}`.",
+        f"- PRIK revision: `{snapshot.commit}`.",
         "",
         f"These results were recorded on {_month_date(snapshot.recorded_date)}. Performance depends on the CPU,",
         "compiler, operating system, and background activity, so comparisons should use",
@@ -422,8 +422,8 @@ def _environment_markdown(snapshot: PerformanceSnapshot, build_snapshot: Perform
 
 
 def _replace_block(markdown: str, name: str, replacement: str) -> str:
-    start = f"<!-- x2py-performance-{name}:start -->"
-    end = f"<!-- x2py-performance-{name}:end -->"
+    start = f"<!-- prik-performance-{name}:start -->"
+    end = f"<!-- prik-performance-{name}:end -->"
     if markdown.count(start) != 1 or markdown.count(end) != 1:
         raise ValueError(f"Performance page must contain exactly one {name!r} marker pair")
     before, remainder = markdown.split(start, maxsplit=1)
@@ -475,7 +475,7 @@ def _chart_geometric_label(snapshot: PerformanceSnapshot) -> str:
     if math.isclose(ratio, 1.0, rel_tol=0.005):
         return "Geometric mean: parity"
     if ratio > 1.0:
-        return f"Geometric mean: x2py {ratio:.2f}{TIMES} faster"
+        return f"Geometric mean: PRIK {ratio:.2f}{TIMES} faster"
     return f"Geometric mean: f2py {1.0 / ratio:.2f}{TIMES} faster"
 
 
@@ -501,17 +501,17 @@ def render_chart(snapshot: PerformanceSnapshot) -> str:
             f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" role="img" '
             'aria-labelledby="title description">'
         ),
-        '  <title id="title">x2py performance relative to f2py</title>',
+        '  <title id="title">PRIK performance relative to f2py</title>',
         '  <desc id="description">',
         (
-            f"    Relative speed across {len(snapshot.results)} benchmarks. Values above one indicate x2py is faster. "
-            f"x2py is faster in {len(snapshot.x2py_wins)} benchmarks."
+            f"    Relative speed across {len(snapshot.results)} benchmarks. Values above one indicate PRIK is faster. "
+            f"PRIK is faster in {len(snapshot.prik_wins)} benchmarks."
         ),
         "  </desc>",
         f'  <rect x="1" y="1" width="998" height="{height - 2}" rx="16" fill="#ffffff" stroke="#d8e1e8" stroke-width="2"/>',
         '  <g font-family="Inter, -apple-system, BlinkMacSystemFont, \'Segoe UI\', sans-serif" fill="#17212b">',
-        '    <text x="28" y="42" font-size="24" font-weight="700">x2py relative performance</text>',
-        '    <text x="28" y="70" font-size="14" fill="#52616f">f2py time ÷ x2py time · farther right means faster x2py calls</text>',
+        '    <text x="28" y="42" font-size="24" font-weight="700">PRIK relative performance</text>',
+        '    <text x="28" y="70" font-size="14" fill="#52616f">f2py time ÷ PRIK time · farther right means faster PRIK calls</text>',
         '    <g stroke="#e4eaef" stroke-width="1">',
     ]
     for tick in _axis_ticks(lower, upper):
@@ -535,7 +535,7 @@ def render_chart(snapshot: PerformanceSnapshot) -> str:
     )
     lines.extend(["    </g>", '    <g font-size="14">'])
 
-    colors = {"x2py": "#0f766e", "f2py": "#b45309", "parity": "#64748b"}
+    colors = {"prik": "#0f766e", "f2py": "#b45309", "parity": "#64748b"}
     for index, result in enumerate(snapshot.results):
         y = row_start + index * row_step
         point = x_position(result.ratio)
@@ -562,7 +562,7 @@ def render_chart(snapshot: PerformanceSnapshot) -> str:
             "    </g>",
             '    <g font-size="13">',
             f'      <circle cx="30" cy="{footer}" r="6" fill="#0f766e"/>',
-            f'      <text x="43" y="{footer + 5}" fill="#52616f">x2py faster</text>',
+            f'      <text x="43" y="{footer + 5}" fill="#52616f">PRIK faster</text>',
             f'      <circle cx="160" cy="{footer}" r="6" fill="#b45309"/>',
             f'      <text x="173" y="{footer + 5}" fill="#52616f">f2py faster</text>',
             f'      <circle cx="285" cy="{footer}" r="6" fill="#64748b"/>',
@@ -581,7 +581,7 @@ def render_chart(snapshot: PerformanceSnapshot) -> str:
 
 
 def _duration_axis_upper(results: tuple[BenchmarkResult, ...]) -> float:
-    maximum = max(max(result.f2py_value, result.x2py_value) for result in results)
+    maximum = max(max(result.f2py_value, result.prik_value) for result in results)
     rough_step = maximum / 5.0
     magnitude = 10 ** math.floor(math.log10(rough_step)) if rough_step > 0 else 1.0
     normalized = rough_step / magnitude
@@ -615,7 +615,7 @@ def render_build_chart(snapshot: PerformanceSnapshot) -> str:
             f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" role="img" '
             'aria-labelledby="build-title build-description">'
         ),
-        '  <title id="build-title">Clean build time for x2py and f2py</title>',
+        '  <title id="build-title">Clean build time for PRIK and f2py</title>',
         '  <desc id="build-description">',
         (
             f"    Absolute clean source-to-extension build time across {len(snapshot.results)} profile and workload "
@@ -640,16 +640,16 @@ def render_build_chart(snapshot: PerformanceSnapshot) -> str:
     for index, result in enumerate(snapshot.results):
         group_y = top + index * group_step
         f2py_width = x_position(result.f2py_value) - plot_left
-        x2py_width = x_position(result.x2py_value) - plot_left
+        prik_width = x_position(result.prik_value) - plot_left
         lines.extend(
             [
                 f'      <text x="28" y="{group_y + 6}" font-weight="600">{escape(result.chart_label)}</text>',
                 f'      <text x="28" y="{group_y + 30}" font-size="12" fill="#607080">f2py</text>',
                 f'      <rect x="{plot_left}" y="{group_y + 16}" width="{f2py_width:.1f}" height="20" rx="5" fill="#b45309"/>',
                 f'      <text x="{min(x_position(result.f2py_value) + 10, 975):.1f}" y="{group_y + 31}" fill="#8a3f08" font-weight="700">{escape(result.f2py_display)}</text>',
-                f'      <text x="28" y="{group_y + 58}" font-size="12" fill="#607080">x2py</text>',
-                f'      <rect x="{plot_left}" y="{group_y + 44}" width="{x2py_width:.1f}" height="20" rx="5" fill="#0f766e"/>',
-                f'      <text x="{min(x_position(result.x2py_value) + 10, 975):.1f}" y="{group_y + 59}" fill="#0b5e58" font-weight="700">{escape(result.x2py_display)}</text>',
+                f'      <text x="28" y="{group_y + 58}" font-size="12" fill="#607080">PRIK</text>',
+                f'      <rect x="{plot_left}" y="{group_y + 44}" width="{prik_width:.1f}" height="20" rx="5" fill="#0f766e"/>',
+                f'      <text x="{min(x_position(result.prik_value) + 10, 975):.1f}" y="{group_y + 59}" fill="#0b5e58" font-weight="700">{escape(result.prik_display)}</text>',
             ]
         )
     lines.extend(
@@ -657,7 +657,7 @@ def render_build_chart(snapshot: PerformanceSnapshot) -> str:
             "    </g>",
             '    <g font-size="13">',
             f'      <rect x="28" y="{footer - 10}" width="18" height="12" rx="3" fill="#0f766e"/>',
-            f'      <text x="54" y="{footer + 1}" fill="#52616f">x2py</text>',
+            f'      <text x="54" y="{footer + 1}" fill="#52616f">PRIK</text>',
             f'      <rect x="118" y="{footer - 10}" width="18" height="12" rx="3" fill="#b45309"/>',
             f'      <text x="144" y="{footer + 1}" fill="#52616f">f2py</text>',
             "    </g>",
@@ -690,9 +690,9 @@ def _operating_system_name() -> str:
 
 def generate(
     f2py_path: Path,
-    x2py_path: Path,
+    prik_path: Path,
     f2py_build_path: Path,
-    x2py_build_path: Path,
+    prik_build_path: Path,
     page_path: Path,
     chart_path: Path,
     build_chart_path: Path,
@@ -705,7 +705,7 @@ def generate(
     """Generate the marked page sections and SVG from paired results."""
     snapshot = load_snapshot(
         f2py_path,
-        x2py_path,
+        prik_path,
         operating_system=operating_system,
         compiler_version=compiler_version,
         commit=commit,
@@ -713,7 +713,7 @@ def generate(
     )
     build_snapshot = load_snapshot(
         f2py_build_path,
-        x2py_build_path,
+        prik_build_path,
         operating_system=operating_system,
         compiler_version=compiler_version,
         commit=commit,
@@ -733,9 +733,9 @@ def generate(
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--f2py-results", type=Path, default=DEFAULT_F2PY_RESULTS)
-    parser.add_argument("--x2py-results", type=Path, default=DEFAULT_X2PY_RESULTS)
+    parser.add_argument("--prik-results", type=Path, default=DEFAULT_PRIK_RESULTS)
     parser.add_argument("--f2py-build-results", type=Path, default=DEFAULT_F2PY_BUILD_RESULTS)
-    parser.add_argument("--x2py-build-results", type=Path, default=DEFAULT_X2PY_BUILD_RESULTS)
+    parser.add_argument("--prik-build-results", type=Path, default=DEFAULT_PRIK_BUILD_RESULTS)
     parser.add_argument("--page", type=Path, default=DEFAULT_PAGE)
     parser.add_argument("--chart", type=Path, default=DEFAULT_CHART)
     parser.add_argument("--build-chart", type=Path, default=DEFAULT_BUILD_CHART)
@@ -757,13 +757,13 @@ def main(argv: list[str] | None = None) -> int:
         operating_system = args.operating_system or _operating_system_name()
         commit = args.commit or _command_first_line(
             ["git", "rev-parse", "HEAD"],
-            description="x2py revision",
+            description="PRIK revision",
         )
         snapshot = generate(
             args.f2py_results,
-            args.x2py_results,
+            args.prik_results,
             args.f2py_build_results,
-            args.x2py_build_results,
+            args.prik_build_results,
             args.page,
             args.chart,
             args.build_chart,

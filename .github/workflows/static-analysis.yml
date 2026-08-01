@@ -37,7 +37,7 @@ jobs:
       - name: Wrapper-plan generator contracts
         run: python tools/check_wrapper_codegen_complexity.py
       - name: Bandit security scan
-        run: python -m bandit -c pyproject.toml -r c_parser fortran_parser semantics x2py --severity-level medium --confidence-level medium
+        run: python -m bandit -c pyproject.toml -r c_parser fortran_parser semantics prik --severity-level medium --confidence-level medium
       - name: Vulture dead-code scan
         run: python -m vulture
       - name: Radon complexity policy
@@ -47,7 +47,7 @@ jobs:
         run: python tools/check_radon_policy.py --base-ref auto
       - name: Radon complexity report
         continue-on-error: true
-        run: python -m radon cc c_parser fortran_parser semantics x2py -n C -s --total-average
+        run: python -m radon cc c_parser fortran_parser semantics prik -n C -s --total-average
       - name: Radon maintainability report
         continue-on-error: true
-        run: python -m radon mi c_parser fortran_parser semantics x2py -s
+        run: python -m radon mi c_parser fortran_parser semantics prik -s

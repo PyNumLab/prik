@@ -77,7 +77,7 @@ def test_array_results_follow_data_buffer_and_descriptor_handle_contracts(
     assert zero.base is not None
 
     assert module.rank3_cube(np.int32(0), np.int32(2), np.int32(3)).shape == (0, 2, 3)
-    monkeypatch.setenv("X2PY_WRAPPER_FAIL_ALLOC", "1")
+    monkeypatch.setenv("PRIK_WRAPPER_FAIL_ALLOC", "1")
     with pytest.raises(MemoryError, match="Unable to allocate copy-return output array"):
         module.fixed_vector()
 

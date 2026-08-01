@@ -9,7 +9,7 @@ publication: reviewed
 
 # Compiler Issues
 
-x2py uses the Fortran compiler passed to `--compiler` and its matching C
+prik uses the Fortran compiler passed to `--compiler` and its matching C
 compiler to build the Python extension.
 
 ## Verify Both Compilers
@@ -30,18 +30,18 @@ for all options.
 Pass an executable name available on `PATH`, or use an absolute path:
 
 ```bash
-python3 -m x2py solver.f90 \
+python3 -m prik solver.f90 \
   --compiler /opt/toolchain/bin/flang \
   --out-dir build/solver
 ```
 
 Versioned names such as `gfortran-13` and `flang-22` are recognized. If the
-matching C compiler is missing, x2py stops with an explicit error rather than
+matching C compiler is missing, prik stops with an explicit error rather than
 using an incompatible compiler.
 
 ## Unsupported Compiler Family
 
-If the name is not recognized, x2py lists the accepted compiler families. Use
+If the name is not recognized, prik lists the accepted compiler families. Use
 the compiler's standard executable name or choose another listed option.
 
 ## Compiler-Specific Flags

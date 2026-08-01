@@ -2,28 +2,28 @@ from pathlib import Path
 
 import pytest
 
-import x2py
+import prik
 
-from x2py.contracts import CONTRACT_SYMBOLS
+from prik.contracts import CONTRACT_SYMBOLS
 
-from x2py import parse_fortran_file as parse_fortran_source
+from prik import parse_fortran_file as parse_fortran_source
 
 
-from x2py.semantics.fortran2ir import (
+from prik.semantics.fortran2ir import (
     fortran_module_to_semantic_module,
 )
 
-from x2py.pipeline.pyi import pyi_text_to_semantic_module as _parse_pyi_text
+from prik.pipeline.pyi import pyi_text_to_semantic_module as _parse_pyi_text
 
-from x2py.wrapper_codegen.printers import (
+from prik.wrapper_codegen.printers import (
     emit_module,
     emit_module_stubs,
     opaque_dependency_modules,
     PyiPrinter,
 )
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
-from x2py.semantics.models import (
+from prik.semantics.models import (
     PROTOTYPE_REF_METADATA,
     ProjectionMapping,
     RUNTIME_RELEASE_GIL_METADATA,
@@ -44,17 +44,17 @@ from x2py.semantics.models import (
     SemanticVariable,
 )
 
-from x2py.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.policy_completion import complete_semantic_policies
 
 OPERATOR_F90_SOURCE = (
     Path(__file__).parents[1] / "generic_interfaces" / "end_to_end" / "fixtures" / "foperators_f90.f90"
 )
 
-CONTRACT_IMPORT = f"from x2py.contracts import {', '.join(sorted(CONTRACT_SYMBOLS))}\n"
+CONTRACT_IMPORT = f"from prik.contracts import {', '.join(sorted(CONTRACT_SYMBOLS))}\n"
 
 
 def parse_pyi_text(source: str, *args, **kwargs):
-    if "x2py.contracts" in source:
+    if "prik.contracts" in source:
         return _parse_pyi_text(source, *args, **kwargs)
     return _parse_pyi_text(f"{CONTRACT_IMPORT}{source}", *args, **kwargs)
 
@@ -117,7 +117,7 @@ __all__ = (
     "opaque_dependency_modules",
     "parse_fortran_source",
     "parse_pyi_text",
+    "prik",
     "pytest",
     "rendered_source",
-    "x2py",
 )

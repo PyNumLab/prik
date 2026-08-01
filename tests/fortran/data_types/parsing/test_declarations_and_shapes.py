@@ -8,7 +8,7 @@ from tests.fortran._support.parser_procedures import (
     parse_fortran_project,
     pytest,
 )
-from x2py.parsers.fortran.parser import FortranParser
+from prik.parsers.fortran.parser import FortranParser
 
 
 def test_builtin_datatypes_preserve_positional_and_keyword_kinds():
@@ -295,7 +295,7 @@ end module my_kinds
     ],
 )
 def test_extract_kind_from_type_spec_contract(base_type, type_spec, expected):
-    from x2py.parsers.fortran.type_resolver import extract_kind_from_type_spec
+    from prik.parsers.fortran.type_resolver import extract_kind_from_type_spec
 
     assert extract_kind_from_type_spec(base_type, type_spec) == expected
 

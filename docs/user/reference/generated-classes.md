@@ -10,7 +10,7 @@ publication: draft
 # Generated Classes Reference
 
 Supported Fortran derived types become generated Python extension classes.
-Instances wrap native storage through x2py's completed ownership policy; Python
+Instances wrap native storage through prik's completed ownership policy; Python
 field access and methods use generated wrapper operations instead of exposing a
 stable binary layout.
 
@@ -36,11 +36,11 @@ changes visibility and remains supported.
 
 ## Constructors
 
-x2py generates a keyword-only Python initializer for public rank-zero numeric,
+prik generates a keyword-only Python initializer for public rank-zero numeric,
 logical, and complex fields that are safe constructor inputs:
 
 ```python
-from x2py.contracts import Float64, Int32, native_type
+from prik.contracts import Float64, Int32, native_type
 
 @native_type(finalizers=('cleanup_initialized',))
 class initialized:
@@ -60,7 +60,7 @@ arrays, allocatables, pointers, strings, and nested derived components are not
 automatic constructor keywords.
 
 An edited semantic `.pyi` may remove the generated constructor, bind one
-concrete initializer, or replace it with an exact overload set. x2py does not
+concrete initializer, or replace it with an exact overload set. prik does not
 recreate a constructor intentionally removed from the contract. Overloaded
 constructors select a concrete target from the completed scalar dtype, array
 dtype/rank, or generated-class predicates before invoking native code. An
@@ -89,7 +89,7 @@ position is not the default, and `@overload(...)` when a generic method has
 multiple specific procedures:
 
 ```python
-from x2py.contracts import Addr, Arg, Float64, Int32, Pass, bind, native_call, overload, private
+from prik.contracts import Addr, Arg, Float64, Int32, Pass, bind, native_call, overload, private
 
 class accumulator:
     total: Float64 = 0.0
@@ -135,7 +135,7 @@ steps that need status reporting.
 
 ## Unsupported Class Shapes
 
-x2py blocks derived-type forms whose Python ownership or dispatch policy is not
+prik blocks derived-type forms whose Python ownership or dispatch policy is not
 complete:
 
 - arrays of derived types;

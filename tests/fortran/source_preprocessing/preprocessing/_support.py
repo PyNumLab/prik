@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-import x2py.pipeline.preprocessing as preprocessing
+import prik.pipeline.preprocessing as preprocessing
 
-from x2py.pipeline.preprocessing import (
+from prik.pipeline.preprocessing import (
     PreprocessingError,
     PreprocessingConfig,
     build_compile_commands_invocation,
@@ -37,16 +37,16 @@ import os
 import pathlib
 import sys
 
-pathlib.Path(os.environ["X2PY_FAKE_COMPILER_ARGS"]).write_text("\\n".join(sys.argv[1:]), encoding="utf-8")
-sys.stdout.write(os.environ["X2PY_FAKE_COMPILER_OUTPUT"])
+pathlib.Path(os.environ["PRIK_FAKE_COMPILER_ARGS"]).write_text("\\n".join(sys.argv[1:]), encoding="utf-8")
+sys.stdout.write(os.environ["PRIK_FAKE_COMPILER_OUTPUT"])
 """,
         encoding="utf-8",
     )
     script.chmod(0o755)
     env = {
         **os.environ,
-        "X2PY_FAKE_COMPILER_ARGS": str(args_file),
-        "X2PY_FAKE_COMPILER_OUTPUT": output,
+        "PRIK_FAKE_COMPILER_ARGS": str(args_file),
+        "PRIK_FAKE_COMPILER_OUTPUT": output,
     }
     return script, args_file, env
 

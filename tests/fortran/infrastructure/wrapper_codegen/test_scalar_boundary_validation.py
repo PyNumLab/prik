@@ -5,10 +5,10 @@ from __future__ import annotations
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.ownership import CodegenAction, NativeBarrierAction
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import ArgumentHandoffMode, BridgeDataAction
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.semantics.ownership import CodegenAction, NativeBarrierAction
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.wrapper_policy import ArgumentHandoffMode, BridgeDataAction
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
 
 def _scalar_boundary_plan():
@@ -95,10 +95,10 @@ def test_scalar_copy_in_out_reuses_one_binding_local_without_bridge_copy():
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
     assert c_source.count("int32_t bound_value;") == 1
-    assert "x2py_int32_unpack_exact(bound_value_obj, &bound_value)" in c_source
+    assert "prik_int32_unpack_exact(bound_value_obj, &bound_value)" in c_source
     assert "bind_c_bump(&bound_value);" in c_source
     assert "PyObject * result_obj = NULL;" in c_source
-    assert "result_obj = x2py_int32_to_python(&bound_value);" in c_source
+    assert "result_obj = prik_int32_to_python(&bound_value);" in c_source
     assert "integer(c_int32_t) :: value" in bridge_source
     assert "call native_bump(value)" in bridge_source
     assert "value =" not in bridge_source

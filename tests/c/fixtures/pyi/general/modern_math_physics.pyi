@@ -1,4 +1,4 @@
-from x2py.contracts import CStruct, Float64, Int, private
+from prik.contracts import CStruct, Float64, Int, private
 
 class modern_particle(CStruct):
     id: Int

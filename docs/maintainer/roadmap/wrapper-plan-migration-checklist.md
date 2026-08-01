@@ -855,7 +855,7 @@ For each lane:
    ABI/handoff specs, generator-owned structural checks, directly named backend
    lowering methods, source-printer support, and support-report coverage.
 6. Implement the minimum dependency-closed backend slice in
-   `x2py.wrapper_codegen`: copy small suitable pieces, rewrite oversized legacy
+   `prik.wrapper_codegen`: copy small suitable pieces, rewrite oversized legacy
    classes as minimal equivalents, and add only the intermediate tests required
    by the contract above.
 7. Generate the plan from policy-completed semantic IR, invoke the directly
@@ -914,7 +914,7 @@ the product contract.
 
 ### Foundation and semantic authority
 
-- [x] Establish the isolated `x2py.wrapper_codegen` package boundary and
+- [x] Establish the isolated `prik.wrapper_codegen` package boundary and
   visitor infrastructure.
 - [x] Complete the first primitive lane in general wrapper policy before
   planning, including native-call order, result projection, ownership, and
@@ -1037,7 +1037,7 @@ Phase 4 legacy replay audit:
   copy, frees it, and rejects descriptor replacement. Its whole source cannot
   migrate in Phase 4 because it also contains nullable snapshot-result forms
   from a later lane. Allocation failure is deliberately injected with
-  `X2PY_WRAPPER_FAIL_ALLOC` and preserves the legacy null/`None` surface.
+  `PRIK_WRAPPER_FAIL_ALLOC` and preserves the legacy null/`None` surface.
 - No existing generation unit contained only the already completed scalar
   function lanes plus every Phase 4 getter, setter, constant, descriptor,
   initialization, reload, and failure behavior. The bounded
@@ -1464,7 +1464,7 @@ function result has `source_kind="direct_return"`,
 `CodegenAction.COPY_OUT`, no native-call slot, and a bridge function result of
 `type(c_ptr)`. The bridge first receives the native value in backend-local
 `character(kind=c_char, len=n)` storage, then allocates `n + 1` bytes through
-the existing `x2py_malloc` interface, copies all `n` characters, appends
+the existing `prik_malloc` interface, copies all `n` characters, appends
 `c_null_char`, and returns the pointer. A hidden output has
 `source_kind="hidden_output"`, `CodegenAction.COPY_OUT`,
 `NativeBarrierAction.PASS_CALL_LOCAL_ADDRESS`, and references the exact same
@@ -1530,7 +1530,7 @@ codegen action. The same mutable native-call slot is referenced throughout;
 there is no second output slot.
 
 The binding validates the input exactly as Phase 5A does, allocates one
-`n + 1` byte call-local buffer through `x2py_malloc`, copies all `n` encoded
+`n + 1` byte call-local buffer through `prik_malloc`, copies all `n` encoded
 bytes, and appends NUL. Allocation failure raises `MemoryError` before native
 execution. The bridge receives the mutable buffer and length, materializes
 backend-local `character(kind=c_char, len=n)` storage, passes that storage to
@@ -1637,7 +1637,7 @@ destruction, mutation, and no result projection, but the contract value itself
 uses stack storage while `PythonBarrierAction.RAW_ADDRESS` and
 `NativeBarrierAction.PASS_RAW_ADDRESS` preserve the unsafe caller-supplied
 address. The raw pointee is never adopted, released, sized, or validated by
-x2py. This corrects the pre-5D raw-string decision that incorrectly retained
+prik. This corrects the pre-5D raw-string decision that incorrectly retained
 immutable-string call-local ownership despite the completed raw-address
 barriers.
 
@@ -1907,7 +1907,7 @@ numeric and fixed-character runtime rows have passed compiled legacy/direct
 parity and moved to `wrapper-plan`.
 
 Scope: required Python-visible type-level raw-address array arguments such as
-`Addr(Float64[n])`. The caller supplies one Python integer address, x2py
+`Addr(Float64[n])`. The caller supplies one Python integer address, prik
 forwards it as one opaque C address, and the bridge associates a typed native
 array view using rank, shape, element type, and orientation facts completed
 before `ir2ast.py`. There is no NumPy object, runtime handle, persistent native
@@ -1943,7 +1943,7 @@ The maintained public contract is already documented in
   arguments or visible rank-zero scalar storage;
 - the integer carries no dtype, rank, shape, order, alignment, bounds,
   ownership, or lifetime metadata;
-- x2py cannot prove that the supplied address actually points to compatible,
+- prik cannot prove that the supplied address actually points to compatible,
   sufficiently large, live storage; and
 - edited semantic `.pyi` raw-address storage is mutable caller storage unless
   a completed policy explicitly says otherwise.
@@ -2274,33 +2274,33 @@ Other exclusions and dependencies are:
 Do not redesign the public feature while migrating it. Reuse these completed
 sources of truth:
 
-- `x2py/semantics/native_array_handles.py` defines
+- `prik/semantics/native_array_handles.py` defines
   `NativeArrayHandlePolicy`, `ArrayInteropPolicy`, handle facts, descriptor
   kinds, and completed build requirements.
-- `x2py/semantics/policy_completion.py` completes handle kind, origin, owner,
+- `prik/semantics/policy_completion.py` completes handle kind, origin, owner,
   owner retention, descriptor ownership, getter/setter behavior, output
   projection, release, target lifetime, destruction, extraction, interop,
   nullability, storage mode, operations, and blockers before `ir2ast.py`.
-- `x2py/runtime/handles.py` owns the reusable runtime protocol, including
+- `prik/runtime/handles.py` owns the reusable runtime protocol, including
   `_native_array_actual_argument_for_binding_positional`,
   `_native_array_descriptor_argument_for_binding_positional`, and
   `_native_array_descriptor_handoff_for_binding_positional`. Direct lowering
   must call these helpers rather than duplicate their Python validation.
-- `x2py/codegen/bindings/c_to_python.py` is the legacy binding oracle. Its
+- `prik/codegen/bindings/c_to_python.py` is the legacy binding oracle. Its
   `_ARRAY_INTEROP_POLICY_DISPATCHER`, `_NATIVE_ARRAY_HANDLE_DISPATCHER`,
   descriptor-argument handlers, owned-result handlers, operation wrappers, and
   descriptor reader define the currently passing C behavior.
-- `x2py/codegen/bridges/fortran_to_c.py` is the legacy bridge oracle. Its
+- `prik/codegen/bridges/fortran_to_c.py` is the legacy bridge oracle. Its
   corresponding dispatchers, descriptor-argument handlers, module/field
   operation generators, and owned-allocatable result helpers define the
   currently passing Fortran behavior.
-- `x2py/pipeline/build.py` already derives native-array build requirements from
+- `prik/pipeline/build.py` already derives native-array build requirements from
   completed semantic policy and records them in manifests. The wrapper plan
   must carry and emit the matching artifact requirements without rediscovering
   them from generated source text.
 
 The legacy generators are behavioral oracles, not dependencies of
-`x2py/wrapper_codegen`. Reuse the runtime helpers and completed semantic
+`prik/wrapper_codegen`. Reuse the runtime helpers and completed semantic
 records directly. Rewrite the smallest equivalent node/lowering methods in the
 direct generators; do not import legacy binding/bridge generator methods or
 legacy codegen-model nodes into the wrapper-plan package.
@@ -2477,7 +2477,7 @@ production selection stays on the legacy route until each corresponding handle
 source has parity evidence.
 
 Legacy oracle: `CPythonBindingGenerator._native_array_actual_argument_body`,
-the normal-array runtime helpers in `x2py/runtime/handles.py`, and the existing
+the normal-array runtime helpers in `prik/runtime/handles.py`, and the existing
 Phase 6 bridge array-buffer lowering. Reuse the runtime helpers and bridge ABI;
 rewrite only the minimal direct binding call and source-kind branch.
 
@@ -3099,28 +3099,28 @@ copied native-array-handle extraction.
 Use the current implementation as an oracle, not as permission to preserve its
 architecture:
 
-- `x2py/semantics/ownership.py` already names `DERIVED_TYPE`,
+- `prik/semantics/ownership.py` already names `DERIVED_TYPE`,
   `PASS_WRAPPER_ADDRESS`, `WRAPPER_INSTANCE`, and `BORROWED_VIEW`, and contains
   the current argument/result/module/field owner defaults. Remove the obsolete
   derived whole-object snapshot action without disturbing ordinary result
   copies, scalar descriptor value copies, or explicit non-object uses of
   `snapshot_copy` transfer policy.
-- `x2py/semantics/policy_completion.py` is the only allowed owner of origin,
+- `prik/semantics/policy_completion.py` is the only allowed owner of origin,
   ownership, transfer, destruction, mutability, nullability, projection,
   release, storage, getter/setter, owner-retention, module-object handoff, and
   field decisions. It must complete module-proxy policy for plain module
   objects and direct-address borrowed policy for `Aliased` module objects.
-- `x2py/semantics/wrapper_policy.py` must gain a derived-specific policy branch.
+- `prik/semantics/wrapper_policy.py` must gain a derived-specific policy branch.
   Derived values must not continue through primitive-scalar blockers,
   primitive result checks, or primitive bridge data-action selection.
-- `x2py/semantics/ir2ast.py` and the legacy generators remain the generated
+- `prik/semantics/ir2ast.py` and the legacy generators remain the generated
   artifact oracle. Direct lowering must not call `semantic_ir_to_codegen_ast()`
   or reconstruct legacy codegen variables.
-- `x2py/codegen/bindings/c_to_python.py` contains the existing wrapper-instance
+- `prik/codegen/bindings/c_to_python.py` contains the existing wrapper-instance
   conversion, checked casts, owned/borrowed result construction, owner
   retention, and allocator/destructor helpers. Remove recursive snapshot
   construction rather than migrating it into the direct route.
-- `x2py/codegen/bridges/fortran_to_c.py` contains the existing typed wrapper
+- `prik/codegen/bridges/fortran_to_c.py` contains the existing typed wrapper
   address conversion, native result materialization, borrowed field/module
   access, native-aware destruction, and typed component getters/setters. Reuse
   those live member-access mechanics as the artifact oracle while moving every
@@ -3311,7 +3311,7 @@ Complete the semantic contract before defining direct plan records.
 - [x] Complete an `Aliased` module object as `owner=NATIVE`,
   `transfer=BORROWED_VIEW`, native-owner destruction, alias storage, module
   owner retention, direct address acquisition, and replacement rejection.
-- [x] Remove the obsolete public `Snapshot` keyword from `x2py.contracts`,
+- [x] Remove the obsolete public `Snapshot` keyword from `prik.contracts`,
   parser, printer, generated `.pyi`, semantic IR, policy actions, legacy
   generators, documentation, and fixtures. Do not remove unrelated explicit
   copy-result or scalar descriptor value-copy policy.
@@ -3574,7 +3574,7 @@ forms are:
 matrix selector. For the `P` column, `Pointer(Arg(i))` without a matching
 projected return selects a call-local pointer input adapter and discards native
 reassociation. A matching `Returns[...]` selects association writeback and
-therefore requires persistent pointer storage. x2py never selects between these
+therefore requires persistent pointer storage. prik never selects between these
 paths from native `INTENT`.
 
 Use these completed action names. Parenthesized state requirements are runtime
@@ -3669,7 +3669,7 @@ For a module allocatable transaction, the bridge performs the equivalent of:
 type(item_allocatable_holder), target :: transaction
 
 status = move_out(c_loc(transaction))
-if (status == X2PY_STATUS_OK) then
+if (status == PRIK_STATUS_OK) then
     call native_procedure(transaction%value)
     restore_status = move_back(c_loc(transaction))
 end if
@@ -3703,7 +3703,7 @@ deallocate an unowned target. When final association matches a known module,
 parent, or wrapper-owned target, retain that owner in completed policy; an
 otherwise durable native target retains the originating extension and remains
 the native program's release responsibility. Native code that returns a pointer
-to an expired local target violates the contract rather than creating an x2py
+to an expired local target violates the contract rather than creating an prik
 fallback.
 
 This completed owner/release rule removes the old wrapper-owned pointer-result
@@ -3956,7 +3956,7 @@ they do not expose the public callback semantics deferred to Phase 10.
   cleanup failures, and the exact retained incompatibilities. No obsolete
   module-allocatable rejection, stable-pointer-only, or wrapper-pointer-result
   blocker remains as negative compatibility coverage.
-- `x2py/pipeline/build.py` registers the dependency-closed Phase 8 support
+- `prik/pipeline/build.py` registers the dependency-closed Phase 8 support
   lanes and their passing production evidence. The automatic-route test
   replaces `semantic_ir_to_codegen_ast()` with a failure sentinel and proves an
   eligible opaque-derived unit never invokes it.
@@ -4095,15 +4095,15 @@ when the documented contract says so; do not preserve legacy architecture.
 
 Inventory these legacy owners without importing them into the direct package:
 
-- `x2py/semantics/ir2ast.py` currently interprets constructor overloads,
+- `prik/semantics/ir2ast.py` currently interprets constructor overloads,
   passed-object positions, type-bound names, polymorphic variants, and class
   insertion. Each semantic decision found there must move into post-IR class
   policy before direct lowering.
-- `x2py/codegen/bindings/c_to_python.py` currently assembles type objects,
+- `prik/codegen/bindings/c_to_python.py` currently assembles type objects,
   constructors, methods, overloads, properties, inheritance, module exports,
   and finalizers. Reuse emitted behavior as the oracle, not its broad control
   flow or method-name synthesis.
-- `x2py/codegen/bridges/fortran_to_c.py` currently supplies typed constructor
+- `prik/codegen/bridges/fortran_to_c.py` currently supplies typed constructor
   allocation, passed-object association, method calls, overload interfaces,
   and finalization helpers. Direct bridge generation must consume completed
   class/method actions and reuse Phase 8 native storage helpers.
@@ -4755,9 +4755,9 @@ backend or legacy lowering runs.
   in one cutover without compatibility flags or per-function fallback.
 - [x] Do not move modified isolated nodes or printers back into the legacy
   package during migration. After final cutover, remove the legacy package
-  pieces proven unused and keep `x2py.wrapper_codegen` as the canonical
+  pieces proven unused and keep `prik.wrapper_codegen` as the canonical
   generator rather than performing a second package rename.
-- [x] Keep semantic `.pyi` emission under `x2py.wrapper_codegen.printers` and
+- [x] Keep semantic `.pyi` emission under `prik.wrapper_codegen.printers` and
   retire focused tests of the old semantic AST, bridge, binding, and printer
   implementation before deleting the legacy package.
 - [x] Remove the temporary legacy route and its route diagnostics after every
@@ -4798,7 +4798,7 @@ maintainability reports, and `git diff --check` all passed.
   final tests now exercise only the canonical wrapper-plan route and retain the
   existing behavior and ABI-relevant call assertions.
 - [x] Structural dependency tests prove complete generator isolation: no
-  imports from `x2py.wrapper_codegen` to `x2py.codegen` or in the reverse
+  imports from `prik.wrapper_codegen` to `prik.codegen` or in the reverse
   direction.
 - [x] BLAS and LAPACK full-library wrapper tests remained excluded locally and in
   GitHub Actions throughout Phases 0-11. At the explicit Phase 12 gate, enable
@@ -4811,7 +4811,7 @@ maintainability reports, and `git diff --check` all passed.
   and bridge handlers they dispatch to, and the handoff specs validated.
 - [x] No unsupported wrapper lane uses old lowering/codegen; focused tests now
   target completed policy, `WrapperPlan`, `WrapperCodeGenerator`, or compiled
-  public behavior rather than `ir2ast.py` and `x2py.codegen` internals.
+  public behavior rather than `ir2ast.py` and `prik.codegen` internals.
 - [x] The final cutover report includes the completed `tests/wrapper` migration
   matrix and confirms every wrapper-generating row uses the wrapper-plan route.
 - [x] The final report includes focused verification commands and results.
@@ -4821,8 +4821,8 @@ maintainability reports, and `git diff --check` all passed.
 
 ## Post-Cutover Legacy Codegen Removal
 
-The legacy `x2py.codegen` package, `x2py/semantics/ir2ast.py`, and the obsolete
-`x2py/compiling/python_wrapper.py` pipeline are removed together. No alias,
+The legacy `prik.codegen` package, `prik/semantics/ir2ast.py`, and the obsolete
+`prik/compiling/python_wrapper.py` pipeline are removed together. No alias,
 fallback, compatibility import, or rejection-only test preserves that route.
 
 Required behavior remains with its current owner: completed semantic policy

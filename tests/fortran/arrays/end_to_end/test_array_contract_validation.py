@@ -9,7 +9,7 @@ from numpy.lib.stride_tricks import as_strided
 from tests.fortran._support.wrapper_build import (
     _build_source_or_generated_pyi_and_import,
 )
-from x2py.runtime.handles import _NativeArrayHandoff, AllocatableArray, PointerArray
+from prik.runtime.handles import _NativeArrayHandoff, AllocatableArray, PointerArray
 
 FIXTURES = Path(__file__).parent / "fixtures"
 ARRAY_CONTRACTS_F90_SOURCE = FIXTURES / "farray_contracts_f90.f90"

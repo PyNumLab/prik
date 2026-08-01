@@ -4,7 +4,7 @@ import pytest
 
 
 def test_named_struct_members_are_variables_in_source_order():
-    from x2py.parsers.c import CArray, CComposedType, CVariable, parse_c_file
+    from prik.parsers.c import CArray, CComposedType, CVariable, parse_c_file
 
     parsed = parse_c_file(
         "struct point { double x; double y; double coordinates[2]; };\n",
@@ -20,7 +20,7 @@ def test_named_struct_members_are_variables_in_source_order():
 
 
 def test_typedef_struct_alias_refers_to_the_concrete_struct_object():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         "typedef struct point { double x; double y; } point_t;\n",
@@ -33,7 +33,7 @@ def test_typedef_struct_alias_refers_to_the_concrete_struct_object():
 
 
 def test_forward_struct_declaration_is_completed_by_later_definition():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         "struct state;\nstruct state { int id; };\n",
@@ -47,7 +47,7 @@ def test_forward_struct_declaration_is_completed_by_later_definition():
 
 
 def test_duplicate_complete_tag_definitions_report_diagnostics():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         "struct state { int id; };\nstruct state { int id; };\n",
@@ -59,7 +59,7 @@ def test_duplicate_complete_tag_definitions_report_diagnostics():
 
 
 def test_anonymous_struct_typedef_gets_stable_anonymous_id():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file("typedef struct { int code; } result_t;\n", filename="anon_struct.h")
 
@@ -69,7 +69,7 @@ def test_anonymous_struct_typedef_gets_stable_anonymous_id():
 
 
 def test_union_members_are_variables_without_struct_field_class():
-    from x2py.parsers.c import CUnion, CVariable, parse_c_file
+    from prik.parsers.c import CUnion, CVariable, parse_c_file
 
     parsed = parse_c_file("union value { int i; double d; };\n", filename="union.h")
 
@@ -80,7 +80,7 @@ def test_union_members_are_variables_without_struct_field_class():
 
 
 def test_anonymous_union_typedef_refers_to_the_concrete_union_object():
-    from x2py.parsers.c import CUnion, parse_c_file
+    from prik.parsers.c import CUnion, parse_c_file
 
     parsed = parse_c_file("typedef union { int i; double d; } value_t;\n", filename="anon_union.h")
 
@@ -90,7 +90,7 @@ def test_anonymous_union_typedef_refers_to_the_concrete_union_object():
 
 
 def test_function_signatures_using_unions_by_value_report_diagnostics():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """
@@ -117,7 +117,7 @@ void consume_pointer(union value *value);
 
 
 def test_project_reports_union_by_value_through_resolved_typedefs():
-    from x2py.parsers.c import parse_c_project
+    from prik.parsers.c import parse_c_project
 
     project = parse_c_project(
         {
@@ -135,7 +135,7 @@ def test_project_reports_union_by_value_through_resolved_typedefs():
 
 
 def test_incomplete_union_and_tag_typedef_aliases_use_concrete_tag_classes():
-    from x2py.parsers.c import CStruct, CUnion, parse_c_file
+    from prik.parsers.c import CStruct, CUnion, parse_c_file
 
     parsed = parse_c_file(
         "struct handle;\nunion payload;\ntypedef struct handle handle_t;\ntypedef union payload payload_t;\n",
@@ -152,7 +152,7 @@ def test_incomplete_union_and_tag_typedef_aliases_use_concrete_tag_classes():
 
 
 def test_repeated_union_and_enum_tags_normalize_with_duplicate_diagnostics():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """
@@ -174,7 +174,7 @@ enum status { STATUS_ERROR };
 
 
 def test_enum_constants_preserve_explicit_implicit_and_symbolic_values():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """
@@ -197,7 +197,7 @@ enum status {
 
 
 def test_typedef_enum_and_trailing_tag_variable_are_separate_objects():
-    from x2py.parsers.c import CEnum, CStruct, parse_c_file
+    from prik.parsers.c import CEnum, CStruct, parse_c_file
 
     parsed = parse_c_file(
         "typedef enum { FLAG_NONE = 0, FLAG_READ = 1 } flag_t;\nstruct point { int x; } origin;\n",
@@ -213,7 +213,7 @@ def test_typedef_enum_and_trailing_tag_variable_are_separate_objects():
 
 
 def test_recursive_struct_pointer_uses_an_incomplete_struct_component_without_cycles():
-    from x2py.parsers.c import CComposedType, CPointer, CStruct, parse_c_file
+    from prik.parsers.c import CComposedType, CPointer, CStruct, parse_c_file
 
     parsed = parse_c_file(
         "typedef struct node { int value; struct node *next; } node_t;\n",
@@ -230,7 +230,7 @@ def test_recursive_struct_pointer_uses_an_incomplete_struct_component_without_cy
 
 
 def test_typedef_chains_preserve_typedef_objects_before_resolution():
-    from x2py.parsers.c import CTypedef, CUnsignedLong, parse_c_file
+    from prik.parsers.c import CTypedef, CUnsignedLong, parse_c_file
 
     parsed = parse_c_file(
         "typedef unsigned long size_type;\ntypedef size_type api_size;\napi_size count(void);\n",
@@ -245,7 +245,7 @@ def test_typedef_chains_preserve_typedef_objects_before_resolution():
 
 
 def test_struct_members_use_same_components_for_callbacks_arrays_and_bitfields():
-    from x2py.parsers.c import CArray, CFunctionType, CPointer, parse_c_file
+    from prik.parsers.c import CArray, CFunctionType, CPointer, parse_c_file
 
     parsed = parse_c_file(
         "struct hooks { int (*compare)(const void *, const void *); unsigned enabled : 1; int values[4]; };\n",
@@ -261,7 +261,7 @@ def test_struct_members_use_same_components_for_callbacks_arrays_and_bitfields()
 
 
 def test_struct_members_preserve_precise_locations_and_legal_flexible_array_metadata():
-    from x2py.parsers.c import CArray, parse_c_file
+    from prik.parsers.c import CArray, parse_c_file
 
     parsed = parse_c_file(
         """struct packet {
@@ -315,7 +315,7 @@ def test_struct_members_preserve_precise_locations_and_legal_flexible_array_meta
     ],
 )
 def test_invalid_flexible_array_members_are_diagnosed(source, owner_name, message):
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(source, filename="invalid_flexible.h")
     aggregate = getattr(parsed, owner_name)[0]
@@ -331,7 +331,7 @@ def test_invalid_flexible_array_members_are_diagnosed(source, owner_name, messag
 
 
 def test_unnamed_and_zero_width_bitfields_preserve_source_facts_and_locations():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """struct flags {
@@ -352,7 +352,7 @@ def test_unnamed_and_zero_width_bitfields_preserve_source_facts_and_locations():
 
 
 def test_nested_aggregate_member_definition_builds_the_nested_type():
-    from x2py.parsers.c import CStruct, CUnion, parse_c_file
+    from prik.parsers.c import CStruct, CUnion, parse_c_file
 
     parsed = parse_c_file(
         """struct outer {
@@ -376,7 +376,7 @@ def test_nested_aggregate_member_definition_builds_the_nested_type():
 
 
 def test_anonymous_aggregate_member_without_a_declarator_is_retained():
-    from x2py.parsers.c import CUnion, parse_c_file
+    from prik.parsers.c import CUnion, parse_c_file
 
     parsed = parse_c_file(
         "struct flags { union { int integer; float real; }; int tag; };\n",
@@ -392,7 +392,7 @@ def test_anonymous_aggregate_member_without_a_declarator_is_retained():
 
 
 def test_struct_field_missing_semicolon_reports_syntax_location():
-    from x2py.parsers.c import CParseError, parse_c_file
+    from prik.parsers.c import CParseError, parse_c_file
 
     with pytest.raises(CParseError) as exc_info:
         parse_c_file(
@@ -412,7 +412,7 @@ def test_struct_field_missing_semicolon_reports_syntax_location():
 
 
 def test_nested_aggregate_field_with_function_declarator_is_rejected():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """struct outer {
@@ -434,7 +434,7 @@ def test_nested_aggregate_field_with_function_declarator_is_rejected():
 
 
 def test_bad_field_declarator_does_not_stop_later_declarators():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """struct bad {
@@ -450,7 +450,7 @@ def test_bad_field_declarator_does_not_stop_later_declarators():
 
 
 def test_unnamed_field_type_without_bit_width_reports_diagnostic():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """struct bad {
@@ -472,7 +472,7 @@ def test_unnamed_field_type_without_bit_width_reports_diagnostic():
 
 
 def test_unsupported_field_declarator_is_reported_at_member_location():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """struct bad {

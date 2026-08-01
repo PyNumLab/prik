@@ -23,7 +23,7 @@ def _generate_contract_package(source: Path, package: Path) -> Path:
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "generate",
             "--pyi",
             str(source),
@@ -67,7 +67,7 @@ def test_module_generation_writes_explicit_package_entry_and_native_leaf(tmp_pat
         "contract_math_mod.pyi",
     }
     assert entry.read_text(encoding="utf-8").startswith(
-        "from x2py.contracts import Addr, Arg, Int32, external, native_call\n"
+        "from prik.contracts import Addr, Arg, Int32, external, native_call\n"
         "from . import contract_math_mod\n\n"
         "@external\n"
     )
@@ -82,7 +82,7 @@ def test_same_named_module_uses_init_entry_and_keeps_externals_at_root(tmp_path:
     assert entry == tmp_path / "contracts" / "contract_same_name" / "__init__.pyi"
     assert {path.name for path in entry.parent.iterdir()} == {"__init__.pyi", "contract_same_name.pyi"}
     assert entry.read_text(encoding="utf-8") == (
-        "from x2py.contracts import external\n"
+        "from prik.contracts import external\n"
         "from . import contract_same_name\n\n"
         "@external\n"
         "def external_ping() -> None: ...\n"
@@ -107,7 +107,7 @@ def test_multi_module_generation_keeps_each_native_namespace(tmp_path: Path):
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "generate",
             "--pyi",
             str(MULTI_MODULE),

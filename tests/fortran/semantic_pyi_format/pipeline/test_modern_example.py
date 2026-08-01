@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from x2py import parse_fortran_file
-from x2py.semantics.fortran2ir import fortran_module_to_semantic_module
-from x2py.wrapper_codegen.printers import emit_module
+from prik import parse_fortran_file
+from prik.semantics.fortran2ir import fortran_module_to_semantic_module
+from prik.wrapper_codegen.printers import emit_module
 
 
 def test_modern_fortran_example_pyi_snapshot():

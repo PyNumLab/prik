@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Arg, Flat, Float64, Int32, native_call
+from prik.contracts import Addr, Arg, Flat, Float64, Int32, native_call
 
 @native_call([Addr(Arg(0)), Arg(1)])
 def sum_assumed_size(

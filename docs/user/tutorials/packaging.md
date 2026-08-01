@@ -9,7 +9,7 @@ publication: draft
 
 # Packaging Tutorial
 
-Reserved tutorial for packaging an x2py wrapper project for reuse.
+Reserved tutorial for packaging an prik wrapper project for reuse.
 
 ## TODO
 

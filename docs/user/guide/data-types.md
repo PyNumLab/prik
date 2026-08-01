@@ -1,6 +1,6 @@
 ---
 title: Data Types
-description: How x2py maps Fortran types to Python, NumPy dtypes, and semantic contracts
+description: How prik maps Fortran types to Python, NumPy dtypes, and semantic contracts
 audience: users
 prerequisites: common beginner workflow
 related: arrays.md, strings.md, wrapping-derived-types.md
@@ -10,7 +10,7 @@ publication: reviewed
 
 # Data Types
 
-x2py resolves Fortran types using the selected compiler, then generates an
+prik resolves Fortran types using the selected compiler, then generates an
 explicit semantic contract (`.pyi`). Inspect that contract before calling the
 wrapper because kind numbers are compiler-dependent.
 
@@ -52,13 +52,13 @@ end module numeric_types
 Generate the contract:
 
 ```bash
-python3 -m x2py generate --pyi numeric_types.f90
+python3 -m prik generate --pyi numeric_types.f90
 ```
 
 Build it:
 
 ```bash
-python3 -m x2py numeric_types.f90 --out-dir build/numeric-types
+python3 -m prik numeric_types.f90 --out-dir build/numeric-types
 ```
 
 ---
@@ -105,7 +105,7 @@ Concrete primitive contracts can create their matching NumPy scalar with its
 zero value:
 
 ```python
-import x2py.contracts as xc
+import prik.contracts as xc
 
 count = xc.Int32()      # np.int32(0)
 weight = xc.Float64()   # np.float64(0.0)
@@ -127,7 +127,7 @@ their own default constructors, described in their later user-guide pages.
 
 - Always use **exact NumPy scalar dtypes** (`np.float64`, `np.int32`, etc.).
 - Plain Python `float` / `int` will raise `TypeError` for scalar arguments.
-- x2py resolves kinds using the selected compiler (`gfortran` by default).
+- prik resolves kinds using the selected compiler (`gfortran` by default).
 - Inspect the contract with `generate --pyi` whenever you change compiler flags or architecture.
 
 ---

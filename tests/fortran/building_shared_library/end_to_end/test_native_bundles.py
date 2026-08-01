@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from x2py import build_pyi_extension
+from prik import build_pyi_extension
 from tests.fortran.building_shared_library.end_to_end.test_multi_source_builds import (
     _assert_combined_runtime,
     _compile_native_objects,
@@ -21,8 +21,8 @@ from tests.fortran.building_shared_library.end_to_end.test_multi_source_builds i
 )
 
 
-CONTRACT_IMPORT = "from x2py.contracts import Addr, Arg, Int32, external, native_call\n\n"
-NATIVE_CALL_IMPORT = "from x2py.contracts import Addr, Arg, Int32, native_call\n\n"
+CONTRACT_IMPORT = "from prik.contracts import Addr, Arg, Int32, external, native_call\n\n"
+NATIVE_CALL_IMPORT = "from prik.contracts import Addr, Arg, Int32, native_call\n\n"
 pytestmark = pytest.mark.fortran_end_to_end
 
 
@@ -195,7 +195,7 @@ end module artifact_mod
     entry = _write_contract_package(
         tmp_path / "contracts" / "mixed_native_bundle",
         entry=(
-            "from x2py.contracts import Addr, Arg, Int32, external, native_call\n"
+            "from prik.contracts import Addr, Arg, Int32, external, native_call\n"
             "from . import artifact_mod\n\n"
             f"{_simple_external_declaration('ext_object')}\n"
             f"{_simple_external_declaration('ext_archive')}\n"

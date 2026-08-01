@@ -92,7 +92,7 @@ and remain native-source end-to-end evidence only.
 
 ## Diagnostics and unsupported behavior
 
-Put an unsupported case at its first decisive stage and assert a stable x2py
+Put an unsupported case at its first decisive stage and assert a stable prik
 diagnostic. Do not force a known policy rejection through compilation merely
 to observe a compiler failure.
 

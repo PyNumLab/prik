@@ -6,7 +6,7 @@ import ast
 
 from tests.fortran._support.wrapper_build import REPO_ROOT
 
-WRAPPER_CODEGEN_ROOT = REPO_ROOT / "x2py" / "wrapper_codegen"
+WRAPPER_CODEGEN_ROOT = REPO_ROOT / "prik" / "wrapper_codegen"
 BOUNDARY_MODULES = (
     ("c", WRAPPER_CODEGEN_ROOT / "c" / "binding.py"),
     ("fortran", WRAPPER_CODEGEN_ROOT / "fortran" / "bridge.py"),

@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Annotated, Arg, Int32, SourceName, bind, native_call
+from prik.contracts import Addr, Annotated, Arg, Int32, SourceName, bind, native_call
 
 class visible_t:
     def __init__(

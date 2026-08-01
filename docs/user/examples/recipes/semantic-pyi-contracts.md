@@ -15,7 +15,7 @@ semantic contract.
 ## Generate A Starter Contract
 
 ```bash
-python3 -m x2py generate --pyi tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90 \
+python3 -m prik generate --pyi tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90 \
   --out contracts/basic_subroutine
 ```
 
@@ -31,7 +31,7 @@ The implemented `.pyi` wrapper subset can build from a semantic contract when
 you provide the native artifacts explicitly:
 
 ```bash
-python3 -m x2py path/to/module.pyi \
+python3 -m prik path/to/module.pyi \
   --native-objects path/to/module.o path/to/support.a \
   -I path/to/mod-files \
   -I path/to/vendor-mod-files \
@@ -47,7 +47,7 @@ Python callers can inspect the normalized native implementation plan after a
 build:
 
 ```python
-from x2py import build_pyi_extension
+from prik import build_pyi_extension
 
 result = build_pyi_extension(
     "contracts/module.pyi",
@@ -67,11 +67,11 @@ libraries, named libraries, include/module directories, and ordered link items.
 For multi-source packages, pass all ordered sources and one package directory:
 
 ```bash
-python3 -m x2py generate --pyi first_api.f90 second_api.f90 --out contracts
+python3 -m prik generate --pyi first_api.f90 second_api.f90 --out contracts
 ```
 
 The generated `contracts/__init__.pyi` imports all native module leaves directly
-under `contracts/`; x2py does not add per-source subdirectories.
+under `contracts/`; prik does not add per-source subdirectories.
 
 ## Notes
 

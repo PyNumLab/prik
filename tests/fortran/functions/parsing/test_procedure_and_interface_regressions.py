@@ -33,7 +33,7 @@ def test_procedure_bind_c_name_and_value_argument_are_preserved():
 module c_api
   use iso_c_binding
 contains
-  integer(c_int) function renamed(n) bind(C, name="x2py_renamed") result(res)
+  integer(c_int) function renamed(n) bind(C, name="prik_renamed") result(res)
     integer(c_int), value, intent(in) :: n
     res = n
   end function renamed
@@ -43,7 +43,7 @@ end module c_api
 
     proc = parsed.modules[0].procedures[0]
     assert proc.attributes == ["bind(c)"]
-    assert proc.bind_name == "x2py_renamed"
+    assert proc.bind_name == "prik_renamed"
     assert proc.arguments[0].pass_by_value is True
 
 

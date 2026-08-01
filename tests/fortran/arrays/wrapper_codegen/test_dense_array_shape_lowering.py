@@ -5,19 +5,19 @@ from __future__ import annotations
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import (
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.wrapper_policy import (
     TransformationAction,
     TransformationLayer,
     WritebackPhase,
 )
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
 
 def _dense_plan():
     module = parse_pyi_text(
         """
-from x2py.contracts import Annotated, Flat, Float64, Int32, ORDER_C, external
+from prik.contracts import Annotated, Flat, Float64, Int32, ORDER_C, external
 
 def dense_f(rows: Int32, cols: Int32, values: Float64[rows, cols]) -> None: ...
 def dense_c(rows: Int32, cols: Int32, values: Annotated[Float64[rows, cols], ORDER_C]) -> None: ...
@@ -50,7 +50,7 @@ def bounded_flat(
 def _copy_f_plan():
     module = parse_pyi_text(
         """
-from x2py.contracts import Annotated, COPY_F, Float64, ORDER_C
+from prik.contracts import Annotated, COPY_F, Float64, ORDER_C
 
 def transform(values: Annotated[Float64[2, 3], ORDER_C, COPY_F]) -> None: ...
 """,
@@ -63,7 +63,7 @@ def transform(values: Annotated[Float64[2, 3], ORDER_C, COPY_F]) -> None: ...
 def _copy_f_lifecycle_plan():
     module = parse_pyi_text(
         """
-from x2py.contracts import Annotated, COPY_F, Float64, ORDER_C, Returns
+from prik.contracts import Annotated, COPY_F, Float64, ORDER_C, Returns
 
 def native_input(values: Annotated[Float64[2, 3], ORDER_C, COPY_F]) -> None: ...
 
@@ -80,7 +80,7 @@ def projected(
 def _late_extent_external_plan():
     module = parse_pyi_text(
         """
-from x2py.contracts import Annotated, Float64, Immutable, Int32, external
+from prik.contracts import Annotated, Float64, Immutable, Int32, external
 
 @external
 def late_extent(values: Float64[n], n: Annotated[Int32, Immutable] | None = ...) -> None: ...
@@ -158,16 +158,16 @@ def test_dense_array_lowering_uses_planned_shape_checks_and_bridge_orientation()
 
     assert "PyTuple_SET_ITEM(bound_values_shape, 0, PyLong_FromLongLong((long long)(bound_rows)))" in c_source
     assert "PyTuple_SET_ITEM(bound_values_shape, 1, PyLong_FromLongLong((long long)(bound_cols)))" in c_source
-    assert 'x2py_array_actual_unpack(bound_values_obj, "float64", 2, bound_values_shape, "F"' in c_source
-    assert 'x2py_array_actual_unpack(bound_values_obj, "float64", 2, bound_values_shape, "C"' in c_source
+    assert 'prik_array_actual_unpack(bound_values_obj, "float64", 2, bound_values_shape, "F"' in c_source
+    assert 'prik_array_actual_unpack(bound_values_obj, "float64", 2, bound_values_shape, "C"' in c_source
     assert "bound_values_shape = PyTuple_New(1)" in c_source
     assert "PyTuple_SET_ITEM(bound_values_shape, 0, Py_None)" in c_source
     assert (
-        'x2py_array_actual_unpack(bound_values_obj, "float64", 1, bound_values_shape, NULL, '
+        'prik_array_actual_unpack(bound_values_obj, "float64", 1, bound_values_shape, NULL, '
         "1, 1, 1, 0, 0, 0, 1, 1, 0, &bound_values_actual)"
     ) in c_source
     assert (
-        'x2py_array_actual_unpack(bound_values_obj, "float64", 2, bound_values_shape, "F", '
+        'prik_array_actual_unpack(bound_values_obj, "float64", 2, bound_values_shape, "F", '
         "1, 1, 1, 0, 0, 0, 1, 1, 1, &bound_values_actual)"
     ) in c_source
     assert "call c_f_pointer(bound_values, values, [values_extent_0, values_extent_1])" in bridge_source
@@ -225,7 +225,7 @@ def test_copy_f_lowering_keeps_numpy_copy_in_and_copy_out_out_of_the_bridge():
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
-    assert "X2PY_ARRAY_LAYOUT_C_CONTIGUOUS, 1, 1" in c_source
+    assert "PRIK_ARRAY_LAYOUT_C_CONTIGUOUS, 1, 1" in c_source
     assert (
         "bound_values_representation = PyArray_NewCopy((PyArrayObject *)bound_values_obj, NPY_FORTRANORDER)" in c_source
     )

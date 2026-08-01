@@ -34,7 +34,7 @@ def assert_generated_contract_matches_fixture(case: GeneratedContractCase, tmp_p
     command = [
         sys.executable,
         "-m",
-        "x2py",
+        "prik",
         "generate",
         "--pyi",
         *(str(path) for path in case.inputs),

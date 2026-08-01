@@ -4,11 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from x2py import pyi_text_to_semantic_module
-from x2py.pipeline.pyi import pyi_file_to_semantic_module
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import ClassInvocationKind, OverloadMatchKind
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik import pyi_text_to_semantic_module
+from prik.pipeline.pyi import pyi_file_to_semantic_module
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.wrapper_policy import ClassInvocationKind, OverloadMatchKind
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
 FIXTURES = Path(__file__).parents[1] / "end_to_end" / "fixtures" / "edited_contracts"
 METHOD_AND_CONSTRUCTOR = FIXTURES / "method_and_constructor" / "fclasses_f90.pyi"
@@ -36,7 +36,7 @@ def _surface(plan, name: str):
 def test_module_procedure_method_visibility_is_completed_independently():
     public_plan = _plan_text(
         """
-from x2py.contracts import Addr, Arg, Float64, Pass, native_call
+from prik.contracts import Addr, Arg, Float64, Pass, native_call
 
 class point:
     @native_call([Pass(), Addr(Arg(0))])
@@ -57,7 +57,7 @@ def move(item: point, dx: Float64) -> None: ...
 
     private_plan = _plan_text(
         """
-from x2py.contracts import Addr, Arg, Float64, Pass, native_call, private
+from prik.contracts import Addr, Arg, Float64, Pass, native_call, private
 
 class point:
     @native_call([Pass(), Addr(Arg(0))])
@@ -100,7 +100,7 @@ def test_bound_constructor_and_method_reuse_completed_direct_function_plans():
 def test_bound_constructor_pass_disambiguates_same_type_arguments_and_keeps_module_export():
     plan = _plan_text(
         """
-from x2py.contracts import Arg, Pass, bind, native_call
+from prik.contracts import Arg, Pass, bind, native_call
 
 class point:
     @bind("initialize_point")

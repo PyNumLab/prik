@@ -4,7 +4,7 @@ import pytest
 
 
 def test_lexer_removes_comments_without_changing_string_or_char_literals():
-    from x2py.parsers.c.lexer import lex_c_source
+    from prik.parsers.c.lexer import lex_c_source
 
     tokens = lex_c_source(
         r"""
@@ -23,7 +23,7 @@ int value; // removed line comment
 
 
 def test_lexer_removes_multiline_block_comments_but_preserves_following_line_numbers():
-    from x2py.parsers.c.lexer import lex_c_source
+    from prik.parsers.c.lexer import lex_c_source
 
     tokens = lex_c_source(
         "int first;\n/* removed\n   block */\nint second;\n",
@@ -37,7 +37,7 @@ def test_lexer_removes_multiline_block_comments_but_preserves_following_line_num
 
 
 def test_line_continuations_preserve_original_line_numbers():
-    from x2py.parsers.c.preprocessor import normalize_c_source
+    from prik.parsers.c.preprocessor import normalize_c_source
 
     normalized = normalize_c_source(
         "#define SUM(a, b) \\\n  ((a) + (b))\nint x;\n",
@@ -50,7 +50,7 @@ def test_line_continuations_preserve_original_line_numbers():
 
 
 def test_top_level_split_helpers_ignore_nested_commas_and_function_bodies():
-    from x2py.parsers.c.lexer import split_top_level_c_source, top_level_split
+    from prik.parsers.c.lexer import split_top_level_c_source, top_level_split
 
     assert top_level_split("int (*cmp)(int, int), int value") == [
         "int (*cmp)(int, int)",
@@ -69,8 +69,8 @@ def test_top_level_split_helpers_ignore_nested_commas_and_function_bodies():
 
 
 def test_c_lexer_covers_linemarker_escapes_top_level_strings_and_eof_records():
-    from x2py.parsers.c import parse_c_file
-    from x2py.parsers.c.lexer import (
+    from prik.parsers.c import parse_c_file
+    from prik.parsers.c.lexer import (
         CLogicalRecord,
         _unescape_linemarker_filename,
         lex_c_source,
@@ -78,7 +78,7 @@ def test_c_lexer_covers_linemarker_escapes_top_level_strings_and_eof_records():
         normalize_c_source,
         split_top_level_c_source,
     )
-    from x2py.parsers.c.preprocessor import _record_location
+    from prik.parsers.c.preprocessor import _record_location
 
     assert _unescape_linemarker_filename(r"a\nb\rc\td\\e\"f\x") == 'a\nb\rc\td\\e"fx'
     assert _unescape_linemarker_filename("tail\\") == "tail\\"
@@ -126,7 +126,7 @@ def test_c_lexer_covers_linemarker_escapes_top_level_strings_and_eof_records():
 
 
 def test_c_lexer_mapping_helpers_cover_boundaries_ranges_and_position_updates():
-    from x2py.parsers.c.lexer import (
+    from prik.parsers.c.lexer import (
         CLineMapping,
         _advance_position,
         _line_mapping,
@@ -161,7 +161,7 @@ def test_c_lexer_mapping_helpers_cover_boundaries_ranges_and_position_updates():
 
 
 def test_c_lexer_linemarker_and_directive_helpers_cover_raw_and_preprocessed_modes():
-    from x2py.parsers.c.lexer import (
+    from prik.parsers.c.lexer import (
         CLineMapping,
         _blank_preprocessor_directives,
         _parse_linemarker,
@@ -201,7 +201,7 @@ def test_c_lexer_linemarker_and_directive_helpers_cover_raw_and_preprocessed_mod
 
 
 def test_c_lexer_delimiter_helpers_cover_literals_nesting_offsets_and_validation():
-    from x2py.parsers.c.lexer import (
+    from prik.parsers.c.lexer import (
         _scan_code_states,
         top_level_partition,
         top_level_split,
@@ -233,7 +233,7 @@ def test_c_lexer_delimiter_helpers_cover_literals_nesting_offsets_and_validation
 
 
 def test_c_lexer_aggregate_attribute_helpers_preserve_shape_and_classify_headers():
-    from x2py.parsers.c.lexer import (
+    from prik.parsers.c.lexer import (
         _balanced_invocation_end,
         _is_aggregate_definition_header,
         _is_braced_declaration_header,
@@ -271,7 +271,7 @@ def test_c_lexer_aggregate_attribute_helpers_preserve_shape_and_classify_headers
 
 
 def test_c_lexer_comment_normalization_and_tokens_preserve_source_accounting():
-    from x2py.parsers.c.lexer import lex_c_source, normalize_c_source, strip_c_comments
+    from prik.parsers.c.lexer import lex_c_source, normalize_c_source, strip_c_comments
 
     source = 'int first; // removed\nchar *text = "/* kept */"; /* block\n removed */ int second;\n'
     stripped = strip_c_comments(source)
@@ -310,7 +310,7 @@ def test_c_lexer_comment_normalization_and_tokens_preserve_source_accounting():
 
 
 def test_raw_mode_records_includes_without_expanding_them():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         '#include "api_types.h"\n#include <stddef.h>\nint run(void);\n',
@@ -323,7 +323,7 @@ def test_raw_mode_records_includes_without_expanding_them():
 
 
 def test_raw_mode_resolves_local_includes_relative_to_path_input(tmp_path):
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     header = tmp_path / "api.h"
     types = tmp_path / "api_types.h"
@@ -339,8 +339,8 @@ def test_raw_mode_resolves_local_includes_relative_to_path_input(tmp_path):
 def test_c_preprocessor_helpers_cover_include_dirs_and_filesystem_errors(tmp_path, monkeypatch):
     from pathlib import Path
 
-    from x2py.parsers.c.lexer import CLogicalRecord
-    from x2py.parsers.c.preprocessor import _record_location, _resolve_local_include
+    from prik.parsers.c.lexer import CLogicalRecord
+    from prik.parsers.c.preprocessor import _record_location, _resolve_local_include
 
     include_dir = tmp_path / "include"
     include_dir.mkdir()
@@ -383,7 +383,7 @@ def test_c_preprocessor_helpers_cover_include_dirs_and_filesystem_errors(tmp_pat
 
 
 def test_collect_preprocessor_metadata_preserves_locations_and_diagnostics(tmp_path):
-    from x2py.parsers.c.preprocessor import collect_preprocessor_metadata
+    from prik.parsers.c.preprocessor import collect_preprocessor_metadata
 
     include_dir = tmp_path / "include"
     include_dir.mkdir()
@@ -447,7 +447,7 @@ def test_collect_preprocessor_metadata_preserves_locations_and_diagnostics(tmp_p
     ],
 )
 def test_raw_mode_rejects_directives_that_require_preprocessing(directive):
-    from x2py.parsers.c import CParseError, parse_c_file
+    from prik.parsers.c import CParseError, parse_c_file
 
     with pytest.raises(CParseError, match="require compiler preprocessing") as exc_info:
         parse_c_file(f"{directive}\nint run(void);\n", filename="raw_macro.h")
@@ -457,7 +457,7 @@ def test_raw_mode_rejects_directives_that_require_preprocessing(directive):
 
 
 def test_raw_mode_accepts_trivial_include_guards_without_preprocessing():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """
@@ -478,7 +478,7 @@ int run(void);
 
 
 def test_raw_mode_records_pragmas_as_metadata_without_hiding_declarations():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """
@@ -499,7 +499,7 @@ int configured(void);
 
 
 def test_raw_mode_openmp_declaration_pragmas_do_not_hide_declarations():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """
@@ -525,7 +525,7 @@ int omp_helper(void);
 
 
 def test_compiler_preprocessed_mode_accepts_line_markers_and_expanded_declarations():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """
@@ -552,7 +552,7 @@ double scale(double x);
 
 
 def test_compiler_preprocessed_mode_maps_gcc_linemarkers_across_includes_and_line_jumps():
-    from x2py.parsers.c import CComposedType, CFunctionType, CPointer, parse_c_file
+    from prik.parsers.c import CComposedType, CFunctionType, CPointer, parse_c_file
 
     parsed = parse_c_file(
         """
@@ -604,7 +604,7 @@ int api_register(api_state *state, api_callback cb, int (*factory)(api_state *, 
 
 
 def test_compiler_preprocessed_mode_maps_nested_aggregate_members_to_original_file():
-    from x2py.parsers.c import CStruct, parse_c_file
+    from prik.parsers.c import CStruct, parse_c_file
 
     parsed = parse_c_file(
         """
@@ -633,7 +633,7 @@ struct outer {
 
 
 def test_compiler_preprocessed_mode_maps_fatal_parse_errors_to_original_file():
-    from x2py.parsers.c import CParseError, parse_c_file
+    from prik.parsers.c import CParseError, parse_c_file
 
     with pytest.raises(CParseError) as exc_info:
         parse_c_file(

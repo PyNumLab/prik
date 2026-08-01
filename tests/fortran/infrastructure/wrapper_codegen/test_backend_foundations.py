@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from tests.fortran._support.wrapper_build import REPO_ROOT
-from x2py.wrapper_codegen import (
+from prik.wrapper_codegen import (
     BackendScalarType,
     BindingModulePlan,
     BridgeModulePlan,
@@ -37,7 +37,7 @@ from x2py.wrapper_codegen import (
     NamespacePlan,
     UnsupportedWrapperCodegenNodeError,
 )
-from x2py.wrapper_codegen.c.binding import CBindingGenerator
+from prik.wrapper_codegen.c.binding import CBindingGenerator
 
 
 def test_source_printers_render_complete_c_header_and_fortran_modules():
@@ -221,11 +221,11 @@ def test_fortran_source_printer_rejects_an_overlong_token_without_a_safe_break()
 
 
 def test_source_printers_do_not_import_wrapper_plan_models():
-    path = REPO_ROOT / "x2py" / "wrapper_codegen" / "printers" / "source_printers.py"
+    path = REPO_ROOT / "prik" / "wrapper_codegen" / "printers" / "source_printers.py"
     imports = {
         node.module
         for node in ast.walk(ast.parse(Path(path).read_text(encoding="utf-8")))
         if isinstance(node, ast.ImportFrom) and node.module is not None
     }
 
-    assert "x2py.wrapper_codegen.plan" not in imports
+    assert "prik.wrapper_codegen.plan" not in imports

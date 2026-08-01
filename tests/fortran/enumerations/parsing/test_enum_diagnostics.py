@@ -2,7 +2,7 @@
 
 import pytest
 
-from x2py import FortranParseError, parse_fortran_file
+from prik import FortranParseError, parse_fortran_file
 from tests.fortran._support.parser_regressions import FortranParser, _unit
 
 

@@ -10,7 +10,7 @@ from tests.fortran._support.wrapper_build import (
     _import_from_build_dir,
     _sole_native_module,
 )
-from x2py import build_pyi_extension
+from prik import build_pyi_extension
 
 pytestmark = pytest.mark.fortran_end_to_end
 
@@ -75,7 +75,7 @@ end module {module_name}
     contract = tmp_path / f"{module_name}.pyi"
     contract.write_text(
         """
-from x2py.contracts import Allocatable, Arg, Int32, Return, Returns, String, native_call
+from prik.contracts import Allocatable, Arg, Int32, Return, Returns, String, native_call
 
 @native_call([Return("names", 0)])
 def make_names() -> Allocatable[String[:][:]]: ...

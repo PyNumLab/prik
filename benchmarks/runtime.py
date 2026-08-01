@@ -21,7 +21,7 @@ def get_function(api: Any, name: str) -> Callable[..., Any]:
 
 
 tool = os.environ.get("BINDING_TOOL")
-benchmark_group = os.environ.get("X2PY_RUNTIME_BENCHMARK_GROUP", "all")
+benchmark_group = os.environ.get("PRIK_RUNTIME_BENCHMARK_GROUP", "all")
 group_settings = {
     "all": (20, 3),
     "calls": (64, 4),
@@ -35,14 +35,14 @@ group_settings = {
 
 if benchmark_group not in group_settings:
     choices = ", ".join(group_settings)
-    raise RuntimeError(f"Unknown X2PY_RUNTIME_BENCHMARK_GROUP {benchmark_group!r}; choose one of: {choices}.")
+    raise RuntimeError(f"Unknown PRIK_RUNTIME_BENCHMARK_GROUP {benchmark_group!r}; choose one of: {choices}.")
 
-if tool == "x2py":
-    extension = importlib.import_module("bench_x2py")
+if tool == "prik":
+    extension = importlib.import_module("bench_prik")
 elif tool == "f2py":
     extension = importlib.import_module("bench_f2py")
 else:
-    raise RuntimeError("Set BINDING_TOOL to 'x2py' or 'f2py'.")
+    raise RuntimeError("Set BINDING_TOOL to 'prik' or 'f2py'.")
 
 api = extension.kernels
 noop = get_function(api, "noop")
@@ -60,7 +60,7 @@ metadata = {
     "numpy_version": np.__version__,
     "platform_details": platform.platform(),
 }
-if cpu_model := os.environ.get("X2PY_BENCHMARK_CPU_MODEL"):
+if cpu_model := os.environ.get("PRIK_BENCHMARK_CPU_MODEL"):
     metadata["cpu_model_name"] = cpu_model
 runner = pyperf.Runner(
     processes=processes,

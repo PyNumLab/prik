@@ -83,7 +83,7 @@ storage. Array handles keep a different rule: `Allocatable[T[...]] | None` and
 ### Allocatable Handles
 
 ```python
-from x2py.contracts import Allocatable, Float64, Int32
+from prik.contracts import Allocatable, Float64, Int32
 
 values: Allocatable[Float64[:]]
 
@@ -109,7 +109,7 @@ descriptor.
 ### Pointer Handles
 
 ```python
-from x2py.contracts import Float64, Int32, Pointer
+from prik.contracts import Float64, Int32, Pointer
 
 values: Pointer[Float64[:]]
 
@@ -137,7 +137,7 @@ the normal Fortran array dummy. It does not receive a pointer dummy descriptor.
 For a normal array data signature:
 
 ```python
-from x2py.contracts import Allocatable, Float64, Pointer
+from prik.contracts import Allocatable, Float64, Pointer
 
 def f(x: Float64[:]) -> None: ...
 
@@ -254,7 +254,7 @@ changes.
   `ndarray | None` module attributes.
 - [x] Document that derived allocatable and pointer fields expose handles.
 - [x] Document that allocatable function results can return owned handles only
-  when x2py creates stable owner storage.
+  when prik creates stable owner storage.
 - [x] Document that pointer handles do not imply target ownership.
 - [x] Document that pointer `nullify()` is default, while pointer
   `allocate()`, `deallocate()`, and `resize()` require explicit policy.
@@ -431,7 +431,7 @@ blocker still prevents wrapper lowering.
   allows deallocation through this pointer.
 - [x] Add an explicit unsafe/user-responsibility deallocation policy value,
   `unsafe_deallocate`, for callers who knowingly request deallocation without
-  x2py-proven target ownership.
+  prik-proven target ownership.
 - [x] Complete `resize(shape)` permission only when explicit pointer policy
   allows resize through this pointer.
 - [x] Do not expose pointer `allocate()`, `deallocate()`, or `resize()` when

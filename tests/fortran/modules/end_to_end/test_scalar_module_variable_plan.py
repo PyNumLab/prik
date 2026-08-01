@@ -13,7 +13,7 @@ from tests.fortran._support.wrapper_build import (
     _build_source_wrapper_plan_and_import,
     _sole_native_module,
 )
-from x2py.runtime.handles import AllocatableArray
+from prik.runtime.handles import AllocatableArray
 
 pytestmark = pytest.mark.fortran_end_to_end
 
@@ -166,10 +166,10 @@ def test_whole_scalar_module_variable_behavior_uses_canonical_plan(
     assert values.allocated is False
     assert values.to_numpy() is None
 
-    monkeypatch.setenv("X2PY_WRAPPER_FAIL_ALLOC", "1")
+    monkeypatch.setenv("PRIK_WRAPPER_FAIL_ALLOC", "1")
     assert module.optional_scale is None
     assert module.selected_scale is None
-    monkeypatch.delenv("X2PY_WRAPPER_FAIL_ALLOC")
+    monkeypatch.delenv("PRIK_WRAPPER_FAIL_ALLOC")
     assert module.optional_scale == np.float64(11.5)
     assert module.selected_scale == np.float64(22.5)
 

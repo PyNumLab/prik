@@ -13,7 +13,7 @@ from tests.fortran._support.wrapper_build import (
     _assert_modern_string_examples,
     _sole_native_module,
 )
-from x2py import build_pyi_extension
+from prik import build_pyi_extension
 
 FIXTURES = Path(__file__).parent / "fixtures"
 STRING_LEGACY_SOURCE = FIXTURES / "fstrings.f"
@@ -84,7 +84,7 @@ def test_modern_fortran_character_arguments_and_results(
     with pytest.raises(TypeError):
         module.fixed_array_extent(np.array([[b"label"]], dtype="S8"))
 
-    monkeypatch.setenv("X2PY_WRAPPER_FAIL_ALLOC", "1")
+    monkeypatch.setenv("PRIK_WRAPPER_FAIL_ALLOC", "1")
     with pytest.raises(MemoryError):
         module.string_result_deferred("failure")
     with pytest.raises(MemoryError, match="Unable to allocate copy-return output string"):

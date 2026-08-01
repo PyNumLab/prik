@@ -1,4 +1,4 @@
-from x2py.contracts import external
+from prik.contracts import external
 from . import contract_same_name
 
 @external

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from x2py import parse_fortran_file
+from prik import parse_fortran_file
 
 FIXTURES = Path(__file__).parents[1] / "end_to_end" / "fixtures"
 

@@ -6,17 +6,17 @@ import ast
 import inspect
 
 from tests.fortran._support.wrapper_build import REPO_ROOT
-from x2py.parsers.c.parser import CParser
-from x2py.parsers.fortran.parser import FortranParser, SourceUnit, _SOURCE_UNIT_TYPES
-from x2py.semantics.c2ir import CToIRConverter
-from x2py.semantics.fortran2ir import FortranToIRConverter, _FortranVariableContextVisitor
-from x2py.semantics.pyi2ir import _ClassBodyVisitor, _ModuleVisitor
-from x2py.utilities.visitor import ClassVisitor as SemanticClassVisitor
-from x2py.wrapper_codegen.c.binding import CBindingGenerator
-from x2py.wrapper_codegen.fortran.bridge import FortranBridgeGenerator
-from x2py.wrapper_codegen.planner import WrapperPlanner
-from x2py.wrapper_codegen.printers import PyiPrinter
-from x2py.wrapper_codegen.visitor import ClassVisitor as WrapperClassVisitor
+from prik.parsers.c.parser import CParser
+from prik.parsers.fortran.parser import FortranParser, SourceUnit, _SOURCE_UNIT_TYPES
+from prik.semantics.c2ir import CToIRConverter
+from prik.semantics.fortran2ir import FortranToIRConverter, _FortranVariableContextVisitor
+from prik.semantics.pyi2ir import _ClassBodyVisitor, _ModuleVisitor
+from prik.utilities.visitor import ClassVisitor as SemanticClassVisitor
+from prik.wrapper_codegen.c.binding import CBindingGenerator
+from prik.wrapper_codegen.fortran.bridge import FortranBridgeGenerator
+from prik.wrapper_codegen.planner import WrapperPlanner
+from prik.wrapper_codegen.printers import PyiPrinter
+from prik.wrapper_codegen.visitor import ClassVisitor as WrapperClassVisitor
 
 
 SEMANTIC_VISITORS = (
@@ -34,14 +34,14 @@ WRAPPER_VISITORS = (
     FortranBridgeGenerator,
 )
 VISITOR_IMPLEMENTATION_PATHS = (
-    REPO_ROOT / "x2py" / "parsers" / "fortran" / "parser.py",
-    REPO_ROOT / "x2py" / "semantics" / "c2ir.py",
-    REPO_ROOT / "x2py" / "semantics" / "fortran2ir.py",
-    REPO_ROOT / "x2py" / "semantics" / "pyi2ir.py",
-    REPO_ROOT / "x2py" / "wrapper_codegen" / "planner.py",
-    REPO_ROOT / "x2py" / "wrapper_codegen" / "c" / "binding.py",
-    REPO_ROOT / "x2py" / "wrapper_codegen" / "fortran" / "bridge.py",
-    REPO_ROOT / "x2py" / "wrapper_codegen" / "printers" / "pyi_printer.py",
+    REPO_ROOT / "prik" / "parsers" / "fortran" / "parser.py",
+    REPO_ROOT / "prik" / "semantics" / "c2ir.py",
+    REPO_ROOT / "prik" / "semantics" / "fortran2ir.py",
+    REPO_ROOT / "prik" / "semantics" / "pyi2ir.py",
+    REPO_ROOT / "prik" / "wrapper_codegen" / "planner.py",
+    REPO_ROOT / "prik" / "wrapper_codegen" / "c" / "binding.py",
+    REPO_ROOT / "prik" / "wrapper_codegen" / "fortran" / "bridge.py",
+    REPO_ROOT / "prik" / "wrapper_codegen" / "printers" / "pyi_printer.py",
 )
 
 

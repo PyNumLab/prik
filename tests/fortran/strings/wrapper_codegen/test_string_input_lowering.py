@@ -5,11 +5,11 @@ from __future__ import annotations
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.ownership import CodegenAction, NativeBarrierAction, PythonBarrierAction
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import ArgumentHandoffMode, BridgeDataAction
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
-from x2py.wrapper_codegen.plan import DatatypeFamily
+from prik.semantics.ownership import CodegenAction, NativeBarrierAction, PythonBarrierAction
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.wrapper_policy import ArgumentHandoffMode, BridgeDataAction
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.wrapper_codegen.plan import DatatypeFamily
 
 
 def _string_input_module():

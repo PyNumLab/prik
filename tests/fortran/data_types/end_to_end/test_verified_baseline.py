@@ -17,8 +17,8 @@ from tests.fortran._support.wrapper_build import (
     _sole_native_module,
     wrapper_source,
 )
-from x2py import build_pyi_extension
-from x2py.runtime.handles import _NativeArrayHandoff, AllocatableArray, PointerArray
+from prik import build_pyi_extension
+from prik.runtime.handles import _NativeArrayHandoff, AllocatableArray, PointerArray
 
 DATA_TYPE_CONTRACTS = Path(__file__).parent / "fixtures" / "baseline" / "contracts"
 ARRAY_CONTRACTS = Path(__file__).parents[2] / "arrays" / "end_to_end" / "fixtures" / "baseline" / "contracts"
@@ -97,7 +97,7 @@ def test_fmath_scalar_sources_use_canonical_wrapper_plan(
     assert {path.name for path in wrapper_result.generated_sources} == expected_generated_sources
     assert any(path.name == f"{source.stem}_wrapper.h" for path in wrapper_result.generated_files)
     assert any(
-        path.name == "x2py_binding.h" and path.parent.name == "binding_support"
+        path.name == "prik_binding.h" and path.parent.name == "binding_support"
         for path in wrapper_result.generated_files
     )
     assert wrapper_result.compiled is True

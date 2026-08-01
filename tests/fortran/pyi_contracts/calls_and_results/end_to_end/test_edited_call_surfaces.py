@@ -10,7 +10,7 @@ from tests.fortran._support.wrapper_build import (
     _import_from_build_dir,
     _sole_native_module,
 )
-from x2py import build_pyi_extension
+from prik import build_pyi_extension
 
 FIXTURES = Path(__file__).parent / "fixtures"
 CONTRACTS = FIXTURES / "edited_contracts"
@@ -159,6 +159,6 @@ def test_hidden_fixed_shape_array_output_is_allocated_and_returned(
     np.testing.assert_array_equal(module.fill_vector(np.int32(4)), np.array([2.0, 4.0, 6.0, 8.0]))
     assert module.fill_vector(np.int32(0)).shape == (0,)
 
-    monkeypatch.setenv("X2PY_WRAPPER_FAIL_ALLOC", "1")
+    monkeypatch.setenv("PRIK_WRAPPER_FAIL_ALLOC", "1")
     with pytest.raises(MemoryError, match="Unable to allocate copy-return output array"):
         module.fill_vector(np.int32(2))

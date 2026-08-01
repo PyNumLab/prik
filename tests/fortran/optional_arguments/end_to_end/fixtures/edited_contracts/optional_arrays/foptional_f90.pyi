@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Arg, Float64, Int32, Returns, native_call
+from prik.contracts import Addr, Arg, Float64, Int32, Returns, native_call
 
 @native_call([Arg(0), Addr(Arg(1))])
 def mutate_optional(

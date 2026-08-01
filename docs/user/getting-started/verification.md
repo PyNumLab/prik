@@ -1,6 +1,6 @@
 ---
 title: Verification
-description: Verify that x2py, NumPy, and the native toolchain are working correctly
+description: Verify that prik, NumPy, and the native toolchain are working correctly
 audience: users, contributors
 prerequisites: installation
 related: first-wrapped-function.md
@@ -20,11 +20,11 @@ The next page uses them together to build a complete extension.
 Run these commands in your activated virtual environment:
 
 ```bash
-# Check x2py and NumPy
-python3 -c "from importlib.metadata import version; import x2py, numpy; print('x2py:', version('x2py')); print('NumPy:', numpy.__version__)"
+# Check prik and NumPy
+python3 -c "from importlib.metadata import version; import prik, numpy; print('prik:', version('prik')); print('NumPy:', numpy.__version__)"
 
 # Check the command-line interface
-python3 -m x2py --help
+python3 -m prik --help
 ```
 
 ---
@@ -72,7 +72,7 @@ missing, install it or add its `bin` directory to `PATH`.
 
 | Failure Type                    | Recommended Action                          |
 |--------------------------------|---------------------------------------------|
-| Cannot import x2py / NumPy     | Check active virtual environment            |
+| Cannot import prik / NumPy     | Check active virtual environment            |
 | A header directory is missing  | Reinstall Python development files or NumPy |
 | Compiler not found             | Fix `PATH` or install both executables from a supported pair |
 

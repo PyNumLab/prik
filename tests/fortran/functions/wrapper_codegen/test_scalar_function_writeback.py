@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import WritebackPhase
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.wrapper_policy import WritebackPhase
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
 
 def _artifacts(module):
@@ -45,6 +45,6 @@ def test_scalar_writeback_is_an_explicit_binding_lifecycle_result():
     assert "void bind_c_bump(int32_t * value);" in c_source
     assert "bind_c_bump(&bound_value);" in c_source
     assert "PyObject * result_obj = NULL;" in c_source
-    assert "result_obj = x2py_int32_to_python(&bound_value);" in c_source
+    assert "result_obj = prik_int32_to_python(&bound_value);" in c_source
     assert "subroutine bind_c_bump(value)" in fortran_source
     assert "call native_bump(value)" in fortran_source

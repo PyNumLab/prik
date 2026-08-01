@@ -1,6 +1,6 @@
 ---
 title: User Guide
-description: Detailed guides for wrapping Fortran code with x2py
+description: Detailed guides for wrapping Fortran code with prik
 audience: users
 prerequisites: getting started
 related: data-types.md

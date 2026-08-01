@@ -1,4 +1,4 @@
-from x2py.contracts import Int32, String, bind, external
+from prik.contracts import Int32, String, bind, external
 
 @bind("CHAR_CODE_DEFAULT")
 @external

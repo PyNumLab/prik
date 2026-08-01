@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from x2py.parsers.c import parse_c_file
+from prik.parsers.c import parse_c_file
 
 
 pytestmark = pytest.mark.skip(reason="Benchmarks are parked until benchmark adoption resumes.")

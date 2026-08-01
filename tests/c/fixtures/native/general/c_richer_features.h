@@ -1,58 +1,58 @@
-#ifndef X2PY_GENERAL_C_RICHER_FEATURES_H
-#define X2PY_GENERAL_C_RICHER_FEATURES_H
+#ifndef PRIK_GENERAL_C_RICHER_FEATURES_H
+#define PRIK_GENERAL_C_RICHER_FEATURES_H
 
 #include <stddef.h>
 
-#define X2PY_API(ret) ret
-#define X2PY_STRINGIFY(value) #value
+#define PRIK_API(ret) ret
+#define PRIK_STRINGIFY(value) #value
 
-#ifdef X2PY_ENABLE_FAST_PATH
-int x2py_fast_path(void);
+#ifdef PRIK_ENABLE_FAST_PATH
+int prik_fast_path(void);
 #else
-int x2py_slow_path(void);
+int prik_slow_path(void);
 #endif
 
-typedef int (*x2py_compare_fn)(const void *left, const void *right);
+typedef int (*prik_compare_fn)(const void *left, const void *right);
 
-enum x2py_status {
-    X2PY_STATUS_OK = 0,
-    X2PY_STATUS_RETRY = 1,
-    X2PY_STATUS_ERROR = -1
+enum prik_status {
+    PRIK_STATUS_OK = 0,
+    PRIK_STATUS_RETRY = 1,
+    PRIK_STATUS_ERROR = -1
 };
 
-union x2py_scalar {
+union prik_scalar {
     int i32;
     unsigned long u64;
     double f64;
 };
 
-struct x2py_flags {
+struct prik_flags {
     unsigned ready : 1;
     unsigned mode : 3;
     unsigned reserved : 28;
 };
 
-struct x2py_context;
-typedef struct x2py_context *x2py_context_handle;
+struct prik_context;
+typedef struct prik_context *prik_context_handle;
 
 /* Raw mode must defer this macro-shaped declaration. It is a future supported
-   case only after compiler preprocessing expands X2PY_API into ordinary C. */
-X2PY_API(int) x2py_sort(
+   case only after compiler preprocessing expands PRIK_API into ordinary C. */
+PRIK_API(int) prik_sort(
     void *items,
     size_t count,
     size_t item_size,
-    x2py_compare_fn compare
+    prik_compare_fn compare
 );
 
-int x2py_register_callback(
-    x2py_context_handle context,
-    void (*callback)(void *userdata, enum x2py_status status),
+int prik_register_callback(
+    prik_context_handle context,
+    void (*callback)(void *userdata, enum prik_status status),
     void *userdata
 );
 
-const char *x2py_status_message(enum x2py_status status);
-void x2py_fill_matrix(size_t rows, size_t cols, double matrix[static rows][cols]);
+const char *prik_status_message(enum prik_status status);
+void prik_fill_matrix(size_t rows, size_t cols, double matrix[static rows][cols]);
 
-#undef X2PY_API
+#undef PRIK_API
 
 #endif

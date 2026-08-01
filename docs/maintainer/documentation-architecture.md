@@ -9,7 +9,7 @@ publication: draft
 
 # Documentation Architecture
 
-This page defines how x2py documentation is organized and maintained. It is a
+This page defines how prik documentation is organized and maintained. It is a
 repository-governance contract, not part of the product-learning material.
 `mkdocs.yml` owns the complete intended navigation for the User, Developer,
 and Maintainer lanes. A publication hook filters that tree so GitHub Pages
@@ -45,7 +45,7 @@ contains only pages explicitly marked as reviewed.
     They reserve dedicated right-side space for the copy control, and long lines
     scroll inside the block instead of widening the page.
 
-`docs/index.md` is the user-first project entrance. Its body introduces x2py,
+`docs/index.md` is the user-first project entrance. Its body introduces prik,
 shows the shortest checked source-to-import workflow and its generated function
 docstring, and sends the reader into Getting Started. Developer, Maintainer,
 and deeper User Guide destinations stay available through site navigation
@@ -55,9 +55,9 @@ instead of competing with that first task.
 
 | Lane | Primary reader | Publication | Content |
 | --- | --- | --- | --- |
-| `user/` | People using x2py | Documentation website after review | Getting Started, guides, performance benchmarks, tutorials, examples, public reference, support status, FAQ, troubleshooting, changelog |
-| `developer/` | People changing x2py | Documentation website after review | Source orientation, implementation maps, testing, coding standards, feature work, contribution workflow |
-| `maintainer/` | People governing x2py | Documentation website after review | Documentation policy, design decisions, internal architecture, CI administration, releases, roadmaps |
+| `user/` | People using prik | Documentation website after review | Getting Started, guides, performance benchmarks, tutorials, examples, public reference, support status, FAQ, troubleshooting, changelog |
+| `developer/` | People changing prik | Documentation website after review | Source orientation, implementation maps, testing, coding standards, feature work, contribution workflow |
+| `maintainer/` | People governing prik | Documentation website after review | Documentation policy, design decisions, internal architecture, CI administration, releases, roadmaps |
 
 Pages use their primary audience for placement. A developer may consult a
 maintainer design record, but that does not make governance material part of
@@ -138,7 +138,7 @@ Use the explicit draft-preview environment flag while reviewing unpublished
 pages locally:
 
 ```bash
-X2PY_DOCS_INCLUDE_DRAFTS=1 python3 -m mkdocs serve
+PRIK_DOCS_INCLUDE_DRAFTS=1 python3 -m mkdocs serve
 ```
 
 Draft preview adds a visible warning to unpublished pages. Changing a page from
@@ -190,11 +190,11 @@ website publication.
 
 The Performance page keeps its explanatory text and reproduction workflow in
 reviewed Markdown. Result-dependent summary, table, and environment blocks are
-bounded by `x2py-performance-*` comments and are generated from paired `pyperf`
+bounded by `prik-performance-*` comments and are generated from paired `pyperf`
 files by `tools/generate_performance_docs.py`. The same tool owns the runtime
 comparison SVG and the clean-build comparison SVG. Clean-build results contain
 development and optimized compiler profiles and record the compiler-process
-limit used by x2py; f2py retains its normal Meson/Ninja scheduler. Generation
+limit used by prik; f2py retains its normal Meson/Ninja scheduler. Generation
 must fail when a marker is missing or duplicated;
 it must not rewrite prose outside those blocks. The environment block records
 both the operating-system distribution and the lower-level platform string so
@@ -205,7 +205,7 @@ label after verifying its Neoverse N2/Cobalt 100 CPU part. The benchmark scripts
 add an architecture-neutral CPU identity to every runtime and build result
 because pyperf's Linux metadata collector does not report `cpu_model_name` on
 every ARM64 `/proc/cpuinfo` format. Documentation generation continues to
-require matching CPU metadata across each x2py/f2py result pair.
+require matching CPU metadata across each prik/f2py result pair.
 
 ## Continuous Documentation Quality
 

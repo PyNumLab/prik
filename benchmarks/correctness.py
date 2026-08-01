@@ -11,7 +11,7 @@ def load_api(module_name: str, nested_module: str | None = None) -> Any:
     return getattr(module, nested_module) if nested_module else module
 
 
-x2py = load_api("bench_x2py", "kernels")
+prik = load_api("bench_prik", "kernels")
 f2py = load_api("bench_f2py", "kernels")
 
 
@@ -35,7 +35,7 @@ def check_implementation(api: Any) -> None:
     )
 
 
-check_implementation(x2py)
+check_implementation(prik)
 check_implementation(f2py)
 
 print("All implementations passed correctness checks.")

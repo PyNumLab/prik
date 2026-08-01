@@ -5,15 +5,15 @@ from __future__ import annotations
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
 
 def _strided_plan(rank: int = 2):
     dimensions = ", ".join("::" for _ in range(rank))
     module = parse_pyi_text(
         f"""
-from x2py.contracts import Float64
+from prik.contracts import Float64
 
 def strided(values: Float64[{dimensions}]) -> None: ...
 """,
@@ -47,8 +47,8 @@ def test_strided_array_lowering_validates_and_passes_one_explicit_bridge_slice()
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
-    assert 'x2py_array_actual_unpack(bound_values_obj, "float64", 2, bound_values_shape, "F"' in c_source
-    assert "NPY_FLOAT64, 2, 2, X2PY_ARRAY_LAYOUT_POSITIVE_STRIDED_F, 0, 1" in c_source
+    assert 'prik_array_actual_unpack(bound_values_obj, "float64", 2, bound_values_shape, "F"' in c_source
+    assert "NPY_FLOAT64, 2, 2, PRIK_ARRAY_LAYOUT_POSITIVE_STRIDED_F, 0, 1" in c_source
     assert "bound_values_upper_bound_0 = bound_values_actual.upper_bounds[0]" in c_source
     assert "bound_values_stride_1 = bound_values_actual.strides[1]" in c_source
     assert "bound_values_upper_bound_0" in c_source

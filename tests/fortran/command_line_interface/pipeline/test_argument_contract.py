@@ -12,7 +12,7 @@ from tests.fortran.command_line_interface.pipeline._support import (
     subprocess,
     sys,
     types,
-    x2py_cli,
+    prik_cli,
 )
 
 
@@ -35,7 +35,7 @@ end module second_mod
     )
     output = tmp_path / "combined.pyi"
 
-    cmd = [sys.executable, "-m", "x2py", "generate", "--pyi", str(source), "--out", str(output)]
+    cmd = [sys.executable, "-m", "prik", "generate", "--pyi", str(source), "--out", str(output)]
     result = subprocess.run(cmd, capture_output=True, text=True)
 
     assert result.returncode != 0
@@ -58,7 +58,7 @@ end module conflict_mod
     cmd = [
         sys.executable,
         "-m",
-        "x2py",
+        "prik",
         "generate",
         "--pyi",
         str(f90),
@@ -72,7 +72,7 @@ end module conflict_mod
     assert "--out cannot be used with both --json and --pyi" in res.stderr
 
 
-def test_x2py_pyi_report_formats_and_rejects_conflicting_dependency_stubs():
+def test_prik_pyi_report_formats_and_rejects_conflicting_dependency_stubs():
     report = {
         "first.f90": {
             "pyi": "def first() -> None: ...",
@@ -88,7 +88,7 @@ def test_x2py_pyi_report_formats_and_rejects_conflicting_dependency_stubs():
         "empty.f90": {},
     }
 
-    text = x2py_cli._format_pyi_report(report)
+    text = prik_cli._format_pyi_report(report)
 
     assert (
         text
@@ -110,7 +110,7 @@ File: empty.f90
 <no module declarations found>"""
     )
     with pytest.raises(ValueError, match="Conflicting generated dependency stub"):
-        x2py_cli._write_pyi_dependencies(
+        prik_cli._write_pyi_dependencies(
             {
                 "first.f90": {"pyi_dependencies": {"shared": "class shared:\n    pass"}},
                 "second.f90": {"pyi_dependencies": {"shared": "class shared:\n    value: int"}},
@@ -150,19 +150,19 @@ File: empty.f90
         ),
     ],
 )
-def test_x2py_main_preserves_validation_diagnostics(monkeypatch, overrides, expected):
+def test_prik_main_preserves_validation_diagnostics(monkeypatch, overrides, expected):
     args = _main_args(**overrides)
     _install_main_parser(monkeypatch, args)
-    monkeypatch.setattr(x2py_cli, "_resolve_language", lambda paths, language, parser: language)
-    monkeypatch.setattr(x2py_cli, "_build_preprocessing_config", lambda active_args, parser: object())
+    monkeypatch.setattr(prik_cli, "_resolve_language", lambda paths, language, parser: language)
+    monkeypatch.setattr(prik_cli, "_build_preprocessing_config", lambda active_args, parser: object())
 
     with pytest.raises(_MainParserError) as exc_info:
-        x2py_cli.main()
+        prik_cli.main()
 
     assert str(exc_info.value) == expected
 
 
-def test_x2py_main_collects_many_native_inputs_from_one_option_group(
+def test_prik_main_collects_many_native_inputs_from_one_option_group(
     monkeypatch,
     tmp_path: Path,
     capsys,
@@ -182,7 +182,7 @@ def test_x2py_main_collects_many_native_inputs_from_one_option_group(
         sys,
         "argv",
         [
-            "x2py",
+            "prik",
             str(contract),
             "--compiler",
             "selected-gfortran",
@@ -223,12 +223,12 @@ def test_x2py_main_collects_many_native_inputs_from_one_option_group(
         ],
     )
     monkeypatch.setattr(
-        x2py_cli,
+        prik_cli,
         "_run_wrap_build_with_diagnostics",
         lambda active_args, active_preprocessing: calls.append((active_args, active_preprocessing)) or result,
     )
 
-    assert x2py_cli.main() == 0
+    assert prik_cli.main() == 0
 
     assert len(calls) == 1
     active_args, _preprocessing = calls[0]
@@ -246,7 +246,7 @@ def test_x2py_main_collects_many_native_inputs_from_one_option_group(
         "arg:-Wl,--end-group",
     ]
     assert active_args.native_library_dirs == ["lib", "vendor/lib"]
-    assert x2py_cli._cli_build_include_dirs(active_args) == (
+    assert prik_cli._cli_build_include_dirs(active_args) == (
         "include",
         "vendor/include",
         "mods",
@@ -265,19 +265,19 @@ def test_x2py_main_collects_many_native_inputs_from_one_option_group(
         {"paths": ["input.f90"]},
         {"paths": ["contract.pyi"], "native_objects": ["native.o"]},
         {"paths": ["input.f90"], "makefile": True},
-        {"paths": [], "build_manifest": "build/x2py-build.json"},
+        {"paths": [], "build_manifest": "build/prik-build.json"},
     ],
 )
 def test_wrapper_inputs_select_the_default_build_stage(overrides):
-    assert x2py_cli._is_wrapper_build(_main_args(**overrides))
+    assert prik_cli._is_wrapper_build(_main_args(**overrides))
 
 
 def test_explicit_inspection_stage_prevents_default_wrapper_selection():
-    assert not x2py_cli._is_wrapper_build(_main_args(parse=True))
+    assert not prik_cli._is_wrapper_build(_main_args(parse=True))
 
 
 def test_cli_native_compile_flags_split_grouped_shell_words():
-    assert x2py_cli._cli_native_compile_flags(["-O2 -g0", "-DNAME='value with spaces'"]) == (
+    assert prik_cli._cli_native_compile_flags(["-O2 -g0", "-DNAME='value with spaces'"]) == (
         "-O2",
         "-g0",
         "-DNAME=value with spaces",
@@ -287,32 +287,32 @@ def test_cli_native_compile_flags_split_grouped_shell_words():
 @pytest.mark.parametrize("jobs", ("0", "many"))
 def test_cli_compile_jobs_rejects_non_positive_or_non_integer_values(jobs: str, capsys) -> None:
     with pytest.raises(SystemExit) as exc_info:
-        x2py_cli.main([str(TEST_FILE), "--jobs", jobs])
+        prik_cli.main([str(TEST_FILE), "--jobs", jobs])
 
     assert exc_info.value.code == 2
     assert "jobs must be a positive integer" in capsys.readouterr().err
 
 
 def test_cli_wrapper_flags_split_grouped_shell_words():
-    assert x2py_cli._cli_wrapper_fortran_flags(["-O0 -g", "-DNAME='value with spaces'"]) == (
+    assert prik_cli._cli_wrapper_fortran_flags(["-O0 -g", "-DNAME='value with spaces'"]) == (
         "-O0",
         "-g",
         "-DNAME=value with spaces",
     )
-    assert x2py_cli._cli_wrapper_c_flags(["-O1 -g0"]) == ("-O1", "-g0")
+    assert prik_cli._cli_wrapper_c_flags(["-O1 -g0"]) == ("-O1", "-g0")
 
 
 def test_cli_native_compile_flags_reject_malformed_grouped_value():
     with pytest.raises(ValueError, match="Invalid --native-compile-flags value"):
-        x2py_cli._cli_native_compile_flags(["'-O2"])
+        prik_cli._cli_native_compile_flags(["'-O2"])
 
 
 def test_cli_wrapper_flags_reject_malformed_grouped_value():
     with pytest.raises(ValueError, match="Invalid --wrapper-c-flags value"):
-        x2py_cli._cli_wrapper_c_flags(["'-O0"])
+        prik_cli._cli_wrapper_c_flags(["'-O0"])
 
 
-def test_x2py_build_preprocessing_config_preserves_macro_validation_errors(monkeypatch):
+def test_prik_build_preprocessing_config_preserves_macro_validation_errors(monkeypatch):
     class Parser:
         def error(self, message):
             raise ValueError(message)
@@ -339,14 +339,14 @@ def test_x2py_build_preprocessing_config_preserves_macro_validation_errors(monke
     def reject(value, option):
         raise PreprocessingError(f"{option}: invalid {value}", category="INVALID_MACRO_NAME")
 
-    monkeypatch.setattr(x2py_cli, "validate_macro_name", reject)
+    monkeypatch.setattr(prik_cli, "validate_macro_name", reject)
 
     with pytest.raises(ValueError) as define_error:
-        x2py_cli._build_preprocessing_config(args(defines=["=bad"]), Parser())
+        prik_cli._build_preprocessing_config(args(defines=["=bad"]), Parser())
     assert str(define_error.value) == "--define/-D: invalid =bad"
 
     with pytest.raises(ValueError) as undef_error:
-        x2py_cli._build_preprocessing_config(args(undefs=["=bad"]), Parser())
+        prik_cli._build_preprocessing_config(args(undefs=["=bad"]), Parser())
     assert str(undef_error.value) == "--undef/-U: invalid =bad"
 
 
@@ -359,7 +359,7 @@ def test_x2py_build_preprocessing_config_preserves_macro_validation_errors(monke
         ),
     ],
 )
-def test_x2py_build_preprocessing_config_preserves_validation_diagnostics(overrides, message):
+def test_prik_build_preprocessing_config_preserves_validation_diagnostics(overrides, message):
     values = {
         "defines": [],
         "undefs": [],
@@ -382,11 +382,11 @@ def test_x2py_build_preprocessing_config_preserves_validation_diagnostics(overri
             raise ValueError(received)
 
     with pytest.raises(ValueError) as error:
-        x2py_cli._build_preprocessing_config(types.SimpleNamespace(**values), Parser())
+        prik_cli._build_preprocessing_config(types.SimpleNamespace(**values), Parser())
     assert str(error.value) == message
 
 
-def test_x2py_resolve_language_handles_fortran_and_ambiguous_input_edges(tmp_path: Path):
+def test_prik_resolve_language_handles_fortran_and_ambiguous_input_edges(tmp_path: Path):
     class ErrorParser:
         def error(self, message):
             raise ValueError(message)
@@ -402,17 +402,17 @@ def test_x2py_resolve_language_handles_fortran_and_ambiguous_input_edges(tmp_pat
     unknown.write_text("notes\n", encoding="utf-8")
 
     with pytest.raises(ValueError) as directory_error:
-        x2py_cli._resolve_language([str(input_dir)], None, parser)
+        prik_cli._resolve_language([str(input_dir)], None, parser)
     assert str(directory_error.value) == (
         f"Input directory {input_dir} requires an explicit frontend; "
         "pass --language fortran or --language c. Use --help for examples."
     )
 
-    assert x2py_cli._resolve_language([str(f_source)], None, parser) == "fortran"
-    assert x2py_cli._resolve_language([str(stub)], None, parser) == "fortran"
+    assert prik_cli._resolve_language([str(f_source)], None, parser) == "fortran"
+    assert prik_cli._resolve_language([str(stub)], None, parser) == "fortran"
 
     with pytest.raises(ValueError) as unknown_error:
-        x2py_cli._resolve_language([str(unknown)], None, parser)
+        prik_cli._resolve_language([str(unknown)], None, parser)
     assert str(unknown_error.value) == (
         f"Cannot determine the input language for {unknown}; "
         "pass --language fortran or --language c. Use --help for examples."
@@ -420,7 +420,7 @@ def test_x2py_resolve_language_handles_fortran_and_ambiguous_input_edges(tmp_pat
 
 
 def test_cli_without_language_keeps_fortran_default_behavior():
-    cmd = [sys.executable, "-m", "x2py", "parse", str(TEST_FILE)]
+    cmd = [sys.executable, "-m", "prik", "parse", str(TEST_FILE)]
 
     result = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
@@ -429,19 +429,19 @@ def test_cli_without_language_keeps_fortran_default_behavior():
 
 
 def test_cli_wrapper_out_requires_name_for_default_wrap():
-    cmd = [sys.executable, "-m", "x2py", str(TEST_FILE), "--out"]
+    cmd = [sys.executable, "-m", "prik", str(TEST_FILE), "--out"]
     res = subprocess.run(cmd, capture_output=True, text=True)
     assert res.returncode == 2
     assert "argument --out: expected one argument" in res.stderr
 
 
-def test_x2py_command_parsers_group_options_by_user_intent():
-    top_help = x2py_cli._top_level_parser(["--help"]).format_help()
-    build_help = x2py_cli._build_parser(["input.f90", "--help"]).format_help()
-    parse_help = x2py_cli._parse_parser(["--help"]).format_help()
-    semantics_help = x2py_cli._semantics_parser(["--help"]).format_help()
-    generate_help = x2py_cli._generate_parser(["--help"]).format_help()
-    probe_help = x2py_cli._probe_parser(["--help"]).format_help()
+def test_prik_command_parsers_group_options_by_user_intent():
+    top_help = prik_cli._top_level_parser(["--help"]).format_help()
+    build_help = prik_cli._build_parser(["input.f90", "--help"]).format_help()
+    parse_help = prik_cli._parse_parser(["--help"]).format_help()
+    semantics_help = prik_cli._semantics_parser(["--help"]).format_help()
+    generate_help = prik_cli._generate_parser(["--help"]).format_help()
+    probe_help = prik_cli._probe_parser(["--help"]).format_help()
     normalized_top_help = " ".join(top_help.split())
     normalized_build_help = " ".join(build_help.split())
     normalized_parse_help = " ".join(parse_help.split())
@@ -455,27 +455,27 @@ def test_x2py_command_parsers_group_options_by_user_intent():
 
     assert "commands:" in top_help
     assert all(command in top_help for command in ("parse", "semantics", "generate", "probe"))
-    assert top_help.startswith("usage: python3 -m x2py INPUT [INPUT ...] [BUILD OPTIONS]")
-    assert "python3 -m x2py {parse,semantics,generate,probe} [OPTIONS] ..." in top_help
+    assert top_help.startswith("usage: python3 -m prik INPUT [INPUT ...] [BUILD OPTIONS]")
+    assert "python3 -m prik {parse,semantics,generate,probe} [OPTIONS] ..." in top_help
     assert "Build Python extensions from Fortran and inspect native interface artifacts." in top_help
-    assert x2py_cli._HELP_DIVIDER in top_help
+    assert prik_cli._HELP_DIVIDER in top_help
     assert "Basic wrapper build:" in top_help
     assert "Name the Python extension:" in top_help
     assert "Generate an editable semantic contract:" in top_help
-    assert "python3 -m x2py points.f90" in top_help
-    assert "python3 -m x2py points.f90 --out geometry" in top_help
-    assert "python3 -m x2py generate --pyi points.f90 --out contracts" in top_help
-    assert "See the x2py homepage for the points.f90 source and generated Python API:" in top_help
-    assert "https://pynumlab.github.io/x2py/#see-it-in-action" in top_help
+    assert "python3 -m prik points.f90" in top_help
+    assert "python3 -m prik points.f90 --out geometry" in top_help
+    assert "python3 -m prik generate --pyi points.f90 --out contracts" in top_help
+    assert "See the prik homepage for the points.f90 source and generated Python API:" in top_help
+    assert "https://pynumlab.github.io/prik/#see-it-in-action" in top_help
     assert "points.f90" in build_help
     assert "points.f90" in parse_help
     assert "points.f90" in semantics_help
     assert "points.f90" in generate_help
     for help_text in (top_help, build_help, parse_help, semantics_help, generate_help, probe_help):
         assert "scale.f90" not in help_text
-    assert "Run `python3 -m x2py --help-build` for the full list of build options." in top_help
+    assert "Run `python3 -m prik --help-build` for the full list of build options." in top_help
     for command in ("parse", "semantics", "generate", "probe"):
-        assert f"python3 -m x2py {command} --help" in top_help
+        assert f"python3 -m prik {command} --help" in top_help
     for heading in ("positional arguments:", "build options:"):
         assert heading in top_help
     for common_option in (
@@ -497,10 +497,10 @@ def test_x2py_command_parsers_group_options_by_user_intent():
     assert "--native-library openblas passes -lopenblas to the linker" in normalized_top_help
     assert "--native-link-item" not in top_help
     assert "--wrapper-c-flags" not in top_help
-    assert build_help.startswith("usage: python3 -m x2py INPUT [INPUT ...]\n")
+    assert build_help.startswith("usage: python3 -m prik INPUT [INPUT ...]\n")
     assert "[OUTPUT OPTIONS] [COMPILER OPTIONS] [WRAPPER OPTIONS]" in build_help
     assert "[NATIVE OPTIONS] [DIAGNOSTIC OPTIONS]" in build_help
-    assert "python3 -m x2py --build-manifest PATH [MANIFEST OVERRIDES]" in build_help
+    assert "python3 -m prik --build-manifest PATH [MANIFEST OVERRIDES]" in build_help
     assert "positional arguments:" in build_help
     for heading in (
         "input selection:",
@@ -517,10 +517,10 @@ def test_x2py_command_parsers_group_options_by_user_intent():
     assert "Compiler used throughout the extension build" in build_help
     assert "Add a compiler include search directory" in build_help
     assert "default: gfortran" in normalized_build_help
-    assert "default: ./__x2py__" in normalized_build_help
+    assert "default: ./__prik__" in normalized_build_help
     assert "Fortran source file(s), or exactly one semantic .pyi contract" in normalized_build_help
     assert "Input language (default: fortran)" in normalized_build_help
-    assert "Rebuild the extension from an existing x2py-build.json" in normalized_build_help
+    assert "Rebuild the extension from an existing prik-build.json" in normalized_build_help
     assert "Name the Python extension and stable NAME.so library" in normalized_build_help
     assert "Print build paths and metadata as JSON" in normalized_build_help
     assert 'Native compiler flags (for example, "-O3 -fopenmp")' in normalized_build_help
@@ -531,7 +531,7 @@ def test_x2py_command_parsers_group_options_by_user_intent():
     assert "Manifest overrides: --out, --compiler, -I/--include-dir, --jobs" in normalized_build_help
     assert "--language {fortran}" in build_help
     assert "--language {fortran,c}" not in build_help
-    assert parse_help.startswith("usage: python3 -m x2py parse INPUT [INPUT ...] [OPTIONS]")
+    assert parse_help.startswith("usage: python3 -m prik parse INPUT [INPUT ...] [OPTIONS]")
     for heading in (
         "positional arguments:",
         "input options:",
@@ -560,7 +560,7 @@ def test_x2py_command_parsers_group_options_by_user_intent():
     assert "datatype measurement" not in normalized_parse_help
     assert "native and bridge compilation" not in normalized_parse_help
     assert "default: gfortran; cc with --language c" in normalized_parse_help
-    assert semantics_help.startswith("usage: python3 -m x2py semantics INPUT [INPUT ...] [OPTIONS]")
+    assert semantics_help.startswith("usage: python3 -m prik semantics INPUT [INPUT ...] [OPTIONS]")
     assert "--json" not in semantics_help
     assert "Write combined JSON to PATH" in semantics_help
     assert "Define a preprocessing macro" in semantics_help
@@ -617,12 +617,12 @@ def test_x2py_command_parsers_group_options_by_user_intent():
     assert "--pyi" in generate_help
     assert "--sources" in generate_help
     assert "--makefile" in generate_help
-    assert "Read an existing x2py-build.json and regenerate wrapper artifacts" in normalized_generate_help
+    assert "Read an existing prik-build.json and regenerate wrapper artifacts" in normalized_generate_help
     assert "Compiler used for source analysis and wrapper build files" in normalized_generate_help
     assert "default: gfortran; cc with --language c" in normalized_generate_help
     assert "native compiler options:" not in generate_help
     assert "link options:" not in generate_help
-    assert probe_help.startswith("usage: python3 -m x2py probe --language {fortran,c} --compiler COMPILER [OPTIONS]\n")
+    assert probe_help.startswith("usage: python3 -m prik probe --language {fortran,c} --compiler COMPILER [OPTIONS]\n")
     for heading in ("probe options:", "execution options:", "output options:", "diagnostic options:"):
         assert heading in probe_help
     assert_group_order(
@@ -651,27 +651,27 @@ def test_x2py_command_parsers_group_options_by_user_intent():
     ("parser_factory", "purpose"),
     [
         (
-            x2py_cli._top_level_parser,
+            prik_cli._top_level_parser,
             "Build Python extensions from Fortran and inspect native interface artifacts.",
         ),
         (
-            x2py_cli._build_parser,
+            prik_cli._build_parser,
             "Build a Python extension from Fortran source or a semantic .pyi contract.",
         ),
         (
-            x2py_cli._parse_parser,
+            prik_cli._parse_parser,
             "Inspect Fortran or C source declarations before semantic conversion.",
         ),
         (
-            x2py_cli._semantics_parser,
+            prik_cli._semantics_parser,
             "Convert Fortran or C source code into language-neutral semantic IR models.",
         ),
         (
-            x2py_cli._generate_parser,
+            prik_cli._generate_parser,
             "Generate semantic .pyi contracts or wrapper build artifacts without compiling.",
         ),
         (
-            x2py_cli._probe_parser,
+            prik_cli._probe_parser,
             "Probe compiler-target datatype sizes, alignment, and ABI facts.",
         ),
     ],
@@ -686,27 +686,27 @@ def test_cli_help_places_a_clear_purpose_below_usage(parser_factory, purpose):
     ("parser_factory", "example_headings"),
     [
         (
-            x2py_cli._top_level_parser,
+            prik_cli._top_level_parser,
             ("Basic wrapper build:", "Name the Python extension:", "More help:"),
         ),
         (
-            x2py_cli._build_parser,
+            prik_cli._build_parser,
             ("Basic wrapper build:", "Build from a semantic contract:", "Replay a build manifest:"),
         ),
         (
-            x2py_cli._parse_parser,
+            prik_cli._parse_parser,
             ("Basic Fortran inspection:", "Detailed Fortran report:", "C header as JSON:"),
         ),
         (
-            x2py_cli._semantics_parser,
+            prik_cli._semantics_parser,
             ("Basic Fortran conversion:", "C header:", "Save semantic IR:"),
         ),
         (
-            x2py_cli._generate_parser,
+            prik_cli._generate_parser,
             ("Editable semantic contract:", "Wrapper sources only:", "Reproducible Makefile build:"),
         ),
         (
-            x2py_cli._probe_parser,
+            prik_cli._probe_parser,
             (
                 "Basic target probes:",
                 "Human-readable mapping table:",
@@ -719,13 +719,13 @@ def test_cli_help_places_a_clear_purpose_below_usage(parser_factory, purpose):
 def test_cli_help_groups_examples_by_task(parser_factory, example_headings):
     help_text = parser_factory(["--help", "--no-color"]).format_help()
 
-    assert x2py_cli._HELP_DIVIDER in help_text
+    assert prik_cli._HELP_DIVIDER in help_text
     assert all(heading in help_text for heading in example_headings)
 
 
 def test_help_build_routes_to_the_full_default_build_help():
     result = subprocess.run(
-        [sys.executable, "-m", "x2py", "--help-build", "--no-color"],
+        [sys.executable, "-m", "prik", "--help-build", "--no-color"],
         capture_output=True,
         text=True,
     )
@@ -743,7 +743,7 @@ def test_help_build_routes_to_the_full_default_build_help():
 
 
 def test_help_build_exposes_every_supported_build_option():
-    parser = x2py_cli._build_parser(["--help"])
+    parser = prik_cli._build_parser(["--help"])
     help_text = parser.format_help()
     option_strings = {option for action in parser._actions for option in action.option_strings}
 
@@ -754,10 +754,10 @@ def test_help_build_exposes_every_supported_build_option():
 @pytest.mark.parametrize(
     "parser_factory",
     (
-        x2py_cli._parse_parser,
-        x2py_cli._semantics_parser,
-        x2py_cli._generate_parser,
-        x2py_cli._probe_parser,
+        prik_cli._parse_parser,
+        prik_cli._semantics_parser,
+        prik_cli._generate_parser,
+        prik_cli._probe_parser,
     ),
 )
 def test_subcommand_help_exposes_every_supported_option(parser_factory):
@@ -782,7 +782,7 @@ def test_subcommand_help_exposes_every_supported_option(parser_factory):
 )
 def test_manifest_replay_rejects_saved_settings_instead_of_ignoring_them(extra_args, message, capsys):
     with pytest.raises(SystemExit) as exc_info:
-        x2py_cli.main(["--build-manifest", "build/x2py-build.json", *extra_args])
+        prik_cli.main(["--build-manifest", "build/prik-build.json", *extra_args])
 
     assert exc_info.value.code == 2
     assert message in capsys.readouterr().err
@@ -796,13 +796,13 @@ def test_manifest_replay_accepts_documented_overrides(monkeypatch):
         captured["preprocessing"] = preprocessing
         return object()
 
-    monkeypatch.setattr(x2py_cli, "_run_wrap_build_with_diagnostics", run_build)
-    monkeypatch.setattr(x2py_cli, "_print_wrap_build_output", lambda _args, _result: None)
+    monkeypatch.setattr(prik_cli, "_run_wrap_build_with_diagnostics", run_build)
+    monkeypatch.setattr(prik_cli, "_print_wrap_build_output", lambda _args, _result: None)
 
-    result = x2py_cli.main(
+    result = prik_cli.main(
         [
             "--build-manifest",
-            "build/x2py-build.json",
+            "build/prik-build.json",
             "--out",
             "REPLAYED",
             "--compiler",
@@ -835,7 +835,7 @@ def test_manifest_replay_accepts_documented_overrides(monkeypatch):
 )
 def test_generate_requires_exactly_one_output_mode(argv):
     with pytest.raises(SystemExit) as exc_info:
-        x2py_cli.main(argv)
+        prik_cli.main(argv)
 
     assert exc_info.value.code == 2
 
@@ -845,7 +845,7 @@ def test_cli_requires_explicit_language_for_directory_and_unknown_suffix(tmp_pat
     source.write_text("subroutine solve()\nend subroutine solve\n", encoding="utf-8")
 
     unknown = subprocess.run(
-        [sys.executable, "-m", "x2py", "parse", str(source)],
+        [sys.executable, "-m", "prik", "parse", str(source)],
         capture_output=True,
         text=True,
     )
@@ -854,7 +854,7 @@ def test_cli_requires_explicit_language_for_directory_and_unknown_suffix(tmp_pat
     assert "--language fortran or --language c" in unknown.stderr
 
     directory = subprocess.run(
-        [sys.executable, "-m", "x2py", "parse", str(tmp_path)],
+        [sys.executable, "-m", "prik", "parse", str(tmp_path)],
         capture_output=True,
         text=True,
     )
@@ -862,7 +862,7 @@ def test_cli_requires_explicit_language_for_directory_and_unknown_suffix(tmp_pat
     assert "requires an explicit frontend" in directory.stderr
 
     explicit = subprocess.run(
-        [sys.executable, "-m", "x2py", "parse", str(source), "--language", "fortran"],
+        [sys.executable, "-m", "prik", "parse", str(source), "--language", "fortran"],
         capture_output=True,
         text=True,
         check=True,
@@ -875,7 +875,7 @@ def test_cli_rejects_fortran_file_with_explicit_c_frontend(tmp_path: Path):
     source.write_text("subroutine solve()\nend subroutine solve\n", encoding="utf-8")
 
     result = subprocess.run(
-        [sys.executable, "-m", "x2py", "parse", str(source), "--language", "c"],
+        [sys.executable, "-m", "prik", "parse", str(source), "--language", "c"],
         capture_output=True,
         text=True,
     )
@@ -892,7 +892,7 @@ def test_cli_fortran_rejects_embedded_c_declaration_outside_execution_body(tmp_p
         encoding="utf-8",
     )
     result = subprocess.run(
-        [sys.executable, "-m", "x2py", "generate", "--pyi", str(source)],
+        [sys.executable, "-m", "prik", "generate", "--pyi", str(source)],
         capture_output=True,
         text=True,
     )
@@ -902,17 +902,17 @@ def test_cli_fortran_rejects_embedded_c_declaration_outside_execution_body(tmp_p
     assert "Unknown or unsupported datatype declaration" in result.stderr
 
 
-def test_x2py_cli_defaults_pyi_to_wrapper_and_requires_native_implementation(tmp_path: Path):
+def test_prik_cli_defaults_pyi_to_wrapper_and_requires_native_implementation(tmp_path: Path):
     pyi = tmp_path / "module.pyi"
     pyi.write_text("def f() -> None: ...\n", encoding="utf-8")
-    cmd = [sys.executable, "-m", "x2py", str(pyi)]
+    cmd = [sys.executable, "-m", "prik", str(pyi)]
     res = subprocess.run(cmd, capture_output=True, text=True)
     assert res.returncode == 2
     assert "A .pyi wrapper build requires --native-fortran-sources" in res.stderr
 
 
 @pytest.mark.parametrize("macro_flag", ["-D", "-U"])
-def test_x2py_main_rejects_invalid_macro_names(macro_flag: str, monkeypatch):
-    monkeypatch.setattr(sys, "argv", ["x2py", "parse", str(TEST_FILE), macro_flag, "=invalid"])
+def test_prik_main_rejects_invalid_macro_names(macro_flag: str, monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["prik", "parse", str(TEST_FILE), macro_flag, "=invalid"])
     with pytest.raises(SystemExit):
-        x2py_cli.main()
+        prik_cli.main()

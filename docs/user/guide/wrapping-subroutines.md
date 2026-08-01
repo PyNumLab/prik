@@ -1,6 +1,6 @@
 ---
 title: Wrapping Subroutines
-description: How x2py wraps Fortran `subroutine` procedures — output arguments, in-place mutation, and result projection
+description: How prik wraps Fortran `subroutine` procedures — output arguments, in-place mutation, and result projection
 audience: users
 prerequisites: data types, first wrapped function
 related: wrapping-functions.md, arrays.md, optional-arguments.md
@@ -29,7 +29,7 @@ change in place.
 | `intent(out)` allocatable   | Hidden (or optional)         | `Allocatable[...]` handle         |
 | No `intent`                 | Visible argument             | Conservative `intent(inout)` rule |
 
-Without `intent`, x2py uses the conservative `intent(inout)` behavior. A
+Without `intent`, prik uses the conservative `intent(inout)` behavior. A
 primitive scalar stays visible and its replacement value is returned. If the
 dummy is known to be input-only, remove that projected result from the
 generated contract. This is common in legacy sources, but the rule applies to
@@ -76,7 +76,7 @@ end module outputs
 Build it:
 
 ```bash
-python3 -m x2py outputs.f90 --out-dir build/outputs
+python3 -m prik outputs.f90 --out-dir build/outputs
 ```
 
 ---

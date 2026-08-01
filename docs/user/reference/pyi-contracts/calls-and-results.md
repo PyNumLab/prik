@@ -18,7 +18,7 @@ When every native argument is visible in native order, `@native_call(...)` is
 not needed:
 
 ```python
-from x2py.contracts import Int32
+from prik.contracts import Int32
 
 def scalar_status(
     base: Int32[()],
@@ -50,7 +50,7 @@ procedure needs hidden output storage, reordered arguments, constants,
 lengths, presence flags, shapes, or work buffers:
 
 ```python
-from x2py.contracts import Addr, Arg, Int32, Return, Returns, native_call
+from prik.contracts import Addr, Arg, Int32, Return, Returns, native_call
 
 @native_call([Addr(Arg(0)), Return("status", 0)])
 def scalar_status(base: Int32) -> Returns["status", Int32]: ...
@@ -77,14 +77,14 @@ argument then needs an explicit replacement result or a supported rule that
 discards the temporary mutation:
 
 ```python
-from x2py.contracts import Annotated, Float64, Immutable, Returns
+from prik.contracts import Annotated, Float64, Immutable, Returns
 
 def scale(
     values: Annotated[Float64[:], Immutable],
 ) -> Returns["values", Float64[:]]: ...
 ```
 
-x2py calls the native procedure with separate writable storage and returns the
+prik calls the native procedure with separate writable storage and returns the
 replacement. The original array remains unchanged.
 
 Do not combine replacement-only mutation with a writable borrowed view. Those
@@ -95,7 +95,7 @@ requests contradict each other and are rejected.
 Annotations affect runtime checks; they are not only IDE hints:
 
 ```python
-from x2py.contracts import Float64
+from prik.contracts import Float64
 
 def solve(
     matrix: Float64[3, 3],
@@ -112,11 +112,11 @@ Supported edits include:
   optional in the native procedure.
 
 Changing dtype or rank, or inventing optionality, changes the declared native
-binary interface. It is valid only when the implementation matches. x2py can
+binary interface. It is valid only when the implementation matches. prik can
 check exact NumPy dtype, rank, shape, layout, writeability, byte order,
 alignment, and zero-sized-array rules. Plain multidimensional arrays in a
 Fortran contract use Fortran order by default. The
-[array guide](../../guide/arrays.md#what-x2py-validates) explains these checks.
+[array guide](../../guide/arrays.md#what-prik-validates) explains these checks.
 
 ## Translate Status Results into Exceptions
 
@@ -124,7 +124,7 @@ Use `@raises(...)` when a projected native status should become a Python
 exception:
 
 ```python
-from x2py.contracts import Addr, Arg, Int32, Return, String, native_call, raises
+from prik.contracts import Addr, Arg, Int32, Return, String, native_call, raises
 
 @raises(status="status", message="message", success=0)
 @native_call([Addr(Arg(0)), Return("status", 0), Return("message", 1)])
@@ -143,7 +143,7 @@ Native calls keep Python's Global Interpreter Lock (GIL) by default. Use
 execute:
 
 ```python
-from x2py.contracts import nogil
+from prik.contracts import nogil
 
 @nogil
 def run_parallel_engine() -> None: ...
@@ -155,7 +155,7 @@ exception projection still run with the GIL held. Remove `@nogil` to restore
 the default held-GIL behavior. This changes call behavior, not the native
 procedure interface.
 
-If a decorated native call invokes an x2py callback, the callback trampoline
+If a decorated native call invokes an prik callback, the callback trampoline
 temporarily reacquires the GIL for Python execution. Callback contracts are
 covered in the [Callbacks](../../guide/callbacks.md) guide.
 

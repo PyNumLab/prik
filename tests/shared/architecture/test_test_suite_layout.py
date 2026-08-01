@@ -210,7 +210,7 @@ def test_coverage_workflow_reuses_the_canonical_test_selections() -> None:
         "-m toolchain_smoke",
         '-m "not real_library and not toolchain_smoke"',
         "--require-toolchain-smoke",
-        "--x2py-fortran-compiler=gfortran",
+        "--prik-fortran-compiler=gfortran",
     ):
         assert snippet in ordinary
         assert snippet in coverage
@@ -287,7 +287,7 @@ def test_documentation_workflow_generates_main_only_performance_snapshot() -> No
     assert "python tools/generate_performance_docs.py" in workflow
     assert "name: performance-snapshot" in workflow
     assert "benchmarks/results/f2py.json" in workflow
-    assert "benchmarks/results/x2py.json" in workflow
+    assert "benchmarks/results/prik.json" in workflow
     assert "benchmarks/results/f2py-build.json" in workflow
-    assert "benchmarks/results/x2py-build.json" in workflow
+    assert "benchmarks/results/prik-build.json" in workflow
     assert "uses: actions/download-artifact@v4" in workflow

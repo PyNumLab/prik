@@ -1,4 +1,4 @@
-from x2py.contracts import Allocatable, Arg, Int32, Return, Returns, String, native_call
+from prik.contracts import Allocatable, Arg, Int32, Return, Returns, String, native_call
 
 def char_code_default(
     c: String[1]

@@ -34,12 +34,12 @@ def test_bind_c_derived_types_use_accessors_and_fortran_value_copy(
     if pyi_parity_build_mode == "source":
         bridge_source = (tmp_path / "source_build" / "bind_c_fbind_c_derived_layout_f90_wrapper.f90").read_text()
 
-        assert "function bind_c_x2py_field_tagged_point_position_get" in bridge_source
-        assert "subroutine bind_c_x2py_field_tagged_point_position_set" in bridge_source
-        assert "function bind_c_x2py_field_tagged_point_weight_get" in bridge_source
-        assert "subroutine bind_c_x2py_field_tagged_point_weight_set" in bridge_source
+        assert "function bind_c_prik_field_tagged_point_position_get" in bridge_source
+        assert "subroutine bind_c_prik_field_tagged_point_position_set" in bridge_source
+        assert "function bind_c_prik_field_tagged_point_weight_get" in bridge_source
+        assert "subroutine bind_c_prik_field_tagged_point_weight_set" in bridge_source
         assert "type(c_ptr), value :: bound_value" in bridge_source
-        assert "type(x2py_type_tagged_point), pointer :: value" in bridge_source
+        assert "type(prik_type_tagged_point), pointer :: value" in bridge_source
         assert "result = native_score_by_value(value)" in bridge_source
 
     value = module.tagged_point()

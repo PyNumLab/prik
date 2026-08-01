@@ -12,7 +12,7 @@ from tests.fortran._support.wrapper_build import (
     _import_from_build_dir,
     _sole_native_module,
 )
-from x2py import build_pyi_extension
+from prik import build_pyi_extension
 
 pytestmark = pytest.mark.fortran_end_to_end
 
@@ -28,7 +28,7 @@ def test_edited_pyi_selects_direct_c_storage_or_fortran_copy_semantics(tmp_path:
         encoding="utf-8",
     )
     (contract / "array_ops.pyi").write_text(
-        """from x2py.contracts import (
+        """from prik.contracts import (
     Addr,
     Annotated,
     Arg,

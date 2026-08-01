@@ -7,15 +7,15 @@ from dataclasses import replace
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.ownership import CodegenAction, NativeBarrierAction
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.semantics.ownership import CodegenAction, NativeBarrierAction
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
 
 def _multiple_result_plan():
     module = parse_pyi_text(
         """
-from x2py.contracts import Addr, Arg, Int32, Return, native_call
+from prik.contracts import Addr, Arg, Int32, Return, native_call
 
 @native_call([Addr(Arg(0)), Return("status", 1)])
 def with_scalar(n: Int32) -> tuple[Int32, Int32]: ...
@@ -50,8 +50,8 @@ def test_multiple_scalar_results_lower_to_binding_tuple_and_one_bridge_function_
 
     assert "int32_t bind_c_with_scalar(int32_t * n, int32_t * status);" in c_source
     assert "result = bind_c_with_scalar(&bound_n, &status);" in c_source
-    assert "PyObject * result_0_obj = x2py_int32_to_python(&result);" in c_source
-    assert "PyObject * result_1_obj = x2py_int32_to_python(&status);" in c_source
+    assert "PyObject * result_0_obj = prik_int32_to_python(&result);" in c_source
+    assert "PyObject * result_1_obj = prik_int32_to_python(&status);" in c_source
     assert "PyObject * result_obj = PyTuple_New(2);" in c_source
     assert "PyTuple_SET_ITEM(result_obj, 0, result_0_obj);" in c_source
     assert "PyTuple_SET_ITEM(result_obj, 1, result_1_obj);" in c_source

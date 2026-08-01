@@ -15,7 +15,7 @@ generated extension directly.
 `build_fortran_extension` returns a result object with the module name, shared
 library path, generated source paths, and other build artifacts.
 
-<!-- x2py-doc-test: exact -->
+<!-- prik-doc-test: exact -->
 ```python
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
@@ -23,7 +23,7 @@ from tempfile import TemporaryDirectory
 
 import numpy as np
 
-from x2py import build_fortran_extension
+from prik import build_fortran_extension
 
 source = Path("tests/fortran/building_shared_library/end_to_end/fixtures/native/fruntime_abi_f90.f90")
 with TemporaryDirectory() as output_dir:
@@ -39,7 +39,7 @@ with TemporaryDirectory() as output_dir:
 
 Expected output:
 
-<!-- x2py-doc-test-output -->
+<!-- prik-doc-test-output -->
 ```text
 fruntime_abi_f90
 7.5

@@ -7,7 +7,7 @@ from dataclasses import replace
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.ownership import (
+from prik.semantics.ownership import (
     CodegenAction,
     DestructionPolicy,
     ObjectKind,
@@ -15,16 +15,16 @@ from x2py.semantics.ownership import (
     StorageMode,
     TransferMode,
 )
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import (
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.wrapper_policy import (
     BridgeDataAction,
     OptionalMode,
     PythonExceptionKind,
     STRING_REPLACEMENT_COPY_REASON,
     WritebackPhase,
 )
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
-from x2py.wrapper_codegen.plan import BindingStatusErrorPlan, DatatypeFamily
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.wrapper_codegen.plan import BindingStatusErrorPlan, DatatypeFamily
 
 
 def _fixed_writeback_module():
@@ -87,7 +87,7 @@ def test_fixed_string_writeback_dispatches_to_named_binding_and_bridge_lowering(
     assert "void bind_c_replace_name(char * name, int64_t name_length);" in c_source
     assert "const char * bound_name_source = NULL;" in c_source
     assert "char * bound_name = NULL;" in c_source
-    assert "bound_name = (char *)x2py_malloc((size_t)bound_name_length + 1);" in c_source
+    assert "bound_name = (char *)prik_malloc((size_t)bound_name_length + 1);" in c_source
     assert 'PyExc_MemoryError, "Unable to allocate mutable string buffer for argument name."' in c_source
     assert "memcpy(bound_name, bound_name_source, (size_t)bound_name_length);" in c_source
     assert "bound_name[bound_name_length] = '\\0';" in c_source
@@ -116,8 +116,8 @@ def test_fixed_string_replacement_allocation_runs_after_other_argument_conversio
     artifacts = WrapperCodeGenerator().generate(WrapperPlanner().build(module))
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
 
-    assert c_source.index("x2py_int32_unpack_exact(bound_count_obj, &bound_count)") < c_source.index(
-        "bound_name = (char *)x2py_malloc((size_t)bound_name_length + 1)"
+    assert c_source.index("prik_int32_unpack_exact(bound_count_obj, &bound_count)") < c_source.index(
+        "bound_name = (char *)prik_malloc((size_t)bound_name_length + 1)"
     )
 
 

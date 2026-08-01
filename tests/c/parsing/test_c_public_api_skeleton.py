@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 def test_c_parser_path_and_include_key_helpers_preserve_boundary_contracts(monkeypatch):
-    from x2py.parsers.c.parser import _include_key_from_current, _looks_like_existing_source_path
+    from prik.parsers.c.parser import _include_key_from_current, _looks_like_existing_source_path
 
     monkeypatch.setattr(Path, "is_file", lambda self: True)
 
@@ -25,7 +25,7 @@ def test_c_parser_path_and_include_key_helpers_preserve_boundary_contracts(monke
 
 
 def test_c_parser_public_wrappers_forward_explicit_options(monkeypatch):
-    from x2py.parsers.c import parse_c_file, parse_c_project
+    from prik.parsers.c import parse_c_file, parse_c_project
 
     calls = []
 
@@ -38,7 +38,7 @@ def test_c_parser_public_wrappers_forward_explicit_options(monkeypatch):
             calls.append(("project", args, kwargs))
             return "project-result"
 
-    monkeypatch.setattr("x2py.parsers.c.parser._DEFAULT_PARSER", RecordingParser())
+    monkeypatch.setattr("prik.parsers.c.parser._DEFAULT_PARSER", RecordingParser())
 
     include_dirs = [Path("include")]
     assert (
@@ -84,7 +84,7 @@ def test_c_parser_public_wrappers_forward_explicit_options(monkeypatch):
 
 
 def test_parse_c_file_accepts_inline_source_and_returns_typed_model():
-    from x2py.parsers.c import CFile, parse_c_file
+    from prik.parsers.c import CFile, parse_c_file
 
     parsed = parse_c_file("int add(int a, int b);\n", filename="inline.h")
 
@@ -94,8 +94,8 @@ def test_parse_c_file_accepts_inline_source_and_returns_typed_model():
     assert [fn.name for fn in parsed.functions] == ["add"]
 
 
-def test_x2py_exports_c_file_and_project_entrypoints_like_fortran():
-    from x2py import CFile, CProject, parse_c_file, parse_c_project
+def test_prik_exports_c_file_and_project_entrypoints_like_fortran():
+    from prik import CFile, CProject, parse_c_file, parse_c_project
 
     parsed = parse_c_file("int add(int left, int right);\n", filename="api.h")
     project = parse_c_project({"api.h": "int add(int left, int right);\n"})
@@ -106,7 +106,7 @@ def test_x2py_exports_c_file_and_project_entrypoints_like_fortran():
 
 
 def test_parse_c_file_accepts_path_input_and_preserves_filename(tmp_path: Path):
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     header = tmp_path / "api.h"
     header.write_text("double scale(double x);\n", encoding="utf-8")
@@ -118,7 +118,7 @@ def test_parse_c_file_accepts_path_input_and_preserves_filename(tmp_path: Path):
 
 
 def test_parse_c_file_accepts_empty_source_and_unknown_suffix():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file("", filename="empty.src")
 
@@ -130,14 +130,14 @@ def test_parse_c_file_accepts_empty_source_and_unknown_suffix():
 def test_parse_c_file_rejects_unknown_preprocessing_mode():
     import pytest
 
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     with pytest.raises(ValueError, match="preprocessing mode"):
         parse_c_file("int answer(void);\n", filename="api.h", preprocessing="unknown")
 
 
 def test_parse_c_project_accepts_mapping_sources():
-    from x2py.parsers.c import CProject, parse_c_project
+    from prik.parsers.c import CProject, parse_c_project
 
     project = parse_c_project(
         {
@@ -153,7 +153,7 @@ def test_parse_c_project_accepts_mapping_sources():
 
 
 def test_parse_c_project_accepts_single_file_path(tmp_path: Path):
-    from x2py.parsers.c import parse_c_project
+    from prik.parsers.c import parse_c_project
 
     source = tmp_path / "api.c"
     source.write_text("int answer(void);\n", encoding="utf-8")
@@ -165,7 +165,7 @@ def test_parse_c_project_accepts_single_file_path(tmp_path: Path):
 
 
 def test_parse_c_project_indexes_forward_structs_by_tag_name():
-    from x2py.parsers.c import parse_c_project
+    from prik.parsers.c import parse_c_project
 
     project = parse_c_project(
         {
@@ -180,7 +180,7 @@ def test_parse_c_project_indexes_forward_structs_by_tag_name():
 
 
 def test_parse_c_project_indexes_named_union_and_enum_tags():
-    from x2py.parsers.c import parse_c_project
+    from prik.parsers.c import parse_c_project
 
     project = parse_c_project(
         {
@@ -193,7 +193,7 @@ def test_parse_c_project_indexes_named_union_and_enum_tags():
 
 
 def test_parse_c_project_accepts_directory_input_with_c_and_h_files(tmp_path: Path):
-    from x2py.parsers.c import parse_c_project
+    from prik.parsers.c import parse_c_project
 
     (tmp_path / "api.h").write_text("int add(int a, int b);\n", encoding="utf-8")
     (tmp_path / "api.c").write_text('#include "api.h"\n', encoding="utf-8")
@@ -205,7 +205,7 @@ def test_parse_c_project_accepts_directory_input_with_c_and_h_files(tmp_path: Pa
 
 
 def test_c_file_serialization_is_json_stable():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file("", filename="empty.c")
 
@@ -229,7 +229,7 @@ def test_c_file_serialization_is_json_stable():
 
 
 def test_concrete_type_serialization_preserves_semantic_type_fields_and_locations():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         "typedef int (*compare_fn)(const void *, const void *);\ncompare_fn select_compare(void);\n",
@@ -255,7 +255,7 @@ def test_concrete_type_serialization_preserves_semantic_type_fields_and_location
 
 
 def test_parameter_adjustment_serialization_preserves_declared_and_effective_types():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     payload = parse_c_file(
         "void process(int values[4], int callback(int));\n",
@@ -272,7 +272,7 @@ def test_parameter_adjustment_serialization_preserves_declared_and_effective_typ
 
 
 def test_inline_aggregate_typedef_serialization_uses_references_without_cycles():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     payload = parse_c_file(
         "typedef struct node { struct node *next; } node_t;\n",
@@ -286,7 +286,7 @@ def test_inline_aggregate_typedef_serialization_uses_references_without_cycles()
 
 
 def test_unresolved_typedef_reference_metadata_is_preserved_in_json():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     payload = parse_c_file("api_size count(void);\n", filename="unresolved.h").to_dict()
 
@@ -297,7 +297,7 @@ def test_unresolved_typedef_reference_metadata_is_preserved_in_json():
 
 
 def test_c_parser_instance_entrypoints_match_public_functions():
-    from x2py.parsers.c import CParser, parse_c_file, parse_c_project
+    from prik.parsers.c import CParser, parse_c_file, parse_c_project
 
     source = "int answer(void);\n"
     parser = CParser()
@@ -310,7 +310,7 @@ def test_c_parser_instance_entrypoints_match_public_functions():
 
 
 def test_c_parse_error_attributes_and_diagnostic_formatting():
-    from x2py.parsers.c import CArray, CComposedType, CInt, CParseError, CPointer, CSourceLocation
+    from prik.parsers.c import CArray, CComposedType, CInt, CParseError, CPointer, CSourceLocation
 
     err = CParseError(
         "unexpected token",
@@ -338,7 +338,7 @@ def test_c_parse_error_attributes_and_diagnostic_formatting():
 
 
 def test_c_parse_error_color_and_no_color_formatting():
-    from x2py.parsers.c import CParseError
+    from prik.parsers.c import CParseError
 
     err = CParseError(
         "unexpected token",

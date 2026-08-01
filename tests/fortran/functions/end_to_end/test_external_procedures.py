@@ -17,8 +17,8 @@ from tests.fortran._support.wrapper_build import (
     _sole_native_module,
     wrapper_source,
 )
-from x2py import build_pyi_extension
-from x2py.pipeline.build import build_fortran_extension
+from prik import build_pyi_extension
+from prik.pipeline.build import build_fortran_extension
 
 FIXED_EXTERNAL = wrapper_source("fixed_external.f")
 FREE_EXTERNAL = wrapper_source("free_external.f90")
@@ -86,7 +86,7 @@ def _generate_contract(input_paths: tuple[Path, ...], package: Path, expected_pa
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "generate",
             "--pyi",
             *(str(path) for path in input_paths),
@@ -221,7 +221,7 @@ def test_classic_external_bridge_uses_implicit_declaration_and_no_module_use(tmp
     bridge = (result.output_dir / f"bind_c_{result.module_name}_wrapper.f90").read_text(encoding="utf-8").lower()
     assert module.free_square(np.int32(3)) == np.int32(9)
     assert entry.read_text(encoding="utf-8").startswith(
-        "from x2py.contracts import Addr, Arg, Int32, external, native_call\n\n@external\n"
+        "from prik.contracts import Addr, Arg, Int32, external, native_call\n\n@external\n"
     )
     assert "integer(c_int32_t), external :: free_square" in bridge
     assert "function free_square(" not in bridge
@@ -314,7 +314,7 @@ end function storage_value
     )
     contract = tmp_path / "column_sums_f.pyi"
     contract.write_text(
-        """from x2py.contracts import Addr, Arg, Flat, Float64, Int32, Return, external, native_call
+        """from prik.contracts import Addr, Arg, Flat, Float64, Int32, Return, external, native_call
 
 @external
 @native_call([Addr(Arg(0)), Addr(Arg(1)), Arg(2), Arg(3)])
@@ -391,7 +391,7 @@ end module optional_flat
     )
     contract = tmp_path / "optional_flat.pyi"
     contract.write_text(
-        """from x2py.contracts import Annotated, Flat, Float64, Int32, ORDER_C
+        """from prik.contracts import Annotated, Flat, Float64, Int32, ORDER_C
 
 def maybe_scale_f(
     rows: Int32,
@@ -484,8 +484,8 @@ def test_namespace_imported_module_rejects_external_marker_before_codegen(tmp_pa
     entry = _generate_contract(source, tmp_path / "contracts", _generated_contract_fixture(BASIC_SOURCE.stem))
     leaf = entry.parent / "m1.pyi"
     leaf_text = leaf.read_text(encoding="utf-8").replace(
-        "from x2py.contracts import ",
-        "from x2py.contracts import external, ",
+        "from prik.contracts import ",
+        "from prik.contracts import external, ",
         1,
     )
     leaf.write_text(leaf_text.replace("def add1", "@external\ndef add1"), encoding="utf-8")

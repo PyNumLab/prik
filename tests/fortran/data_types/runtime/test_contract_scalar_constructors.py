@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-import x2py.contracts as contracts
+import prik.contracts as contracts
 
 
 def test_concrete_primitive_default_constructors_return_zero_numpy_scalars():

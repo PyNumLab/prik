@@ -9,14 +9,14 @@ import subprocess
 import sys
 
 from tests.fortran._support.wrapper_build import REPO_ROOT
-from x2py.pipeline.wrapper_artifacts import GeneratedWrapperArtifacts
-from x2py.wrapper_codegen.checks import (
+from prik.pipeline.wrapper_artifacts import GeneratedWrapperArtifacts
+from prik.wrapper_codegen.checks import (
     WrapperCodegenCheckConfig,
     check_wrapper_codegen_package,
     check_wrapper_codegen_paths,
 )
 
-SOURCE_ROOT = REPO_ROOT / "x2py"
+SOURCE_ROOT = REPO_ROOT / "prik"
 WRAPPER_CODEGEN_ROOT = SOURCE_ROOT / "wrapper_codegen"
 
 
@@ -62,14 +62,14 @@ def test_backend_generators_do_not_import_each_other():
     binding_imports = _imported_modules(WRAPPER_CODEGEN_ROOT / "c" / "binding.py")
     bridge_imports = _imported_modules(WRAPPER_CODEGEN_ROOT / "fortran" / "bridge.py")
 
-    assert not _imports_under(binding_imports, "x2py.wrapper_codegen.fortran")
-    assert not _imports_under(bridge_imports, "x2py.wrapper_codegen.c")
+    assert not _imports_under(binding_imports, "prik.wrapper_codegen.fortran")
+    assert not _imports_under(bridge_imports, "prik.wrapper_codegen.c")
 
 
 def test_wrapper_build_pipeline_imports_canonical_generator():
     imports = _imported_modules(SOURCE_ROOT / "pipeline" / "build.py")
 
-    assert _imports_under(imports, "x2py.wrapper_codegen")
+    assert _imports_under(imports, "prik.wrapper_codegen")
 
 
 def test_wrapper_codegen_package_static_contracts_pass():
@@ -131,7 +131,7 @@ def test_checker_uses_strict_default_limits_for_emitter_handlers(tmp_path: Path)
         tmp_path,
         "strict.py",
         """
-from x2py.wrapper_codegen import ClassVisitor
+from prik.wrapper_codegen import ClassVisitor
 
 class DemoEmitter(ClassVisitor):
     def _convert_item(self, value):
@@ -158,7 +158,7 @@ def test_checker_rejects_missing_primary_and_secondary_registry_handlers(tmp_pat
     codes = _check_source(
         tmp_path,
         """
-from x2py.wrapper_codegen import ClassVisitor
+from prik.wrapper_codegen import ClassVisitor
 
 class DemoEmitter(ClassVisitor):
     PRIMARY_REGISTRY = {"item": "_emit_item"}
@@ -173,7 +173,7 @@ def test_checker_rejects_printer_calls_from_handlers(tmp_path: Path):
     codes = _check_source(
         tmp_path,
         """
-from x2py.wrapper_codegen import ClassVisitor
+from prik.wrapper_codegen import ClassVisitor
 
 class DemoEmitter(ClassVisitor):
     HANDLER_REGISTRY = {"item": "_emit_item"}

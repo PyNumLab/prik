@@ -6,9 +6,9 @@ from typing import ClassVar
 
 import pytest
 
-from x2py.parsers.c import parse_c_file, parse_c_project
+from prik.parsers.c import parse_c_file, parse_c_project
 
-from x2py.parsers.c.models import (
+from prik.parsers.c.models import (
     CArray,
     CAtomic,
     CBool,
@@ -53,7 +53,7 @@ from x2py.parsers.c.models import (
     CVoid,
 )
 
-from x2py.semantics.c2ir import (
+from prik.semantics.c2ir import (
     CToIRConverter,
     c_file_to_semantic_module,
     c_file_to_semantic_modules,
@@ -65,7 +65,7 @@ from x2py.semantics.c2ir import (
     c_type_to_semantic_type,
 )
 
-from x2py.semantics.models import (
+from prik.semantics.models import (
     SemanticArgument,
     SemanticClass,
     SemanticField,
@@ -76,10 +76,10 @@ from x2py.semantics.models import (
     SemanticVariable,
 )
 
-from x2py.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
+from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
 
 
-from x2py.wrapper_codegen.printers import emit_module, emit_module_stubs
+from prik.wrapper_codegen.printers import emit_module, emit_module_stubs
 
 
 def _function(module, name):

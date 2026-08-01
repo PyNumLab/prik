@@ -10,7 +10,7 @@ from tests.fortran._support.wrapper_build import (
     _import_from_build_dir,
     _sole_native_module,
 )
-from x2py import build_pyi_extension
+from prik import build_pyi_extension
 
 FIXTURES = Path(__file__).parent / "fixtures"
 CHARACTER_EDGES_F90_SOURCE = FIXTURES / "fcharacter_edges_f90.f90"
@@ -64,7 +64,7 @@ def test_fortran_character_edge_cases_follow_copy_in_copy_out_policy(
     with pytest.raises(TypeError, match="embedded NUL"):
         module.unicode_echo("a\0b")
 
-    monkeypatch.setenv("X2PY_WRAPPER_FAIL_ALLOC", "1")
+    monkeypatch.setenv("PRIK_WRAPPER_FAIL_ALLOC", "1")
     with pytest.raises(MemoryError, match="Unable to allocate copy-return output string"):
         module.make_out()
     assert module.optional_inout() is None
@@ -88,7 +88,7 @@ def test_fixed_string_replacement_and_identity_use_canonical_plan(
         encoding="utf-8",
     )
     (contract_package / "fcharacter_edges_f90.pyi").write_text(
-        """from x2py.contracts import Returns, String, bind
+        """from prik.contracts import Returns, String, bind
 
 @bind("fixed_inout")
 def fixed_replacement(name: String[8]) -> Returns["name", String[8]]: ...
@@ -117,6 +117,6 @@ def fixed_discard(name: String[8]) -> None: ...
     with pytest.raises(TypeError, match="exactly 8 bytes"):
         module.fixed_discard("abcdefghi")
 
-    monkeypatch.setenv("X2PY_WRAPPER_FAIL_ALLOC", "1")
+    monkeypatch.setenv("PRIK_WRAPPER_FAIL_ALLOC", "1")
     with pytest.raises(MemoryError, match="Unable to allocate mutable string buffer for argument name"):
         module.fixed_replacement("abc     ")

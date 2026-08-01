@@ -8,7 +8,7 @@ status: maintained
 
 # Developer Guide
 
-This guide is for changing x2py. It maps user-visible behavior to its owning
+This guide is for changing prik. It maps user-visible behavior to its owning
 implementation and tests, then gives focused change and verification
 workflows.
 
@@ -48,7 +48,7 @@ public command or Python API
 For example, a new CLI stage option normally requires:
 
 1. A focused contract test in `tests/parser/test_cli.py`.
-2. Dispatch or output routing in `x2py/cli.py`.
+2. Dispatch or output routing in `prik/cli.py`.
 3. Preprocessing tests if the option changes source loading.
 4. A copy-paste command in [examples.md](examples.md).
 5. A tutorial update only when the main user workflow changes.
@@ -92,8 +92,8 @@ When adding a user example:
 
 `tests/tools/test_documentation_examples.py` executes explicitly marked
 `bash` CLI examples and `python` API snippets from `README.md` and Markdown
-files under `docs/`. Bash examples must be `python3 -m x2py` or
-`python3 -m x2py.type_mapping_report` commands; the test replaces `python3`
+files under `docs/`. Bash examples must be `python3 -m prik` or
+`python3 -m prik.type_mapping_report` commands; the test replaces `python3`
 with the active test interpreter and runs them without a shell. It rejects
 shell operators, output-writing options, and options that select custom
 executables or preprocessing command templates. Python snippets run with the
@@ -106,21 +106,21 @@ leave build artifacts in the checkout.
 Mark a command that only needs to exit successfully:
 
 ````markdown
-<!-- x2py-doc-test: run -->
+<!-- prik-doc-test: run -->
 ```bash
-python3 -m x2py semantics tests/data/fortran/general/basic_subroutine.f90
+python3 -m prik semantics tests/data/fortran/general/basic_subroutine.f90
 ```
 ````
 
 Mark a command whose stdout must match the documentation exactly:
 
 ````markdown
-<!-- x2py-doc-test: exact -->
+<!-- prik-doc-test: exact -->
 ```bash
-python3 -m x2py parse tests/data/fortran/general/basic_subroutine.f90
+python3 -m prik parse tests/data/fortran/general/basic_subroutine.f90
 ```
 
-<!-- x2py-doc-test-output -->
+<!-- prik-doc-test-output -->
 ```text
 File: tests/data/fortran/general/basic_subroutine.f90
 ...
@@ -138,7 +138,7 @@ When a command reads a checked fixture, include its source input in the user
 documentation and verify the displayed source against the fixture:
 
 ````markdown
-<!-- x2py-doc-source: tests/data/fortran/general/basic_subroutine.f90 -->
+<!-- prik-doc-source: tests/data/fortran/general/basic_subroutine.f90 -->
 ```fortran
 module m1
 ...
@@ -150,7 +150,7 @@ Append a target profile to an exact marker only for compiler-generated output
 that is intentionally architecture-specific:
 
 ```markdown
-<!-- x2py-doc-test: exact linux-x86_64 -->
+<!-- prik-doc-test: exact linux-x86_64 -->
 ```
 
 Off-target checks are skipped. The matching profile must still run the command
@@ -195,23 +195,23 @@ implementation files.
 
 | User-visible area | Main implementation files | Main tests |
 | --- | --- | --- |
-| Fortran parse output | `x2py/fortran_parser/parser.py`, `x2py/fortran_parser/models.py`, `x2py/fortran_parser/lexer.py` | `tests/parser/test_procedure_and_type_parsing.py`, `tests/parser/test_fortran_fixture_suite.py`, `tests/parser/test_error_handling.py` |
-| C parse output | `x2py/c_parser/parser.py`, `x2py/c_parser/models.py`, `x2py/c_parser/lexer.py` | `tests/parser/c/test_c_declarations_and_declarators.py`, `tests/parser/c/test_c_fixture_suite.py`, `tests/parser/c/test_c_error_fixture_suite.py` |
-| CLI stage selection and output | `x2py/cli.py`, `x2py/fortran_parser/cli.py` | `tests/parser/test_cli.py` |
-| Compiler preprocessing | `x2py/preprocessing.py` | `tests/parser/test_preprocessing_cli.py`, `tests/parser/test_preprocessor_and_execution_boundaries.py`, `tests/parser/c/test_c_lexer_preprocessor.py` |
-| C target ABI probing and cache | `x2py/c_type_probe.py` | `tests/parser/test_c_standard_type_probe.py` |
-| Fortran target type probing and cache | `x2py/fortran_type_probe.py` | `tests/parser/test_fortran_type_probe.py` |
-| Generated target datatype mapping examples | `x2py/type_mapping_report.py` | `tests/tools/test_type_mapping_report.py`, `tests/tools/test_documentation_examples.py` |
-| Fortran to semantic IR | `x2py/semantics/fortran2ir.py`, `x2py/semantics/models.py` | `tests/semantics/test_fortran2ir.py` |
-| C to semantic IR | `x2py/semantics/c2ir.py`, `x2py/semantics/models.py` | `tests/semantics/test_c2ir.py` |
-| `.pyi` printing | `x2py/codegen/printers/pyi_printer.py` | `tests/semantics/test_pyi_printer.py`, `tests/semantics/test_pyi_printer_modern_example.py` |
-| `.pyi` loading/editing | `x2py/pyi_parser/parser.py` | `tests/pyi/test_pyi_to_ir.py`, `tests/pyi/test_pyi_fixture_suite.py` |
-| Fortran wrapper orchestration | `x2py/wrapping.py` | `tests/wrapper/fortran/native_build/test_build_modes.py`, `tests/wrapper/fortran/multi_source/test_multi_source_builds.py` |
-| Wrapper planning and owner-local errors | `x2py/wrapper_codegen/planner.py` | `tests/wrapper_codegen/` |
-| Semantic IR to codegen AST | `x2py/semantics/ir2ast.py` | `tests/semantics/test_ir2ast.py`, `tests/wrapper/` |
-| Fortran-to-C bridge and CPython binding | `x2py/codegen/bridges/fortran_to_c.py`, `x2py/codegen/bindings/c_to_python.py` | `tests/wrapper/` subject suites |
-| Native compilation and binding support | `x2py/compiling/`, `x2py/binding_support/` | `tests/wrapper/fortran/native_build/test_runtime_abi.py`, `tests/wrapper/fortran/native_build/test_build_modes.py` |
-| Public API exports | `x2py/__init__.py` | `tests/parser/test_parser_public_entrypoints.py`, `tests/parser/c/test_c_public_api_skeleton.py` |
+| Fortran parse output | `prik/fortran_parser/parser.py`, `prik/fortran_parser/models.py`, `prik/fortran_parser/lexer.py` | `tests/parser/test_procedure_and_type_parsing.py`, `tests/parser/test_fortran_fixture_suite.py`, `tests/parser/test_error_handling.py` |
+| C parse output | `prik/c_parser/parser.py`, `prik/c_parser/models.py`, `prik/c_parser/lexer.py` | `tests/parser/c/test_c_declarations_and_declarators.py`, `tests/parser/c/test_c_fixture_suite.py`, `tests/parser/c/test_c_error_fixture_suite.py` |
+| CLI stage selection and output | `prik/cli.py`, `prik/fortran_parser/cli.py` | `tests/parser/test_cli.py` |
+| Compiler preprocessing | `prik/preprocessing.py` | `tests/parser/test_preprocessing_cli.py`, `tests/parser/test_preprocessor_and_execution_boundaries.py`, `tests/parser/c/test_c_lexer_preprocessor.py` |
+| C target ABI probing and cache | `prik/c_type_probe.py` | `tests/parser/test_c_standard_type_probe.py` |
+| Fortran target type probing and cache | `prik/fortran_type_probe.py` | `tests/parser/test_fortran_type_probe.py` |
+| Generated target datatype mapping examples | `prik/type_mapping_report.py` | `tests/tools/test_type_mapping_report.py`, `tests/tools/test_documentation_examples.py` |
+| Fortran to semantic IR | `prik/semantics/fortran2ir.py`, `prik/semantics/models.py` | `tests/semantics/test_fortran2ir.py` |
+| C to semantic IR | `prik/semantics/c2ir.py`, `prik/semantics/models.py` | `tests/semantics/test_c2ir.py` |
+| `.pyi` printing | `prik/codegen/printers/pyi_printer.py` | `tests/semantics/test_pyi_printer.py`, `tests/semantics/test_pyi_printer_modern_example.py` |
+| `.pyi` loading/editing | `prik/pyi_parser/parser.py` | `tests/pyi/test_pyi_to_ir.py`, `tests/pyi/test_pyi_fixture_suite.py` |
+| Fortran wrapper orchestration | `prik/wrapping.py` | `tests/wrapper/fortran/native_build/test_build_modes.py`, `tests/wrapper/fortran/multi_source/test_multi_source_builds.py` |
+| Wrapper planning and owner-local errors | `prik/wrapper_codegen/planner.py` | `tests/wrapper_codegen/` |
+| Semantic IR to codegen AST | `prik/semantics/ir2ast.py` | `tests/semantics/test_ir2ast.py`, `tests/wrapper/` |
+| Fortran-to-C bridge and CPython binding | `prik/codegen/bridges/fortran_to_c.py`, `prik/codegen/bindings/c_to_python.py` | `tests/wrapper/` subject suites |
+| Native compilation and binding support | `prik/compiling/`, `prik/binding_support/` | `tests/wrapper/fortran/native_build/test_runtime_abi.py`, `tests/wrapper/fortran/native_build/test_build_modes.py` |
+| Public API exports | `prik/__init__.py` | `tests/parser/test_parser_public_entrypoints.py`, `tests/parser/c/test_c_public_api_skeleton.py` |
 | Executable Markdown examples | `README.md`, `docs/*.md` | `tests/tools/test_documentation_examples.py` |
 
 ### Codegen Class Organization
@@ -219,11 +219,11 @@ implementation files.
 Current runtime wrapper codegen is intentionally narrow: Fortran sources lower
 through the generated Fortran bridge, generated C, and the CPython extension
 binding. Semantic `.pyi` emission is the editable contract printer. Do not keep
-placeholder C++, pybind11, or Python source printers in `x2py/codegen` until
+placeholder C++, pybind11, or Python source printers in `prik/codegen` until
 those backends have a documented runtime contract and tests.
 
 Organize generators and printers using `FortranParser` in
-`x2py/fortran_parser/parser.py` as the structural reference. A maintainer
+`prik/fortran_parser/parser.py` as the structural reference. A maintainer
 should be able to read each class from top to bottom in the same order that
 data moves through it:
 
@@ -257,8 +257,8 @@ module-level function only to preserve an old internal call path.
 
 ### `.pyi` Contract Internals
 
-User-visible `.pyi` syntax is parsed by `x2py/pyi_parser/parser.py` and printed
-by `x2py/codegen/printers/pyi_printer.py`. Both operate on `x2py/semantics/models.py`.
+User-visible `.pyi` syntax is parsed by `prik/pyi_parser/parser.py` and printed
+by `prik/codegen/printers/pyi_printer.py`. Both operate on `prik/semantics/models.py`.
 
 Important implementation rules:
 
@@ -290,11 +290,11 @@ User-visible datatype names are semantic names, not raw parser spellings.
 Mapping happens during parser-to-IR conversion:
 
 - Fortran intrinsic/kind mapping and compiler storage-fact application live in
-  `x2py/semantics/fortran2ir.py`.
-- C primitive, typedef, and probe-aware mapping lives in `x2py/semantics/c2ir.py`.
-- The shared dtype names and storage contracts live in `x2py/semantics/models.py`.
+  `prik/semantics/fortran2ir.py`.
+- C primitive, typedef, and probe-aware mapping lives in `prik/semantics/c2ir.py`.
+- The shared dtype names and storage contracts live in `prik/semantics/models.py`.
 - Compiler-measured mapping snapshots are generated by
-  `x2py/type_mapping_report.py`.
+  `prik/type_mapping_report.py`.
 
 When changing datatype mapping:
 
@@ -311,8 +311,8 @@ When changing datatype mapping:
    the complete output of:
 
    ```bash
-   python3 -m x2py.type_mapping_report --language c
-   python3 -m x2py.type_mapping_report --language fortran
+   python3 -m prik.type_mapping_report --language c
+   python3 -m prik.type_mapping_report --language fortran
    ```
 
 For Fortran, keep both modern and legacy spellings in the generated report.
@@ -349,7 +349,7 @@ Post-IR policy completion and wrapper planning decide:
 
 ## Pipeline Internals
 
-The user-facing stages all start in `x2py/cli.py`, but each stage owns a
+The user-facing stages all start in `prik/cli.py`, but each stage owns a
 different layer of the pipeline.
 
 ```text
@@ -364,7 +364,7 @@ CLI args
 
 ### CLI And Language Resolution
 
-`x2py/cli.py` is the shared command-line entrypoint. It is responsible for:
+`prik/cli.py` is the shared command-line entrypoint. It is responsible for:
 
 - choosing Fortran or C from `--language` and file suffixes;
 - rejecting ambiguous directories and unknown suffixes without `--language`;
@@ -372,20 +372,20 @@ CLI args
 - dispatching the requested stage flags;
 - defaulting recognizable Fortran sources to a wrapper build when no stage is
   selected;
-- routing the default build and `--makefile` through `x2py/wrapping.py`;
+- routing the default build and `--makefile` through `prik/wrapping.py`;
 - routing text, JSON, and `--out` output.
 
 Recognizable Fortran files and `.pyi` wrapper inputs can omit `--language`.
 C files and directories require explicit language selection. Keep this behavior
 tested in `tests/parser/test_cli.py` whenever stage selection changes.
 
-The package-specific `x2py/fortran_parser/cli.py` remains for the Fortran parser
+The package-specific `prik/fortran_parser/cli.py` remains for the Fortran parser
 package entrypoint. New cross-language user behavior normally belongs in
-`x2py/cli.py`.
+`prik/cli.py`.
 
 ### Preprocessing Internals
 
-`x2py/preprocessing.py` owns compiler-backed preprocessing and provenance. The
+`prik/preprocessing.py` owns compiler-backed preprocessing and provenance. The
 main value object is `PreprocessingConfig`; the main execution path is
 `run_compiler_preprocessor_with_recipe(...)`.
 
@@ -420,7 +420,7 @@ source loading inside conversion helpers.
 Fortran direct Python API, no CPP/FPP macros:
 
 ```python
-from x2py import parse_fortran_file
+from prik import parse_fortran_file
 from semantics.fortran2ir import fortran_module_to_semantic_module
 
 parsed = parse_fortran_file(source, filename="visibility_mod.f90")
@@ -438,9 +438,9 @@ before parsing:
 ```python
 from pathlib import Path
 
-from x2py import parse_fortran_file
+from prik import parse_fortran_file
 from semantics.fortran2ir import fortran_file_to_semantic_modules
-from x2py.preprocessing import PreprocessingConfig, preprocess_source
+from prik.preprocessing import PreprocessingConfig, preprocess_source
 
 path = Path("configured.F90")
 preprocessed = preprocess_source(
@@ -480,7 +480,7 @@ configured; direct API callers must do it explicitly.
 C direct Python API, no macro expansion needed:
 
 ```python
-from x2py import parse_c_file
+from prik import parse_c_file
 from semantics.c2ir import c_file_to_semantic_modules
 
 parsed = parse_c_file("int add(int a, int b);", filename="api.h")
@@ -499,9 +499,9 @@ translation unit in `compiler` or `preprocessed` mode:
 from pathlib import Path
 
 from c_parser.cli import attach_preprocessing_recipe
-from x2py import parse_c_file
+from prik import parse_c_file
 from semantics.c2ir import c_file_to_semantic_modules
-from x2py.preprocessing import PreprocessingConfig, preprocess_source
+from prik.preprocessing import PreprocessingConfig, preprocess_source
 
 path = Path("api.h")
 preprocessed = preprocess_source(
@@ -530,7 +530,7 @@ not wrapper-callable declarations. Declarations that depend on macros which
 were recorded but not expanded remain explicit semantic facts rather than
 being treated as complete wrapper contracts.
 
-For CLI code, do not reimplement these paths manually. `x2py/cli.py` builds
+For CLI code, do not reimplement these paths manually. `prik/cli.py` builds
 the `PreprocessingConfig`, loads or preprocesses source, attaches C
 preprocessing recipes, parses, runs target type probes when configured, and
 then dispatches to the semantic helpers.
@@ -569,7 +569,7 @@ CLI source stages:
 
 ```text
 source path(s)
-  -> x2py/cli.py language resolution
+  -> prik/cli.py language resolution
   -> PreprocessingConfig
   -> raw source or compiler-preprocessed source
   -> CFile / FortranFile parser model
@@ -592,7 +592,7 @@ Generating `.pyi` from source is semantic conversion plus printing. In Python
 API code, keep those calls visible:
 
 ```python
-from x2py import emit_module_stubs, parse_fortran_file
+from prik import emit_module_stubs, parse_fortran_file
 from semantics.fortran2ir import fortran_file_to_semantic_modules
 
 parsed = parse_fortran_file(source, filename="api.f90")
@@ -607,14 +607,14 @@ then `c_file_to_semantic_modules(...)` or
 Loading or editing `.pyi` is the opposite direction:
 
 ```python
-from x2py import pyi_paths_to_semantic_modules
+from prik import pyi_paths_to_semantic_modules
 
 modules = pyi_paths_to_semantic_modules("interfaces")
 ```
 
 Use the `.pyi` helpers by input shape:
 
-- `parse_pyi_text(source, filename=...)` from `x2py.pyi_parser` for parser-only
+- `parse_pyi_text(source, filename=...)` from `prik.pyi_parser` for parser-only
   AST parsing.
 - `convert_pyi_to_ir(tree, module_name=..., source=...)` for AST-to-IR
   conversion.
@@ -658,9 +658,9 @@ C source
   -> c_project_to_semantic_modules(..., standard_type_report=...)
 ```
 
-For direct-compiler C semantic and `.pyi` stages, `x2py/cli.py` runs
+For direct-compiler C semantic and `.pyi` stages, `prik/cli.py` runs
 `probe_c_standard_types_cached(...)` internally and passes the facts to
-`x2py/semantics/c2ir.py`. The standalone report is an inspection output, not a
+`prik/semantics/c2ir.py`. The standalone report is an inspection output, not a
 second semantic-stage input path. Probe execution and cache policy belong to
 the probe implementation.
 
@@ -684,14 +684,14 @@ integer width or target-changing flags. Standalone reports are inspection and
 verification outputs, not alternate semantic-stage inputs.
 
 Generated datatype mapping reports are documentation and verification outputs,
-not a separate parse path. `x2py/type_mapping_report.py` uses the C and Fortran
+not a separate parse path. `prik/type_mapping_report.py` uses the C and Fortran
 converter/probe machinery to print target-specific mapping examples for
 `docs/semantics.md`; changes there need both semantic conversion tests and
 documentation-example verification.
 
 ### Fortran Runtime Wrapper Path
 
-`x2py/wrapping.py::build_fortran_extension(...)` is the public orchestration
+`prik/wrapping.py::build_fortran_extension(...)` is the public orchestration
 boundary for direct Fortran builds. Keep its stages explicit:
 
 ```text
@@ -708,16 +708,16 @@ ordered source paths
 
 The main ownership boundaries are:
 
-- `x2py/wrapping.py`: source order, preprocessing/probing, semantic merge,
+- `prik/wrapping.py`: source order, preprocessing/probing, semantic merge,
   output placement, direct-versus-Makefile mode, and artifact reporting;
-- `x2py/semantics/ir2ast.py`: semantic contract validation and conversion to
+- `prik/semantics/ir2ast.py`: semantic contract validation and conversion to
   codegen models;
-- `x2py/codegen/bridges/fortran_to_c.py`: Fortran-to-C ABI adaptation;
-- `x2py/codegen/bindings/c_to_python.py`: Python argument/result conversion,
+- `prik/codegen/bridges/fortran_to_c.py`: Fortran-to-C ABI adaptation;
+- `prik/codegen/bindings/c_to_python.py`: Python argument/result conversion,
   reference handling, and CPython wrapper construction;
-- `x2py/codegen/printers/{fcode,ccode,cpythoncode}.py`: source rendering only;
-- `x2py/compiling/`: compiler commands and shared-library linking; and
-- `x2py/binding_support/`: native binding support copied into each build.
+- `prik/codegen/printers/{fcode,ccode,cpythoncode}.py`: source rendering only;
+- `prik/compiling/`: compiler commands and shared-library linking; and
+- `prik/binding_support/`: native binding support copied into each build.
 
 Do not move semantic ownership or projection policy into printers. Do not infer
 source dependencies: multi-source builds compile in caller order, and the first
@@ -742,20 +742,20 @@ rather than "what Python wrapper should be generated?"
 
 Fortran:
 
-- `x2py/fortran_parser/parser.py` slices the file into grammar units, then parses
+- `prik/fortran_parser/parser.py` slices the file into grammar units, then parses
   each unit's specification region.
-- `x2py/fortran_parser/models.py` stores `FortranFile`, modules, procedures,
+- `prik/fortran_parser/models.py` stores `FortranFile`, modules, procedures,
   variables, derived types, interfaces, programs, submodules, and diagnostics.
 - Execution bodies are intentionally skipped after the parser has enough
   signature/source facts.
 
 C:
 
-- `x2py/c_parser/lexer.py` handles comments, directives, top-level splitting, and
+- `prik/c_parser/lexer.py` handles comments, directives, top-level splitting, and
   token source locations.
-- `x2py/c_parser/parser.py` visits declarations and declarators, records typed
+- `prik/c_parser/parser.py` visits declarations and declarators, records typed
   source facts, and reports unsupported parser-owned syntax.
-- `x2py/c_parser/models.py` stores functions, variables, typedefs, structs, unions,
+- `prik/c_parser/models.py` stores functions, variables, typedefs, structs, unions,
   enums, includes, raw directives, preprocessing facts, and diagnostics.
 
 Adding parser fields is a schema decision. Add fields only when downstream
@@ -765,12 +765,12 @@ new fact.
 ### Semantic IR Internals
 
 The semantic layer normalizes C and Fortran facts into language-neutral models
-from `x2py/semantics/models.py`.
+from `prik/semantics/models.py`.
 
-- `x2py/semantics/fortran2ir.py` maps Fortran procedures, derived types, module
+- `prik/semantics/fortran2ir.py` maps Fortran procedures, derived types, module
   variables, kinds, shapes, storage contracts, visibility, imported references,
   and compile-time values.
-- `x2py/semantics/c2ir.py` maps C functions, variables, structs/opaque structs,
+- `prik/semantics/c2ir.py` maps C functions, variables, structs/opaque structs,
   enums, typedef chains, standard-type probe facts, macros, pointer/array
   storage, and C-specific semantic facts.
 - C `int` keeps the semantic name `Int` while its compiler-probed concrete
@@ -784,9 +784,9 @@ from `x2py/semantics/models.py`.
   reserved home for local variables or local constants if a frontend later
   promotes them into semantic IR; local bindings are not emitted into `.pyi` or
   treated as wrapper interface items by default.
-- `x2py/codegen/printers/pyi_printer.py` emits editable user contracts.
-- `x2py/pyi_parser/parser.py` loads edited contracts back into semantic IR.
-- `x2py/semantics/policy_completion.py` completes the decisions required for
+- `prik/codegen/printers/pyi_printer.py` emits editable user contracts.
+- `prik/pyi_parser/parser.py` loads edited contracts back into semantic IR.
+- `prik/semantics/policy_completion.py` completes the decisions required for
   wrapping.
 
 Keep semantic IR stable where possible. If a parser change does not affect the
@@ -892,11 +892,11 @@ the C parser.
    `tests/parser/c/test_c_declarations_and_declarators.py`,
    `tests/parser/c/test_c_compiler_extensions.py`, or
    `tests/parser/c/test_c_structs_unions_enums_typedefs.py`.
-2. Implement the parser change in `x2py/c_parser/parser.py`. Add or update model
-   fields in `x2py/c_parser/models.py` only if the serialized parser contract needs
+2. Implement the parser change in `prik/c_parser/parser.py`. Add or update model
+   fields in `prik/c_parser/models.py` only if the serialized parser contract needs
    new facts.
 3. If source splitting or raw directive handling changes, update
-   `x2py/c_parser/lexer.py` and `tests/parser/c/test_c_lexer_preprocessor.py`.
+   `prik/c_parser/lexer.py` and `tests/parser/c/test_c_lexer_preprocessor.py`.
 4. If project-level resolution changes, update
    `tests/parser/c/test_c_project_resolution.py`.
 5. If parser JSON changes intentionally, regenerate the relevant project
@@ -907,7 +907,7 @@ the C parser.
    ```
 
 6. If the new parser fact affects semantic conversion, update
-   `x2py/semantics/c2ir.py` and add coverage in `tests/semantics/test_c2ir.py`.
+   `prik/semantics/c2ir.py` and add coverage in `tests/semantics/test_c2ir.py`.
 7. If the generated `.pyi` changes, update `tests/semantics/test_pyi_printer.py`
    or `tests/pyi/test_pyi_fixture_suite.py`.
 8. Update [c_parser.md](c_parser.md), [tutorial.md](tutorial.md),
@@ -931,8 +931,8 @@ metadata item.
    `tests/parser/test_procedure_and_type_parsing.py`,
    `tests/parser/test_scope_handling.py`, or
    `tests/parser/test_preprocessor_and_execution_boundaries.py`.
-2. Implement parsing in `x2py/fortran_parser/parser.py`. Add model fields in
-   `x2py/fortran_parser/models.py` only if the parser output needs to expose the
+2. Implement parsing in `prik/fortran_parser/parser.py`. Add model fields in
+   `prik/fortran_parser/models.py` only if the parser output needs to expose the
    new fact.
 3. Add parser diagnostic coverage in `tests/parser/test_error_handling.py` if
    malformed source should now fail differently.
@@ -946,7 +946,7 @@ metadata item.
    python tests/parser/fortran/generate_fortran_parser_goldens.py tests/data/fortran/general/basic_subroutine.f90
    ```
 
-6. If the new fact affects semantic output, update `x2py/semantics/fortran2ir.py`
+6. If the new fact affects semantic output, update `prik/semantics/fortran2ir.py`
    and `tests/semantics/test_fortran2ir.py`.
 7. If generated `.pyi` changes, update `tests/semantics/test_pyi_printer.py`
    and the relevant fixture tests.
@@ -967,8 +967,8 @@ Example target: map a new Fortran kind, C typedef, or target-probed C type.
 
 1. Add conversion coverage in `tests/semantics/test_fortran2ir.py` or
    `tests/semantics/test_c2ir.py`.
-2. Implement the mapping in `x2py/semantics/fortran2ir.py` or `x2py/semantics/c2ir.py`.
-3. Keep the public semantic dtype names in `x2py/semantics/models.py` stable unless
+2. Implement the mapping in `prik/semantics/fortran2ir.py` or `prik/semantics/c2ir.py`.
+3. Keep the public semantic dtype names in `prik/semantics/models.py` stable unless
    there is a deliberate schema decision.
 4. If the emitted `.pyi` annotation changes, update
    `tests/semantics/test_pyi_printer.py` and `tests/pyi/test_pyi_to_ir.py`.
@@ -988,10 +988,10 @@ PYTHONPATH=. pytest -q tests/semantics/test_pyi_printer.py tests/pyi/test_pyi_to
 Example target: add a new `Annotated[...]` metadata item or projection helper.
 
 1. Add loader tests in `tests/pyi/test_pyi_to_ir.py`.
-2. Update `x2py/pyi_parser/parser.py`.
+2. Update `prik/pyi_parser/parser.py`.
 3. Add printer tests in `tests/semantics/test_pyi_printer.py`.
-4. Update `x2py/codegen/printers/pyi_printer.py`.
-5. Update semantic models in `x2py/semantics/models.py` only if the IR needs a new
+4. Update `prik/codegen/printers/pyi_printer.py`.
+5. Update semantic models in `prik/semantics/models.py` only if the IR needs a new
    field or constraint.
 6. Update policy completion or wrapper planning if the syntax changes a
    completed decision.
@@ -1033,9 +1033,9 @@ Example target: add a stage option, change output routing, or improve
 diagnostic formatting.
 
 1. Add CLI tests in `tests/parser/test_cli.py` first.
-2. Implement shared dispatch and output behavior in `x2py/cli.py`.
-3. Keep Fortran package-specific CLI behavior in `x2py/fortran_parser/cli.py`.
-4. If compiler preprocessing behavior changes, update `x2py/preprocessing.py`
+2. Implement shared dispatch and output behavior in `prik/cli.py`.
+3. Keep Fortran package-specific CLI behavior in `prik/fortran_parser/cli.py`.
+4. If compiler preprocessing behavior changes, update `prik/preprocessing.py`
    and preprocessing tests.
 5. Update [tutorial.md](tutorial.md) or [examples.md](examples.md) for
    user-facing commands and this guide for maintainer command maps.
@@ -1121,13 +1121,13 @@ changes, update the corresponding fixtures under `tests/pyi/fixtures` or
 Manual call for one C fixture:
 
 ```bash
-python -m x2py parse tests/data/c/general/math_api.h --language c --json
+python -m prik parse tests/data/c/general/math_api.h --language c --json
 ```
 
 Manual Python API call:
 
 ```python
-from x2py import parse_c_file
+from prik import parse_c_file
 
 parsed = parse_c_file("int add(int a, int b);", filename="example.h")
 print([function.name for function in parsed.functions])
@@ -1165,13 +1165,13 @@ Executable tutorial: `tests/parser/c/test_c_parser_developer_tutorial.py`.
 Manual call for one Fortran fixture:
 
 ```bash
-python -m x2py parse tests/data/fortran/general/basic_subroutine.f90 --language fortran --json
+python -m prik parse tests/data/fortran/general/basic_subroutine.f90 --language fortran --json
 ```
 
 Manual Python API call:
 
 ```python
-from x2py import parse_fortran_file
+from prik import parse_fortran_file
 
 parsed = parse_fortran_file(
     "tests/data/fortran/general/basic_subroutine.f90",
@@ -1209,10 +1209,10 @@ Executable tutorial: `tests/parser/test_parser_developer_tutorial.py`.
 Manual calls:
 
 ```bash
-python -m x2py semantics tests/data/fortran/general/basic_subroutine.f90
-python -m x2py generate --pyi tests/data/fortran/general/basic_subroutine.f90
-python -m x2py semantics tests/data/c/general/math_api.h --language c
-python -m x2py generate --pyi tests/data/c/general/math_api.h --language c
+python -m prik semantics tests/data/fortran/general/basic_subroutine.f90
+python -m prik generate --pyi tests/data/fortran/general/basic_subroutine.f90
+python -m prik semantics tests/data/c/general/math_api.h --language c
+python -m prik generate --pyi tests/data/c/general/math_api.h --language c
 ```
 
 Focused tests by concern:
@@ -1245,10 +1245,10 @@ Executable examples: `tests/semantics/test_pyi_printer.py` and
 Manual calls:
 
 ```bash
-python -m x2py parse tests/data/fortran/general/basic_subroutine.f90
-python -m x2py semantics tests/data/fortran/general/basic_subroutine.f90
-python -m x2py generate --pyi tests/data/fortran/general/basic_subroutine.f90
-python -m x2py parse tests/data/c/general/math_api.h --language c
+python -m prik parse tests/data/fortran/general/basic_subroutine.f90
+python -m prik semantics tests/data/fortran/general/basic_subroutine.f90
+python -m prik generate --pyi tests/data/fortran/general/basic_subroutine.f90
+python -m prik parse tests/data/c/general/math_api.h --language c
 ```
 
 Focused tests:

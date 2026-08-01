@@ -16,33 +16,33 @@ artifacts used by tests. Navigate by ownership boundary first, then by file.
 
 | Path | Purpose |
 | --- | --- |
-| `x2py/` | Python package implementation. Start with [source-map.md](source-map.md) for entrypoints and [feature-to-code-map.md](feature-to-code-map.md) when starting from behavior. |
-| `x2py/contracts/` | Public semantic `.pyi` contract vocabulary imported directly by generated and edited contracts. |
-| `x2py/pipeline/` | Shared preprocessing, semantic `.pyi` loading, and high-level wrapper build orchestration. |
-| `x2py/probes/` | Compiler-derived target facts and target type mapping reports. |
-| `x2py/runtime/` | Python runtime objects used by generated extension modules. |
-| `x2py/types/` | Cross-layer mappings from resolved semantic types to Python ecosystem types. |
-| `x2py/parsers/` | Public namespace for language and semantic-contract frontends and parser models. |
-| `x2py/semantics/` | Semantic IR, source-to-IR conversion, `.pyi` parsing, and policy completion. |
-| `x2py/wrapper_codegen/` | Typed wrapper plans, direct native bridge/binding lowering, and source and semantic `.pyi` printers. |
-| `x2py/compiling/` | Native compile objects, compiler command orchestration, native support installation, and linking. |
-| `x2py/binding_support/` | Bundled header-only native support copied into generated wrapper builds. |
-| `x2py/naming/` | Unified public-name and generated-symbol policy. |
-| `x2py/utilities/` | Small shared Python utilities. |
-| `benchmarks/` | Local x2py/f2py correctness and performance comparison harness. Benchmark sources and scripts are maintained; native builds and result files are generated locally. |
+| `prik/` | Python package implementation. Start with [source-map.md](source-map.md) for entrypoints and [feature-to-code-map.md](feature-to-code-map.md) when starting from behavior. |
+| `prik/contracts/` | Public semantic `.pyi` contract vocabulary imported directly by generated and edited contracts. |
+| `prik/pipeline/` | Shared preprocessing, semantic `.pyi` loading, and high-level wrapper build orchestration. |
+| `prik/probes/` | Compiler-derived target facts and target type mapping reports. |
+| `prik/runtime/` | Python runtime objects used by generated extension modules. |
+| `prik/types/` | Cross-layer mappings from resolved semantic types to Python ecosystem types. |
+| `prik/parsers/` | Public namespace for language and semantic-contract frontends and parser models. |
+| `prik/semantics/` | Semantic IR, source-to-IR conversion, `.pyi` parsing, and policy completion. |
+| `prik/wrapper_codegen/` | Typed wrapper plans, direct native bridge/binding lowering, and source and semantic `.pyi` printers. |
+| `prik/compiling/` | Native compile objects, compiler command orchestration, native support installation, and linking. |
+| `prik/binding_support/` | Bundled header-only native support copied into generated wrapper builds. |
+| `prik/naming/` | Unified public-name and generated-symbol policy. |
+| `prik/utilities/` | Small shared Python utilities. |
+| `benchmarks/` | Local prik/f2py correctness and performance comparison harness. Benchmark sources and scripts are maintained; native builds and result files are generated locally. |
 | `tools/generate_performance_docs.py` | Validates paired runtime and clean-build `pyperf` results and generates the bounded public Performance snapshot and both charts. |
 
-The major source packages have local README files under `x2py/` for
+The major source packages have local README files under `prik/` for
 developers reading directly in the source tree. Those README files should link
 back to the maintained source-navigation docs instead of old top-level docs.
 
-Only `x2py/__init__.py`, `x2py/__main__.py`, and `x2py/cli.py` live directly at
+Only `prik/__init__.py`, `prik/__main__.py`, and `prik/cli.py` live directly at
 the package root. Public library symbols are deliberately flattened through
-`x2py/__init__.py`; internal modules are imported through their owning package.
-The deliberate public submodule namespaces are `x2py.contracts`, whose import
-path is part of semantic `.pyi` syntax, and `x2py.parsers`, which groups the
+`prik/__init__.py`; internal modules are imported through their owning package.
+The deliberate public submodule namespaces are `prik.contracts`, whose import
+path is part of semantic `.pyi` syntax, and `prik.parsers`, which groups the
 language-specific frontends. Stable convenience functions remain flattened
-through `x2py/__init__.py`.
+through `prik/__init__.py`.
 
 ## Tests
 
@@ -55,9 +55,9 @@ through `x2py/__init__.py`.
 | `tests/c/` | C input-language parsing, preprocessing, probe, semantic, CLI, and fixture evidence. |
 | `tests/shared/` | Language-neutral product architecture, documentation, naming, tools, type mapping, and utility checks. |
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 | `tests/c/fixtures/parser/` | C parser-specific tests and fixture maintenance. |
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ## Documentation
 
@@ -76,7 +76,7 @@ Source navigation is considered maintained when these files agree:
   change routes.
 - [feature-to-code-map.md](feature-to-code-map.md): user-visible features to
   docs, implementation files, tests, and support evidence.
-- `x2py/README.md` and package README files: local entry points for developers
+- `prik/README.md` and package README files: local entry points for developers
   already browsing the source tree.
 - `tests/shared/docs/test_structure.py`: mechanical coverage for the
   navigation pages and README links.
@@ -85,7 +85,7 @@ Source navigation is considered maintained when these files agree:
 
 ## Generated And Fixture Areas
 
-- `__x2py__/` directories are wrapper build artifacts and should not be
+- `__prik__/` directories are wrapper build artifacts and should not be
   hand-edited as source.
 - `benchmarks/build/f2py/` and `benchmarks/results/` contain generated
   comparison artifacts and are not repository sources. CI retains paired
@@ -93,11 +93,11 @@ Source navigation is considered maintained when these files agree:
   them without committing the raw files.
 - Parser and `.pyi` fixture files should be regenerated with the documented
   fixture commands instead of edited loosely.
-- `x2py.egg-info/`, caches, and benchmark output are generated local artifacts,
+- `prik.egg-info/`, caches, and benchmark output are generated local artifacts,
   not source ownership boundaries.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 - Native Fortran sources and semantic `.pyi` contracts live below the feature
   or infrastructure test that owns their behavior. C fixtures remain below
   `tests/c/fixtures/`.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->

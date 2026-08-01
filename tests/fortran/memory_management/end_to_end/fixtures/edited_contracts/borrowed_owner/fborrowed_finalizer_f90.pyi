@@ -1,6 +1,6 @@
 # Intentional difference: the borrowed child states that its containing wrapper
 # owns and ultimately finalizes the native instance.
-from x2py.contracts import Annotated, Destruction, Int32, Ownership, Transfer, native_type
+from prik.contracts import Annotated, Destruction, Int32, Ownership, Transfer, native_type
 
 @native_type(finalizers=('cleanup_child',))
 class child:

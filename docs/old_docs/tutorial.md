@@ -8,7 +8,7 @@ status: maintained
 
 # Tutorial
 
-This tutorial is the main user guide for the supported x2py pipeline from
+This tutorial is the main user guide for the supported prik pipeline from
 native source to wrapper builds and semantic policy completion. The commands use
 version-controlled fixtures so they can be run from the repository root.
 
@@ -21,14 +21,14 @@ maintenance material starts in the [developer guide](developper_guide.md).
 
 ## Current Scope
 
-x2py builds one Python extension by default when given one or more ordered
+prik builds one Python extension by default when given one or more ordered
 Fortran source files:
 
 ```bash
-python3 -m x2py solver.f90
+python3 -m prik solver.f90
 ```
 
-x2py also supports three explicit inspection stages:
+prik also supports three explicit inspection stages:
 
 1. Parse wrapper-relevant Fortran or C declarations.
 2. Convert parser facts to language-neutral semantic IR.
@@ -76,7 +76,7 @@ projections.
 
 ## Before You Start
 
-x2py requires Python 3.10 or newer. For native source input, the shared CLI
+prik requires Python 3.10 or newer. For native source input, the shared CLI
 runs compiler preprocessing:
 
 - C defaults to `cc`.
@@ -88,18 +88,18 @@ Install the checkout and inspect the CLI:
 
 ```bash
 python3 -m pip install -e .
-python3 -m x2py --help
+python3 -m prik --help
 ```
 
 The examples below use `python3`. Replace it with the Python 3.10+ executable
-for your environment when necessary. After installation, the `x2py` console
-command is equivalent to `python3 -m x2py`.
+for your environment when necessary. After installation, the `prik` console
+command is equivalent to `python3 -m prik`.
 
 ## Fortran Walkthrough
 
 Input (`tests/data/fortran/general/basic_subroutine.f90`):
 
-<!-- x2py-doc-source: tests/data/fortran/general/basic_subroutine.f90 -->
+<!-- prik-doc-source: tests/data/fortran/general/basic_subroutine.f90 -->
 ```fortran
 module m1
 contains
@@ -114,14 +114,14 @@ end module m1
 
 Recognizable Fortran files do not require `--language fortran`:
 
-<!-- x2py-doc-test: exact -->
+<!-- prik-doc-test: exact -->
 ```bash
-python3 -m x2py parse tests/data/fortran/general/basic_subroutine.f90
+python3 -m prik parse tests/data/fortran/general/basic_subroutine.f90
 ```
 
 Expected output:
 
-<!-- x2py-doc-test-output -->
+<!-- prik-doc-test-output -->
 ```text
 File: tests/data/fortran/general/basic_subroutine.f90
   Modules: 1
@@ -137,9 +137,9 @@ procedure signature; it does not decide wrapper policy.
 
 Convert the parsed source to language-neutral semantic IR:
 
-<!-- x2py-doc-test: run -->
+<!-- prik-doc-test: run -->
 ```bash
-python3 -m x2py semantics tests/data/fortran/general/basic_subroutine.f90
+python3 -m prik semantics tests/data/fortran/general/basic_subroutine.f90
 ```
 
 `--semantics` prints a machine-readable payload containing `semantic_modules`
@@ -148,14 +148,14 @@ data.
 
 ### 3. Generate The Editable Interface
 
-<!-- x2py-doc-test: exact -->
+<!-- prik-doc-test: exact -->
 ```bash
-python3 -m x2py generate --pyi tests/data/fortran/general/basic_subroutine.f90
+python3 -m prik generate --pyi tests/data/fortran/general/basic_subroutine.f90
 ```
 
 Expected output:
 
-<!-- x2py-doc-test-output -->
+<!-- prik-doc-test-output -->
 ```python
 File: tests/data/fortran/general/basic_subroutine.f90
 @native_call([Addr(Arg(0)), Arg(1)])
@@ -168,14 +168,14 @@ def add1(
 The stub preserves the exact native contract:
 
 - `n` is a read-only scalar value at the Python boundary; the native call uses
-  the address of x2py's converted native slot because the Fortran dummy argument
+  the address of prik's converted native slot because the Fortran dummy argument
   is not declared with `value`.
 - `x` is a writable rank-one array whose extent is `n`.
 
 Write the stub to an explicit path:
 
 ```bash
-python3 -m x2py generate --pyi tests/data/fortran/general/basic_subroutine.f90 \
+python3 -m prik generate --pyi tests/data/fortran/general/basic_subroutine.f90 \
   --out basic_subroutine.pyi
 ```
 
@@ -185,7 +185,7 @@ Use `--pyi --out` without a path to write a `.pyi` beside each input source.
 
 Use the checked runtime example for a complete build and call:
 
-<!-- x2py-doc-source: tests/data/fortran/wrapper/feature_parity/runtime/fruntime_abi_f90.f90 -->
+<!-- prik-doc-source: tests/data/fortran/wrapper/feature_parity/runtime/fruntime_abi_f90.f90 -->
 ```fortran
 module fruntime_abi_f90
 contains
@@ -200,7 +200,7 @@ end module fruntime_abi_f90
 Build it into an explicit directory:
 
 ```bash
-python3 -m x2py tests/data/fortran/wrapper/feature_parity/runtime/fruntime_abi_f90.f90 \
+python3 -m prik tests/data/fortran/wrapper/feature_parity/runtime/fruntime_abi_f90.f90 \
   --out-dir build/fruntime_abi \
   --json
 ```
@@ -227,7 +227,7 @@ The exact NumPy scalar types are intentional. The wrapper validates the native
 ABI contract instead of silently converting arbitrary Python numeric objects.
 
 Without `--out-dir`, intermediate files and the ABI-suffixed extension go into
-`__x2py__` in the current working directory, while a direct CLI build writes
+`__prik__` in the current working directory, while a direct CLI build writes
 its stable `<module>.so` alias there unless `--out` gives it an explicit path. Use
 `--verbose` to print
 the executed compiler and linker commands.
@@ -250,13 +250,13 @@ For a build-system-controlled workflow, generate sources and a GNU Make build
 without compiling:
 
 ```bash
-python3 -m x2py generate --makefile tests/data/fortran/wrapper/feature_parity/runtime/fruntime_abi_f90.f90 \
+python3 -m prik generate --makefile tests/data/fortran/wrapper/feature_parity/runtime/fruntime_abi_f90.f90 \
   --out-dir build/fruntime_abi \
   --json
 ```
 
-Then run `make -f build/fruntime_abi/Makefile.x2py`. The Makefile exposes
-`FC`, `CC`, `X2PY_LD`, `X2PY_FFLAGS`, `X2PY_CFLAGS`, and `X2PY_LDFLAGS`.
+Then run `make -f build/fruntime_abi/Makefile.prik`. The Makefile exposes
+`FC`, `CC`, `PRIK_LD`, `PRIK_FFLAGS`, `PRIK_CFLAGS`, and `PRIK_LDFLAGS`.
 The [Fortran wrapper guide](fortran_wrapper.md) defines the complete Python API
 and the [examples cookbook](examples.md#fortran-runtime-wrapper-examples)
 contains multi-source and Python API recipes.
@@ -265,10 +265,10 @@ contains multi-source and Python API recipes.
 
 Input (`tests/data/c/general/math_api.h`):
 
-<!-- x2py-doc-source: tests/data/c/general/math_api.h -->
+<!-- prik-doc-source: tests/data/c/general/math_api.h -->
 ```c
-#ifndef X2PY_GENERAL_MATH_API_H
-#define X2PY_GENERAL_MATH_API_H
+#ifndef PRIK_GENERAL_MATH_API_H
+#define PRIK_GENERAL_MATH_API_H
 
 double norm2(int n, const double x[static 1]);
 void scale(int n, double alpha, double x[static 1]);
@@ -280,14 +280,14 @@ void fill_identity3(double a[static 3][3]);
 
 C inputs require explicit C mode:
 
-<!-- x2py-doc-test: exact -->
+<!-- prik-doc-test: exact -->
 ```bash
-python3 -m x2py parse tests/data/c/general/math_api.h --language c
+python3 -m prik parse tests/data/c/general/math_api.h --language c
 ```
 
 Expected output:
 
-<!-- x2py-doc-test-output -->
+<!-- prik-doc-test-output -->
 ```text
 File: tests/data/c/general/math_api.h
   Language: c
@@ -304,14 +304,14 @@ File: tests/data/c/general/math_api.h
 
 Generate the semantic `.pyi`:
 
-<!-- x2py-doc-test: exact -->
+<!-- prik-doc-test: exact -->
 ```bash
-python3 -m x2py generate --pyi tests/data/c/general/math_api.h --language c
+python3 -m prik generate --pyi tests/data/c/general/math_api.h --language c
 ```
 
 Expected output:
 
-<!-- x2py-doc-test-output -->
+<!-- prik-doc-test-output -->
 ```python
 File: tests/data/c/general/math_api.h
 def norm2(
@@ -348,7 +348,7 @@ scope.
 | Goal | Command flag | Output |
 | --- | --- | --- |
 | Build a Fortran extension | no inspection stage flag | Generated sources, objects, and importable extension |
-| Generate an editable native build | `--makefile` | Generated sources and `Makefile.x2py`, without compilation |
+| Generate an editable native build | `--makefile` | Generated sources and `Makefile.prik`, without compilation |
 | Inspect native parser facts | `--parse` | Human-readable report |
 | Consume full parser facts | `--parse --json` | Parser payload |
 | Consume language-neutral facts | `--semantics` | Semantic payload |
@@ -373,15 +373,15 @@ Language selection follows these supported rules:
 Parse a directory recursively:
 
 ```bash
-python3 -m x2py parse path/to/fortran_sources --language fortran
-python3 -m x2py parse path/to/c_sources --language c
+python3 -m prik parse path/to/fortran_sources --language fortran
+python3 -m prik parse path/to/c_sources --language c
 ```
 
 Parse multiple explicit inputs:
 
 ```bash
-python3 -m x2py parse src/types.f90 src/api.f90 --language fortran
-python3 -m x2py parse include/types.h include/api.h --language c
+python3 -m prik parse src/types.f90 src/api.f90 --language fortran
+python3 -m prik parse include/types.h include/api.h --language c
 ```
 
 For the direct Python parser APIs, paths, source strings, project mappings,
@@ -395,7 +395,7 @@ The CLI preprocesses native source before parsing it. Pass the same important
 flags used by the native build:
 
 ```bash
-python3 -m x2py parse include/api.h --language c \
+python3 -m prik parse include/api.h --language c \
   --compiler clang \
   -I include \
   -D API_EXPORT= \
@@ -406,13 +406,13 @@ python3 -m x2py parse include/api.h --language c \
 Use a C compilation database when one is available:
 
 ```bash
-python3 -m x2py.c_type_probe --compiler clang \
+python3 -m prik.c_type_probe --compiler clang \
   --compiler-arg=--target=aarch64-linux-gnu \
   --runner=qemu-aarch64 \
   > build/aarch64-c-types.json
 ```
 
-For normal direct-compiler C semantic and `.pyi` stages, x2py
+For normal direct-compiler C semantic and `.pyi` stages, prik
 automatically probes primitive widths and plain `char` signedness using the
 selected compiler and target flags. It caches the result by compiler identity
 and target configuration, so repeated runs do not recompile the probe. The
@@ -427,7 +427,7 @@ back into semantic conversion as a separate input path.
 For Fortran:
 
 ```bash
-python3 -m x2py generate --pyi src/api.f90 --language fortran \
+python3 -m prik generate --pyi src/api.f90 --language fortran \
   --compiler gfortran \
   -I include \
   -D USE_MPI \
@@ -435,7 +435,7 @@ python3 -m x2py generate --pyi src/api.f90 --language fortran \
   --compiler-arg=-fdefault-real-8
 ```
 
-For direct-compiler Fortran semantic, `.pyi`, and wrapper-build stages, x2py
+For direct-compiler Fortran semantic, `.pyi`, and wrapper-build stages, prik
 resolves compiler-dependent kind expressions and measures the storage of every
 intrinsic type used by the source. This matters for processor-dependent
 numeric kinds and flags such as `-fdefault-real-8` or
@@ -456,8 +456,8 @@ Generate the native-to-semantic-to-NumPy scalar mapping for the selected
 compiler target:
 
 ```bash
-python3 -m x2py.type_mapping_report --language c
-python3 -m x2py.type_mapping_report --language fortran
+python3 -m prik.type_mapping_report --language c
+python3 -m prik.type_mapping_report --language fortran
 ```
 
 Pass `--compiler` and repeated `--compiler-arg` options to inspect a different
@@ -481,7 +481,7 @@ The loader accepts semantic interface syntax such as:
 
 ```python
 from typing import Final
-from x2py.contracts import prototype
+from prik.contracts import prototype
 
 nmax: Final[Int32] = 32
 
@@ -519,9 +519,9 @@ a complete temporary-directory build and import.
 
 Parse inline source:
 
-<!-- x2py-doc-test: run -->
+<!-- prik-doc-test: run -->
 ```python
-from x2py import parse_c_file, parse_fortran_file
+from prik import parse_c_file, parse_fortran_file
 
 c_file = parse_c_file("int add(int a, int b);", filename="inline.h")
 fortran_file = parse_fortran_file(
@@ -535,9 +535,9 @@ print([procedure.name for procedure in fortran_file.procedures])
 
 Parse a project from an in-memory mapping:
 
-<!-- x2py-doc-test: run -->
+<!-- prik-doc-test: run -->
 ```python
-from x2py import parse_c_project
+from prik import parse_c_project
 
 project = parse_c_project(
     {
@@ -552,9 +552,9 @@ print(sorted(project.functions))
 
 Convert and emit a stub:
 
-<!-- x2py-doc-test: run -->
+<!-- prik-doc-test: run -->
 ```python
-from x2py import (
+from prik import (
     c_file_to_semantic_modules,
     emit_module_stubs,
     parse_c_file,
@@ -589,7 +589,7 @@ resolved by an annotation.
 
 ## Supported Boundaries
 
-Use x2py for the behavior implemented and tested today:
+Use prik for the behavior implemented and tested today:
 
 - generated and compiled CPython extensions from one or more ordered Fortran
   source files;

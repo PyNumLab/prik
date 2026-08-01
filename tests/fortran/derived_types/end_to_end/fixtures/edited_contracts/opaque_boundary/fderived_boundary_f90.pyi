@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Arg, Float64, native_call
+from prik.contracts import Addr, Arg, Float64, native_call
 
 class point:
     x: Float64

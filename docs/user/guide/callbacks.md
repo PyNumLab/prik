@@ -1,6 +1,6 @@
 ---
 title: Callbacks
-description: How to pass Python callables to Fortran as callbacks with x2py
+description: How to pass Python callables to Fortran as callbacks with prik
 audience: advanced users
 prerequisites: wrapping functions, data types
 related: error-handling.md, memory-management.md
@@ -10,7 +10,7 @@ publication: reviewed
 
 # Callbacks
 
-Callbacks let wrapped Fortran call a Python function while an x2py call is
+Callbacks let wrapped Fortran call a Python function while an prik call is
 running. They are useful for objective functions, progress hooks, custom
 transforms, and small pieces of user-defined numerical logic.
 
@@ -55,7 +55,7 @@ For example, the wrapped function may need `@native_call([Addr(Arg(1))])`
 because its `value` argument is passed to Fortran by reference:
 
 ```python
-from x2py.contracts import Addr, Arg, Float64, native_call, prototype
+from prik.contracts import Addr, Arg, Float64, native_call, prototype
 
 @prototype
 def scalar_callback(value: Addr(Float64)) -> Float64: ...
@@ -108,7 +108,7 @@ end module callbacks_api
 Build it:
 
 ```bash
-python3 -m x2py callbacks.f90 --out-dir build/callbacks
+python3 -m prik callbacks.f90 --out-dir build/callbacks
 ```
 
 **Python usage:**
@@ -139,7 +139,7 @@ For ordinary scalar and array callback arguments, use the same contract spelling
 you use elsewhere:
 
 ```python
-from x2py.contracts import Addr, Float64, Int32, prototype
+from prik.contracts import Addr, Float64, Int32, prototype
 
 @prototype
 def update_values(
@@ -160,7 +160,7 @@ For scalar arguments, choose the spelling from the Fortran callback dummy:
 | `real(8), value :: value` | `value: Float64` |
 
 Both forms call Python with an independent `np.float64` scalar. The difference
-is the native calling convention x2py must match.
+is the native calling convention prik must match.
 
 `Value(T)` is only for supported non-primitive scalar value dummies, such as a
 derived-type callback dummy declared with the Fortran `value` attribute.
@@ -171,7 +171,7 @@ derived-type callback dummy declared with the Fortran `value` attribute.
 
 - The callback is only valid **during** the wrapped native call.
 - Native code must not store the callback for later use.
-- Return the exact NumPy scalar type when x2py expects a scalar callback result.
+- Return the exact NumPy scalar type when prik expects a scalar callback result.
 - Primitive scalar callback arguments arrive as independent NumPy scalar values,
   whether the native dummy is `value` or reference.
 - Primitive scalar reference writeback is unsupported; return a scalar result
@@ -184,7 +184,7 @@ derived-type callback dummy declared with the Fortran `value` attribute.
 ## Important Limitations
 
 Supported callbacks are immediate, same-thread adapters. The native routine may
-call the Python callable while the wrapped call is active, and x2py tears down
+call the Python callable while the wrapped call is active, and prik tears down
 the callback context when that wrapped call returns.
 
 The current callback contract does not support:
@@ -207,7 +207,7 @@ The current callback contract does not support:
   same thread that entered the wrapper.
 
 Callback exceptions and invalid return conversions are fatal at the callback
-boundary: x2py prints the Python traceback and aborts the host process.
+boundary: prik prints the Python traceback and aborts the host process.
 
 ---
 

@@ -18,17 +18,17 @@ pytest.importorskip("hypothesis")
 
 from hypothesis import given, strategies as st
 
-import x2py.pipeline.preprocessing as preprocessing
+import prik.pipeline.preprocessing as preprocessing
 
-from x2py.semantics.fortran2ir import fortran_file_to_semantic_modules
+from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
 
-from x2py.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
+from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
 
-from x2py.wrapper_codegen.printers import emit_module_stubs
+from prik.wrapper_codegen.printers import emit_module_stubs
 
-from x2py import FortranParseError, parse_fortran_file
+from prik import FortranParseError, parse_fortran_file
 
-from x2py.pipeline.preprocessing import PreprocessingConfig, preprocess_source
+from prik.pipeline.preprocessing import PreprocessingConfig, preprocess_source
 
 _FORTRAN_SCALAR_TYPES = st.sampled_from(["integer", "real", "logical"])
 

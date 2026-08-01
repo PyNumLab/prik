@@ -12,7 +12,7 @@ from tests.fortran._support.wrapper_build import (
     _compile_native_object,
     _import_from_build_dir,
 )
-from x2py import build_pyi_extension
+from prik import build_pyi_extension
 
 MODULE_FIXTURES = Path(__file__).parents[3] / "modules" / "end_to_end" / "fixtures"
 EDITED_ENTRIES = Path(__file__).parent / "fixtures" / "edited_contracts" / "module_exports"

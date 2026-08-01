@@ -4,15 +4,15 @@ from __future__ import annotations
 
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import OptionalMode
-from x2py.wrapper_codegen import CBindingGenerator, WrapperCodeGenerator, WrapperPlanner
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.wrapper_policy import OptionalMode
+from prik.wrapper_codegen import CBindingGenerator, WrapperCodeGenerator, WrapperPlanner
 
 
 def _later_array_plan():
     module = parse_pyi_text(
         """
-from x2py.contracts import Float64, String
+from prik.contracts import Float64, String
 
 def optional(values: Float64[:] = ...) -> None: ...
 def any_rank(values: Float64[...]) -> Float64: ...
@@ -64,9 +64,9 @@ def test_optional_assumed_rank_and_character_lowering_follow_named_plan_fields()
 
     assert "PyObject * bound_values_obj = Py_None;" in c_source
     assert "if (bound_values_obj != Py_None)" in c_source
-    assert "NPY_FLOAT64, 1, 15, X2PY_ARRAY_LAYOUT_F_CONTIGUOUS" in c_source
+    assert "NPY_FLOAT64, 1, 15, PRIK_ARRAY_LAYOUT_F_CONTIGUOUS" in c_source
     assert "bound_values_rank = (int64_t)PyArray_NDIM" in c_source
-    assert "NPY_STRING, 1, 1, X2PY_ARRAY_LAYOUT_ANY_CONTIGUOUS" in c_source
+    assert "NPY_STRING, 1, 1, PRIK_ARRAY_LAYOUT_ANY_CONTIGUOUS" in c_source
     assert "bound_values_itemsize != 8" in c_source
     assert "if (c_associated(bound_values)) then" in bridge_source
     assert "select case (values_rank)" in bridge_source

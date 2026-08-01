@@ -4,7 +4,7 @@ import shutil
 
 import pytest
 
-import x2py.probes.report as type_mapping_report
+import prik.probes.report as type_mapping_report
 
 
 @pytest.mark.parametrize(

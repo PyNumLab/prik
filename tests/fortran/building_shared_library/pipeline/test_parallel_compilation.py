@@ -8,9 +8,9 @@ import time
 
 import pytest
 
-from x2py.compiling.objects import ObjectFile
-from x2py.parsers.fortran.parser import parse_fortran_project
-from x2py.pipeline.build import (
+from prik.compiling.objects import ObjectFile
+from prik.parsers.fortran.parser import parse_fortran_project
+from prik.pipeline.build import (
     _compile_extension_objects,
     _normalize_compile_jobs,
     _project_compile_batches,
@@ -95,7 +95,7 @@ def test_independent_native_and_binding_objects_compile_concurrently(tmp_path: P
 
 
 def test_compile_job_limit_accepts_auto_or_positive_values_and_rejects_invalid_values(monkeypatch) -> None:
-    monkeypatch.setattr("x2py.pipeline.build._available_compile_jobs", lambda: 7)
+    monkeypatch.setattr("prik.pipeline.build._available_compile_jobs", lambda: 7)
 
     assert _normalize_compile_jobs(None) == 7
     assert _normalize_compile_jobs(2) == 2

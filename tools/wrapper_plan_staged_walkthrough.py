@@ -11,12 +11,12 @@ import tempfile
 
 import numpy as np
 
-from x2py.parsers.fortran.parser import parse_fortran_project
-from x2py.pipeline import build as pipeline
-from x2py.pipeline.preprocessing import PreprocessingConfig
-from x2py.semantics.fortran2ir import fortran_project_to_semantic_modules
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.wrapper_codegen import (
+from prik.parsers.fortran.parser import parse_fortran_project
+from prik.pipeline import build as pipeline
+from prik.pipeline.preprocessing import PreprocessingConfig
+from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.wrapper_codegen import (
     CBindingGenerator,
     FortranBridgeGenerator,
     WrapperCodeGenerator,
@@ -25,7 +25,7 @@ from x2py.wrapper_codegen import (
 
 
 # Choose one starting point. Both paths then use the same plan, generator, and build steps.
-ENTRY = os.environ.get("X2PY_WALKTHROUGH_ENTRY", "pyi")  # "fortran" or "pyi"
+ENTRY = os.environ.get("PRIK_WALKTHROUGH_ENTRY", "pyi")  # "fortran" or "pyi"
 
 # This is the manual plan edit. Change it back to "ADD_R8" to generate addition.
 PLAN_NATIVE_TARGET = "SUB_R8"
@@ -42,7 +42,7 @@ DEMO_FORTRAN_SOURCE = """\
 """
 
 DEMO_PYI_CONTRACT = """\
-from x2py.contracts import Addr, Arg, Float64, bind, external, native_call
+from prik.contracts import Addr, Arg, Float64, bind, external, native_call
 
 @bind("ADD_R8")
 @external
@@ -54,7 +54,7 @@ def calculate(x: Float64, y: Float64) -> Float64: ...
 if shutil.which("gfortran") is None:
     raise RuntimeError("This walkthrough needs gfortran")
 
-workdir = Path(tempfile.mkdtemp(prefix="x2py-wrapper-plan-walkthrough-"))
+workdir = Path(tempfile.mkdtemp(prefix="prik-wrapper-plan-walkthrough-"))
 source = workdir / "native.f"
 contract = workdir / "demo.pyi"
 source.write_text(DEMO_FORTRAN_SOURCE, encoding="utf-8")

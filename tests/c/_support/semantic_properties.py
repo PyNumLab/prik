@@ -11,8 +11,8 @@ pytest.importorskip("hypothesis")
 
 from hypothesis import given, strategies as st
 
-from x2py.parsers.c import parse_c_file
-from x2py.semantics.c2ir import c_file_to_semantic_modules
+from prik.parsers.c import parse_c_file
+from prik.semantics.c2ir import c_file_to_semantic_modules
 
 
 _C_SCALAR_TYPES = st.sampled_from(

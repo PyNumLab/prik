@@ -106,7 +106,7 @@ different width.
 ### Generated Linux x86_64 Mapping Example
 
 The following mapping snapshots are generated from the same compiler-backed
-code paths used by x2py. They target the `linux-x86_64` profile used by GitHub
+code paths used by prik. They target the `linux-x86_64` profile used by GitHub
 Actions. The executable documentation test reruns the commands and compares
 their complete output, so a compiler fact or semantic mapping change must
 update these examples.
@@ -114,12 +114,12 @@ update these examples.
 C uses `cc` to measure primitive storage, signedness, alignment, and floating
 precision:
 
-<!-- x2py-doc-test: exact linux-x86_64 -->
+<!-- prik-doc-test: exact linux-x86_64 -->
 ```bash
-python3 -m x2py.type_mapping_report --language c
+python3 -m prik.type_mapping_report --language c
 ```
 
-<!-- x2py-doc-test-output -->
+<!-- prik-doc-test-output -->
 ```markdown
 Target profile: `linux-x86_64`
 
@@ -152,12 +152,12 @@ double-kind forms. The generated table also lists legacy spellings; numeric
 `type*N` rows use their fixed total storage, and character-star rows show
 length syntax rather than a different character kind:
 
-<!-- x2py-doc-test: exact linux-x86_64 -->
+<!-- prik-doc-test: exact linux-x86_64 -->
 ```bash
-python3 -m x2py.type_mapping_report --language fortran
+python3 -m prik.type_mapping_report --language fortran
 ```
 
-<!-- x2py-doc-test-output -->
+<!-- prik-doc-test-output -->
 ```markdown
 Target profile: `linux-x86_64`
 
@@ -241,7 +241,7 @@ Target profile: `linux-x86_64`
 
 ## C To Semantic IR Mapping
 
-Status: first C semantic conversion subset implemented in `x2py/semantics/c2ir.py`.
+Status: first C semantic conversion subset implemented in `prik/semantics/c2ir.py`.
 The converter consumes `c_parser` models and emits the same language-neutral
 semantic IR used by Fortran and edited `.pyi` files. Shared primitive dtype
 policy is documented in the datatype mapping section above.
@@ -256,7 +256,7 @@ policy is documented in the datatype mapping section above.
 - `void` return -> `None`.
 - `_Bool` -> `Bool`.
 - All modeled primitive integer, real, and complex spellings consume supplied
-  `x2py.c_type_probe` facts. Plain `char` signedness, integer widths, real
+  `prik.c_type_probe` facts. Plain `char` signedness, integer widths, real
   storage widths and precision metadata, and complex storage widths come from
   the selected compiler target.
 - `int` keeps semantic name `Int` while its concrete dtype follows the target.
@@ -268,7 +268,7 @@ policy is documented in the datatype mapping section above.
 - Local typedef chains are resolved when their parser model definitions are
   available.
 - `size_t` maps to `SizeT` without a target probe; supplied
-  `x2py.c_type_probe` facts override standard typedefs with width-specific
+  `prik.c_type_probe` facts override standard typedefs with width-specific
   `Int*`, `UInt*`, or `Float*` semantic names.
 - Opaque standard-type probe facts such as `FILE` create named opaque semantic
   classes when referenced by converted declarations.
@@ -343,7 +343,7 @@ not assumed to be opaque because its ABI representation is unknown.
 
 ## Semantic `.pyi` Format
 
-The semantic `.pyi` format is a Python-valid view of x2py semantic IR. It is
+The semantic `.pyi` format is a Python-valid view of prik semantic IR. It is
 language-neutral: Fortran and C inputs use the same type, storage,
 pointer, array, layout and metadata notation. Source language differences are
 represented by contracts and metadata, not by separate syntax families.
@@ -580,7 +580,7 @@ facts do not add visible array requirements.
 
 ### Loading And Round Trips
 
-`x2py.pyi_parser` parses canonical array subscriptions and `Annotated[...]`
+`prik.pyi_parser` parses canonical array subscriptions and `Annotated[...]`
 metadata into Python AST. `convert_pyi_to_ir` converts that AST into the same
 public storage contracts emitted by the Fortran semantic pipeline, while
 `pyi_file_to_semantic_module` combines file parsing and conversion. Native source-provenance
@@ -849,7 +849,7 @@ only when a real array storage contract is known.
 
 ## Design Proposal: Self-Contained C Semantic `.pyi` Runtime Contract
 
-> **Status: design only, not implemented native binding support.** x2py currently
+> **Status: design only, not implemented native binding support.** prik currently
 > parses C, converts the supported subset to semantic IR, emits and loads
 > semantic `.pyi`. It does not currently generate,
 > lower, compile, or execute C wrappers. Every runtime behavior, wrapper error,
@@ -880,7 +880,7 @@ Python would intentionally remain C-like at this stage:
 
 Therefore, the proposed Phase 1 would not implement or emit `@native_call`.
 
-The purpose of this ordering is to prove that x2py can describe, parse, lower
+The purpose of this ordering is to prove that prik can describe, parse, lower
 and execute direct C signatures reliably before adding Pythonic adaptations.
 
 ### 2. Proposed Rules
@@ -939,10 +939,10 @@ and execute direct C signatures reliably before adding Pythonic adaptations.
 The proposed compiler-facing artifact is:
 
 ```text
-module.x2py.pyi
+module.prik.pyi
 ```
 
-It may use x2py semantic types, but it would contain only identity-callable
+It may use prik semantic types, but it would contain only identity-callable
 functions in Phase 1.
 
 A clean `.pyi` for standard type checkers is not part of the proposed Phase 1.
@@ -1282,7 +1282,7 @@ def use_rows(rows: Addr[2](Int)) -> None: ...
 def update_value(value: Addr[5](Int)) -> None: ...
 ```
 
-The caller supplies an x2py-compatible native pointer object with the declared
+The caller supplies an prik-compatible native pointer object with the declared
 topology. The wrapper passes it unchanged. Constructing pointer rows from
 nested Python sequences and exposing `update_value(value: Int) -> Int` are
 later Pythonic adaptations.

@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Arg, Float64, Int32, native_call
+from prik.contracts import Addr, Arg, Float64, Int32, native_call
 
 def scale2_contiguous(
     a: Float64[:, :],

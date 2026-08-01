@@ -1,4 +1,4 @@
-from x2py.contracts import Float64, Int32, native_type
+from prik.contracts import Float64, Int32, native_type
 
 @native_type(finalizers=('cleanup_initialized',))
 class initialized:

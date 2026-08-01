@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Arg, Bool, Complex128, Complex64, Float32, Float64, Int16, Int32, Int64, Int8, native_call
+from prik.contracts import Addr, Arg, Bool, Complex128, Complex64, Float32, Float64, Int16, Int32, Int64, Int8, native_call
 
 @native_call([Addr(Arg(0))])
 def id_i8(

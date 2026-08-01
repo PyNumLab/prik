@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import DirectResultABI
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.wrapper_policy import DirectResultABI
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
 
 @pytest.mark.parametrize(
@@ -28,7 +28,7 @@ def test_direct_scalar_result_registry_projects_supported_type_facts(type_name, 
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
 
     helper_suffix = numpy_type.casefold().removeprefix("npy_")
-    assert f"PyObject * result_obj = x2py_{helper_suffix}_to_{result_kind}(&result);" in c_source
+    assert f"PyObject * result_obj = prik_{helper_suffix}_to_{result_kind}(&result);" in c_source
     assert "return result_obj;" in c_source
 
 

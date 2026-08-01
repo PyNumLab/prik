@@ -1,5 +1,5 @@
 # Intentional difference: hide scale and scaled_counter, and remove next_local.
-from x2py.contracts import Final, Float64, Int32, private
+from prik.contracts import Final, Float64, Int32, private
 
 nmax: Final[Int32] = 12
 

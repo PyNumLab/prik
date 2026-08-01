@@ -1,9 +1,9 @@
 """Minimized parser regressions extracted from former third-party sources."""
 
-from x2py import parse_fortran_file
-from x2py.parsers.fortran.lexer import preprocess_lines, strip_comment
-from x2py.parsers.fortran.parser import FortranParser
-from x2py.parsers.fortran.utils import split_csv
+from prik import parse_fortran_file
+from prik.parsers.fortran.lexer import preprocess_lines, strip_comment
+from prik.parsers.fortran.parser import FortranParser
+from prik.parsers.fortran.utils import split_csv
 
 
 def test_free_form_lexing_preserves_mixed_quotes_and_folds_leading_ampersands():

@@ -9,7 +9,7 @@ publication: reviewed
 
 # Editing `.pyi` Contracts
 
-x2py's generated `.pyi` files are editable wrapper contracts. They look like
+prik's generated `.pyi` files are editable wrapper contracts. They look like
 Python stubs, but they also describe native calls, storage, and results. Edit
 them to change the Python API without changing the native implementation.
 
@@ -21,21 +21,21 @@ will be covered by the Semantic `.pyi` Format reference.
 Generate a starter contract:
 
 ```bash
-python3 -m x2py generate --pyi native/solver.f90 --out contracts/solver
+python3 -m prik generate --pyi native/solver.f90 --out contracts/solver
 ```
 
 Edit `contracts/solver/__init__.pyi` and its leaf `.pyi` files, then build from
 the entry contract:
 
 ```bash
-python3 -m x2py contracts/solver/__init__.pyi \
+python3 -m prik contracts/solver/__init__.pyi \
   --native-fortran-sources native/solver.f90 \
   --out-dir build/solver
 ```
 
 You can provide compiled objects or libraries instead of source. In either
 case, the `.pyi` files define the Python API and the native files provide its
-implementation. x2py does not reread the native source to restore declarations
+implementation. prik does not reread the native source to restore declarations
 you removed from the contract.
 
 Keep an unchanged generated copy while experimenting. It makes each edit easy
@@ -85,7 +85,7 @@ Some facts must continue to match the supplied implementation:
 - callback signature; and
 - required native imports.
 
-x2py checks that the contract is internally consistent. It cannot prove that
+prik checks that the contract is internally consistent. It cannot prove that
 an arbitrary object or shared library has the binary interface described by
 the contract. A contract that gives false native facts may fail while
 building, importing, or calling the extension.
@@ -100,7 +100,7 @@ Before rebuilding:
 - Do not invent optionality, ownership, or a release method.
 - Rebuild and call the edited path once before making the next change.
 
-When x2py rejects an incomplete or unsafe rule, fix the contract instead of
+When prik rejects an incomplete or unsafe rule, fix the contract instead of
 removing metadata until the build happens to pass.
 
 ## Understanding Errors

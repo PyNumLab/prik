@@ -2,7 +2,7 @@
 
 ### Contribution license
 
-x2py is distributed under the MIT License. By submitting a contribution, you
+prik is distributed under the MIT License. By submitting a contribution, you
 agree that your contribution is licensed under the same MIT terms and represent
 that you have the right to submit it. If an employer or another organization
 owns the work, obtain its authorization before contributing.
@@ -18,12 +18,12 @@ owns the work, obtain its authorization before contributing.
 This repo includes a CI guard that may require updating parser reference docs
 when parser-related files change.
 
-- **C parser changes**: if you change `x2py/parsers/c/`, `tests/c/fixtures/parser/`, or
+- **C parser changes**: if you change `prik/parsers/c/`, `tests/c/fixtures/parser/`, or
   `tests/c/fixtures/native/`, update `docs/c_parser.md` when the change affects the
   documented feature inventory, public API, diagnostics, fixtures, semantic
   handoff, or maintenance workflow. The guard also treats
   `tests/c/probes/test_c_types.py` as C parser related.
-- **Fortran parser changes**: if you change `x2py/parsers/fortran/` or
+- **Fortran parser changes**: if you change `prik/parsers/fortran/` or
   `tests/fortran/source_parsing/parsing/`, update
   `docs/developer/fortran-parser-reference.md` when the change affects the documented feature
   inventory, public API, diagnostics, fixtures, semantic handoff, or

@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-import x2py.contracts as contracts
-from x2py.runtime.handles import (
+import prik.contracts as contracts
+from prik.runtime.handles import (
     AllocatableArray,
     PointerArray,
     _bind_contract_native_array_handle,

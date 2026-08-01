@@ -28,7 +28,7 @@ from tests.fortran._support.ownership_policy import (
     pytest,
 )
 
-from x2py.semantics.models import (
+from prik.semantics.models import (
     RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA,
     SemanticCoercion,
 )

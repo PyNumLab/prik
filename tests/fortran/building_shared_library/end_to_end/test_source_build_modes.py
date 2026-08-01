@@ -12,8 +12,8 @@ import numpy as np
 import pytest
 
 from tests.fortran._support.wrapper_build import _sole_native_module
-from x2py.pipeline.preprocessing import PreprocessingConfig
-from x2py.pipeline.build import NativeBuildPlan, NativeLinkItem, build_fortran_extension
+from prik.pipeline.preprocessing import PreprocessingConfig
+from prik.pipeline.build import NativeBuildPlan, NativeLinkItem, build_fortran_extension
 
 NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 VERBOSE_SOURCE = NATIVE_FIXTURES / "verbose_api.f90"
@@ -32,7 +32,7 @@ def test_verbose_mode_prints_full_direct_build_commands(tmp_path: Path):
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             str(source),
             "--verbose",
             "--out-dir",
@@ -105,7 +105,7 @@ def test_verbose_mode_prints_custom_wrapper_flags(tmp_path: Path):
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             str(source),
             "--out",
             "SCALE_debug",
@@ -155,11 +155,11 @@ def test_fortran_wrapper_default_places_artifacts_in_invocation_directory(tmp_pa
     source = source_dir / DEFAULT_OUTPUT_SOURCE.name
     shutil.copyfile(DEFAULT_OUTPUT_SOURCE, source)
 
-    cmd = [sys.executable, "-m", "x2py", str(source), "--json"]
+    cmd = [sys.executable, "-m", "prik", str(source), "--json"]
     result = subprocess.run(cmd, capture_output=True, text=True, check=True, cwd=run_dir)
     payload = json.loads(result.stdout)
 
-    build_dir = run_dir / "__x2py__"
+    build_dir = run_dir / "__prik__"
     shared_library = Path(payload["shared_library"])
     assert shared_library.parent == run_dir
     assert shared_library.name == "fdefault_output.so"
@@ -179,7 +179,7 @@ def test_fortran_wrapper_out_dir_separates_abi_artifact_from_cli_alias(tmp_path:
     shutil.copyfile(DEFAULT_OUTPUT_SOURCE, source)
 
     result = subprocess.run(
-        [sys.executable, "-m", "x2py", str(source), "--out-dir", "build", "--json"],
+        [sys.executable, "-m", "prik", str(source), "--out-dir", "build", "--json"],
         capture_output=True,
         text=True,
         check=True,
@@ -199,7 +199,7 @@ def test_fortran_wrapper_default_module_name_does_not_collide_with_root_function
     shutil.copyfile(SCALE_SOURCE, source)
 
     result = subprocess.run(
-        [sys.executable, "-m", "x2py", str(source), "--json"],
+        [sys.executable, "-m", "prik", str(source), "--json"],
         capture_output=True,
         text=True,
         check=True,
@@ -231,7 +231,7 @@ def test_fortran_wrapper_out_names_importable_shared_library(tmp_path: Path):
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             str(source),
             "--out",
             str(output_name),
@@ -248,7 +248,7 @@ def test_fortran_wrapper_out_names_importable_shared_library(tmp_path: Path):
     assert shared_library == output_name.with_suffix(".so")
     assert shared_library.is_file()
     assert payload["module_name"] == "SCALE"
-    assert any(path.name.startswith("SCALE.") and path.suffix == ".so" for path in (tmp_path / "__x2py__").iterdir())
+    assert any(path.name.startswith("SCALE.") and path.suffix == ".so" for path in (tmp_path / "__prik__").iterdir())
     assert str(shared_library) in payload["generated_files"]
 
     sys.modules.pop("SCALE", None)
@@ -269,7 +269,7 @@ def test_documented_homepage_points_example_builds_and_imports(tmp_path: Path):
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             str(source),
             "--out",
             "geometry",
@@ -316,7 +316,7 @@ def test_internal_preprocessing_mode_still_builds_importable_runtime_wrapper(tmp
     assert result.compiled is True
     assert result.build_makefile is None
     assert any(
-        path.name == "x2py_binding.h" and path.parent.name == "binding_support" for path in result.generated_files
+        path.name == "prik_binding.h" and path.parent.name == "binding_support" for path in result.generated_files
     )
     support_license = build_dir / "binding_support" / "LICENSE"
     assert support_license in result.generated_files
@@ -445,7 +445,7 @@ def test_generate_sources_cli_writes_wrapper_sources_without_native_outputs(tmp_
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "generate",
             "--sources",
             str(source),

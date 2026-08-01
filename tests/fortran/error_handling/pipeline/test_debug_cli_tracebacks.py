@@ -15,7 +15,7 @@ end subroutine bad
         encoding="utf-8",
     )
 
-    cmd = [sys.executable, "-m", "x2py", "parse", str(f90), "--debug"]
+    cmd = [sys.executable, "-m", "prik", "parse", str(f90), "--debug"]
     res = subprocess.run(cmd, capture_output=True, text=True)
 
     assert res.returncode == 1

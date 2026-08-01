@@ -10,9 +10,9 @@ import pytest
 
 from tests.fortran._support.pyi_fixtures import assert_generated_pyi_package_matches_fixture
 from tests.fortran._support.wrapper_build import _compiler
-from x2py import build_pyi_extension
-from x2py.compiling.objects import ObjectFile
-from x2py.pipeline.build import _new_compiler
+from prik import build_pyi_extension
+from prik.compiling.objects import ObjectFile
+from prik.pipeline.build import _new_compiler
 
 FEATURE_ROOT = Path(__file__).parents[1]
 FIXTURES = FEATURE_ROOT / "pipeline" / "fixtures"
@@ -50,7 +50,7 @@ def compiled_contract_rebuild(tmp_path: Path):
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "generate",
             "--pyi",
             str(SOURCE),

@@ -24,9 +24,9 @@ not by themselves establish native binding support.
 - [Memory ownership model](memory-ownership-model.md)
 - [Error propagation model](error-propagation-model.md)
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 - [CPython integration](cpython-integration.md)
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ## TODO
 

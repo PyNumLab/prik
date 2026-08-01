@@ -19,12 +19,12 @@ from tests.fortran.command_line_interface.pipeline._support import (
     subprocess,
     sys,
     types,
-    x2py_cli,
+    prik_cli,
 )
 
 
 def test_cli_readable_output():
-    cmd = [sys.executable, "-m", "x2py", "parse", str(TEST_FILE)]
+    cmd = [sys.executable, "-m", "prik", "parse", str(TEST_FILE)]
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
     assert f"File: {TEST_FILE}" in res.stdout
     assert "subroutine add1" in res.stdout
@@ -49,7 +49,7 @@ end module module_vars
         encoding="utf-8",
     )
 
-    cmd = [sys.executable, "-m", "x2py", "parse", str(f90), "--show-vars"]
+    cmd = [sys.executable, "-m", "prik", "parse", str(f90), "--show-vars"]
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
     assert "    - module module_vars (vars=2, uses=0)" in res.stdout
@@ -73,7 +73,7 @@ end module module_vars
         encoding="utf-8",
     )
 
-    cmd = [sys.executable, "-m", "x2py", "parse", str(f90), "--show-vars", "--print-limit", "1"]
+    cmd = [sys.executable, "-m", "prik", "parse", str(f90), "--show-vars", "--print-limit", "1"]
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
     assert "      Variables: 2" in res.stdout
@@ -98,7 +98,7 @@ end module many_procs
         encoding="utf-8",
     )
 
-    cmd = [sys.executable, "-m", "x2py", "parse", str(f90), "--print-limit", "1"]
+    cmd = [sys.executable, "-m", "prik", "parse", str(f90), "--print-limit", "1"]
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
     assert "      Procedures: 2" in res.stdout
@@ -113,7 +113,7 @@ def test_cli_json_out(tmp_path: Path):
     cmd = [
         sys.executable,
         "-m",
-        "x2py",
+        "prik",
         "parse",
         str(TEST_FILE),
         "--json",
@@ -130,7 +130,7 @@ def test_cli_json_out(tmp_path: Path):
 def test_cli_out_without_filename_uses_source_basename_json(tmp_path: Path):
     f90 = tmp_path / "mini.f90"
     f90.write_text("subroutine work(n)\n  integer, intent(in) :: n\nend subroutine work\n", encoding="utf-8")
-    cmd = [sys.executable, "-m", "x2py", "parse", str(f90), "--out"]
+    cmd = [sys.executable, "-m", "prik", "parse", str(f90), "--out"]
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
     assert res.stdout == ""
     out = tmp_path / "mini.json"
@@ -140,14 +140,14 @@ def test_cli_out_without_filename_uses_source_basename_json(tmp_path: Path):
 
 
 def test_cli_json_output_without_out():
-    cmd = [sys.executable, "-m", "x2py", "parse", str(TEST_FILE), "--json"]
+    cmd = [sys.executable, "-m", "prik", "parse", str(TEST_FILE), "--json"]
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
     payload = json.loads(res.stdout)
     assert str(TEST_FILE) in payload
 
 
 def test_cli_pyi_output_without_out():
-    cmd = [sys.executable, "-m", "x2py", "generate", "--pyi", str(TEST_FILE)]
+    cmd = [sys.executable, "-m", "prik", "generate", "--pyi", str(TEST_FILE)]
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
     assert f"File: {TEST_FILE}" in res.stdout
     assert "def add1(" in res.stdout
@@ -163,7 +163,7 @@ end subroutine bad
         encoding="utf-8",
     )
 
-    cmd = [sys.executable, "-m", "x2py", "parse", str(f90)]
+    cmd = [sys.executable, "-m", "prik", "parse", str(f90)]
     env = {k: v for k, v in os.environ.items() if k != "NO_COLOR"}
     res = subprocess.run(cmd, capture_output=True, text=True, env=env)
 
@@ -173,8 +173,8 @@ end subroutine bad
 
 
 def test_cli_semantics_out_writes_json_without_stdout(tmp_path: Path):
-    out = tmp_path / "x2py.semantics.json"
-    cmd = [sys.executable, "-m", "x2py", "semantics", str(TEST_FILE), "--out", str(out)]
+    out = tmp_path / "prik.semantics.json"
+    cmd = [sys.executable, "-m", "prik", "semantics", str(TEST_FILE), "--out", str(out)]
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
     assert res.stdout == ""
@@ -185,7 +185,7 @@ def test_cli_semantics_out_writes_json_without_stdout(tmp_path: Path):
 
 
 def test_cli_semantics_without_json_output():
-    cmd = [sys.executable, "-m", "x2py", "semantics", str(TEST_FILE)]
+    cmd = [sys.executable, "-m", "prik", "semantics", str(TEST_FILE)]
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
     payload = json.loads(res.stdout)
     assert str(TEST_FILE) in payload
@@ -193,7 +193,7 @@ def test_cli_semantics_without_json_output():
 
 
 def test_cli_pyi_output():
-    cmd = [sys.executable, "-m", "x2py", "generate", "--pyi", str(TEST_FILE)]
+    cmd = [sys.executable, "-m", "prik", "generate", "--pyi", str(TEST_FILE)]
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
     assert f"File: {TEST_FILE}" in res.stdout
     assert "def add1(" in res.stdout
@@ -213,7 +213,7 @@ end module m
         encoding="utf-8",
     )
 
-    cmd = [sys.executable, "-m", "x2py", "generate", "--pyi", str(f90), "--out"]
+    cmd = [sys.executable, "-m", "prik", "generate", "--pyi", str(f90), "--out"]
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
     assert res.stdout == ""
@@ -240,7 +240,7 @@ end module second_mod
         encoding="utf-8",
     )
 
-    cmd = [sys.executable, "-m", "x2py", "generate", "--pyi", str(source), "--out"]
+    cmd = [sys.executable, "-m", "prik", "generate", "--pyi", str(source), "--out"]
     result = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
     assert result.stdout == ""
@@ -266,7 +266,7 @@ end module explicit_mod
     )
     out = tmp_path / "contracts"
 
-    cmd = [sys.executable, "-m", "x2py", "generate", "--pyi", str(f90), "--out", str(out)]
+    cmd = [sys.executable, "-m", "prik", "generate", "--pyi", str(f90), "--out", str(out)]
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
     assert res.stdout == ""
@@ -300,7 +300,7 @@ end subroutine consume
     cmd = [
         sys.executable,
         "-m",
-        "x2py",
+        "prik",
         "generate",
         "--pyi",
         str(tmp_path),
@@ -318,11 +318,11 @@ end subroutine consume
     assert "local_wp" not in text
 
 
-def test_x2py_write_pyi_dependencies_handles_nested_modules_and_empty_payloads(tmp_path: Path):
+def test_prik_write_pyi_dependencies_handles_nested_modules_and_empty_payloads(tmp_path: Path):
     output_dir = tmp_path / "out"
     text = "class Shared:\n    pass"
 
-    x2py_cli._write_pyi_dependencies(
+    prik_cli._write_pyi_dependencies(
         {
             str(tmp_path / "nodeps.f90"): {},
             str(tmp_path / "first.f90"): {"pyi_dependencies": {"pkg.sub.shared": text}},
@@ -335,7 +335,7 @@ def test_x2py_write_pyi_dependencies_handles_nested_modules_and_empty_payloads(t
     assert not (output_dir / "pkg.sub.shared.pyi").exists()
 
 
-def test_x2py_write_pyi_dependencies_uses_explicit_utf8(tmp_path: Path, monkeypatch):
+def test_prik_write_pyi_dependencies_uses_explicit_utf8(tmp_path: Path, monkeypatch):
     writes = []
 
     def write_text(path, data, *args, **kwargs):
@@ -347,7 +347,7 @@ def test_x2py_write_pyi_dependencies_uses_explicit_utf8(tmp_path: Path, monkeypa
 
     monkeypatch.setattr(Path, "write_text", write_text)
 
-    x2py_cli._write_pyi_dependencies(
+    prik_cli._write_pyi_dependencies(
         {str(tmp_path / "first.f90"): {"pyi_dependencies": {"shared": "class Shared:\n    pass"}}},
         output_dir=tmp_path,
     )
@@ -355,8 +355,8 @@ def test_x2py_write_pyi_dependencies_uses_explicit_utf8(tmp_path: Path, monkeypa
     assert writes == [(tmp_path / "shared.pyi", "class Shared:\n    pass\n")]
 
 
-def test_x2py_main_formats_preprocessing_errors_with_and_without_diagnostics(monkeypatch, capsys):
-    monkeypatch.setattr(sys, "argv", ["x2py", "parse", str(TEST_FILE)])
+def test_prik_main_formats_preprocessing_errors_with_and_without_diagnostics(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["prik", "parse", str(TEST_FILE)])
 
     def fail_with_diagnostic(_paths, _preprocessing):
         raise PreprocessingError(
@@ -372,51 +372,51 @@ def test_x2py_main_formats_preprocessing_errors_with_and_without_diagnostics(mon
             ],
         )
 
-    monkeypatch.setattr(x2py_cli, "_parse_report", fail_with_diagnostic)
-    assert x2py_cli.main() == 1
+    monkeypatch.setattr(prik_cli, "_parse_report", fail_with_diagnostic)
+    assert prik_cli.main() == 1
     assert "source.F90:9: error[PREPROCESSOR_FAILED]: bad include" in capsys.readouterr().err
 
     def fail_without_diagnostic(_paths, _preprocessing):
         raise PreprocessingError("plain failure", category="PREPROCESSOR_FAILED")
 
-    monkeypatch.setattr(x2py_cli, "_parse_report", fail_without_diagnostic)
-    assert x2py_cli.main() == 1
-    assert "x2py: error[PREPROCESSOR_FAILED]: plain failure" in capsys.readouterr().err
+    monkeypatch.setattr(prik_cli, "_parse_report", fail_without_diagnostic)
+    assert prik_cli.main() == 1
+    assert "prik: error[PREPROCESSOR_FAILED]: plain failure" in capsys.readouterr().err
 
 
-def test_x2py_main_preserves_zero_print_limit_and_legacy_vars_limit_contract(monkeypatch, capsys):
+def test_prik_main_preserves_zero_print_limit_and_legacy_vars_limit_contract(monkeypatch, capsys):
     args = _main_args(parse=True, print_limit=0, vars_limit=7)
     _install_main_parser(monkeypatch, args)
     preprocessing = object()
     parse_payload = {"parse": "payload"}
     format_calls = []
 
-    monkeypatch.setattr(x2py_cli, "_resolve_language", lambda paths, language, parser: language)
-    monkeypatch.setattr(x2py_cli, "_build_preprocessing_config", lambda active_args, parser: preprocessing)
-    monkeypatch.setattr(x2py_cli, "_parse_report", lambda paths, active_preprocessing: parse_payload)
+    monkeypatch.setattr(prik_cli, "_resolve_language", lambda paths, language, parser: language)
+    monkeypatch.setattr(prik_cli, "_build_preprocessing_config", lambda active_args, parser: preprocessing)
+    monkeypatch.setattr(prik_cli, "_parse_report", lambda paths, active_preprocessing: parse_payload)
     monkeypatch.setattr(
-        x2py_cli,
+        prik_cli,
         "_format_report",
         lambda payload, **kwargs: format_calls.append((payload, kwargs)) or "formatted",
     )
 
-    assert x2py_cli.main() == 0
+    assert prik_cli.main() == 0
     assert capsys.readouterr().out == "formatted\n"
     assert format_calls == [(parse_payload, {"show_vars": True, "print_limit": 0})]
 
 
-def test_x2py_main_preserves_conflicting_json_and_pyi_out_diagnostic(monkeypatch):
+def test_prik_main_preserves_conflicting_json_and_pyi_out_diagnostic(monkeypatch):
     args = _main_args(pyi=True, json=True, out="/tmp/conflict.pyi")
     _install_main_parser(monkeypatch, args)
     _patch_main_report_payloads(monkeypatch, semantic_payload={"input.f90": {"pyi": "def work() -> None: ..."}})
 
     with pytest.raises(_MainParserError) as exc_info:
-        x2py_cli.main()
+        prik_cli.main()
 
     assert str(exc_info.value) == "--out cannot be used with both --json and --pyi"
 
 
-def test_x2py_main_preserves_explicit_and_adjacent_json_write_contracts(monkeypatch):
+def test_prik_main_preserves_explicit_and_adjacent_json_write_contracts(monkeypatch):
     writes = []
     monkeypatch.setattr(
         Path,
@@ -428,7 +428,7 @@ def test_x2py_main_preserves_explicit_and_adjacent_json_write_contracts(monkeypa
     explicit_args = _main_args(parse=True, out="/tmp/report.json")
     _install_main_parser(monkeypatch, explicit_args)
     _patch_main_report_payloads(monkeypatch, parse_payload=explicit_payload)
-    assert x2py_cli.main() == 0
+    assert prik_cli.main() == 0
 
     adjacent_payload = {
         "/tmp/first.f90": {"node": 1},
@@ -437,7 +437,7 @@ def test_x2py_main_preserves_explicit_and_adjacent_json_write_contracts(monkeypa
     adjacent_args = _main_args(parse=True, out="")
     _install_main_parser(monkeypatch, adjacent_args)
     _patch_main_report_payloads(monkeypatch, parse_payload=adjacent_payload)
-    assert x2py_cli.main() == 0
+    assert prik_cli.main() == 0
 
     assert writes == [
         (Path("/tmp/report.json"), json.dumps(explicit_payload, indent=2), {"encoding": "utf-8"}),
@@ -450,7 +450,7 @@ def test_x2py_main_preserves_explicit_and_adjacent_json_write_contracts(monkeypa
     ]
 
 
-def test_x2py_main_preserves_stdout_mode_matrix(monkeypatch, capsys):
+def test_prik_main_preserves_stdout_mode_matrix(monkeypatch, capsys):
     parse_payload = {"parse": {"node": 1}}
     semantic_payload = {"semantic": {"node": 2}}
     scenarios = [
@@ -474,27 +474,27 @@ def test_x2py_main_preserves_stdout_mode_matrix(monkeypatch, capsys):
         )
         formats = []
         monkeypatch.setattr(
-            x2py_cli,
+            prik_cli,
             "_format_report",
             lambda payload, _formats=formats, **kwargs: _formats.append(("parse-format", payload, kwargs)) or "PARSE",
         )
         monkeypatch.setattr(
-            x2py_cli,
+            prik_cli,
             "_format_pyi_report",
             lambda payload, _formats=formats: _formats.append(("pyi-format", payload)) or "PYI",
         )
         monkeypatch.setattr(
-            x2py_cli,
+            prik_cli,
             "print_pyi_output",
             lambda text, _formats=formats: _formats.append(("pyi-output", text)),
         )
 
-        assert x2py_cli.main() == 0
+        assert prik_cli.main() == 0
         assert capsys.readouterr().out == expected_stdout
         assert formats == expected_formats
 
 
-def test_x2py_cli_helpers_cover_language_and_preprocessing_edges(tmp_path: Path, monkeypatch):
+def test_prik_cli_helpers_cover_language_and_preprocessing_edges(tmp_path: Path, monkeypatch):
     class ErrorParser:
         def error(self, message):
             raise ValueError(message)
@@ -525,15 +525,15 @@ def test_x2py_cli_helpers_cover_language_and_preprocessing_edges(tmp_path: Path,
     upper_stub.write_text("def upper() -> None: ...\n", encoding="utf-8")
     (tmp_path / "notes.txt").write_text("ignore", encoding="utf-8")
 
-    assert x2py_cli._expand_pyi_paths([str(tmp_path), str(stub)]) == [stub]
-    assert x2py_cli._expand_pyi_paths([str(stub)]) == [stub]
-    assert x2py_cli._expand_pyi_paths([str(upper_stub)]) == [upper_stub]
-    assert x2py_cli._expand_pyi_paths([str(tmp_path / "notes.txt")]) == []
+    assert prik_cli._expand_pyi_paths([str(tmp_path), str(stub)]) == [stub]
+    assert prik_cli._expand_pyi_paths([str(stub)]) == [stub]
+    assert prik_cli._expand_pyi_paths([str(upper_stub)]) == [upper_stub]
+    assert prik_cli._expand_pyi_paths([str(tmp_path / "notes.txt")]) == []
     with pytest.raises(ValueError, match="Cannot determine"):
-        x2py_cli._resolve_language([str(tmp_path / "notes.txt")], None, parser)
+        prik_cli._resolve_language([str(tmp_path / "notes.txt")], None, parser)
 
     with pytest.raises(ValueError, match="--preprocess-template requires"):
-        x2py_cli._build_preprocessing_config(
+        prik_cli._build_preprocessing_config(
             args(
                 compiler="cc",
                 preprocess_template="{compiler} -E {source}",
@@ -553,14 +553,14 @@ def test_x2py_cli_helpers_cover_language_and_preprocessing_edges(tmp_path: Path,
 
     source = tmp_path / "api.f90"
     source.write_text("subroutine ignored()\nend subroutine ignored\n", encoding="utf-8")
-    monkeypatch.setattr(x2py_cli, "run_compiler_preprocessor_with_recipe", preprocess)
-    code, recipe = x2py_cli._fortran_source_for_path(
+    monkeypatch.setattr(prik_cli, "run_compiler_preprocessor_with_recipe", preprocess)
+    code, recipe = prik_cli._fortran_source_for_path(
         source,
         PreprocessingConfig(mode="compiler", compiler="gfortran"),
     )
     assert "subroutine work" in code
     assert recipe == {"mode": "compiler"}
-    report = x2py_cli._parse_report(
+    report = prik_cli._parse_report(
         [str(source)],
         PreprocessingConfig(mode="compiler", compiler="gfortran"),
     )
@@ -568,7 +568,7 @@ def test_x2py_cli_helpers_cover_language_and_preprocessing_edges(tmp_path: Path,
 
 
 def test_cli_help_is_concise_and_points_to_detailed_help():
-    cmd = [sys.executable, "-m", "x2py", "--help"]
+    cmd = [sys.executable, "-m", "prik", "--help"]
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
     normalized_help = " ".join(res.stdout.split())
     assert "INPUT [INPUT ...] [BUILD OPTIONS]" in res.stdout
@@ -584,16 +584,16 @@ def test_cli_help_is_concise_and_points_to_detailed_help():
     assert "Basic wrapper build:" in res.stdout
     assert "Name the Python extension:" in res.stdout
     assert "Generate an editable semantic contract:" in res.stdout
-    assert "python3 -m x2py points.f90" in res.stdout
-    assert "python3 -m x2py points.f90 --out geometry" in res.stdout
-    assert "python3 -m x2py generate --pyi points.f90 --out contracts" in res.stdout
-    assert "See the x2py homepage for the points.f90 source and generated Python API:" in res.stdout
-    assert "https://pynumlab.github.io/x2py/#see-it-in-action" in res.stdout
-    assert "python3 -m x2py --help-build" in res.stdout
-    assert "python3 -m x2py parse --help" in res.stdout
-    assert "python3 -m x2py semantics --help" in res.stdout
-    assert "python3 -m x2py generate --help" in res.stdout
-    assert "python3 -m x2py probe --help" in res.stdout
+    assert "python3 -m prik points.f90" in res.stdout
+    assert "python3 -m prik points.f90 --out geometry" in res.stdout
+    assert "python3 -m prik generate --pyi points.f90 --out contracts" in res.stdout
+    assert "See the prik homepage for the points.f90 source and generated Python API:" in res.stdout
+    assert "https://pynumlab.github.io/prik/#see-it-in-action" in res.stdout
+    assert "python3 -m prik --help-build" in res.stdout
+    assert "python3 -m prik parse --help" in res.stdout
+    assert "python3 -m prik semantics --help" in res.stdout
+    assert "python3 -m prik generate --help" in res.stdout
+    assert "python3 -m prik probe --help" in res.stdout
 
 
 @pytest.mark.parametrize(
@@ -607,7 +607,7 @@ def test_cli_help_is_concise_and_points_to_detailed_help():
 )
 def test_subcommand_help_tailors_shared_compiler_options(command, expected, excluded):
     result = subprocess.run(
-        [sys.executable, "-m", "x2py", command, "--help", "--no-color"],
+        [sys.executable, "-m", "prik", command, "--help", "--no-color"],
         capture_output=True,
         text=True,
         check=True,
@@ -629,7 +629,7 @@ def test_cli_parse_shows_module_derived_types_and_derived_arg_kinds():
     fixture = (
         Path(__file__).parents[2] / "source_parsing" / "parsing" / "fixtures" / "general" / "modern_pyi_example.f90"
     )
-    cmd = [sys.executable, "-m", "x2py", "parse", str(fixture)]
+    cmd = [sys.executable, "-m", "prik", "parse", str(fixture)]
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
     assert "      Derived types: 3" in res.stdout
@@ -793,13 +793,13 @@ def test_fortran_parser_cli_json_and_parse_errors(tmp_path: Path):
     good = tmp_path / "good.f90"
     good.write_text("subroutine work(n)\n  integer, intent(in) :: n\nend subroutine work\n", encoding="utf-8")
 
-    json_cmd = [sys.executable, "-m", "x2py.parsers.fortran", str(good), "--json"]
+    json_cmd = [sys.executable, "-m", "prik.parsers.fortran", str(good), "--json"]
     json_res = subprocess.run(json_cmd, capture_output=True, text=True, check=True)
     assert str(good) in json.loads(json_res.stdout)
 
     bad = tmp_path / "bad.f90"
     bad.write_text("subroutine bad(x)\n  weirdtype :: x\nend subroutine bad\n", encoding="utf-8")
-    bad_cmd = [sys.executable, "-m", "x2py.parsers.fortran", str(bad), "--no-color"]
+    bad_cmd = [sys.executable, "-m", "prik.parsers.fortran", str(bad), "--no-color"]
     bad_res = subprocess.run(bad_cmd, capture_output=True, text=True)
     assert bad_res.returncode == 1
     assert bad_res.stdout == ""
@@ -807,7 +807,7 @@ def test_fortran_parser_cli_json_and_parse_errors(tmp_path: Path):
     assert "Unknown or unsupported datatype" in bad_res.stderr
 
 
-def test_x2py_cli_helper_branches(tmp_path: Path, monkeypatch, capsys):
+def test_prik_cli_helper_branches(tmp_path: Path, monkeypatch, capsys):
     @dataclass
     class Node:
         name: str
@@ -818,24 +818,24 @@ def test_x2py_cli_helper_branches(tmp_path: Path, monkeypatch, capsys):
         parent: object
         name: str
 
-    monkeypatch.setenv("X2PY_TEST_FLAG", "ON")
-    assert x2py_cli._env_flag("X2PY_TEST_FLAG") is True
-    monkeypatch.delenv("X2PY_TEST_FLAG")
-    assert x2py_cli._env_flag("X2PY_TEST_FLAG") is False
+    monkeypatch.setenv("PRIK_TEST_FLAG", "ON")
+    assert prik_cli._env_flag("PRIK_TEST_FLAG") is True
+    monkeypatch.delenv("PRIK_TEST_FLAG")
+    assert prik_cli._env_flag("PRIK_TEST_FLAG") is False
 
-    assert x2py_cli._diagnostic_color_enabled(disabled=True) is False
+    assert prik_cli._diagnostic_color_enabled(disabled=True) is False
     monkeypatch.setenv("NO_COLOR", "1")
-    assert x2py_cli._diagnostic_color_enabled(disabled=False) is False
+    assert prik_cli._diagnostic_color_enabled(disabled=False) is False
     monkeypatch.delenv("NO_COLOR")
 
-    assert x2py_cli._to_dict_no_parent(Node("child", parent=Node("root"))) == {"name": "child"}
-    assert x2py_cli._to_dict_no_parent(ParentFirstNode(parent=Node("root"), name="child")) == {"name": "child"}
-    assert x2py_cli._to_dict_no_parent({"node": Node("child", parent=Node("root"))}) == {"node": {"name": "child"}}
+    assert prik_cli._to_dict_no_parent(Node("child", parent=Node("root"))) == {"name": "child"}
+    assert prik_cli._to_dict_no_parent(ParentFirstNode(parent=Node("root"), name="child")) == {"name": "child"}
+    assert prik_cli._to_dict_no_parent({"node": Node("child", parent=Node("root"))}) == {"node": {"name": "child"}}
 
     source = tmp_path / "mini.f90"
     source.write_text("subroutine work(n)\n  integer, intent(in) :: n\nend subroutine work\n", encoding="utf-8")
-    assert x2py_cli._collect_extensions(tmp_path) == [source]
-    assert x2py_cli._expand_paths([str(tmp_path)]) == [source]
+    assert prik_cli._collect_extensions(tmp_path) == [source]
+    assert prik_cli._expand_paths([str(tmp_path)]) == [source]
 
     monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
     real_import = builtins.__import__
@@ -846,11 +846,11 @@ def test_x2py_cli_helper_branches(tmp_path: Path, monkeypatch, capsys):
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", fail_rich_import)
-    x2py_cli.print_pyi_output("def f() -> None: ...")
+    prik_cli.print_pyi_output("def f() -> None: ...")
     assert "def f() -> None: ..." in capsys.readouterr().out
 
 
-def test_x2py_print_pyi_output_uses_rich_and_falls_back(monkeypatch, capsys):
+def test_prik_print_pyi_output_uses_rich_and_falls_back(monkeypatch, capsys):
     calls = []
 
     class FakeSyntax:
@@ -876,7 +876,7 @@ def test_x2py_print_pyi_output_uses_rich_and_falls_back(monkeypatch, capsys):
     monkeypatch.setitem(sys.modules, "rich.syntax", syntax_module)
     monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
 
-    x2py_cli.print_pyi_output("def f() -> None: ...")
+    prik_cli.print_pyi_output("def f() -> None: ...")
     assert calls == [
         (
             "def f() -> None: ...",
@@ -897,22 +897,22 @@ def test_x2py_print_pyi_output_uses_rich_and_falls_back(monkeypatch, capsys):
             raise RuntimeError("terminal failed")
 
     console_module.Console = RaisingConsole
-    x2py_cli.print_pyi_output("def g() -> None: ...")
+    prik_cli.print_pyi_output("def g() -> None: ...")
     assert "def g() -> None: ..." in capsys.readouterr().out
 
 
-def test_x2py_main_formats_value_errors_or_reraises_for_debug(tmp_path: Path, monkeypatch, capsys):
+def test_prik_main_formats_value_errors_or_reraises_for_debug(tmp_path: Path, monkeypatch, capsys):
     source = tmp_path / "input.f90"
     source.write_text("module input\nend module input\n", encoding="utf-8")
 
     def fail_parse(_paths, _preprocessing):
         raise ValueError("invalid generated interface")
 
-    monkeypatch.setattr(x2py_cli, "_parse_report", fail_parse)
-    monkeypatch.setattr(sys, "argv", ["x2py", "parse", str(source)])
-    assert x2py_cli.main() == 1
-    assert "x2py: error: invalid generated interface" in capsys.readouterr().err
+    monkeypatch.setattr(prik_cli, "_parse_report", fail_parse)
+    monkeypatch.setattr(sys, "argv", ["prik", "parse", str(source)])
+    assert prik_cli.main() == 1
+    assert "prik: error: invalid generated interface" in capsys.readouterr().err
 
-    monkeypatch.setattr(sys, "argv", ["x2py", "parse", str(source), "--debug"])
+    monkeypatch.setattr(sys, "argv", ["prik", "parse", str(source), "--debug"])
     with pytest.raises(ValueError, match="invalid generated interface"):
-        x2py_cli.main()
+        prik_cli.main()

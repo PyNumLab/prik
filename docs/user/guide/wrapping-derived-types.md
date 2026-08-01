@@ -1,6 +1,6 @@
 ---
 title: Wrapping Derived Types
-description: How x2py wraps Fortran derived types as Python classes with methods, fields, constructors, and ownership rules
+description: How prik wraps Fortran derived types as Python classes with methods, fields, constructors, and ownership rules
 audience: users, advanced users
 prerequisites: wrapping modules, data types
 related: memory-management.md, generic-interfaces.md
@@ -65,7 +65,7 @@ end module points
 Build it:
 
 ```bash
-python3 -m x2py points.f90 --out geometry --out-dir build/geometry
+python3 -m prik points.f90 --out geometry --out-dir build/geometry
 ```
 
 ---
@@ -159,7 +159,7 @@ In this mapping, `@bind` selects the native initializer,
 `point`, and `Addr(Arg(i))` passes Python argument `i` by address:
 
 ```python
-from x2py.contracts import Addr, Arg, Float64, Pass, bind, native_call
+from prik.contracts import Addr, Arg, Float64, Pass, bind, native_call
 
 class point:
     x: Float64
@@ -222,7 +222,7 @@ Python argument. Add the method to the existing `point` class while keeping
 the module declaration:
 
 ```python
-from x2py.contracts import Addr, Arg, Float64, Pass, native_call
+from prik.contracts import Addr, Arg, Float64, Pass, native_call
 
 class point:
     @native_call([Pass(), Addr(Arg(0)), Addr(Arg(1))])
@@ -269,7 +269,7 @@ The generated contract uses the same explicit overload links as a module-level
 generic:
 
 ```python
-from x2py.contracts import Float64, Int32, bind, overload, private
+from prik.contracts import Float64, Int32, bind, overload, private
 
 class counter:
     @private
@@ -323,7 +323,7 @@ end function add_points
 The generated contract exposes `operator(+)` as `__add__`:
 
 ```python
-from x2py.contracts import overload, private
+from prik.contracts import overload, private
 
 class point:
     @overload("add_points")

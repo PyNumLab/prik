@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.ownership import (
+from prik.semantics.ownership import (
     CodegenAction,
     DestructionPolicy,
     NativeBarrierAction,
@@ -15,10 +15,10 @@ from x2py.semantics.ownership import (
     StorageMode,
     TransferMode,
 )
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import ArgumentHandoffMode, BridgeDataAction
-from x2py.wrapper_codegen import ArrayHandoffPlan, WrapperCodeGenerator, WrapperPlanner
-from x2py.wrapper_codegen.plan import DatatypeFamily
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.wrapper_policy import ArgumentHandoffMode, BridgeDataAction
+from prik.wrapper_codegen import ArrayHandoffPlan, WrapperCodeGenerator, WrapperPlanner
+from prik.wrapper_codegen.plan import DatatypeFamily
 
 
 def _array_module():
@@ -73,17 +73,17 @@ def test_required_array_buffer_dispatches_through_named_binding_and_bridge_metho
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
     assert "double bind_c_sum_values(void * values, int64_t values_extent_0);" in c_source
-    assert "x2py_array_actual bound_values_actual;" in c_source
+    assert "prik_array_actual bound_values_actual;" in c_source
     assert (
-        'x2py_array_actual_unpack(bound_values_obj, "float64", 1, bound_values_shape, NULL, '
+        'prik_array_actual_unpack(bound_values_obj, "float64", 1, bound_values_shape, NULL, '
         "1, 1, 1, 0, 0, 0, 1, 0, -1, &bound_values_actual)"
     ) in c_source
     assert "bound_values = bound_values_actual.data;" in c_source
     assert "bound_values_extent_0 = bound_values_actual.extents[0];" in c_source
     assert "if (PyArray_Check(bound_values_obj)) {" in c_source
     assert (
-        "x2py_array_validate(bound_values_obj, NPY_FLOAT64, 1, 1, "
-        'X2PY_ARRAY_LAYOUT_ANY_CONTIGUOUS, 1, 1, "numpy.float64", "values")'
+        "prik_array_validate(bound_values_obj, NPY_FLOAT64, 1, 1, "
+        'PRIK_ARRAY_LAYOUT_ANY_CONTIGUOUS, 1, 1, "numpy.float64", "values")'
     ) in c_source
     assert "bound_values = PyArray_DATA((PyArrayObject *)bound_values_obj);" in c_source
     assert "result = bind_c_sum_values(bound_values, bound_values_extent_0);" in c_source

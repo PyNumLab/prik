@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 702" role="img" aria-labelledby="title description">
-  <title id="title">x2py performance relative to f2py</title>
+  <title id="title">PRIK performance relative to f2py</title>
   <desc id="description">
-    Relative speed across 13 benchmarks. Values above one indicate x2py is faster. x2py is faster in 7 benchmarks.
+    Relative speed across 13 benchmarks. Values above one indicate PRIK is faster. PRIK is faster in 7 benchmarks.
   </desc>
   <rect x="1" y="1" width="998" height="700" rx="16" fill="#ffffff" stroke="#d8e1e8" stroke-width="2"/>
   <g font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" fill="#17212b">
-    <text x="28" y="42" font-size="24" font-weight="700">x2py relative performance</text>
-    <text x="28" y="70" font-size="14" fill="#52616f">f2py time ÷ x2py time · farther right means faster x2py calls</text>
+    <text x="28" y="42" font-size="24" font-weight="700">PRIK relative performance</text>
+    <text x="28" y="70" font-size="14" fill="#52616f">f2py time ÷ PRIK time · farther right means faster PRIK calls</text>
     <g stroke="#e4eaef" stroke-width="1">
       <line x1="350.0" y1="115" x2="350.0" y2="626"/>
       <line x1="413.3" y1="115" x2="413.3" y2="626"/>
@@ -81,12 +81,12 @@
     </g>
     <g font-size="13">
       <circle cx="30" cy="664" r="6" fill="#0f766e"/>
-      <text x="43" y="669" fill="#52616f">x2py faster</text>
+      <text x="43" y="669" fill="#52616f">PRIK faster</text>
       <circle cx="160" cy="664" r="6" fill="#b45309"/>
       <text x="173" y="669" fill="#52616f">f2py faster</text>
       <circle cx="285" cy="664" r="6" fill="#64748b"/>
       <text x="298" y="669" fill="#52616f">no significant difference</text>
-      <text x="970" y="669" text-anchor="end" fill="#52616f">Geometric mean: x2py 1.05× faster</text>
+      <text x="970" y="669" text-anchor="end" fill="#52616f">Geometric mean: PRIK 1.05× faster</text>
     </g>
   </g>
 </svg>

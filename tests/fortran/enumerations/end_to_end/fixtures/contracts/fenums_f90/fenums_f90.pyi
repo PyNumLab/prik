@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Arg, Final, Int32, native_call
+from prik.contracts import Addr, Arg, Final, Int32, native_call
 
 class paint:
     def __init__(

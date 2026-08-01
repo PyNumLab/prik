@@ -59,18 +59,18 @@ def test_policy_tracks_hotspot_average_without_changed_base(tmp_path: Path):
 
 
 def test_source_root_filter_uses_path_boundaries():
-    assert is_under_source_roots("x2py/parsers/c/parser.py", ("x2py",))
-    assert is_under_source_roots("x2py", ("x2py",))
-    assert not is_under_source_roots("x2py_extra/parser.py", ("x2py",))
+    assert is_under_source_roots("prik/parsers/c/parser.py", ("prik",))
+    assert is_under_source_roots("prik", ("prik",))
+    assert not is_under_source_roots("prik_extra/parser.py", ("prik",))
 
 
 def test_changed_python_files_preserve_pre_rename_paths():
-    output = "R098\told/parser.py\tx2py/parser.py\nM\tx2py/cli.py\nA\tx2py/new.py\n"
+    output = "R098\told/parser.py\tprik/parser.py\nM\tprik/cli.py\nA\tprik/new.py\n"
 
     assert parse_changed_python_files(output) == [
-        ChangedPythonFile("x2py/parser.py", "old/parser.py"),
-        ChangedPythonFile("x2py/cli.py", "x2py/cli.py"),
-        ChangedPythonFile("x2py/new.py", None),
+        ChangedPythonFile("prik/parser.py", "old/parser.py"),
+        ChangedPythonFile("prik/cli.py", "prik/cli.py"),
+        ChangedPythonFile("prik/new.py", None),
     ]
 
 

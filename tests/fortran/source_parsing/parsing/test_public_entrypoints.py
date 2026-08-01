@@ -2,10 +2,10 @@
 
 import pytest
 
-from x2py.parsers.fortran.parser import FortranParser
-from x2py import FortranParseError, parse_fortran_file, parse_fortran_project
-from x2py.parsers.fortran.parser import FortranParser as PackageFortranParser
-from x2py.semantics.fortran2ir import fortran_file_to_semantic_modules
+from prik.parsers.fortran.parser import FortranParser
+from prik import FortranParseError, parse_fortran_file, parse_fortran_project
+from prik.parsers.fortran.parser import FortranParser as PackageFortranParser
+from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
 
 
 def test_parser_public_entrypoint_aliases_and_singular_contracts_use_inline_sources():
@@ -57,7 +57,7 @@ end module second_mod
         )
 
 
-def test_x2py_package_contains_fortran_parser_and_semantics_subpackages():
+def test_prik_package_contains_fortran_parser_and_semantics_subpackages():
     parsed_fortran = PackageFortranParser().parse_file(
         """
 subroutine work(n)

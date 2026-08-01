@@ -1,6 +1,6 @@
 ---
 title: Wrapping Functions
-description: How x2py wraps Fortran `function` procedures — return values, output arguments, arrays, and contracts
+description: How prik wraps Fortran `function` procedures — return values, output arguments, arrays, and contracts
 audience: users
 prerequisites: data types, first wrapped function
 related: wrapping-subroutines.md, arrays.md
@@ -43,7 +43,7 @@ For example, rename the generated declaration to `multiply` and add
 `scale`:
 
 ```python
-from x2py.contracts import Addr, Arg, Float64, bind, external, native_call
+from prik.contracts import Addr, Arg, Float64, bind, external, native_call
 
 @bind("scale")
 @external

@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
 
 def test_hidden_scalar_result_is_one_bridge_output_and_one_python_result():
@@ -30,7 +30,7 @@ def scale(x: Float64) -> Float64: ...
 
     assert "void bind_c_scale(double * x, double * result);" in c_source
     assert "bind_c_scale(&bound_x, &result);" in c_source
-    assert "PyObject * result_obj = x2py_float64_to_python(&result);" in c_source
+    assert "PyObject * result_obj = prik_float64_to_python(&result);" in c_source
     assert 'subroutine bind_c_scale(x, result) bind(c, name="bind_c_scale")' in fortran_source
     assert "external :: SCALE_OUT" in fortran_source
     assert "subroutine SCALE_OUT(" not in fortran_source
@@ -40,7 +40,7 @@ def scale(x: Float64) -> Float64: ...
 def test_required_explicit_interface_declares_hidden_result_in_native_order():
     module = parse_pyi_text(
         """
-from x2py.contracts import Addr, Annotated, Arg, Float64, Immutable, Int32, Return, bind, external, native_call
+from prik.contracts import Addr, Annotated, Arg, Float64, Immutable, Int32, Return, bind, external, native_call
 
 @bind("SCALE_OUT")
 @external

@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Aliased, Allocatable, Annotated, Arg, Float64, Int32, Pass, native_call
+from prik.contracts import Addr, Aliased, Allocatable, Annotated, Arg, Float64, Int32, Pass, native_call
 
 class box:
     def __init__(self) -> None: ...

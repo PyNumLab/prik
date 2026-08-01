@@ -1,5 +1,5 @@
 # Intentional difference: combine edited module, method, and constructor overloads.
-from x2py.contracts import Addr, Arg, Float64, Int32, Pass, bind, native_call, overload, private
+from prik.contracts import Addr, Arg, Float64, Int32, Pass, bind, native_call, overload, private
 
 
 @bind("convert")

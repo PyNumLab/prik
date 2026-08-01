@@ -7,9 +7,9 @@ from dataclasses import replace
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.models import RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import (
+from prik.semantics.models import RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.wrapper_policy import (
     BridgeDataAction,
     DerivedNativeHandoff,
     DerivedObjectOrigin,
@@ -17,14 +17,14 @@ from x2py.semantics.wrapper_policy import (
     DerivedRelease,
     LifecycleOperation,
 )
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
 
 def _value_module(*, attributes: tuple[str, ...] = ()):
     decorator = f"@native_type(attributes={attributes!r})" if attributes else ""
     module = parse_pyi_text(
         f"""
-from x2py.contracts import Arg, Float64, Value, native_call, native_type
+from prik.contracts import Arg, Float64, Value, native_call, native_type
 
 {decorator}
 class point:
@@ -72,7 +72,7 @@ def test_exact_typed_value_lowering_uses_fortran_value_semantics_and_opaque_bind
 
     assert "struct point" not in c_source
     assert "PyCapsule_GetPointer" in c_source
-    assert "type(x2py_type_point), pointer :: value" in bridge_source
+    assert "type(prik_type_point), pointer :: value" in bridge_source
     assert "native_score(value)" in bridge_source
 
 
@@ -107,7 +107,7 @@ def test_derived_plan_edits_fail_central_validation(edit: str, diagnostic: str):
 def test_owned_derived_result_has_explicit_failure_and_release_lifecycle():
     module = parse_pyi_text(
         """
-from x2py.contracts import Float64
+from prik.contracts import Float64
 
 class point:
     x: Float64
@@ -133,7 +133,7 @@ def make_point() -> point: ...
 def test_hidden_returns_derived_output_reuses_owned_result_storage_and_lifecycle():
     module = parse_pyi_text(
         """
-from x2py.contracts import Float64, Return, Returns, native_call
+from prik.contracts import Float64, Return, Returns, native_call
 
 class point:
     x: Float64
@@ -157,13 +157,13 @@ def make_point() -> Returns["value", point]: ...
 
     c_source, bridge_source = _sources(plan)
     assert "PyCapsule_New(value" in c_source
-    assert "allocate(value_value, stat=x2py_allocation_status)" in bridge_source
+    assert "allocate(value_value, stat=prik_allocation_status)" in bridge_source
 
 
 def test_projected_derived_argument_returns_the_exact_caller_wrapper_without_release():
     module = parse_pyi_text(
         """
-from x2py.contracts import Float64, Returns
+from prik.contracts import Float64, Returns
 
 class point:
     x: Float64
@@ -192,7 +192,7 @@ def update(value: point) -> Returns["value", point]: ...
 def test_derived_module_handoff_edit_fails_central_validation():
     module = parse_pyi_text(
         """
-from x2py.contracts import Aliased, Annotated, Float64
+from prik.contracts import Aliased, Annotated, Float64
 
 class point:
     x: Float64
@@ -218,7 +218,7 @@ current: Annotated[point, Aliased]
     (
         (
             """
-from x2py.contracts import Float64, Pointer
+from prik.contracts import Float64, Pointer
 
 class point:
     x: Float64
@@ -230,7 +230,7 @@ class holder:
         ),
         (
             """
-from x2py.contracts import Float64
+from prik.contracts import Float64
 
 class point:
     x: Float64
@@ -241,7 +241,7 @@ def consume(value: point[:]) -> None: ...
         ),
         (
             """
-from x2py.contracts import Float64
+from prik.contracts import Float64
 
 class point:
     x: Float64
@@ -281,7 +281,7 @@ def test_unsupported_derived_shapes_fail_on_exact_completed_policy_blockers(
 def test_native_result_and_derived_writeback_share_ordered_output_aggregation():
     module = parse_pyi_text(
         """
-from x2py.contracts import Float64, Returns
+from prik.contracts import Float64, Returns
 
 class point:
     x: Float64
@@ -307,7 +307,7 @@ def update(value: point) -> tuple[Float64, Returns["value", point]]: ...
 def test_mixed_derived_results_check_allocation_and_own_every_failure_path_before_scalar_conversion():
     module = parse_pyi_text(
         """
-from x2py.contracts import Int32, Return, native_call
+from prik.contracts import Int32, Return, native_call
 
 class point:
     x: Int32
@@ -322,11 +322,11 @@ def make_pair() -> tuple[Int32, point, point]: ...
 
     assert "left = c_null_ptr" in bridge_source
     assert "right = c_null_ptr" in bridge_source
-    assert "allocate(left_value, stat=x2py_allocation_status)" in bridge_source
-    assert "allocate(right_value, stat=x2py_allocation_status)" in bridge_source
+    assert "allocate(left_value, stat=prik_allocation_status)" in bridge_source
+    assert "allocate(right_value, stat=prik_allocation_status)" in bridge_source
     assert "deallocate(left_value)" in bridge_source
     allocation_check = c_source.index("if (left == NULL || right == NULL)")
     first_wrapper = c_source.index("PyCapsule_New(left")
-    scalar_conversion = c_source.index("x2py_int32_to_python(&status)")
+    scalar_conversion = c_source.index("prik_int32_to_python(&status)")
     assert allocation_check < first_wrapper < scalar_conversion
-    assert "if (right != NULL) { bind_c_x2py_destroy_point(right); right = NULL; }" in c_source
+    assert "if (right != NULL) { bind_c_prik_destroy_point(right); right = NULL; }" in c_source

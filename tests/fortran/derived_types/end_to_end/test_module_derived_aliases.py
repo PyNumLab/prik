@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from x2py.runtime.handles import AllocatableArray
+from prik.runtime.handles import AllocatableArray
 from tests.fortran._support.wrapper_build import _build_source_or_generated_pyi_and_import
 
 FIXTURES = Path(__file__).parent / "fixtures"

@@ -52,9 +52,9 @@ def test_runtime_groups_assign_more_samples_only_to_noisy_cases(
         sum_matrix=lambda *_args: None,
         matrix_update=lambda *_args: None,
     )
-    monkeypatch.setenv("BINDING_TOOL", "x2py")
-    monkeypatch.setenv("X2PY_RUNTIME_BENCHMARK_GROUP", group)
-    monkeypatch.setenv("X2PY_BENCHMARK_CPU_MODEL", "Published Benchmark CPU")
+    monkeypatch.setenv("BINDING_TOOL", "prik")
+    monkeypatch.setenv("PRIK_RUNTIME_BENCHMARK_GROUP", group)
+    monkeypatch.setenv("PRIK_BENCHMARK_CPU_MODEL", "Published Benchmark CPU")
     monkeypatch.setattr(importlib, "import_module", lambda _name: SimpleNamespace(kernels=kernels))
     monkeypatch.setattr(pyperf, "Runner", FakeRunner)
 
@@ -83,4 +83,4 @@ def test_run_script_appends_runtime_groups_in_public_table_order() -> None:
     ]
     assert positions == sorted(positions)
     assert 'result_args=(--append "results/$binding_tool.json")' in source
-    assert "X2PY_BENCHMARK_CPU_MODEL" in source
+    assert "PRIK_BENCHMARK_CPU_MODEL" in source

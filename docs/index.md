@@ -1,5 +1,5 @@
 ---
-title: x2py
+title: PRIK
 description: Turn Fortran functions, modules, arrays, and derived types into natural Python APIs
 audience: users
 prerequisites: none
@@ -8,19 +8,21 @@ status: maintained
 publication: reviewed
 ---
 
-# x2py
+# PRIK
+
+**Python Runtime Interop Kit.**
 
 **Turn Fortran into natural Python APIs.**
 
 Build clean, importable native extensions from supported Fortran without
-writing low-level binding code. x2py preserves modules, derived types, arrays,
+writing low-level binding code. PRIK preserves modules, derived types, arrays,
 and native behavior, and generates an editable `.pyi` contract so you can
 shape the Python API.
 
 The complete example below builds with one command:
 
 ```bash
-python3 -m x2py points.f90 --out geometry
+python3 -m prik points.f90 --out geometry
 ```
 
 ---
@@ -29,7 +31,7 @@ python3 -m x2py points.f90 --out geometry
 
 Create `points.f90`:
 
-<!-- x2py-doc-source: tests/fortran/building_shared_library/end_to_end/fixtures/native/home_points.f90 -->
+<!-- prik-doc-source: tests/fortran/building_shared_library/end_to_end/fixtures/native/home_points.f90 -->
 ```fortran
 module points
   implicit none
@@ -69,7 +71,7 @@ print(item.x, item.y)             # 4.0 2.0
 print(points.norm_squared(item))  # 20.0
 ```
 
-No manual bindings are required. From this source, x2py creates a Python
+No manual bindings are required. From this source, PRIK creates a Python
 namespace, a class with accessible fields, a mutating procedure, and a
 function.
 
@@ -83,7 +85,7 @@ the available edits.
 ## How it works
 
 1. Write standard Fortran.
-2. Run `x2py` on the source.
+2. Run `prik` on the source.
 3. Import the generated native extension.
 4. Optionally edit the generated `.pyi` contract to shape the Python API.
 
@@ -113,15 +115,15 @@ kernels through their normal generated interfaces. Results are
 machine-dependent; the detailed page records the complete environment and
 reproduction method.
 
-**Runtime-call performance** — values above `1.0×` mean x2py is faster.
+**Runtime-call performance** — values above `1.0×` mean PRIK is faster.
 
-[![Relative performance of x2py and f2py across call, vector, and matrix workloads. Values above 1.0 mean x2py is faster.](user/assets/performance-comparison.svg)](user/performance.md)
-{ .x2py-performance-chart }
+[![Relative performance of PRIK and f2py across call, vector, and matrix workloads. Values above 1.0 mean PRIK is faster.](user/assets/performance-comparison.svg)](user/performance.md)
+{ .prik-performance-chart }
 
 **Clean end-to-end build time** — lower times are better.
 
-[![Clean end-to-end build time for x2py and f2py under development and optimized compiler profiles. Lower times are better.](user/assets/build-time-comparison.svg)](user/performance.md#clean-build-time)
-{ .x2py-performance-chart }
+[![Clean end-to-end build time for prik and f2py under development and optimized compiler profiles. Lower times are better.](user/assets/build-time-comparison.svg)](user/performance.md#clean-build-time)
+{ .prik-performance-chart }
 
 [View the full results and methodology →](user/performance.md)
 
@@ -129,4 +131,4 @@ reproduction method.
 
 **Ready to wrap your Fortran code?**
 
-[Getting Started Guide →](user/getting-started/index.md){ .x2py-primary-cta }
+[Getting Started Guide →](user/getting-started/index.md){ .prik-primary-cta }

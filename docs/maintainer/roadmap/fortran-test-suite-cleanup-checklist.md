@@ -1284,7 +1284,7 @@ Final coverage evidence from 2026-07-30 uses the same deterministic seed,
 `coverage report` procedure as the baseline. The recovered pre-migration rerun
 is 90.22%; the final language-root selection is 90.63%. Exact JSON comparison
 found no lost executed line or branch in any of the 78 unchanged executable
-Python files. In `x2py/parsers/fortran/parser.py`, every baseline line remains
+Python files. In `prik/parsers/fortran/parser.py`, every baseline line remains
 executed after remapping the nine-line `CLASS(*)` diagnostic insertion. The
 old fallthrough arc at the insertion point is deliberately split into the new
 assumed-type decision and its fallthrough, and both that fallthrough and the
@@ -1390,7 +1390,7 @@ Rules:
 The runtime helper previously hardcoded GFortran. Alternate-compiler smoke now:
 
 - [x] add a session-level option such as
-  `--x2py-fortran-compiler=<executable>`;
+  `--prik-fortran-compiler=<executable>`;
 - [x] resolve and log the requested executable and version once;
 - [x] propagate its profile through preprocessing, probes, native compilation,
   bridge compilation, linking, and runtime discovery; and
@@ -1455,7 +1455,7 @@ compiler/platform lane performs the equivalent of:
 ```text
 python -m pytest -q <profile/platform nodes> <focused Fortran CLI nodes>
 python -m pytest -q tests/fortran -m toolchain_smoke \
-  --x2py-fortran-compiler=<executable> --require-toolchain-smoke
+  --prik-fortran-compiler=<executable> --require-toolchain-smoke
 ```
 
 `tests/architecture/fortran/test_ci_toolchain_lanes.py` verifies:

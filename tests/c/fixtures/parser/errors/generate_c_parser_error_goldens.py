@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-from x2py.parsers.c import CParseError, parse_c_file
+from prik.parsers.c import CParseError, parse_c_file
 
 
 _ERRORS_DIR = Path(__file__).resolve().parents[2] / "native" / "errors" / "parser"

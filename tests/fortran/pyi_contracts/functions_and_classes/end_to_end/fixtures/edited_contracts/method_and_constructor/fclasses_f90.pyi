@@ -1,6 +1,6 @@
 # Intentional difference: reuse one module procedure as a direct constructor,
 # a renamed method, and a public module function.
-from x2py.contracts import Addr, Arg, Float64, Pass, bind, native_call
+from prik.contracts import Addr, Arg, Float64, Pass, bind, native_call
 
 
 class vector:

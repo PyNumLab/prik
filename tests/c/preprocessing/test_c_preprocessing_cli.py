@@ -22,7 +22,7 @@ def test_cli_c_default_compiler_mode_accepts_include_dirs(tmp_path: Path):
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "parse",
             str(header),
             "--language",
@@ -49,7 +49,7 @@ def test_cli_c_default_compiler_mode_accepts_define_flags(tmp_path: Path):
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "parse",
             str(header),
             "--language",
@@ -72,7 +72,7 @@ def test_cli_compiler_mode_uses_default_c_compiler(tmp_path: Path):
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "parse",
             str(header),
             "--language",
@@ -95,7 +95,7 @@ def test_cli_accepts_explicit_compiler_flag(tmp_path: Path):
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "parse",
             str(header),
             "--language",
@@ -119,7 +119,7 @@ def test_cli_c_compiler_mode_runs_exact_compiler_and_parses_preprocessed_stdout(
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "parse",
             str(header),
             "--language",
@@ -186,7 +186,7 @@ def test_cli_preprocessing_failure_has_category_without_traceback_unless_debug(t
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "parse",
             str(header),
             "--language",
@@ -201,7 +201,7 @@ def test_cli_preprocessing_failure_has_category_without_traceback_unless_debug(t
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "parse",
             str(header),
             "--language",
@@ -252,7 +252,7 @@ def test_cli_c_compile_commands_mode_uses_exact_database_compiler(tmp_path: Path
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "parse",
             str(source),
             "--language",
@@ -294,7 +294,7 @@ def test_cli_c_compiler_mode_macro_metadata_flows_to_parse_report(tmp_path: Path
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "parse",
             str(header),
             "--language",

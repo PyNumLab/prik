@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from tests.fortran._support.wrapper_build import _build_source_and_import
-from x2py.runtime.handles import AllocatableArray
+from prik.runtime.handles import AllocatableArray
 
 pytestmark = pytest.mark.fortran_end_to_end
 

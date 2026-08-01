@@ -1,4 +1,4 @@
-"""Fail-closed page publication for the x2py MkDocs website."""
+"""Fail-closed page publication for the prik MkDocs website."""
 
 from __future__ import annotations
 
@@ -187,7 +187,7 @@ def on_config(config, **_kwargs):
     """Load publication state and filter production navigation."""
     global _docs_dir, _include_drafts, _known_document_paths, _published_paths, _repository_url
 
-    _include_drafts = os.getenv("X2PY_DOCS_INCLUDE_DRAFTS", "").strip().lower() in _TRUE_VALUES
+    _include_drafts = os.getenv("PRIK_DOCS_INCLUDE_DRAFTS", "").strip().lower() in _TRUE_VALUES
     _docs_dir = Path(config["docs_dir"])
     _repository_url = str(config["repo_url"]).rstrip("/")
     states, _known_document_paths = _publication_states(_docs_dir)

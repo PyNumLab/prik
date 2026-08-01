@@ -9,27 +9,27 @@ publication: draft
 
 # Python API Reference
 
-This page documents the checked public symbols exported from `x2py.__all__`.
-The names below are the supported import surface for callers that use x2py as a
+This page documents the checked public symbols exported from `prik.__all__`.
+The names below are the supported import surface for callers that use prik as a
 library.
 
 ```python
-import x2py
+import prik
 
-sorted(x2py.__all__)
+sorted(prik.__all__)
 ```
 
 ## CLI entrypoint
 
 | Symbol | Purpose |
 | --- | --- |
-| `main` | Runs the `python3 -m x2py` command-line interface. Prefer the CLI for shell workflows and the functions below for Python workflows. |
+| `main` | Runs the `python3 -m prik` command-line interface. Prefer the CLI for shell workflows and the functions below for Python workflows. |
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ## C parser API
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 | Symbol | Purpose |
 | &#45;&#45;- | &#45;&#45;- |
 | `parse_c_file` | Parses one C source or header into a `CFile`. |
@@ -37,13 +37,13 @@ X2PY_C_DOCS_END -->
 | `CFile` | Parsed C file model. |
 | `CProject` | Parsed C project model. |
 | `CParseError` | Error raised for C parse failures. |
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The parser APIs expect already-selected inputs. CLI-only features such as
 language inference, directory expansion, command-line validation, and compiler
 preprocessing option parsing live in the CLI layer.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ## Fortran parser API
 
@@ -73,7 +73,7 @@ X2PY_C_DOCS_END -->
 | `collect_semantic_compile_time_requirements` | Collects semantic values that must be known at compile time. |
 | `resolve_semantic_compile_time_values` | Resolves collected compile-time requirements. |
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 | `CToIRConverter` | Stateful C-to-semantic-IR converter. |
 | `c_file_to_semantic_module` | Converts one parsed C file to one semantic module. |
 | `c_file_to_semantic_modules` | Converts one parsed C file to semantic modules. |
@@ -83,7 +83,7 @@ X2PY_C_DOCS_END -->
 | `c_parameter_to_semantic_argument` | Converts one parsed C parameter to a semantic argument. |
 | `c_struct_to_semantic_class` | Converts one parsed C struct to a semantic class. |
 | `c_type_to_semantic_type` | Converts one parsed C type to a semantic type. |
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 Semantic conversion is the boundary between parser models and wrapper-facing
 contracts. Run the default wrapper build to complete policy and validate
@@ -137,9 +137,9 @@ pointer handle releases only its descriptor, not an associated target.
 `p1` unassociated when `p2` is unassociated. It replaces any current
 association of `p1` without copying or deallocating target storage.
 
-Owned writable handles carry a versioned record defined by x2py's bundled
-native binding support. Separately built x2py extensions can accept the same
-handle without linking to each other when their x2py handle ABI and Fortran
+Owned writable handles carry a versioned record defined by prik's bundled
+native binding support. Separately built prik extensions can accept the same
+handle without linking to each other when their prik handle ABI and Fortran
 compiler/runtime ABIs are compatible. Each receiving wrapper validates the
 record's version, size, descriptor kind, dtype, and rank before direct
 descriptor use.
@@ -171,7 +171,7 @@ plain NumPy arrays are for ordinary array-data parameters.
 | --- | --- |
 | `build_fortran_extension` | Builds a Python extension from semantic Fortran source inputs plus optional native-only sources, artifacts, compiler flags, include paths, libraries, and ordered link items. |
 | `build_pyi_extension` | Builds a Python extension from semantic `.pyi` contracts plus explicit native artifacts. |
-| `build_pyi_extension_from_manifest` | Replays a saved semantic `.pyi` wrapper build manifest, either building directly or regenerating `Makefile.x2py`. |
+| `build_pyi_extension_from_manifest` | Replays a saved semantic `.pyi` wrapper build manifest, either building directly or regenerating `Makefile.prik`. |
 | `WrapperBuildResult` | Result model returned by wrapper build functions. |
 | `NativeBuildPlan` | Structured native implementation compile/link plan attached to a wrapper build result. |
 | `NativeCompilationUnit` | Native source compilation unit and produced object recorded in a native build plan. |
@@ -188,7 +188,7 @@ compilation units, produced objects, prebuilt artifacts, module/include
 directories, library directories, or ordered native link items separately from
 the semantic contract paths. Semantic `.pyi` build results also expose a
 normalized replay `manifest`; Makefile mode writes that manifest to
-`<out-dir>/x2py-build.json` before generating `Makefile.x2py`.
+`<out-dir>/prik-build.json` before generating `Makefile.prik`.
 
 ## Target type and NumPy helpers
 
@@ -216,9 +216,9 @@ type and NumPy dtype mapping. The CLI type-probe flags are documented in
   validation.
 - Generated module, function, class, and configuration references document the
   wrapper output surface; this page remains the maintained inventory for
-  `x2py.__all__`.
+  `prik.__all__`.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 - Runtime wrapping of user-supplied C libraries is not part of the public
   wrapper-build API yet.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->

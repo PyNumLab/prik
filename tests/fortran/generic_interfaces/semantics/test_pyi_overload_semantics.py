@@ -3,7 +3,7 @@
 from tests.fortran._support.pyi_conversion import parse_pyi_text, pytest
 
 
-def test_convert_pyi_to_ir_resolves_x2py_overload_by_explicit_specific_name():
+def test_convert_pyi_to_ir_resolves_prik_overload_by_explicit_specific_name():
     module = parse_pyi_text(
         """
 @bind("convert_integer_native")
@@ -104,6 +104,6 @@ class item:
         ),
     ],
 )
-def test_convert_pyi_to_ir_rejects_invalid_x2py_overload_links(source: str, message: str):
+def test_convert_pyi_to_ir_rejects_invalid_prik_overload_links(source: str, message: str):
     with pytest.raises(ValueError, match=message):
         parse_pyi_text(source, module_name="generic_mod")

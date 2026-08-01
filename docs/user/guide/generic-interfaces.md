@@ -1,6 +1,6 @@
 ---
 title: Generic Interfaces (Overloading)
-description: How x2py supports Fortran named generic interfaces and exact overload dispatch
+description: How prik supports Fortran named generic interfaces and exact overload dispatch
 audience: users, advanced users
 prerequisites: wrapping functions, wrapping subroutines, data types
 related: optional-arguments.md, wrapping-derived-types.md, error-handling.md
@@ -10,7 +10,7 @@ publication: reviewed
 
 # Generic Interfaces (Overloading)
 
-x2py turns a Fortran generic interface into one Python callable. The callable
+prik turns a Fortran generic interface into one Python callable. The callable
 dispatches to a concrete native procedure by exact dtype, rank, and generated
 class. It does not apply implicit numeric coercion.
 
@@ -49,8 +49,8 @@ end module conversions
 Build it:
 
 ```bash
-python3 -m x2py generate --pyi generic.f90
-python3 -m x2py generic.f90 --out-dir build/generic
+python3 -m prik generate --pyi generic.f90
+python3 -m prik generic.f90 --out-dir build/generic
 ```
 
 ---
@@ -65,7 +65,7 @@ candidate to that procedure, and `@bind` selects the public native generic when
 the concrete procedure is private in Fortran.
 
 ```python
-from x2py.contracts import Float64, Int32, bind, overload, private
+from prik.contracts import Float64, Int32, bind, overload, private
 
 @private
 def convert_integer(value: Int32) -> Int32: ...
@@ -146,7 +146,7 @@ Python callable. Suppose the native module and contract also contain a public
 `convert_logical`:
 
 ```python
-from x2py.contracts import Bool, Int32, overload, private
+from prik.contracts import Bool, Int32, overload, private
 
 @private
 def convert_logical(value: Bool) -> Int32: ...

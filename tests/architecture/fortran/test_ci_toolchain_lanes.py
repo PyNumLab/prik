@@ -22,9 +22,9 @@ def test_workflow_declares_pinned_ifx_and_flang_pairs_on_ubuntu_2404() -> None:
 
     assert text.startswith("name: Smoke Tests\n")
     assert "runs-on: ubuntu-24.04" in text
-    assert 'X2PY_IFX_VERSION: "2026.1.1"' in text
-    assert 'X2PY_FLANG_VERSION: "22.1.8"' in text
-    assert 'X2PY_FLANG_RUNTIME_VERSION: "22.1.7"' in text
+    assert 'PRIK_IFX_VERSION: "2026.1.1"' in text
+    assert 'PRIK_FLANG_VERSION: "22.1.8"' in text
+    assert 'PRIK_FLANG_RUNTIME_VERSION: "22.1.7"' in text
     for snippet in (
         "- toolchain: ifx",
         "display_name: Linux · Intel IFX 2026.1.1 · Python 3.12",
@@ -43,11 +43,11 @@ def test_workflow_installs_pinned_compilers_and_exports_their_runtime() -> None:
 
     for snippet in (
         "https://software.repos.intel.com/python/conda/",
-        '"ifx_linux-64=$X2PY_IFX_VERSION"',
-        '"dpcpp_linux-64=$X2PY_IFX_VERSION"',
-        '"flang=$X2PY_FLANG_VERSION"',
-        '"clang=$X2PY_FLANG_VERSION"',
-        '"libflang-rt=$X2PY_FLANG_RUNTIME_VERSION"',
+        '"ifx_linux-64=$PRIK_IFX_VERSION"',
+        '"dpcpp_linux-64=$PRIK_IFX_VERSION"',
+        '"flang=$PRIK_FLANG_VERSION"',
+        '"clang=$PRIK_FLANG_VERSION"',
+        '"libflang-rt=$PRIK_FLANG_RUNTIME_VERSION"',
         'echo "$toolchain_prefix/bin" >> "$GITHUB_PATH"',
         'echo "LD_LIBRARY_PATH=$toolchain_prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"',
     ):
@@ -99,10 +99,10 @@ def test_macos_lane_runs_strict_smoke_and_the_full_ordinary_suite() -> None:
     for snippet in (
         "name: macOS 15 ARM64 · Python 3.12",
         "runs-on: macos-15",
-        "X2PY_GFORTRAN_BINARY: gfortran-13",
-        "X2PY_GCC_BINARY: gcc-13",
-        'ln -sf "$(command -v "$X2PY_GFORTRAN_BINARY")" "$compiler_dir/gfortran"',
-        'ln -sf "$(command -v "$X2PY_GCC_BINARY")" "$compiler_dir/gcc"',
+        "PRIK_GFORTRAN_BINARY: gfortran-13",
+        "PRIK_GCC_BINARY: gcc-13",
+        'ln -sf "$(command -v "$PRIK_GFORTRAN_BINARY")" "$compiler_dir/gfortran"',
+        'ln -sf "$(command -v "$PRIK_GCC_BINARY")" "$compiler_dir/gcc"',
         "ImageVersion",
         "sw_vers",
         "uname -m",
@@ -129,7 +129,7 @@ def test_lane_runner_contains_profile_cli_and_strict_smoke_commands() -> None:
         "-m",
         "toolchain_smoke",
         "--require-toolchain-smoke",
-        "--x2py-fortran-compiler=/opt/toolchain/bin/flang",
+        "--prik-fortran-compiler=/opt/toolchain/bin/flang",
     )
 
 

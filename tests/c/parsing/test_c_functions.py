@@ -4,7 +4,7 @@ import pytest
 
 
 def test_named_function_exposes_result_type_named_parameters_and_derived_type():
-    from x2py.parsers.c import CDouble, CFunctionType, CTypedef, parse_c_file
+    from prik.parsers.c import CDouble, CFunctionType, CTypedef, parse_c_file
 
     parsed = parse_c_file(
         "double dot(size_t n, const double *x, const double *y);\n",
@@ -21,7 +21,7 @@ def test_named_function_exposes_result_type_named_parameters_and_derived_type():
 
 
 def test_function_definitions_skip_bodies_but_preserve_start_and_end_locations():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """
@@ -42,7 +42,7 @@ int add(int a, int b)
 
 
 def test_void_parameter_list_and_empty_parameter_list_are_distinguished():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file("int explicit_void(void);\nint unspecified();\n", filename="void_params.h")
 
@@ -53,7 +53,7 @@ def test_void_parameter_list_and_empty_parameter_list_are_distinguished():
 
 
 def test_variadic_functions_are_parsed_as_source_facts():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file("int log_msg(const char *fmt, ...);\n", filename="variadic.h")
 
@@ -62,7 +62,7 @@ def test_variadic_functions_are_parsed_as_source_facts():
 
 
 def test_old_style_knr_function_definition_raises_unsupported_diagnostic():
-    from x2py.parsers.c import CParseError, parse_c_file
+    from prik.parsers.c import CParseError, parse_c_file
 
     source = """
 int add(a, b)
@@ -85,7 +85,7 @@ int b;
 
 
 def test_old_style_knr_detection_uses_linemarkers_and_normalized_headers():
-    from x2py.parsers.c import CParseError, parse_c_file
+    from prik.parsers.c import CParseError, parse_c_file
 
     source = """# 40 "generated_api.c"
 __extension__ int exported(a)
@@ -107,7 +107,7 @@ int a;
 
 
 def test_modern_prototype_before_old_style_definition_does_not_stop_knr_detection():
-    from x2py.parsers.c import CParseError, CParser, parse_c_file
+    from prik.parsers.c import CParseError, CParser, parse_c_file
 
     source = """
 int modern(int value)
@@ -141,7 +141,7 @@ int a;
 
 
 def test_old_style_knr_scan_skips_directives_and_keeps_scanning():
-    from x2py.parsers.c import CParseError, CParser
+    from prik.parsers.c import CParseError, CParser
 
     parser = CParser()
     parser._raise_for_unsupported_old_style_definitions(
@@ -161,7 +161,7 @@ def test_old_style_knr_scan_skips_directives_and_keeps_scanning():
 
 
 def test_find_parameter_list_returns_outer_function_signature_bounds():
-    from x2py.parsers.c import CParser
+    from prik.parsers.c import CParser
 
     parser = CParser()
     text = "int run(int (*callback)(char ch), const char *label)   "
@@ -171,7 +171,7 @@ def test_find_parameter_list_returns_outer_function_signature_bounds():
 
 
 def test_control_statement_parameter_lists_inside_function_bodies_are_not_knr_definitions():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """
@@ -213,7 +213,7 @@ branch: switch (value)
     ],
 )
 def test_c_parser_rejects_non_c_top_level_syntax(source):
-    from x2py.parsers.c import CParseError, parse_c_file
+    from prik.parsers.c import CParseError, parse_c_file
 
     with pytest.raises(CParseError, match="Invalid C syntax") as exc_info:
         parse_c_file(source, filename="mixed.h")
@@ -222,7 +222,7 @@ def test_c_parser_rejects_non_c_top_level_syntax(source):
 
 
 def test_c_parser_invalid_syntax_error_maps_preprocessed_source_location():
-    from x2py.parsers.c import CParseError, parse_c_file
+    from prik.parsers.c import CParseError, parse_c_file
 
     with pytest.raises(CParseError) as exc_info:
         parse_c_file(
@@ -237,7 +237,7 @@ def test_c_parser_invalid_syntax_error_maps_preprocessed_source_location():
 
 
 def test_c_parser_skips_non_c_tokens_inside_function_body():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """
@@ -254,7 +254,7 @@ int run(void)
 
 
 def test_c_parser_does_not_classify_valid_c_from_typedef_identifier_spelling():
-    from x2py.parsers.c import CTypedef, parse_c_file
+    from prik.parsers.c import CTypedef, parse_c_file
 
     parsed = parse_c_file("subroutine solve(void);\n", filename="identifier_spelling.h")
 
@@ -265,7 +265,7 @@ def test_c_parser_does_not_classify_valid_c_from_typedef_identifier_spelling():
 
 @pytest.mark.parametrize("source", ["@@@\n", "int run(void);\n@@@;\n"])
 def test_c_parser_rejects_invalid_top_level_syntax(source):
-    from x2py.parsers.c import CParseError, parse_c_file
+    from prik.parsers.c import CParseError, parse_c_file
 
     with pytest.raises(CParseError, match="Invalid C syntax") as exc_info:
         parse_c_file(source, filename="invalid.c")
@@ -274,7 +274,7 @@ def test_c_parser_rejects_invalid_top_level_syntax(source):
 
 
 def test_c_parser_ignores_invalid_syntax_inside_function_body():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """
@@ -300,7 +300,7 @@ int run(void)
     ],
 )
 def test_c_parser_rejects_invalid_nested_grammar_units(source):
-    from x2py.parsers.c import CParseError, parse_c_file
+    from prik.parsers.c import CParseError, parse_c_file
 
     with pytest.raises(CParseError, match="Invalid C syntax") as exc_info:
         parse_c_file(source, filename="invalid_nested.h")
@@ -309,7 +309,7 @@ def test_c_parser_rejects_invalid_nested_grammar_units(source):
 
 
 def test_control_flow_conditions_inside_function_body_do_not_look_like_knr_definitions():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """
@@ -329,7 +329,7 @@ int evaluate(int value)
 
 
 def test_function_pointer_parameter_is_a_callback_candidate_with_nameless_signature():
-    from x2py.parsers.c import CFunctionType, CInt, CPointer, parse_c_file
+    from prik.parsers.c import CFunctionType, CInt, CPointer, parse_c_file
 
     parsed = parse_c_file(
         "void sort_items(void *items, int (*compare)(const void *, const void *));\n",
@@ -346,7 +346,7 @@ def test_function_pointer_parameter_is_a_callback_candidate_with_nameless_signat
 
 
 def test_function_parameter_preserves_declaration_and_adjusts_to_callback_pointer():
-    from x2py.parsers.c import CComposedType, CFunctionType, CPointer, parse_c_file
+    from prik.parsers.c import CComposedType, CFunctionType, CPointer, parse_c_file
 
     parsed = parse_c_file("void apply(int callback(int));\n", filename="adjusted_callback.h")
 
@@ -360,7 +360,7 @@ def test_function_parameter_preserves_declaration_and_adjusts_to_callback_pointe
 
 
 def test_project_resolves_callback_typedef_parameter_to_typedef_signature():
-    from x2py.parsers.c import CFunctionType, CTypedef, parse_c_project
+    from prik.parsers.c import CFunctionType, CTypedef, parse_c_project
 
     project = parse_c_project(
         {
@@ -377,7 +377,7 @@ void sort_items(void *items, compare_fn compare);
 
 
 def test_function_returning_pointer_to_const_struct_is_preserved():
-    from x2py.parsers.c import CComposedType, CConst, CPointer, CStruct, parse_c_file
+    from prik.parsers.c import CComposedType, CConst, CPointer, CStruct, parse_c_file
 
     parsed = parse_c_file(
         "struct state;\nconst struct state *current_state(void);\n",
@@ -392,7 +392,7 @@ def test_function_returning_pointer_to_const_struct_is_preserved():
 
 
 def test_matching_prototype_and_definition_merge_and_prefer_definition():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """
@@ -414,7 +414,7 @@ int solve(int value)
 
 
 def test_inline_function_body_in_header_is_recorded_as_definition():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         "static inline int add_one(int value) { return value + 1; }\n",
@@ -431,7 +431,7 @@ def test_inline_function_body_in_header_is_recorded_as_definition():
 
 
 def test_function_declaration_attributes_are_tolerated_when_type_shape_is_unchanged():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         'int exported(void) __attribute__((visibility("default")));\nint deprecated(void) [[deprecated]];\n',
@@ -444,7 +444,7 @@ def test_function_declaration_attributes_are_tolerated_when_type_shape_is_unchan
 
 
 def test_unsupported_function_declarator_is_reported_and_later_declarations_continue():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         "int broken @@ { return 0; }\nint kept;\n",
@@ -464,7 +464,7 @@ def test_unsupported_function_declarator_is_reported_and_later_declarations_cont
 
 
 def test_conflicting_function_prototypes_report_diagnostic():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         "int work(int value);\ndouble work(double value);\n",
@@ -476,7 +476,7 @@ def test_conflicting_function_prototypes_report_diagnostic():
 
 
 def test_function_conflicts_consider_parameters_and_variadic_marker():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """
@@ -497,7 +497,7 @@ int log_msg(const char *fmt, ...);
 
 
 def test_duplicate_function_definitions_report_diagnostic():
-    from x2py.parsers.c import parse_c_file
+    from prik.parsers.c import parse_c_file
 
     parsed = parse_c_file(
         """

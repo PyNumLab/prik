@@ -1,7 +1,7 @@
 """Pointer descriptor build requirements in the generated manifest."""
 
-from x2py.pipeline.build import _manifest_native_array_requirements
-from x2py.semantics.native_array_handles import NativeArrayBuildRequirement, NativeArrayBuildRequirements
+from prik.pipeline.build import _manifest_native_array_requirements
+from prik.semantics.native_array_handles import NativeArrayBuildRequirement, NativeArrayBuildRequirements
 
 
 def test_pyi_manifest_records_pointer_descriptor_interop_requirements():

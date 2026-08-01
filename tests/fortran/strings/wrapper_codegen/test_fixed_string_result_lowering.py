@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.models import RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA
-from x2py.semantics.ownership import (
+from prik.semantics.models import RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA
+from prik.semantics.ownership import (
     CodegenAction,
     DestructionPolicy,
     NativeBarrierAction,
@@ -16,10 +16,10 @@ from x2py.semantics.ownership import (
     StorageMode,
     TransferMode,
 )
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import BridgeDataAction
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
-from x2py.wrapper_codegen.plan import DatatypeFamily
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.wrapper_policy import BridgeDataAction
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.wrapper_codegen.plan import DatatypeFamily
 
 
 _COPY_REASON = "copy fixed-length Fortran character output into C-owned null-terminated storage"

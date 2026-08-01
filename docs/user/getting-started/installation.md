@@ -1,6 +1,6 @@
 ---
 title: Installation
-description: Install x2py from source and choose a Fortran compiler
+description: Install prik from source and choose a Fortran compiler
 audience: users, contributors
 prerequisites: Python 3.10 or newer, repository checkout
 related: verification.md
@@ -10,7 +10,7 @@ publication: reviewed
 
 # Installation
 
-x2py is currently installed from a local source checkout. Building Python
+prik is currently installed from a local source checkout. Building Python
 extensions also requires a Fortran compiler, its matching C compiler, and
 standard build tools.
 
@@ -18,7 +18,7 @@ standard build tools.
 
 ## Supported Python Versions
 
-x2py requires **Python 3.10 or newer**.  
+prik requires **Python 3.10 or newer**.
 The project is regularly tested on Python 3.10, 3.11, and 3.12.
 
 Check your Python version first:
@@ -78,11 +78,11 @@ requirements. For the best-tested experience, use GNU, IFX, or Flang.
 Clone the repository:
 
 ```bash
-git clone https://github.com/PyNumLab/x2py.git
-cd x2py
+git clone https://github.com/PyNumLab/prik.git
+cd prik
 ```
 
-Create a virtual environment and install x2py:
+Create a virtual environment and install prik:
 
 ```bash
 python3 -m venv .venv
@@ -91,7 +91,7 @@ python3 -m pip install --upgrade pip
 python3 -m pip install -e .
 ```
 
-This installs x2py in editable mode along with its runtime dependencies (including NumPy).
+This installs prik in editable mode along with its runtime dependencies (including NumPy).
 
 ---
 

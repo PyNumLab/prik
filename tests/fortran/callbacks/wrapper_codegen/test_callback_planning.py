@@ -4,11 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from x2py.pipeline.pyi import pyi_file_to_semantic_module, pyi_text_to_semantic_module
-from x2py.semantics import models
-from x2py.semantics.ownership import PythonBarrierAction
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import (
+from prik.pipeline.pyi import pyi_file_to_semantic_module, pyi_text_to_semantic_module
+from prik.semantics import models
+from prik.semantics.ownership import PythonBarrierAction
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.wrapper_policy import (
     CallbackABIKind,
     CallbackGILAction,
     CallbackLifecycleAction,
@@ -17,8 +17,8 @@ from x2py.semantics.wrapper_policy import (
     CallbackTransferAction,
     ExternalDeclarationMode,
 )
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
-from x2py.wrapper_codegen.plan import DatatypeFamily
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.wrapper_codegen.plan import DatatypeFamily
 
 CONTRACT_ROOT = Path(__file__).parents[1] / "end_to_end" / "fixtures" / "contracts"
 CONTRACT = CONTRACT_ROOT / "fcallback_all_f90" / "fcallback_all_f90.pyi"
@@ -164,12 +164,12 @@ def test_callback_artifacts_use_linear_context_adapter_and_trampoline_paths():
 
     assert "integer(c_int32_t), value :: value" in bridge
     assert "integer(c_int32_t) :: count" in bridge
-    assert "external :: x2py_callback_adapter" in bridge
-    assert 'bind(c, name="x2py_callback_trampoline' in bridge
+    assert "external :: prik_callback_adapter" in bridge
+    assert 'bind(c, name="prik_callback_trampoline' in bridge
     assert "size(values_callback_storage, dim=1, kind=c_int64_t)" in bridge
     assert "int(len(read_label_callback_storage), kind=c_int64_t)" in bridge
-    assert "x2py_int32_to_numpy(&value)" in c_source
-    assert "x2py_int32_to_numpy(count_data)" in c_source
+    assert "prik_int32_to_numpy(&value)" in c_source
+    assert "prik_int32_to_numpy(count_data)" in c_source
     assert bridge.count("call native_apply_array_storage_callback(") == 1
     assert "call callback(" not in bridge
     assert max(map(len, bridge.splitlines())) <= 132

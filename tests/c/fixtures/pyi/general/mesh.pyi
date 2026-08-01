@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, CStruct, Float64, Int, SizeT
+from prik.contracts import Addr, CStruct, Float64, Int, SizeT
 
 class node(CStruct):
     id: Int

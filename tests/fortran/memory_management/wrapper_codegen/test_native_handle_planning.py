@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.ownership import CodegenAction, ObjectKind, PythonBarrierAction
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import (
+from prik.semantics.ownership import CodegenAction, ObjectKind, PythonBarrierAction
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.wrapper_policy import (
     ArgumentHandoffMode,
     NativeArrayDescriptorInterop,
     NativeArrayDescriptorKind,
@@ -21,13 +21,13 @@ from x2py.semantics.wrapper_policy import (
     NativeArraySourceKind,
     NativeDescriptorHandoffABI,
 )
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
 
 def _native_handle_plan():
     module = parse_pyi_text(
         """
-from x2py.contracts import (
+from prik.contracts import (
     Addr,
     Allocatable,
     Annotated,
@@ -141,7 +141,7 @@ def _generated_c_function(source: str, name: str) -> str:
 def _module_handle_plan():
     module = parse_pyi_text(
         """
-from x2py.contracts import Aliased, Allocatable, Annotated, Float64, Pointer, PointerAssociation, PointerPolicy, String
+from prik.contracts import Aliased, Allocatable, Annotated, Float64, Pointer, PointerAssociation, PointerPolicy, String
 
 module_allocatable: Annotated[Allocatable[Float64[:]], Aliased]
 plain_allocatable: Allocatable[Float64[:]]
@@ -344,19 +344,19 @@ def test_generated_native_handle_artifacts_follow_one_typed_action_vocabulary():
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
     assert artifacts.artifacts.required_headers == ("ISO_Fortran_binding.h",)
-    assert "x2py_array_actual_unpack(" in c_source
+    assert "prik_array_actual_unpack(" in c_source
     assert '"_native_array_descriptor_argument_for_binding_positional"' in c_source
     assert '"_native_array_descriptor_handoff_for_binding_positional"' in c_source
     assert '"_native_array_handle_from_generated_ops"' in c_source
     assert '"_bind_contract_native_array_handle"' in c_source
-    assert "x2py_native_array_handle_capsule_new(" in c_source
-    assert "x2py_native_array_handle_from_capsule(" in c_source
-    assert "X2PY_NATIVE_ARRAY_KIND_ALLOCATABLE" in c_source
-    assert "X2PY_NATIVE_ARRAY_KIND_POINTER" in c_source
-    assert "x2py_native_array_handle_release(owner_handle)" in c_source
-    assert "bound_values_native_handle = x2py_native_array_handle_from_capsule(bound_values_item" in c_source
-    assert "x2py_bind_default_memory_handles_replace_values" in c_source
-    assert "x2py_owned_memory_handles_replace_values_destroy" in c_source
+    assert "prik_native_array_handle_capsule_new(" in c_source
+    assert "prik_native_array_handle_from_capsule(" in c_source
+    assert "PRIK_NATIVE_ARRAY_KIND_ALLOCATABLE" in c_source
+    assert "PRIK_NATIVE_ARRAY_KIND_POINTER" in c_source
+    assert "prik_native_array_handle_release(owner_handle)" in c_source
+    assert "bound_values_native_handle = prik_native_array_handle_from_capsule(bound_values_item" in c_source
+    assert "prik_bind_default_memory_handles_replace_values" in c_source
+    assert "prik_owned_memory_handles_replace_values_destroy" in c_source
     assert "bound_values_default_binder" in c_source
     assert "CFI_CDESC_T(1)" in c_source
     assert "CFI_CDESC_T(2)" in c_source
@@ -378,7 +378,7 @@ def test_generated_native_handle_artifacts_follow_one_typed_action_vocabulary():
     assert "bound_values = (CFI_cdesc_t *)&bound_values_storage;" in optional_binding
     assert "result_value = native_make(n)" in bridge_source
     assert "result_value = native_make_matrix(n, m)" in bridge_source
-    assert "call x2py_collect_allocatable_array_result(native_maybe_make(n), result)" in bridge_source
+    assert "call prik_collect_allocatable_array_result(native_maybe_make(n), result)" in bridge_source
     assert "if (allocated(value)) then" in bridge_source
     assert "call move_alloc(value, result)" in bridge_source
     assert "allocated(CFI_cdesc_t * result);" in c_source
@@ -399,14 +399,14 @@ def test_constant_owned_handle_operations_do_not_emit_unused_descriptor_locals()
     for operation in ("aligned", "descriptor", "destroy", "layout", "native_byte_order", "writeable"):
         function = _generated_c_function(
             c_source,
-            f"x2py_owned_memory_handles_make_return_{operation}",
+            f"prik_owned_memory_handles_make_return_{operation}",
         )
         assert "owner_handle" in function
         assert "owner_descriptor" not in function
 
     allocated = _generated_c_function(
         c_source,
-        "x2py_owned_memory_handles_make_return_allocated",
+        "prik_owned_memory_handles_make_return_allocated",
     )
     assert "owner_descriptor" in allocated
 

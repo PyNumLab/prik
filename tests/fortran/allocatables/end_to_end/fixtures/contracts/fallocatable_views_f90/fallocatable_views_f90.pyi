@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Aliased, Allocatable, Annotated, Arg, Float64, Int32, Pass, Return, Returns, native_call
+from prik.contracts import Addr, Aliased, Allocatable, Annotated, Arg, Float64, Int32, Pass, Return, Returns, native_call
 
 class buffer:
     def __init__(self) -> None: ...

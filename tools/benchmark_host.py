@@ -11,7 +11,7 @@ import sys
 
 
 DEFAULT_CPUINFO = Path("/proc/cpuinfo")
-CPU_MODEL_ENVIRONMENT = "X2PY_BENCHMARK_CPU_MODEL"
+CPU_MODEL_ENVIRONMENT = "PRIK_BENCHMARK_CPU_MODEL"
 KNOWN_ARM_MODELS = {
     ("0x41", "0xd49"): "Arm Neoverse N2",
     ("0x6d", "0xd49"): "Microsoft Azure Cobalt 100",

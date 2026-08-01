@@ -54,7 +54,7 @@ def test_c_error_fixtures_have_matching_expected_json():
 
 
 def test_c_error_fixture_suite_reports_expected_diagnostics():
-    from x2py.parsers.c import CParseError, parse_c_file
+    from prik.parsers.c import CParseError, parse_c_file
 
     for fixture in sorted(_ERRORS_DIR.glob("*")):
         if fixture.suffix.lower() not in _SOURCE_SUFFIXES:

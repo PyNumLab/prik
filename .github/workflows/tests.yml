@@ -10,8 +10,8 @@ on:
   workflow_call:
 
 env:
-  X2PY_GFORTRAN_BINARY: gfortran-13
-  X2PY_GFORTRAN_PACKAGE: gfortran-13
+  PRIK_GFORTRAN_BINARY: gfortran-13
+  PRIK_GFORTRAN_PACKAGE: gfortran-13
 
 jobs:
   test:
@@ -39,13 +39,13 @@ jobs:
       - name: Install pinned GFortran
         shell: bash
         run: |
-          if ! command -v "$X2PY_GFORTRAN_BINARY" >/dev/null 2>&1; then
+          if ! command -v "$PRIK_GFORTRAN_BINARY" >/dev/null 2>&1; then
             sudo apt-get update
-            sudo apt-get install --yes "$X2PY_GFORTRAN_PACKAGE"
+            sudo apt-get install --yes "$PRIK_GFORTRAN_PACKAGE"
           fi
-          compiler_dir="$RUNNER_TEMP/x2py-gfortran"
+          compiler_dir="$RUNNER_TEMP/prik-gfortran"
           mkdir -p "$compiler_dir"
-          ln -sf "$(command -v "$X2PY_GFORTRAN_BINARY")" "$compiler_dir/gfortran"
+          ln -sf "$(command -v "$PRIK_GFORTRAN_BINARY")" "$compiler_dir/gfortran"
           echo "$compiler_dir" >> "$GITHUB_PATH"
           "$compiler_dir/gfortran" --version
       - name: Run tests
@@ -60,7 +60,7 @@ jobs:
             tests/fortran \
             -m toolchain_smoke \
             --require-toolchain-smoke \
-            --x2py-fortran-compiler=gfortran
+            --prik-fortran-compiler=gfortran
           python -m pytest -q --randomly-seed=1 \
             -o junit_family=legacy \
             --junitxml="$RUNNER_TEMP/pytest-suite-results.xml" \
@@ -86,8 +86,8 @@ jobs:
     permissions:
       contents: read
     env:
-      X2PY_GFORTRAN_BINARY: gfortran-13
-      X2PY_GCC_BINARY: gcc-13
+      PRIK_GFORTRAN_BINARY: gfortran-13
+      PRIK_GCC_BINARY: gcc-13
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -104,14 +104,14 @@ jobs:
       - name: Configure GNU Fortran and GCC 13
         shell: bash
         run: |
-          if ! command -v "$X2PY_GFORTRAN_BINARY" >/dev/null 2>&1 || \
-             ! command -v "$X2PY_GCC_BINARY" >/dev/null 2>&1; then
+          if ! command -v "$PRIK_GFORTRAN_BINARY" >/dev/null 2>&1 || \
+             ! command -v "$PRIK_GCC_BINARY" >/dev/null 2>&1; then
             brew install gcc@13
           fi
-          compiler_dir="$RUNNER_TEMP/x2py-gfortran"
+          compiler_dir="$RUNNER_TEMP/prik-gfortran"
           mkdir -p "$compiler_dir"
-          ln -sf "$(command -v "$X2PY_GFORTRAN_BINARY")" "$compiler_dir/gfortran"
-          ln -sf "$(command -v "$X2PY_GCC_BINARY")" "$compiler_dir/gcc"
+          ln -sf "$(command -v "$PRIK_GFORTRAN_BINARY")" "$compiler_dir/gfortran"
+          ln -sf "$(command -v "$PRIK_GCC_BINARY")" "$compiler_dir/gcc"
           echo "$compiler_dir" >> "$GITHUB_PATH"
       - name: Show macOS test environment
         shell: bash

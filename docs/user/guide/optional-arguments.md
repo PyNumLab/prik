@@ -1,6 +1,6 @@
 ---
 title: Optional Arguments
-description: How x2py handles Fortran `optional` arguments — inputs, outputs, arrays, and None behavior
+description: How prik handles Fortran `optional` arguments — inputs, outputs, arrays, and None behavior
 audience: users
 prerequisites: wrapping subroutines, data types
 related: generic-interfaces.md, arrays.md, error-handling.md
@@ -10,7 +10,7 @@ publication: reviewed
 
 # Optional Arguments
 
-x2py supports optional scalars, arrays, strings, derived types, and outputs.
+prik supports optional scalars, arrays, strings, derived types, and outputs.
 It preserves native `present(...)` semantics.
 
 ---
@@ -52,7 +52,7 @@ end module adjustments
 Build it:
 
 ```bash
-python3 -m x2py optional.f90 --out-dir build/optional
+python3 -m prik optional.f90 --out-dir build/optional
 ```
 
 ---
@@ -149,7 +149,7 @@ association. If its updated value is returned, Python receives a scalar or
 ## Limitations
 
 - Optional procedure pointers and passed procedures are not yet supported.
-- x2py does not invent default values. The Fortran procedure handles missing
+- prik does not invent default values. The Fortran procedure handles missing
   arguments.
 
 ---

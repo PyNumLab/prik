@@ -19,10 +19,10 @@ import pytest
 
 from tests.fortran._support.pyi_fixtures import assert_generated_pyi_package_matches_fixture
 from tests.fortran._support.fmath_cases import fmath_cases
-from x2py import build_pyi_extension
-from x2py.compiling.objects import ObjectFile
-from x2py.parsers.fortran.parser import parse_fortran_project
-from x2py.pipeline.build import (
+from prik import build_pyi_extension
+from prik.compiling.objects import ObjectFile
+from prik.parsers.fortran.parser import parse_fortran_project
+from prik.pipeline.build import (
     NativeBuildPlan,
     _apply_source_python_exports,
     _build_rendered_wrapper_extension,
@@ -30,12 +30,12 @@ from x2py.pipeline.build import (
     _merge_wrapper_modules,
     _new_compiler,
 )
-from x2py.pipeline.preprocessing import PreprocessingConfig
-from x2py.pipeline.build import build_fortran_extension
-from x2py.runtime.handles import AllocatableArray
-from x2py.semantics.fortran2ir import fortran_project_to_semantic_modules
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.pipeline.preprocessing import PreprocessingConfig
+from prik.pipeline.build import build_fortran_extension
+from prik.runtime.handles import AllocatableArray
+from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 WRAPPER_TEST_ROOT = Path(__file__).resolve().parent
@@ -126,7 +126,7 @@ def _build_and_import(source_template: Path, workdir: Path, expected_generated_s
     cmd = [
         sys.executable,
         "-m",
-        "x2py",
+        "prik",
         str(source),
         "--out-dir",
         str(workdir),
@@ -143,7 +143,7 @@ def _build_and_import(source_template: Path, workdir: Path, expected_generated_s
     assert shared_library.parent == workdir
     assert {Path(path).name for path in payload["generated_sources"]} == expected_generated_sources
     generated_files = [Path(path) for path in payload["generated_files"]]
-    assert any(path.name == "x2py_binding.h" and path.parent.name == "binding_support" for path in generated_files)
+    assert any(path.name == "prik_binding.h" and path.parent.name == "binding_support" for path in generated_files)
 
     sys.modules.pop(module_name, None)
     sys.path.insert(0, str(workdir))
@@ -154,7 +154,7 @@ def _build_and_import(source_template: Path, workdir: Path, expected_generated_s
 
 
 def _compiler() -> str:
-    requested = os.environ.get("X2PY_TEST_FORTRAN_COMPILER", "gfortran")
+    requested = os.environ.get("PRIK_TEST_FORTRAN_COMPILER", "gfortran")
     compiler = shutil.which(requested)
     if compiler is None:
         pytest.skip(f"requested Fortran compiler is unavailable: {requested}")
@@ -216,7 +216,7 @@ def _generate_checked_pyi_contract(source: Path, package_dir: Path, expected_pac
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "generate",
             "--pyi",
             str(source),
@@ -375,7 +375,7 @@ def _build_text_and_import(source_text: str, filename: str, workdir: Path, expec
     cmd = [
         sys.executable,
         "-m",
-        "x2py",
+        "prik",
         str(source),
         "--out-dir",
         str(workdir),
@@ -408,7 +408,7 @@ def _build_sources_and_import(source_texts: list[tuple[str, str]], workdir: Path
     cmd = [
         sys.executable,
         "-m",
-        "x2py",
+        "prik",
         *(str(source) for source in sources),
         "--out-dir",
         str(workdir),

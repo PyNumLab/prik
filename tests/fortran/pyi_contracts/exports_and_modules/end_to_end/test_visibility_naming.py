@@ -60,7 +60,7 @@ def test_strict_wrapper_names_reject_python_name_fixes(tmp_path: Path):
     cmd = [
         sys.executable,
         "-m",
-        "x2py",
+        "prik",
         str(source),
         "--out-dir",
         str(tmp_path),

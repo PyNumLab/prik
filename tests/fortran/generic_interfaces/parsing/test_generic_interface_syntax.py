@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from tests.fortran._support.parser_procedures import parse_fortran_file, parse_fortran_interfaces, parse_fortran_module
-from x2py.parsers.fortran.models import FortranParseError
+from prik.parsers.fortran.models import FortranParseError
 
 FIXTURES = Path(__file__).parents[1] / "end_to_end" / "fixtures"
 

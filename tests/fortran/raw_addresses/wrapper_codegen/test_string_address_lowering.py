@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.ownership import (
+from prik.semantics.ownership import (
     CodegenAction,
     DestructionPolicy,
     NativeBarrierAction,
@@ -15,14 +15,14 @@ from x2py.semantics.ownership import (
     StorageMode,
     TransferMode,
 )
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import (
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.wrapper_policy import (
     ArgumentHandoffMode,
     BridgeDataAction,
     RAW_STRING_ADDRESS_COPY_REASON,
     STRING_STORAGE_COPY_REASON,
 )
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
 
 def _string_address_module():
@@ -93,7 +93,7 @@ def test_string_addresses_dispatch_to_named_binding_and_bridge_lowering():
     assert "void bind_c_raw(void * label);" in c_source
     assert "if (!PyLong_Check(bound_label_obj))" in c_source
     assert "bound_label = PyLong_AsVoidPtr(bound_label_obj);" in c_source
-    assert "x2py_malloc" not in c_source
+    assert "prik_malloc" not in c_source
 
     assert 'subroutine bind_c_storage(bound_label) bind(c, name="bind_c_storage")' in bridge_source
     assert 'subroutine bind_c_raw(bound_label) bind(c, name="bind_c_raw")' in bridge_source

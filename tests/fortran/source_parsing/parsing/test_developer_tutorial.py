@@ -2,7 +2,7 @@
 
 This test is intentionally written as a small walkthrough rather than as a
 black-box public API test. It shows the private visitor/helper sequence that
-maintainers should follow when changing `x2py/parsers/fortran/parser.py`:
+maintainers should follow when changing `prik/parsers/fortran/parser.py`:
 
 1. preprocess and slice file-level source units,
 2. split one unit into grammar parts,
@@ -10,7 +10,7 @@ maintainers should follow when changing `x2py/parsers/fortran/parser.py`:
 4. recursively slice and inspect its direct children.
 """
 
-from x2py.parsers.fortran.parser import FortranParser
+from prik.parsers.fortran.parser import FortranParser
 
 
 def test_developer_tutorial_recursive_unit_visitors_and_helpers():

@@ -85,5 +85,5 @@ def test_main_exports_detected_model_to_github_environment(
     )
 
     assert result == 0
-    assert github_environment.read_text(encoding="utf-8") == ("X2PY_BENCHMARK_CPU_MODEL=Microsoft Azure Cobalt 100\n")
+    assert github_environment.read_text(encoding="utf-8") == ("PRIK_BENCHMARK_CPU_MODEL=Microsoft Azure Cobalt 100\n")
     assert "Verified benchmark host: aarch64 · Microsoft Azure Cobalt 100" in capsys.readouterr().out

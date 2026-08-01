@@ -116,7 +116,7 @@ void use_context(struct private_context *ctx);
     assert "from private import private_context" in stubs["api"]
     assert (
         stubs["private"]
-        == "from x2py.contracts import CStruct, Opaque\n\nclass private_context(CStruct, Opaque):\n    pass"
+        == "from prik.contracts import CStruct, Opaque\n\nclass private_context(CStruct, Opaque):\n    pass"
     )
 
 

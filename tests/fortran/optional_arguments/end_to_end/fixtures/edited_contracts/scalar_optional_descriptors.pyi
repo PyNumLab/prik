@@ -1,4 +1,4 @@
-from x2py.contracts import (
+from prik.contracts import (
     Allocatable,
     Annotated,
     Arg,

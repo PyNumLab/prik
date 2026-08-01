@@ -605,7 +605,7 @@ class vector:
         ),
         (
             "@native_call([Len(Unknown(0))])\ndef f(x: Int32) -> None: ...\n",
-            "Expected imported x2py contract helper: 'Unknown'",
+            "Expected imported prik contract helper: 'Unknown'",
         ),
         (
             "def f(x: Int32) -> Returns['x']: ...\n",
@@ -719,7 +719,7 @@ def update(
 def test_convert_pyi_to_ir_resolves_aliased_scalar_descriptor_projection_helpers():
     module = parse_pyi_text(
         """
-from x2py.contracts import Allocatable as A, Arg as Input, Float64 as F64, Pointer as P, Return as Output, native_call as call
+from prik.contracts import Allocatable as A, Arg as Input, Float64 as F64, Pointer as P, Return as Output, native_call as call
 
 @call([A(Input(0))], result=P(Output(0)))
 def convert(value: F64 | None) -> F64 | None: ...

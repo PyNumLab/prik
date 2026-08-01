@@ -1,6 +1,6 @@
-"""Tests for x2py's self-contained generated-name helpers."""
+"""Tests for prik's self-contained generated-name helpers."""
 
-from x2py.utilities.strings import create_incremented_string, random_string
+from prik.utilities.strings import create_incremented_string, random_string
 
 
 class _CaseInsensitiveRules:

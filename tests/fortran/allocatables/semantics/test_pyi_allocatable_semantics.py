@@ -5,14 +5,14 @@ import re
 import pytest
 
 from tests.fortran._support.semantic_conversion import parse_pyi_text
-from x2py.semantics.metadata import PROJECTED_OUTPUT_METADATA
-from x2py.semantics.native_array_handles import native_array_descriptor_kind
+from prik.semantics.metadata import PROJECTED_OUTPUT_METADATA
+from prik.semantics.native_array_handles import native_array_descriptor_kind
 
 
 def test_persistent_allocatable_descriptors_preserve_scalar_and_array_kinds():
     module = parse_pyi_text(
         """
-from x2py.contracts import Aliased, Allocatable, Annotated, Float64
+from prik.contracts import Aliased, Allocatable, Annotated, Float64
 
 scratch: Allocatable[Float64]
 values: Annotated[Allocatable[Float64[:]], Aliased]
@@ -42,7 +42,7 @@ class buffer:
 def test_scalar_allocatable_calls_use_nullable_values_and_explicit_descriptor_projections():
     module = parse_pyi_text(
         """
-from x2py.contracts import Allocatable, Arg, Float64, Return, Returns, native_call
+from prik.contracts import Allocatable, Arg, Float64, Return, Returns, native_call
 
 @native_call([Allocatable(Arg(0)), Allocatable(Return("created", 1))])
 def update(
@@ -68,21 +68,21 @@ def update(
     ("source", "message"),
     [
         (
-            "from x2py.contracts import Allocatable, Float64\ndef consume(value: Allocatable[Float64]) -> None: ...\n",
+            "from prik.contracts import Allocatable, Float64\ndef consume(value: Allocatable[Float64]) -> None: ...\n",
             "Procedure scalar descriptors use nullable value annotations",
         ),
         (
-            "from x2py.contracts import Allocatable, Float64\ndef produce() -> Allocatable[Float64]: ...\n",
+            "from prik.contracts import Allocatable, Float64\ndef produce() -> Allocatable[Float64]: ...\n",
             "Procedure scalar descriptor results use a nullable value annotation",
         ),
         (
-            "from x2py.contracts import Allocatable, Arg, Float64, native_call\n"
+            "from prik.contracts import Allocatable, Arg, Float64, native_call\n"
             "@native_call([Allocatable(Arg(0))])\n"
             "def consume(value: Float64) -> None: ...\n",
             "must use a nullable annotation",
         ),
         (
-            "from x2py.contracts import Allocatable, Arg, Float64, native_call\n"
+            "from prik.contracts import Allocatable, Arg, Float64, native_call\n"
             "@native_call([], result=Allocatable(Arg(0)))\n"
             "def produce() -> Float64 | None: ...\n",
             "must reference Return(i), not Arg(i)",
@@ -99,7 +99,7 @@ def test_scalar_allocatable_calls_reject_descriptor_wrappers_as_python_values(
 
 def test_plain_nullable_scalar_is_not_an_allocatable_descriptor():
     module = parse_pyi_text(
-        "from x2py.contracts import Float64\nmaybe_value: Float64 | None\n",
+        "from prik.contracts import Float64\nmaybe_value: Float64 | None\n",
         module_name="nullable_value",
     )
 
@@ -112,7 +112,7 @@ def test_legacy_annotated_allocatable_array_spelling_is_rejected():
     with pytest.raises(ValueError, match="use Allocatable"):
         parse_pyi_text(
             """
-from x2py.contracts import Allocatable, Annotated, Float64
+from prik.contracts import Allocatable, Annotated, Float64
 values: Annotated[Float64[:], Allocatable]
 """,
             module_name="legacy_allocatable_array",

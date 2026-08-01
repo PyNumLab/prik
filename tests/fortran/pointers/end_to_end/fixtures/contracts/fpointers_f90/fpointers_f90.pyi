@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Aliased, Annotated, Arg, Destruction, Float64, Int32, Ownership, Pointer, PointerAssociation, Return, Transfer, native_call
+from prik.contracts import Addr, Aliased, Annotated, Arg, Destruction, Float64, Int32, Ownership, Pointer, PointerAssociation, Return, Transfer, native_call
 
 @native_call([Pointer(Arg(0))])
 def read_pointer(

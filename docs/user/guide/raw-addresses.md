@@ -11,7 +11,7 @@ publication: reviewed
 # Raw Addresses
 
 `Addr(T)` makes an integer address part of the Python API.
-x2py casts the address and passes it to native code without owning the memory.
+prik casts the address and passes it to native code without owning the memory.
 
 Use this boundary only when the API must expose an address. Prefer checked
 scalar storage, arrays, and strings for normal wrappers.
@@ -36,7 +36,7 @@ These spellings describe different boundaries:
 
 - `Addr(T)` means the Python caller passes an integer address.
 - Inside `@native_call(...)`, `Arg(i)` selects Python argument `i`, and
-  `Addr(Arg(i))` tells x2py to pass that converted scalar by address.
+  `Addr(Arg(i))` tells prik to pass that converted scalar by address.
 
 The `@native_call(...)` decorator records how Python arguments are placed in
 the native call. Arrays, rank-zero storage, strings, and raw addresses already
@@ -74,13 +74,13 @@ end module raw_api
 Generate a starter contract:
 
 ```bash
-python3 -m x2py generate --pyi raw_api.f90 --out contracts/raw
+python3 -m prik generate --pyi raw_api.f90 --out contracts/raw
 ```
 
 Edit `contracts/raw/raw_api.pyi`:
 
 ```python
-from x2py.contracts import Addr, Arg, Float64, Int32, String, native_call
+from prik.contracts import Addr, Arg, Float64, Int32, String, native_call
 
 def increment(value: Addr(Int32)) -> None: ...
 
@@ -97,7 +97,7 @@ def edit_label(label: Addr(String[8])) -> None: ...
 Build from the edited contract and native source:
 
 ```bash
-python3 -m x2py contracts/raw/__init__.pyi \
+python3 -m prik contracts/raw/__init__.pyi \
   --native-fortran-sources raw_api.f90 \
   --out-dir build/raw
 ```
@@ -189,7 +189,7 @@ Use `String[8][()]` when the wrapper should validate mutable storage.
 - Use writable memory when native code may modify it.
 - Treat address zero as null only when the native routine allows null.
 
-x2py cannot validate the addressed memory's lifetime, dtype, size, shape, order,
+prik cannot validate the addressed memory's lifetime, dtype, size, shape, order,
 alignment, ownership, or writeability. A wrong address can crash the process.
 
 ## Next

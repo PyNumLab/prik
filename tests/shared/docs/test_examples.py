@@ -14,7 +14,7 @@ import sys
 
 import pytest
 
-from x2py import pyi_text_to_semantic_module
+from prik import pyi_text_to_semantic_module
 
 
 ROOT = Path(__file__).parents[3]
@@ -27,9 +27,9 @@ AUDITED_PYTHON_DOC_PATHS = [
     *sorted((ROOT / "docs/user/getting-started").glob("*.md")),
     *sorted((ROOT / "docs/user/guide").glob("*.md")),
 ]
-TEST_MARKER = re.compile(r"^\s*<!--\s*x2py-doc-test:\s*(run|exact)(?:\s+([a-z0-9_-]+))?\s*-->\s*$")
-OUTPUT_MARKER = re.compile(r"^\s*<!--\s*x2py-doc-test-output\s*-->\s*$")
-SOURCE_MARKER = re.compile(r"^\s*<!--\s*x2py-doc-source:\s*(.+?)\s*-->\s*$")
+TEST_MARKER = re.compile(r"^\s*<!--\s*prik-doc-test:\s*(run|exact)(?:\s+([a-z0-9_-]+))?\s*-->\s*$")
+OUTPUT_MARKER = re.compile(r"^\s*<!--\s*prik-doc-test-output\s*-->\s*$")
+SOURCE_MARKER = re.compile(r"^\s*<!--\s*prik-doc-source:\s*(.+?)\s*-->\s*$")
 FENCE_MARKER = re.compile(r"^\s*(`{3,}|~{3,})")
 SHELL_OPERATORS = {"&&", "||", ";", "|", ">", ">>", "<", "2>", "2>>"}
 DISALLOWED_OPTIONS = {
@@ -39,9 +39,9 @@ DISALLOWED_OPTIONS = {
     "--out",
     "--preprocess-template",
 }
-C_DOCS_START = "<!-- X2PY_C_DOCS_START"
-C_DOCS_END = "X2PY_C_DOCS_END -->"
-C_DOCS_DISABLED = "<!-- X2PY_C_DOCS_DISABLED:"
+C_DOCS_START = "<!-- PRIK_C_DOCS_START"
+C_DOCS_END = "PRIK_C_DOCS_END -->"
+C_DOCS_DISABLED = "<!-- PRIK_C_DOCS_DISABLED:"
 
 
 @dataclass(frozen=True)
@@ -240,7 +240,7 @@ def _command_argv(example: DocumentationExample) -> list[str]:
         return [sys.executable, "-c", example.command]
 
     argv = shlex.split(example.command)
-    allowed_modules = {("python", "-m", "x2py")}
+    allowed_modules = {("python", "-m", "prik")}
     normalized_command = ("python", *argv[1:3]) if argv and argv[0] in {"python", "python3"} else ()
     if normalized_command not in allowed_modules:
         raise AssertionError(f"{example.test_id}: unsupported documentation command")
@@ -255,9 +255,9 @@ def _command_argv(example: DocumentationExample) -> list[str]:
 
 
 def test_documentation_has_automatically_verified_examples():
-    assert DOCUMENTATION_EXAMPLES, "mark at least one Markdown example with x2py-doc-test"
+    assert DOCUMENTATION_EXAMPLES, "mark at least one Markdown example with prik-doc-test"
     assert any(example.mode == "exact" for example in DOCUMENTATION_EXAMPLES)
-    assert DOCUMENTED_SOURCES, "mark displayed fixture inputs with x2py-doc-source"
+    assert DOCUMENTED_SOURCES, "mark displayed fixture inputs with prik-doc-source"
 
 
 @pytest.mark.parametrize("source", DOCUMENTED_SOURCES, ids=lambda source: source.test_id)
@@ -270,7 +270,7 @@ def test_documented_source_input(source: DocumentedSource):
 def test_documented_python_block_is_valid(block: DocumentedPythonBlock):
     """Keep Python examples parseable and semantic contract examples loadable."""
     ast.parse(block.source, filename=block.test_id)
-    if "from x2py.contracts import" in block.source:
+    if "from prik.contracts import" in block.source:
         pyi_text_to_semantic_module(block.source, module_name="documentation_example")
 
 
@@ -282,7 +282,7 @@ def test_documented_expected_output_labels_are_automatically_verified(path: Path
             continue
         marker_index = _next_nonempty_line(lines, index + 1)
         assert marker_index < len(lines) and OUTPUT_MARKER.match(lines[marker_index]), (
-            f"{path.relative_to(ROOT)}:{index + 1}: documented output must use x2py-doc-test-output"
+            f"{path.relative_to(ROOT)}:{index + 1}: documented output must use prik-doc-test-output"
         )
 
 

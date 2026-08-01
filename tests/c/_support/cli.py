@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import types
 
-from x2py import cli as x2py_cli
+from prik import cli as prik_cli
 
 
 class _MainParserError(Exception):
@@ -80,8 +80,8 @@ def _install_main_parser(monkeypatch, args):
             raise _MainParserError(message)
 
     parser = FakeParser()
-    monkeypatch.setattr(x2py_cli, "_parser_for_argv", lambda argv: (parser, argv))
+    monkeypatch.setattr(prik_cli, "_parser_for_argv", lambda argv: (parser, argv))
     return parser
 
 
-__all__ = ("_install_main_parser", "_main_args", "types", "x2py_cli")
+__all__ = ("_install_main_parser", "_main_args", "prik_cli", "types")

@@ -7,21 +7,21 @@ from pathlib import Path
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.compiling.objects import ObjectFile
-from x2py.pipeline.build import (
+from prik.compiling.objects import ObjectFile
+from prik.pipeline.build import (
     NativeBuildPlan,
     NativeLinkItem,
     _build_rendered_wrapper_extension,
     _generated_wrapper_plan_artifacts,
 )
-from x2py.pipeline.wrapper_artifacts import (
+from prik.pipeline.wrapper_artifacts import (
     GeneratedSourceFile,
     GeneratedWrapperArtifacts,
     RenderedGeneratedWrapperArtifacts,
 )
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.stage_values import FrozenStageRecordError
-from x2py.wrapper_codegen import (
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.stage_values import FrozenStageRecordError
+from prik.wrapper_codegen import (
     ModulePlan,
     WrapperCodeGenerator,
     WrapperPlanner,
@@ -145,7 +145,7 @@ def scale(x: Float64) -> Float64: ...
     bridge_source = build_dir / "bind_c_plan_scalar_build_wrapper.f90"
     binding_source = build_dir / "plan_scalar_build_wrapper.c"
     header = build_dir / "plan_scalar_build_wrapper.h"
-    native_support_header = build_dir / "binding_support" / "x2py_binding.h"
+    native_support_header = build_dir / "binding_support" / "prik_binding.h"
 
     assert bridge_source.read_text(encoding="utf-8") == rendered.sources[0].text
     assert binding_source.read_text(encoding="utf-8") == rendered.sources[1].text

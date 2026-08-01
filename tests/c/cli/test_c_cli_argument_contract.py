@@ -9,11 +9,11 @@ from tests.c._support.cli import (
     _install_main_parser,
     _main_args,
     types,
-    x2py_cli,
+    prik_cli,
 )
 
 
-def test_x2py_build_preprocessing_config_preserves_full_config_contract(monkeypatch):
+def test_prik_build_preprocessing_config_preserves_full_config_contract(monkeypatch):
     args = types.SimpleNamespace(
         defines=["USE_FAST=1"],
         undefs=["LEGACY"],
@@ -50,10 +50,10 @@ def test_x2py_build_preprocessing_config_preserves_full_config_contract(monkeypa
         calls.append(("build", kwargs))
         return config
 
-    monkeypatch.setattr(x2py_cli, "validate_macro_name", validate)
-    monkeypatch.setattr(x2py_cli, "PreprocessingConfig", build)
+    monkeypatch.setattr(prik_cli, "validate_macro_name", validate)
+    monkeypatch.setattr(prik_cli, "PreprocessingConfig", build)
 
-    assert x2py_cli._build_preprocessing_config(args, Parser()) is config
+    assert prik_cli._build_preprocessing_config(args, Parser()) is config
     assert calls == [
         ("validate", "USE_FAST=1", "--define/-D"),
         ("validate", "LEGACY", "--undef/-U"),
@@ -91,23 +91,23 @@ def test_x2py_build_preprocessing_config_preserves_full_config_contract(monkeypa
         ),
     ],
 )
-def test_x2py_main_preserves_c_validation_diagnostics(monkeypatch, overrides, expected):
+def test_prik_main_preserves_c_validation_diagnostics(monkeypatch, overrides, expected):
     args = _main_args(**overrides)
     _install_main_parser(monkeypatch, args)
-    monkeypatch.setattr(x2py_cli, "_resolve_language", lambda paths, language, parser: language)
+    monkeypatch.setattr(prik_cli, "_resolve_language", lambda paths, language, parser: language)
     monkeypatch.setattr(
-        x2py_cli,
+        prik_cli,
         "_build_preprocessing_config",
         lambda active_args, parser: object(),
     )
 
     with pytest.raises(_MainParserError) as exc_info:
-        x2py_cli.main()
+        prik_cli.main()
 
     assert str(exc_info.value) == expected
 
 
-def test_x2py_resolve_language_handles_c_input_edges(tmp_path: Path):
+def test_prik_resolve_language_handles_c_input_edges(tmp_path: Path):
     class ErrorParser:
         def error(self, message):
             raise ValueError(message)
@@ -120,9 +120,9 @@ def test_x2py_resolve_language_handles_c_input_edges(tmp_path: Path):
     unknown = tmp_path / "notes.txt"
     unknown.write_text("notes\n", encoding="utf-8")
 
-    assert x2py_cli._resolve_language([str(unknown)], "c", parser) == "c"
+    assert prik_cli._resolve_language([str(unknown)], "c", parser) == "c"
     with pytest.raises(ValueError) as requested_error:
-        x2py_cli._resolve_language([str(input_dir), str(c_header)], "fortran", parser)
+        prik_cli._resolve_language([str(input_dir), str(c_header)], "fortran", parser)
     assert str(requested_error.value) == (
         f"C input {c_header} is incompatible with --language fortran; pass --language c. Use --help for examples."
     )

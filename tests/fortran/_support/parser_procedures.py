@@ -1,8 +1,8 @@
 import pytest
 
-from x2py.parsers.fortran.models import FortranFunctionCall, FortranSlice, FortranUseMapping, FortranVariable
+from prik.parsers.fortran.models import FortranFunctionCall, FortranSlice, FortranUseMapping, FortranVariable
 
-from x2py import FortranParseError, parse_fortran_file, parse_fortran_project
+from prik import FortranParseError, parse_fortran_file, parse_fortran_project
 
 
 def collect_project_procedure_signatures(files):

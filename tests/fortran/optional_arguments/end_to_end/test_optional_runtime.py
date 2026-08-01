@@ -5,14 +5,14 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from x2py import build_pyi_extension
+from prik import build_pyi_extension
 from tests.fortran._support.wrapper_build import (
     _compile_native_object,
     _build_source_or_generated_pyi_and_import,
     _import_from_build_dir,
     _sole_native_module,
 )
-from x2py.runtime.handles import _NativeArrayHandoff, AllocatableArray, PointerArray
+from prik.runtime.handles import _NativeArrayHandoff, AllocatableArray, PointerArray
 
 FIXTURES = Path(__file__).parent / "fixtures"
 OPTIONAL_F90_SOURCE = FIXTURES / "foptional_f90.f90"

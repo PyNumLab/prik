@@ -1,6 +1,6 @@
 ---
 title: Pointers
-description: How x2py handles Fortran `pointer` variables, results, fields, and descriptors
+description: How prik handles Fortran `pointer` variables, results, fields, and descriptors
 audience: advanced users
 prerequisites: arrays, allocatables
 related: allocatables.md, memory-management.md
@@ -36,7 +36,7 @@ shape, and strides. It does not by itself say who owns that target.
 Use `Pointer[T[...]]` when the native callable needs the pointer descriptor:
 
 ```python
-from x2py.contracts import Float64, Pointer
+from prik.contracts import Float64, Pointer
 
 module_values: Pointer[Float64[:]]
 
@@ -63,7 +63,7 @@ a `PointerArray`. You can also create an unassociated handle when a routine
 needs a present pointer descriptor that it will associate:
 
 ```python
-import x2py.contracts as xc
+import prik.contracts as xc
 
 target = xc.Pointer[xc.Float64[:]]()
 assert target.associated is False
@@ -224,7 +224,7 @@ end module pointers_api
 Build and use it:
 
 ```bash
-python3 -m x2py pointers.f90 --out-dir build/pointers
+python3 -m prik pointers.f90 --out-dir build/pointers
 ```
 
 ```python
@@ -397,7 +397,7 @@ view = p.to_numpy()
 value = view[0]  # NOT OK without native synchronization
 ```
 
-x2py does not lock native pointer association or track outstanding NumPy views.
+prik does not lock native pointer association or track outstanding NumPy views.
 The application must synchronize concurrent native changes.
 
 ---

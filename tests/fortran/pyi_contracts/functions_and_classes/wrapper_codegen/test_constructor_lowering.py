@@ -1,14 +1,14 @@
 """Lowering selected for an edited direct native constructor."""
 
-from x2py.pipeline.pyi import pyi_text_to_semantic_module
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.pipeline.pyi import pyi_text_to_semantic_module
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
 
 def test_bound_constructor_generates_one_initializer_without_keyword_default():
     module = pyi_text_to_semantic_module(
         """
-from x2py.contracts import Addr, Arg, Int32, Pass, bind, native_call
+from prik.contracts import Addr, Arg, Int32, Pass, bind, native_call
 
 class state:
     @bind("init_state")

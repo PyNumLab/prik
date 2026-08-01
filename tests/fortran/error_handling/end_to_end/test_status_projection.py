@@ -12,7 +12,7 @@ from tests.fortran._support.wrapper_build import (
     _import_from_build_dir,
     _sole_native_module,
 )
-from x2py import build_pyi_extension
+from prik import build_pyi_extension
 
 
 FIXTURES = Path(__file__).parent / "fixtures"

@@ -12,7 +12,7 @@ from tests.fortran._support.wrapper_build import (
     _import_from_build_dir,
     _sole_native_module,
 )
-from x2py import build_pyi_extension
+from prik import build_pyi_extension
 
 FINAL_FIXTURES = Path(__file__).parents[2] / "derived_types" / "end_to_end" / "fixtures"
 DERIVED_BOUNDARY_F90_SOURCE = FINAL_FIXTURES / "fderived_boundary_f90.f90"
@@ -23,7 +23,7 @@ ALIASED_MODULE_SOURCE = FINAL_FIXTURES / "fmodule_derived_alias_f90.f90"
 ALIASED_MODULE_CONTRACT = FINAL_FIXTURES / "edited_contracts" / "module_aliased_proxy" / "__init__.pyi"
 DERIVED_CONSTANT_SOURCE = Path(__file__).parents[2] / "modules" / "end_to_end" / "fixtures" / "fmodule_vars_f90.f90"
 DERIVED_CONSTANT_CONTRACT = """\
-from x2py.contracts import Final, Int32
+from prik.contracts import Final, Int32
 
 class rgb_color:
     r: Int32
@@ -55,7 +55,7 @@ contains
 end module fderived_string_plan
 """
 STRING_FIELD_CONTRACT = """\
-from x2py.contracts import Aliased, Annotated, String
+from prik.contracts import Aliased, Annotated, String
 
 class record:
     label: String[8]
@@ -114,7 +114,7 @@ contains
 end module fderived_value_plan
 """
 VALUE_AND_OPTIONAL_CONTRACT = """\
-from x2py.contracts import Arg, Float64, Returns, Value, native_call, native_type
+from prik.contracts import Arg, Float64, Returns, Value, native_call, native_type
 
 @native_type(attributes=("bind(c)",))
 class point:
@@ -165,7 +165,7 @@ contains
 end module fderived_finalizer_plan
 """
 BORROWED_FINALIZER_CONTRACT = """\
-from x2py.contracts import Int32, native_type
+from prik.contracts import Int32, native_type
 
 @native_type(finalizers=("cleanup_child",))
 class child:

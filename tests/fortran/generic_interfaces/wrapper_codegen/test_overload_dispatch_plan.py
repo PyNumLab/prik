@@ -5,9 +5,9 @@ from dataclasses import replace
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import OverloadMatchKind
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.wrapper_policy import OverloadMatchKind
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 
 
 def _plan():

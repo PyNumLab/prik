@@ -16,9 +16,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  X2PY_IFX_VERSION: "2026.1.1"
-  X2PY_FLANG_VERSION: "22.1.8"
-  X2PY_FLANG_RUNTIME_VERSION: "22.1.7"
+  PRIK_IFX_VERSION: "2026.1.1"
+  PRIK_FLANG_VERSION: "22.1.8"
+  PRIK_FLANG_RUNTIME_VERSION: "22.1.7"
 
 jobs:
   toolchain-smoke:
@@ -33,13 +33,13 @@ jobs:
         include:
           - toolchain: ifx
             display_name: Linux · Intel IFX 2026.1.1 · Python 3.12
-            environment: x2py-ifx-2026.1.1
+            environment: prik-ifx-2026.1.1
             fortran_compiler: ifx
             c_compiler: icx
             cache_version: "2026.1.1-v2"
           - toolchain: flang
             display_name: Linux · LLVM Flang 22.1.8 · Python 3.12
-            environment: x2py-flang-22.1.8
+            environment: prik-flang-22.1.8
             fortran_compiler: flang
             c_compiler: clang
             cache_version: "22.1.8-runtime-22.1.7-v1"
@@ -71,8 +71,8 @@ jobs:
             --override-channels \
             --channel https://software.repos.intel.com/python/conda/ \
             --channel conda-forge \
-            "ifx_linux-64=$X2PY_IFX_VERSION" \
-            "dpcpp_linux-64=$X2PY_IFX_VERSION"
+            "ifx_linux-64=$PRIK_IFX_VERSION" \
+            "dpcpp_linux-64=$PRIK_IFX_VERSION"
       - name: Install LLVM Flang and Clang
         if: matrix.toolchain == 'flang' && steps.compiler-cache.outputs.cache-hit != 'true'
         shell: bash
@@ -81,9 +81,9 @@ jobs:
             --prefix "$RUNNER_TEMP/${{ matrix.environment }}" \
             --override-channels \
             --channel conda-forge \
-            "flang=$X2PY_FLANG_VERSION" \
-            "clang=$X2PY_FLANG_VERSION" \
-            "libflang-rt=$X2PY_FLANG_RUNTIME_VERSION"
+            "flang=$PRIK_FLANG_VERSION" \
+            "clang=$PRIK_FLANG_VERSION" \
+            "libflang-rt=$PRIK_FLANG_RUNTIME_VERSION"
       - name: Export coherent compiler profile
         shell: bash
         run: |
@@ -127,7 +127,7 @@ jobs:
       contents: read
     env:
       HOMEBREW_NO_AUTO_UPDATE: "1"
-      X2PY_MACOS_FLANG_ENVIRONMENT: x2py-flang-macos
+      PRIK_MACOS_FLANG_ENVIRONMENT: prik-flang-macos
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -145,7 +145,7 @@ jobs:
         shell: bash
         run: |
           brew install flang
-          toolchain_prefix="$RUNNER_TEMP/$X2PY_MACOS_FLANG_ENVIRONMENT"
+          toolchain_prefix="$RUNNER_TEMP/$PRIK_MACOS_FLANG_ENVIRONMENT"
           flang_prefix="$(brew --prefix flang)"
           llvm_prefix="$(brew --prefix llvm)"
           flang_c_include="$flang_prefix/include/flang"

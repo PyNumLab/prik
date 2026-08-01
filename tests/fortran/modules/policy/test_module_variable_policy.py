@@ -5,9 +5,9 @@ from tests.fortran._support.ownership_policy import (
     complete_semantic_policies,
     parse_pyi_text,
 )
-from x2py.semantics.models import RESOLVED_MODULE_VARIABLE_POLICY_METADATA
-from x2py.semantics.ownership import AssignmentMode
-from x2py.semantics.wrapper_policy import ModuleGetterAction, ModuleVariablePolicy
+from prik.semantics.models import RESOLVED_MODULE_VARIABLE_POLICY_METADATA
+from prik.semantics.ownership import AssignmentMode
+from prik.semantics.wrapper_policy import ModuleGetterAction, ModuleVariablePolicy
 
 
 def test_scalar_module_variable_policy_completes_access_and_storage_before_planning():
@@ -53,7 +53,7 @@ selected_scale: Pointer[Float64]
 def test_fixed_module_array_requires_explicit_addressable_alias_storage():
     module = parse_pyi_text(
         """
-from x2py.contracts import Float64
+from prik.contracts import Float64
 
 values: Float64[4]
 """,

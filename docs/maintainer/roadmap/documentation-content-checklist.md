@@ -77,11 +77,11 @@ more specialized pages.
 - [ ] `docs/user/changelog/index.md`: define changelog policy, release-note shape,
   migration notes, and how docs changes are tracked with releases.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 - [ ] `docs/user/faq/index.md`: add answers for source versus `.pyi` builds,
   supported languages, C-input future work, generated files, editable contracts,
   unsupported features, and where to report bugs.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ### Developer And Contributor Guides
 
@@ -164,14 +164,14 @@ X2PY_C_DOCS_END -->
   generated-symbol reservation, collision policy, imports, scopes, and package
   names.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 - [ ] `docs/maintainer/design/code-generation.md`: document wrapper-plan and generated-source boundaries, bridge
   generation, CPython binding generation, printers, and forbidden semantic
   inference in backends.
 - [ ] `docs/maintainer/design/cpython-integration.md`: document CPython API usage, NumPy
   C API integration, extension module layout, reference ownership, and error
   propagation.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ### Tutorials And Examples
 
@@ -346,10 +346,10 @@ primary placeholder queue.
 - [x] `docs/maintainer/roadmap/semantic-pyi-wrapper-checklist.md`: active implementation
   roadmap for semantic `.pyi` wrapper parity.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 When the C-input documentation phase resumes, extend the maintained user-guide
 index with a separate C-input route rather than mixing future behavior into the
 current Fortran workflow.
 - [x] `docs/developer/c-parser-reference.md`: maintained C parser
   reference.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->

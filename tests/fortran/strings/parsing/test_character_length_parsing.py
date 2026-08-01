@@ -1,6 +1,6 @@
 """Declaration parsing, interfaces, and less common scope edges."""
 
-from x2py import parse_fortran_file
+from prik import parse_fortran_file
 
 
 def test_character_entity_lengths_and_assumed_bounds_are_preserved():

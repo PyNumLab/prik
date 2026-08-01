@@ -27,8 +27,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  X2PY_GFORTRAN_BINARY: gfortran-13
-  X2PY_GFORTRAN_PACKAGE: gfortran-13
+  PRIK_GFORTRAN_BINARY: gfortran-13
+  PRIK_GFORTRAN_PACKAGE: gfortran-13
 
 jobs:
   benchmark:
@@ -69,13 +69,13 @@ jobs:
       - name: Install pinned GFortran
         shell: bash
         run: |
-          if ! command -v "$X2PY_GFORTRAN_BINARY" >/dev/null 2>&1; then
+          if ! command -v "$PRIK_GFORTRAN_BINARY" >/dev/null 2>&1; then
             sudo apt-get update
-            sudo apt-get install --yes "$X2PY_GFORTRAN_PACKAGE"
+            sudo apt-get install --yes "$PRIK_GFORTRAN_PACKAGE"
           fi
-          compiler_dir="$RUNNER_TEMP/x2py-gfortran"
+          compiler_dir="$RUNNER_TEMP/prik-gfortran"
           mkdir -p "$compiler_dir"
-          ln -sf "$(command -v "$X2PY_GFORTRAN_BINARY")" "$compiler_dir/gfortran"
+          ln -sf "$(command -v "$PRIK_GFORTRAN_BINARY")" "$compiler_dir/gfortran"
           echo "$compiler_dir" >> "$GITHUB_PATH"
           "$compiler_dir/gfortran" --version
 
@@ -83,9 +83,9 @@ jobs:
         shell: bash
         run: |
           if (( GITHUB_RUN_NUMBER % 2 == 0 )); then
-            export X2PY_BENCHMARK_FIRST=f2py
+            export PRIK_BENCHMARK_FIRST=f2py
           else
-            export X2PY_BENCHMARK_FIRST=x2py
+            export PRIK_BENCHMARK_FIRST=prik
           fi
           bash benchmarks/run.sh
 
@@ -98,9 +98,9 @@ jobs:
         run: |
           python -m pyperf check \
             benchmarks/results/f2py.json \
-            benchmarks/results/x2py.json \
+            benchmarks/results/prik.json \
             benchmarks/results/f2py-build.json \
-            benchmarks/results/x2py-build.json
+            benchmarks/results/prik-build.json
 
       - name: Upload Performance snapshot and raw results
         uses: actions/upload-artifact@v4
@@ -108,9 +108,9 @@ jobs:
           name: performance-snapshot
           path: |
             benchmarks/results/f2py.json
-            benchmarks/results/x2py.json
+            benchmarks/results/prik.json
             benchmarks/results/f2py-build.json
-            benchmarks/results/x2py-build.json
+            benchmarks/results/prik-build.json
             docs/user/performance.md
             docs/user/assets/performance-comparison.svg
             docs/user/assets/build-time-comparison.svg

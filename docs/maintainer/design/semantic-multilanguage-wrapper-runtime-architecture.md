@@ -9,7 +9,7 @@ publication: draft
 
 # Semantic Multilanguage Wrapper and Interoperability Runtime
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 > **Status:** This is a long-term architecture document, not a statement that
 > every backend below exists. The source-driven Fortran-to-Python wrapper is
 > implemented and documented in
@@ -17,7 +17,7 @@ publication: draft
 > `.pyi`, and semantic inspection are implemented, but the runtime backend for
 > user-supplied C inputs will be added later. Other language backends and the
 > broader coercion runtime remain design goals.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ## Vision
 
@@ -35,7 +35,7 @@ The system should:
 * avoid the limitations of SWIG/f2py-style systems
 * support wrapping libraries even when the source code is unavailable
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 * wrap native libraries from:
   * Fortran
   * C
@@ -43,7 +43,7 @@ The system should:
   * Rust
   * CUDA
   * and potentially more languages later
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 The project is not merely a wrapper generator.
 
@@ -139,7 +139,7 @@ But:
 
 The architecture is composed of multiple layers.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```text
 Native libraries/sources
         ↓
@@ -161,7 +161,7 @@ Generated CPython extension
         ↓
 Python API
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 The validation engine enforces concrete checks. Validation contracts describe when those checks run, what they guarantee, and how failures are reported.
 
@@ -227,7 +227,7 @@ end module
 The semantic interface may expose a Pythonic object model:
 
 ```python
-from x2py.contracts import bind
+from prik.contracts import bind
 
 @bind("sparse_matrix")
 class SparseMatrix:
@@ -349,7 +349,7 @@ is an allowed coercion for `alpha`.
 ## Matrix Example
 
 ```python
-from x2py.contracts import ORDER_F
+from prik.contracts import ORDER_F
 
 def solve(
     A: Float64Matrix[
@@ -399,9 +399,9 @@ Examples:
 * `Finite`
 * `NonNull`
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 * `ORDER_C`
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 A constraint is usually local to one value: dtype, shape, device, alignment, mutability, ownership, or value range.
 
@@ -421,14 +421,14 @@ Responsibilities:
 
 Example conversion trace:
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```text
 argument A:
   np.ndarray(shape=(10, 10), dtype=float64, order=C)
     -> copy_to_fortran_order
   Float64Matrix(shape=(10, 10), dtype=float64, order=F, owner=temporary)
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ---
 
@@ -446,7 +446,7 @@ Responsibilities:
 
 Example validation error:
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```text
 ValidationError in solve(A, b)
   parameter: A
@@ -454,7 +454,7 @@ ValidationError in solve(A, b)
   observed: order='C', shape=(10, 10), dtype=float64
   hint: declare From(np.ndarray, copy=True) or pass np.asfortranarray(A)
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 The validation engine is runtime-oriented. It does not replace static typing; it protects the native ABI boundary and provides clear diagnostics for dynamic Python inputs.
 
@@ -509,7 +509,7 @@ They are separate from constants. A `Final[...]` declaration records an immutabl
 The implemented minimal slice is literal defaults on mutable module variables:
 
 ```python
-from x2py.contracts import Int32
+from prik.contracts import Int32
 
 counter: Int32 = 41
 ```
@@ -519,7 +519,7 @@ That form can be lowered to a typed value and assigned through the generated ext
 The longer-term contract is more general. An initializer expression may be executable Python:
 
 ```python
-from x2py.contracts import Float64, Int32
+from prik.contracts import Float64, Int32
 
 from .init_hooks import initial_counter, runtime_scale
 
@@ -623,9 +623,9 @@ The interface can then reference the contract:
 def solve(A: Float64Matrix, b: Float64Vector) -> Float64Vector: ...
 ```
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 This allows common validation logic to be shared across Fortran, C, C++, Rust, and CUDA backends.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ---
 
@@ -766,9 +766,9 @@ Examples:
 * Eigen maps
 * CUDA tensors
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 * C structs
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 Adapters should receive values only after coercion and validation have completed. This keeps ABI code focused on call mechanics instead of user-input cleanup.
 
@@ -806,10 +806,10 @@ Possible parsers:
 * Fortran parser
 * Rust parser
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 * C parser
 * C++ parser
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 Their role:
 
@@ -831,10 +831,10 @@ Example:
 * Rust runtime safety
 * CUDA kernels
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 * C runtime layer
 * C++ object systems
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 All unified through:
 
@@ -856,31 +856,31 @@ Suppose:
 subroutine solve_system(A, b, x)
 ```
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ### C++ mesh
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```cpp
 class Mesh {
 public:
     void refine();
 };
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ### Rust optimizer
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ```rust
 extern "C" fn optimize(ptr: *mut f64, len: usize) -> i32;
 ```
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 The semantic API may expose:
 
 ```python
-from x2py.contracts import ORDER_F
+from prik.contracts import ORDER_F
 
 class Solver:
     @contract(pre=square_linear_system)
@@ -932,9 +932,9 @@ Examples:
 | Torch CUDA → CPU array | copy, unless API accepts GPU memory |
 | CuPy array → CUDA kernel | zero-copy when stream and device contracts match |
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 | NumPy C-order → Fortran descriptor requiring F-order | copy or reject, depending on contract |
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 The runtime should optimize coercion paths automatically while still honoring explicit API contracts.
 
@@ -960,25 +960,25 @@ because these domains already contain:
 * array-heavy APIs
 * strict shape, device, ownership, and aliasing requirements
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 * legacy Fortran/C++ code
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ---
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 ## CPython Extension Backend
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The project should generate custom CPython extensions directly.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 Reasons:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 * full control over runtime
 * full control over arrays
 * full control over coercions
@@ -986,25 +986,25 @@ X2PY_C_DOCS_END -->
 * better diagnostics
 * better ownership handling
 * better performance
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 The project should NOT fundamentally depend on:
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 * SWIG
 * ctypes
 * pybind11
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 although optional backends may exist later.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 &#45;&#45;-
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ## Diagnostics
 
@@ -1090,10 +1090,10 @@ This allows:
 
 * Add CUDA/device-memory adapters once device contracts are available.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 * Implement initial Fortran and C adapters.
 * Add C++ and Rust adapters after the semantic runtime is stable.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ### Phase 6: Parser Frontends and Ecosystem Plugins
 

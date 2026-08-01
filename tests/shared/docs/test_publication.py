@@ -64,7 +64,7 @@ def test_repository_evidence_links_are_rewritten_to_github(tmp_path: Path, monke
     source_file.parent.mkdir()
     source_file.write_text("# evidence\n", encoding="utf-8")
     monkeypatch.setattr(mkdocs_publication, "_docs_dir", docs_dir)
-    monkeypatch.setattr(mkdocs_publication, "_repository_url", "https://github.com/PyNumLab/x2py")
+    monkeypatch.setattr(mkdocs_publication, "_repository_url", "https://github.com/PyNumLab/prik")
 
     markdown = (
         "[Page](index.md) [Section](guide/) [Evidence](../../tests/evidence.py#proof) [Missing](../../missing.py)"
@@ -72,6 +72,6 @@ def test_repository_evidence_links_are_rewritten_to_github(tmp_path: Path, monke
 
     assert mkdocs_publication._rewrite_repository_targets(markdown, "user/index.md") == (
         "[Page](index.md) [Section](guide/) "
-        "[Evidence](https://github.com/PyNumLab/x2py/blob/main/tests/evidence.py#proof) "
+        "[Evidence](https://github.com/PyNumLab/prik/blob/main/tests/evidence.py#proof) "
         "[Missing](../../missing.py)"
     )

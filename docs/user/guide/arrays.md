@@ -1,6 +1,6 @@
 ---
 title: Arrays
-description: NumPy array shape, layout, strides, and validation in x2py
+description: NumPy array shape, layout, strides, and validation in prik
 audience: users
 prerequisites: data types
 related: strings.md, allocatables.md, pointers.md, wrapping-subroutines.md
@@ -10,16 +10,16 @@ publication: reviewed
 
 # Arrays
 
-x2py exposes Fortran arrays as **NumPy arrays**.
+prik exposes Fortran arrays as **NumPy arrays**.
 Each generated contract defines the accepted dtype, shape, layout,
-writeability, and strides. x2py validates these rules before native code runs.
+writeability, and strides. prik validates these rules before native code runs.
 
 This page starts with normal Fortran-order arrays. It then covers C-order
 arrays, `COPY_F`, `Flat` storage, and strided views.
 
 Small `intent` note for this page: `intent(in)` reads an array,
 `intent(inout)` mutates it, and `intent(out)` fills caller-provided storage.
-Without `intent`, x2py conservatively uses the `intent(inout)` rule. The
+Without `intent`, prik conservatively uses the `intent(inout)` rule. The
 subroutines page covers the full return rules.
 
 ---
@@ -113,7 +113,7 @@ end module array_ops
 Build:
 
 ```bash
-python3 -m x2py arrays.f90 --out-dir build/arrays
+python3 -m prik arrays.f90 --out-dir build/arrays
 ```
 
 ---
@@ -165,7 +165,7 @@ print(vec)  # [2. 4. 6. 8.]
 
 ---
 
-## What x2py Validates
+## What prik Validates
 
 - Exact NumPy dtype (`np.float64`, `np.int32`, ...)
 - Correct rank and shape (including expressions such as `rows, columns`)
@@ -173,7 +173,7 @@ print(vec)  # [2. 4. 6. 8.]
 - Writeability for `intent(out)` or `intent(inout)` arrays
 - Declared stride pattern for stride-aware contracts
 
-**x2py does not silently cast, copy, transpose, or convert layouts.**
+**prik does not silently cast, copy, transpose, or convert layouts.**
 A mismatch raises `TypeError` before native code runs.
 
 Contiguous elements have no gaps between them in the required layout.
@@ -191,7 +191,7 @@ values = np.asfortranarray(data, dtype=np.float64)
 values = np.ones(shape, dtype=np.float64, order="F")
 ```
 
-x2py rejects C-contiguous matrices for a Fortran-contiguous contract.
+prik rejects C-contiguous matrices for a Fortran-contiguous contract.
 This gives the native routine the layout it expects.
 
 ---
@@ -201,7 +201,7 @@ This gives the native routine the layout it expects.
 Start with the generated Fortran-oriented contract for `sum_columns`:
 
 ```python
-from x2py.contracts import Float64, Int32
+from prik.contracts import Float64, Int32
 
 def sum_columns(
     size: Int32,
@@ -233,7 +233,7 @@ print(result)  # [111. 222. 333.]
 Edit the semantic `.pyi` and add `ORDER_C`:
 
 ```python
-from x2py.contracts import Annotated, Float64, Int32, ORDER_C
+from prik.contracts import Annotated, Float64, Int32, ORDER_C
 
 def sum_columns(
     size: Int32,
@@ -276,7 +276,7 @@ No transposition happens. Native code reads the existing storage directly.
 Keep `ORDER_C` and add `COPY_F`:
 
 ```python
-from x2py.contracts import Annotated, COPY_F, Float64, Int32, ORDER_C
+from prik.contracts import Annotated, COPY_F, Float64, Int32, ORDER_C
 
 def sum_columns(
     size: Int32,
@@ -285,7 +285,7 @@ def sum_columns(
 ) -> None: ...
 ```
 
-x2py copies the input to Fortran order before the native call.
+prik copies the input to Fortran order before the native call.
 The routine returns the original column sums:
 
 ```python
@@ -306,7 +306,7 @@ print(result)  # [111. 222. 333.]
 
 `ORDER_C` validates the caller's layout.
 `COPY_F` creates the Fortran-order temporary while preserving logical axes.
-For output arrays, x2py copies the result back to the caller's C-order storage.
+For output arrays, prik copies the result back to the caller's C-order storage.
 
 ---
 
@@ -318,7 +318,7 @@ A companion argument such as `count` tells the routine how much storage to read.
 The generated contract for `sum_flat` uses `Flat`:
 
 ```python
-from x2py.contracts import Flat, Float64, Int32
+from prik.contracts import Flat, Float64, Int32
 
 def sum_flat(
     count: Int32,
@@ -349,13 +349,13 @@ Storage order controls flattening:
 `Flat` rejects strided slices; dtype and contiguity rules still apply.
 
 `Flat` can appear at one edge of a multidimensional contract.
-Other axes remain visible. x2py collapses the remaining Python axes into one
+Other axes remain visible. prik collapses the remaining Python axes into one
 native extent.
 
 For `real(8) :: values(rows, *)`, the generated contract is:
 
 ```python
-from x2py.contracts import Flat, Float64, Int32
+from prik.contracts import Flat, Float64, Int32
 
 def sum_flat_columns(
     rows: Int32,
@@ -390,7 +390,7 @@ Use `::` for an assumed-shape axis that accepts F-contiguous arrays and
 positive-stride views without copying:
 
 ```python
-from x2py.contracts import Float64, Returns
+from prik.contracts import Float64, Returns
 
 def scale_visible_rows(
     values: Float64[::, ::],
@@ -417,7 +417,7 @@ print(out)
 #  [21. 45. 69.]]
 ```
 
-x2py passes the base address, extents, and positive element strides. Reversed
+prik passes the base address, extents, and positive element strides. Reversed
 slices, broadcasted views, and C-order strided matrices are rejected for this
 Fortran-oriented contract. Strides are not an order workaround.
 

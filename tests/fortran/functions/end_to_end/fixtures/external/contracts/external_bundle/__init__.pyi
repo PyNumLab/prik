@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Arg, Int32, external, native_call
+from prik.contracts import Addr, Arg, Int32, external, native_call
 
 @external
 @native_call([Addr(Arg(0))])

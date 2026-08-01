@@ -56,7 +56,7 @@ def lane_commands(
         "-m",
         "toolchain_smoke",
         "--require-toolchain-smoke",
-        f"--x2py-fortran-compiler={compiler}",
+        f"--prik-fortran-compiler={compiler}",
     )
     return profile, smoke
 

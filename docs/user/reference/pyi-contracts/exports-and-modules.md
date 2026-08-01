@@ -49,7 +49,7 @@ identity is not guaranteed for every read.
 Delete a declaration to remove it from the Python API:
 
 ```python
-from x2py.contracts import Int32
+from prik.contracts import Int32
 
 counter: Int32
 
@@ -64,7 +64,7 @@ Use `@private` for a function or class that another contract declaration still
 needs:
 
 ```python
-from x2py.contracts import Float64, private
+from prik.contracts import Float64, private
 
 @private
 def scaled_counter() -> Float64: ...
@@ -73,7 +73,7 @@ def scaled_counter() -> Float64: ...
 Use `private[...]` for a variable or argument:
 
 ```python
-from x2py.contracts import Float64, private
+from prik.contracts import Float64, private
 
 scale: private[Float64]
 ```
@@ -86,7 +86,7 @@ You may add a declaration when the procedure already exists in the supplied
 native implementation:
 
 ```python
-from x2py.contracts import Float64
+from prik.contracts import Float64
 
 def norm2(values: Float64[:]) -> Float64: ...
 ```
@@ -96,7 +96,7 @@ name selects the native procedure. Use `@bind(...)` when the Python name
 differs:
 
 ```python
-from x2py.contracts import Float64, Int32, bind
+from prik.contracts import Float64, Int32, bind
 
 @bind("solver_step")
 def step(values: Float64[:]) -> Int32: ...
@@ -105,7 +105,7 @@ def step(values: Float64[:]) -> Int32: ...
 For a standalone external symbol, also use `@external`:
 
 ```python
-from x2py.contracts import Float64, bind, external
+from prik.contracts import Float64, bind, external
 
 @external
 @bind("vendor_norm2")
@@ -121,19 +121,19 @@ present in the linked implementation.
 A writable scalar module variable may have a literal initial value:
 
 ```python
-from x2py.contracts import Int32
+from prik.contracts import Int32
 
 counter: Int32 = 41
 ```
 
-x2py sets the module variable when the extension is imported. It remains
-writable. This works only when x2py can write that native variable, and the
+prik sets the module variable when the extension is imported. It remains
+writable. This works only when prik can write that native variable, and the
 initializer must be a literal rather than a call, name, or expression.
 
 Use `Final[...]` only for a true read-only constant:
 
 ```python
-from x2py.contracts import Final, Int32
+from prik.contracts import Final, Int32
 
 nmax: Final[Int32] = 12
 ```

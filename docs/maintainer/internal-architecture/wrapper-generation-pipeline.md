@@ -73,7 +73,7 @@ runs both backend preflight checks, lowers recursively to C and Fortran syntax
 nodes, and asks the source printers to render those nodes. Build integration
 compiles the rendered sources; it does not own datatype transfer policy.
 Wrapper C/Fortran source printers and the semantic `.pyi` printer share
-`x2py/wrapper_codegen/printers/`; no compatibility printer remains under the
+`prik/wrapper_codegen/printers/`; no compatibility printer remains under the
 legacy codegen package.
 
 Wrapper builds have no legacy route or fallback. An unsupported completed plan

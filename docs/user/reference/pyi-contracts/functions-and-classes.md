@@ -18,7 +18,7 @@ Keep the module procedure declaration and add a method that calls it. `Pass()`
 places `self` in the native argument list:
 
 ```python
-from x2py.contracts import Addr, Arg, Float64, Pass, native_call, private
+from prik.contracts import Addr, Arg, Float64, Pass, native_call, private
 
 class point:
     @native_call([Pass(), Addr(Arg(0))])
@@ -41,7 +41,7 @@ the method when its Python name differs from that procedure.
 Each `@overload(...)` declaration is one runtime candidate:
 
 ```python
-from x2py.contracts import Addr, Arg, Float64, Int32, bind, native_call, overload, private
+from prik.contracts import Addr, Arg, Float64, Int32, bind, native_call, overload, private
 
 @private
 @native_call([Addr(Arg(0))])
@@ -84,7 +84,7 @@ native constructor. Replace it with one concrete native initializer by editing
 `__init__`:
 
 ```python
-from x2py.contracts import Addr, Arg, Int32, Pass, bind, native_call
+from prik.contracts import Addr, Arg, Int32, Pass, bind, native_call
 
 class state:
     @bind("init_state")

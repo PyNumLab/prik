@@ -5,17 +5,17 @@ from __future__ import annotations
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.ownership import CodegenAction, ObjectKind, OwnershipOwner, TransferMode
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import ArrayWritebackABI
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
-from x2py.wrapper_codegen.plan import WritebackPhase
+from prik.semantics.ownership import CodegenAction, ObjectKind, OwnershipOwner, TransferMode
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.wrapper_policy import ArrayWritebackABI
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.wrapper_codegen.plan import WritebackPhase
 
 
 def _output_plan():
     module = parse_pyi_text(
         """
-from x2py.contracts import Float64, Int32, Returns
+from prik.contracts import Float64, Int32, Returns
 
 def fill(n: Int32, values: Float64[n]) -> Returns["values", Float64[n]]: ...
 def fill_two(
@@ -33,7 +33,7 @@ def fill_two(
 def _logical_output_plan():
     module = parse_pyi_text(
         """
-from x2py.contracts import Bool, Int32
+from prik.contracts import Bool, Int32
 
 def invert_flags(n: Int32, values: Bool[n], out: Bool[n]) -> None: ...
 """,
@@ -47,7 +47,7 @@ def _high_rank_logical_output_plan():
     shape = ", ".join(":" for _ in range(15))
     module = parse_pyi_text(
         f"""
-from x2py.contracts import Bool
+from prik.contracts import Bool
 
 def normalize(values: Bool[{shape}]) -> None: ...
 """,

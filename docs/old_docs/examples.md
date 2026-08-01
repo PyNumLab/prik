@@ -8,11 +8,11 @@ status: maintained
 
 # Verified Examples Cookbook
 
-This cookbook collects supported x2py commands and Python API patterns. The
+This cookbook collects supported prik commands and Python API patterns. The
 repository fixture commands and inline Python snippets are covered by the
 current test suite or can be run directly from the repository root.
 
-Start with the [tutorial](tutorial.md) if this is your first x2py workflow.
+Start with the [tutorial](tutorial.md) if this is your first prik workflow.
 Use the [semantic `.pyi` format](pyi_format.md) for the full accepted `.pyi`
 contract and the [semantic IR reference](semantics.md) for datatype details.
 
@@ -35,7 +35,7 @@ self-contained.
 
 ### Basic Fortran Input
 
-<!-- x2py-doc-source: tests/data/fortran/general/basic_subroutine.f90 -->
+<!-- prik-doc-source: tests/data/fortran/general/basic_subroutine.f90 -->
 ```fortran
 module m1
 contains
@@ -48,7 +48,7 @@ end module m1
 
 ### Runtime Fortran Wrapper Input
 
-<!-- x2py-doc-source: tests/data/fortran/wrapper/feature_parity/runtime/fruntime_abi_f90.f90 -->
+<!-- prik-doc-source: tests/data/fortran/wrapper/feature_parity/runtime/fruntime_abi_f90.f90 -->
 ```fortran
 module fruntime_abi_f90
 contains
@@ -62,10 +62,10 @@ end module fruntime_abi_f90
 
 ### Basic C Input
 
-<!-- x2py-doc-source: tests/data/c/general/math_api.h -->
+<!-- prik-doc-source: tests/data/c/general/math_api.h -->
 ```c
-#ifndef X2PY_GENERAL_MATH_API_H
-#define X2PY_GENERAL_MATH_API_H
+#ifndef PRIK_GENERAL_MATH_API_H
+#define PRIK_GENERAL_MATH_API_H
 
 double norm2(int n, const double x[static 1]);
 void scale(int n, double alpha, double x[static 1]);
@@ -80,7 +80,7 @@ void fill_identity3(double a[static 3][3]);
 <details>
 <summary>Show <code>tests/data/fortran/general/modern_pyi_example.f90</code></summary>
 
-<!-- x2py-doc-source: tests/data/fortran/general/modern_pyi_example.f90 -->
+<!-- prik-doc-source: tests/data/fortran/general/modern_pyi_example.f90 -->
 ```fortran
 module modern_math_physics
   implicit none
@@ -170,7 +170,7 @@ a separate backend later.
 Build the checked scalar fixture into an explicit directory:
 
 ```bash
-python3 -m x2py tests/data/fortran/wrapper/feature_parity/runtime/fruntime_abi_f90.f90 \
+python3 -m prik tests/data/fortran/wrapper/feature_parity/runtime/fruntime_abi_f90.f90 \
   --out-dir build/fruntime_abi \
   --json
 ```
@@ -179,7 +179,7 @@ Recognizable Fortran sources use the default wrapper build when no inspection
 stage is selected:
 
 ```bash
-python3 -m x2py tests/data/fortran/wrapper/feature_parity/runtime/fruntime_abi_f90.f90 \
+python3 -m prik tests/data/fortran/wrapper/feature_parity/runtime/fruntime_abi_f90.f90 \
   --out-dir build/fruntime_abi \
   --json
 ```
@@ -202,8 +202,8 @@ Exact NumPy scalars are part of the native contract. Passing ordinary Python
 numbers where a specific native dtype is required raises `TypeError` rather
 than silently changing the ABI conversion.
 
-With no `--out-dir`, x2py writes intermediates and the ABI-suffixed extension
-under `__x2py__` in the current working directory, while a direct CLI build
+With no `--out-dir`, prik writes intermediates and the ABI-suffixed extension
+under `__prik__` in the current working directory, while a direct CLI build
 writes its stable `<module>.so` alias there unless `--out` gives it an explicit path.
 Use `--verbose` to
 print the direct compiler and linker commands. Use `--strict-wrapper-names` to
@@ -216,7 +216,7 @@ name and every generated artifact. This checked example uses a temporary
 directory and loads the extension directly from the returned shared-library
 path:
 
-<!-- x2py-doc-test: exact -->
+<!-- prik-doc-test: exact -->
 ```python
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
@@ -224,7 +224,7 @@ from tempfile import TemporaryDirectory
 
 import numpy as np
 
-from x2py import build_fortran_extension
+from prik import build_fortran_extension
 
 source = Path("tests/data/fortran/wrapper/feature_parity/runtime/fruntime_abi_f90.f90")
 with TemporaryDirectory() as output_dir:
@@ -237,7 +237,7 @@ with TemporaryDirectory() as output_dir:
     print(module.scale(np.float64(3.0), np.float64(2.5)))
 ```
 
-<!-- x2py-doc-test-output -->
+<!-- prik-doc-test-output -->
 ```text
 fruntime_abi_f90
 7.5
@@ -245,10 +245,10 @@ fruntime_abi_f90
 
 ### Generate An Editable Makefile
 
-Generate wrapper sources and `Makefile.x2py` without compiling:
+Generate wrapper sources and `Makefile.prik` without compiling:
 
 ```bash
-python3 -m x2py generate --makefile tests/data/fortran/wrapper/feature_parity/runtime/fruntime_abi_f90.f90 \
+python3 -m prik generate --makefile tests/data/fortran/wrapper/feature_parity/runtime/fruntime_abi_f90.f90 \
   --out-dir build/fruntime_abi \
   --json
 ```
@@ -256,14 +256,14 @@ python3 -m x2py generate --makefile tests/data/fortran/wrapper/feature_parity/ru
 Build it with GNU Make:
 
 ```bash
-make -f build/fruntime_abi/Makefile.x2py -j4 \
-  X2PY_FFLAGS=-O3 \
-  X2PY_CFLAGS=-O3 \
-  X2PY_LDFLAGS=-O3
+make -f build/fruntime_abi/Makefile.prik -j4 \
+  PRIK_FFLAGS=-O3 \
+  PRIK_CFLAGS=-O3 \
+  PRIK_LDFLAGS=-O3
 ```
 
-The generated Makefile exposes `FC`, `CC`, `X2PY_LD`, `X2PY_FFLAGS`,
-`X2PY_CFLAGS`, and `X2PY_LDFLAGS`. User Fortran sources remain ordered;
+The generated Makefile exposes `FC`, `CC`, `PRIK_LD`, `PRIK_FFLAGS`,
+`PRIK_CFLAGS`, and `PRIK_LDFLAGS`. User Fortran sources remain ordered;
 independent generated objects may be built in parallel.
 
 ### Build One Extension From Multiple Sources
@@ -272,7 +272,7 @@ Supply every source in compiler-valid order. The first semantic module names
 the merged extension:
 
 ```bash
-python3 -m x2py \
+python3 -m prik \
   tests/data/fortran/wrapper/multi_source/modules/first_api.f90 \
   tests/data/fortran/wrapper/multi_source/modules/second_api.f90 \
   --out-dir build/multi_api \
@@ -291,7 +291,7 @@ assert first_api.add_one(np.int32(4)) == np.int32(5)
 assert first_api.double_value(np.int32(4)) == np.int32(10)
 ```
 
-x2py does not discover missing sources or reorder dependencies. Provide module
+prik does not discover missing sources or reorder dependencies. Provide module
 providers before consumers. See
 [Multiple Sources And Build Modes](fortran_wrapper.md#multiple-sources-and-build-modes)
 for output placement and build-system details.
@@ -303,27 +303,27 @@ for output placement and build-system details.
 Compact Fortran report:
 
 ```bash
-python3 -m x2py parse tests/data/fortran/general/basic_subroutine.f90
+python3 -m prik parse tests/data/fortran/general/basic_subroutine.f90
 ```
 
 Compact C report:
 
 ```bash
-python3 -m x2py parse tests/data/c/general/math_api.h --language c
+python3 -m prik parse tests/data/c/general/math_api.h --language c
 ```
 
 Full parser payload:
 
 ```bash
-python3 -m x2py parse tests/data/fortran/general/basic_subroutine.f90 --json
-python3 -m x2py parse tests/data/c/general/math_api.h --language c --json
+python3 -m prik parse tests/data/fortran/general/basic_subroutine.f90 --json
+python3 -m prik parse tests/data/c/general/math_api.h --language c --json
 ```
 
 ### Semantic IR
 
 ```bash
-python3 -m x2py semantics tests/data/fortran/general/basic_subroutine.f90
-python3 -m x2py semantics tests/data/c/general/math_api.h --language c
+python3 -m prik semantics tests/data/fortran/general/basic_subroutine.f90
+python3 -m prik semantics tests/data/c/general/math_api.h --language c
 ```
 
 The semantic payload includes `semantic_modules` and generated `pyi` text.
@@ -333,21 +333,21 @@ The semantic payload includes `semantic_modules` and generated `pyi` text.
 Print:
 
 ```bash
-python3 -m x2py generate --pyi tests/data/fortran/general/basic_subroutine.f90
-python3 -m x2py generate --pyi tests/data/c/general/math_api.h --language c
+python3 -m prik generate --pyi tests/data/fortran/general/basic_subroutine.f90
+python3 -m prik generate --pyi tests/data/c/general/math_api.h --language c
 ```
 
 Write an explicit interface file:
 
 ```bash
-python3 -m x2py generate --pyi tests/data/fortran/general/basic_subroutine.f90 \
+python3 -m prik generate --pyi tests/data/fortran/general/basic_subroutine.f90 \
   --out /tmp/basic_subroutine.pyi
 ```
 
 Write one interface beside each input:
 
 ```bash
-python3 -m x2py generate --pyi path/to/fortran_sources --language fortran --out
+python3 -m prik generate --pyi path/to/fortran_sources --language fortran --out
 ```
 
 ## Control Human-Readable Parse Output
@@ -355,23 +355,23 @@ python3 -m x2py generate --pyi path/to/fortran_sources --language fortran --out
 Fortran variable sections are compact by default. Expand them with
 `--show-vars`:
 
-<!-- x2py-doc-test: run -->
+<!-- prik-doc-test: run -->
 ```bash
-python3 -m x2py parse tests/data/fortran/general/modern_pyi_example.f90 \
+python3 -m prik parse tests/data/fortran/general/modern_pyi_example.f90 \
   --show-vars
 ```
 
 Limit every repeated section:
 
-<!-- x2py-doc-test: exact -->
+<!-- prik-doc-test: exact -->
 ```bash
-python3 -m x2py parse tests/data/fortran/general/modern_pyi_example.f90 \
+python3 -m prik parse tests/data/fortran/general/modern_pyi_example.f90 \
   --show-vars --print-limit 1
 ```
 
 This reports totals while showing one item from each repeated section:
 
-<!-- x2py-doc-test-output -->
+<!-- prik-doc-test-output -->
 ```text
 File: tests/data/fortran/general/modern_pyi_example.f90
   Modules: 1
@@ -398,8 +398,8 @@ Fortran parse reports.
 ### Explicit Files
 
 ```bash
-python3 -m x2py parse src/types.f90 src/api.f90 --language fortran
-python3 -m x2py parse include/types.h include/api.h --language c
+python3 -m prik parse src/types.f90 src/api.f90 --language fortran
+python3 -m prik parse include/types.h include/api.h --language c
 ```
 
 ### Directories
@@ -407,8 +407,8 @@ python3 -m x2py parse include/types.h include/api.h --language c
 Directories require an explicit frontend:
 
 ```bash
-python3 -m x2py parse src/fortran --language fortran --print-limit 20
-python3 -m x2py parse src/c --language c --print-limit 20
+python3 -m prik parse src/fortran --language fortran --print-limit 20
+python3 -m prik parse src/c --language c --print-limit 20
 ```
 
 Fortran directory discovery is recursive for recognized Fortran suffixes. C
@@ -421,8 +421,8 @@ Use an explicit frontend when the source suffix does not identify the
 language:
 
 ```bash
-python3 -m x2py parse generated/api.source --language c
-python3 -m x2py parse generated/api.source --language fortran
+python3 -m prik parse generated/api.source --language c
+python3 -m prik parse generated/api.source --language fortran
 ```
 
 ## Compiler Preprocessing
@@ -433,7 +433,7 @@ for macros, conditional compilation, target flags, and native includes.
 ### C Compiler And Flags
 
 ```bash
-python3 -m x2py parse include/api.h --language c \
+python3 -m prik parse include/api.h --language c \
   --compiler clang \
   -I include \
   -D API_EXPORT= \
@@ -445,22 +445,22 @@ python3 -m x2py parse include/api.h --language c \
 ### C Compilation Database
 
 ```bash
-python3 -m x2py semantics src/api.c --language c \
+python3 -m prik semantics src/api.c --language c \
   --compile-commands build/compile_commands.json
 ```
 
 Extra wrapper-specific flags can be added to the selected database entry:
 
 ```bash
-python3 -m x2py semantics src/api.c --language c \
+python3 -m prik semantics src/api.c --language c \
   --compile-commands build/compile_commands.json \
-  --compiler-arg=-DX2PY_SCAN=1
+  --compiler-arg=-DPRIK_SCAN=1
 ```
 
 ### Fortran Compiler And Flags
 
 ```bash
-python3 -m x2py generate --pyi src/api.f90 --language fortran \
+python3 -m prik generate --pyi src/api.f90 --language fortran \
   --compiler gfortran \
   -I include \
   -D USE_MPI \
@@ -473,7 +473,7 @@ python3 -m x2py generate --pyi src/api.f90 --language fortran \
 Use a command template for an unsupported compiler family:
 
 ```bash
-python3 -m x2py parse include/api.h --language c \
+python3 -m prik parse include/api.h --language c \
   --preprocessor-adapter command-template \
   --preprocess-template \
   'cc -E {include_dirs} {defines} {undefs} {standard} {compiler_args} {source}'
@@ -488,7 +488,7 @@ For C projects, reachable project includes are public by default and system
 headers are private. Narrow or override that wrapper-facing surface:
 
 ```bash
-python3 -m x2py generate --pyi include/api.h --language c \
+python3 -m prik generate --pyi include/api.h --language c \
   --include-exposure roots-only \
   --public-include 'include/public/*' \
   --private-include 'vendor/*'
@@ -501,20 +501,20 @@ Private declarations remain available for internal type resolution.
 Write one parser payload to an explicit path:
 
 ```bash
-python3 -m x2py parse tests/data/fortran/general/basic_subroutine.f90 \
+python3 -m prik parse tests/data/fortran/general/basic_subroutine.f90 \
   --json --out /tmp/basic_subroutine.json
 ```
 
 Write one parser payload beside each source:
 
 ```bash
-python3 -m x2py parse path/to/fortran_sources --language fortran --out
+python3 -m prik parse path/to/fortran_sources --language fortran --out
 ```
 
 Write an explicit `.pyi`:
 
 ```bash
-python3 -m x2py tests/data/c/general/math_api.h \
+python3 -m prik tests/data/c/general/math_api.h \
   --language c --pyi --out /tmp/math_api.pyi
 ```
 
@@ -527,13 +527,13 @@ Parser and preprocessing failures are rendered without a Python traceback by
 default. Disable ANSI color for logs:
 
 ```bash
-python3 -m x2py parse path/to/source.f90 --no-color
+python3 -m prik parse path/to/source.f90 --no-color
 ```
 
 Re-raise an error with a traceback while debugging:
 
 ```bash
-python3 -m x2py parse path/to/source.f90 --debug
+python3 -m prik parse path/to/source.f90 --debug
 ```
 
 Stable diagnostic categories are listed in
@@ -546,9 +546,9 @@ the shared CLI compiler preprocessing pipeline.
 
 ### Parse Inline Fortran
 
-<!-- x2py-doc-test: exact -->
+<!-- prik-doc-test: exact -->
 ```python
-from x2py import parse_fortran_file
+from prik import parse_fortran_file
 
 parsed = parse_fortran_file(
     "subroutine ping(n)\n"
@@ -562,16 +562,16 @@ print(parsed.procedures[0].name)  # ping
 
 Output:
 
-<!-- x2py-doc-test-output -->
+<!-- prik-doc-test-output -->
 ```text
 ping
 ```
 
 ### Parse Inline C
 
-<!-- x2py-doc-test: exact -->
+<!-- prik-doc-test: exact -->
 ```python
-from x2py import parse_c_file
+from prik import parse_c_file
 
 parsed = parse_c_file("int add(int a, int b);", filename="inline.h")
 
@@ -580,16 +580,16 @@ print([function.name for function in parsed.functions])  # ['add']
 
 Output:
 
-<!-- x2py-doc-test-output -->
+<!-- prik-doc-test-output -->
 ```text
 ['add']
 ```
 
 ### Parse An In-Memory C Project
 
-<!-- x2py-doc-test: exact -->
+<!-- prik-doc-test: exact -->
 ```python
-from x2py import parse_c_project
+from prik import parse_c_project
 
 project = parse_c_project(
     {
@@ -604,7 +604,7 @@ print(sorted(project.functions))  # ['answer']
 
 Output:
 
-<!-- x2py-doc-test-output -->
+<!-- prik-doc-test-output -->
 ```text
 ['api.h', 'types.h']
 ['answer']
@@ -612,9 +612,9 @@ Output:
 
 ### Parse An In-Memory Fortran Project
 
-<!-- x2py-doc-test: exact -->
+<!-- prik-doc-test: exact -->
 ```python
-from x2py import parse_fortran_project
+from prik import parse_fortran_project
 
 project = parse_fortran_project(
     {
@@ -632,16 +632,16 @@ print(sorted(project.modules))  # ['api', 'types']
 
 Output:
 
-<!-- x2py-doc-test-output -->
+<!-- prik-doc-test-output -->
 ```text
 ['api', 'types']
 ```
 
 ### Convert C To Semantic IR And Emit `.pyi`
 
-<!-- x2py-doc-test: exact -->
+<!-- prik-doc-test: exact -->
 ```python
-from x2py import (
+from prik import (
     c_file_to_semantic_modules,
     emit_module_stubs,
     parse_c_file,
@@ -655,7 +655,7 @@ print(emit_module_stubs(modules)["inline"])
 
 Output:
 
-<!-- x2py-doc-test-output -->
+<!-- prik-doc-test-output -->
 ```text
 def add(
     a: Int,
@@ -722,7 +722,7 @@ def fill_matrix(
 ### Complete Callback Signature
 
 ```python
-from x2py.contracts import prototype
+from prik.contracts import prototype
 
 @prototype
 def objective(value: Float64) -> Float64: ...
@@ -794,7 +794,7 @@ storage policy rather than inventing it from the declaration alone.
 int log_msg(const char *fmt, ...);
 ```
 
-Current x2py does not generate a runtime wrapper for the variadic contract.
+Current prik does not generate a runtime wrapper for the variadic contract.
 
 ## More References
 

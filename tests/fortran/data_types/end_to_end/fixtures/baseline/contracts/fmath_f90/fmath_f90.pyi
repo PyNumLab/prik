@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Arg, Bool, Complex128, Complex64, Float32, Float64, Int32, Returns, bind, native_call
+from prik.contracts import Addr, Arg, Bool, Complex128, Complex64, Float32, Float64, Int32, Returns, bind, native_call
 
 @bind("SQUARE_R4")
 @native_call([Addr(Arg(0))])

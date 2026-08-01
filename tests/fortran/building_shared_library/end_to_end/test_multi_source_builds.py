@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from x2py import build_pyi_extension
+from prik import build_pyi_extension
 
 from tests.fortran._support.pyi_fixtures import assert_generated_pyi_package_matches_fixture
 from tests.fortran._support.wrapper_build import (
@@ -92,7 +92,7 @@ def _generate_combined_contract(sources: tuple[Path, ...], package_dir: Path) ->
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "generate",
             "--pyi",
             *(str(source) for source in sources),
@@ -146,7 +146,7 @@ def _build_sources(sources: tuple[Path, ...], build_dir: Path) -> tuple[object, 
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             *(str(source) for source in sources),
             "--out-dir",
             str(build_dir),
@@ -347,7 +347,7 @@ def test_makefile_mode_reproduces_multi_source_build(tmp_path: Path):
     command = [
         sys.executable,
         "-m",
-        "x2py",
+        "prik",
         "generate",
         "--makefile",
         str(first),
@@ -366,7 +366,7 @@ def test_makefile_mode_reproduces_multi_source_build(tmp_path: Path):
     text = makefile.read_text(encoding="utf-8")
     assert "FC := " in text
     assert "CC := " in text
-    assert "X2PY_FFLAGS ?=" in text
+    assert "PRIK_FFLAGS ?=" in text
     assert f"{tmp_path / 'second_api.o'}: {second} {tmp_path / 'first_api.o'}" in text
     assert f"{tmp_path / 'bind_c_first_api_wrapper.o'}:" in text
     assert str(tmp_path / "first_api.o") in text
@@ -379,8 +379,8 @@ def test_makefile_mode_reproduces_multi_source_build(tmp_path: Path):
             "-f",
             str(makefile),
             "all",
-            "X2PY_FFLAGS=-O3",
-            "X2PY_CFLAGS=-O3",
+            "PRIK_FFLAGS=-O3",
+            "PRIK_CFLAGS=-O3",
         ],
         capture_output=True,
         text=True,

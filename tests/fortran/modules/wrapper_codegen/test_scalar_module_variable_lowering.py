@@ -8,12 +8,12 @@ from unittest.mock import Mock
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.ownership import AssignmentMode, SetterAction
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import ModuleGetterAction
-from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
-from x2py.wrapper_codegen.c.binding import CBindingGenerator
-from x2py.wrapper_codegen.fortran.bridge import FortranBridgeGenerator
+from prik.semantics.ownership import AssignmentMode, SetterAction
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.wrapper_policy import ModuleGetterAction
+from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.wrapper_codegen.c.binding import CBindingGenerator
+from prik.wrapper_codegen.fortran.bridge import FortranBridgeGenerator
 
 
 SCALAR_MODULE_CONTRACT = """
@@ -163,7 +163,7 @@ def test_module_variable_generators_dispatch_get_set_and_rejection_from_plan():
     assert "bind_c_set_counter(value)" in c_source
     assert "module variable optional_scale is read-only" in c_source
     assert "module variable selected_scale is read-only" in c_source
-    assert 'getenv("X2PY_WRAPPER_FAIL_ALLOC")' in c_source
+    assert 'getenv("PRIK_WRAPPER_FAIL_ALLOC")' in c_source
     assert "result = native_counter" in fortran_source
     assert "native_counter = value" in fortran_source
     assert "allocated(native_optional_scale)" in fortran_source

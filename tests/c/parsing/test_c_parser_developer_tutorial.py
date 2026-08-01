@@ -7,7 +7,7 @@ modules; this file keeps the parser's control flow easy to inspect.
 
 
 def test_tutorial_shared_declarator_backend_builds_layered_variable_type():
-    from x2py.parsers.c import CArray, CConst, CInt, CParser, CPointer
+    from prik.parsers.c import CArray, CConst, CInt, CParser, CPointer
 
     parser = CParser()
     specifiers, declarator = parser._split_declaration_specifiers("const int *values[4]")
@@ -26,7 +26,7 @@ def test_tutorial_shared_declarator_backend_builds_layered_variable_type():
 
 
 def test_tutorial_parse_file_dispatches_declaration_roles_through_one_model():
-    from x2py.parsers.c import CParser, CStruct
+    from prik.parsers.c import CParser, CStruct
 
     parsed = CParser().parse_file(
         """
@@ -47,7 +47,7 @@ extern int request_count;
 
 
 def test_tutorial_preprocessed_input_reuses_parsing_and_remaps_locations():
-    from x2py.parsers.c import CParser
+    from prik.parsers.c import CParser
 
     parsed = CParser().parse_file(
         '# 24 "include/api.h"\nint expanded_api(void);\n',

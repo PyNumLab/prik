@@ -6,7 +6,7 @@ from dataclasses import asdict
 
 import pytest
 
-from x2py.parsers.fortran.models import (
+from prik.parsers.fortran.models import (
     FortranArgument,
     FortranBlockData,
     FortranDerivedType,
@@ -20,11 +20,11 @@ from x2py.parsers.fortran.models import (
     FortranVariable,
 )
 
-from x2py import parse_fortran_file as parse_fortran_source
+from prik import parse_fortran_file as parse_fortran_source
 
-from x2py import parse_fortran_project
+from prik import parse_fortran_project
 
-from x2py.semantics.fortran2ir import (
+from prik.semantics.fortran2ir import (
     FortranToIRConverter,
     _compile_time_requirement_message,
     _iter_fortran_variable_contexts,
@@ -39,18 +39,18 @@ from x2py.semantics.fortran2ir import (
     resolve_semantic_compile_time_values,
 )
 
-from x2py.semantics import models as semantic_models
+from prik.semantics import models as semantic_models
 
-from x2py.semantics.native_contract import native_contract_issues
+from prik.semantics.native_contract import native_contract_issues
 
-from x2py.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
+from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
 
-from x2py.semantics.metadata import SCALAR_STORAGE_CATEGORY
+from prik.semantics.metadata import SCALAR_STORAGE_CATEGORY
 
 
-from x2py.wrapper_codegen.printers import emit_module
+from prik.wrapper_codegen.printers import emit_module
 
-from x2py.semantics.models import (
+from prik.semantics.models import (
     ProjectionMapping,
     SemanticArgument,
     SemanticField,

@@ -1,6 +1,6 @@
 # Intentional difference: no native-call decorators.  Output slots stay
 # visible in native dummy-argument order.
-from x2py.contracts import Addr, Float64, Int32, String, bind
+from prik.contracts import Addr, Float64, Int32, String, bind
 
 class summary_point:
     def __init__(

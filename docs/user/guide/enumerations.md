@@ -1,6 +1,6 @@
 ---
 title: Enumerations
-description: How x2py handles Fortran `enum` and enumerators
+description: How prik handles Fortran `enum` and enumerators
 audience: users
 prerequisites: wrapping modules, data types
 related: wrapping-modules.md, generic-interfaces.md
@@ -10,7 +10,7 @@ publication: reviewed
 
 # Enumerations
 
-x2py turns supported Fortran `enum` declarations into **typed integer constants**. It does **not** generate Python `Enum` or `IntEnum` classes — values remain plain integers with the resolved dtype.
+prik turns supported Fortran `enum` declarations into **typed integer constants**. It does **not** generate Python `Enum` or `IntEnum` classes — values remain plain integers with the resolved dtype.
 
 ---
 
@@ -42,7 +42,7 @@ end module colors_api
 Build it:
 
 ```bash
-python3 -m x2py colors.f90 --out-dir build/colors
+python3 -m prik colors.f90 --out-dir build/colors
 ```
 
 ---

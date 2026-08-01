@@ -1,14 +1,14 @@
-from x2py.contracts import Final, Float32, Int, Int32
+from prik.contracts import Final, Float32, Int, Int32
 
-X2PY_EXPR_N0: Final[Int32] = 4
+PRIK_EXPR_N0: Final[Int32] = 4
 
-X2PY_EXPR_N1: Final[Int32] = X2PY_EXPR_N0 + 2
+PRIK_EXPR_N1: Final[Int32] = PRIK_EXPR_N0 + 2
 
-X2PY_EXPR_A: Final[Int32] = 8
+PRIK_EXPR_A: Final[Int32] = 8
 
-X2PY_EXPR_B: Final[Int32] = 3
+PRIK_EXPR_B: Final[Int32] = 3
 
-X2PY_EXPR_C: Final[Int32] = 2
+PRIK_EXPR_C: Final[Int32] = 2
 
 def fill_grid(
     x: Int[1, 4 + 2]

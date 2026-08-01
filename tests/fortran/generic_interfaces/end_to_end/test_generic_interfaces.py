@@ -40,7 +40,7 @@ def test_fortran_generic_interfaces_dispatch_in_generated_c_extension(
 
     assert "Module Attributes" not in module.__doc__
     assert "convert(*args, **kwargs)" in module.__doc__
-    assert "_x2py_overload_" not in module.__doc__
+    assert "_prik_overload_" not in module.__doc__
     assert "convert_integer" not in module.__doc__
     assert "convert(value: int32) -> int32" in module.convert.__doc__
     assert "convert(value: float64) -> float64" in module.convert.__doc__

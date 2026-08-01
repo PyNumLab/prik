@@ -17,9 +17,9 @@ report is either too compact or too noisy.
 Fortran variable sections are compact by default. Add `--show-vars` when you
 need to inspect module variables and derived-type fields:
 
-<!-- x2py-doc-test: run -->
+<!-- prik-doc-test: run -->
 ```bash
-python3 -m x2py parse tests/fortran/source_parsing/parsing/fixtures/general/modern_pyi_example.f90 \
+python3 -m prik parse tests/fortran/source_parsing/parsing/fixtures/general/modern_pyi_example.f90 \
   --show-vars
 ```
 
@@ -27,15 +27,15 @@ python3 -m x2py parse tests/fortran/source_parsing/parsing/fixtures/general/mode
 
 Use `--print-limit` to keep long reports readable while preserving totals:
 
-<!-- x2py-doc-test: exact -->
+<!-- prik-doc-test: exact -->
 ```bash
-python3 -m x2py parse tests/fortran/source_parsing/parsing/fixtures/general/modern_pyi_example.f90 \
+python3 -m prik parse tests/fortran/source_parsing/parsing/fixtures/general/modern_pyi_example.f90 \
   --show-vars --print-limit 1
 ```
 
 Expected output:
 
-<!-- x2py-doc-test-output -->
+<!-- prik-doc-test-output -->
 ```text
 File: tests/fortran/source_parsing/parsing/fixtures/general/modern_pyi_example.f90
   Modules: 1
@@ -58,9 +58,9 @@ File: tests/fortran/source_parsing/parsing/fixtures/general/modern_pyi_example.f
 
 Choose one inspection stage per command. For parser details, run:
 
-<!-- x2py-doc-test: run -->
+<!-- prik-doc-test: run -->
 ```bash
-python3 -m x2py parse tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
+python3 -m prik parse tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
 ```
 
 ## Notes
@@ -68,6 +68,6 @@ python3 -m x2py parse tests/fortran/source_parsing/parsing/fixtures/general/basi
 - `--show-vars` is Fortran-only.
 - Use `--json` when another tool needs stable machine-readable output.
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 - `&#45;&#45;print-limit` works with human-readable C and Fortran parse reports.
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->

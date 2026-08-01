@@ -3,14 +3,14 @@ from pathlib import Path
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from tests.fortran._support.wrapper_build import wrapper_source
-from x2py.parsers.fortran.parser import parse_fortran_project
-from x2py.pipeline.build import _apply_source_python_exports, _fortran_source_for_pipeline, _merge_wrapper_modules
-from x2py.pipeline.preprocessing import PreprocessingConfig
-from x2py.semantics.fortran2ir import fortran_project_to_semantic_modules
-from x2py.semantics.models import (
+from prik.parsers.fortran.parser import parse_fortran_project
+from prik.pipeline.build import _apply_source_python_exports, _fortran_source_for_pipeline, _merge_wrapper_modules
+from prik.pipeline.preprocessing import PreprocessingConfig
+from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
+from prik.semantics.models import (
     RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA,
 )
-from x2py.semantics.ownership import (
+from prik.semantics.ownership import (
     CodegenAction,
     DestructionPolicy,
     NativeBarrierAction,
@@ -19,8 +19,8 @@ from x2py.semantics.ownership import (
     PythonBarrierAction,
     TransferMode,
 )
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.semantics.wrapper_policy import (
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.wrapper_policy import (
     ArgumentConversionPhase,
     ArgumentHandoffMode,
     BridgeDataAction,

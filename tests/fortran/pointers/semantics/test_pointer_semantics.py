@@ -11,8 +11,8 @@ from tests.fortran._support.semantic_conversion import (
     get_function,
     parse_fortran_source,
 )
-from x2py.semantics.metadata import NATIVE_ARRAY_DESCRIPTOR_METADATA, OPTIONAL_ABSENT_HANDLE_METADATA
-from x2py.semantics.native_array_handles import native_array_descriptor_kind
+from prik.semantics.metadata import NATIVE_ARRAY_DESCRIPTOR_METADATA, OPTIONAL_ABSENT_HANDLE_METADATA
+from prik.semantics.native_array_handles import native_array_descriptor_kind
 
 
 def test_fortran_pointer_arrays_and_scalars_preserve_descriptor_semantics():

@@ -1,4 +1,4 @@
-from x2py.contracts import Float64
+from prik.contracts import Float64
 
 def parallel_sum(
     values: Float64[::]

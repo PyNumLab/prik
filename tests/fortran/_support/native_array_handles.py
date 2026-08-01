@@ -8,9 +8,9 @@ import numpy as np
 
 import pytest
 
-import x2py
+import prik
 
-from x2py.runtime.handles import (
+from prik.runtime.handles import (
     _NativeArrayDescriptorHandoff,
     _NativeArrayHandoff,
     _native_array_actual_argument_for_binding_positional,
@@ -108,6 +108,6 @@ __all__ = (
     "ctypes",
     "gc",
     "np",
+    "prik",
     "pytest",
-    "x2py",
 )

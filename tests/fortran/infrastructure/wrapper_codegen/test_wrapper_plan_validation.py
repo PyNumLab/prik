@@ -7,10 +7,10 @@ from dataclasses import replace
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from x2py.semantics.models import PYTHON_EXPORTS_METADATA
-from x2py.semantics.ownership import CodegenAction, NativeBarrierAction, ObjectKind
-from x2py.semantics.policy_completion import complete_semantic_policies
-from x2py.wrapper_codegen import (
+from prik.semantics.models import PYTHON_EXPORTS_METADATA
+from prik.semantics.ownership import CodegenAction, NativeBarrierAction, ObjectKind
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.wrapper_codegen import (
     NamespacePlan,
     WrapperCodeGenerator,
     WrapperPlanner,

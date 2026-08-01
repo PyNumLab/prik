@@ -1,4 +1,4 @@
-from x2py.contracts import Int32
+from prik.contracts import Int32
 
 def func1() -> Int32: ...
 

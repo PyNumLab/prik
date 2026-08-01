@@ -2,12 +2,12 @@
   "use strict";
 
   const copyIcon = `
-    <svg class="x2py-copy-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <svg class="prik-copy-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <rect x="8" y="8" width="12" height="13" rx="2"></rect>
       <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"></path>
     </svg>`;
   const copiedIcon = `
-    <svg class="x2py-copied-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <svg class="prik-copied-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <path d="m5 12 4 4L19 6"></path>
     </svg>`;
 
@@ -48,14 +48,14 @@
       parent && (parent.classList.contains("highlight") || parent.classList.contains("codehilite"))
         ? parent
         : pre;
-    if (host.classList.contains("x2py-copy-host")) {
+    if (host.classList.contains("prik-copy-host")) {
       return;
     }
 
-    host.classList.add("x2py-copy-host");
+    host.classList.add("prik-copy-host");
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "x2py-code-copy";
+    button.className = "prik-code-copy";
     button.setAttribute("aria-label", "Copy code to clipboard");
     button.title = "Copy";
     button.innerHTML = copyIcon + copiedIcon;

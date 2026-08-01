@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from tests.fortran._support.wrapper_build import _import_from_build_dir, _sole_native_module
-from x2py import build_pyi_extension
+from prik import build_pyi_extension
 
 pytestmark = pytest.mark.fortran_end_to_end
 
@@ -22,7 +22,7 @@ def test_documented_edited_pyi_distinguishes_values_scalar_storage_and_string_ar
     contract.mkdir()
     (contract / "__init__.pyi").write_text("from . import documented_strings_api\n", encoding="utf-8")
     (contract / "documented_strings_api.pyi").write_text(
-        """from x2py.contracts import Addr, Arg, Int32, Returns, String, native_call
+        """from prik.contracts import Addr, Arg, Int32, Returns, String, native_call
 
 def edit_text(text: String[8]) -> Returns["text", String[8]]: ...
 

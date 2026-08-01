@@ -9,7 +9,7 @@ publication: draft
 
 # Developer Documentation
 
-This lane is for changing x2py. It maps public behavior to implementation and
+This lane is for changing prik. It maps public behavior to implementation and
 tests, then provides focused contribution workflows.
 
 ## Orientation
@@ -24,9 +24,9 @@ tests, then provides focused contribution workflows.
 - [Testing strategy](testing-strategy.md)
 - [Coding standards](coding-standards.md)
 
-<!-- X2PY_C_DOCS_START
+<!-- PRIK_C_DOCS_START
 - [C parser reference](c-parser-reference.md)
-X2PY_C_DOCS_END -->
+PRIK_C_DOCS_END -->
 
 ## Change Workflows
 

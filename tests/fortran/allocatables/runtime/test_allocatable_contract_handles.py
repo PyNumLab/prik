@@ -1,10 +1,10 @@
-"""Runtime constructors exposed by concrete x2py contract annotations."""
+"""Runtime constructors exposed by concrete prik contract annotations."""
 
 import numpy as np
 import pytest
 
-import x2py.contracts as contracts
-from x2py.runtime.handles import (
+import prik.contracts as contracts
+from prik.runtime.handles import (
     AllocatableArray,
     _bind_contract_native_array_handle,
     _native_array_descriptor_argument_for_binding,

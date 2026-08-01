@@ -13,15 +13,15 @@ from tests.fortran._support.native_array_handles import (
     gc,
     np,
     pytest,
-    x2py,
+    prik,
 )
 
 
 def test_runtime_handle_classes_are_public_api_exports():
-    assert x2py.AllocatableArray is AllocatableArray
-    assert x2py.NativeArrayHandleBase is NativeArrayHandleBase
-    assert x2py.PointerArray is PointerArray
-    assert {"AllocatableArray", "NativeArrayHandleBase", "PointerArray"} <= set(x2py.__all__)
+    assert prik.AllocatableArray is AllocatableArray
+    assert prik.NativeArrayHandleBase is NativeArrayHandleBase
+    assert prik.PointerArray is PointerArray
+    assert {"AllocatableArray", "NativeArrayHandleBase", "PointerArray"} <= set(prik.__all__)
 
 
 def test_generated_handle_factory_adapts_private_operations_to_runtime_protocol():

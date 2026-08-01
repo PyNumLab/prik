@@ -14,7 +14,7 @@ building a wrapper.
 
 ## Input
 
-<!-- x2py-doc-source: tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90 -->
+<!-- prik-doc-source: tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90 -->
 ```fortran
 module m1
 contains
@@ -27,14 +27,14 @@ end module m1
 
 ## Parse Source Facts
 
-<!-- x2py-doc-test: exact -->
+<!-- prik-doc-test: exact -->
 ```bash
-python3 -m x2py parse tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
+python3 -m prik parse tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
 ```
 
 Expected output:
 
-<!-- x2py-doc-test-output -->
+<!-- prik-doc-test-output -->
 ```text
 File: tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
   Modules: 1
@@ -45,21 +45,21 @@ File: tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
 
 ## Generate Semantic `.pyi`
 
-<!-- x2py-doc-test: exact -->
+<!-- prik-doc-test: exact -->
 ```bash
-python3 -m x2py generate --pyi tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
+python3 -m prik generate --pyi tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
 ```
 
 Expected output:
 
-<!-- x2py-doc-test-output -->
+<!-- prik-doc-test-output -->
 ```python
 File: tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
 Root contract: basic_subroutine/basic_subroutine.pyi
 from . import m1
 
 Module contract: m1.pyi
-from x2py.contracts import Addr, Arg, Float64, Int32, native_call
+from prik.contracts import Addr, Arg, Float64, Int32, native_call
 
 @native_call([Addr(Arg(0)), Arg(1)])
 def add1(

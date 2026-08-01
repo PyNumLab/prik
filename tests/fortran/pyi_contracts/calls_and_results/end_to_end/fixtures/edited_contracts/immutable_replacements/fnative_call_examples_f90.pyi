@@ -1,6 +1,6 @@
 # Intentional difference: writable scalar, string, array, and derived-type
 # arguments use immutable Python-visible inputs and explicit replacement results.
-from x2py.contracts import Addr, Annotated, Arg, Float64, Immutable, Int32, Return, Returns, String, native_call
+from prik.contracts import Addr, Annotated, Arg, Float64, Immutable, Int32, Return, Returns, String, native_call
 
 class summary_point:
     def __init__(

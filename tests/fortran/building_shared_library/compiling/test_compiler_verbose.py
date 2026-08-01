@@ -3,11 +3,11 @@ from pathlib import Path
 
 import pytest
 
-import x2py.compiling.compiler_profiles as compiler_profiles
-import x2py.compiling.compilers as compiler_module
-from x2py.compiling.objects import ObjectFile
-from x2py.compiling.compilers import Compiler
-from x2py.compiling.compiler_profiles import available_compilers, fortran_compiler_family, vendors
+import prik.compiling.compiler_profiles as compiler_profiles
+import prik.compiling.compilers as compiler_module
+from prik.compiling.objects import ObjectFile
+from prik.compiling.compilers import Compiler
+from prik.compiling.compiler_profiles import available_compilers, fortran_compiler_family, vendors
 
 
 def test_record_only_compiler_keeps_object_command_without_executing(monkeypatch, tmp_path: Path):

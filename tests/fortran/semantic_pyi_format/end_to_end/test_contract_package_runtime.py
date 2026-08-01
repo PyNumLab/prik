@@ -60,7 +60,7 @@ def _generate_contract_package(source: Path, output_parent: Path) -> Path:
         [
             sys.executable,
             "-m",
-            "x2py",
+            "prik",
             "generate",
             "--pyi",
             str(source),
@@ -105,7 +105,7 @@ def _build_contract(
     command = [
         sys.executable,
         "-m",
-        "x2py",
+        "prik",
         str(entry),
         "--native-objects",
         str(native_object),

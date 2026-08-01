@@ -1,4 +1,4 @@
-from x2py.contracts import Addr, Aliased, Allocatable, Annotated, Arg, Float64, Int32, native_call
+from prik.contracts import Addr, Aliased, Allocatable, Annotated, Arg, Float64, Int32, native_call
 
 class box:
     values: Allocatable[Float64[:]]
