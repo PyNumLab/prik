@@ -14,6 +14,12 @@ deployment. The documentation workflow builds the same filtered MkDocs site
 that maintainers can preview locally, uploads the generated `site/` directory,
 and deploys it through GitHub Pages.
 
+Packaging output under `build/` is generated, ignored, and must never be
+committed. In addition to keeping distribution artifacts out of the source
+tree, this ensures rename-aware quality gates compare the previous package
+directly with its current source path instead of matching it to a duplicate
+under `build/lib/`.
+
 ## Test Platforms
 
 The `Tests` workflow runs the ordinary suite on Ubuntu with every supported
