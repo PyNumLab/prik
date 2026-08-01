@@ -2689,6 +2689,11 @@ class FortranBridgeGenerator(ClassVisitor):
                 else ()
             ),
             *(
+                (FortranParameter(f"{name}_dense_actual", "integer(c_int)", ("value",)),)
+                if array.dense_actual_role is not None
+                else ()
+            ),
+            *(
                 FortranParameter(f"{name}_extent_{axis}", "integer(c_int64_t)", ("value",))
                 for axis in range(len(array.extent_roles))
             ),
@@ -3275,7 +3280,7 @@ class FortranBridgeGenerator(ClassVisitor):
         if plan.bridge.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR:
             return ()
         if plan.bridge.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER:
-            return (self._array_pointer_initializer(plan),)
+            return self._array_pointer_initializer_nodes(plan)
         if plan.bridge.optional_mode is OptionalMode.NULLABLE_VALUE:
             return (
                 FortranCall(
@@ -3478,13 +3483,25 @@ class FortranBridgeGenerator(ClassVisitor):
             if array.rank is None:
                 declarations.extend(self._assumed_rank_array_declarations(argument))
             else:
+                attributes = ["pointer"]
+                if array.contiguous is True:
+                    attributes.append("contiguous")
+                attributes.append(self._array_dimension_attribute(array.rank))
                 declarations.append(
                     FortranDeclaration(
                         self._array_pointer_name(argument),
                         self._array_element_fortran_type(argument),
-                        ("pointer", self._array_dimension_attribute(array.rank)),
+                        tuple(attributes),
                     )
                 )
+                if array.dense_actual_role is not None:
+                    declarations.append(
+                        FortranDeclaration(
+                            argument.bridge.native_name.lower(),
+                            self._array_element_fortran_type(argument),
+                            ("pointer", self._array_dimension_attribute(array.rank)),
+                        )
+                    )
             if argument.array_writeback_abi is ArrayWritebackABI.LOGICAL_LOW_BIT_INT8:
                 declarations.append(
                     FortranDeclaration(
@@ -3564,7 +3581,7 @@ class FortranBridgeGenerator(ClassVisitor):
     def _logical_array_byte_pointer_name(argument: ArgumentTransferPlan) -> str:
         return f"{argument.bridge.native_name.lower()}_logical_bytes"
 
-    def _array_initializers(self, plan: FunctionPlan) -> tuple[FortranCall, ...]:
+    def _array_initializers(self, plan: FunctionPlan) -> tuple[FortranCall | FortranIf, ...]:
         """Associate each completed ordinary array data/extent handoff."""
         initializers = []
         for argument in plan.arguments:
@@ -3574,7 +3591,7 @@ class FortranBridgeGenerator(ClassVisitor):
                 continue
             if argument.array is not None and argument.array.rank is None:
                 continue
-            initializers.append(self._array_pointer_initializer(argument))
+            initializers.extend(self._array_pointer_initializer_nodes(argument))
         return tuple(initializers)
 
     def _raw_array_address_declarations(self, plan: FunctionPlan) -> tuple[FortranDeclaration, ...]:
@@ -3647,6 +3664,30 @@ class FortranBridgeGenerator(ClassVisitor):
             ),
         )
 
+    def _array_pointer_initializer_nodes(
+        self,
+        argument: ArgumentTransferPlan,
+    ) -> tuple[FortranCall | FortranIf, ...]:
+        """Associate base storage and select the planned dense or strided view."""
+        association = self._array_pointer_initializer(argument)
+        array = argument.array
+        if array is None or array.dense_actual_role is None:
+            return (association,)
+        name = argument.bridge.native_name.lower()
+        return (
+            association,
+            FortranIf(
+                CodeExpression(f"{name}_dense_actual /= 0_c_int"),
+                body=(FortranPointerAssignment(name, CodeExpression(f"{name}_base")),),
+                else_body=(
+                    FortranPointerAssignment(
+                        name,
+                        CodeExpression(self._strided_array_section_expression(argument)),
+                    ),
+                ),
+            ),
+        )
+
     def _assumed_rank_array_declarations(
         self,
         argument: ArgumentTransferPlan,
@@ -3654,11 +3695,12 @@ class FortranBridgeGenerator(ClassVisitor):
         """Declare one readable typed pointer local for every supported runtime rank."""
         name = argument.bridge.native_name.lower()
         element_type = self._array_element_fortran_type(argument)
+        attributes = ("pointer", "contiguous") if argument.array.contiguous is True else ("pointer",)
         return tuple(
             FortranDeclaration(
                 f"{name}_rank_{rank}",
                 element_type,
-                ("pointer", self._array_dimension_attribute(rank)),
+                (*attributes, self._array_dimension_attribute(rank)),
             )
             for rank in range(1, 16)
         )
@@ -3697,6 +3739,17 @@ class FortranBridgeGenerator(ClassVisitor):
         pointer_name = self._array_pointer_name(argument)
         if array.contiguous is not False:
             return pointer_name
+        if array.dense_actual_role is not None:
+            return name
+        return self._strided_array_section_expression(argument)
+
+    def _strided_array_section_expression(self, argument: ArgumentTransferPlan) -> str:
+        """Render one positive-stride section from completed layout roles."""
+        array = argument.array
+        if array is None or array.rank is None:
+            raise ValueError(f"Strided array argument {argument.owner_path!r} requires a concrete rank")
+        name = argument.bridge.native_name.lower()
+        pointer_name = self._array_pointer_name(argument)
         slices = (f"1:{name}_upper_bound_{axis} + 1:{name}_stride_{axis}" for axis in range(array.rank))
         return f"{pointer_name}({', '.join(slices)})"
 

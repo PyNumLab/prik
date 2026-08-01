@@ -48,9 +48,9 @@ def test_planner_records_editable_native_runtime_and_status_error_facts():
     functions = {function.binding.python_name: function for function in plan.namespaces[0].functions}
     solve = functions["solve"]
 
-    assert functions["pause_for_one_second"].binding.hold_gil is False
-    assert functions["pause_with_gil"].binding.hold_gil is True
-    assert solve.binding.hold_gil is False
+    assert functions["pause_for_one_second"].binding.release_gil is True
+    assert functions["pause_with_gil"].binding.release_gil is False
+    assert solve.binding.release_gil is True
     assert solve.binding.status_error is not None
     assert solve.binding.status_error.success == 0
     assert solve.binding.status_error.exception_kind is PythonExceptionKind.RUNTIME_ERROR
@@ -72,7 +72,7 @@ def test_planner_records_editable_native_runtime_and_status_error_facts():
     )
 
 
-def test_direct_binding_lowering_places_only_native_call_outside_the_gil():
+def test_direct_binding_lowering_places_only_opted_in_native_call_outside_the_gil():
     artifacts = WrapperCodeGenerator().generate(_runtime_plan())
     c_source = _rendered_source(artifacts, ".c")
     released = _function_source(c_source, "pause_for_one_second", "pause_with_gil")
@@ -127,7 +127,7 @@ def test_runtime_plan_edits_dispatch_to_named_lowering_and_validate_roles():
     held = _edit_function(
         plan,
         "pause_for_one_second",
-        lambda function: replace(function, binding=replace(function.binding, hold_gil=True)),
+        lambda function: replace(function, binding=replace(function.binding, release_gil=False)),
     )
     c_source = _rendered_source(WrapperCodeGenerator().generate(held), ".c")
     released = _function_source(c_source, "pause_for_one_second", "pause_with_gil")

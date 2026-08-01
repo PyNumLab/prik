@@ -55,7 +55,7 @@ instead of competing with that first task.
 
 | Lane | Primary reader | Publication | Content |
 | --- | --- | --- | --- |
-| `user/` | People using x2py | Documentation website after review | Getting Started, guides, tutorials, examples, public reference, support status, FAQ, troubleshooting, changelog |
+| `user/` | People using x2py | Documentation website after review | Getting Started, guides, performance benchmarks, tutorials, examples, public reference, support status, FAQ, troubleshooting, changelog |
 | `developer/` | People changing x2py | Documentation website after review | Source orientation, implementation maps, testing, coding standards, feature work, contribution workflow |
 | `maintainer/` | People governing x2py | Documentation website after review | Documentation policy, design decisions, internal architecture, CI administration, releases, roadmaps |
 
@@ -153,6 +153,7 @@ docs/
   index.md
   user/
     index.md
+    performance.md
     getting-started/
     guide/
     tutorials/

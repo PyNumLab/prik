@@ -57,7 +57,7 @@ this routing page tied to the source hotspots and package README files.
 | --- | --- | --- |
 | Wrapping functions and subroutines | `x2py/semantics/fortran2ir.py`, policy completion, `x2py/wrapper_codegen/planner.py`, bridge and binding generators | Runtime tests compile, import, call, and verify return and failure behavior |
 | Wrapping modules and module variables | parser module facts, semantic module conversion, naming policy, wrapper generators | Python-visible names, accessors, and unsupported module constructs are tested |
-| Arrays and allocatables | semantic array contracts, ownership policy, typed wrapper plans, bridge/binding array handlers | dtype, shape, rank, contiguity, mutation, returned arrays, and failure paths are tested |
+| Arrays and allocatables | semantic array contracts, ownership policy, typed wrapper plans, bridge/binding array handlers | dtype, shape, rank, contiguity, mutation, returned arrays, and failure paths are tested; ordinary NumPy array actuals validate and extract their buffer directly in the C binding, descriptor handles use the planned runtime-handle path, and strided contracts carry a dense-actual role for zero-copy fast-path selection |
 | Pointer arguments | semantic metadata, ownership policy, bridge/binding pointer handlers | Owner, lifetime, association, and blocked cases are explicit and tested |
 | Optional arguments | parser optional attributes, semantic arguments, binding argument parsing | Present/absent calls and unsupported combinations are tested |
 | Generic interfaces | parser interface facts, semantic overload sets, `FunctionOverloadSet`, binding dispatch | Overload selection and ambiguity failures are tested at runtime |

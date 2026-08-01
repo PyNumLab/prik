@@ -71,7 +71,7 @@ to compare and undo.
 - [How do I return a replacement instead of mutating the original Python value?](calls-and-results.md#control-mutation)
 - [How do I pass checked storage or a raw memory address?](../../guide/raw-addresses.md#checked-storage-or-raw-address)
 - [How do I turn a native status into a Python exception?](calls-and-results.md#translate-status-results-into-exceptions)
-- [How do I keep Python's Global Interpreter Lock (GIL) during a call, or return to the normal releasing behavior?](calls-and-results.md#keep-the-gil-when-required)
+- [How do I release Python's Global Interpreter Lock (GIL) for a native call?](calls-and-results.md#release-the-gil-for-a-native-call)
 - [How do I describe a callback signature in the contract?](../../guide/callbacks.md#choosing-the-prototype-spelling)
 
 Most edits change the Python surface: names, visibility, grouping, or how

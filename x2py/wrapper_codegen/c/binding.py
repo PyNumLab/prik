@@ -70,6 +70,7 @@ from x2py.wrapper_codegen.nodes import (
 )
 from x2py.wrapper_codegen.naming import NativeSymbolNames
 from x2py.wrapper_codegen.plan import (
+    ArrayHandoffPlan,
     ArgumentTransferPlan,
     CallbackHandoffPlan,
     CallbackTransferPlan,
@@ -106,6 +107,7 @@ class _CArgumentNames:
     extent_names: tuple[str, ...]
     upper_bound_names: tuple[str, ...]
     stride_names: tuple[str, ...]
+    dense_actual_name: str
     runtime_rank_name: str
     itemsize_name: str
     polymorphic_name: str
@@ -6421,7 +6423,7 @@ class CBindingGenerator(ClassVisitor):
         self,
         plan: ArgumentTransferPlan,
         context: _CFunctionContext,
-    ) -> tuple[CDeclaration | CExpressionStatement, ...]:
+    ) -> tuple[CDeclaration | CExpressionStatement | CIf | CFor, ...]:
         """Validate and borrow one completed ordinary NumPy array buffer."""
         if plan.native_array_actual is not None:
             return self._lower_argument_required_array_actual(plan, context)
@@ -6466,56 +6468,61 @@ class CBindingGenerator(ClassVisitor):
             declarations.extend(CDeclaration(name, "int64_t", CodeExpression("0")) for name in names.upper_bound_names)
         if array.stride_roles:
             declarations.extend(CDeclaration(name, "int64_t", CodeExpression("1")) for name in names.stride_names)
+        declarations.extend(self._array_dense_actual_declarations(array, names))
         if array.runtime_rank_role is not None:
             declarations.append(CDeclaration(names.runtime_rank_name, "int64_t", CodeExpression("0")))
         if array.itemsize_role is not None:
             declarations.append(CDeclaration(names.itemsize_name, "int64_t", CodeExpression("0")))
         return tuple(declarations)
 
+    @staticmethod
+    def _array_dense_actual_declarations(
+        array: ArrayHandoffPlan,
+        names: _CArgumentNames,
+    ) -> tuple[CDeclaration, ...]:
+        """Declare the planned dense-actual selector when its role exists."""
+        if array.dense_actual_role is None:
+            return ()
+        return (CDeclaration(names.dense_actual_name, "int", CodeExpression("0")),)
+
     # Native-handle actuals reuse the ordinary array-buffer ABI.
     def _lower_argument_required_array_actual(
         self,
         plan: ArgumentTransferPlan,
         context: _CFunctionContext,
-    ) -> tuple[CDeclaration | CExpressionStatement, ...]:
-        """Pack an ndarray or native handle through the shared runtime helper."""
+    ) -> tuple[CDeclaration | CExpressionStatement | CIf, ...]:
+        """Validate ndarrays directly and reserve runtime packing for native handles."""
         actual = plan.native_array_actual
         array = plan.array
         if actual is None or array is None:
             raise ValueError(f"Array actual {plan.owner_path!r} is missing its completed policy")
         names = context.arguments[plan.owner_path]
         prefix = names.value_name
-        nodes: list[CDeclaration | CExpressionStatement] = [
-            CDeclaration(names.object_name, "PyObject *"),
-            CDeclaration(names.value_name, "void *", CodeExpression("NULL")),
-            *(CDeclaration(name, "int64_t", CodeExpression("0")) for name in names.extent_names),
-            *(
-                CDeclaration(name, "int64_t", CodeExpression("0"))
-                for name in names.upper_bound_names[: len(array.upper_bound_roles)]
-            ),
-            *(
-                CDeclaration(name, "int64_t", CodeExpression("1"))
-                for name in names.stride_names[: len(array.stride_roles)]
-            ),
-            *(
-                (CDeclaration(names.runtime_rank_name, "int64_t", CodeExpression("0")),)
-                if array.runtime_rank_role is not None
-                else ()
-            ),
-            *(
-                (CDeclaration(names.itemsize_name, "int64_t", CodeExpression("0")),)
-                if array.itemsize_role is not None
-                else ()
-            ),
+        array_object = f"(PyArrayObject *){names.object_name}"
+        direct_nodes = (
+            self._array_type_and_rank_check(plan, names, array_object),
+            *self._array_layout_checks(plan, array_object),
+            *self._array_access_checks(plan, array_object),
+            *self._array_shape_checks(plan, context, array_object),
+            *self._array_extraction_nodes(plan, names, array_object),
+        )
+        handle_nodes = (
             CDeclaration(f"{prefix}_runtime", "PyObject *", CodeExpression("NULL")),
             CDeclaration(f"{prefix}_helper", "PyObject *", CodeExpression("NULL")),
             CDeclaration(f"{prefix}_shape", "PyObject *", CodeExpression("NULL")),
             CDeclaration(f"{prefix}_layout", "PyObject *", CodeExpression("NULL")),
             CDeclaration(f"{prefix}_packed", "PyObject *", CodeExpression("NULL")),
-        ]
-        nodes.extend(self._native_array_actual_call_nodes(plan, context, names))
-        nodes.extend(self._native_array_actual_unpack_nodes(plan, names))
-        return tuple(nodes)
+            *self._native_array_actual_call_nodes(plan, context, names),
+            *self._native_array_actual_unpack_nodes(plan, names),
+        )
+        return (
+            *self._ordinary_array_argument_declarations(plan, names),
+            CIf(
+                CodeExpression(f"PyArray_Check({names.object_name})"),
+                body=direct_nodes,
+                else_body=handle_nodes,
+            ),
+        )
 
     def _native_array_actual_call_nodes(
         self,
@@ -6730,7 +6737,7 @@ class CBindingGenerator(ClassVisitor):
             CodeExpression(
                 f"if (!PyArray_Check({names.object_name}) || PyArray_TYPE({array}) != {numpy_type} || "
                 f'{rank_check}) {{ PyErr_Format(PyExc_TypeError, "Expected a compatible numpy.ndarray of '
-                f"type {python_type} for argument {plan.binding.python_name}. Received <class '%s'>\", "
+                f"dtype {python_type} for argument {plan.binding.python_name}. Received <class '%s'>\", "
                 f"Py_TYPE({names.object_name})->tp_name); return NULL; }}"
             )
         )
@@ -6795,12 +6802,13 @@ class CBindingGenerator(ClassVisitor):
         else:
             condition = f"!(PyArray_IS_C_CONTIGUOUS({array}) || PyArray_IS_F_CONTIGUOUS({array}))"
             expected_order = "C or F"
+        contiguous_requirement = "; array must be contiguous" if handoff.contiguous is True else ""
         return (
             CExpressionStatement(
                 CodeExpression(
                     f"if ({condition}) {{ PyErr_SetString(PyExc_TypeError, "
                     f'"Argument {plan.binding.python_name} has incompatible layout; expected ordering '
-                    f'({expected_order})"); return NULL; }}'
+                    f'({expected_order}){contiguous_requirement}"); return NULL; }}'
                 )
             ),
         )
@@ -6904,7 +6912,7 @@ class CBindingGenerator(ClassVisitor):
         plan: ArgumentTransferPlan,
         names: _CArgumentNames,
         array: str,
-    ) -> tuple[CExpressionStatement, ...]:
+    ) -> tuple[CExpressionStatement | CIf | CFor, ...]:
         """Extract only the ABI fields named by the editable handoff plan."""
         handoff = plan.array
         if handoff is None:
@@ -6930,6 +6938,7 @@ class CBindingGenerator(ClassVisitor):
         if handoff.flatten_python_storage:
             nodes.extend(self._flat_array_extraction_nodes(handoff, names, array))
             return tuple(nodes)
+        nodes.extend(self._array_dense_actual_extraction_nodes(handoff, names, array))
         active_rank = 15 if handoff.rank is None else handoff.rank
         for axis in range(active_rank):
             guard = f"if (PyArray_NDIM({array}) > {axis}) " if handoff.rank is None else ""
@@ -6938,9 +6947,33 @@ class CBindingGenerator(ClassVisitor):
                     CodeExpression(f"{guard}{names.extent_names[axis]} = (int64_t)PyArray_DIM({array}, {axis})")
                 )
             )
-        if handoff.contiguous is False:
-            nodes.extend(self._strided_array_extraction_nodes(handoff.rank, names, array))
+        nodes.extend(self._array_strided_extraction_dispatch_nodes(handoff, names, array))
         return tuple(nodes)
+
+    @staticmethod
+    def _array_dense_actual_extraction_nodes(
+        handoff: ArrayHandoffPlan,
+        names: _CArgumentNames,
+        array: str,
+    ) -> tuple[CExpressionStatement, ...]:
+        """Extract the runtime dense-actual selector named by the plan."""
+        if handoff.dense_actual_role is None:
+            return ()
+        return (CExpressionStatement(CodeExpression(f"{names.dense_actual_name} = PyArray_IS_F_CONTIGUOUS({array})")),)
+
+    def _array_strided_extraction_dispatch_nodes(
+        self,
+        handoff: ArrayHandoffPlan,
+        names: _CArgumentNames,
+        array: str,
+    ) -> tuple[CExpressionStatement | CIf, ...]:
+        """Dispatch general stride extraction only when the selected actual needs it."""
+        if handoff.contiguous is not False:
+            return ()
+        strided_nodes = self._strided_array_extraction_nodes(handoff.rank, names, array)
+        if handoff.dense_actual_role is None:
+            return strided_nodes
+        return (CIf(CodeExpression(f"!{names.dense_actual_name}"), body=strided_nodes),)
 
     def _flat_array_extraction_nodes(
         self,
@@ -9028,9 +9061,9 @@ class CBindingGenerator(ClassVisitor):
         call: CExpressionStatement,
     ) -> tuple[CAllowThreadsBegin | CAllowThreadsEnd | CExpressionStatement, ...]:
         """Dispatch the completed GIL envelope to directly named methods."""
-        if plan.binding.hold_gil:
-            return self._lower_native_call_held(call)
-        return self._lower_native_call_released(call)
+        if plan.binding.release_gil:
+            return self._lower_native_call_released(call)
+        return self._lower_native_call_held(call)
 
     def _lower_native_call_held(self, call: CExpressionStatement) -> tuple[CExpressionStatement, ...]:
         """Emit one native bridge call while retaining the GIL."""
@@ -9396,6 +9429,7 @@ class CBindingGenerator(ClassVisitor):
             tuple(f"{local}_extent_{axis}" for axis in range(rank)),
             tuple(f"{local}_upper_bound_{axis}" for axis in range(rank)),
             tuple(f"{local}_stride_{axis}" for axis in range(rank)),
+            f"{local}_dense_actual",
             f"{local}_rank",
             f"{local}_itemsize",
             f"{local}_polymorphic",
@@ -9944,6 +9978,8 @@ class CBindingGenerator(ClassVisitor):
             arguments.append(names.runtime_rank_name)
         if handoff.itemsize_role is not None:
             arguments.append(names.itemsize_name)
+        if handoff.dense_actual_role is not None:
+            arguments.append(names.dense_actual_name)
         arguments.extend(names.extent_names)
         arguments.extend(self._selected_array_axis_names(names.upper_bound_names, handoff.upper_bound_roles))
         arguments.extend(self._selected_array_axis_names(names.stride_names, handoff.stride_roles))
@@ -10173,6 +10209,8 @@ class CBindingGenerator(ClassVisitor):
             parameters.append(CParameter(f"{name}_rank", "int64_t"))
         if handoff.itemsize_role is not None:
             parameters.append(CParameter(f"{name}_itemsize", "int64_t"))
+        if handoff.dense_actual_role is not None:
+            parameters.append(CParameter(f"{name}_dense_actual", "int"))
         parameters.extend(self._array_bridge_axis_parameters(name, "extent", len(handoff.extent_roles)))
         parameters.extend(self._array_bridge_axis_parameters(name, "upper_bound", len(handoff.upper_bound_roles)))
         parameters.extend(self._array_bridge_axis_parameters(name, "stride", len(handoff.stride_roles)))

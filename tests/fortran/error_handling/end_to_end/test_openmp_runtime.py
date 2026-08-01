@@ -1,4 +1,4 @@
-"""GNU OpenMP build flags, execution, and GIL-release tests."""
+"""GNU OpenMP build flags, execution, and default GIL-policy tests."""
 
 import importlib
 import json
@@ -59,8 +59,8 @@ def test_openmp_enabled_procedure_builds_with_explicit_gnu_flags(tmp_path: Path)
     )
 
     c_wrapper = (tmp_path / "fopenmp_runtime_f90_wrapper.c").read_text(encoding="utf-8")
-    assert "Py_BEGIN_ALLOW_THREADS" in c_wrapper
-    assert "Py_END_ALLOW_THREADS" in c_wrapper
+    assert "Py_BEGIN_ALLOW_THREADS" not in c_wrapper
+    assert "Py_END_ALLOW_THREADS" not in c_wrapper
 
     sys.modules.pop("fopenmp_runtime_f90", None)
     sys.path.insert(0, str(tmp_path))

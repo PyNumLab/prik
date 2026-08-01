@@ -178,7 +178,7 @@ def test_dense_array_lowering_uses_planned_shape_checks_and_bridge_orientation()
     assert "subroutine bind_c_c_flat_rank2_runtime(" in bridge_source
     assert "external :: flat_rank2_runtime" in bridge_source
     assert "external :: c_flat_rank2_fixed" in bridge_source
-    assert "real(c_double), pointer, dimension(:, :) :: values" in bridge_source
+    assert "real(c_double), pointer, contiguous, dimension(:, :) :: values" in bridge_source
 
 
 def test_external_interface_declares_late_extent_before_dependent_array():

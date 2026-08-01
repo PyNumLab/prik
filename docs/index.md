@@ -3,7 +3,7 @@ title: x2py
 description: Turn Fortran functions, modules, arrays, and derived types into natural Python APIs
 audience: users
 prerequisites: none
-related: user/getting-started/index.md, user/getting-started/installation.md
+related: user/getting-started/index.md, user/getting-started/installation.md, user/performance.md
 status: maintained
 publication: reviewed
 ---
@@ -99,6 +99,8 @@ No manual binding code or low-level boilerplate.
 - Immediate Python callbacks and overloaded interfaces
 - Editable `.pyi` contracts and readable generated docstrings
 - Early, clear errors when a boundary cannot be wrapped
+- Low wrapper overhead measured against NumPy's
+  [f2py](user/performance.md) in a reproducible benchmark suite
 
 ---
 

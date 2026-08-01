@@ -26,7 +26,7 @@ def _plan(source: str, *, module_name: str = "fmath"):
 def _scalar_plan():
     return _plan(
         """
-@hold_gil
+@nogil
 @bind("SWAP_ARGS")
 @external
 @native_call([Addr(Arg(1)), Addr(Arg(0))])

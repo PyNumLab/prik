@@ -38,6 +38,7 @@ def test_strided_array_plan_names_bounds_and_element_strides_explicitly():
         f"{argument.owner_path}:stride:0",
         f"{argument.owner_path}:stride:1",
     )
+    assert array.dense_actual_role == f"{argument.owner_path}:dense-actual"
 
 
 def test_strided_array_lowering_validates_and_passes_one_explicit_bridge_slice():
@@ -49,10 +50,22 @@ def test_strided_array_lowering_validates_and_passes_one_explicit_bridge_slice()
     assert 'PyUnicode_FromString("F")' in c_source
     assert "bound_values_upper_bound_0" in c_source
     assert "bound_values_stride_1" in c_source
-    assert "real(c_double), pointer, dimension(:, :) :: values_base" in bridge_source
+    assert "int bound_values_dense_actual = 0;" in c_source
+    assert "bound_values_dense_actual = PyArray_IS_F_CONTIGUOUS" in c_source
+    assert "if (!bound_values_dense_actual) {" in c_source
     assert (
-        "values_base(1:values_upper_bound_0 + 1:values_stride_0, 1:values_upper_bound_1 + 1:values_stride_1)"
+        "bind_c_strided(bound_values, bound_values_dense_actual, bound_values_extent_0, bound_values_extent_1,"
+        in c_source
+    )
+    assert "integer(c_int), value :: values_dense_actual" in bridge_source
+    assert "real(c_double), pointer, dimension(:, :) :: values_base" in bridge_source
+    assert "real(c_double), pointer, dimension(:, :) :: values" in bridge_source
+    assert "if (values_dense_actual /= 0_c_int) then" in bridge_source
+    assert "values => values_base" in bridge_source
+    assert (
+        "values => values_base(1:values_upper_bound_0 + 1:values_stride_0, 1:values_upper_bound_1 + 1:values_stride_1)"
     ) in bridge_source
+    assert "call native_strided(values)" in bridge_source
     assert max(map(len, bridge_source.splitlines())) <= 132
 
 
@@ -63,4 +76,14 @@ def test_strided_role_edit_fails_before_backend_lowering():
     array.stride_roles = array.stride_roles[:1]
 
     with pytest.raises(ValueError, match="invalid-array-stride-roles"):
+        WrapperCodeGenerator().generate(plan)
+
+
+def test_strided_dense_actual_role_edit_fails_before_backend_lowering():
+    plan = _strided_plan()
+    array = plan.namespaces[0].functions[0].arguments[0].array
+    assert array is not None
+    array.dense_actual_role = None
+
+    with pytest.raises(ValueError, match="invalid-array-dense-actual-role"):
         WrapperCodeGenerator().generate(plan)

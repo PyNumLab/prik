@@ -2280,6 +2280,7 @@ class WrapperCodeGenerator:
             *array.extent_roles,
             *array.upper_bound_roles,
             *array.stride_roles,
+            array.dense_actual_role,
             array.runtime_rank_role,
             array.itemsize_role,
         )
@@ -2663,6 +2664,7 @@ class WrapperCodeGenerator:
             *array.extent_roles,
             *array.upper_bound_roles,
             *array.stride_roles,
+            array.dense_actual_role,
             array.runtime_rank_role,
             array.itemsize_role,
         )
@@ -2765,7 +2767,21 @@ class WrapperCodeGenerator:
             *self._array_order_diagnostics(plan),
             *self._array_axis_mode_diagnostics(plan),
             *self._array_stride_role_diagnostics(plan),
+            *self._array_dense_actual_role_diagnostics(plan),
         )
+
+    def _array_dense_actual_role_diagnostics(
+        self,
+        plan: ArgumentTransferPlan,
+    ) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Require the planned runtime selector exactly on concrete strided inputs."""
+        array = plan.array
+        if array is None:
+            return ()
+        expected = f"{plan.owner_path}:dense-actual" if array.contiguous is False and array.rank is not None else None
+        if array.dense_actual_role != expected:
+            return (self._diagnostic(plan.owner_path, "invalid-array-dense-actual-role", array.dense_actual_role),)
+        return ()
 
     def _array_order_diagnostics(self, plan: ArgumentTransferPlan) -> tuple[WrapperPlanDiagnostic, ...]:
         """Validate the completed ordinary-array order marker."""

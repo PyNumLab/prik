@@ -34,7 +34,7 @@ from x2py.semantics.models import (
     PYTHON_VALUE_IMMUTABLE,
     PYTHON_VALUE_MUTABILITY_METADATA,
     PROTOTYPE_REF_METADATA,
-    RUNTIME_HOLD_GIL_METADATA,
+    RUNTIME_RELEASE_GIL_METADATA,
     RUNTIME_STATUS_ERROR_METADATA,
     ProjectionMapping,
     ProcedureOverloadSet,
@@ -1653,8 +1653,8 @@ class PyiPrinter(ClassVisitor):
             )
         if isinstance(policy := func.metadata.get(RUNTIME_STATUS_ERROR_METADATA), dict):
             decorators.append(f"{indent}{self._raises(policy)}")
-        if func.metadata.get(RUNTIME_HOLD_GIL_METADATA):
-            decorators.append(f"{indent}@{self._contract('hold_gil')}")
+        if func.metadata.get(RUNTIME_RELEASE_GIL_METADATA):
+            decorators.append(f"{indent}@{self._contract('nogil')}")
         if not decorators:
             return ""
         return "\n".join(decorators) + "\n"

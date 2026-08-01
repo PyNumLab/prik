@@ -36,7 +36,7 @@ from .models import (
     PYTHON_VALUE_IMMUTABLE,
     PYTHON_VALUE_MUTABILITY_METADATA,
     PROTOTYPE_REF_METADATA,
-    RUNTIME_HOLD_GIL_METADATA,
+    RUNTIME_RELEASE_GIL_METADATA,
     RUNTIME_STATUS_ERROR_METADATA,
     ProjectionMapping,
     ProcedureOverloadSet,
@@ -105,7 +105,7 @@ class _Decorators:
     native_type: dict[str, object] | None = None
     external: bool = False
     is_static: bool = False
-    hold_gil: bool = False
+    release_gil: bool = False
     error_status_policy: dict[str, object] | None = None
     prototype: bool = False
 
@@ -284,7 +284,7 @@ class _PyiAstParser:
         native_name: str | None = None,
         external: bool = False,
         has_native_call: bool = False,
-        hold_gil: bool = False,
+        release_gil: bool = False,
         error_status_policy: dict[str, object] | None = None,
     ) -> SemanticFunction:
         actual_projection = projection if projection is not None else []
@@ -296,8 +296,8 @@ class _PyiAstParser:
         metadata = {BIND_TARGET_METADATA: native_name} if native_name is not None else {}
         if has_native_call:
             metadata[NATIVE_PROJECTION_METADATA] = True
-        if hold_gil:
-            metadata[RUNTIME_HOLD_GIL_METADATA] = True
+        if release_gil:
+            metadata[RUNTIME_RELEASE_GIL_METADATA] = True
         if error_status_policy is not None:
             metadata[RUNTIME_STATUS_ERROR_METADATA] = dict(error_status_policy)
         origin = self._origin(
@@ -365,7 +365,7 @@ class _PyiAstParser:
         class_name: str,
         infer_passed_object: bool = True,
         has_native_call: bool = False,
-        hold_gil: bool = False,
+        release_gil: bool = False,
         error_status_policy: dict[str, object] | None = None,
     ) -> SemanticMethod:
         actual_projection = projection if projection is not None else []
@@ -402,8 +402,8 @@ class _PyiAstParser:
                 ),
             )
             self._restore_pass_projection(actual_projection, passed_object_position)
-        if hold_gil:
-            metadata[RUNTIME_HOLD_GIL_METADATA] = True
+        if release_gil:
+            metadata[RUNTIME_RELEASE_GIL_METADATA] = True
         if error_status_policy is not None:
             metadata[RUNTIME_STATUS_ERROR_METADATA] = dict(error_status_policy)
         origin = self._origin(
@@ -485,7 +485,7 @@ class _PyiAstParser:
             "overload": self._apply_overload_decorator,
             "bind": self._apply_bind_decorator,
             "external": self._apply_external_decorator,
-            "hold_gil": self._apply_hold_gil_decorator,
+            "nogil": self._apply_nogil_decorator,
             "native_call": self._apply_native_call_decorator,
             "native_type": self._apply_native_type_decorator,
             "prototype": self._apply_prototype_decorator,
@@ -540,12 +540,12 @@ class _PyiAstParser:
         parsed.bind_target = self._required_string_decorator_argument(node, "bind")
 
     @staticmethod
-    def _apply_hold_gil_decorator(parsed: _Decorators, node: ast.expr, context: str) -> None:
+    def _apply_nogil_decorator(parsed: _Decorators, node: ast.expr, context: str) -> None:
         if isinstance(node, ast.Call):
-            raise ValueError("hold_gil does not accept arguments")
-        if parsed.hold_gil:
-            raise ValueError(f"Duplicate {context} hold_gil decorator")
-        parsed.hold_gil = True
+            raise ValueError("nogil does not accept arguments")
+        if parsed.release_gil:
+            raise ValueError(f"Duplicate {context} nogil decorator")
+        parsed.release_gil = True
 
     @staticmethod
     def _apply_external_decorator(parsed: _Decorators, node: ast.expr, context: str) -> None:
@@ -715,7 +715,7 @@ class _PyiAstParser:
         candidate = deepcopy(target)
         candidate.visibility = declaration.visibility
         candidate.metadata[OVERLOAD_TARGET_METADATA] = target.name
-        for key in (RUNTIME_HOLD_GIL_METADATA, RUNTIME_STATUS_ERROR_METADATA):
+        for key in (RUNTIME_RELEASE_GIL_METADATA, RUNTIME_STATUS_ERROR_METADATA):
             if key in declaration.metadata:
                 candidate.metadata[key] = deepcopy(declaration.metadata[key])
 
@@ -2654,7 +2654,7 @@ class _ClassBodyVisitor(ClassVisitor):
             class_name=self.class_name,
             infer_passed_object=decorators.overload_target is None,
             has_native_call=decorators.has_native_call,
-            hold_gil=decorators.hold_gil,
+            release_gil=decorators.release_gil,
             error_status_policy=decorators.error_status_policy,
         )
         if node.name == "__init__" and decorators.bind_target is not None and decorators.overload_target is None:
@@ -2698,7 +2698,7 @@ class _ClassBodyVisitor(ClassVisitor):
         if (
             decorators.has_native_call
             or decorators.bind_target is not None
-            or decorators.hold_gil
+            or decorators.release_gil
             or decorators.error_status_policy is not None
             or decorators.external
         ):
@@ -2758,7 +2758,7 @@ class _ModuleVisitor(ClassVisitor):
         if (
             decorators.has_native_call
             or decorators.bind_target is not None
-            or decorators.hold_gil
+            or decorators.release_gil
             or decorators.error_status_policy is not None
             or decorators.external
         ):
@@ -2795,7 +2795,7 @@ class _ModuleVisitor(ClassVisitor):
             native_name=decorators.bind_target,
             external=decorators.external,
             has_native_call=decorators.has_native_call,
-            hold_gil=decorators.hold_gil,
+            release_gil=decorators.release_gil,
             error_status_policy=decorators.error_status_policy,
         )
         if decorators.overload_target is not None:

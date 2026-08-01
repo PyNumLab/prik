@@ -90,8 +90,8 @@ def test_scalar_module_variables_use_attributes_and_parameters_have_no_native_se
         getter_start = wrapper_source.index("static PyObject * module_get_counter")
         setter_start = wrapper_source.index("static int module_set_counter")
         next_getter_start = wrapper_source.index("static PyObject * module_get_scale")
-        assert "Py_BEGIN_ALLOW_THREADS" in wrapper_source[summarize_start:scaled_start]
-        assert "Py_END_ALLOW_THREADS" in wrapper_source[summarize_start:scaled_start]
+        assert "Py_BEGIN_ALLOW_THREADS" not in wrapper_source[summarize_start:scaled_start]
+        assert "Py_END_ALLOW_THREADS" not in wrapper_source[summarize_start:scaled_start]
         assert "Py_BEGIN_ALLOW_THREADS" not in wrapper_source[getter_start:setter_start]
         assert "Py_END_ALLOW_THREADS" not in wrapper_source[getter_start:setter_start]
         assert "Py_BEGIN_ALLOW_THREADS" not in wrapper_source[setter_start:next_getter_start]

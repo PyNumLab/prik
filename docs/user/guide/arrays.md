@@ -386,7 +386,8 @@ This checks the final Python axis and flattens the leading axes.
 
 ## Strided Views
 
-Use `::` for an assumed-shape axis that supports positive strides:
+Use `::` for an assumed-shape axis that accepts F-contiguous arrays and
+positive-stride views without copying:
 
 ```python
 from x2py.contracts import Float64, Returns

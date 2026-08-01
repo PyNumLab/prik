@@ -26,7 +26,7 @@ from x2py.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
 from x2py.semantics.models import (
     PROTOTYPE_REF_METADATA,
     ProjectionMapping,
-    RUNTIME_HOLD_GIL_METADATA,
+    RUNTIME_RELEASE_GIL_METADATA,
     RUNTIME_STATUS_ERROR_METADATA,
     SemanticArgument,
     SemanticArrayContract,
@@ -87,7 +87,7 @@ def normalize(text: str) -> str:
 __all__ = (
     "OPERATOR_F90_SOURCE",
     "PROTOTYPE_REF_METADATA",
-    "RUNTIME_HOLD_GIL_METADATA",
+    "RUNTIME_RELEASE_GIL_METADATA",
     "RUNTIME_STATUS_ERROR_METADATA",
     "Path",
     "ProjectionMapping",

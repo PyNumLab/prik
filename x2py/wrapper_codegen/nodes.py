@@ -167,8 +167,8 @@ class CIf(StageRecord):
     """C conditional with recursively printable statement bodies."""
 
     condition: CodeExpression
-    body: tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...] = ()
-    else_body: tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...] = ()
+    body: tuple[CDeclaration | CExpressionStatement | CIf | CFor | CReturn, ...] = ()
+    else_body: tuple[CDeclaration | CExpressionStatement | CIf | CFor | CReturn, ...] = ()
 
 
 @dataclass

@@ -2,7 +2,7 @@
 title: User Documentation
 audience: users
 prerequisites: none
-related: getting-started/index.md, guide/index.md
+related: getting-started/index.md, guide/index.md, performance.md
 status: maintained
 publication: reviewed
 ---
@@ -17,8 +17,10 @@ extensions.
 
 1. [Getting Started](getting-started/index.md)
 2. [User Guide](guide/index.md)
+3. [Performance](performance.md)
 
 Getting Started covers installation, environment verification, the first
 standalone wrapper, the first module wrapper, and the beginner edit-build-test
 loop. The User Guide covers supported Fortran wrapper features, runtime
-behavior, packaging, and distribution.
+behavior, packaging, and distribution. Performance presents the reproducible
+x2py and f2py comparison.
