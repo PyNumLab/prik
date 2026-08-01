@@ -7,6 +7,10 @@ The default x2py wrapper and the f2py wrappers measured here keep the GIL held,
 so the suite reports one like-for-like comparison of their normal generated
 interfaces.
 
+`X2PY_BENCHMARK_FIRST=x2py` is the default measurement order. Set it to
+`f2py` to reverse the order. The publication workflow alternates this setting
+between runs so one tool is not systematically measured first.
+
 Run the complete correctness check and rigorous benchmark with:
 
 ```bash
@@ -31,3 +35,27 @@ Results are machine-specific. Compare files produced in the same run; CPU,
 compiler, Python, and NumPy differences can otherwise dominate small timings.
 The generated build directories, extensions, and result files are local
 artifacts rather than repository sources.
+
+## Publish a Documentation Snapshot
+
+After a completed run, refresh the generated sections of the public Performance
+page and its chart with:
+
+```bash
+python3 tools/generate_performance_docs.py
+```
+
+Run this command from the repository root. It reads the paired `pyperf` files,
+checks that they contain the same benchmarks and compatible platform metadata,
+and updates only the marked result sections in `docs/user/performance.md` plus
+`docs/user/assets/performance-comparison.svg`. Explanatory prose and the
+reproduction instructions remain hand-maintained.
+
+The Documentation workflow performs the same generation after successful
+correctness checks and rigorous measurements on pushes to `main`. It keeps the
+raw `pyperf` files as a workflow artifact and overlays the generated snapshot
+only in the website build; it does not create a result commit.
+
+The publication environment pins Python 3.12, NumPy/f2py 2.5.1, pyperf 2.10.0,
+Meson 1.11.2, Ninja 1.13.0, and GNU Fortran 13. Update those versions through a
+reviewed change so published runs remain comparable.

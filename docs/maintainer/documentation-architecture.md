@@ -188,6 +188,13 @@ Do not restore top-level topic directories or place maintainer rules beside the
 website landing page. Historical `old_docs/` material is never eligible for
 website publication.
 
+The Performance page keeps its explanatory text and reproduction workflow in
+reviewed Markdown. Result-dependent summary, table, and environment blocks are
+bounded by `x2py-performance-*` comments and are generated from paired `pyperf`
+files by `tools/generate_performance_docs.py`. The same tool owns the
+performance SVG. Generation must fail when a marker is missing or duplicated;
+it must not rewrite prose outside those blocks.
+
 ## Continuous Documentation Quality
 
 - Require metadata for every active page.

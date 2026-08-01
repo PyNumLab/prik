@@ -71,6 +71,7 @@ TOOLS_TEST_MODULES = {
     "test_check_benchmark_regression.py",
     "test_check_radon_policy.py",
     "test_check_static_analysis_versions.py",
+    "test_generate_performance_docs.py",
     "test_print_pytest_failures.py",
     "test_run_fortran_toolchain_lane.py",
     "test_warm_real_library_native_cache.py",
@@ -218,6 +219,7 @@ def test_active_github_action_jobs_use_purpose_first_display_names() -> None:
     expected = {
         DOCS_WORKFLOW: (
             "name: Documentation",
+            "    name: Benchmark",
             "    name: Build",
             "    name: Deploy",
         ),
@@ -252,3 +254,16 @@ def test_active_github_action_jobs_use_purpose_first_display_names() -> None:
         text = workflow.read_text(encoding="utf-8")
         for name in names:
             assert name in text
+
+
+def test_documentation_workflow_generates_main_only_performance_snapshot() -> None:
+    workflow = DOCS_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "runs-on: ${{ vars.X2PY_BENCHMARK_RUNNER || 'ubuntu-24.04' }}" in workflow
+    assert "if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'" in workflow
+    assert "bash benchmarks/run.sh" in workflow
+    assert "python tools/generate_performance_docs.py" in workflow
+    assert "name: performance-snapshot" in workflow
+    assert "benchmarks/results/f2py.json" in workflow
+    assert "benchmarks/results/x2py.json" in workflow
+    assert "uses: actions/download-artifact@v4" in workflow
