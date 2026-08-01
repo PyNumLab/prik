@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 import pytest
@@ -181,6 +182,24 @@ def test_fortran_source_printer_formats_after_nested_indentation_is_complete():
 
     assert "       & " in source
     assert max(map(len, source.splitlines())) <= 132
+
+
+@pytest.mark.parametrize("quote", ("'", '"'))
+def test_fortran_source_printer_continues_long_literals_without_changing_their_value(quote: str):
+    encoded_value = f"{'x' * 110} literal whitespace {quote * 2}{'y' * 160}"
+    statement = f"result = {quote}{encoded_value}{quote}"
+
+    source = FortranSourcePrinter().doprint(
+        FortranAssignment("result", CodeExpression(f"{quote}{encoded_value}{quote}"))
+    )
+    reconstructed = source.replace("result = &\n  & ", "result = ")
+    reconstructed = re.sub(r"&\n\s*&", "", reconstructed)
+
+    assert reconstructed == statement
+    assert max(map(len, source.splitlines())) <= 132
+    for current, following in zip(source.splitlines(), source.splitlines()[1:], strict=False):
+        following_content = following.lstrip().removeprefix("&")
+        assert not (current[-2:-1] == quote and following_content[:1] == quote)
 
 
 def test_fortran_source_printer_rejects_an_overlong_token_without_a_safe_break():

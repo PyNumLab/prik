@@ -329,39 +329,90 @@ class FortranSourcePrinter(ClassVisitor):
         continuation_prefix = f"{indentation}  & "
         prefix = indentation
         remaining = line[len(indentation) :]
+        continued_quote = None
         wrapped = []
         while len(prefix) + len(remaining) > self._MAX_LINE_LENGTH:
             budget = self._MAX_LINE_LENGTH - len(prefix) - len(" &")
-            split = self._safe_fortran_break(remaining, budget)
+            split = self._safe_fortran_break(remaining, budget, initial_quote=continued_quote)
             if split is None:
                 return (*wrapped, f"{prefix}{remaining}")
-            piece = remaining[:split].rstrip()
-            remaining = remaining[split:].lstrip()
+            position, continued_quote = split
+            if continued_quote is None:
+                piece = remaining[:position].rstrip()
+                remaining = remaining[position:].lstrip()
+            else:
+                piece = remaining[:position]
+                remaining = remaining[position:]
             if not piece or not remaining:
                 return (*wrapped, f"{prefix}{piece}{remaining}")
-            wrapped.append(f"{prefix}{piece} &")
-            prefix = continuation_prefix
+            trailing = "&" if continued_quote is not None else " &"
+            wrapped.append(f"{prefix}{piece}{trailing}")
+            prefix = f"{indentation}&" if continued_quote is not None else continuation_prefix
         wrapped.append(f"{prefix}{remaining}")
         return tuple(wrapped)
 
     @staticmethod
-    def _safe_fortran_break(text: str, budget: int) -> int | None:
-        """Find the last whitespace or comma outside a Fortran literal."""
-        literal_positions = FortranSourcePrinter._fortran_literal_positions(text)
+    def _safe_fortran_break(
+        text: str,
+        budget: int,
+        *,
+        initial_quote: str | None = None,
+    ) -> tuple[int, str | None] | None:
+        """Find the preferred safe code or character-literal continuation."""
+        literal_quotes = FortranSourcePrinter._fortran_literal_quotes(text, initial_quote=initial_quote)
+        literal_positions = set(literal_quotes)
         window = text[: budget + 1]
-        if FortranSourcePrinter._has_fortran_comment(window, literal_positions):
+        if FortranSourcePrinter._has_fortran_comment(text, literal_positions):
             return None
         candidates = FortranSourcePrinter._fortran_break_candidates(window, literal_positions)
-        return max((candidate for candidate in candidates if 0 < candidate <= budget), default=None)
+        position = max((candidate for candidate in candidates if 0 < candidate <= budget), default=None)
+        if position is not None:
+            return position, None
+        return FortranSourcePrinter._fortran_literal_break(text, budget, literal_quotes)
 
     @staticmethod
-    def _fortran_literal_positions(text: str) -> set[int]:
-        """Return character offsets protected by single- or double-quoted literals."""
-        literal_pattern = re.compile(r"'(?:[^']|'')*'|\"(?:[^\"]|\"\")*\"")
-        positions = set()
-        for literal in literal_pattern.finditer(text):
-            positions.update(range(literal.start(), literal.end()))
+    def _fortran_literal_quotes(text: str, *, initial_quote: str | None = None) -> dict[int, str]:
+        """Map character offsets protected by Fortran literals to their quote."""
+        positions = {}
+        quote = initial_quote
+        index = 0
+        while index < len(text):
+            character = text[index]
+            if quote is None:
+                if character in {"'", '"'}:
+                    quote = character
+                    positions[index] = quote
+                index += 1
+                continue
+            positions[index] = quote
+            if character == quote and index + 1 < len(text) and text[index + 1] == quote:
+                positions[index + 1] = quote
+                index += 2
+                continue
+            if character == quote:
+                quote = None
+            index += 1
         return positions
+
+    @staticmethod
+    def _fortran_literal_break(
+        text: str,
+        budget: int,
+        literal_quotes: dict[int, str],
+    ) -> tuple[int, str] | None:
+        """Find a character-literal continuation that preserves its exact value."""
+        candidates = []
+        for position in range(1, min(len(text), budget + 1)):
+            quote = literal_quotes.get(position)
+            if quote is None or literal_quotes.get(position - 1) != quote:
+                continue
+            if text[position - 1 : position + 1] == quote * 2:
+                continue
+            candidates.append(position)
+        if not candidates:
+            return None
+        position = max(candidates)
+        return position, literal_quotes[position]
 
     @staticmethod
     def _has_fortran_comment(text: str, literal_positions: set[int]) -> bool:

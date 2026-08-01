@@ -519,8 +519,9 @@ A wrapper feature is considered supported only when all applicable layers agree:
   unsupported or lacks policy;
 - semantic lowering preserves the contract without reconstructing source text;
 - the source formatter wraps generated free-form Fortran at syntax-safe token
-  boundaries so every bridge line stays within the standard 132-column limit;
-  generation fails before compilation only when a line has no safe break point;
+  boundaries, including character-literal continuations that preserve their
+  exact value, so every bridge line stays within the standard 132-column limit;
+  generation fails before compilation when no safe continuation point exists;
 - runtime behavior is covered by the project verification policy before it is
   presented as supported; and
 - fixed-form and free-form behavior are both considered when the source feature
