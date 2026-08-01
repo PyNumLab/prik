@@ -20,6 +20,12 @@ tree, this ensures rename-aware quality gates compare the previous package
 directly with its current source path instead of matching it to a duplicate
 under `build/lib/`.
 
+PyPI publication is deliberately separate from ordinary push and pull-request
+workflows. Publishing a GitHub Release triggers a build job, followed by a
+protected `pypi` environment job that authenticates through OpenID Connect.
+See the [release process](release-process.md) for the exact trusted-publisher
+identity and approval sequence.
+
 ## Test Platforms
 
 The `Tests` workflow runs the ordinary suite on Ubuntu with every supported

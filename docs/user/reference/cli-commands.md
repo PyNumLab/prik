@@ -12,9 +12,14 @@ publication: draft
 This page documents the checked command surface exposed by:
 
 ```bash
+prik --version
 python3 -m prik --help
 python3 -m prik --help-build
 ```
+
+`prik --version` and `python3 -m prik --version` print the installed
+distribution version and exit successfully. The value comes from the same
+package metadata as `prik.__version__`.
 
 With no subcommand, prik builds a wrapper from Fortran source or a semantic
 `.pyi` contract. Four focused subcommands expose parsing, semantic inspection,
@@ -126,6 +131,7 @@ silently ignoring them.
 | Option | Purpose |
 | --- | --- |
 | `paths` | Source files, `.pyi` files, or directories. Omit only when using `--build-manifest`. |
+| `--version` | Prints the installed PRIK version and exits. |
 | `--language fortran` | Selects the Fortran frontend explicitly when suffix inference is unavailable. |
 | `--jobs N` | Limits concurrent compiler processes to `N`; the default uses the CPUs available to prik. |
 

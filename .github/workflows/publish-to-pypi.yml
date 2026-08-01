@@ -1,0 +1,91 @@
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+
+concurrency:
+  group: publish-pypi-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and validate distributions
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify tag matches package version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+
+          project = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]
+          expected_tag = f"v{project['version']}"
+          release_tag = os.environ["RELEASE_TAG"]
+          if release_tag != expected_tag:
+              raise SystemExit(f"release tag {release_tag!r} must be {expected_tag!r}")
+          PY
+      - name: Install packaging tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build twine
+      - name: Build source and wheel distributions
+        run: python -m build
+      - name: Check distribution metadata
+        run: python -m twine check dist/*
+      - name: Verify and install the wheel
+        shell: bash
+        run: |
+          mapfile -t wheels < <(compgen -G "dist/prik-*-py3-none-any.whl")
+          mapfile -t sdists < <(compgen -G "dist/prik-*.tar.gz")
+          if (( ${#wheels[@]} != 1 || ${#sdists[@]} != 1 )); then
+            echo "expected one universal wheel and one source distribution" >&2
+            ls -la dist
+            exit 1
+          fi
+          python -m venv "$RUNNER_TEMP/prik-release-check"
+          "$RUNNER_TEMP/prik-release-check/bin/python" -m pip install "${wheels[0]}"
+          "$RUNNER_TEMP/prik-release-check/bin/prik" --version
+          "$RUNNER_TEMP/prik-release-check/bin/python" -c \
+            'import importlib.metadata as m, prik; assert prik.__version__ == m.version("prik")'
+          "$RUNNER_TEMP/prik-release-check/bin/prik" --help
+          "$RUNNER_TEMP/prik-release-check/bin/python" -m prik --help
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish distributions
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/p/prik
+    permissions:
+      id-token: write
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+      - name: Publish distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

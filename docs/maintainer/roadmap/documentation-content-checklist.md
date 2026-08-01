@@ -74,8 +74,8 @@ more specialized pages.
   and cleanup symptoms.
 - [ ] `docs/user/troubleshooting/platform-specific-issues.md`: document Linux,
   macOS, Windows, compiler, linker, and shared-library path caveats.
-- [ ] `docs/user/changelog/index.md`: define changelog policy, release-note shape,
-  migration notes, and how docs changes are tracked with releases.
+- [x] `CHANGELOG.md`: defines the changelog policy and release-note shape at the
+  repository root, where package users and GitHub visitors can find it.
 
 <!-- PRIK_C_DOCS_START
 - [ ] `docs/user/faq/index.md`: add answers for source versus `.pyi` builds,

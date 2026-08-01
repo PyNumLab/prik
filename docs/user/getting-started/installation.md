@@ -1,8 +1,8 @@
 ---
 title: Installation
-description: Install prik from source and choose a Fortran compiler
+description: Install PRIK from PyPI and choose a Fortran compiler
 audience: users, contributors
-prerequisites: Python 3.10 or newer, repository checkout
+prerequisites: Python 3.10 or newer
 related: verification.md
 status: maintained
 publication: reviewed
@@ -10,7 +10,7 @@ publication: reviewed
 
 # Installation
 
-prik is currently installed from a local source checkout. Building Python
+Install PRIK from the Python Package Index with `pip`. Building Python
 extensions also requires a Fortran compiler, its matching C compiler, and
 standard build tools.
 
@@ -75,31 +75,36 @@ requirements. For the best-tested experience, use GNU, IFX, or Flang.
 
 ## User Installation
 
-Clone the repository:
-
-```bash
-git clone https://github.com/PyNumLab/prik.git
-cd prik
-```
-
-Create a virtual environment and install prik:
+Create a virtual environment and install the published `prik` distribution:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 python3 -m pip install --upgrade pip
-python3 -m pip install -e .
+python3 -m pip install prik
 ```
 
-This installs prik in editable mode along with its runtime dependencies (including NumPy).
+This installs PRIK and its runtime dependencies, including NumPy. Verify both
+supported command entry points:
+
+```bash
+prik --version
+prik --help
+python3 -m prik --help
+```
 
 ---
 
 ## Contributor Installation
 
-If you are contributing code or running tests, also install the QA tools:
+For an editable checkout with the QA tools, clone the repository first:
 
 ```bash
+git clone https://github.com/PyNumLab/prik.git
+cd prik
+python3 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install --upgrade pip
 python3 -m pip install -e ".[qa]"
 ```
 

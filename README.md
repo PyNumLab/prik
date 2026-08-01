@@ -118,22 +118,25 @@ standard build tools, and Fortran and C compilers. GNU Fortran is the default
 and is tested on Linux and macOS. LLVM Flang is tested on both platforms;
 Intel IFX is tested on Linux.
 
-Clone the repository and install PRIK in a virtual environment:
+Install the published PRIK package in a virtual environment:
 
 ```bash
-git clone https://github.com/PyNumLab/prik.git
-cd prik
 python3 -m venv .venv
 source .venv/bin/activate
 python3 -m pip install --upgrade pip
-python3 -m pip install -e .
+python3 -m pip install prik
 ```
 
 Check the installation:
 
 ```bash
+prik --version
 python3 -m prik --help
 ```
+
+Contributors can instead clone
+[`PyNumLab/prik`](https://github.com/PyNumLab/prik) and install an editable
+checkout with `python3 -m pip install -e ".[qa]"`.
 
 With the `points.f90` source from above in the current directory, build the
 extension:
@@ -517,11 +520,11 @@ license notice when redistributed.
 - **[Documentation](https://pynumlab.github.io/prik/)** — Learn how to install and use PRIK
 - **[Getting Started](https://pynumlab.github.io/prik/user/getting-started/)** — Installation, verification, standalone procedures, modules, and rebuild workflow
 - **[User Guide](https://pynumlab.github.io/prik/user/guide/)** — Data types, functions, modules, arrays, derived types, callbacks, ownership, and runtime behavior
+- **[Changelog](CHANGELOG.md)** — User-visible changes by release
 <!--
 - **[Tutorials](docs/user/tutorials/index.md)** — Step-by-step walkthroughs
 - **[CLI Reference](docs/user/reference/cli-commands.md)** — Complete command-line documentation
 - **[Language Support](docs/user/language-support/index.md)** — What is supported, partially supported, or planned
 - **[FAQ](docs/user/faq/index.md)** — Concise answers to common questions
 - **[Troubleshooting](docs/user/troubleshooting/index.md)** — Solutions for installation, compiler, build, runtime, and platform issues
-- **[Changelog](docs/user/changelog/index.md)** — User-visible changes by release
 -->

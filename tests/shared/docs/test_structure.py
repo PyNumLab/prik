@@ -131,7 +131,6 @@ REQUIRED_AREA_INDEXES = [
     "user/language-support/index.md",
     "user/faq/index.md",
     "user/troubleshooting/index.md",
-    "user/changelog/index.md",
     "developer/index.md",
     "developer/contributing/index.md",
     "maintainer/README.md",
@@ -206,6 +205,7 @@ CLI_HELP_GROUP_HEADINGS = [
 CLI_REFERENCE_OPTIONS = [
     "paths",
     "--help-build",
+    "--version",
     "--language",
     "--pyi",
     "--sources",
@@ -694,7 +694,8 @@ def test_readme_follows_one_points_workflow_from_build_through_contract_rebuild(
         "## How it works",
         maxsplit=1,
     )[0]
-    installation_index = quick_start.index("git clone https://github.com/PyNumLab/prik.git")
+    installation_index = quick_start.index("python3 -m pip install prik")
+    version_index = quick_start.index("prik --version", installation_index)
     help_index = quick_start.index("python3 -m prik --help")
     source_build_command_index = quick_start.index(
         "python3 -m prik points.f90 --out geometry",
@@ -753,7 +754,7 @@ def test_readme_follows_one_points_workflow_from_build_through_contract_rebuild(
     verbose_c_flag_index = quick_start.index("--wrapper-c-flags=-O2", verbose_fortran_flag_index)
     verbose_output_index = quick_start.index("generated Python binding", verbose_c_flag_index)
 
-    assert installation_index < help_index < source_build_command_index
+    assert installation_index < version_index < help_index < source_build_command_index
     assert source_build_command_index < source_build_tree_index < explicit_source_build_command_index
     assert explicit_source_build_command_index < explicit_source_build_tree_index < pyi_generation_command_index
     assert pyi_generation_command_index < pyi_contract_tree_index < pyi_contract_body_index
@@ -775,6 +776,23 @@ def test_readme_follows_one_points_workflow_from_build_through_contract_rebuild(
     assert "build/points" not in readme
     assert "tests/data/fortran/general/basic_subroutine.f90" not in readme
     assert "contracts/basic_subroutine/basic_subroutine.pyi" not in readme
+
+
+def test_installation_separates_pypi_users_from_editable_contributors() -> None:
+    installation = _visible_documentation_source(DOCS_ROOT / "user/getting-started/installation.md")
+    user_section = installation.split("## User Installation", maxsplit=1)[1].split(
+        "## Contributor Installation",
+        maxsplit=1,
+    )[0]
+    contributor_section = installation.split("## Contributor Installation", maxsplit=1)[1].split(
+        "## Platform Support",
+        maxsplit=1,
+    )[0]
+
+    assert "python3 -m pip install prik" in user_section
+    assert "pip install -e" not in user_section
+    assert "git clone https://github.com/PyNumLab/prik.git" in contributor_section
+    assert 'python3 -m pip install -e ".[qa]"' in contributor_section
 
 
 @pytest.mark.parametrize("relative_path", REQUIRED_AREA_INDEXES)

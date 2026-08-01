@@ -1,5 +1,9 @@
 """Tests split by stable CLI output-contract ownership."""
 
+from importlib import metadata
+
+import prik
+
 from tests.fortran.command_line_interface.pipeline._support import (
     Path,
     PreprocessingConfig,
@@ -21,6 +25,21 @@ from tests.fortran.command_line_interface.pipeline._support import (
     types,
     prik_cli,
 )
+
+
+def test_cli_and_python_api_report_installed_distribution_version():
+    expected = metadata.version("prik")
+    commands = (
+        [sys.executable, "-m", "prik", "--version"],
+        [str(Path(sys.executable).with_name("prik")), "--version"],
+    )
+
+    assert prik.__version__ == expected
+    assert "__version__" in prik.__all__
+    for command in commands:
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        assert result.stdout == f"prik {expected}\n"
+        assert result.stderr == ""
 
 
 def test_cli_readable_output():

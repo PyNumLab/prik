@@ -10,6 +10,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, fields, is_dataclass, replace
 from pathlib import Path
 
+from prik import __version__
 from prik.parsers.c.cli import attach_preprocessing_recipe, expand_c_paths, format_c_report, parse_c_report
 from prik.parsers.c.models import CParseError
 from prik.parsers.c.parser import CParser
@@ -43,7 +44,9 @@ _SOURCE_SUFFIXES_BY_LANGUAGE = {
 }
 _HELP_DIVIDER = "------------------------------ EXAMPLES ------------------------------"
 _TOP_LEVEL_USAGE = (
-    "%(prog)s INPUT [INPUT ...] [BUILD OPTIONS]\n       %(prog)s {parse,semantics,generate,probe} [OPTIONS] ..."
+    "%(prog)s INPUT [INPUT ...] [BUILD OPTIONS]\n"
+    "       %(prog)s {parse,semantics,generate,probe} [OPTIONS] ...\n"
+    "       %(prog)s --version"
 )
 _BUILD_USAGE = (
     "%(prog)s INPUT [INPUT ...]\n"
@@ -1976,6 +1979,12 @@ def _add_build_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_top_level_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"prik {__version__}",
+        help="Print the installed PRIK version and exit",
+    )
     input_group = parser.add_argument_group("positional arguments")
     input_group.add_argument(
         "paths",
@@ -2331,7 +2340,7 @@ def _parser_for_argv(argv: list[str]) -> tuple[argparse.ArgumentParser, list[str
     if "--help-build" in argv:
         build_help_argv = ["--help" if value == "--help-build" else value for value in argv]
         return _build_parser(argv), build_help_argv
-    if not argv or argv[0] in {"-h", "--help"}:
+    if not argv or argv[0] in {"-h", "--help", "--version"}:
         return _top_level_parser(argv), argv
     command = argv[0]
     if command in _COMMAND_PARSERS:

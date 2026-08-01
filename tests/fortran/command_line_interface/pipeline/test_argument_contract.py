@@ -457,6 +457,7 @@ def test_prik_command_parsers_group_options_by_user_intent():
     assert all(command in top_help for command in ("parse", "semantics", "generate", "probe"))
     assert top_help.startswith("usage: python3 -m prik INPUT [INPUT ...] [BUILD OPTIONS]")
     assert "python3 -m prik {parse,semantics,generate,probe} [OPTIONS] ..." in top_help
+    assert "python3 -m prik --version" in top_help
     assert "Build Python extensions from Fortran and inspect native interface artifacts." in top_help
     assert prik_cli._HELP_DIVIDER in top_help
     assert "Basic wrapper build:" in top_help
@@ -488,6 +489,7 @@ def test_prik_command_parsers_group_options_by_user_intent():
         "--native-library",
         "--verbose",
         "--help-build",
+        "--version",
     ):
         assert common_option in top_help
     assert "Input-language compiler used throughout the extension" in top_help

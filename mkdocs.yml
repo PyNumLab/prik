@@ -111,7 +111,6 @@ nav:
       - Language Support:
           - Overview: user/language-support/index.md
           - Feature Matrix: user/language-support/feature-matrix.md
-      - Changelog: user/changelog/index.md
   - Developer Documentation:
       - Overview: developer/index.md
       - Development Workflow: developer/development-workflow.md

@@ -1,6 +1,7 @@
 """Public PRIK API."""
 
 from importlib import import_module
+from importlib.metadata import version as _distribution_version
 
 from prik.parsers.c.models import CFile, CParseError, CProject
 from prik.parsers.c.parser import parse_c_file, parse_c_project
@@ -41,6 +42,8 @@ from prik.semantics.pyi2ir import convert_pyi_to_ir
 from prik.pipeline.pyi import pyi_file_to_semantic_module, pyi_paths_to_semantic_modules, pyi_text_to_semantic_module
 from prik.wrapper_codegen.printers import emit_module_stubs, opaque_dependency_modules
 from prik.runtime.handles import AllocatableArray, NativeArrayHandleBase, PointerArray
+
+__version__ = _distribution_version("prik")
 
 _CLI_EXPORTS = {"main"}
 _FORTRAN_TYPE_PROBE_EXPORTS = {
@@ -113,6 +116,7 @@ __all__ = (
     "NativePrebuiltArtifact",
     "PointerArray",
     "WrapperBuildResult",
+    "__version__",
     "build_fortran_extension",
     "build_fortran_type_probe_source",
     "build_pyi_extension",

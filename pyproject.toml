@@ -10,6 +10,20 @@ readme = "README.md"
 authors = [
     { name = "Said Hadjout" },
 ]
+keywords = ["fortran", "interop", "native-extension", "numpy", "wrapper-generator"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Code Generators",
+]
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
@@ -51,6 +65,13 @@ include = ["prik*"]
 
 [project.scripts]
 prik = "prik.cli:main"
+
+[project.urls]
+Homepage = "https://pynumlab.github.io/prik/"
+Documentation = "https://pynumlab.github.io/prik/"
+Repository = "https://github.com/PyNumLab/prik"
+Issues = "https://github.com/PyNumLab/prik/issues"
+Changelog = "https://github.com/PyNumLab/prik/blob/main/CHANGELOG.md"
 
 [tool.pytest.ini_options]
 minversion = "7.0"

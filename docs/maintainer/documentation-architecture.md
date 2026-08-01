@@ -55,7 +55,7 @@ instead of competing with that first task.
 
 | Lane | Primary reader | Publication | Content |
 | --- | --- | --- | --- |
-| `user/` | People using prik | Documentation website after review | Getting Started, guides, performance benchmarks, tutorials, examples, public reference, support status, FAQ, troubleshooting, changelog |
+| `user/` | People using prik | Documentation website after review | Getting Started, guides, performance benchmarks, tutorials, examples, public reference, support status, FAQ, troubleshooting |
 | `developer/` | People changing prik | Documentation website after review | Source orientation, implementation maps, testing, coding standards, feature work, contribution workflow |
 | `maintainer/` | People governing prik | Documentation website after review | Documentation policy, design decisions, internal architecture, CI administration, releases, roadmaps |
 
@@ -162,7 +162,6 @@ docs/
     language-support/
     faq/
     troubleshooting/
-    changelog/
   developer/
     index.md
     contributing/
@@ -181,6 +180,10 @@ docs/
     code-copy.css
   old_docs/
 ```
+
+The repository-root `CHANGELOG.md` is the canonical release history. It lives
+beside `README.md` and `pyproject.toml` so GitHub and package users can find it
+without navigating the documentation website.
 
 New active pages must be created in one of the three lanes. Website-only static
 behavior and presentation assets live in `javascripts/` and `stylesheets/`.

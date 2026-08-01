@@ -19,6 +19,21 @@ import prik
 sorted(prik.__all__)
 ```
 
+## Package version
+
+| Symbol | Purpose |
+| --- | --- |
+| `__version__` | Installed PRIK distribution version, read from package metadata. |
+
+`pyproject.toml` is the only file that declares the release version. The public
+attribute does not maintain a second version constant:
+
+```python
+import prik
+
+assert prik.__version__ == "0.1.0"
+```
+
 ## CLI entrypoint
 
 | Symbol | Purpose |

@@ -15,8 +15,12 @@ COVERAGE_WORKFLOW = REPO_ROOT / ".github/workflows/coverage.yml"
 CODECOV_CONFIG = REPO_ROOT / "codecov.yml"
 DOCS_WORKFLOW = REPO_ROOT / ".github/workflows/docs.yml"
 PARSER_REFERENCE_WORKFLOW = REPO_ROOT / ".github/workflows/parser-reference-guard.yml"
+PUBLISH_WORKFLOW = REPO_ROOT / ".github/workflows/publish-to-pypi.yml"
 STATIC_ANALYSIS_WORKFLOW = REPO_ROOT / ".github/workflows/static-analysis.yml"
 TESTS_WORKFLOW = REPO_ROOT / ".github/workflows/tests.yml"
+PYPROJECT = REPO_ROOT / "pyproject.toml"
+CHANGELOG = REPO_ROOT / "CHANGELOG.md"
+MANIFEST = REPO_ROOT / "MANIFEST.in"
 FULL_REAL_LIBRARY_TEST = "tests/fortran/building_shared_library/end_to_end/real_libraries/test_full_libraries.py"
 
 LEGACY_TEST_ROOTS = {
@@ -262,6 +266,11 @@ def test_active_github_action_jobs_use_purpose_first_display_names() -> None:
             "name: Coverage",
             "    name: Python 3.12",
         ),
+        PUBLISH_WORKFLOW: (
+            "name: Publish to PyPI",
+            "    name: Build and validate distributions",
+            "    name: Publish distributions",
+        ),
         CLAUDE_WORKFLOW: (
             "name: Claude Code",
             "    name: Respond",
@@ -272,6 +281,64 @@ def test_active_github_action_jobs_use_purpose_first_display_names() -> None:
         text = workflow.read_text(encoding="utf-8")
         for name in names:
             assert name in text
+
+
+def test_pypi_package_identity_is_complete_and_consistent() -> None:
+    pyproject = PYPROJECT.read_text(encoding="utf-8")
+    changelog = CHANGELOG.read_text(encoding="utf-8")
+
+    for declaration in (
+        'name = "prik"',
+        'version = "0.1.0"',
+        'prik = "prik.cli:main"',
+        'Homepage = "https://pynumlab.github.io/prik/"',
+        'Repository = "https://github.com/PyNumLab/prik"',
+        'Issues = "https://github.com/PyNumLab/prik/issues"',
+        'Changelog = "https://github.com/PyNumLab/prik/blob/main/CHANGELOG.md"',
+    ):
+        assert declaration in pyproject
+    assert "## 0.1.0 — 2026-08-01" in changelog
+    assert "`prik --version`" in changelog
+    assert "`prik.__version__`" in changelog
+    assert MANIFEST.read_text(encoding="utf-8") == "include CHANGELOG.md\n"
+
+
+def test_pypi_publication_uses_a_protected_token_free_release_job() -> None:
+    workflow = PUBLISH_WORKFLOW.read_text(encoding="utf-8")
+    build_job, publish_job = workflow.split("  publish:\n", maxsplit=1)
+
+    for declaration in (
+        "  release:\n    types: [published]",
+        "persist-credentials: false",
+        "release tag {release_tag!r} must be {expected_tag!r}",
+        "python -m build",
+        "python -m twine check dist/*",
+        'compgen -G "dist/prik-*-py3-none-any.whl"',
+        'bin/prik" --version',
+        "prik.__version__ == m.version",
+        "uses: actions/upload-artifact@v4",
+    ):
+        assert declaration in build_job
+
+    assert "id-token: write" not in build_job
+    assert "needs: build" in publish_job
+    assert "name: pypi" in publish_job
+    assert "id-token: write" in publish_job
+    assert "uses: actions/download-artifact@v4" in publish_job
+    assert "uses: pypa/gh-action-pypi-publish@release/v1" in publish_job
+    assert "secrets." not in workflow
+    assert "password:" not in workflow
+    assert "workflow_dispatch:" not in workflow
+
+
+def test_static_analysis_targets_the_renamed_package_tree() -> None:
+    workflow = STATIC_ANALYSIS_WORKFLOW.read_text(encoding="utf-8")
+
+    assert "python -m bandit -c pyproject.toml -r prik" in workflow
+    assert "python -m radon cc prik" in workflow
+    assert "python -m radon mi prik" in workflow
+    for removed_root in ("c_parser", "fortran_parser", "semantics"):
+        assert removed_root not in workflow
 
 
 def test_documentation_workflow_generates_main_only_performance_snapshot() -> None:
