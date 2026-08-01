@@ -76,7 +76,7 @@ for binding_tool in "${binding_tools[@]}"; do
         python3 runtime.py \
             --rigorous \
             --affinity=0 \
-            --inherit-environ=BINDING_TOOL,X2PY_RUNTIME_BENCHMARK_GROUP,OMP_NUM_THREADS,OPENBLAS_NUM_THREADS,MKL_NUM_THREADS \
+            --inherit-environ=BINDING_TOOL,X2PY_RUNTIME_BENCHMARK_GROUP,X2PY_BENCHMARK_CPU_MODEL,OMP_NUM_THREADS,OPENBLAS_NUM_THREADS,MKL_NUM_THREADS \
             "${result_args[@]}"
         result_args=(--append "results/$binding_tool.json")
     done

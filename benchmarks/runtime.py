@@ -53,16 +53,19 @@ matrix_update = get_function(api, "matrix_update")
 
 
 processes, values = group_settings[benchmark_group]
+metadata = {
+    "binding_tool": tool,
+    "benchmark_group": benchmark_group,
+    "python_version": sys.version,
+    "numpy_version": np.__version__,
+    "platform_details": platform.platform(),
+}
+if cpu_model := os.environ.get("X2PY_BENCHMARK_CPU_MODEL"):
+    metadata["cpu_model_name"] = cpu_model
 runner = pyperf.Runner(
     processes=processes,
     values=values,
-    metadata={
-        "binding_tool": tool,
-        "benchmark_group": benchmark_group,
-        "python_version": sys.version,
-        "numpy_version": np.__version__,
-        "platform_details": platform.platform(),
-    },
+    metadata=metadata,
 )
 
 if benchmark_group in {"all", "calls"}:

@@ -40,16 +40,21 @@ the generated documentation together with the raw `pyperf` files. The website
 build overlays that artifact before testing and building MkDocs. Generated
 results are deployment inputs, not automated commits to `main`.
 
-Set the repository variable `X2PY_BENCHMARK_RUNNER` to the label of a dedicated
-Linux x86-64 runner for stable published measurements. Without that variable,
-the workflow uses the pinned Ubuntu 24.04 GitHub-hosted image and publishes its
-recorded platform details. Pull requests verify the generator against fixtures
-but do not replace the public snapshot. The workflow pins the benchmark
-toolchain and alternates whether x2py or f2py is measured first to avoid a
-systematic ordering advantage. Runtime cases use separate latency, medium, and
-bulk sampling budgets and are merged into one pyperf result per tool;
-this gives nanosecond-scale calls more independent samples without multiplying
-the cost of the largest array workloads.
+The benchmark job always targets GitHub's `ubuntu-24.04-arm` standard runner,
+whose hosted pool is based on Microsoft Cobalt 100 processors. It verifies the
+ARM64 architecture and CPU part `0xd49` used by Neoverse N2/Cobalt 100 before
+installing dependencies or measuring. This avoids the different AMD processor
+generations that may back successive x86-64 Ubuntu jobs. The documentation
+build and deployment remain on x86-64 Ubuntu because they consume only the
+generated Markdown and SVG artifact.
+
+Pull requests verify the generator and benchmark-host metadata helpers against
+fixtures but do not replace the public snapshot. The workflow pins the
+benchmark toolchain and alternates whether x2py or f2py is measured first to
+avoid a systematic ordering advantage. Runtime cases use separate latency,
+medium, and bulk sampling budgets and are merged into one pyperf result per
+tool; this gives nanosecond-scale calls more independent samples without
+multiplying the cost of the largest array workloads.
 
 Enable the repository once through **Settings > Pages > Build and deployment >
 Source > GitHub Actions**. Then open **Actions > Documentation > Run workflow**,

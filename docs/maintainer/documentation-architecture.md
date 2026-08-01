@@ -200,6 +200,13 @@ it must not rewrite prose outside those blocks. The environment block records
 both the operating-system distribution and the lower-level platform string so
 published results identify the benchmark host clearly.
 
+Automated performance snapshots run on the fixed `ubuntu-24.04-arm` workflow
+label after verifying its Neoverse N2/Cobalt 100 CPU part. The benchmark scripts
+add an architecture-neutral CPU identity to every runtime and build result
+because pyperf's Linux metadata collector does not report `cpu_model_name` on
+every ARM64 `/proc/cpuinfo` format. Documentation generation continues to
+require matching CPU metadata across each x2py/f2py result pair.
+
 ## Continuous Documentation Quality
 
 - Require metadata for every active page.

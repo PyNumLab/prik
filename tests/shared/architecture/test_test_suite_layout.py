@@ -69,6 +69,7 @@ FORTRAN_OWNER_DIRECTORIES = {
 }
 SHARED_OWNER_DIRECTORIES = {"architecture", "docs", "naming", "tools", "types", "utilities"}
 TOOLS_TEST_MODULES = {
+    "test_benchmark_host.py",
     "test_build_time_benchmark.py",
     "test_check_benchmark_regression.py",
     "test_check_radon_policy.py",
@@ -276,8 +277,12 @@ def test_active_github_action_jobs_use_purpose_first_display_names() -> None:
 def test_documentation_workflow_generates_main_only_performance_snapshot() -> None:
     workflow = DOCS_WORKFLOW.read_text(encoding="utf-8")
 
-    assert "runs-on: ${{ vars.X2PY_BENCHMARK_RUNNER || 'ubuntu-24.04' }}" in workflow
+    assert "runs-on: ubuntu-24.04-arm" in workflow
     assert "if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'" in workflow
+    assert "python tools/benchmark_host.py" in workflow
+    assert "--require-machine aarch64" in workflow
+    assert "--require-arm-part 0xd49" in workflow
+    assert '--github-env "$GITHUB_ENV"' in workflow
     assert "bash benchmarks/run.sh" in workflow
     assert "python tools/generate_performance_docs.py" in workflow
     assert "name: performance-snapshot" in workflow

@@ -34,7 +34,7 @@ jobs:
   benchmark:
     name: Benchmark
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    runs-on: ${{ vars.X2PY_BENCHMARK_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 90
     permissions:
       contents: read
@@ -50,6 +50,13 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: pyproject.toml
+
+      - name: Verify and record benchmark host
+        run: >-
+          python tools/benchmark_host.py
+          --require-machine aarch64
+          --require-arm-part 0xd49
+          --github-env "$GITHUB_ENV"
 
       - name: Install benchmark dependencies
         run: |

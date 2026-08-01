@@ -111,6 +111,7 @@ def test_run_build_benchmarks_excludes_warmups_and_writes_paired_pyperf_suites(
         return 1.0 if tool == "x2py" else 2.0
 
     monkeypatch.setattr(build_time, "timed_build", fake_timed_build)
+    monkeypatch.setenv("X2PY_BENCHMARK_CPU_MODEL", "Published Benchmark CPU")
 
     x2py_path, f2py_path = build_time.run_build_benchmarks(
         runs=2,
@@ -137,3 +138,5 @@ def test_run_build_benchmarks_excludes_warmups_and_writes_paired_pyperf_suites(
     assert x2py_suite.get_metadata()["build_runs"] == 2
     assert f2py_suite.get_metadata()["build_warmups"] == 1
     assert x2py_suite.get_metadata()["x2py_build_jobs"] == 4
+    assert x2py_suite.get_metadata()["cpu_model_name"] == "Published Benchmark CPU"
+    assert f2py_suite.get_metadata()["cpu_model_name"] == "Published Benchmark CPU"

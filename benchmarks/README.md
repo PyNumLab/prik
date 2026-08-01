@@ -91,10 +91,14 @@ the runtime and clean-build comparison SVGs in `docs/user/assets/`.
 Explanatory prose and the reproduction instructions remain hand-maintained.
 
 The Documentation workflow performs the same generation after successful
-correctness checks and rigorous measurements on pushes to `main`. It keeps the
-raw `pyperf` files as a workflow artifact and overlays the generated snapshot
+correctness checks and rigorous measurements on pushes to `main`. The benchmark
+job uses GitHub's `ubuntu-24.04-arm` runner, whose standard hosted pool is based
+on Microsoft Cobalt 100 processors, and verifies that the allocated machine is
+ARM64 with the expected Neoverse N2/Cobalt 100 CPU part before measuring. The
+documentation build and deployment remain separate x86-64 jobs. The workflow
+keeps the raw `pyperf` files as an artifact and overlays the generated snapshot
 only in the website build; it does not create a result commit.
 
 The publication environment pins Python 3.12, NumPy/f2py 2.5.1, pyperf 2.10.0,
-Meson 1.11.2, Ninja 1.13.0, and GNU Fortran 13. Update those versions through a
-reviewed change so published runs remain comparable.
+Meson 1.11.2, Ninja 1.13.0, GNU Fortran 13, and the ARM64 runner label. Update
+those inputs through a reviewed change so published runs remain comparable.

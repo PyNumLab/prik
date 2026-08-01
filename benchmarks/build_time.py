@@ -274,6 +274,8 @@ def _write_result_suite(
             "platform_details": platform.platform(),
             "source_count": len(case.workload.sources),
         }
+        if cpu_model := os.environ.get("X2PY_BENCHMARK_CPU_MODEL"):
+            metadata["cpu_model_name"] = cpu_model
         run = pyperf.Run(timings[(tool, case.benchmark_name)], metadata=metadata, collect_metadata=True)
         benchmarks.append(pyperf.Benchmark([run]))
     suite = pyperf.BenchmarkSuite(benchmarks)

@@ -54,6 +54,7 @@ def test_runtime_groups_assign_more_samples_only_to_noisy_cases(
     )
     monkeypatch.setenv("BINDING_TOOL", "x2py")
     monkeypatch.setenv("X2PY_RUNTIME_BENCHMARK_GROUP", group)
+    monkeypatch.setenv("X2PY_BENCHMARK_CPU_MODEL", "Published Benchmark CPU")
     monkeypatch.setattr(importlib, "import_module", lambda _name: SimpleNamespace(kernels=kernels))
     monkeypatch.setattr(pyperf, "Runner", FakeRunner)
 
@@ -61,6 +62,7 @@ def test_runtime_groups_assign_more_samples_only_to_noisy_cases(
 
     assert observed["processes"] == processes
     assert observed["values"] == values
+    assert observed["metadata"]["cpu_model_name"] == "Published Benchmark CPU"
     assert observed["names"] == list(expected_names)
 
 
@@ -81,3 +83,4 @@ def test_run_script_appends_runtime_groups_in_public_table_order() -> None:
     ]
     assert positions == sorted(positions)
     assert 'result_args=(--append "results/$binding_tool.json")' in source
+    assert "X2PY_BENCHMARK_CPU_MODEL" in source
