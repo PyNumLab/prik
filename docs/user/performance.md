@@ -68,6 +68,27 @@ The smallest workloads expose wrapper overhead most clearly. As more time is
 spent inside Fortran, both tools approach the cost of the native operation and
 small differences matter less.
 
+## Clean Build Time
+
+Build latency is measured separately from runtime-call overhead. Each timing
+starts with an empty output directory and ends when the normal tool command has
+generated its wrapper, compiled all native and generated sources, and linked an
+extension. Importability and the expected Python exports are checked immediately
+afterward, outside the timed interval.
+
+The small-module workload uses the same one-source, five-procedure module as the
+runtime suite. The full-library workload gives both tools the same 155-source
+reference BLAS implementation and requires all 155 routines to be exposed.
+
+<!-- x2py-performance-build:start -->
+Each value is the mean of 6 clean builds after 1 untimed warm-up.
+
+| Clean build workload | f2py | x2py | Relative result |
+| --- | ---: | ---: | ---: |
+| Small module (1 source, 5 procedures) | 2.92 sec | **1.19 sec** | x2py 2.45× faster |
+| Full reference BLAS (155 sources) | **22.0 sec** | 78.7 sec | f2py 3.57× faster |
+<!-- x2py-performance-build:end -->
+
 ## Fair, Like-for-Like Setup
 
 The suite wraps one set of Fortran kernels with the default x2py and f2py
@@ -79,6 +100,8 @@ them. No benchmark-only wrapper mode is used.
 - Both interfaces keep the GIL held.
 - OpenMP, OpenBLAS, and MKL are limited to one thread.
 - `pyperf --rigorous` pins each benchmark to logical CPU `0`.
+- Build timings alternate tool order, use clean output directories, and
+  exclude post-build import checks.
 - CPU: Intel(R) Core(TM) i7-4712MQ CPU @ 2.30GHz.
 - Operating system: Ubuntu 26.04 LTS.
 - Kernel/platform: `Linux-7.0.0-28-generic-x86_64-with-glibc2.43`.
@@ -86,7 +109,7 @@ them. No benchmark-only wrapper mode is used.
 - NumPy/f2py: 2.5.1.
 - Fortran compiler: GNU Fortran 15.2.0.
 - pyperf: 2.10.0.
-- x2py revision: `03d228acc6a8`.
+- x2py revision: `f8d7e8a95724`.
 
 These results were recorded on August 1, 2026. Performance depends on the CPU,
 compiler, operating system, and background activity, so comparisons should use
@@ -103,5 +126,5 @@ measurements, and comparison with one command:
 bash benchmarks/run.sh
 ```
 
-The command writes both `pyperf` result files under `benchmarks/results/` and
-prints the full comparison table.
+The command writes the runtime and clean-build `pyperf` result pairs under
+`benchmarks/results/` and prints both comparison tables.

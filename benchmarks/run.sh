@@ -46,6 +46,15 @@ echo "========================================"
 
 mkdir -p results
 
+echo
+echo "========================================"
+echo " Benchmarking clean end-to-end builds"
+echo "========================================"
+python3 build_time.py \
+    --runs "${X2PY_BUILD_BENCHMARK_RUNS:-6}" \
+    --warmups "${X2PY_BUILD_BENCHMARK_WARMUPS:-1}" \
+    --first "$benchmark_first"
+
 echo "Benchmark order: ${binding_tools[*]}"
 for binding_tool in "${binding_tools[@]}"; do
     BINDING_TOOL="$binding_tool" \
@@ -62,4 +71,9 @@ done
 python3 -m pyperf compare_to \
     results/f2py.json \
     results/x2py.json \
+    --table
+
+python3 -m pyperf compare_to \
+    results/f2py-build.json \
+    results/x2py-build.json \
     --table

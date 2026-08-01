@@ -91,6 +91,18 @@ shows the available edits.
 - Editable `.pyi` contracts and readable generated docstrings
 - Early, clear errors when a boundary cannot be wrapped
 
+## Performance
+
+**Low wrapper overhead, measured against NumPy's f2py.**
+
+The included benchmark suite runs both tools against the same Fortran kernels
+through their normal generated interfaces. Results are machine-dependent; the
+chart below is the latest committed snapshot.
+
+[![Relative performance of x2py and f2py across call, vector, and matrix workloads. Values above 1.0 mean x2py is faster.](docs/user/assets/performance-comparison.svg)](https://pynumlab.github.io/x2py/user/performance/)
+
+[See the complete results, test environment, and one-command reproduction instructions.](https://pynumlab.github.io/x2py/user/performance/)
+
 ## Installation & Quick Start
 
 x2py requires **Python 3.10 or newer**, NumPy, Python development headers,

@@ -104,6 +104,22 @@ No manual binding code or low-level boilerplate.
 
 ---
 
+## Measured Performance
+
+**Low wrapper overhead, measured against NumPy's f2py.**
+
+The latest published benchmark runs both tools against the same Fortran
+kernels through their normal generated interfaces. Results are
+machine-dependent; the detailed page records the complete environment and
+reproduction method.
+
+[![Relative performance of x2py and f2py across call, vector, and matrix workloads. Values above 1.0 mean x2py is faster.](user/assets/performance-comparison.svg)](user/performance.md)
+{ .x2py-performance-chart }
+
+[View the full results and methodology →](user/performance.md)
+
+---
+
 **Ready to wrap your Fortran code?**
 
 [Getting Started Guide →](user/getting-started/index.md){ .x2py-primary-cta }

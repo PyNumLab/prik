@@ -68,6 +68,7 @@ FORTRAN_OWNER_DIRECTORIES = {
 }
 SHARED_OWNER_DIRECTORIES = {"architecture", "docs", "naming", "tools", "types", "utilities"}
 TOOLS_TEST_MODULES = {
+    "test_build_time_benchmark.py",
     "test_check_benchmark_regression.py",
     "test_check_radon_policy.py",
     "test_check_static_analysis_versions.py",
@@ -266,4 +267,6 @@ def test_documentation_workflow_generates_main_only_performance_snapshot() -> No
     assert "name: performance-snapshot" in workflow
     assert "benchmarks/results/f2py.json" in workflow
     assert "benchmarks/results/x2py.json" in workflow
+    assert "benchmarks/results/f2py-build.json" in workflow
+    assert "benchmarks/results/x2py-build.json" in workflow
     assert "uses: actions/download-artifact@v4" in workflow

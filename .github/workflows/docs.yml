@@ -88,7 +88,12 @@ jobs:
             --commit "$GITHUB_SHA"
 
       - name: Report measurement stability
-        run: python -m pyperf check benchmarks/results/f2py.json benchmarks/results/x2py.json
+        run: |
+          python -m pyperf check \
+            benchmarks/results/f2py.json \
+            benchmarks/results/x2py.json \
+            benchmarks/results/f2py-build.json \
+            benchmarks/results/x2py-build.json
 
       - name: Upload Performance snapshot and raw results
         uses: actions/upload-artifact@v4
@@ -97,6 +102,8 @@ jobs:
           path: |
             benchmarks/results/f2py.json
             benchmarks/results/x2py.json
+            benchmarks/results/f2py-build.json
+            benchmarks/results/x2py-build.json
             docs/user/performance.md
             docs/user/assets/performance-comparison.svg
           retention-days: 90

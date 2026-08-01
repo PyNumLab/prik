@@ -83,6 +83,14 @@ nav:
               - Control CLI Output: user/examples/recipes/control-cli-output.md
               - Use Python Inspection APIs: user/examples/recipes/use-python-inspection-apis.md
               - Use Compiler Preprocessing Options: user/examples/recipes/compiler-preprocessing.md
+      - Troubleshooting:
+          - Overview: user/troubleshooting/index.md
+          - Installation Issues: user/troubleshooting/installation-issues.md
+          - Compiler Issues: user/troubleshooting/compiler-issues.md
+          - Build Issues: user/troubleshooting/build-issues.md
+          - Runtime Issues: user/troubleshooting/runtime-issues.md
+          - Platform-Specific Issues: user/troubleshooting/platform-specific-issues.md
+      - FAQ: user/faq/index.md
       - Reference:
           - Overview: user/reference/index.md
           - CLI Commands: user/reference/cli-commands.md
@@ -103,14 +111,6 @@ nav:
       - Language Support:
           - Overview: user/language-support/index.md
           - Feature Matrix: user/language-support/feature-matrix.md
-      - FAQ: user/faq/index.md
-      - Troubleshooting:
-          - Overview: user/troubleshooting/index.md
-          - Installation Issues: user/troubleshooting/installation-issues.md
-          - Compiler Issues: user/troubleshooting/compiler-issues.md
-          - Build Issues: user/troubleshooting/build-issues.md
-          - Runtime Issues: user/troubleshooting/runtime-issues.md
-          - Platform-Specific Issues: user/troubleshooting/platform-specific-issues.md
       - Changelog: user/changelog/index.md
   - Developer Documentation:
       - Overview: developer/index.md

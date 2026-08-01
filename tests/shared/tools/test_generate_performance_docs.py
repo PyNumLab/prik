@@ -8,6 +8,7 @@ import pyperf
 import pytest
 
 from tools.generate_performance_docs import (
+    BUILD_SHARED_METADATA,
     _format_factor,
     _format_ratio,
     generate,
@@ -19,7 +20,7 @@ from tools.generate_performance_docs import (
 
 COMMON_METADATA = {
     "cpu_affinity": "2",
-    "cpu_model_name": "Benchmark CPU",
+    "cpu_model_name": "Benchmark CPU C Processor",
     "hostname": "private-runner-name",
     "numpy_version": "2.5.1",
     "perf_version": "2.10.0",
@@ -36,6 +37,7 @@ def _write_suite(
     benchmarks: list[tuple[str, list[float]]],
     *,
     platform_details: str = "Linux-test-x86_64",
+    extra_metadata: dict[str, object] | None = None,
 ) -> Path:
     suite_benchmarks = []
     for name, values in benchmarks:
@@ -45,6 +47,7 @@ def _write_suite(
             "date": "2026-08-01 12:00:00",
             "name": name,
             "platform_details": platform_details,
+            **(extra_metadata or {}),
         }
         run = pyperf.Run(values, metadata=metadata, collect_metadata=False)
         suite_benchmarks.append(pyperf.Benchmark([run]))
@@ -74,6 +77,34 @@ def _paired_suites(tmp_path: Path) -> tuple[Path, Path]:
     return f2py, x2py
 
 
+def _paired_build_suites(tmp_path: Path) -> tuple[Path, Path]:
+    metadata = {
+        "build_runs": 6,
+        "build_scope": "clean source-to-extension generation, compilation, and linking",
+        "build_warmups": 1,
+        "compiler": "/usr/bin/gfortran",
+    }
+    f2py = _write_suite(
+        tmp_path / "f2py-build.json",
+        "f2py",
+        [
+            ("build.small_module", [2.0, 2.1, 1.9, 2.05, 1.95]),
+            ("build.full_blas", [10.0, 10.2, 9.8, 10.1, 9.9]),
+        ],
+        extra_metadata=metadata,
+    )
+    x2py = _write_suite(
+        tmp_path / "x2py-build.json",
+        "x2py",
+        [
+            ("build.small_module", [1.0, 1.1, 0.9, 1.05, 0.95]),
+            ("build.full_blas", [12.0, 12.2, 11.8, 12.1, 11.9]),
+        ],
+        extra_metadata=metadata,
+    )
+    return f2py, x2py
+
+
 def _page_template() -> str:
     return """before
 <!-- x2py-performance-summary:start -->
@@ -83,7 +114,11 @@ between summary and table
 <!-- x2py-performance-table:start -->
 old table
 <!-- x2py-performance-table:end -->
-between table and environment
+between table and build
+<!-- x2py-performance-build:start -->
+old build results
+<!-- x2py-performance-build:end -->
+between build and environment
 <!-- x2py-performance-environment:start -->
 old environment
 <!-- x2py-performance-environment:end -->
@@ -119,6 +154,7 @@ def test_format_factor_keeps_small_significant_differences_visible() -> None:
 
 def test_render_page_updates_only_marked_blocks(tmp_path: Path) -> None:
     f2py, x2py = _paired_suites(tmp_path)
+    f2py_build, x2py_build = _paired_build_suites(tmp_path)
     snapshot = load_snapshot(
         f2py,
         x2py,
@@ -126,15 +162,28 @@ def test_render_page_updates_only_marked_blocks(tmp_path: Path) -> None:
         compiler_version="GNU Fortran 13.3.0",
         commit="1234567890abcdef",
     )
+    build_snapshot = load_snapshot(
+        f2py_build,
+        x2py_build,
+        operating_system=TEST_OS,
+        compiler_version="GNU Fortran 13.3.0",
+        commit="1234567890abcdef",
+        metadata_keys=BUILD_SHARED_METADATA,
+    )
 
-    rendered = render_page(_page_template(), snapshot)
+    rendered = render_page(_page_template(), snapshot, build_snapshot)
 
     assert rendered.startswith("before\n")
     assert rendered.endswith("after\n")
     assert "between summary and table" in rendered
     assert "1 of 3" in rendered
     assert "No significant difference" in rendered
+    assert "Small module (1 source, 5 procedures)" in rendered
+    assert "Full reference BLAS (155 sources)" in rendered
+    assert "mean of 6 clean builds after 1 untimed warm-up" in rendered
     assert "private-runner-name" not in rendered
+    assert "CPU: Benchmark CPU &#67; Processor." in rendered
+    assert "CPU: Benchmark CPU C Processor." not in rendered
     assert "Operating system: Test Linux 1.0" in rendered
     assert "GNU Fortran 13.3.0" in rendered
     assert "`1234567890ab`" in rendered
@@ -142,6 +191,7 @@ def test_render_page_updates_only_marked_blocks(tmp_path: Path) -> None:
 
 def test_render_page_rejects_missing_or_duplicate_markers(tmp_path: Path) -> None:
     f2py, x2py = _paired_suites(tmp_path)
+    f2py_build, x2py_build = _paired_build_suites(tmp_path)
     snapshot = load_snapshot(
         f2py,
         x2py,
@@ -149,9 +199,21 @@ def test_render_page_rejects_missing_or_duplicate_markers(tmp_path: Path) -> Non
         compiler_version="GNU Fortran 13.3.0",
         commit="1234567890abcdef",
     )
+    build_snapshot = load_snapshot(
+        f2py_build,
+        x2py_build,
+        operating_system=TEST_OS,
+        compiler_version="GNU Fortran 13.3.0",
+        commit="1234567890abcdef",
+        metadata_keys=BUILD_SHARED_METADATA,
+    )
 
     with pytest.raises(ValueError, match="exactly one 'summary' marker pair"):
-        render_page(_page_template().replace("<!-- x2py-performance-summary:end -->", ""), snapshot)
+        render_page(
+            _page_template().replace("<!-- x2py-performance-summary:end -->", ""),
+            snapshot,
+            build_snapshot,
+        )
 
 
 def test_render_chart_is_valid_accessible_svg(tmp_path: Path) -> None:
@@ -211,6 +273,7 @@ def test_load_snapshot_rejects_swapped_tool_results(tmp_path: Path) -> None:
 
 def test_generate_writes_page_and_chart(tmp_path: Path) -> None:
     f2py, x2py = _paired_suites(tmp_path)
+    f2py_build, x2py_build = _paired_build_suites(tmp_path)
     page = tmp_path / "performance.md"
     chart = tmp_path / "assets/performance.svg"
     page.write_text(_page_template(), encoding="utf-8")
@@ -218,6 +281,8 @@ def test_generate_writes_page_and_chart(tmp_path: Path) -> None:
     generate(
         f2py,
         x2py,
+        f2py_build,
+        x2py_build,
         page,
         chart,
         operating_system=TEST_OS,
@@ -234,7 +299,7 @@ def test_generate_writes_page_and_chart(tmp_path: Path) -> None:
 def test_current_performance_page_has_one_complete_marker_pair_per_generated_block() -> None:
     page = Path("docs/user/performance.md").read_text(encoding="utf-8")
 
-    for name in ("summary", "table", "environment"):
+    for name in ("summary", "table", "build", "environment"):
         assert page.count(f"<!-- x2py-performance-{name}:start -->") == 1
         assert page.count(f"<!-- x2py-performance-{name}:end -->") == 1
 

@@ -23,13 +23,27 @@ from pyperf._compare import is_significant_benchs
 REPOSITORY_ROOT = Path(__file__).parents[1]
 DEFAULT_F2PY_RESULTS = REPOSITORY_ROOT / "benchmarks/results/f2py.json"
 DEFAULT_X2PY_RESULTS = REPOSITORY_ROOT / "benchmarks/results/x2py.json"
+DEFAULT_F2PY_BUILD_RESULTS = REPOSITORY_ROOT / "benchmarks/results/f2py-build.json"
+DEFAULT_X2PY_BUILD_RESULTS = REPOSITORY_ROOT / "benchmarks/results/x2py-build.json"
 DEFAULT_PAGE = REPOSITORY_ROOT / "docs/user/performance.md"
 DEFAULT_CHART = REPOSITORY_ROOT / "docs/user/assets/performance-comparison.svg"
 COMPILE_FLAGS = "-O3 -march=native -mtune=native"
 TIMES = "\N{MULTIPLICATION SIGN}"
-MARKER_NAMES = ("summary", "table", "environment")
+_STANDALONE_C = re.compile(r"(?<![A-Za-z0-9_])C(?![A-Za-z0-9_])")
+MARKER_NAMES = ("summary", "table", "build", "environment")
 SHARED_METADATA = (
     "cpu_affinity",
+    "cpu_model_name",
+    "numpy_version",
+    "perf_version",
+    "platform_details",
+    "python_version",
+)
+BUILD_SHARED_METADATA = (
+    "build_runs",
+    "build_scope",
+    "build_warmups",
+    "compiler",
     "cpu_model_name",
     "numpy_version",
     "perf_version",
@@ -105,6 +119,8 @@ def _procedure_labels(name: str) -> tuple[str, str]:
     fixed = {
         "call.noop": ("Empty function call", "Empty call"),
         "call.add_scalars": ("Add two scalars", "Add scalars"),
+        "build.small_module": ("Small module (1 source, 5 procedures)", "Small module"),
+        "build.full_blas": ("Full reference BLAS (155 sources)", "Full reference BLAS"),
     }
     if name in fixed:
         return fixed[name]
@@ -139,11 +155,12 @@ def _format_benchmark_value(benchmark: pyperf.Benchmark, value: float) -> str:
 def _compatible_metadata(
     f2py_suite: pyperf.BenchmarkSuite,
     x2py_suite: pyperf.BenchmarkSuite,
+    keys: tuple[str, ...],
 ) -> dict[str, object]:
     f2py_metadata = f2py_suite.get_metadata()
     x2py_metadata = x2py_suite.get_metadata()
     shared: dict[str, object] = {}
-    for key in SHARED_METADATA:
+    for key in keys:
         f2py_value = f2py_metadata.get(key)
         x2py_value = x2py_metadata.get(key)
         if f2py_value is None or x2py_value is None:
@@ -168,6 +185,7 @@ def load_snapshot(
     compiler_version: str,
     commit: str,
     recorded_date: date | None = None,
+    metadata_keys: tuple[str, ...] = SHARED_METADATA,
 ) -> PerformanceSnapshot:
     """Load and validate one paired benchmark snapshot."""
     f2py_suite = pyperf.BenchmarkSuite.load(str(f2py_path))
@@ -205,7 +223,7 @@ def load_snapshot(
     latest_date = max(f2py_suite.get_dates()[1], x2py_suite.get_dates()[1]).date()
     return PerformanceSnapshot(
         results=tuple(results),
-        metadata=_compatible_metadata(f2py_suite, x2py_suite),
+        metadata=_compatible_metadata(f2py_suite, x2py_suite, metadata_keys),
         recorded_date=recorded_date or latest_date,
         operating_system=operating_system,
         compiler_version=_compiler_display_name(compiler_version),
@@ -310,6 +328,22 @@ def _table_markdown(snapshot: PerformanceSnapshot) -> str:
     return "\n".join(rows)
 
 
+def _build_markdown(snapshot: PerformanceSnapshot) -> str:
+    runs = int(snapshot.metadata["build_runs"])
+    warmups = int(snapshot.metadata["build_warmups"])
+    rows = [
+        f"Each value is the mean of {runs} clean builds after {warmups} untimed warm-up{'s' if warmups != 1 else ''}.",
+        "",
+        "| Clean build workload | f2py | x2py | Relative result |",
+        "| --- | ---: | ---: | ---: |",
+    ]
+    for result in snapshot.results:
+        f2py_value = _table_value(result.f2py_display, winner=result.outcome == "f2py")
+        x2py_value = _table_value(result.x2py_display, winner=result.outcome == "x2py")
+        rows.append(f"| {result.table_label} | {f2py_value} | {x2py_value} | {_relative_result(result)} |")
+    return "\n".join(rows)
+
+
 def _month_date(value: date) -> str:
     months = (
         "January",
@@ -332,6 +366,12 @@ def _metadata_text(metadata: dict[str, object], key: str) -> str:
     return str(metadata[key]).replace("`", "'")
 
 
+def _cpu_model_text(metadata: dict[str, object]) -> str:
+    # Keep runner-provided model names visually exact without making an incidental
+    # model suffix look like documentation for the deferred C-language frontend.
+    return _STANDALONE_C.sub("&#67;", _metadata_text(metadata, "cpu_model_name"))
+
+
 def _environment_markdown(snapshot: PerformanceSnapshot) -> str:
     python_version = _metadata_text(snapshot.metadata, "python_version").split(maxsplit=1)[0]
     affinity = _metadata_text(snapshot.metadata, "cpu_affinity")
@@ -342,7 +382,9 @@ def _environment_markdown(snapshot: PerformanceSnapshot) -> str:
         "- Both interfaces keep the GIL held.",
         "- OpenMP, OpenBLAS, and MKL are limited to one thread.",
         f"- `pyperf --rigorous` pins each benchmark to logical CPU `{affinity}`.",
-        f"- CPU: {_metadata_text(snapshot.metadata, 'cpu_model_name')}.",
+        "- Build timings alternate tool order, use clean output directories, and",
+        "  exclude post-build import checks.",
+        f"- CPU: {_cpu_model_text(snapshot.metadata)}.",
         f"- Operating system: {operating_system}.",
         f"- Kernel/platform: `{_metadata_text(snapshot.metadata, 'platform_details')}`.",
         f"- Python: {python_version}.",
@@ -368,11 +410,16 @@ def _replace_block(markdown: str, name: str, replacement: str) -> str:
     return f"{before}{start}\n{replacement.rstrip()}\n{end}{after}"
 
 
-def render_page(markdown: str, snapshot: PerformanceSnapshot) -> str:
+def render_page(
+    markdown: str,
+    snapshot: PerformanceSnapshot,
+    build_snapshot: PerformanceSnapshot,
+) -> str:
     """Replace only the generated blocks in a Performance page."""
     replacements = {
         "summary": _summary_markdown(snapshot),
         "table": _table_markdown(snapshot),
+        "build": _build_markdown(build_snapshot),
         "environment": _environment_markdown(snapshot),
     }
     for name in MARKER_NAMES:
@@ -534,6 +581,8 @@ def _operating_system_name() -> str:
 def generate(
     f2py_path: Path,
     x2py_path: Path,
+    f2py_build_path: Path,
+    x2py_build_path: Path,
     page_path: Path,
     chart_path: Path,
     *,
@@ -551,8 +600,17 @@ def generate(
         commit=commit,
         recorded_date=recorded_date,
     )
+    build_snapshot = load_snapshot(
+        f2py_build_path,
+        x2py_build_path,
+        operating_system=operating_system,
+        compiler_version=compiler_version,
+        commit=commit,
+        recorded_date=recorded_date,
+        metadata_keys=BUILD_SHARED_METADATA,
+    )
     original_page = page_path.read_text(encoding="utf-8")
-    generated_page = render_page(original_page, snapshot)
+    generated_page = render_page(original_page, snapshot, build_snapshot)
     page_path.write_text(generated_page, encoding="utf-8")
     chart_path.parent.mkdir(parents=True, exist_ok=True)
     chart_path.write_text(render_chart(snapshot), encoding="utf-8")
@@ -563,6 +621,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--f2py-results", type=Path, default=DEFAULT_F2PY_RESULTS)
     parser.add_argument("--x2py-results", type=Path, default=DEFAULT_X2PY_RESULTS)
+    parser.add_argument("--f2py-build-results", type=Path, default=DEFAULT_F2PY_BUILD_RESULTS)
+    parser.add_argument("--x2py-build-results", type=Path, default=DEFAULT_X2PY_BUILD_RESULTS)
     parser.add_argument("--page", type=Path, default=DEFAULT_PAGE)
     parser.add_argument("--chart", type=Path, default=DEFAULT_CHART)
     parser.add_argument("--compiler", default="gfortran")
@@ -588,6 +648,8 @@ def main(argv: list[str] | None = None) -> int:
         snapshot = generate(
             args.f2py_results,
             args.x2py_results,
+            args.f2py_build_results,
+            args.x2py_build_results,
             args.page,
             args.chart,
             operating_system=operating_system,
