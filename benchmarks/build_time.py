@@ -35,20 +35,47 @@ BLAS_SOURCE_ROOT = (
     / "native"
 )
 FORTRAN_SUFFIXES = frozenset({".f", ".f90", ".f95", ".f03", ".f08", ".for", ".f77", ".ftn"})
-COMPILE_FLAGS = "-O3 -march=native -mtune=native"
+DEVELOPMENT_FLAGS = "-O0"
+OPTIMIZED_FLAGS = "-O3 -march=native -mtune=native"
 TOOLS = ("x2py", "f2py")
 Tool = Literal["x2py", "f2py"]
+
+
+@dataclass(frozen=True)
+class BuildProfile:
+    """One compiler-optimization profile measured for every workload."""
+
+    slug: str
+    label: str
+    flags: str
 
 
 @dataclass(frozen=True)
 class BuildWorkload:
     """One source set and its required generated Python exports."""
 
-    benchmark_name: str
     slug: str
     sources: tuple[Path, ...]
     namespace: tuple[str, ...]
     expected_exports: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class BuildCase:
+    """One workload measured under one compiler profile."""
+
+    profile: BuildProfile
+    workload: BuildWorkload
+
+    @property
+    def benchmark_name(self) -> str:
+        return f"build.{self.profile.slug}.{self.workload.slug}"
+
+
+BUILD_PROFILES = (
+    BuildProfile("development", "Development", DEVELOPMENT_FLAGS),
+    BuildProfile("optimized", "Optimized", OPTIMIZED_FLAGS),
+)
 
 
 def build_workloads() -> tuple[BuildWorkload, ...]:
@@ -61,14 +88,12 @@ def build_workloads() -> tuple[BuildWorkload, ...]:
     )
     return (
         BuildWorkload(
-            benchmark_name="build.small_module",
             slug="small_module",
             sources=(small_source,),
             namespace=("kernels",),
             expected_exports=("noop", "add_scalars", "increment_vector", "sum_matrix", "matrix_update"),
         ),
         BuildWorkload(
-            benchmark_name="build.full_blas",
             slug="full_blas",
             sources=blas_sources,
             namespace=(),
@@ -77,27 +102,41 @@ def build_workloads() -> tuple[BuildWorkload, ...]:
     )
 
 
+def build_cases() -> tuple[BuildCase, ...]:
+    """Return every maintained profile/workload build combination."""
+    return tuple(BuildCase(profile, workload) for profile in BUILD_PROFILES for workload in build_workloads())
+
+
+def _available_build_jobs() -> int:
+    try:
+        return max(1, len(os.sched_getaffinity(0)))
+    except AttributeError:
+        return max(1, os.cpu_count() or 1)
+
+
 def tool_order(first: Tool, round_index: int) -> tuple[Tool, Tool]:
     """Alternate which binding tool receives the first build in each round."""
     second: Tool = "f2py" if first == "x2py" else "x2py"
     return (first, second) if round_index % 2 == 0 else (second, first)
 
 
-def module_name(tool: Tool, workload: BuildWorkload) -> str:
+def module_name(tool: Tool, case: BuildCase) -> str:
     """Return one isolated extension name for a tool and workload."""
-    return f"bench_build_{tool}_{workload.slug}"
+    return f"bench_build_{tool}_{case.profile.slug}_{case.workload.slug}"
 
 
 def build_command(
     tool: Tool,
-    workload: BuildWorkload,
+    case: BuildCase,
     workdir: Path,
     *,
     compiler: str,
+    jobs: int,
 ) -> tuple[str, ...]:
     """Return the normal end-to-end build command for one timed sample."""
-    sources = tuple(str(source.resolve()) for source in workload.sources)
-    name = module_name(tool, workload)
+    sources = tuple(str(source.resolve()) for source in case.workload.sources)
+    flags = case.profile.flags
+    name = module_name(tool, case)
     generated = workdir / "generated"
     if tool == "x2py":
         return (
@@ -111,9 +150,11 @@ def build_command(
             str(generated),
             "--compiler",
             compiler,
-            f"--native-compile-flags={COMPILE_FLAGS}",
-            f"--wrapper-fortran-flags={COMPILE_FLAGS}",
-            f"--wrapper-c-flags={COMPILE_FLAGS}",
+            "--jobs",
+            str(jobs),
+            f"--native-compile-flags={flags}",
+            f"--wrapper-fortran-flags={flags}",
+            f"--wrapper-c-flags={flags}",
         )
     return (
         sys.executable,
@@ -125,22 +166,22 @@ def build_command(
         *sources,
         "--build-dir",
         str(generated),
-        f"--f77flags={COMPILE_FLAGS}",
-        f"--f90flags={COMPILE_FLAGS}",
-        f"--opt={COMPILE_FLAGS}",
+        f"--f77flags={flags}",
+        f"--f90flags={flags}",
+        f"--opt={flags}",
     )
 
 
-def _build_environment(compiler: str) -> dict[str, str]:
+def _build_environment(compiler: str, flags: str) -> dict[str, str]:
     environment = dict(os.environ)
     environment.update(
         {
-            "CFLAGS": COMPILE_FLAGS,
+            "CFLAGS": flags,
             "FC": compiler,
             "F77": compiler,
             "F90": compiler,
-            "FFLAGS": COMPILE_FLAGS,
-            "F90FLAGS": COMPILE_FLAGS,
+            "FFLAGS": flags,
+            "F90FLAGS": flags,
         }
     )
     return environment
@@ -155,10 +196,10 @@ def _failure_message(command: tuple[str, ...], result: subprocess.CompletedProce
     )
 
 
-def _verify_import(tool: Tool, workload: BuildWorkload, workdir: Path) -> None:
-    name = module_name(tool, workload)
-    namespace = repr(workload.namespace)
-    expected = repr(workload.expected_exports)
+def _verify_import(tool: Tool, case: BuildCase, workdir: Path) -> None:
+    name = module_name(tool, case)
+    namespace = repr(case.workload.namespace)
+    expected = repr(case.workload.expected_exports)
     verification = (
         "import importlib\n"
         f"api = importlib.import_module({name!r})\n"
@@ -179,16 +220,16 @@ def _verify_import(tool: Tool, workload: BuildWorkload, workdir: Path) -> None:
         raise RuntimeError(_failure_message((sys.executable, "-c", "<import verification>"), result))
 
 
-def timed_build(tool: Tool, workload: BuildWorkload, workdir: Path, *, compiler: str) -> float:
+def timed_build(tool: Tool, case: BuildCase, workdir: Path, *, compiler: str, jobs: int) -> float:
     """Run one clean build and validate its import outside the timed interval."""
     shutil.rmtree(workdir, ignore_errors=True)
     workdir.mkdir(parents=True)
-    command = build_command(tool, workload, workdir, compiler=compiler)
+    command = build_command(tool, case, workdir, compiler=compiler, jobs=jobs)
     started = time.perf_counter()
     result = subprocess.run(  # nosec B603 - command is assembled from fixed benchmark inputs
         command,
         cwd=workdir,
-        env=_build_environment(compiler),
+        env=_build_environment(compiler, case.profile.flags),
         capture_output=True,
         text=True,
         check=False,
@@ -196,38 +237,44 @@ def timed_build(tool: Tool, workload: BuildWorkload, workdir: Path, *, compiler:
     elapsed = time.perf_counter() - started
     if result.returncode:
         raise RuntimeError(_failure_message(command, result))
-    _verify_import(tool, workload, workdir)
+    _verify_import(tool, case, workdir)
     return elapsed
 
 
 def _write_result_suite(
     tool: Tool,
-    workloads: tuple[BuildWorkload, ...],
+    cases: tuple[BuildCase, ...],
     timings: dict[tuple[Tool, str], list[float]],
     *,
     runs: int,
     warmups: int,
     first: Tool,
     compiler: str,
+    jobs: int,
     results_root: Path,
 ) -> Path:
     recorded_at = datetime.now().isoformat(sep=" ")
     benchmarks = []
-    for workload in workloads:
+    profile_summary = ";".join(f"{profile.slug}:{profile.flags}" for profile in BUILD_PROFILES)
+    for case in cases:
         metadata = {
             "binding_tool": tool,
             "build_first_tool": first,
+            "x2py_build_jobs": jobs,
+            "build_profile": case.profile.slug,
+            "build_profiles": profile_summary,
             "build_runs": runs,
             "build_scope": "clean source-to-extension generation, compilation, and linking",
             "build_warmups": warmups,
             "compiler": compiler,
             "date": recorded_at,
-            "name": workload.benchmark_name,
+            "compile_flags": case.profile.flags,
+            "name": case.benchmark_name,
             "numpy_version": np.__version__,
             "platform_details": platform.platform(),
-            "source_count": len(workload.sources),
+            "source_count": len(case.workload.sources),
         }
-        run = pyperf.Run(timings[(tool, workload.benchmark_name)], metadata=metadata, collect_metadata=True)
+        run = pyperf.Run(timings[(tool, case.benchmark_name)], metadata=metadata, collect_metadata=True)
         benchmarks.append(pyperf.Benchmark([run]))
     suite = pyperf.BenchmarkSuite(benchmarks)
     results_root.mkdir(parents=True, exist_ok=True)
@@ -242,11 +289,12 @@ def run_build_benchmarks(
     warmups: int,
     first: Tool,
     compiler: str,
+    jobs: int,
     results_root: Path = RESULTS_ROOT,
 ) -> tuple[Path, Path]:
     """Measure every clean-build workload and write paired pyperf suites."""
-    workloads = build_workloads()
-    timings = {(tool, workload.benchmark_name): [] for tool in TOOLS for workload in workloads}
+    cases = build_cases()
+    timings = {(tool, case.benchmark_name): [] for tool in TOOLS for case in cases}
     with TemporaryDirectory(prefix="x2py-build-benchmark-") as temporary:
         temporary_root = Path(temporary)
         for round_index in range(warmups + runs):
@@ -255,30 +303,32 @@ def run_build_benchmarks(
             phase_index = round_index - warmups + 1 if measured else round_index + 1
             phase_total = runs if measured else warmups
             order_index = phase_index - 1
-            for workload in workloads:
+            for case in cases:
                 for tool in tool_order(first, order_index):
                     elapsed = timed_build(
                         tool,
-                        workload,
-                        temporary_root / workload.slug / tool,
+                        case,
+                        temporary_root / case.profile.slug / case.workload.slug / tool,
                         compiler=compiler,
+                        jobs=jobs,
                     )
                     print(
-                        f"{phase} {phase_index}/{phase_total}: {workload.benchmark_name} "
+                        f"{phase} {phase_index}/{phase_total}: {case.benchmark_name} "
                         f"with {tool} took {elapsed:.3f} sec",
                         flush=True,
                     )
                     if measured:
-                        timings[(tool, workload.benchmark_name)].append(elapsed)
+                        timings[(tool, case.benchmark_name)].append(elapsed)
     paths = tuple(
         _write_result_suite(
             tool,
-            workloads,
+            cases,
             timings,
             runs=runs,
             warmups=warmups,
             first=first,
             compiler=compiler,
+            jobs=jobs,
             results_root=results_root,
         )
         for tool in TOOLS
@@ -292,12 +342,15 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--warmups", type=int, default=1)
     parser.add_argument("--first", choices=TOOLS, default="x2py")
     parser.add_argument("--compiler", default="gfortran")
+    parser.add_argument("--jobs", type=int, default=None, help="x2py compiler-process limit")
     parser.add_argument("--results-dir", type=Path, default=RESULTS_ROOT)
     args = parser.parse_args(argv)
     if args.runs < 2:
         parser.error("--runs must be at least 2")
     if args.warmups < 0:
         parser.error("--warmups must be non-negative")
+    if args.jobs is not None and args.jobs < 1:
+        parser.error("--jobs must be a positive integer")
     return args
 
 
@@ -311,11 +364,13 @@ def main(argv: list[str] | None = None) -> int:
         print("cannot run build benchmark: NumPy f2py is not installed", file=sys.stderr)
         return 2
     try:
+        jobs = args.jobs or _available_build_jobs()
         paths = run_build_benchmarks(
             runs=args.runs,
             warmups=args.warmups,
             first=args.first,
             compiler=compiler,
+            jobs=jobs,
             results_root=args.results_dir,
         )
     except (OSError, RuntimeError, ValueError) as exc:

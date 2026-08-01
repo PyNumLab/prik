@@ -74,8 +74,9 @@ has its own options; use `parse --help`, `semantics --help`, `generate --help`,
 or `probe --help` after `python3 -m x2py` to see only the options relevant to
 that command. The concise build list covers output naming and location, build
 compiler and include-directory selection, native compile flags such as `-O3`,
-native libraries, and verbose build output. Command-specific help describes
-the stage-specific role of shared flags; for example, `parse --help` explains
+native libraries, compiler job limits, and verbose build output.
+Command-specific help describes the stage-specific role of shared flags; for
+example, `parse --help` explains
 that `--compiler` and `-I` configure preprocessing. The concise build help does
 not mislabel them as preprocessing-only options. It also keeps short examples
 for a basic source build, an explicitly named extension, and semantic contract
@@ -106,7 +107,7 @@ default output directory shown there is `./__x2py__`.
 `--build-manifest PATH` reads an existing `x2py-build.json` and replays the
 saved build; it does not generate a manifest. Manifest replay accepts only
 overrides that the replay implementation consumes:
-`--out`, `--compiler`, `-I`/`--include-dir`, `--json`, `--verbose`,
+`--out`, `--compiler`, `-I`/`--include-dir`, `--jobs`, `--json`, `--verbose`,
 `--no-color`, and `--debug`. The manifest owns its output
 directory, input language, preprocessing recipe, wrapper behavior, native
 inputs, and link plan, so replay rejects flags from those areas instead of
@@ -126,6 +127,7 @@ silently ignoring them.
 | --- | --- |
 | `paths` | Source files, `.pyi` files, or directories. Omit only when using `--build-manifest`. |
 | `--language fortran` | Selects the Fortran frontend explicitly when suffix inference is unavailable. |
+| `--jobs N` | Limits concurrent compiler processes to `N`; the default uses the CPUs available to x2py. |
 
 <!-- X2PY_C_DOCS_START
 | `&#45;&#45;language {fortran,c}` | Selects the frontend. Required for C inputs, directories, and unknown suffixes. |

@@ -11,7 +11,8 @@ interfaces.
 Build timings treat each tool as a black box. A timed sample starts with an
 empty output directory and includes source processing, wrapper generation,
 native and generated-source compilation, and linking. Import verification runs
-after the timer stops. The workloads are:
+after the timer stops. Both tools use their normal dependency-aware compiler
+concurrency. The workloads are:
 
 - the one-source, five-procedure module used by the runtime suite; and
 - the repository's 155-source reference BLAS fixture, with all 155 routines
@@ -21,6 +22,13 @@ One untimed warm-up precedes six measured clean builds of each workload by
 default. Tool order alternates between rounds. Set
 `X2PY_BUILD_BENCHMARK_RUNS` or `X2PY_BUILD_BENCHMARK_WARMUPS` to change those
 counts for local investigation.
+
+Every workload is measured with two compiler profiles:
+
+- development: `-O0`; and
+- optimized: `-O3 -march=native -mtune=native`.
+
+Runtime-call measurements continue to use only the optimized profile.
 
 `X2PY_BENCHMARK_FIRST=x2py` is the default measurement order. Set it to
 `f2py` to reverse the order. The publication workflow alternates this setting
@@ -32,10 +40,11 @@ Run the complete correctness check and rigorous benchmark with:
 bash run.sh
 ```
 
-The script rebuilds both runtime extensions, runs the clean build-time suite,
-and applies `-O3 -march=native -mtune=native` to the native Fortran source,
-generated Fortran wrapper, and generated C binding. It retains f2py's generated
-sources under `build/f2py` for local inspection.
+The script rebuilds both runtime extensions, runs both clean-build profiles,
+and applies each profile consistently to the native Fortran source, generated
+Fortran wrapper, and generated C binding. Runtime extensions use the optimized
+profile. It retains f2py's generated sources under `build/f2py` for local
+inspection.
 
 To compare existing results without rebuilding:
 
@@ -73,8 +82,8 @@ Run this command from the repository root. It reads the runtime and build-time
 `pyperf` pairs, checks that each pair contains the same benchmarks and compatible
 platform metadata, records the host operating-system distribution and compiler,
 and updates only the marked result sections in `docs/user/performance.md` plus
-`docs/user/assets/performance-comparison.svg`. Explanatory prose and the
-reproduction instructions remain hand-maintained.
+the runtime and clean-build comparison SVGs in `docs/user/assets/`.
+Explanatory prose and the reproduction instructions remain hand-maintained.
 
 The Documentation workflow performs the same generation after successful
 correctness checks and rigorous measurements on pushes to `main`. It keeps the

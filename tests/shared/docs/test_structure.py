@@ -227,6 +227,7 @@ CLI_REFERENCE_OPTIONS = [
     "--build-manifest",
     "--native-fortran-sources",
     "--native-compile-flags",
+    "--jobs",
     "--native-objects",
     "--native-library",
     "--native-link-item",

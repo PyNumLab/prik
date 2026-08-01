@@ -47,7 +47,7 @@ X2PY_C_DOCS_END -->
 | Wrapper planning | `x2py/wrapper_codegen/planner.py`, `x2py/wrapper_codegen/plan.py` | policy-completed semantic modules | typed wrapper plans consuming completed decisions without a separate support-analysis traversal | `tests/fortran/infrastructure/wrapper_codegen/`, wrapper tests |
 | Direct bridge and binding lowering | `x2py/wrapper_codegen/fortran/bridge.py`, `x2py/wrapper_codegen/c/binding.py`, `x2py/wrapper_codegen/generator.py` | validated typed wrapper plans | Fortran, C, and header syntax nodes | `tests/fortran/infrastructure/wrapper_codegen/`, wrapper tests |
 | Wrapper and semantic-contract printing | `x2py/wrapper_codegen/printers/` | wrapper syntax nodes or semantic IR | wrapper source files or semantic `.pyi` text | printer, generated-contract, and wrapper artifact tests |
-| Compile and link | `x2py/compiling/`, `x2py/pipeline/build.py` | explicit native objects, then generated bridge objects, then runtime/binding objects and ordered link inputs | shared library | wrapper runtime and build-mode tests |
+| Compile and link | `x2py/compiling/`, `x2py/pipeline/build.py` | dependency-batched native objects, generated bridge and binding objects, compiler-process limit, and ordered link inputs | shared library | wrapper runtime and build-mode tests |
 
 <!-- X2PY_C_DOCS_START
 X2PY_C_DOCS_END -->

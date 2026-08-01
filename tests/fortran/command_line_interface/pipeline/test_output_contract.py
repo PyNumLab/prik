@@ -575,6 +575,7 @@ def test_cli_help_is_concise_and_points_to_detailed_help():
     assert "positional arguments:" in res.stdout.lower()
     assert "build options:" in res.stdout
     assert "--native-compile-flags" in res.stdout
+    assert "--jobs" in res.stdout
     assert "Input-language compiler used throughout the extension" in res.stdout
     assert "default: gfortran" in normalized_help
     assert "Add an include directory used throughout the extension" in res.stdout

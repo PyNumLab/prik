@@ -191,8 +191,11 @@ website publication.
 The Performance page keeps its explanatory text and reproduction workflow in
 reviewed Markdown. Result-dependent summary, table, and environment blocks are
 bounded by `x2py-performance-*` comments and are generated from paired `pyperf`
-files by `tools/generate_performance_docs.py`. The same tool owns the
-performance SVG. Generation must fail when a marker is missing or duplicated;
+files by `tools/generate_performance_docs.py`. The same tool owns the runtime
+comparison SVG and the clean-build comparison SVG. Clean-build results contain
+development and optimized compiler profiles and record the compiler-process
+limit used by x2py; f2py retains its normal Meson/Ninja scheduler. Generation
+must fail when a marker is missing or duplicated;
 it must not rewrite prose outside those blocks. The environment block records
 both the operating-system distribution and the lower-level platform string so
 published results identify the benchmark host clearly.

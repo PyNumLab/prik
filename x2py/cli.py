@@ -106,7 +106,7 @@ _BUILD_HELP_EPILOG = (
     "    python3 -m x2py --build-manifest build/x2py-build.json\n\n"
     f"{_POINTS_EXAMPLE_HELP}"
     "  See docs/user/reference/cli-commands.md for all build options.\n\n"
-    "  Manifest overrides: --out, --compiler, -I/--include-dir, --json, --verbose,\n"
+    "  Manifest overrides: --out, --compiler, -I/--include-dir, --jobs, --json, --verbose,\n"
     "    --no-color, and --debug."
 )
 _PARSE_HELP_EPILOG = (
@@ -1101,6 +1101,16 @@ def _cli_native_compile_flags(raw_flags: list[str] | None) -> tuple[str, ...]:
     return _cli_compiler_flags(raw_flags, option_name="--native-compile-flags")
 
 
+def _positive_compile_jobs(value: str) -> int:
+    try:
+        jobs = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("jobs must be a positive integer") from exc
+    if jobs < 1:
+        raise argparse.ArgumentTypeError("jobs must be a positive integer")
+    return jobs
+
+
 def _cli_build_include_dirs(args: argparse.Namespace) -> tuple[str, ...]:
     """Return build-wide CLI include paths in user order."""
     return tuple(args.include_dirs or ())
@@ -1232,6 +1242,7 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
             include_dirs=getattr(args, "include_dirs", None),
             makefile=getattr(args, "makefile", False),
             generate_sources=getattr(args, "generate_sources", False),
+            jobs=getattr(args, "jobs", None),
             verbose=1 if getattr(args, "verbose", False) else 0,
             _on_total_build_time=total_build_time_reporter,
         )
@@ -1253,6 +1264,7 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
             strict_wrapper_names=getattr(args, "strict_wrapper_names", False),
             makefile=getattr(args, "makefile", False),
             generate_sources=getattr(args, "generate_sources", False),
+            jobs=getattr(args, "jobs", None),
             verbose=1 if getattr(args, "verbose", False) else 0,
             wrapper_compiler_debug=getattr(args, "wrapper_compiler_debug", False),
             wrapper_fortran_flags=_cli_wrapper_fortran_flags(getattr(args, "wrapper_fortran_flags", None)),
@@ -1276,6 +1288,7 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
         native_include_dirs=_cli_build_include_dirs(args),
         makefile=getattr(args, "makefile", False),
         generate_sources=getattr(args, "generate_sources", False),
+        jobs=getattr(args, "jobs", None),
         verbose=1 if getattr(args, "verbose", False) else 0,
         wrapper_compiler_debug=getattr(args, "wrapper_compiler_debug", False),
         wrapper_fortran_flags=_cli_wrapper_fortran_flags(getattr(args, "wrapper_fortran_flags", None)),
@@ -1887,6 +1900,7 @@ _PIPELINE_DEFAULTS = {
     "build_manifest": None,
     "native_fortran_sources": None,
     "native_compile_flags": None,
+    "jobs": None,
     "native_objects": None,
     "native_libraries": None,
     "native_link_items": None,
@@ -1949,6 +1963,12 @@ def _add_build_arguments(parser: argparse.ArgumentParser) -> None:
     _add_wrapper_behavior_options(parser, group_title="wrapper options")
     native_group = parser.add_argument_group("native options")
     _add_native_compilation_options(native_group)
+    native_group.add_argument(
+        "--jobs",
+        type=_positive_compile_jobs,
+        metavar="N",
+        help="Limit concurrent compiler processes (default: available CPUs)",
+    )
     _add_extension_link_options(native_group)
 
     diagnostic_group = parser.add_argument_group("diagnostic options")
@@ -1995,6 +2015,12 @@ def _add_top_level_arguments(parser: argparse.ArgumentParser) -> None:
         nargs="+",
         metavar="FLAG",
         help="Native implementation compiler flags, for example --native-compile-flags=-O3",
+    )
+    build_group.add_argument(
+        "--jobs",
+        type=_positive_compile_jobs,
+        metavar="N",
+        help="Limit concurrent compiler processes (default: available CPUs)",
     )
     build_group.add_argument(
         "--native-library",

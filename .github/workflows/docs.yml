@@ -106,6 +106,7 @@ jobs:
             benchmarks/results/x2py-build.json
             docs/user/performance.md
             docs/user/assets/performance-comparison.svg
+            docs/user/assets/build-time-comparison.svg
           retention-days: 90
 
   build:

@@ -76,8 +76,8 @@ but the import uses only the module name.
 
 ## Multiple Source Files
 
-Pass source files in the order required by the compiler. Choosing the module
-name explicitly keeps the result clear:
+Pass every wrapped source file in one command. Choosing the module name
+explicitly keeps the result clear:
 
 ```bash
 python3 -m x2py src/types.f90 src/solver.f90 \
@@ -85,8 +85,27 @@ python3 -m x2py src/types.f90 src/solver.f90 \
   --out-dir build/solver
 ```
 
-x2py preserves the given order. It does not discover source dependencies or
-external libraries automatically.
+x2py reads module and submodule dependencies from the wrapped sources. Files
+whose dependencies are ready compile concurrently; independent external
+procedures can all compile together. The original input order is still used
+for the final link.
+
+By default, x2py uses the CPUs available to the current process. Limit compiler
+concurrency with `--jobs`, or select a serial build with `--jobs 1`:
+
+```bash
+python3 -m x2py src/types.f90 src/solver.f90 \
+  --jobs 4 \
+  --out solver \
+  --out-dir build/solver
+```
+
+Additional native libraries and dependencies outside the supplied wrapped
+sources remain explicit build inputs; x2py does not search for them
+automatically.
+
+Python callers set `jobs=N` on `build_fortran_extension(...)`,
+`build_pyi_extension(...)`, or manifest replay.
 
 ## Use a Makefile
 

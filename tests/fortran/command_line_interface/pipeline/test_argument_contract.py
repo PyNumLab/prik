@@ -194,6 +194,8 @@ def test_x2py_main_collects_many_native_inputs_from_one_option_group(
             "source_one.f90",
             "source_two.f90",
             "--native-compile-flags=-O2 -g0",
+            "--jobs",
+            "3",
             "--native-objects",
             "one.o",
             "two.a",
@@ -235,6 +237,7 @@ def test_x2py_main_collects_many_native_inputs_from_one_option_group(
     assert active_args.include_dirs == ["include", "vendor/include", "mods", "vendor/mods"]
     assert active_args.native_fortran_sources == ["source_one.f90", "source_two.f90"]
     assert active_args.native_compile_flags == ["-O2 -g0"]
+    assert active_args.jobs == 3
     assert active_args.native_objects == ["one.o", "two.a", "libsolver.so"]
     assert active_args.native_libraries == ["blas", "lapack"]
     assert active_args.native_link_items == [
@@ -472,6 +475,7 @@ def test_x2py_command_parsers_group_options_by_user_intent():
         "--compiler",
         "--include-dir",
         "--native-compile-flags",
+        "--jobs",
         "--native-library",
         "--verbose",
         "--help-build",
@@ -499,6 +503,7 @@ def test_x2py_command_parsers_group_options_by_user_intent():
     ):
         assert heading in build_help
     assert "--native-link-item" in build_help
+    assert "--jobs" in build_help
     assert "--wrapper-c-flags" in build_help
     assert "Compiler used throughout the extension build" in build_help
     assert "Add a compiler include search directory" in build_help
@@ -514,7 +519,7 @@ def test_x2py_command_parsers_group_options_by_user_intent():
     assert "See docs/user/reference/cli-commands.md for all build options." in build_help
     assert "Build from a semantic contract:" in build_help
     assert "Replay a build manifest:" in build_help
-    assert "Manifest overrides: --out, --compiler, -I/--include-dir" in normalized_build_help
+    assert "Manifest overrides: --out, --compiler, -I/--include-dir, --jobs" in normalized_build_help
     assert "--language {fortran}" in build_help
     assert "--language {fortran,c}" not in build_help
     assert parse_help.startswith("usage: python3 -m x2py parse INPUT [INPUT ...] [OPTIONS]")

@@ -13,6 +13,7 @@ from tools.generate_performance_docs import (
     _format_ratio,
     generate,
     load_snapshot,
+    render_build_chart,
     render_chart,
     render_page,
 )
@@ -79,17 +80,21 @@ def _paired_suites(tmp_path: Path) -> tuple[Path, Path]:
 
 def _paired_build_suites(tmp_path: Path) -> tuple[Path, Path]:
     metadata = {
+        "build_profiles": "development:-O0;optimized:-O3 -march=native -mtune=native",
         "build_runs": 6,
         "build_scope": "clean source-to-extension generation, compilation, and linking",
         "build_warmups": 1,
         "compiler": "/usr/bin/gfortran",
+        "x2py_build_jobs": 4,
     }
     f2py = _write_suite(
         tmp_path / "f2py-build.json",
         "f2py",
         [
-            ("build.small_module", [2.0, 2.1, 1.9, 2.05, 1.95]),
-            ("build.full_blas", [10.0, 10.2, 9.8, 10.1, 9.9]),
+            ("build.development.small_module", [2.0, 2.1, 1.9, 2.05, 1.95]),
+            ("build.development.full_blas", [10.0, 10.2, 9.8, 10.1, 9.9]),
+            ("build.optimized.small_module", [3.0, 3.1, 2.9, 3.05, 2.95]),
+            ("build.optimized.full_blas", [20.0, 20.2, 19.8, 20.1, 19.9]),
         ],
         extra_metadata=metadata,
     )
@@ -97,8 +102,10 @@ def _paired_build_suites(tmp_path: Path) -> tuple[Path, Path]:
         tmp_path / "x2py-build.json",
         "x2py",
         [
-            ("build.small_module", [1.0, 1.1, 0.9, 1.05, 0.95]),
-            ("build.full_blas", [12.0, 12.2, 11.8, 12.1, 11.9]),
+            ("build.development.small_module", [1.0, 1.1, 0.9, 1.05, 0.95]),
+            ("build.development.full_blas", [12.0, 12.2, 11.8, 12.1, 11.9]),
+            ("build.optimized.small_module", [1.5, 1.6, 1.4, 1.55, 1.45]),
+            ("build.optimized.full_blas", [10.0, 10.2, 9.8, 10.1, 9.9]),
         ],
         extra_metadata=metadata,
     )
@@ -178,9 +185,13 @@ def test_render_page_updates_only_marked_blocks(tmp_path: Path) -> None:
     assert "between summary and table" in rendered
     assert "1 of 3" in rendered
     assert "No significant difference" in rendered
-    assert "Small module (1 source, 5 procedures)" in rendered
-    assert "Full reference BLAS (155 sources)" in rendered
+    assert "Development (`-O0`) · small module (1 source, 5 procedures)" in rendered
+    assert "Development (`-O0`) · full reference BLAS (155 sources)" in rendered
+    assert "Optimized (`-O3 -march=native -mtune=native`) · small module" in rendered
+    assert "Optimized (`-O3 -march=native -mtune=native`) · full reference BLAS" in rendered
     assert "mean of 6 clean builds after 1 untimed warm-up" in rendered
+    assert "up to 4 concurrent compiler" in rendered
+    assert "f2py uses its normal Meson/Ninja scheduler" in rendered
     assert "private-runner-name" not in rendered
     assert "CPU: Benchmark CPU &#67; Processor." in rendered
     assert "CPU: Benchmark CPU C Processor." not in rendered
@@ -235,6 +246,27 @@ def test_render_chart_is_valid_accessible_svg(tmp_path: Path) -> None:
     assert "Geometric mean:" in chart
 
 
+def test_render_build_chart_is_valid_accessible_svg(tmp_path: Path) -> None:
+    f2py, x2py = _paired_build_suites(tmp_path)
+    snapshot = load_snapshot(
+        f2py,
+        x2py,
+        operating_system=TEST_OS,
+        compiler_version="GNU Fortran 13.3.0",
+        commit="1234567890abcdef",
+        metadata_keys=BUILD_SHARED_METADATA,
+    )
+
+    chart = render_build_chart(snapshot)
+    root = ElementTree.fromstring(chart)
+
+    assert root.attrib["role"] == "img"
+    assert root.attrib["aria-labelledby"] == "build-title build-description"
+    assert "Development · small module" in chart
+    assert "Optimized · full reference BLAS" in chart
+    assert "lower is better" in chart
+
+
 def test_load_snapshot_rejects_incompatible_platforms(tmp_path: Path) -> None:
     f2py, _x2py = _paired_suites(tmp_path)
     x2py = _write_suite(
@@ -276,6 +308,7 @@ def test_generate_writes_page_and_chart(tmp_path: Path) -> None:
     f2py_build, x2py_build = _paired_build_suites(tmp_path)
     page = tmp_path / "performance.md"
     chart = tmp_path / "assets/performance.svg"
+    build_chart = tmp_path / "assets/build-time.svg"
     page.write_text(_page_template(), encoding="utf-8")
 
     generate(
@@ -285,6 +318,7 @@ def test_generate_writes_page_and_chart(tmp_path: Path) -> None:
         x2py_build,
         page,
         chart,
+        build_chart,
         operating_system=TEST_OS,
         compiler_version="GNU Fortran 13.3.0",
         commit="1234567890abcdef",
@@ -293,7 +327,9 @@ def test_generate_writes_page_and_chart(tmp_path: Path) -> None:
 
     assert "August 2, 2026" in page.read_text(encoding="utf-8")
     assert chart.is_file()
+    assert build_chart.is_file()
     ElementTree.parse(chart)
+    ElementTree.parse(build_chart)
 
 
 def test_current_performance_page_has_one_complete_marker_pair_per_generated_block() -> None:

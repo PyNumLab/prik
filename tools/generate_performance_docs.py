@@ -27,6 +27,7 @@ DEFAULT_F2PY_BUILD_RESULTS = REPOSITORY_ROOT / "benchmarks/results/f2py-build.js
 DEFAULT_X2PY_BUILD_RESULTS = REPOSITORY_ROOT / "benchmarks/results/x2py-build.json"
 DEFAULT_PAGE = REPOSITORY_ROOT / "docs/user/performance.md"
 DEFAULT_CHART = REPOSITORY_ROOT / "docs/user/assets/performance-comparison.svg"
+DEFAULT_BUILD_CHART = REPOSITORY_ROOT / "docs/user/assets/build-time-comparison.svg"
 COMPILE_FLAGS = "-O3 -march=native -mtune=native"
 TIMES = "\N{MULTIPLICATION SIGN}"
 _STANDALONE_C = re.compile(r"(?<![A-Za-z0-9_])C(?![A-Za-z0-9_])")
@@ -40,6 +41,7 @@ SHARED_METADATA = (
     "python_version",
 )
 BUILD_SHARED_METADATA = (
+    "build_profiles",
     "build_runs",
     "build_scope",
     "build_warmups",
@@ -49,6 +51,7 @@ BUILD_SHARED_METADATA = (
     "perf_version",
     "platform_details",
     "python_version",
+    "x2py_build_jobs",
 )
 Outcome = Literal["x2py", "f2py", "parity"]
 
@@ -119,8 +122,22 @@ def _procedure_labels(name: str) -> tuple[str, str]:
     fixed = {
         "call.noop": ("Empty function call", "Empty call"),
         "call.add_scalars": ("Add two scalars", "Add scalars"),
-        "build.small_module": ("Small module (1 source, 5 procedures)", "Small module"),
-        "build.full_blas": ("Full reference BLAS (155 sources)", "Full reference BLAS"),
+        "build.development.small_module": (
+            "Development (`-O0`) · small module (1 source, 5 procedures)",
+            "Development · small module",
+        ),
+        "build.development.full_blas": (
+            "Development (`-O0`) · full reference BLAS (155 sources)",
+            "Development · full reference BLAS",
+        ),
+        "build.optimized.small_module": (
+            "Optimized (`-O3 -march=native -mtune=native`) · small module (1 source, 5 procedures)",
+            "Optimized · small module",
+        ),
+        "build.optimized.full_blas": (
+            "Optimized (`-O3 -march=native -mtune=native`) · full reference BLAS (155 sources)",
+            "Optimized · full reference BLAS",
+        ),
     }
     if name in fixed:
         return fixed[name]
@@ -372,18 +389,22 @@ def _cpu_model_text(metadata: dict[str, object]) -> str:
     return _STANDALONE_C.sub("&#67;", _metadata_text(metadata, "cpu_model_name"))
 
 
-def _environment_markdown(snapshot: PerformanceSnapshot) -> str:
+def _environment_markdown(snapshot: PerformanceSnapshot, build_snapshot: PerformanceSnapshot) -> str:
     python_version = _metadata_text(snapshot.metadata, "python_version").split(maxsplit=1)[0]
     affinity = _metadata_text(snapshot.metadata, "cpu_affinity")
     operating_system = snapshot.operating_system.replace("`", "'")
     compiler_version = snapshot.compiler_version.replace("`", "'")
     lines = [
-        f"- Native and generated sources use `{COMPILE_FLAGS}`.",
+        f"- Runtime native and generated sources use `{COMPILE_FLAGS}`.",
+        "- Clean builds use development (`-O0`) and optimized",
+        f"  (`{COMPILE_FLAGS}`) profiles.",
         "- Both interfaces keep the GIL held.",
         "- OpenMP, OpenBLAS, and MKL are limited to one thread.",
         f"- `pyperf --rigorous` pins each benchmark to logical CPU `{affinity}`.",
-        "- Build timings alternate tool order, use clean output directories, and",
-        "  exclude post-build import checks.",
+        f"- x2py build timings use up to {int(build_snapshot.metadata['x2py_build_jobs'])} concurrent compiler",
+        "  processes; f2py uses its normal Meson/Ninja scheduler.",
+        "- Build timings alternate tool order, use clean output directories, and exclude",
+        "  post-build import checks.",
         f"- CPU: {_cpu_model_text(snapshot.metadata)}.",
         f"- Operating system: {operating_system}.",
         f"- Kernel/platform: `{_metadata_text(snapshot.metadata, 'platform_details')}`.",
@@ -420,7 +441,7 @@ def render_page(
         "summary": _summary_markdown(snapshot),
         "table": _table_markdown(snapshot),
         "build": _build_markdown(build_snapshot),
-        "environment": _environment_markdown(snapshot),
+        "environment": _environment_markdown(snapshot, build_snapshot),
     }
     for name in MARKER_NAMES:
         markdown = _replace_block(markdown, name, replacements[name])
@@ -559,6 +580,95 @@ def render_chart(snapshot: PerformanceSnapshot) -> str:
     return "\n".join(lines)
 
 
+def _duration_axis_upper(results: tuple[BenchmarkResult, ...]) -> float:
+    maximum = max(max(result.f2py_value, result.x2py_value) for result in results)
+    rough_step = maximum / 5.0
+    magnitude = 10 ** math.floor(math.log10(rough_step)) if rough_step > 0 else 1.0
+    normalized = rough_step / magnitude
+    step_factor = 1.0 if normalized <= 1.0 else 2.0 if normalized <= 2.0 else 5.0 if normalized <= 5.0 else 10.0
+    step = step_factor * magnitude
+    return math.ceil(maximum / step) * step
+
+
+def _duration_ticks(upper: float) -> tuple[float, ...]:
+    step = upper / 5.0
+    return tuple(index * step for index in range(6))
+
+
+def render_build_chart(snapshot: PerformanceSnapshot) -> str:
+    """Render an accessible grouped-bar SVG for absolute build durations."""
+    width = 1000
+    plot_left = 390
+    plot_right = 920
+    top = 125
+    group_step = 92
+    final_group = top + (len(snapshot.results) - 1) * group_step
+    footer = final_group + 82
+    height = footer + 38
+    upper = _duration_axis_upper(snapshot.results)
+
+    def x_position(value: float) -> float:
+        return plot_left + (value / upper) * (plot_right - plot_left)
+
+    lines = [
+        (
+            f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" role="img" '
+            'aria-labelledby="build-title build-description">'
+        ),
+        '  <title id="build-title">Clean build time for x2py and f2py</title>',
+        '  <desc id="build-description">',
+        (
+            f"    Absolute clean source-to-extension build time across {len(snapshot.results)} profile and workload "
+            "combinations. Shorter bars are faster."
+        ),
+        "  </desc>",
+        f'  <rect x="1" y="1" width="998" height="{height - 2}" rx="16" fill="#ffffff" stroke="#d8e1e8" stroke-width="2"/>',
+        '  <g font-family="Inter, -apple-system, BlinkMacSystemFont, \'Segoe UI\', sans-serif" fill="#17212b">',
+        '    <text x="28" y="42" font-size="24" font-weight="700">Clean end-to-end build time</text>',
+        '    <text x="28" y="70" font-size="14" fill="#52616f">development and optimized profiles · lower is better</text>',
+        '    <g stroke="#e4eaef" stroke-width="1">',
+    ]
+    for tick in _duration_ticks(upper):
+        tick_x = x_position(tick)
+        lines.append(f'      <line x1="{tick_x:.1f}" y1="{top - 18}" x2="{tick_x:.1f}" y2="{final_group + 64}"/>')
+    lines.extend(["    </g>", '    <g font-size="12" fill="#607080" text-anchor="middle">'])
+    for tick in _duration_ticks(upper):
+        tick_x = x_position(tick)
+        lines.append(f'      <text x="{tick_x:.1f}" y="{top - 28}">{tick:g} s</text>')
+    lines.extend(["    </g>", '    <g font-size="14">'])
+
+    for index, result in enumerate(snapshot.results):
+        group_y = top + index * group_step
+        f2py_width = x_position(result.f2py_value) - plot_left
+        x2py_width = x_position(result.x2py_value) - plot_left
+        lines.extend(
+            [
+                f'      <text x="28" y="{group_y + 6}" font-weight="600">{escape(result.chart_label)}</text>',
+                f'      <text x="28" y="{group_y + 30}" font-size="12" fill="#607080">f2py</text>',
+                f'      <rect x="{plot_left}" y="{group_y + 16}" width="{f2py_width:.1f}" height="20" rx="5" fill="#b45309"/>',
+                f'      <text x="{min(x_position(result.f2py_value) + 10, 975):.1f}" y="{group_y + 31}" fill="#8a3f08" font-weight="700">{escape(result.f2py_display)}</text>',
+                f'      <text x="28" y="{group_y + 58}" font-size="12" fill="#607080">x2py</text>',
+                f'      <rect x="{plot_left}" y="{group_y + 44}" width="{x2py_width:.1f}" height="20" rx="5" fill="#0f766e"/>',
+                f'      <text x="{min(x_position(result.x2py_value) + 10, 975):.1f}" y="{group_y + 59}" fill="#0b5e58" font-weight="700">{escape(result.x2py_display)}</text>',
+            ]
+        )
+    lines.extend(
+        [
+            "    </g>",
+            '    <g font-size="13">',
+            f'      <rect x="28" y="{footer - 10}" width="18" height="12" rx="3" fill="#0f766e"/>',
+            f'      <text x="54" y="{footer + 1}" fill="#52616f">x2py</text>',
+            f'      <rect x="118" y="{footer - 10}" width="18" height="12" rx="3" fill="#b45309"/>',
+            f'      <text x="144" y="{footer + 1}" fill="#52616f">f2py</text>',
+            "    </g>",
+            "  </g>",
+            "</svg>",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def _command_first_line(argv: list[str], *, description: str) -> str:
     try:
         result = subprocess.run(argv, check=True, capture_output=True, text=True)  # nosec B603
@@ -585,6 +695,7 @@ def generate(
     x2py_build_path: Path,
     page_path: Path,
     chart_path: Path,
+    build_chart_path: Path,
     *,
     operating_system: str,
     compiler_version: str,
@@ -614,6 +725,8 @@ def generate(
     page_path.write_text(generated_page, encoding="utf-8")
     chart_path.parent.mkdir(parents=True, exist_ok=True)
     chart_path.write_text(render_chart(snapshot), encoding="utf-8")
+    build_chart_path.parent.mkdir(parents=True, exist_ok=True)
+    build_chart_path.write_text(render_build_chart(build_snapshot), encoding="utf-8")
     return snapshot
 
 
@@ -625,6 +738,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--x2py-build-results", type=Path, default=DEFAULT_X2PY_BUILD_RESULTS)
     parser.add_argument("--page", type=Path, default=DEFAULT_PAGE)
     parser.add_argument("--chart", type=Path, default=DEFAULT_CHART)
+    parser.add_argument("--build-chart", type=Path, default=DEFAULT_BUILD_CHART)
     parser.add_argument("--compiler", default="gfortran")
     parser.add_argument("--compiler-version")
     parser.add_argument("--operating-system")
@@ -652,6 +766,7 @@ def main(argv: list[str] | None = None) -> int:
             args.x2py_build_results,
             args.page,
             args.chart,
+            args.build_chart,
             operating_system=operating_system,
             compiler_version=compiler_version,
             commit=commit,

@@ -10,6 +10,7 @@ from pathlib import Path
 import shlex
 import shutil
 import subprocess
+import threading
 import warnings
 
 from .objects import ObjectFile
@@ -93,14 +94,16 @@ class Compiler:
             language = sorted(unsupported)[0]
             raise ValueError(f"Toolchain does not support an executable override for {language!r}")
         self._command_log: list[tuple[str, ...]] = []
+        self._command_log_lock = threading.Lock()
 
     @property
     def command_log(self) -> tuple[tuple[str, ...], ...]:
         """Return exact compiler commands in execution order."""
 
-        return tuple(self._command_log)
+        with self._command_log_lock:
+            return tuple(self._command_log)
 
-    def compile_object(self, object_file: ObjectFile, *, verbose: bool | int = False) -> None:
+    def compile_object(self, object_file: ObjectFile, *, verbose: bool | int = False) -> tuple[str, ...]:
         """Compile exactly one source file into its declared object path."""
 
         object_file.object_path.parent.mkdir(parents=True, exist_ok=True)
@@ -122,7 +125,7 @@ class Compiler:
         ]
         if object_file.language == "fortran":
             command.extend((str(language["module_output_flag"]), str(object_file.object_path.parent)))
-        self._run_or_record(command, verbose)
+        return self._run_or_record(command, verbose)
 
     def link_extension(
         self,
@@ -202,7 +205,8 @@ class Compiler:
 
     def _run_or_record(self, command: Iterable[str], verbose: bool | int) -> tuple[str, ...]:
         expanded = tuple(os.path.expandvars(str(part)) for part in command)
-        self._command_log.append(expanded)
+        with self._command_log_lock:
+            self._command_log.append(expanded)
         if self._execute_commands:
             return self.run_command(expanded, verbose)
         return expanded

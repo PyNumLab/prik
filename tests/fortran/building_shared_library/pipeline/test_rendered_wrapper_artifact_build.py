@@ -151,10 +151,11 @@ def scale(x: Float64) -> Float64: ...
     assert binding_source.read_text(encoding="utf-8") == rendered.sources[1].text
     assert header.read_text(encoding="utf-8") == rendered.sources[2].text
     assert native_support_header.exists()
-    assert [object_file.language for object_file, _verbose in compiler.compiled] == ["fortran", "c"]
+    compiled_by_language = {object_file.language: object_file for object_file, _verbose in compiler.compiled}
+    assert set(compiled_by_language) == {"fortran", "c"}
 
-    bridge_obj = compiler.compiled[0][0]
-    binding_obj = compiler.compiled[1][0]
+    bridge_obj = compiled_by_language["fortran"]
+    binding_obj = compiled_by_language["c"]
     assert native_dir in bridge_obj.include_dirs
     assert binding_obj.tools == frozenset({"python"})
     assert compiler.linked == (

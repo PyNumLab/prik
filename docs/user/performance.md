@@ -13,21 +13,21 @@ publication: reviewed
 **Low-overhead Python calls for real Fortran workloads.**
 
 <!-- x2py-performance-summary:start -->
-On the benchmark system, the normal x2py interface delivered a **1.06× geometric-mean
-speedup over NumPy's f2py**. Across 13 workloads, x2py was faster in 8 and f2py in 2; 3
-workloads showed no statistically significant difference.
+On the benchmark system, the normal x2py interface delivered a **1.09× geometric-mean
+speedup over NumPy's f2py**. Across 13 workloads, x2py was faster in 10 and f2py in 3;
+all comparisons were statistically significant.
 
 <div class="x2py-performance-summary" role="group" aria-label="Benchmark summary">
   <div class="x2py-performance-metric">
-    <strong>1.06×</strong>
+    <strong>1.09×</strong>
     <span>x2py geometric-mean speedup</span>
   </div>
   <div class="x2py-performance-metric">
-    <strong>8 of 13</strong>
+    <strong>10 of 13</strong>
     <span>workloads faster with x2py</span>
   </div>
   <div class="x2py-performance-metric">
-    <strong>1.38×</strong>
+    <strong>1.49×</strong>
     <span>best measured x2py speedup</span>
   </div>
 </div>
@@ -48,20 +48,20 @@ the normal generated interface of each tool.
 <!-- x2py-performance-table:start -->
 | Workload | f2py | x2py | Relative result |
 | --- | ---: | ---: | ---: |
-| Empty function call | 44.5 ns | **41.7 ns** | x2py 1.07× faster |
-| Add two scalars | **416 ns** | 434 ns | f2py 1.04× faster |
-| Increment vector, 1 element | 129 ns | **93.8 ns** | x2py 1.38× faster |
-| Increment vector, 16 elements | 142 ns | **106 ns** | x2py 1.33× faster |
-| Increment vector, 1,024 elements | **276 ns** | 297 ns | f2py 1.08× faster |
-| Increment vector, 1,000,000 elements | 981 µs | 973 µs | No significant difference |
-| Sum 4×4 F-order matrix | 165 ns | **148 ns** | x2py 1.12× faster |
-| Sum 32×32 F-order matrix | 1.13 µs | **1.12 µs** | x2py 1.02× faster |
-| Sum 256×256 F-order matrix | 63.5 µs | **63.3 µs** | x2py 1.003× faster |
-| Sum 1,024×1,024 F-order matrix | 1.10 ms | 1.10 ms | No significant difference |
-| Update 4×4 F-order matrix | 342 ns | **331 ns** | x2py 1.03× faster |
-| Update 256×256 F-order matrix | 25.7 µs | **25.6 µs** | x2py 1.006× faster |
-| Update 1,024×1,024 F-order matrix | 1.14 ms | 1.14 ms | No significant difference |
-| **Geometric mean** | reference | — | **x2py 1.06× faster** |
+| Empty function call | 44.6 ns | **41.2 ns** | x2py 1.08× faster |
+| Add two scalars | 436 ns | **426 ns** | x2py 1.02× faster |
+| Increment vector, 1 element | 140 ns | **93.7 ns** | x2py 1.49× faster |
+| Increment vector, 16 elements | 151 ns | **107 ns** | x2py 1.41× faster |
+| Increment vector, 1,024 elements | **283 ns** | 301 ns | f2py 1.07× faster |
+| Increment vector, 1,000,000 elements | 1.27 ms | **1.16 ms** | x2py 1.10× faster |
+| Sum 4×4 F-order matrix | 168 ns | **162 ns** | x2py 1.04× faster |
+| Sum 32×32 F-order matrix | **1.14 µs** | 1.15 µs | f2py 1.008× faster |
+| Sum 256×256 F-order matrix | **64.1 µs** | 65.9 µs | f2py 1.03× faster |
+| Sum 1,024×1,024 F-order matrix | 1.22 ms | **1.19 ms** | x2py 1.02× faster |
+| Update 4×4 F-order matrix | 343 ns | **330 ns** | x2py 1.04× faster |
+| Update 256×256 F-order matrix | 26.1 µs | **25.8 µs** | x2py 1.009× faster |
+| Update 1,024×1,024 F-order matrix | 1.38 ms | **1.15 ms** | x2py 1.21× faster |
+| **Geometric mean** | reference | — | **x2py 1.09× faster** |
 <!-- x2py-performance-table:end -->
 
 The smallest workloads expose wrapper overhead most clearly. As more time is
@@ -79,14 +79,21 @@ afterward, outside the timed interval.
 The small-module workload uses the same one-source, five-procedure module as the
 runtime suite. The full-library workload gives both tools the same 155-source
 reference BLAS implementation and requires all 155 routines to be exposed.
+Each workload is built once as a development build with `-O0` and once as an
+optimized build with `-O3 -march=native -mtune=native`.
+
+![Clean end-to-end build time for x2py and f2py under development and optimized compiler profiles. Lower times are better.](assets/build-time-comparison.svg)
+{ .x2py-performance-chart }
 
 <!-- x2py-performance-build:start -->
 Each value is the mean of 6 clean builds after 1 untimed warm-up.
 
 | Clean build workload | f2py | x2py | Relative result |
 | --- | ---: | ---: | ---: |
-| Small module (1 source, 5 procedures) | 2.92 sec | **1.19 sec** | x2py 2.45× faster |
-| Full reference BLAS (155 sources) | **22.0 sec** | 78.7 sec | f2py 3.57× faster |
+| Development (`-O0`) · small module (1 source, 5 procedures) | 2.36 sec | **895 ms** | x2py 2.64× faster |
+| Development (`-O0`) · full reference BLAS (155 sources) | 10.7 sec | 10.7 sec | No significant difference |
+| Optimized (`-O3 -march=native -mtune=native`) · small module (1 source, 5 procedures) | 2.89 sec | **1.04 sec** | x2py 2.77× faster |
+| Optimized (`-O3 -march=native -mtune=native`) · full reference BLAS (155 sources) | **21.7 sec** | 39.0 sec | f2py 1.80× faster |
 <!-- x2py-performance-build:end -->
 
 ## Fair, Like-for-Like Setup
@@ -96,12 +103,16 @@ interfaces. It checks both extensions for the same results before measuring
 them. No benchmark-only wrapper mode is used.
 
 <!-- x2py-performance-environment:start -->
-- Native and generated sources use `-O3 -march=native -mtune=native`.
+- Runtime native and generated sources use `-O3 -march=native -mtune=native`.
+- Clean builds use development (`-O0`) and optimized
+  (`-O3 -march=native -mtune=native`) profiles.
 - Both interfaces keep the GIL held.
 - OpenMP, OpenBLAS, and MKL are limited to one thread.
 - `pyperf --rigorous` pins each benchmark to logical CPU `0`.
-- Build timings alternate tool order, use clean output directories, and
-  exclude post-build import checks.
+- x2py build timings use up to 8 concurrent compiler
+  processes; f2py uses its normal Meson/Ninja scheduler.
+- Build timings alternate tool order, use clean output directories, and exclude
+  post-build import checks.
 - CPU: Intel(R) Core(TM) i7-4712MQ CPU @ 2.30GHz.
 - Operating system: Ubuntu 26.04 LTS.
 - Kernel/platform: `Linux-7.0.0-28-generic-x86_64-with-glibc2.43`.
@@ -109,7 +120,7 @@ them. No benchmark-only wrapper mode is used.
 - NumPy/f2py: 2.5.1.
 - Fortran compiler: GNU Fortran 15.2.0.
 - pyperf: 2.10.0.
-- x2py revision: `f8d7e8a95724`.
+- x2py revision: `working-tree`.
 
 These results were recorded on August 1, 2026. Performance depends on the CPU,
 compiler, operating system, and background activity, so comparisons should use

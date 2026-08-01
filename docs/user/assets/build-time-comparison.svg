@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 521" role="img" aria-labelledby="build-title build-description">
+  <title id="build-title">Clean build time for x2py and f2py</title>
+  <desc id="build-description">
+    Absolute clean source-to-extension build time across 4 profile and workload combinations. Shorter bars are faster.
+  </desc>
+  <rect x="1" y="1" width="998" height="519" rx="16" fill="#ffffff" stroke="#d8e1e8" stroke-width="2"/>
+  <g font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" fill="#17212b">
+    <text x="28" y="42" font-size="24" font-weight="700">Clean end-to-end build time</text>
+    <text x="28" y="70" font-size="14" fill="#52616f">development and optimized profiles · lower is better</text>
+    <g stroke="#e4eaef" stroke-width="1">
+      <line x1="390.0" y1="107" x2="390.0" y2="465"/>
+      <line x1="496.0" y1="107" x2="496.0" y2="465"/>
+      <line x1="602.0" y1="107" x2="602.0" y2="465"/>
+      <line x1="708.0" y1="107" x2="708.0" y2="465"/>
+      <line x1="814.0" y1="107" x2="814.0" y2="465"/>
+      <line x1="920.0" y1="107" x2="920.0" y2="465"/>
+    </g>
+    <g font-size="12" fill="#607080" text-anchor="middle">
+      <text x="390.0" y="97">0 s</text>
+      <text x="496.0" y="97">8 s</text>
+      <text x="602.0" y="97">16 s</text>
+      <text x="708.0" y="97">24 s</text>
+      <text x="814.0" y="97">32 s</text>
+      <text x="920.0" y="97">40 s</text>
+    </g>
+    <g font-size="14">
+      <text x="28" y="131" font-weight="600">Development · small module</text>
+      <text x="28" y="155" font-size="12" fill="#607080">f2py</text>
+      <rect x="390" y="141" width="31.3" height="20" rx="5" fill="#b45309"/>
+      <text x="431.3" y="156" fill="#8a3f08" font-weight="700">2.36 sec</text>
+      <text x="28" y="183" font-size="12" fill="#607080">x2py</text>
+      <rect x="390" y="169" width="11.9" height="20" rx="5" fill="#0f766e"/>
+      <text x="411.9" y="184" fill="#0b5e58" font-weight="700">895 ms</text>
+      <text x="28" y="223" font-weight="600">Development · full reference BLAS</text>
+      <text x="28" y="247" font-size="12" fill="#607080">f2py</text>
+      <rect x="390" y="233" width="141.4" height="20" rx="5" fill="#b45309"/>
+      <text x="541.4" y="248" fill="#8a3f08" font-weight="700">10.7 sec</text>
+      <text x="28" y="275" font-size="12" fill="#607080">x2py</text>
+      <rect x="390" y="261" width="141.6" height="20" rx="5" fill="#0f766e"/>
+      <text x="541.6" y="276" fill="#0b5e58" font-weight="700">10.7 sec</text>
+      <text x="28" y="315" font-weight="600">Optimized · small module</text>
+      <text x="28" y="339" font-size="12" fill="#607080">f2py</text>
+      <rect x="390" y="325" width="38.2" height="20" rx="5" fill="#b45309"/>
+      <text x="438.2" y="340" fill="#8a3f08" font-weight="700">2.89 sec</text>
+      <text x="28" y="367" font-size="12" fill="#607080">x2py</text>
+      <rect x="390" y="353" width="13.8" height="20" rx="5" fill="#0f766e"/>
+      <text x="413.8" y="368" fill="#0b5e58" font-weight="700">1.04 sec</text>
+      <text x="28" y="407" font-weight="600">Optimized · full reference BLAS</text>
+      <text x="28" y="431" font-size="12" fill="#607080">f2py</text>
+      <rect x="390" y="417" width="287.6" height="20" rx="5" fill="#b45309"/>
+      <text x="687.6" y="432" fill="#8a3f08" font-weight="700">21.7 sec</text>
+      <text x="28" y="459" font-size="12" fill="#607080">x2py</text>
+      <rect x="390" y="445" width="516.2" height="20" rx="5" fill="#0f766e"/>
+      <text x="916.2" y="460" fill="#0b5e58" font-weight="700">39.0 sec</text>
+    </g>
+    <g font-size="13">
+      <rect x="28" y="473" width="18" height="12" rx="3" fill="#0f766e"/>
+      <text x="54" y="484" fill="#52616f">x2py</text>
+      <rect x="118" y="473" width="18" height="12" rx="3" fill="#b45309"/>
+      <text x="144" y="484" fill="#52616f">f2py</text>
+    </g>
+  </g>
+</svg>

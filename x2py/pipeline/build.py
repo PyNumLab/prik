@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 import json
 import os
@@ -96,6 +97,23 @@ def _print_verbose_step(verbose: bool | int, label: str) -> None:
     """Print one readable build step before it can report a native error."""
     if verbose:
         print(f">> {label}")
+
+
+def _available_compile_jobs() -> int:
+    """Return the processor count available to this build process."""
+    try:
+        return max(1, len(os.sched_getaffinity(0)))
+    except AttributeError:
+        return max(1, os.cpu_count() or 1)
+
+
+def _normalize_compile_jobs(jobs: int | None) -> int:
+    """Resolve an optional positive compiler-process limit."""
+    if jobs is None:
+        return _available_compile_jobs()
+    if isinstance(jobs, bool) or not isinstance(jobs, int) or jobs < 1:
+        raise ValueError("compile jobs must be a positive integer")
+    return jobs
 
 
 @dataclass(frozen=True)
@@ -442,6 +460,36 @@ def _rendered_wrapper_link_language(
     return binding_objects[-1].language
 
 
+@dataclass(frozen=True)
+class _CompiledObject:
+    command: tuple[str, ...] | None
+    elapsed: float
+
+
+def _compile_one_object(compiler: Compiler, object_file: ObjectFile) -> _CompiledObject:
+    started = time.perf_counter()
+    command = compiler.compile_object(object_file, verbose=False)
+    return _CompiledObject(
+        command=command if isinstance(command, tuple) else None,
+        elapsed=time.perf_counter() - started,
+    )
+
+
+def _report_compiled_object(
+    object_file: ObjectFile,
+    result: _CompiledObject,
+    *,
+    label: str,
+    verbose: bool | int,
+) -> None:
+    if not verbose:
+        return
+    _print_verbose_step(verbose, f"{label}: {object_file.source} -> {object_file.object_path}")
+    if result.command is not None:
+        print(shlex.join(result.command))
+    _print_verbose_timing(verbose, result.elapsed)
+
+
 def _compile_object_stage(
     compiler: Compiler,
     object_files: Iterable[ObjectFile],
@@ -450,14 +498,59 @@ def _compile_object_stage(
     verbose: bool | int,
 ) -> None:
     """Compile one named object group and expose that boundary in verbose logs."""
-    objects = tuple(object_files)
-    if not objects:
+    for object_file in object_files:
+        result = _compile_one_object(compiler, object_file)
+        _report_compiled_object(object_file, result, label=label, verbose=verbose)
+
+
+def _submit_object_stage(
+    executor: ThreadPoolExecutor,
+    compiler: Compiler,
+    object_files: Iterable[ObjectFile],
+) -> tuple[tuple[ObjectFile, Future[_CompiledObject]], ...]:
+    return tuple(
+        (object_file, executor.submit(_compile_one_object, compiler, object_file)) for object_file in object_files
+    )
+
+
+def _finish_object_stage(
+    pending: Iterable[tuple[ObjectFile, Future[_CompiledObject]]],
+    *,
+    label: str,
+    verbose: bool | int,
+) -> None:
+    for object_file, future in pending:
+        _report_compiled_object(object_file, future.result(), label=label, verbose=verbose)
+
+
+def _compile_extension_objects(
+    compiler: Compiler,
+    *,
+    native_batches: Iterable[Iterable[ObjectFile]],
+    bridge_objects: Iterable[ObjectFile],
+    binding_objects: Iterable[ObjectFile],
+    jobs: int,
+    verbose: bool | int,
+) -> None:
+    """Compile one dependency-aware extension graph within a shared job limit."""
+    native_groups = tuple(tuple(batch) for batch in native_batches)
+    bridges = tuple(bridge_objects)
+    bindings = tuple(binding_objects)
+    if jobs == 1:
+        for batch in native_groups:
+            _compile_object_stage(compiler, batch, label="Compile native source", verbose=verbose)
+        _compile_object_stage(compiler, bridges, label="Compile bridge source", verbose=verbose)
+        _compile_object_stage(compiler, bindings, label="Compile binding source", verbose=verbose)
         return
-    for object_file in objects:
-        _print_verbose_step(verbose, f"{label}: {object_file.source} -> {object_file.object_path}")
-        started = time.perf_counter()
-        compiler.compile_object(object_file, verbose=verbose)
-        _print_verbose_timing(verbose, time.perf_counter() - started)
+
+    with ThreadPoolExecutor(max_workers=jobs, thread_name_prefix="x2py-compile") as executor:
+        binding_futures = _submit_object_stage(executor, compiler, bindings)
+        for batch in native_groups:
+            native_futures = _submit_object_stage(executor, compiler, batch)
+            _finish_object_stage(native_futures, label="Compile native source", verbose=verbose)
+        bridge_futures = _submit_object_stage(executor, compiler, bridges)
+        _finish_object_stage(bridge_futures, label="Compile bridge source", verbose=verbose)
+        _finish_object_stage(binding_futures, label="Compile binding source", verbose=verbose)
 
 
 def _build_rendered_wrapper_extension(
@@ -468,10 +561,12 @@ def _build_rendered_wrapper_extension(
     sources: Iterable[str | Path] = (),
     native_build_plan: NativeBuildPlan | None = None,
     native_dependencies: Iterable[ObjectFile] = (),
+    native_compile_batches: Iterable[Iterable[ObjectFile]] = (),
     native_link_args: Iterable[str] = (),
     wrapper_fortran_flags: Iterable[str] | None = None,
     wrapper_c_flags: Iterable[str] | None = None,
     compiler: Compiler | None = None,
+    compile_jobs: int | None = None,
     verbose: bool | int = False,
 ) -> WrapperBuildResult:
     """Build one extension from rendered wrapper-plan artifacts."""
@@ -502,16 +597,12 @@ def _build_rendered_wrapper_extension(
         x2py_dirpath=str(output_path),
         verbose=verbose,
     )
-    _compile_object_stage(
+    _compile_extension_objects(
         compiler,
-        bridge_objects,
-        label="Compile bridge source",
-        verbose=verbose,
-    )
-    _compile_object_stage(
-        compiler,
-        binding_objects,
-        label="Compile binding source",
+        native_batches=native_compile_batches,
+        bridge_objects=bridge_objects,
+        binding_objects=binding_objects,
+        jobs=_normalize_compile_jobs(compile_jobs),
         verbose=verbose,
     )
 
@@ -624,6 +715,90 @@ def _source_compile_object(
         flags=tuple(flags),
         include_dirs=(*tuple(include_dirs), output_dir),
     )
+
+
+def _serial_compile_batches(object_files: Iterable[ObjectFile]) -> tuple[tuple[ObjectFile, ...], ...]:
+    return tuple((object_file,) for object_file in object_files)
+
+
+def _fortran_owner_used_modules(owner: object) -> set[str]:
+    used = {str(name).lower() for name in getattr(owner, "uses", {})}
+    for procedure in getattr(owner, "procedures", ()):
+        used.update(str(name).lower() for name in getattr(procedure, "uses", {}))
+    for interface in getattr(owner, "interfaces", ()):
+        for procedure in getattr(interface, "procedures", ()):
+            used.update(str(name).lower() for name in getattr(procedure, "uses", {}))
+    return used
+
+
+def _fortran_file_used_modules(parsed_file: object) -> set[str]:
+    owners = (
+        *getattr(parsed_file, "modules", ()),
+        *getattr(parsed_file, "submodules", ()),
+        *getattr(parsed_file, "programs", ()),
+        *getattr(parsed_file, "procedures", ()),
+    )
+    used = set()
+    for owner in owners:
+        used.update(_fortran_owner_used_modules(owner))
+    for interface in getattr(parsed_file, "interfaces", ()):
+        for procedure in getattr(interface, "procedures", ()):
+            used.update(str(name).lower() for name in getattr(procedure, "uses", {}))
+    for submodule in getattr(parsed_file, "submodules", ()):
+        used.add(str(submodule.parent).lower())
+        if submodule.ancestor:
+            used.add(str(submodule.ancestor).lower())
+    return used
+
+
+def _dependency_compile_batches(
+    object_files: tuple[ObjectFile, ...],
+    dependencies: dict[Path, set[Path]],
+) -> tuple[tuple[ObjectFile, ...], ...]:
+    object_by_source = {_path_key(object_file.source): object_file for object_file in object_files}
+    remaining = list(object_by_source)
+    completed: set[Path] = set()
+    batches = []
+    while remaining:
+        ready = [source for source in remaining if dependencies.get(source, set()) <= completed]
+        if not ready:
+            return _serial_compile_batches(object_files)
+        batches.append(tuple(object_by_source[source] for source in ready))
+        completed.update(ready)
+        remaining = [source for source in remaining if source not in completed]
+    return tuple(batches)
+
+
+def _project_compile_batches(
+    parsed_project: object,
+    object_files: tuple[ObjectFile, ...],
+) -> tuple[tuple[ObjectFile, ...], ...]:
+    """Group parsed project objects into dependency-ready compiler batches."""
+    parsed_files = tuple(getattr(parsed_project, "files", ()))
+    parsed_by_source = {
+        _path_key(Path(parsed_file.filename)): parsed_file
+        for parsed_file in parsed_files
+        if getattr(parsed_file, "filename", None)
+    }
+    object_sources = {_path_key(object_file.source) for object_file in object_files}
+    if set(parsed_by_source) != object_sources:
+        return _serial_compile_batches(object_files)
+
+    module_sources: dict[str, Path] = {}
+    for source, parsed_file in parsed_by_source.items():
+        for module in getattr(parsed_file, "modules", ()):
+            module_sources[str(module.name).lower()] = source
+        for submodule in getattr(parsed_file, "submodules", ()):
+            module_sources[str(submodule.name).lower()] = source
+
+    dependencies: dict[Path, set[Path]] = {}
+    for source, parsed_file in parsed_by_source.items():
+        dependencies[source] = {
+            dependency_source
+            for name in _fortran_file_used_modules(parsed_file)
+            if (dependency_source := module_sources.get(name)) is not None and dependency_source != source
+        }
+    return _dependency_compile_batches(object_files, dependencies)
 
 
 def _source_paths(sources: str | Path | Iterable[str | Path]) -> tuple[Path, ...]:
@@ -1747,6 +1922,7 @@ def build_fortran_extension(
     native_include_dirs: Iterable[str | Path] | None = None,
     makefile: bool = False,
     generate_sources: bool = False,
+    jobs: int | None = None,
     verbose: bool | int = False,
     wrapper_compiler_debug: bool = False,
     wrapper_fortran_flags: Iterable[str] | None = None,
@@ -1758,6 +1934,7 @@ def build_fortran_extension(
     if makefile and generate_sources:
         raise ValueError("source-only and Makefile generation are mutually exclusive")
     generation_only = makefile or generate_sources
+    compile_jobs = _normalize_compile_jobs(jobs)
     if generation_only and verbose:
         raise ValueError("source/Makefile generation and verbose direct compilation are separate modes")
 
@@ -1844,12 +2021,7 @@ def build_fortran_extension(
         module_dir=output_path,
     )
     _validate_native_link_paths(native_build_plan)
-    _compile_object_stage(
-        compiler,
-        native_source_objects,
-        label="Compile native source",
-        verbose=verbose,
-    )
+    native_compile_batches = _project_compile_batches(parsed, native_source_objects)
 
     result = _build_rendered_wrapper_extension(
         rendered_wrapper_plan,
@@ -1858,10 +2030,12 @@ def build_fortran_extension(
         sources=source_paths,
         native_build_plan=native_build_plan,
         native_dependencies=native_source_objects,
+        native_compile_batches=native_compile_batches,
         native_link_args=_rendered_wrapper_native_link_args(native_build_plan),
         wrapper_fortran_flags=wrapper_fortran_flags,
         wrapper_c_flags=wrapper_c_flags,
         compiler=compiler,
+        compile_jobs=1 if generation_only else compile_jobs,
         verbose=verbose,
     )
     if makefile:
@@ -1897,6 +2071,7 @@ def build_pyi_extension(
     strict_wrapper_names: bool = False,
     makefile: bool = False,
     generate_sources: bool = False,
+    jobs: int | None = None,
     verbose: bool | int = False,
     complete_native_link_items: Iterable[NativeLinkItem | dict[str, object]] | None = None,
     wrapper_compiler_debug: bool = False,
@@ -1909,6 +2084,7 @@ def build_pyi_extension(
     if makefile and generate_sources:
         raise ValueError("source-only and Makefile generation are mutually exclusive")
     generation_only = makefile or generate_sources
+    compile_jobs = _normalize_compile_jobs(jobs)
     if generation_only and verbose:
         raise ValueError("source/Makefile generation and verbose direct compilation are separate modes")
 
@@ -1966,13 +2142,6 @@ def build_pyi_extension(
         debug=wrapper_compiler_debug,
         input_compiler=input_compiler,
     )
-    _compile_object_stage(
-        compiler,
-        native_source_objects,
-        label="Compile native source",
-        verbose=verbose,
-    )
-
     native_array_build_requirements = native_array_handle_build_requirements(module)
     result = _build_rendered_wrapper_extension(
         rendered_wrapper_plan,
@@ -1981,10 +2150,12 @@ def build_pyi_extension(
         sources=bundle.paths,
         native_build_plan=native_build_plan,
         native_dependencies=native_source_objects,
+        native_compile_batches=_serial_compile_batches(native_source_objects),
         native_link_args=_rendered_wrapper_native_link_args(native_build_plan),
         wrapper_fortran_flags=wrapper_fortran_flags,
         wrapper_c_flags=wrapper_c_flags,
         compiler=compiler,
+        compile_jobs=1 if generation_only else compile_jobs,
         verbose=verbose,
     )
     result = _with_pyi_manifest(
@@ -2031,6 +2202,7 @@ def build_pyi_extension_from_manifest(
     include_dirs: Iterable[str | Path] | None = None,
     makefile: bool = False,
     generate_sources: bool = False,
+    jobs: int | None = None,
     verbose: bool | int = False,
     _on_total_build_time: Callable[[float], None] | None = None,
 ) -> WrapperBuildResult:
@@ -2080,6 +2252,7 @@ def build_pyi_extension_from_manifest(
         strict_wrapper_names=strict_wrapper_names,
         makefile=makefile,
         generate_sources=generate_sources,
+        jobs=jobs,
         verbose=verbose,
         wrapper_compiler_debug=_manifest_bool(compiler_section, "wrapper_compiler_debug"),
         wrapper_fortran_flags=_manifest_string_list(compiler_section, "wrapper_fortran_flags"),

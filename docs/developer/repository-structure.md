@@ -30,7 +30,7 @@ artifacts used by tests. Navigate by ownership boundary first, then by file.
 | `x2py/naming/` | Unified public-name and generated-symbol policy. |
 | `x2py/utilities/` | Small shared Python utilities. |
 | `benchmarks/` | Local x2py/f2py correctness and performance comparison harness. Benchmark sources and scripts are maintained; native builds and result files are generated locally. |
-| `tools/generate_performance_docs.py` | Validates paired `pyperf` results and generates the bounded public Performance snapshot and chart. |
+| `tools/generate_performance_docs.py` | Validates paired runtime and clean-build `pyperf` results and generates the bounded public Performance snapshot and both charts. |
 
 The major source packages have local README files under `x2py/` for
 developers reading directly in the source tree. Those README files should link

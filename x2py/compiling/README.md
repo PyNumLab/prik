@@ -32,11 +32,15 @@ all explicit object files and link inputs
 ```
 
 The bridge and binding sources are rendered together from one completed wrapper
-plan before compilation starts. Their object stages remain separate: the bridge
-is compiled after native objects so it can consume native module files; the
-header-only native support is compiled with the binding that includes it; and
-linking runs only after every required object exists. Each compiler invocation receives its
-source, target, flags, includes, and ordered link inputs explicitly.
+plan before compilation starts. Build orchestration derives module and
+submodule dependencies for wrapped sources and compiles every dependency-ready
+batch concurrently. The independent generated binding can overlap native
+compilation; the bridge waits for all native objects so it can consume native
+module files. The header-only native support is compiled with the binding that
+includes it, and linking starts only after every required object exists. The
+available CPU count is the default process limit and `--jobs` can reduce it.
+Each compiler invocation receives its source, target, flags, includes, and
+ordered link inputs explicitly.
 
 For CLI wrapper builds, the selected input-language compiler executable
 determines one coherent vendor profile. The exact executable is used for native

@@ -264,6 +264,7 @@ wrapper flags reached the build:
 python3 -m x2py points.f90 \
   --out geometry_debug \
   --out-dir build/geometry_debug \
+  --jobs 4 \
   --verbose \
   --compiler gfortran \
   --wrapper-fortran-flags=-O2 \
@@ -272,6 +273,8 @@ python3 -m x2py points.f90 \
 
 The verbose output includes native source compilation, generated bridge
 compilation, generated Python binding compilation, and the final link command.
+Dependency-ready source files and the generated binding may compile
+concurrently; `--jobs 1` selects a serial diagnostic build.
 The custom wrapper flags appear in the relevant command lines:
 
 ```text
