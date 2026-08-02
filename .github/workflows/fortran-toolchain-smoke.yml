@@ -1,8 +1,6 @@
 name: Compiler Compatibility
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
   push:
     branches:
       - main
@@ -10,6 +8,7 @@ on:
   schedule:
     - cron: "17 4 * * 1"
   workflow_dispatch:
+  workflow_call:
 
 concurrency:
   group: fortran-toolchain-smoke-${{ github.workflow }}-${{ github.ref }}

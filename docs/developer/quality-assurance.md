@@ -23,47 +23,36 @@ testing and pre-commit are not part of the active stack.
 
 | Cadence | Tools |
 | --- | --- |
-| Pull request and protected-branch push | pytest, bounded property/fuzz cases, stable-seed pytest-randomly, Ruff, Bandit, Vulture, staged Radon policy |
+| Pull request and protected-branch push | pytest, bounded property/fuzz cases, stable-seed pytest-randomly, Ruff, Bandit, Vulture, staged Radon policy, and project coverage |
 | Pull request, protected-branch push, weekly, and manual | Pinned Intel IFX/ICX and LLVM Flang/Clang profile checks plus strict Fortran toolchain smoke |
-| Main-branch push and requested coverage run | coverage.py report from the Python 3.12 test job |
+| Validated pull request and main-branch push | Pinned ARM64 prik/f2py correctness and rigorous performance benchmark |
 | Manual discovery | Fuzz-marked parser tests with the deeper Hypothesis fuzz profile |
 | Manual triage | Full Radon reports and low-severity Bandit review |
 | Annual dependency review | Dependency vulnerability audit outside the routine per-change gate |
 
-Active GitHub Actions checks use stable `workflow / job` names. The workflow
-name identifies the pipeline scope, while every job name independently
-identifies the concrete check selected in repository rules. This avoids generic
-job names such as `Python 3.12`. Matrix jobs include the platform, toolchain,
-and Python-version axes that distinguish their checks.
+Active GitHub Actions checks use stable, self-contained job names. Pull requests
+are coordinated by `Merge Validation` in four stages:
 
-The pull-request quality checks are:
+1. The unit-test matrix, static analysis, and parser-reference contract run in
+   parallel.
+2. BLAS/LAPACK validation and alternate-compiler compatibility run in parallel
+   after every first-stage check succeeds.
+3. The Python 3.12 project-coverage gate runs after all preceding checks pass.
+4. The same pinned ARM64 documentation performance benchmark used on `main`
+   runs after coverage, and its generated snapshot is consumed by the strict
+   documentation build.
 
-- `Test Matrix / Unit tests · Ubuntu 24.04 · Python 3.10`;
-- `Test Matrix / Unit tests · Ubuntu 24.04 · Python 3.11`;
-- `Test Matrix / Unit tests · Ubuntu 24.04 · Python 3.12`;
-- `Test Matrix / Unit tests · macOS 15 ARM64 · Python 3.12`;
-- `Code Quality / Static analysis · Ubuntu 24.04 · Python 3.12`;
-- `Native Libraries / BLAS + LAPACK · Ubuntu 24.04 · Python 3.12`;
-- `Compiler Compatibility / Compiler smoke · Ubuntu 24.04 · Intel IFX 2026.1.1 · Python 3.12`;
-- `Compiler Compatibility / Compiler smoke · Ubuntu 24.04 · LLVM Flang 22.1.8 · Python 3.12`;
-- `Compiler Compatibility / Compiler smoke · macOS 15 ARM64 · LLVM Flang · Python 3.12`;
-- `Contract Enforcement / Parser reference guard · Ubuntu 24.04`; and
-- `Documentation / Documentation site build · Ubuntu 24.04 · Python 3.12` when
-  the documentation path filter matches.
+An aggregate job runs with `always()` after every stage and fails unless all
+required stage results succeeded. Configure the repository ruleset with this
+single required status check:
 
-Other event-specific checks follow the same convention:
+- `Merge Validation / Pull request validation · all required checks`.
 
-- `Documentation / Documentation performance benchmark · Ubuntu 24.04 ARM64 · Python 3.12`;
-- `Documentation / Documentation deployment · GitHub Pages`;
-- `Quality Metrics / Project coverage · Ubuntu 24.04 · Python 3.12`;
-- `Release Automation / PyPI distribution build · Ubuntu 24.04 · Python 3.12`;
-- `Release Automation / PyPI trusted publishing · pypi`; and
-- `Repository Automation / Claude Code response to mention` when the optional `@claude`
-  integration is invoked.
-
-Treat these strings as ruleset API. If a workflow or job display name changes,
-replace the corresponding required-status-check entry in the repository
-ruleset; do not retain an alias job for the previous name.
+Treat that string as ruleset API. If its workflow or job display name changes,
+replace the corresponding required-status-check entry; do not retain an alias
+job for the previous name. The component workflows retain complete display
+names for diagnostics and for their independent main, release, scheduled, and
+manual runs.
 
 ## Install
 
@@ -104,19 +93,18 @@ python -m coverage report
 
 For subprocess coverage investigations, mirror that command shape before
 deciding a fix. A plain local coverage run can miss subprocess data.
-GitHub Actions runs ordinary PR tests without coverage overhead. Every Python
-version excludes the full BLAS/LAPACK real-library wrapper test while retaining
-general native-bundle coverage. The separate `BLAS + LAPACK` workflow runs the
-two full real-library nodes together on Python 3.12. A pull request may use the
-`ignore-real-library-wrappers` label to skip that expensive workflow without
-disabling the ordinary Python-version matrix.
+Every Python version excludes the full BLAS/LAPACK real-library wrapper test
+while retaining general native-bundle coverage. The `Native Libraries`
+component runs the complete BLAS and LAPACK examples and full-library nodes on
+Python 3.12. A pull request may use the `ignore-real-library-wrappers` label to
+skip that expensive component without disabling the ordinary Python-version
+matrix.
 
-Pushes to `main` run the same canonical Python 3.12 smoke and ordinary-suite
-selections in the separate `Coverage` workflow, then combine and publish their
-coverage data. Add the `run-coverage` PR label, manually dispatch that workflow,
-or call it as a reusable workflow to request the same coverage gate elsewhere.
-The combined coverage.py report is the blocking project gate and must remain at
-or above 90%. Codecov repeats that project target for hosted reporting. Its
+Every pull request and push to `main` runs the canonical Python 3.12 smoke and
+ordinary-suite selections through `Quality Metrics`, then combines and
+publishes their coverage data. The combined coverage.py report is the blocking
+project gate and must remain at or above 90%. Codecov repeats that project
+target for hosted reporting. Its
 patch status is informational: changed-line coverage remains visible for
 review, but a tiny defensive branch cannot independently fail an otherwise
 passing project report. New reachable behavior should still receive focused

@@ -1,8 +1,7 @@
 name: Contract Enforcement
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+  workflow_call:
 
 jobs:
   parser-reference-guard:

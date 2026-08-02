@@ -15,8 +15,9 @@ that maintainers can preview locally, uploads the generated `site/` directory,
 and deploys it through GitHub Pages.
 
 Workflow names identify a unique pipeline scope, and every job display name is
-self-contained so it can be selected confidently as a required check. Required
-status checks must use the exact `workflow / job` contexts documented in the
+self-contained. Pull requests expose one aggregate required check after the
+staged component workflows complete. Required status checks must use the exact
+`workflow / job` context documented in the
 [quality-assurance guide](../developer/quality-assurance.md). Because GitHub
 treats a renamed check as a different context, update the repository ruleset
 whenever either half of that name changes.
@@ -35,29 +36,38 @@ identity and approval sequence.
 
 ## Test Platforms
 
-The `Tests` workflow runs the ordinary suite on Ubuntu with every supported
+The `Test Matrix` workflow runs the ordinary suite on Ubuntu with every supported
 Python version. It also runs the complete ordinary suite on macOS 15 with
 Python 3.12 and GNU Fortran 13, preceded by the portable compiler smoke tests.
 Both selections exclude `real_library`; BLAS and LAPACK run only in their
 dedicated Ubuntu workflow.
 
-The `Smoke Tests` workflow also runs LLVM Flang on macOS 15. Intel IFX remains
-Linux-only because Intel does not provide IFX for macOS.
+The `Compiler Compatibility` workflow also runs LLVM Flang on macOS 15. Intel
+IFX remains Linux-only because Intel does not provide IFX for macOS.
+
+For pull requests, `Merge Validation` runs the test matrix, code quality, and
+parser contract first. Native-library and compiler-compatibility work starts
+only after that stage succeeds. Project
+coverage follows those expensive checks, then the documentation performance
+benchmark and strict site build run last. An `always()` aggregate job converts
+any failed or dependency-skipped required stage into one stable ruleset result.
 
 ## Documentation Publication
 
-The `Documentation` workflow runs for relevant pull requests, pushes to
-`main`, and manual dispatches. Pull requests run the documentation tests and a
-strict production build without deploying. A push to `main` runs those checks
-and deploys the reviewed site when GitHub Pages is configured to use GitHub
-Actions.
+The `Documentation` workflow is called by `Merge Validation` for every pull
+request and also runs on pushes to `main` and manual dispatches. Pull requests
+run the pinned performance benchmark, consume its generated snapshot, execute
+the documentation tests, and perform a strict production build without
+deploying. A push to `main` repeats those checks and deploys the reviewed site
+when GitHub Pages is configured to use GitHub Actions.
 
-Every push to `main` first runs the prik/f2py correctness and rigorous
-performance suite. The job extracts its platform and toolchain metadata,
-generates the result-dependent Performance page sections and SVG, and uploads
-the generated documentation together with the raw `pyperf` files. The website
-build overlays that artifact before testing and building MkDocs. Generated
-results are deployment inputs, not automated commits to `main`.
+Every validated pull request and push to `main` runs the same prik/f2py
+correctness and rigorous performance suite. The job extracts its platform and
+toolchain metadata, generates the result-dependent Performance page sections
+and SVG, and uploads the generated documentation together with the raw
+`pyperf` files. The website build overlays that artifact before testing and
+building MkDocs. Generated results are deployment inputs, not automated
+commits to `main`.
 
 The benchmark job always targets GitHub's `ubuntu-24.04-arm` standard runner,
 whose hosted pool is based on Microsoft Cobalt 100 processors. It verifies the
@@ -67,13 +77,15 @@ generations that may back successive x86-64 Ubuntu jobs. The documentation
 build and deployment remain on x86-64 Ubuntu because they consume only the
 generated Markdown and SVG artifact.
 
-Pull requests verify the generator and benchmark-host metadata helpers against
-fixtures but do not replace the public snapshot. The workflow pins the
-benchmark toolchain and alternates whether prik or f2py is measured first to
-avoid a systematic ordering advantage. Runtime cases use separate latency,
-medium, and bulk sampling budgets and are merged into one pyperf result per
-tool; this gives nanosecond-scale calls more independent samples without
-multiplying the cost of the largest array workloads.
+The pre-merge benchmark catches code-induced failures before `main`. The
+`main` run is still required because it generates the deployment artifact for
+the merged commit; external runner or service failures can still occur and
+must be retried or diagnosed honestly. The workflow pins the benchmark
+toolchain and alternates whether prik or f2py is measured first to avoid a
+systematic ordering advantage. Runtime cases use separate latency, medium, and
+bulk sampling budgets and are merged into one pyperf result per tool; this
+gives nanosecond-scale calls more independent samples without multiplying the
+cost of the largest array workloads.
 
 Documentation workflow concurrency is isolated by Git ref. Pull-request runs
 may cancel an older run for the same ref, but a `main` run is never canceled by

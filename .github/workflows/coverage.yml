@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-  pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
   workflow_dispatch:
   workflow_call:
 
@@ -16,11 +14,6 @@ env:
 jobs:
   coverage:
     name: Project coverage · Ubuntu 24.04 · Python 3.12
-    if: >-
-      ${{
-        github.event_name != 'pull_request' ||
-        contains(github.event.pull_request.labels.*.name, 'run-coverage')
-      }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read

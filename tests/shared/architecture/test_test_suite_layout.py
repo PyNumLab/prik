@@ -16,6 +16,7 @@ COVERAGE_WORKFLOW = REPO_ROOT / ".github/workflows/coverage.yml"
 CODECOV_CONFIG = REPO_ROOT / "codecov.yml"
 DOCS_WORKFLOW = REPO_ROOT / ".github/workflows/docs.yml"
 FORTRAN_SMOKE_WORKFLOW = REPO_ROOT / ".github/workflows/fortran-toolchain-smoke.yml"
+MERGE_VALIDATION_WORKFLOW = REPO_ROOT / ".github/workflows/merge-validation.yml"
 PARSER_REFERENCE_WORKFLOW = REPO_ROOT / ".github/workflows/parser-reference-guard.yml"
 PUBLISH_WORKFLOW = REPO_ROOT / ".github/workflows/publish-to-pypi.yml"
 STATIC_ANALYSIS_WORKFLOW = REPO_ROOT / ".github/workflows/static-analysis.yml"
@@ -150,6 +151,12 @@ def _github_matrix_display_names(workflow: Path) -> tuple[str, ...]:
         for line in workflow.read_text(encoding="utf-8").splitlines()
         if line.strip().startswith(prefix)
     )
+
+
+def _github_action_job_block(workflow: Path, job_id: str) -> str:
+    remainder = workflow.read_text(encoding="utf-8").split(f"  {job_id}:\n", maxsplit=1)[1]
+    next_job = re.search(r"\n  [a-z0-9-]+:\n", remainder)
+    return remainder if next_job is None else remainder[: next_job.start()]
 
 
 def test_pytest_modules_have_one_allowed_primary_owner() -> None:
@@ -290,6 +297,7 @@ def test_active_github_action_checks_use_distinct_workflow_scopes_and_job_names(
         COVERAGE_WORKFLOW: "Quality Metrics",
         DOCS_WORKFLOW: "Documentation",
         FORTRAN_SMOKE_WORKFLOW: "Compiler Compatibility",
+        MERGE_VALIDATION_WORKFLOW: "Merge Validation",
         PARSER_REFERENCE_WORKFLOW: "Contract Enforcement",
         PUBLISH_WORKFLOW: "Release Automation",
         STATIC_ANALYSIS_WORKFLOW: "Code Quality",
@@ -307,6 +315,16 @@ def test_active_github_action_checks_use_distinct_workflow_scopes_and_job_names(
         FORTRAN_SMOKE_WORKFLOW: {
             "toolchain-smoke": "Compiler smoke · ${{ matrix.display_name }}",
             "macos-flang-smoke": "Compiler smoke · macOS 15 ARM64 · LLVM Flang · Python 3.12",
+        },
+        MERGE_VALIDATION_WORKFLOW: {
+            "unit-tests": "Unit-test matrix stage",
+            "code-quality": "Code-quality stage",
+            "parser-contract": "Parser-contract stage",
+            "native-libraries": "Native-library stage",
+            "compiler-compatibility": "Compiler-compatibility stage",
+            "project-coverage": "Project-coverage stage",
+            "documentation": "Documentation benchmark and site-build stage",
+            "merge-gate": "Pull request validation · all required checks",
         },
         PARSER_REFERENCE_WORKFLOW: {"parser-reference-guard": "Parser reference guard · Ubuntu 24.04"},
         PUBLISH_WORKFLOW: {
@@ -341,29 +359,81 @@ def test_active_github_action_checks_use_distinct_workflow_scopes_and_job_names(
     expanded_display_names.extend(f"Unit tests · Ubuntu 24.04 · Python {version}" for version in test_python_versions)
     assert len(expanded_display_names) == len(set(expanded_display_names))
 
-    documented_contexts = (
-        "Test Matrix / Unit tests · Ubuntu 24.04 · Python 3.10",
-        "Test Matrix / Unit tests · Ubuntu 24.04 · Python 3.11",
-        "Test Matrix / Unit tests · Ubuntu 24.04 · Python 3.12",
-        "Test Matrix / Unit tests · macOS 15 ARM64 · Python 3.12",
-        "Code Quality / Static analysis · Ubuntu 24.04 · Python 3.12",
-        "Native Libraries / BLAS + LAPACK · Ubuntu 24.04 · Python 3.12",
-        "Compiler Compatibility / Compiler smoke · Ubuntu 24.04 · Intel IFX 2026.1.1 · Python 3.12",
-        "Compiler Compatibility / Compiler smoke · Ubuntu 24.04 · LLVM Flang 22.1.8 · Python 3.12",
-        "Compiler Compatibility / Compiler smoke · macOS 15 ARM64 · LLVM Flang · Python 3.12",
-        "Contract Enforcement / Parser reference guard · Ubuntu 24.04",
-        "Documentation / Documentation site build · Ubuntu 24.04 · Python 3.12",
-        "Documentation / Documentation performance benchmark · Ubuntu 24.04 ARM64 · Python 3.12",
-        "Documentation / Documentation deployment · GitHub Pages",
-        "Quality Metrics / Project coverage · Ubuntu 24.04 · Python 3.12",
-        "Release Automation / PyPI distribution build · Ubuntu 24.04 · Python 3.12",
-        "Release Automation / PyPI trusted publishing · pypi",
-        "Repository Automation / Claude Code response to mention",
-    )
+    documented_contexts = ("Merge Validation / Pull request validation · all required checks",)
     quality_assurance = QUALITY_ASSURANCE_DOC.read_text(encoding="utf-8")
     assert len(documented_contexts) == len(set(documented_contexts))
     for context in documented_contexts:
         assert f"`{context}`" in quality_assurance
+
+
+def test_pull_request_merge_validation_stages_expensive_work_and_always_reports_the_gate() -> None:
+    workflow = MERGE_VALIDATION_WORKFLOW.read_text(encoding="utf-8")
+
+    assert workflow.startswith("name: Merge Validation\n")
+    assert "  pull_request:\n    types: [opened, synchronize, reopened, labeled, unlabeled]" in workflow
+    assert "group: merge-validation-${{ github.ref }}" in workflow
+    assert "cancel-in-progress: true" in workflow
+
+    stage_one = {
+        "unit-tests": "uses: ./.github/workflows/tests.yml",
+        "code-quality": "uses: ./.github/workflows/static-analysis.yml",
+        "parser-contract": "uses: ./.github/workflows/parser-reference-guard.yml",
+    }
+    for job_id, reusable_workflow in stage_one.items():
+        block = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, job_id)
+        assert reusable_workflow in block
+        assert "needs:" not in block
+
+    for job_id, reusable_workflow in (
+        ("native-libraries", "uses: ./.github/workflows/blas-lapack.yml"),
+        ("compiler-compatibility", "uses: ./.github/workflows/fortran-toolchain-smoke.yml"),
+    ):
+        block = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, job_id)
+        assert "needs: [unit-tests, code-quality, parser-contract]" in block
+        assert reusable_workflow in block
+
+    coverage = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "project-coverage")
+    assert "needs: [native-libraries, compiler-compatibility]" in coverage
+    assert "uses: ./.github/workflows/coverage.yml" in coverage
+    assert "id-token: write" in coverage
+
+    documentation = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "documentation")
+    assert "needs: project-coverage" in documentation
+    assert "uses: ./.github/workflows/docs.yml" in documentation
+    assert "run_performance_benchmark: true" in documentation
+
+    gate = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "merge-gate")
+    assert "if: ${{ always() }}" in gate
+    for dependency in (
+        "unit-tests",
+        "code-quality",
+        "parser-contract",
+        "native-libraries",
+        "compiler-compatibility",
+        "project-coverage",
+        "documentation",
+    ):
+        assert f"      - {dependency}" in gate
+        assert f"needs.{dependency}.result" in gate
+    assert 'if [[ "$result" != "success" ]]' in gate
+    assert 'exit "$failed"' in gate
+
+
+def test_pull_request_components_run_only_through_merge_validation() -> None:
+    for workflow in (
+        TESTS_WORKFLOW,
+        STATIC_ANALYSIS_WORKFLOW,
+        PARSER_REFERENCE_WORKFLOW,
+        BLAS_LAPACK_WORKFLOW,
+        FORTRAN_SMOKE_WORKFLOW,
+        COVERAGE_WORKFLOW,
+        DOCS_WORKFLOW,
+    ):
+        text = workflow.read_text(encoding="utf-8")
+        assert "  workflow_call:" in text
+        assert "  pull_request:" not in text
+
+    assert "run-coverage" not in COVERAGE_WORKFLOW.read_text(encoding="utf-8")
 
 
 def test_pypi_package_identity_is_complete_and_consistent() -> None:
@@ -424,13 +494,15 @@ def test_static_analysis_targets_the_renamed_package_tree() -> None:
         assert removed_root not in workflow
 
 
-def test_documentation_workflow_generates_main_only_performance_snapshot() -> None:
+def test_documentation_workflow_generates_the_same_pr_and_main_performance_snapshot() -> None:
     workflow = DOCS_WORKFLOW.read_text(encoding="utf-8")
 
     assert "group: documentation-${{ github.ref }}" in workflow
     assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in workflow
     assert "runs-on: ubuntu-24.04-arm" in workflow
-    assert "if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'" in workflow
+    assert "run_performance_benchmark:" in workflow
+    assert workflow.count("inputs.run_performance_benchmark ||") == 2
+    assert workflow.count("github.ref == 'refs/heads/main' && github.event_name != 'pull_request'") == 5
     assert "python tools/benchmark_host.py" in workflow
     assert "--require-machine aarch64" in workflow
     assert "--require-arm-part 0xd49" in workflow

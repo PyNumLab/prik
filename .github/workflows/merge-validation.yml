@@ -1,0 +1,94 @@
+name: Merge Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: merge-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    name: Unit-test matrix stage
+    uses: ./.github/workflows/tests.yml
+
+  code-quality:
+    name: Code-quality stage
+    uses: ./.github/workflows/static-analysis.yml
+
+  parser-contract:
+    name: Parser-contract stage
+    uses: ./.github/workflows/parser-reference-guard.yml
+
+  native-libraries:
+    name: Native-library stage
+    needs: [unit-tests, code-quality, parser-contract]
+    uses: ./.github/workflows/blas-lapack.yml
+
+  compiler-compatibility:
+    name: Compiler-compatibility stage
+    needs: [unit-tests, code-quality, parser-contract]
+    uses: ./.github/workflows/fortran-toolchain-smoke.yml
+
+  project-coverage:
+    name: Project-coverage stage
+    needs: [native-libraries, compiler-compatibility]
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/coverage.yml
+
+  documentation:
+    name: Documentation benchmark and site-build stage
+    needs: project-coverage
+    uses: ./.github/workflows/docs.yml
+    with:
+      run_performance_benchmark: true
+
+  merge-gate:
+    name: Pull request validation · all required checks
+    if: ${{ always() }}
+    needs:
+      - unit-tests
+      - code-quality
+      - parser-contract
+      - native-libraries
+      - compiler-compatibility
+      - project-coverage
+      - documentation
+    runs-on: ubuntu-24.04
+    permissions: {}
+    env:
+      UNIT_TESTS_RESULT: ${{ needs.unit-tests.result }}
+      CODE_QUALITY_RESULT: ${{ needs.code-quality.result }}
+      PARSER_CONTRACT_RESULT: ${{ needs.parser-contract.result }}
+      NATIVE_LIBRARIES_RESULT: ${{ needs.native-libraries.result }}
+      COMPILER_COMPATIBILITY_RESULT: ${{ needs.compiler-compatibility.result }}
+      PROJECT_COVERAGE_RESULT: ${{ needs.project-coverage.result }}
+      DOCUMENTATION_RESULT: ${{ needs.documentation.result }}
+    steps:
+      - name: Require every staged validation result
+        shell: bash
+        run: |
+          failed=0
+          for staged_result in \
+            "unit-tests=$UNIT_TESTS_RESULT" \
+            "code-quality=$CODE_QUALITY_RESULT" \
+            "parser-contract=$PARSER_CONTRACT_RESULT" \
+            "native-libraries=$NATIVE_LIBRARIES_RESULT" \
+            "compiler-compatibility=$COMPILER_COMPATIBILITY_RESULT" \
+            "project-coverage=$PROJECT_COVERAGE_RESULT" \
+            "documentation=$DOCUMENTATION_RESULT"
+          do
+            stage=${staged_result%%=*}
+            result=${staged_result#*=}
+            if [[ "$result" != "success" ]]; then
+              echo "::error::$stage finished with result: $result"
+              failed=1
+            fi
+          done
+          exit "$failed"
