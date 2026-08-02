@@ -15,7 +15,7 @@ env:
 
 jobs:
   real-library-wrappers:
-    name: Python 3.12
+    name: BLAS + LAPACK correctness · Ubuntu 24.04 · Python 3.12
     if: >-
       ${{
         github.event_name != 'pull_request' ||

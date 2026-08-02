@@ -6,7 +6,7 @@ on:
 
 jobs:
   parser-reference-guard:
-    name: Guard
+    name: Parser reference guard · Ubuntu 24.04
     if: >
       !contains(github.event.pull_request.labels.*.name, 'ignore-parser-reference-guard') &&
       (github.event.action == 'opened' ||

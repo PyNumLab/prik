@@ -14,6 +14,12 @@ deployment. The documentation workflow builds the same filtered MkDocs site
 that maintainers can preview locally, uploads the generated `site/` directory,
 and deploys it through GitHub Pages.
 
+Job display names are purpose-first and unique across the repository. Required
+status checks must use the exact `workflow / job` contexts documented in the
+[quality-assurance guide](../developer/quality-assurance.md). Because GitHub
+treats a renamed check as a different context, update the repository ruleset
+whenever either half of that name changes.
+
 Packaging output under `build/` is generated, ignored, and must never be
 committed. In addition to keeping distribution artifacts out of the source
 tree, this ensures rename-aware quality gates compare the previous package

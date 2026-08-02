@@ -9,15 +9,18 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).parents[3]
 TEST_ROOT = REPO_ROOT / "tests"
 TEST_INDEX = TEST_ROOT / "README.md"
+WORKFLOW_ROOT = REPO_ROOT / ".github/workflows"
 BLAS_LAPACK_WORKFLOW = REPO_ROOT / ".github/workflows/blas-lapack.yml"
 CLAUDE_WORKFLOW = REPO_ROOT / ".github/workflows/claude.yml"
 COVERAGE_WORKFLOW = REPO_ROOT / ".github/workflows/coverage.yml"
 CODECOV_CONFIG = REPO_ROOT / "codecov.yml"
 DOCS_WORKFLOW = REPO_ROOT / ".github/workflows/docs.yml"
+FORTRAN_SMOKE_WORKFLOW = REPO_ROOT / ".github/workflows/fortran-toolchain-smoke.yml"
 PARSER_REFERENCE_WORKFLOW = REPO_ROOT / ".github/workflows/parser-reference-guard.yml"
 PUBLISH_WORKFLOW = REPO_ROOT / ".github/workflows/publish-to-pypi.yml"
 STATIC_ANALYSIS_WORKFLOW = REPO_ROOT / ".github/workflows/static-analysis.yml"
 TESTS_WORKFLOW = REPO_ROOT / ".github/workflows/tests.yml"
+QUALITY_ASSURANCE_DOC = REPO_ROOT / "docs/developer/quality-assurance.md"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
 MANIFEST = REPO_ROOT / "MANIFEST.in"
@@ -112,6 +115,34 @@ def _maintained_path_reference_files() -> list[Path]:
         and "_migration" not in path.parts
         and "docs/maintainer/roadmap" not in path.as_posix()
         and ".git" not in path.parts
+    )
+
+
+def _github_action_job_display_names(workflow: Path) -> dict[str, str]:
+    names: dict[str, str] = {}
+    current_job: str | None = None
+    in_jobs = False
+    for line in workflow.read_text(encoding="utf-8").splitlines():
+        if line == "jobs:":
+            in_jobs = True
+            continue
+        if not in_jobs:
+            continue
+        job_match = re.fullmatch(r"  ([a-z0-9-]+):", line)
+        if job_match:
+            current_job = job_match.group(1)
+            continue
+        if current_job is not None and line.startswith("    name: "):
+            names[current_job] = line.removeprefix("    name: ")
+    return names
+
+
+def _github_matrix_display_names(workflow: Path) -> tuple[str, ...]:
+    prefix = "display_name: "
+    return tuple(
+        line.strip().removeprefix(prefix)
+        for line in workflow.read_text(encoding="utf-8").splitlines()
+        if line.strip().startswith(prefix)
     )
 
 
@@ -248,48 +279,72 @@ def test_codecov_keeps_project_coverage_blocking_and_patch_coverage_informationa
 
 def test_active_github_action_jobs_use_purpose_first_display_names() -> None:
     expected = {
-        DOCS_WORKFLOW: (
-            "name: Documentation",
-            "    name: Benchmark",
-            "    name: Build",
-            "    name: Deploy",
-        ),
-        PARSER_REFERENCE_WORKFLOW: (
-            "name: Parser Reference",
-            "    name: Guard",
-        ),
-        STATIC_ANALYSIS_WORKFLOW: (
-            "name: Static Analysis",
-            "    name: Python 3.12",
-        ),
-        TESTS_WORKFLOW: (
-            "name: Tests",
-            "    name: Python ${{ matrix.python-version }}",
-            "    name: macOS 15 ARM64 · Python 3.12",
-        ),
-        BLAS_LAPACK_WORKFLOW: (
-            "name: BLAS + LAPACK",
-            "    name: Python 3.12",
-        ),
-        COVERAGE_WORKFLOW: (
-            "name: Coverage",
-            "    name: Python 3.12",
-        ),
-        PUBLISH_WORKFLOW: (
-            "name: Publish to PyPI",
-            "    name: Build and validate distributions",
-            "    name: Publish distributions",
-        ),
-        CLAUDE_WORKFLOW: (
-            "name: Claude Code",
-            "    name: Respond",
-        ),
+        BLAS_LAPACK_WORKFLOW: {"real-library-wrappers": "BLAS + LAPACK correctness · Ubuntu 24.04 · Python 3.12"},
+        CLAUDE_WORKFLOW: {"claude": "Claude Code response"},
+        COVERAGE_WORKFLOW: {"coverage": "Coverage · Ubuntu 24.04 · Python 3.12"},
+        DOCS_WORKFLOW: {
+            "benchmark": "Documentation benchmark · Ubuntu 24.04 ARM64 · Python 3.12",
+            "build": "Documentation build · Ubuntu 24.04 · Python 3.12",
+            "deploy": "Documentation deploy · GitHub Pages",
+        },
+        FORTRAN_SMOKE_WORKFLOW: {
+            "toolchain-smoke": "Compiler smoke · ${{ matrix.display_name }}",
+            "macos-flang-smoke": "Compiler smoke · macOS 15 ARM64 · LLVM Flang · Python 3.12",
+        },
+        PARSER_REFERENCE_WORKFLOW: {"parser-reference-guard": "Parser reference guard · Ubuntu 24.04"},
+        PUBLISH_WORKFLOW: {
+            "build": "PyPI distribution build · Ubuntu 24.04 · Python 3.12",
+            "publish": "PyPI trusted publishing · pypi",
+        },
+        STATIC_ANALYSIS_WORKFLOW: {"static-analysis": "Static analysis · Ubuntu 24.04 · Python 3.12"},
+        TESTS_WORKFLOW: {
+            "test": "Unit tests · Ubuntu 24.04 · Python ${{ matrix.python-version }}",
+            "macos": "Unit tests · macOS 15 ARM64 · Python 3.12",
+        },
     }
 
-    for workflow, names in expected.items():
-        text = workflow.read_text(encoding="utf-8")
-        for name in names:
-            assert name in text
+    assert set(expected) == set(WORKFLOW_ROOT.glob("*.yml"))
+    assert {workflow: _github_action_job_display_names(workflow) for workflow in expected} == expected
+
+    display_names = [name for jobs in expected.values() for name in jobs.values()]
+    assert len(display_names) == len(set(display_names))
+    assert all(not re.fullmatch(r"Python(?:\s+.*)?", name) for name in display_names)
+
+    smoke_matrix_names = _github_matrix_display_names(FORTRAN_SMOKE_WORKFLOW)
+    assert smoke_matrix_names == (
+        "Ubuntu 24.04 · Intel IFX 2026.1.1 · Python 3.12",
+        "Ubuntu 24.04 · LLVM Flang 22.1.8 · Python 3.12",
+    )
+    test_python_versions = ("3.10", "3.11", "3.12")
+    assert 'python-version: ["3.10", "3.11", "3.12"]' in TESTS_WORKFLOW.read_text(encoding="utf-8")
+    expanded_display_names = [name for name in display_names if "${{ matrix." not in name]
+    expanded_display_names.extend(f"Compiler smoke · {name}" for name in smoke_matrix_names)
+    expanded_display_names.extend(f"Unit tests · Ubuntu 24.04 · Python {version}" for version in test_python_versions)
+    assert len(expanded_display_names) == len(set(expanded_display_names))
+
+    documented_contexts = (
+        "Tests / Unit tests · Ubuntu 24.04 · Python 3.10",
+        "Tests / Unit tests · Ubuntu 24.04 · Python 3.11",
+        "Tests / Unit tests · Ubuntu 24.04 · Python 3.12",
+        "Tests / Unit tests · macOS 15 ARM64 · Python 3.12",
+        "Static Analysis / Static analysis · Ubuntu 24.04 · Python 3.12",
+        "BLAS + LAPACK / BLAS + LAPACK correctness · Ubuntu 24.04 · Python 3.12",
+        "Smoke Tests / Compiler smoke · Ubuntu 24.04 · Intel IFX 2026.1.1 · Python 3.12",
+        "Smoke Tests / Compiler smoke · Ubuntu 24.04 · LLVM Flang 22.1.8 · Python 3.12",
+        "Smoke Tests / Compiler smoke · macOS 15 ARM64 · LLVM Flang · Python 3.12",
+        "Parser Reference / Parser reference guard · Ubuntu 24.04",
+        "Documentation / Documentation build · Ubuntu 24.04 · Python 3.12",
+        "Documentation / Documentation benchmark · Ubuntu 24.04 ARM64 · Python 3.12",
+        "Documentation / Documentation deploy · GitHub Pages",
+        "Coverage / Coverage · Ubuntu 24.04 · Python 3.12",
+        "Publish to PyPI / PyPI distribution build · Ubuntu 24.04 · Python 3.12",
+        "Publish to PyPI / PyPI trusted publishing · pypi",
+        "Claude Code / Claude Code response",
+    )
+    quality_assurance = QUALITY_ASSURANCE_DOC.read_text(encoding="utf-8")
+    assert len(documented_contexts) == len(set(documented_contexts))
+    for context in documented_contexts:
+        assert f"`{context}`" in quality_assurance
 
 
 def test_pypi_package_identity_is_complete_and_consistent() -> None:

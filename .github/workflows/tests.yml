@@ -15,7 +15,7 @@ env:
 
 jobs:
   test:
-    name: Python ${{ matrix.python-version }}
+    name: Unit tests · Ubuntu 24.04 · Python ${{ matrix.python-version }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -80,7 +80,7 @@ jobs:
           done
 
   macos:
-    name: macOS 15 ARM64 · Python 3.12
+    name: Unit tests · macOS 15 ARM64 · Python 3.12
     runs-on: macos-15
     timeout-minutes: 120
     permissions:

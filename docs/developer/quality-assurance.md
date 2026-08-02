@@ -30,18 +30,39 @@ testing and pre-commit are not part of the active stack.
 | Manual triage | Full Radon reports and low-severity Bandit review |
 | Annual dependency review | Dependency vulnerability audit outside the routine per-change gate |
 
-Active GitHub Actions checks use short `workflow / job` names:
+Active GitHub Actions checks use stable `workflow / job` names. Every job name
+is purpose-first and globally descriptive, so the ruleset selector never has
+to distinguish several jobs called only `Python 3.12`. Matrix jobs include the
+platform, toolchain, and Python-version axes that distinguish their checks.
 
-- `Documentation / Build` and `Documentation / Deploy`;
-- `Smoke Tests / Intel IFX 2026.1.1 · Python 3.12` and
-  `Smoke Tests / LLVM Flang 22.1.8 · Python 3.12`;
-- `Parser Reference / Guard`;
-- `Static Analysis / Python 3.12`;
-- `Tests / Python 3.10`, `Tests / Python 3.11`, and
-  `Tests / Python 3.12`;
-- `BLAS + LAPACK / Python 3.12`;
-- `Coverage / Python 3.12`; and
-- `Claude Code / Respond` when the optional `@claude` integration is invoked.
+The pull-request quality checks are:
+
+- `Tests / Unit tests · Ubuntu 24.04 · Python 3.10`;
+- `Tests / Unit tests · Ubuntu 24.04 · Python 3.11`;
+- `Tests / Unit tests · Ubuntu 24.04 · Python 3.12`;
+- `Tests / Unit tests · macOS 15 ARM64 · Python 3.12`;
+- `Static Analysis / Static analysis · Ubuntu 24.04 · Python 3.12`;
+- `BLAS + LAPACK / BLAS + LAPACK correctness · Ubuntu 24.04 · Python 3.12`;
+- `Smoke Tests / Compiler smoke · Ubuntu 24.04 · Intel IFX 2026.1.1 · Python 3.12`;
+- `Smoke Tests / Compiler smoke · Ubuntu 24.04 · LLVM Flang 22.1.8 · Python 3.12`;
+- `Smoke Tests / Compiler smoke · macOS 15 ARM64 · LLVM Flang · Python 3.12`;
+- `Parser Reference / Parser reference guard · Ubuntu 24.04`; and
+- `Documentation / Documentation build · Ubuntu 24.04 · Python 3.12` when
+  the documentation path filter matches.
+
+Other event-specific checks follow the same convention:
+
+- `Documentation / Documentation benchmark · Ubuntu 24.04 ARM64 · Python 3.12`;
+- `Documentation / Documentation deploy · GitHub Pages`;
+- `Coverage / Coverage · Ubuntu 24.04 · Python 3.12`;
+- `Publish to PyPI / PyPI distribution build · Ubuntu 24.04 · Python 3.12`;
+- `Publish to PyPI / PyPI trusted publishing · pypi`; and
+- `Claude Code / Claude Code response` when the optional `@claude`
+  integration is invoked.
+
+Treat these strings as ruleset API. If a workflow or job display name changes,
+replace the corresponding required-status-check entry in the repository
+ruleset; do not retain an alias job for the previous name.
 
 ## Install
 

@@ -15,7 +15,7 @@ env:
 
 jobs:
   coverage:
-    name: Python 3.12
+    name: Coverage · Ubuntu 24.04 · Python 3.12
     if: >-
       ${{
         github.event_name != 'pull_request' ||
