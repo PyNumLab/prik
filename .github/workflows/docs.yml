@@ -32,7 +32,7 @@ env:
 
 jobs:
   benchmark:
-    name: Documentation benchmark · Ubuntu 24.04 ARM64 · Python 3.12
+    name: Documentation performance benchmark · Ubuntu 24.04 ARM64 · Python 3.12
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 90
@@ -117,7 +117,7 @@ jobs:
           retention-days: 90
 
   build:
-    name: Documentation build · Ubuntu 24.04 · Python 3.12
+    name: Documentation site build · Ubuntu 24.04 · Python 3.12
     needs: benchmark
     if: always() && (needs.benchmark.result == 'success' || needs.benchmark.result == 'skipped')
     runs-on: ubuntu-24.04
@@ -162,7 +162,7 @@ jobs:
           path: site
 
   deploy:
-    name: Documentation deploy · GitHub Pages
+    name: Documentation deployment · GitHub Pages
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     environment:
       name: github-pages

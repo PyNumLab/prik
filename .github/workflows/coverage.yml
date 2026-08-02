@@ -1,4 +1,4 @@
-name: Coverage
+name: Quality Metrics
 
 on:
   push:
@@ -15,7 +15,7 @@ env:
 
 jobs:
   coverage:
-    name: Coverage · Ubuntu 24.04 · Python 3.12
+    name: Project coverage · Ubuntu 24.04 · Python 3.12
     if: >-
       ${{
         github.event_name != 'pull_request' ||

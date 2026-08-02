@@ -1,4 +1,4 @@
-name: Parser Reference
+name: Contract Enforcement
 
 on:
   pull_request:

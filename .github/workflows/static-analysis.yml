@@ -1,4 +1,4 @@
-name: Static Analysis
+name: Code Quality
 
 on:
   pull_request:

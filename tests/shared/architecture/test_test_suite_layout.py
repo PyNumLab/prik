@@ -137,6 +137,12 @@ def _github_action_job_display_names(workflow: Path) -> dict[str, str]:
     return names
 
 
+def _github_action_workflow_name(workflow: Path) -> str:
+    first_line = workflow.read_text(encoding="utf-8").splitlines()[0]
+    assert first_line.startswith("name: ")
+    return first_line.removeprefix("name: ")
+
+
 def _github_matrix_display_names(workflow: Path) -> tuple[str, ...]:
     prefix = "display_name: "
     return tuple(
@@ -277,15 +283,26 @@ def test_codecov_keeps_project_coverage_blocking_and_patch_coverage_informationa
     )
 
 
-def test_active_github_action_jobs_use_purpose_first_display_names() -> None:
+def test_active_github_action_checks_use_distinct_workflow_scopes_and_job_names() -> None:
+    workflow_names = {
+        BLAS_LAPACK_WORKFLOW: "Native Libraries",
+        CLAUDE_WORKFLOW: "Repository Automation",
+        COVERAGE_WORKFLOW: "Quality Metrics",
+        DOCS_WORKFLOW: "Documentation",
+        FORTRAN_SMOKE_WORKFLOW: "Compiler Compatibility",
+        PARSER_REFERENCE_WORKFLOW: "Contract Enforcement",
+        PUBLISH_WORKFLOW: "Release Automation",
+        STATIC_ANALYSIS_WORKFLOW: "Code Quality",
+        TESTS_WORKFLOW: "Test Matrix",
+    }
     expected = {
-        BLAS_LAPACK_WORKFLOW: {"real-library-wrappers": "BLAS + LAPACK correctness · Ubuntu 24.04 · Python 3.12"},
-        CLAUDE_WORKFLOW: {"claude": "Claude Code response"},
-        COVERAGE_WORKFLOW: {"coverage": "Coverage · Ubuntu 24.04 · Python 3.12"},
+        BLAS_LAPACK_WORKFLOW: {"real-library-wrappers": "BLAS + LAPACK · Ubuntu 24.04 · Python 3.12"},
+        CLAUDE_WORKFLOW: {"claude": "Claude Code response to mention"},
+        COVERAGE_WORKFLOW: {"coverage": "Project coverage · Ubuntu 24.04 · Python 3.12"},
         DOCS_WORKFLOW: {
-            "benchmark": "Documentation benchmark · Ubuntu 24.04 ARM64 · Python 3.12",
-            "build": "Documentation build · Ubuntu 24.04 · Python 3.12",
-            "deploy": "Documentation deploy · GitHub Pages",
+            "benchmark": "Documentation performance benchmark · Ubuntu 24.04 ARM64 · Python 3.12",
+            "build": "Documentation site build · Ubuntu 24.04 · Python 3.12",
+            "deploy": "Documentation deployment · GitHub Pages",
         },
         FORTRAN_SMOKE_WORKFLOW: {
             "toolchain-smoke": "Compiler smoke · ${{ matrix.display_name }}",
@@ -303,7 +320,9 @@ def test_active_github_action_jobs_use_purpose_first_display_names() -> None:
         },
     }
 
-    assert set(expected) == set(WORKFLOW_ROOT.glob("*.yml"))
+    assert set(workflow_names) == set(expected) == set(WORKFLOW_ROOT.glob("*.yml"))
+    assert {workflow: _github_action_workflow_name(workflow) for workflow in workflow_names} == workflow_names
+    assert len(workflow_names.values()) == len(set(workflow_names.values()))
     assert {workflow: _github_action_job_display_names(workflow) for workflow in expected} == expected
 
     display_names = [name for jobs in expected.values() for name in jobs.values()]
@@ -323,23 +342,23 @@ def test_active_github_action_jobs_use_purpose_first_display_names() -> None:
     assert len(expanded_display_names) == len(set(expanded_display_names))
 
     documented_contexts = (
-        "Tests / Unit tests · Ubuntu 24.04 · Python 3.10",
-        "Tests / Unit tests · Ubuntu 24.04 · Python 3.11",
-        "Tests / Unit tests · Ubuntu 24.04 · Python 3.12",
-        "Tests / Unit tests · macOS 15 ARM64 · Python 3.12",
-        "Static Analysis / Static analysis · Ubuntu 24.04 · Python 3.12",
-        "BLAS + LAPACK / BLAS + LAPACK correctness · Ubuntu 24.04 · Python 3.12",
-        "Smoke Tests / Compiler smoke · Ubuntu 24.04 · Intel IFX 2026.1.1 · Python 3.12",
-        "Smoke Tests / Compiler smoke · Ubuntu 24.04 · LLVM Flang 22.1.8 · Python 3.12",
-        "Smoke Tests / Compiler smoke · macOS 15 ARM64 · LLVM Flang · Python 3.12",
-        "Parser Reference / Parser reference guard · Ubuntu 24.04",
-        "Documentation / Documentation build · Ubuntu 24.04 · Python 3.12",
-        "Documentation / Documentation benchmark · Ubuntu 24.04 ARM64 · Python 3.12",
-        "Documentation / Documentation deploy · GitHub Pages",
-        "Coverage / Coverage · Ubuntu 24.04 · Python 3.12",
-        "Publish to PyPI / PyPI distribution build · Ubuntu 24.04 · Python 3.12",
-        "Publish to PyPI / PyPI trusted publishing · pypi",
-        "Claude Code / Claude Code response",
+        "Test Matrix / Unit tests · Ubuntu 24.04 · Python 3.10",
+        "Test Matrix / Unit tests · Ubuntu 24.04 · Python 3.11",
+        "Test Matrix / Unit tests · Ubuntu 24.04 · Python 3.12",
+        "Test Matrix / Unit tests · macOS 15 ARM64 · Python 3.12",
+        "Code Quality / Static analysis · Ubuntu 24.04 · Python 3.12",
+        "Native Libraries / BLAS + LAPACK · Ubuntu 24.04 · Python 3.12",
+        "Compiler Compatibility / Compiler smoke · Ubuntu 24.04 · Intel IFX 2026.1.1 · Python 3.12",
+        "Compiler Compatibility / Compiler smoke · Ubuntu 24.04 · LLVM Flang 22.1.8 · Python 3.12",
+        "Compiler Compatibility / Compiler smoke · macOS 15 ARM64 · LLVM Flang · Python 3.12",
+        "Contract Enforcement / Parser reference guard · Ubuntu 24.04",
+        "Documentation / Documentation site build · Ubuntu 24.04 · Python 3.12",
+        "Documentation / Documentation performance benchmark · Ubuntu 24.04 ARM64 · Python 3.12",
+        "Documentation / Documentation deployment · GitHub Pages",
+        "Quality Metrics / Project coverage · Ubuntu 24.04 · Python 3.12",
+        "Release Automation / PyPI distribution build · Ubuntu 24.04 · Python 3.12",
+        "Release Automation / PyPI trusted publishing · pypi",
+        "Repository Automation / Claude Code response to mention",
     )
     quality_assurance = QUALITY_ASSURANCE_DOC.read_text(encoding="utf-8")
     assert len(documented_contexts) == len(set(documented_contexts))

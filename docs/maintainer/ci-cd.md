@@ -14,7 +14,8 @@ deployment. The documentation workflow builds the same filtered MkDocs site
 that maintainers can preview locally, uploads the generated `site/` directory,
 and deploys it through GitHub Pages.
 
-Job display names are purpose-first and unique across the repository. Required
+Workflow names identify a unique pipeline scope, and every job display name is
+self-contained so it can be selected confidently as a required check. Required
 status checks must use the exact `workflow / job` contexts documented in the
 [quality-assurance guide](../developer/quality-assurance.md). Because GitHub
 treats a renamed check as a different context, update the repository ruleset
