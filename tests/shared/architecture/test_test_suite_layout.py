@@ -375,7 +375,6 @@ def test_pull_request_merge_validation_stages_expensive_work_and_always_reports_
     assert "cancel-in-progress: true" in workflow
 
     stage_one = {
-        "unit-tests": "uses: ./.github/workflows/tests.yml",
         "code-quality": "uses: ./.github/workflows/static-analysis.yml",
         "parser-contract": "uses: ./.github/workflows/parser-reference-guard.yml",
     }
@@ -384,23 +383,29 @@ def test_pull_request_merge_validation_stages_expensive_work_and_always_reports_
         assert reusable_workflow in block
         assert "needs:" not in block
 
-    for job_id, reusable_workflow in (
-        ("native-libraries", "uses: ./.github/workflows/blas-lapack.yml"),
-        ("compiler-compatibility", "uses: ./.github/workflows/fortran-toolchain-smoke.yml"),
-    ):
-        block = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, job_id)
-        assert "needs: [unit-tests, code-quality, parser-contract]" in block
-        assert reusable_workflow in block
+    compiler_compatibility = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "compiler-compatibility")
+    assert "needs: [code-quality, parser-contract]" in compiler_compatibility
+    assert "uses: ./.github/workflows/fortran-toolchain-smoke.yml" in compiler_compatibility
+
+    unit_tests = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "unit-tests")
+    assert "needs: compiler-compatibility" in unit_tests
+    assert "uses: ./.github/workflows/tests.yml" in unit_tests
 
     coverage = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "project-coverage")
-    assert "needs: [native-libraries, compiler-compatibility]" in coverage
+    assert "needs: compiler-compatibility" in coverage
     assert "uses: ./.github/workflows/coverage.yml" in coverage
     assert "id-token: write" in coverage
 
+    native_libraries = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "native-libraries")
+    assert "needs: [unit-tests, project-coverage]" in native_libraries
+    assert "uses: ./.github/workflows/blas-lapack.yml" in native_libraries
+
     documentation = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "documentation")
-    assert "needs: project-coverage" in documentation
+    assert "needs: native-libraries" in documentation
     assert "uses: ./.github/workflows/docs.yml" in documentation
     assert "run_performance_benchmark: true" in documentation
+    assert "pages: write" in documentation
+    assert "id-token: write" in documentation
 
     gate = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "merge-gate")
     assert "if: ${{ always() }}" in gate

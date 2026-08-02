@@ -31,16 +31,18 @@ testing and pre-commit are not part of the active stack.
 | Annual dependency review | Dependency vulnerability audit outside the routine per-change gate |
 
 Active GitHub Actions checks use stable, self-contained job names. Pull requests
-are coordinated by `Merge Validation` in four stages:
+are coordinated by `Merge Validation` in five stages:
 
-1. The unit-test matrix, static analysis, and parser-reference contract run in
-   parallel.
-2. BLAS/LAPACK validation and alternate-compiler compatibility run in parallel
-   after every first-stage check succeeds.
-3. The Python 3.12 project-coverage gate runs after all preceding checks pass.
-4. The same pinned ARM64 documentation performance benchmark used on `main`
-   runs after coverage, and its generated snapshot is consumed by the strict
-   documentation build.
+1. Static analysis and the parser-reference contract run in parallel.
+2. Alternate-compiler smoke testing starts only after both fast policy checks
+   succeed.
+3. The unit-test matrix and Python 3.12 project-coverage gate run in parallel
+   after compiler smoke testing succeeds.
+4. BLAS/LAPACK validation starts only after both ordinary testing and coverage
+   succeed.
+5. The same pinned ARM64 documentation performance benchmark used on `main`
+   runs after native-library validation, and its generated snapshot is consumed
+   by the strict documentation build.
 
 An aggregate job runs with `always()` after every stage and fails unless all
 required stage results succeeded. Configure the repository ruleset with this

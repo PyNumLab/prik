@@ -45,12 +45,13 @@ dedicated Ubuntu workflow.
 The `Compiler Compatibility` workflow also runs LLVM Flang on macOS 15. Intel
 IFX remains Linux-only because Intel does not provide IFX for macOS.
 
-For pull requests, `Merge Validation` runs the test matrix, code quality, and
-parser contract first. Native-library and compiler-compatibility work starts
-only after that stage succeeds. Project
-coverage follows those expensive checks, then the documentation performance
-benchmark and strict site build run last. An `always()` aggregate job converts
-any failed or dependency-skipped required stage into one stable ruleset result.
+For pull requests, `Merge Validation` runs code quality and the parser contract
+first. Compiler-compatibility smoke testing starts only after both policy checks
+succeed. The ordinary test matrix and project coverage then run in parallel;
+native-library validation waits for both of them, and the documentation
+performance benchmark and strict site build run last. An `always()` aggregate
+job converts any failed or dependency-skipped required stage into one stable
+ruleset result.
 
 ## Documentation Publication
 

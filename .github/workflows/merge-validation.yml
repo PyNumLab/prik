@@ -12,10 +12,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  unit-tests:
-    name: Unit-test matrix stage
-    uses: ./.github/workflows/tests.yml
-
   code-quality:
     name: Code-quality stage
     uses: ./.github/workflows/static-analysis.yml
@@ -24,27 +20,36 @@ jobs:
     name: Parser-contract stage
     uses: ./.github/workflows/parser-reference-guard.yml
 
-  native-libraries:
-    name: Native-library stage
-    needs: [unit-tests, code-quality, parser-contract]
-    uses: ./.github/workflows/blas-lapack.yml
-
   compiler-compatibility:
     name: Compiler-compatibility stage
-    needs: [unit-tests, code-quality, parser-contract]
+    needs: [code-quality, parser-contract]
     uses: ./.github/workflows/fortran-toolchain-smoke.yml
+
+  unit-tests:
+    name: Unit-test matrix stage
+    needs: compiler-compatibility
+    uses: ./.github/workflows/tests.yml
 
   project-coverage:
     name: Project-coverage stage
-    needs: [native-libraries, compiler-compatibility]
+    needs: compiler-compatibility
     permissions:
       contents: read
       id-token: write
     uses: ./.github/workflows/coverage.yml
 
+  native-libraries:
+    name: Native-library stage
+    needs: [unit-tests, project-coverage]
+    uses: ./.github/workflows/blas-lapack.yml
+
   documentation:
     name: Documentation benchmark and site-build stage
-    needs: project-coverage
+    needs: native-libraries
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     uses: ./.github/workflows/docs.yml
     with:
       run_performance_benchmark: true
