@@ -15,9 +15,11 @@ that maintainers can preview locally, uploads the generated `site/` directory,
 and deploys it through GitHub Pages.
 
 Workflow names identify a unique pipeline scope, and every job display name is
-self-contained. Pull requests expose one aggregate required check after the
-staged component workflows complete. Required status checks must use the exact
-`workflow / job` context documented in the
+self-contained. The `Pull Request` workflow declares the staged validation jobs
+directly, avoiding the extra caller and called-workflow name layers produced by
+nested reusable workflows. Pull requests expose one aggregate required check
+after those jobs complete. Required status checks must use the exact `workflow
+/ job` context documented in the
 [quality-assurance guide](../developer/quality-assurance.md). Because GitHub
 treats a renamed check as a different context, update the repository ruleset
 whenever either half of that name changes.
@@ -45,22 +47,25 @@ dedicated Ubuntu workflow.
 The `Compiler Compatibility` workflow also runs LLVM Flang on macOS 15. Intel
 IFX remains Linux-only because Intel does not provide IFX for macOS.
 
-For pull requests, `Merge Validation` runs code quality and the parser contract
+For pull requests, `Pull Request` runs code quality and the parser contract
 first. Compiler-compatibility smoke testing starts only after both policy checks
-succeed. The ordinary test matrix and project coverage then run in parallel;
-native-library validation waits for both of them, and the documentation
+succeed. The Ubuntu Python 3.12 matrix entry records and uploads project
+coverage, avoiding a second job that would execute the same suite.
+Native-library validation waits for the complete matrix, and the documentation
 performance benchmark and strict site build run last. An `always()` aggregate
 job converts any failed or dependency-skipped required stage into one stable
-ruleset result.
+ruleset result. The purpose-specific workflows remain independent entry points
+for main, release, scheduled, and manual execution; the pull-request workflow
+does not call them as nested reusable workflows.
 
 ## Documentation Publication
 
-The `Documentation` workflow is called by `Merge Validation` for every pull
-request and also runs on pushes to `main` and manual dispatches. Pull requests
-run the pinned performance benchmark, consume its generated snapshot, execute
-the documentation tests, and perform a strict production build without
-deploying. A push to `main` repeats those checks and deploys the reviewed site
-when GitHub Pages is configured to use GitHub Actions.
+The `Pull Request` workflow runs the pinned performance benchmark, consumes its
+generated snapshot, executes the documentation tests, and performs a strict
+production build without deploying. The independent `Documentation` workflow
+runs on pushes to `main` and manual dispatches, repeats those checks, and
+deploys the reviewed site when GitHub Pages is configured to use GitHub
+Actions.
 
 Every validated pull request and push to `main` runs the same prik/f2py
 correctness and rigorous performance suite. The job extracts its platform and

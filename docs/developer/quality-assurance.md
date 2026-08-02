@@ -31,15 +31,16 @@ testing and pre-commit are not part of the active stack.
 | Annual dependency review | Dependency vulnerability audit outside the routine per-change gate |
 
 Active GitHub Actions checks use stable, self-contained job names. Pull requests
-are coordinated by `Merge Validation` in five stages:
+are coordinated by `Pull Request` in five stages:
 
 1. Static analysis and the parser-reference contract run in parallel.
 2. Alternate-compiler smoke testing starts only after both fast policy checks
    succeed.
-3. The unit-test matrix and Python 3.12 project-coverage gate run in parallel
-   after compiler smoke testing succeeds.
-4. BLAS/LAPACK validation starts only after both ordinary testing and coverage
-   succeed.
+3. The unit-test matrix starts after compiler smoke testing succeeds; its
+   Ubuntu Python 3.12 entry owns the project-coverage gate instead of repeating
+   that suite in a separate job.
+4. BLAS/LAPACK validation starts only after the complete unit-test matrix,
+   including its coverage entry, succeeds.
 5. The same pinned ARM64 documentation performance benchmark used on `main`
    runs after native-library validation, and its generated snapshot is consumed
    by the strict documentation build.
@@ -48,13 +49,15 @@ An aggregate job runs with `always()` after every stage and fails unless all
 required stage results succeeded. Configure the repository ruleset with this
 single required status check:
 
-- `Merge Validation / Pull request validation · all required checks`.
+- `Pull Request / Validation · all required checks`.
 
 Treat that string as ruleset API. If its workflow or job display name changes,
 replace the corresponding required-status-check entry; do not retain an alias
-job for the previous name. The component workflows retain complete display
-names for diagnostics and for their independent main, release, scheduled, and
-manual runs.
+job for the previous name. The pull-request workflow declares its jobs directly
+so check names contain only the `Pull Request` workflow name and the actual job
+name; it does not add reusable-workflow caller stages between them. The
+purpose-specific workflows retain the same complete job names for their
+independent main, release, scheduled, and manual runs.
 
 ## Install
 

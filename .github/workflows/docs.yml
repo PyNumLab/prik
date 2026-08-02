@@ -4,20 +4,13 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-  workflow_call:
-    inputs:
-      run_performance_benchmark:
-        description: Run the pinned ARM64 performance benchmark before building the site.
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: read
 
 concurrency:
   group: documentation-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 env:
   PRIK_GFORTRAN_BINARY: gfortran-13
@@ -26,11 +19,6 @@ env:
 jobs:
   benchmark:
     name: Documentation performance benchmark · Ubuntu 24.04 ARM64 · Python 3.12
-    if: >-
-      ${{
-        inputs.run_performance_benchmark ||
-        (github.ref == 'refs/heads/main' && github.event_name != 'pull_request')
-      }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 90
     permissions:
@@ -136,11 +124,6 @@ jobs:
         run: python -m pip install -e ".[docs,qa]"
 
       - name: Download generated Performance snapshot
-        if: >-
-          ${{
-            inputs.run_performance_benchmark ||
-            (github.ref == 'refs/heads/main' && github.event_name != 'pull_request')
-          }}
         uses: actions/download-artifact@v4
         with:
           name: performance-snapshot

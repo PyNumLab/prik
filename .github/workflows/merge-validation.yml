@@ -1,4 +1,4 @@
-name: Merge Validation
+name: Pull Request
 
 on:
   pull_request:
@@ -8,89 +8,814 @@ permissions:
   contents: read
 
 concurrency:
-  group: merge-validation-${{ github.ref }}
+  group: pull-request-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  PRIK_GFORTRAN_BINARY: gfortran-13
+  PRIK_GFORTRAN_PACKAGE: gfortran-13
+  PRIK_IFX_VERSION: "2026.1.1"
+  PRIK_FLANG_VERSION: "22.1.8"
+  PRIK_FLANG_RUNTIME_VERSION: "22.1.7"
+
 jobs:
-  code-quality:
-    name: Code-quality stage
-    uses: ./.github/workflows/static-analysis.yml
+  static-analysis:
+    name: Static analysis · Ubuntu 24.04 · Python 3.12
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install QA dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[qa]"
+      - name: Verify static-analysis versions
+        run: python tools/check_static_analysis_versions.py
+      - name: Ruff lint
+        run: python -m ruff check .
+      - name: Ruff format
+        run: python -m ruff format --check .
+      - name: Wrapper-plan generator contracts
+        run: python tools/check_wrapper_codegen_complexity.py
+      - name: Bandit security scan
+        run: python -m bandit -c pyproject.toml -r prik --severity-level medium --confidence-level medium
+      - name: Vulture dead-code scan
+        run: python -m vulture
+      - name: Radon complexity policy
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: python tools/check_radon_policy.py --base-ref auto
+      - name: Radon complexity report
+        continue-on-error: true
+        run: python -m radon cc prik -n C -s --total-average
+      - name: Radon maintainability report
+        continue-on-error: true
+        run: python -m radon mi prik -s
 
-  parser-contract:
-    name: Parser-contract stage
-    uses: ./.github/workflows/parser-reference-guard.yml
+  parser-reference-guard:
+    name: Parser reference guard · Ubuntu 24.04
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify parser references were updated when needed
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          set -euo pipefail
+          CHANGED_FILES=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
 
-  compiler-compatibility:
-    name: Compiler-compatibility stage
-    needs: [code-quality, parser-contract]
-    uses: ./.github/workflows/fortran-toolchain-smoke.yml
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+          echo "PR labels: ${PR_LABELS:-<none>}"
+
+          FORCE_LABEL="require-parser-reference-update"
+          IGNORE_LABEL="ignore-parser-reference-guard"
+
+          if [[ ",${PR_LABELS}," == *",${FORCE_LABEL},"* && \
+                ",${PR_LABELS}," == *",${IGNORE_LABEL},"* ]]; then
+            echo "Conflicting labels: ${FORCE_LABEL} and ${IGNORE_LABEL}. Remove one."
+            exit 1
+          fi
+
+          if [[ ",${PR_LABELS}," == *",${IGNORE_LABEL},"* ]]; then
+            echo "${IGNORE_LABEL} label present; skipping guard."
+            exit 0
+          fi
+
+          C_DOC="docs/developer/c-parser-reference.md"
+          FORTRAN_DOC="docs/developer/fortran-parser-reference.md"
+          PYI_DOC="docs/user/reference/semantic-pyi-format.md"
+
+          C_DOC_CHANGED=false
+          FORTRAN_DOC_CHANGED=false
+          PYI_DOC_CHANGED=false
+          C_PARSER_CHANGED=false
+          FORTRAN_PARSER_CHANGED=false
+          PYI_PARSER_CHANGED=false
+          SHARED_PARSER_CHANGED=false
+
+          if grep -Fxq "$C_DOC" <<< "$CHANGED_FILES"; then
+            C_DOC_CHANGED=true
+          fi
+          if grep -Fxq "$FORTRAN_DOC" <<< "$CHANGED_FILES"; then
+            FORTRAN_DOC_CHANGED=true
+          fi
+          if grep -Fxq "$PYI_DOC" <<< "$CHANGED_FILES"; then
+            PYI_DOC_CHANGED=true
+          fi
+
+          while IFS= read -r changed_file; do
+            case "$changed_file" in
+              prik/parsers/c/*|tests/c/parsing/*|tests/c/fixtures/*|tests/c/probes/test_c_types.py)
+                C_PARSER_CHANGED=true
+                ;;
+              prik/parsers/fortran/*|tests/fortran/source_parsing/parsing/*|tests/fortran/data_types/probes/test_fortran_type_probes.py)
+                FORTRAN_PARSER_CHANGED=true
+                ;;
+              prik/parsers/pyi/*|tests/fortran/semantic_pyi_format/*)
+                PYI_PARSER_CHANGED=true
+                ;;
+              tests/fortran/command_line_interface/pipeline/*|\
+              tests/fortran/source_preprocessing/preprocessing/*|\
+              prik/parsers/__init__.py|\
+              prik/preprocessing.py)
+                SHARED_PARSER_CHANGED=true
+                ;;
+            esac
+          done <<< "$CHANGED_FILES"
+
+          if [[ ",${PR_LABELS}," == *",${FORCE_LABEL},"* ]]; then
+            if [ "$C_DOC_CHANGED" = true ] || [ "$FORTRAN_DOC_CHANGED" = true ] || [ "$PYI_DOC_CHANGED" = true ]; then
+              echo "${FORCE_LABEL} label present and at least one parser reference changed."
+            else
+              echo "${FORCE_LABEL} label present, but no parser reference changed."
+              echo "Update ${C_DOC}, ${FORTRAN_DOC}, or ${PYI_DOC}, or remove ${FORCE_LABEL}."
+              exit 1
+            fi
+          fi
+
+          FAILED=false
+
+          if [ "$C_PARSER_CHANGED" = true ] && [ "$C_DOC_CHANGED" != true ]; then
+            echo "C parser-related files changed without updating ${C_DOC}."
+            FAILED=true
+          fi
+
+          if [ "$FORTRAN_PARSER_CHANGED" = true ] && [ "$FORTRAN_DOC_CHANGED" != true ]; then
+            echo "Fortran parser-related files changed without updating ${FORTRAN_DOC}."
+            FAILED=true
+          fi
+
+          if [ "$PYI_PARSER_CHANGED" = true ] && [ "$PYI_DOC_CHANGED" != true ]; then
+            echo "Semantic .pyi parser-related files changed without updating ${PYI_DOC}."
+            FAILED=true
+          fi
+
+          if [ "$SHARED_PARSER_CHANGED" = true ] && \
+             [ "$C_DOC_CHANGED" != true ] && \
+             [ "$FORTRAN_DOC_CHANGED" != true ] && \
+             [ "$PYI_DOC_CHANGED" != true ]; then
+            echo "Shared parser workflow files changed without updating a parser reference."
+            echo "Update ${C_DOC}, ${FORTRAN_DOC}, or ${PYI_DOC}, whichever behavior changed."
+            FAILED=true
+          fi
+
+          if [ "$FAILED" = true ]; then
+            echo "Use ${IGNORE_LABEL} only when the parser reference is already accurate."
+            exit 1
+          fi
+
+          if [ "$C_DOC_CHANGED" = true ]; then
+            echo "${C_DOC} changed."
+          fi
+          if [ "$FORTRAN_DOC_CHANGED" = true ]; then
+            echo "${FORTRAN_DOC} changed."
+          fi
+          if [ "$PYI_DOC_CHANGED" = true ]; then
+            echo "${PYI_DOC} changed."
+          fi
+
+          echo "Parser reference guard passed."
+
+  compiler-smoke:
+    name: Compiler smoke · ${{ matrix.display_name }}
+    needs: [static-analysis, parser-reference-guard]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - toolchain: ifx
+            display_name: Ubuntu 24.04 · Intel IFX 2026.1.1 · Python 3.12
+            environment: prik-ifx-2026.1.1
+            fortran_compiler: ifx
+            c_compiler: icx
+            cache_version: "2026.1.1-v2"
+          - toolchain: flang
+            display_name: Ubuntu 24.04 · LLVM Flang 22.1.8 · Python 3.12
+            environment: prik-flang-22.1.8
+            fortran_compiler: flang
+            c_compiler: clang
+            cache_version: "22.1.8-runtime-22.1.7-v1"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[qa]"
+      - name: Cache compiler environment
+        id: compiler-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/${{ matrix.environment }}
+          key: fortran-toolchain-${{ runner.os }}-${{ matrix.toolchain }}-${{ matrix.cache_version }}
+      - name: Install Intel IFX and ICX
+        if: matrix.toolchain == 'ifx' && steps.compiler-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          conda create --yes --solver=libmamba \
+            --prefix "$RUNNER_TEMP/${{ matrix.environment }}" \
+            --override-channels \
+            --channel https://software.repos.intel.com/python/conda/ \
+            --channel conda-forge \
+            "ifx_linux-64=$PRIK_IFX_VERSION" \
+            "dpcpp_linux-64=$PRIK_IFX_VERSION"
+      - name: Install LLVM Flang and Clang
+        if: matrix.toolchain == 'flang' && steps.compiler-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          conda create --yes --solver=libmamba \
+            --prefix "$RUNNER_TEMP/${{ matrix.environment }}" \
+            --override-channels \
+            --channel conda-forge \
+            "flang=$PRIK_FLANG_VERSION" \
+            "clang=$PRIK_FLANG_VERSION" \
+            "libflang-rt=$PRIK_FLANG_RUNTIME_VERSION"
+      - name: Export coherent compiler profile
+        shell: bash
+        run: |
+          toolchain_prefix="$RUNNER_TEMP/${{ matrix.environment }}"
+          echo "$toolchain_prefix/bin" >> "$GITHUB_PATH"
+          echo "LD_LIBRARY_PATH=$toolchain_prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+      - name: Verify compiler pair
+        shell: bash
+        run: |
+          "${RUNNER_TEMP}/${{ matrix.environment }}/bin/${{ matrix.fortran_compiler }}" --version
+          "${RUNNER_TEMP}/${{ matrix.environment }}/bin/${{ matrix.c_compiler }}" --version
+      - name: Show repository-owned lane plan
+        run: |
+          python tools/run_fortran_toolchain_lane.py \
+            --compiler "$RUNNER_TEMP/${{ matrix.environment }}/bin/${{ matrix.fortran_compiler }}" \
+            --junit-dir "$RUNNER_TEMP" \
+            --plan
+      - name: Run profile checks and strict smoke
+        env:
+          PYTHONPATH: .
+          HYPOTHESIS_PROFILE: ci
+        run: |
+          python tools/run_fortran_toolchain_lane.py \
+            --compiler "$RUNNER_TEMP/${{ matrix.environment }}/bin/${{ matrix.fortran_compiler }}" \
+            --junit-dir "$RUNNER_TEMP"
+      - name: Summarize failed pytest nodes
+        if: failure()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          reports=("$RUNNER_TEMP"/pytest-toolchain-*-results.xml)
+          for report in "${reports[@]}"; do
+            python tools/print_pytest_failures.py "$report"
+          done
+
+  compiler-smoke-macos:
+    name: Compiler smoke · macOS 15 ARM64 · LLVM Flang · Python 3.12
+    needs: [static-analysis, parser-reference-guard]
+    runs-on: macos-15
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      PRIK_MACOS_FLANG_ENVIRONMENT: prik-flang-macos
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[qa]"
+      - name: Install LLVM Flang and Clang
+        shell: bash
+        run: |
+          brew install flang
+          toolchain_prefix="$RUNNER_TEMP/$PRIK_MACOS_FLANG_ENVIRONMENT"
+          flang_prefix="$(brew --prefix flang)"
+          llvm_prefix="$(brew --prefix llvm)"
+          flang_c_include="$flang_prefix/include/flang"
+          test -f "$flang_c_include/ISO_Fortran_binding.h"
+          mkdir -p "$toolchain_prefix/bin"
+          ln -sf "$flang_prefix/bin/flang" "$toolchain_prefix/bin/flang"
+          ln -sf "$llvm_prefix/bin/clang" "$toolchain_prefix/bin/clang"
+          echo "$toolchain_prefix/bin" >> "$GITHUB_PATH"
+          echo "C_INCLUDE_PATH=$flang_c_include${C_INCLUDE_PATH:+:$C_INCLUDE_PATH}" >> "$GITHUB_ENV"
+          echo "DYLD_LIBRARY_PATH=$flang_prefix/lib:$llvm_prefix/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" \
+            >> "$GITHUB_ENV"
+      - name: Verify macOS compiler pair
+        shell: bash
+        run: |
+          echo "runner image: ${ImageOS:-unknown} ${ImageVersion:-unknown}"
+          sw_vers
+          uname -m
+          python --version
+          command -v flang
+          flang --version
+          command -v clang
+          clang --version
+          printf '#include <ISO_Fortran_binding.h>\n' |
+            clang -std=c99 -fsyntax-only -x c -
+      - name: Show repository-owned lane plan
+        run: |
+          python tools/run_fortran_toolchain_lane.py \
+            --compiler flang \
+            --junit-dir "$RUNNER_TEMP" \
+            --plan
+      - name: Run profile checks and strict smoke
+        env:
+          PYTHONPATH: .
+          HYPOTHESIS_PROFILE: ci
+        run: |
+          python tools/run_fortran_toolchain_lane.py \
+            --compiler flang \
+            --junit-dir "$RUNNER_TEMP"
+      - name: Summarize failed pytest nodes
+        if: failure()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          reports=("$RUNNER_TEMP"/pytest-toolchain-*-results.xml)
+          for report in "${reports[@]}"; do
+            python tools/print_pytest_failures.py "$report"
+          done
 
   unit-tests:
-    name: Unit-test matrix stage
-    needs: compiler-compatibility
-    uses: ./.github/workflows/tests.yml
-
-  project-coverage:
-    name: Project-coverage stage
-    needs: compiler-compatibility
+    name: ${{ matrix.display_name }}
+    needs: [compiler-smoke, compiler-smoke-macos]
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       id-token: write
-    uses: ./.github/workflows/coverage.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python-version: "3.10"
+            display_name: Unit tests · Ubuntu 24.04 · Python 3.10
+            coverage: false
+          - python-version: "3.11"
+            display_name: Unit tests · Ubuntu 24.04 · Python 3.11
+            coverage: false
+          - python-version: "3.12"
+            display_name: Unit tests + project coverage · Ubuntu 24.04 · Python 3.12
+            coverage: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[qa]"
+      - name: Install pinned GFortran
+        shell: bash
+        run: |
+          if ! command -v "$PRIK_GFORTRAN_BINARY" >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --yes "$PRIK_GFORTRAN_PACKAGE"
+          fi
+          compiler_dir="$RUNNER_TEMP/prik-gfortran"
+          mkdir -p "$compiler_dir"
+          ln -sf "$(command -v "$PRIK_GFORTRAN_BINARY")" "$compiler_dir/gfortran"
+          echo "$compiler_dir" >> "$GITHUB_PATH"
+          "$compiler_dir/gfortran" --version
+      - name: Run tests
+        if: ${{ !matrix.coverage }}
+        shell: bash
+        env:
+          PYTHONPATH: .
+          HYPOTHESIS_PROFILE: ci
+        run: |
+          python -m pytest -q --randomly-seed=1 \
+            -o junit_family=legacy \
+            --junitxml="$RUNNER_TEMP/pytest-smoke-results.xml" \
+            tests/fortran \
+            -m toolchain_smoke \
+            --require-toolchain-smoke \
+            --prik-fortran-compiler=gfortran
+          python -m pytest -q --randomly-seed=1 \
+            -o junit_family=legacy \
+            --junitxml="$RUNNER_TEMP/pytest-suite-results.xml" \
+            -m "not real_library and not toolchain_smoke" \
+            tests/architecture \
+            tests/c \
+            tests/fortran \
+            tests/shared
+      - name: Run tests with project coverage
+        if: ${{ matrix.coverage }}
+        shell: bash
+        env:
+          PYTHONPATH: .
+          HYPOTHESIS_PROFILE: ci
+          COVERAGE_PROCESS_START: ${{ github.workspace }}/pyproject.toml
+        run: |
+          python -m coverage run -m pytest -q --randomly-seed=1 \
+            -o junit_family=legacy \
+            --junitxml="$RUNNER_TEMP/pytest-smoke-results.xml" \
+            tests/fortran \
+            -m toolchain_smoke \
+            --require-toolchain-smoke \
+            --prik-fortran-compiler=gfortran
+          python -m coverage run -m pytest -q --randomly-seed=1 \
+            -o junit_family=legacy \
+            --junitxml="$RUNNER_TEMP/pytest-suite-results.xml" \
+            -m "not real_library and not toolchain_smoke" \
+            tests/architecture \
+            tests/c \
+            tests/fortran \
+            tests/shared
+      - name: Summarize failed pytest nodes
+        if: failure()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          reports=("$RUNNER_TEMP"/pytest-*-results.xml)
+          for report in "${reports[@]}"; do
+            python tools/print_pytest_failures.py "$report"
+          done
+      - name: Combine coverage data
+        if: ${{ matrix.coverage }}
+        run: python -m coverage combine
+      - name: Report coverage
+        if: ${{ matrix.coverage }}
+        run: python -m coverage report
+      - name: Emit coverage XML
+        if: ${{ matrix.coverage }}
+        run: python -m coverage xml -o coverage.xml
+      - name: Upload coverage to Codecov
+        if: ${{ matrix.coverage }}
+        uses: codecov/codecov-action@v6
+        with:
+          files: ./coverage.xml
+          flags: py312
+          use_oidc: true
+          fail_ci_if_error: true
+
+  unit-tests-macos:
+    name: Unit tests · macOS 15 ARM64 · Python 3.12
+    needs: [compiler-smoke, compiler-smoke-macos]
+    runs-on: macos-15
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    env:
+      PRIK_GFORTRAN_BINARY: gfortran-13
+      PRIK_GCC_BINARY: gcc-13
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[qa]"
+      - name: Configure GNU Fortran and GCC 13
+        shell: bash
+        run: |
+          if ! command -v "$PRIK_GFORTRAN_BINARY" >/dev/null 2>&1 || \
+             ! command -v "$PRIK_GCC_BINARY" >/dev/null 2>&1; then
+            brew install gcc@13
+          fi
+          compiler_dir="$RUNNER_TEMP/prik-gfortran"
+          mkdir -p "$compiler_dir"
+          ln -sf "$(command -v "$PRIK_GFORTRAN_BINARY")" "$compiler_dir/gfortran"
+          ln -sf "$(command -v "$PRIK_GCC_BINARY")" "$compiler_dir/gcc"
+          echo "$compiler_dir" >> "$GITHUB_PATH"
+      - name: Show macOS test environment
+        shell: bash
+        run: |
+          echo "runner image: ${ImageOS:-unknown} ${ImageVersion:-unknown}"
+          sw_vers
+          uname -m
+          python --version
+          command -v gfortran
+          gfortran --version
+          command -v gcc
+          gcc --version
+      - name: Show repository-owned lane plan
+        run: |
+          python tools/run_fortran_toolchain_lane.py \
+            --compiler gfortran \
+            --junit-dir "$RUNNER_TEMP" \
+            --plan
+      - name: Run compiler checks and strict smoke
+        env:
+          PYTHONPATH: .
+          HYPOTHESIS_PROFILE: ci
+        run: |
+          python tools/run_fortran_toolchain_lane.py \
+            --compiler gfortran \
+            --junit-dir "$RUNNER_TEMP"
+      - name: Run full suite without BLAS or LAPACK
+        env:
+          PYTHONPATH: .
+          HYPOTHESIS_PROFILE: ci
+        run: |
+          python -m pytest -q --randomly-seed=1 \
+            -o junit_family=legacy \
+            --junitxml="$RUNNER_TEMP/pytest-macos-suite-results.xml" \
+            -m "not real_library and not toolchain_smoke" \
+            tests/architecture \
+            tests/c \
+            tests/fortran \
+            tests/shared
+      - name: Summarize failed pytest nodes
+        if: failure()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          reports=("$RUNNER_TEMP"/pytest-*-results.xml)
+          for report in "${reports[@]}"; do
+            python tools/print_pytest_failures.py "$report"
+          done
 
   native-libraries:
-    name: Native-library stage
-    needs: [unit-tests, project-coverage]
-    uses: ./.github/workflows/blas-lapack.yml
-
-  documentation:
-    name: Documentation benchmark and site-build stage
-    needs: native-libraries
+    name: BLAS + LAPACK · Ubuntu 24.04 · Python 3.12
+    needs: [unit-tests, unit-tests-macos]
+    if: >-
+      ${{ !contains(github.event.pull_request.labels.*.name, 'ignore-real-library-wrappers') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
     permissions:
       contents: read
-      pages: write
-      id-token: write
-    uses: ./.github/workflows/docs.yml
-    with:
-      run_performance_benchmark: true
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[qa]"
+          python -m pip install \
+            "meson==1.11.2" \
+            "ninja==1.13.0" \
+            "scipy==1.18.0"
+      - name: Install pinned GFortran and LAPACK link dependencies
+        shell: bash
+        run: |
+          packages=(libblas-dev liblapack-dev)
+          if ! command -v "$PRIK_GFORTRAN_BINARY" >/dev/null 2>&1; then
+            packages+=("$PRIK_GFORTRAN_PACKAGE")
+          fi
+          sudo apt-get update
+          sudo apt-get install --yes "${packages[@]}"
+          compiler_dir="$RUNNER_TEMP/prik-gfortran"
+          mkdir -p "$compiler_dir"
+          ln -sf "$(command -v "$PRIK_GFORTRAN_BINARY")" "$compiler_dir/gfortran"
+          echo "$compiler_dir" >> "$GITHUB_PATH"
+          "$compiler_dir/gfortran" --version
+      - name: Restore compiled native library cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/prik-real-library-native
+          key: real-libraries-${{ runner.os }}-gfortran13-${{ hashFiles('examples/blas/native/**', 'examples/lapack/native/**') }}
+      - name: Run complete BLAS correctness example
+        env:
+          PYTHONPATH: .
+          HYPOTHESIS_PROFILE: ci
+        run: python -m pytest -q examples/blas
+      - name: Report reviewed LAPACK inventory
+        env:
+          PYTHONPATH: .
+        run: |
+          python - <<'PY'
+          from examples.lapack.routine_inventory import (
+              EXPECTED_LAPACK_ROOT_PROCEDURES,
+              EXPECTED_LAPACK_SOURCE_FILES,
+              F2PY_NUMERICAL_LIMITATIONS,
+              ROUTINE_GROUPS,
+              ROUTINES,
+              SCIPY_VERSION,
+          )
+
+          print(f"SciPy version: {SCIPY_VERSION}")
+          print(f"LAPACK implementation sources: {EXPECTED_LAPACK_SOURCE_FILES}")
+          print(f"Expected PRIK root procedures: {EXPECTED_LAPACK_ROOT_PROCEDURES}")
+          print(f"Selected float64 correctness routines: {len(ROUTINES)}")
+          print(f"Raw-f2py numerical limitations: {len(F2PY_NUMERICAL_LIMITATIONS)}")
+          for family, routines in ROUTINE_GROUPS.items():
+              print(f"  {family}: {len(routines)}")
+          PY
+      - name: Run SciPy-exposed LAPACK correctness example
+        env:
+          PYTHONPATH: .
+          HYPOTHESIS_PROFILE: ci
+          PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR: ${{ runner.temp }}/prik-real-library-native
+        run: python -m pytest -q examples/lapack
+      - name: Run full BLAS and LAPACK wrapper tests
+        env:
+          PYTHONPATH: .
+          HYPOTHESIS_PROFILE: ci
+          PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR: ${{ runner.temp }}/prik-real-library-native
+        run: |
+          python -m pytest -q --randomly-seed=1 \
+            "tests/fortran/building_shared_library/end_to_end/real_libraries/test_full_libraries.py::test_full_library_wrapper_imports_every_root_procedure_from_cached_shared_library[blas]" \
+            "tests/fortran/building_shared_library/end_to_end/real_libraries/test_full_libraries.py::test_full_library_wrapper_imports_every_root_procedure_from_cached_shared_library[lapack]"
+
+  documentation-benchmark:
+    name: Documentation performance benchmark · Ubuntu 24.04 ARM64 · Python 3.12
+    needs: native-libraries
+    if: >-
+      ${{
+        always() &&
+        (needs.native-libraries.result == 'success' ||
+         (needs.native-libraries.result == 'skipped' &&
+          contains(github.event.pull_request.labels.*.name, 'ignore-real-library-wrappers')))
+      }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Verify and record benchmark host
+        run: >-
+          python tools/benchmark_host.py
+          --require-machine aarch64
+          --require-arm-part 0xd49
+          --github-env "$GITHUB_ENV"
+      - name: Install benchmark dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[docs]" \
+            "numpy==2.5.1" \
+            "meson==1.11.2" \
+            "ninja==1.13.0"
+      - name: Install pinned GFortran
+        shell: bash
+        run: |
+          if ! command -v "$PRIK_GFORTRAN_BINARY" >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --yes "$PRIK_GFORTRAN_PACKAGE"
+          fi
+          compiler_dir="$RUNNER_TEMP/prik-gfortran"
+          mkdir -p "$compiler_dir"
+          ln -sf "$(command -v "$PRIK_GFORTRAN_BINARY")" "$compiler_dir/gfortran"
+          echo "$compiler_dir" >> "$GITHUB_PATH"
+          "$compiler_dir/gfortran" --version
+      - name: Run correctness and rigorous performance suite
+        shell: bash
+        run: |
+          if (( GITHUB_RUN_NUMBER % 2 == 0 )); then
+            export PRIK_BENCHMARK_FIRST=f2py
+          else
+            export PRIK_BENCHMARK_FIRST=prik
+          fi
+          bash benchmarks/run.sh
+      - name: Generate public Performance snapshot
+        run: |
+          python tools/generate_performance_docs.py \
+            --commit "$GITHUB_SHA"
+      - name: Report measurement stability
+        run: |
+          python -m pyperf check \
+            benchmarks/results/f2py.json \
+            benchmarks/results/prik.json \
+            benchmarks/results/f2py-build.json \
+            benchmarks/results/prik-build.json
+      - name: Upload Performance snapshot and raw results
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-snapshot
+          path: |
+            benchmarks/results/f2py.json
+            benchmarks/results/prik.json
+            benchmarks/results/f2py-build.json
+            benchmarks/results/prik-build.json
+            docs/user/performance.md
+            docs/user/assets/performance-comparison.svg
+            docs/user/assets/build-time-comparison.svg
+          retention-days: 90
+
+  documentation-build:
+    name: Documentation site build · Ubuntu 24.04 · Python 3.12
+    needs: documentation-benchmark
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install documentation dependencies
+        run: python -m pip install -e ".[docs,qa]"
+      - name: Download generated Performance snapshot
+        uses: actions/download-artifact@v4
+        with:
+          name: performance-snapshot
+          path: .
+      - name: Run documentation tests
+        run: python -m pytest -q tests/shared/docs
+      - name: Build reviewed documentation
+        run: python -m mkdocs build --strict
 
   merge-gate:
-    name: Pull request validation · all required checks
+    name: Validation · all required checks
     if: ${{ always() }}
     needs:
+      - static-analysis
+      - parser-reference-guard
+      - compiler-smoke
+      - compiler-smoke-macos
       - unit-tests
-      - code-quality
-      - parser-contract
+      - unit-tests-macos
       - native-libraries
-      - compiler-compatibility
-      - project-coverage
-      - documentation
+      - documentation-benchmark
+      - documentation-build
     runs-on: ubuntu-24.04
     permissions: {}
     env:
+      STATIC_ANALYSIS_RESULT: ${{ needs.static-analysis.result }}
+      PARSER_REFERENCE_RESULT: ${{ needs.parser-reference-guard.result }}
+      COMPILER_SMOKE_RESULT: ${{ needs.compiler-smoke.result }}
+      COMPILER_SMOKE_MACOS_RESULT: ${{ needs.compiler-smoke-macos.result }}
       UNIT_TESTS_RESULT: ${{ needs.unit-tests.result }}
-      CODE_QUALITY_RESULT: ${{ needs.code-quality.result }}
-      PARSER_CONTRACT_RESULT: ${{ needs.parser-contract.result }}
+      UNIT_TESTS_MACOS_RESULT: ${{ needs.unit-tests-macos.result }}
       NATIVE_LIBRARIES_RESULT: ${{ needs.native-libraries.result }}
-      COMPILER_COMPATIBILITY_RESULT: ${{ needs.compiler-compatibility.result }}
-      PROJECT_COVERAGE_RESULT: ${{ needs.project-coverage.result }}
-      DOCUMENTATION_RESULT: ${{ needs.documentation.result }}
+      DOCUMENTATION_BENCHMARK_RESULT: ${{ needs.documentation-benchmark.result }}
+      DOCUMENTATION_BUILD_RESULT: ${{ needs.documentation-build.result }}
+      IGNORE_NATIVE_LIBRARIES: ${{ contains(github.event.pull_request.labels.*.name, 'ignore-real-library-wrappers') }}
     steps:
       - name: Require every staged validation result
         shell: bash
         run: |
           failed=0
           for staged_result in \
+            "static-analysis=$STATIC_ANALYSIS_RESULT" \
+            "parser-reference=$PARSER_REFERENCE_RESULT" \
+            "compiler-smoke=$COMPILER_SMOKE_RESULT" \
+            "compiler-smoke-macos=$COMPILER_SMOKE_MACOS_RESULT" \
             "unit-tests=$UNIT_TESTS_RESULT" \
-            "code-quality=$CODE_QUALITY_RESULT" \
-            "parser-contract=$PARSER_CONTRACT_RESULT" \
+            "unit-tests-macos=$UNIT_TESTS_MACOS_RESULT" \
             "native-libraries=$NATIVE_LIBRARIES_RESULT" \
-            "compiler-compatibility=$COMPILER_COMPATIBILITY_RESULT" \
-            "project-coverage=$PROJECT_COVERAGE_RESULT" \
-            "documentation=$DOCUMENTATION_RESULT"
+            "documentation-benchmark=$DOCUMENTATION_BENCHMARK_RESULT" \
+            "documentation-build=$DOCUMENTATION_BUILD_RESULT"
           do
             stage=${staged_result%%=*}
             result=${staged_result#*=}
+            if [[ "$stage" == "native-libraries" && \
+                  "$result" == "skipped" && \
+                  "$IGNORE_NATIVE_LIBRARIES" == "true" ]]; then
+              continue
+            fi
             if [[ "$result" != "success" ]]; then
               echo "::error::$stage finished with result: $result"
               failed=1

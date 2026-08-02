@@ -17,7 +17,6 @@ CODECOV_CONFIG = REPO_ROOT / "codecov.yml"
 DOCS_WORKFLOW = REPO_ROOT / ".github/workflows/docs.yml"
 FORTRAN_SMOKE_WORKFLOW = REPO_ROOT / ".github/workflows/fortran-toolchain-smoke.yml"
 MERGE_VALIDATION_WORKFLOW = REPO_ROOT / ".github/workflows/merge-validation.yml"
-PARSER_REFERENCE_WORKFLOW = REPO_ROOT / ".github/workflows/parser-reference-guard.yml"
 PUBLISH_WORKFLOW = REPO_ROOT / ".github/workflows/publish-to-pypi.yml"
 STATIC_ANALYSIS_WORKFLOW = REPO_ROOT / ".github/workflows/static-analysis.yml"
 TESTS_WORKFLOW = REPO_ROOT / ".github/workflows/tests.yml"
@@ -159,6 +158,12 @@ def _github_action_job_block(workflow: Path, job_id: str) -> str:
     return remainder if next_job is None else remainder[: next_job.start()]
 
 
+def _github_action_job_steps(workflow: Path, job_id: str) -> tuple[str, ...]:
+    block = _github_action_job_block(workflow, job_id)
+    steps = block.split("    steps:\n", maxsplit=1)[1]
+    return tuple(line for line in steps.splitlines() if line.strip())
+
+
 def test_pytest_modules_have_one_allowed_primary_owner() -> None:
     root_modules = sorted(path.name for path in TEST_ROOT.glob("test_*.py"))
     assert root_modules == []
@@ -297,8 +302,7 @@ def test_active_github_action_checks_use_distinct_workflow_scopes_and_job_names(
         COVERAGE_WORKFLOW: "Quality Metrics",
         DOCS_WORKFLOW: "Documentation",
         FORTRAN_SMOKE_WORKFLOW: "Compiler Compatibility",
-        MERGE_VALIDATION_WORKFLOW: "Merge Validation",
-        PARSER_REFERENCE_WORKFLOW: "Contract Enforcement",
+        MERGE_VALIDATION_WORKFLOW: "Pull Request",
         PUBLISH_WORKFLOW: "Release Automation",
         STATIC_ANALYSIS_WORKFLOW: "Code Quality",
         TESTS_WORKFLOW: "Test Matrix",
@@ -317,16 +321,17 @@ def test_active_github_action_checks_use_distinct_workflow_scopes_and_job_names(
             "macos-flang-smoke": "Compiler smoke · macOS 15 ARM64 · LLVM Flang · Python 3.12",
         },
         MERGE_VALIDATION_WORKFLOW: {
-            "unit-tests": "Unit-test matrix stage",
-            "code-quality": "Code-quality stage",
-            "parser-contract": "Parser-contract stage",
-            "native-libraries": "Native-library stage",
-            "compiler-compatibility": "Compiler-compatibility stage",
-            "project-coverage": "Project-coverage stage",
-            "documentation": "Documentation benchmark and site-build stage",
-            "merge-gate": "Pull request validation · all required checks",
+            "static-analysis": "Static analysis · Ubuntu 24.04 · Python 3.12",
+            "parser-reference-guard": "Parser reference guard · Ubuntu 24.04",
+            "compiler-smoke": "Compiler smoke · ${{ matrix.display_name }}",
+            "compiler-smoke-macos": "Compiler smoke · macOS 15 ARM64 · LLVM Flang · Python 3.12",
+            "unit-tests": "${{ matrix.display_name }}",
+            "unit-tests-macos": "Unit tests · macOS 15 ARM64 · Python 3.12",
+            "native-libraries": "BLAS + LAPACK · Ubuntu 24.04 · Python 3.12",
+            "documentation-benchmark": "Documentation performance benchmark · Ubuntu 24.04 ARM64 · Python 3.12",
+            "documentation-build": "Documentation site build · Ubuntu 24.04 · Python 3.12",
+            "merge-gate": "Validation · all required checks",
         },
-        PARSER_REFERENCE_WORKFLOW: {"parser-reference-guard": "Parser reference guard · Ubuntu 24.04"},
         PUBLISH_WORKFLOW: {
             "build": "PyPI distribution build · Ubuntu 24.04 · Python 3.12",
             "publish": "PyPI trusted publishing · pypi",
@@ -344,7 +349,10 @@ def test_active_github_action_checks_use_distinct_workflow_scopes_and_job_names(
     assert {workflow: _github_action_job_display_names(workflow) for workflow in expected} == expected
 
     display_names = [name for jobs in expected.values() for name in jobs.values()]
-    assert len(display_names) == len(set(display_names))
+    check_contexts = [
+        f"{workflow_names[workflow]} / {job_name}" for workflow, jobs in expected.items() for job_name in jobs.values()
+    ]
+    assert len(check_contexts) == len(set(check_contexts))
     assert all(not re.fullmatch(r"Python(?:\s+.*)?", name) for name in display_names)
 
     smoke_matrix_names = _github_matrix_display_names(FORTRAN_SMOKE_WORKFLOW)
@@ -352,71 +360,73 @@ def test_active_github_action_checks_use_distinct_workflow_scopes_and_job_names(
         "Ubuntu 24.04 · Intel IFX 2026.1.1 · Python 3.12",
         "Ubuntu 24.04 · LLVM Flang 22.1.8 · Python 3.12",
     )
-    test_python_versions = ("3.10", "3.11", "3.12")
     assert 'python-version: ["3.10", "3.11", "3.12"]' in TESTS_WORKFLOW.read_text(encoding="utf-8")
-    expanded_display_names = [name for name in display_names if "${{ matrix." not in name]
-    expanded_display_names.extend(f"Compiler smoke · {name}" for name in smoke_matrix_names)
-    expanded_display_names.extend(f"Unit tests · Ubuntu 24.04 · Python {version}" for version in test_python_versions)
-    assert len(expanded_display_names) == len(set(expanded_display_names))
-
-    documented_contexts = ("Merge Validation / Pull request validation · all required checks",)
+    documented_contexts = ("Pull Request / Validation · all required checks",)
     quality_assurance = QUALITY_ASSURANCE_DOC.read_text(encoding="utf-8")
     assert len(documented_contexts) == len(set(documented_contexts))
     for context in documented_contexts:
         assert f"`{context}`" in quality_assurance
 
 
-def test_pull_request_merge_validation_stages_expensive_work_and_always_reports_the_gate() -> None:
+def test_pull_request_declares_direct_staged_jobs_and_always_reports_the_gate() -> None:
     workflow = MERGE_VALIDATION_WORKFLOW.read_text(encoding="utf-8")
 
-    assert workflow.startswith("name: Merge Validation\n")
+    assert workflow.startswith("name: Pull Request\n")
     assert "  pull_request:\n    types: [opened, synchronize, reopened, labeled, unlabeled]" in workflow
-    assert "group: merge-validation-${{ github.ref }}" in workflow
+    assert "group: pull-request-${{ github.ref }}" in workflow
     assert "cancel-in-progress: true" in workflow
+    assert "uses: ./.github/workflows/" not in workflow
 
-    stage_one = {
-        "code-quality": "uses: ./.github/workflows/static-analysis.yml",
-        "parser-contract": "uses: ./.github/workflows/parser-reference-guard.yml",
-    }
-    for job_id, reusable_workflow in stage_one.items():
+    for job_id in ("static-analysis", "parser-reference-guard"):
         block = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, job_id)
-        assert reusable_workflow in block
         assert "needs:" not in block
+        assert "runs-on:" in block
 
-    compiler_compatibility = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "compiler-compatibility")
-    assert "needs: [code-quality, parser-contract]" in compiler_compatibility
-    assert "uses: ./.github/workflows/fortran-toolchain-smoke.yml" in compiler_compatibility
+    for job_id in ("compiler-smoke", "compiler-smoke-macos"):
+        block = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, job_id)
+        assert "needs: [static-analysis, parser-reference-guard]" in block
+        assert "runs-on:" in block
+
+    for job_id in ("unit-tests", "unit-tests-macos"):
+        block = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, job_id)
+        assert "needs: [compiler-smoke, compiler-smoke-macos]" in block
+        assert "runs-on:" in block
 
     unit_tests = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "unit-tests")
-    assert "needs: compiler-compatibility" in unit_tests
-    assert "uses: ./.github/workflows/tests.yml" in unit_tests
-
-    coverage = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "project-coverage")
-    assert "needs: compiler-compatibility" in coverage
-    assert "uses: ./.github/workflows/coverage.yml" in coverage
-    assert "id-token: write" in coverage
+    assert "Unit tests + project coverage · Ubuntu 24.04 · Python 3.12" in unit_tests
+    assert "python -m coverage combine" in unit_tests
+    assert "python -m coverage report" in unit_tests
+    assert "uses: codecov/codecov-action@v6" in unit_tests
+    assert "id-token: write" in unit_tests
 
     native_libraries = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "native-libraries")
-    assert "needs: [unit-tests, project-coverage]" in native_libraries
-    assert "uses: ./.github/workflows/blas-lapack.yml" in native_libraries
+    assert "needs: [unit-tests, unit-tests-macos]" in native_libraries
+    assert "ignore-real-library-wrappers" in native_libraries
+    assert "python -m pytest -q examples/blas" in native_libraries
+    assert "python -m pytest -q examples/lapack" in native_libraries
 
-    documentation = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "documentation")
-    assert "needs: native-libraries" in documentation
-    assert "uses: ./.github/workflows/docs.yml" in documentation
-    assert "run_performance_benchmark: true" in documentation
-    assert "pages: write" in documentation
-    assert "id-token: write" in documentation
+    benchmark = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "documentation-benchmark")
+    assert "needs: native-libraries" in benchmark
+    assert "always()" in benchmark
+    assert "bash benchmarks/run.sh" in benchmark
+
+    documentation = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "documentation-build")
+    assert "needs: documentation-benchmark" in documentation
+    assert "python -m pytest -q tests/shared/docs" in documentation
+    assert "python -m mkdocs build --strict" in documentation
 
     gate = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "merge-gate")
     assert "if: ${{ always() }}" in gate
     for dependency in (
+        "static-analysis",
+        "parser-reference-guard",
+        "compiler-smoke",
+        "compiler-smoke-macos",
         "unit-tests",
-        "code-quality",
-        "parser-contract",
+        "unit-tests-macos",
         "native-libraries",
-        "compiler-compatibility",
-        "project-coverage",
-        "documentation",
+        "documentation-benchmark",
+        "documentation-build",
     ):
         assert f"      - {dependency}" in gate
         assert f"needs.{dependency}.result" in gate
@@ -424,21 +434,39 @@ def test_pull_request_merge_validation_stages_expensive_work_and_always_reports_
     assert 'exit "$failed"' in gate
 
 
-def test_pull_request_components_run_only_through_merge_validation() -> None:
+def test_purpose_specific_workflows_do_not_create_duplicate_pull_request_runs() -> None:
     for workflow in (
         TESTS_WORKFLOW,
         STATIC_ANALYSIS_WORKFLOW,
-        PARSER_REFERENCE_WORKFLOW,
         BLAS_LAPACK_WORKFLOW,
         FORTRAN_SMOKE_WORKFLOW,
         COVERAGE_WORKFLOW,
         DOCS_WORKFLOW,
     ):
         text = workflow.read_text(encoding="utf-8")
-        assert "  workflow_call:" in text
+        assert "  workflow_call:" not in text
         assert "  pull_request:" not in text
 
     assert "run-coverage" not in COVERAGE_WORKFLOW.read_text(encoding="utf-8")
+
+
+def test_pull_request_jobs_share_the_reviewed_component_workflow_steps() -> None:
+    for pull_request_job, component_workflow, component_job in (
+        ("static-analysis", STATIC_ANALYSIS_WORKFLOW, "static-analysis"),
+        ("compiler-smoke", FORTRAN_SMOKE_WORKFLOW, "toolchain-smoke"),
+        ("compiler-smoke-macos", FORTRAN_SMOKE_WORKFLOW, "macos-flang-smoke"),
+        ("unit-tests-macos", TESTS_WORKFLOW, "macos"),
+        ("native-libraries", BLAS_LAPACK_WORKFLOW, "real-library-wrappers"),
+        ("documentation-benchmark", DOCS_WORKFLOW, "benchmark"),
+    ):
+        assert _github_action_job_steps(MERGE_VALIDATION_WORKFLOW, pull_request_job) == _github_action_job_steps(
+            component_workflow, component_job
+        )
+
+    pull_request_build = _github_action_job_steps(MERGE_VALIDATION_WORKFLOW, "documentation-build")
+    main_build = _github_action_job_steps(DOCS_WORKFLOW, "build")
+    configure_pages = main_build.index("      - name: Configure GitHub Pages")
+    assert pull_request_build == main_build[:configure_pages]
 
 
 def test_pypi_package_identity_is_complete_and_consistent() -> None:
@@ -499,24 +527,31 @@ def test_static_analysis_targets_the_renamed_package_tree() -> None:
         assert removed_root not in workflow
 
 
-def test_documentation_workflow_generates_the_same_pr_and_main_performance_snapshot() -> None:
-    workflow = DOCS_WORKFLOW.read_text(encoding="utf-8")
+def test_pull_request_and_main_generate_equivalent_documentation_performance_snapshots() -> None:
+    pull_request = MERGE_VALIDATION_WORKFLOW.read_text(encoding="utf-8")
+    main = DOCS_WORKFLOW.read_text(encoding="utf-8")
 
-    assert "group: documentation-${{ github.ref }}" in workflow
-    assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in workflow
-    assert "runs-on: ubuntu-24.04-arm" in workflow
-    assert "run_performance_benchmark:" in workflow
-    assert workflow.count("inputs.run_performance_benchmark ||") == 2
-    assert workflow.count("github.ref == 'refs/heads/main' && github.event_name != 'pull_request'") == 5
-    assert "python tools/benchmark_host.py" in workflow
-    assert "--require-machine aarch64" in workflow
-    assert "--require-arm-part 0xd49" in workflow
-    assert '--github-env "$GITHUB_ENV"' in workflow
-    assert "bash benchmarks/run.sh" in workflow
-    assert "python tools/generate_performance_docs.py" in workflow
-    assert "name: performance-snapshot" in workflow
-    assert "benchmarks/results/f2py.json" in workflow
-    assert "benchmarks/results/prik.json" in workflow
-    assert "benchmarks/results/f2py-build.json" in workflow
-    assert "benchmarks/results/prik-build.json" in workflow
-    assert "uses: actions/download-artifact@v4" in workflow
+    assert "group: documentation-${{ github.ref }}" in main
+    assert "cancel-in-progress: true" in main
+    assert "  workflow_call:" not in main
+    for declaration in (
+        "runs-on: ubuntu-24.04-arm",
+        "python tools/benchmark_host.py",
+        "--require-machine aarch64",
+        "--require-arm-part 0xd49",
+        '--github-env "$GITHUB_ENV"',
+        "bash benchmarks/run.sh",
+        "python tools/generate_performance_docs.py",
+        "name: performance-snapshot",
+        "benchmarks/results/f2py.json",
+        "benchmarks/results/prik.json",
+        "benchmarks/results/f2py-build.json",
+        "benchmarks/results/prik-build.json",
+        "uses: actions/download-artifact@v4",
+        "python -m pytest -q tests/shared/docs",
+        "python -m mkdocs build --strict",
+    ):
+        assert declaration in pull_request
+        assert declaration in main
+
+    assert main.count("github.ref == 'refs/heads/main' && github.event_name != 'pull_request'") == 3

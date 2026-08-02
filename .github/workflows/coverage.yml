@@ -5,7 +5,6 @@ on:
     branches:
       - main
   workflow_dispatch:
-  workflow_call:
 
 env:
   PRIK_GFORTRAN_BINARY: gfortran-13
