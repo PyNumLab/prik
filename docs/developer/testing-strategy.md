@@ -86,9 +86,10 @@ generate wrappers, compile and link an extension, import it from an isolated
 build directory, call the public Python surface, and verify visible behavior.
 Successful compilation or import without a public call is insufficient.
 
-All such tests live below the owning feature's `end_to_end/` directory and
-carry `fortran_end_to_end`. BLAS and LAPACK additionally carry `real_library`
-and remain native-source end-to-end evidence only.
+Feature end-to-end tests live below the owning feature's `end_to_end/`
+directory and carry `fortran_end_to_end`. Full-library integration nodes carry
+`real_library`. The complete BLAS correctness example under `examples/blas/`
+uses both markers and runs only in the dedicated BLAS/LAPACK lane.
 
 ## Diagnostics and unsupported behavior
 
@@ -111,11 +112,21 @@ Keep fixtures beside their final behavioral owner:
 - complete native projects below feature-local `end_to_end/fixtures/`;
 - edited `.pyi` below the edit family it proves;
 - minimized real-world parser interactions with source parsing; and
-- BLAS/LAPACK below their dedicated real-library end-to-end owner.
+- the authoritative full BLAS source set below `examples/blas/native/`, shared
+  by the correctness example, full-library integration, LAPACK CI build, and
+  build comparison tooling;
+- the LAPACK corpus below its dedicated real-library end-to-end owner.
 
 Generate build products and temporary contracts in pytest temporary
 directories. Check in generated `.pyi` only where exact generation text,
 imports, placement, or package shape is the invariant.
+
+For BLAS behavior, run `python3 -m pytest -q examples/blas` or one of its named
+test functions. The session fixtures build the identical sorted 155-source set
+once through PRIK and once through f2py. `test_routine_coverage.py` audits the
+parsed source inventory, both export sets, visible named tests, and terminal
+outcomes. The older full-library BLAS node remains broader wrapper-build and
+native-link integration evidence, while LAPACK runtime remains CI-only.
 
 ## Ownership discipline
 

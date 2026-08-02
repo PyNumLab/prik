@@ -23,6 +23,7 @@ current Python package layout.
 | `prik/semantics/ownership.py` | Central ownership, transfer, destruction, and generated-action policy | policy completion and typed wrapper planning |
 | `prik/probes/fortran_types.py` | Fortran kind/storage facts and cache | semantic Fortran conversion and wrapper builds |
 | `prik/probes/report.py` | Generated target datatype mapping examples | documentation example tests |
+| `examples/blas/` | Complete Reference BLAS correctness example, source inventory, build fixtures, and the authoritative native source set | dedicated BLAS/LAPACK workflow and full-library integration |
 
 <!-- PRIK_C_DOCS_START
 | `prik/pipeline/preprocessing.py` | Compiler-backed source preprocessing and dependency facts | C and Fortran parser input loading |
@@ -48,6 +49,7 @@ change crosses ownership boundaries.
 | Immediate callback policy, typed adapters, and trampolines | `prik/semantics/wrapper_policy.py`, `prik/semantics/policy_completion.py`, `prik/wrapper_codegen/plan.py`, `prik/wrapper_codegen/planner.py`, `prik/wrapper_codegen/c/binding.py`, `prik/wrapper_codegen/fortran/bridge.py` | `docs/user/guide/callbacks.md`, `docs/user/reference/semantic-pyi-format.md` | `tests/fortran/callbacks/` |
 | Native compilation, binding support, and shared-library linking | `prik/pipeline/build.py`, `prik/compiling/compilers.py`, `prik/compiling/native_support.py` | `docs/user/reference/fortran-wrapper.md`, `docs/developer/build-system.md` | `tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py`, `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py` |
 | Public Python exports | `prik/__init__.py` | `README.md`, `docs/user/reference/python-api.md` | `tests/fortran/source_parsing/parsing/test_public_entrypoints.py` |
+| Reference BLAS source ownership, inventory, and numerical validation | `examples/blas/routine_inventory.py`, `examples/blas/test_routine_coverage.py` | `examples/blas/README.md`, `docs/user/examples/blas-wrapper.md` | `examples/blas/test_*.py`, dedicated BLAS/LAPACK workflow |
 | Source navigation documentation | `docs/developer/source-map.md`, `docs/developer/feature-to-code-map.md`, package README files | `docs/developer/source-map.md` | `tests/shared/docs/test_structure.py` |
 
 <!-- PRIK_C_DOCS_START

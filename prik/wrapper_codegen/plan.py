@@ -478,6 +478,7 @@ class BindingFunctionPlan(StageRecord):
     docstring: str
     release_gil: bool
     status_error: BindingStatusErrorPlan | None
+    argument_conversion_order: tuple[str, ...]
     public: bool = True
 
 

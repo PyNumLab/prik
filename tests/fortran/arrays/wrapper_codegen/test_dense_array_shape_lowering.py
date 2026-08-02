@@ -181,14 +181,33 @@ def test_dense_array_lowering_uses_planned_shape_checks_and_bridge_orientation()
 
 
 def test_external_interface_declares_late_extent_before_dependent_array():
-    artifacts = WrapperCodeGenerator().generate(_late_extent_external_plan())
+    plan = _late_extent_external_plan()
+    function = plan.namespaces[0].functions[0]
+    artifacts = WrapperCodeGenerator().generate(plan)
+    c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
+    assert function.binding.argument_conversion_order == (
+        "late_extent_external.late_extent.n",
+        "late_extent_external.late_extent.values",
+    )
+    assert c_source.index("prik_int32_unpack_exact(bound_n_obj, &bound_n)") < c_source.index(
+        "Argument values has incompatible shape at axis 0"
+    )
     signature = "subroutine late_extent(values, n)"
     interface = bridge_source.split(signature, maxsplit=1)[1].split("end subroutine late_extent", maxsplit=1)[0]
     assert interface.index("integer(c_int32_t), optional :: n") < interface.index(
         "real(c_double), dimension(n) :: values"
     )
+
+
+def test_edited_binding_conversion_order_cannot_read_an_extent_late():
+    plan = _late_extent_external_plan()
+    function = plan.namespaces[0].functions[0]
+    function.binding.argument_conversion_order = tuple(reversed(function.binding.argument_conversion_order))
+
+    with pytest.raises(ValueError, match="late-binding-extent-conversion"):
+        WrapperCodeGenerator().generate(plan)
 
 
 def test_unavailable_dense_extent_role_fails_before_backend_lowering():

@@ -20,6 +20,7 @@ from prik import build_pyi_extension
 from prik.pipeline.pyi import pyi_paths_to_semantic_modules
 
 FORTRAN_LIBRARY_ROOT = Path(__file__).parent
+BLAS_SOURCE_ROOT = REPO_ROOT / "examples" / "blas" / "native"
 NATIVE_CACHE_ENV = "PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR"
 NATIVE_JOBS_ENV = "PRIK_REAL_LIBRARY_NATIVE_JOBS"
 DEFAULT_NATIVE_CACHE_ROOT = REPO_ROOT / ".pytest_cache" / "prik" / "real-library-native"
@@ -61,7 +62,7 @@ def _archiver() -> str:
 
 
 def _library_sources(library: str) -> tuple[Path, ...]:
-    root = FORTRAN_LIBRARY_ROOT / library / "native"
+    root = BLAS_SOURCE_ROOT if library == "blas" else FORTRAN_LIBRARY_ROOT / library / "native"
     return tuple(sorted(path for path in root.iterdir() if path.is_file() and path.suffix.lower() in FORTRAN_SUFFIXES))
 
 
@@ -177,7 +178,7 @@ def _function_names(package: Path) -> set[str]:
 
 
 def _cached_object_path(objects_dir: Path, source: Path) -> Path:
-    return objects_dir / source.relative_to(FORTRAN_LIBRARY_ROOT).with_suffix(".o")
+    return objects_dir / source.relative_to(REPO_ROOT).with_suffix(".o")
 
 
 def _compile_native_source(compiler: str, source: Path, native_object: Path, module_dir: Path) -> None:
@@ -377,7 +378,8 @@ def _assert_lapack_runtime_smoke(module) -> None:
 @pytest.mark.real_library
 @pytest.mark.parametrize("library", ["blas", "lapack"])
 def test_full_library_wrapper_imports_every_root_procedure_from_cached_shared_library(library: str, tmp_path: Path):
-    entry = _generate_contract(FORTRAN_LIBRARY_ROOT / library / "native", tmp_path / "contracts" / library)
+    source_root = BLAS_SOURCE_ROOT if library == "blas" else FORTRAN_LIBRARY_ROOT / library / "native"
+    entry = _generate_contract(source_root, tmp_path / "contracts" / library)
 
     root = _root_module(entry.parent)
     all_function_names = _function_names(entry.parent)

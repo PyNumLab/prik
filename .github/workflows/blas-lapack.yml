@@ -54,7 +54,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/prik-real-library-native
-          key: real-libraries-${{ runner.os }}-gfortran13-${{ hashFiles('tests/fortran/building_shared_library/end_to_end/real_libraries/blas/native/**', 'tests/fortran/building_shared_library/end_to_end/real_libraries/lapack/native/**') }}
+          key: real-libraries-${{ runner.os }}-gfortran13-${{ hashFiles('examples/blas/native/**', 'tests/fortran/building_shared_library/end_to_end/real_libraries/lapack/native/**') }}
+      - name: Run complete BLAS correctness example
+        env:
+          PYTHONPATH: .
+          HYPOTHESIS_PROFILE: ci
+        run: python -m pytest -q examples/blas
       - name: Run full BLAS and LAPACK wrapper tests
         env:
           PYTHONPATH: .

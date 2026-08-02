@@ -3,15 +3,16 @@ title: Examples Gallery
 audience: users
 prerequisites: getting started
 related: ../tutorials/index.md, ../guide/building-shared-library.md
-status: planned-documentation
+status: maintained
 publication: draft
 ---
 
 # Examples Gallery
 
-The maintained part of this section is the checked recipes. Use them when you
-need a copy-paste command, a short Python API pattern, or the current boundary
-between inspection and runtime wrapper support.
+The maintained part of this section includes the checked recipes and the
+complete BLAS correctness project. Use them when you need a copy-paste command,
+a real-library project, or the current boundary between inspection and runtime
+wrapper support.
 
 The larger project examples below are placeholders for future complete runnable
 projects. Each one must include source, build command, import command, runtime
@@ -33,10 +34,10 @@ PRIK_C_DOCS_END -->
 | Control command output | [Control CLI output](recipes/control-cli-output.md) |
 | Use inspection APIs from Python | [Use Python inspection APIs](recipes/use-python-inspection-apis.md) |
 | Pass compiler and preprocessing options | [Use compiler preprocessing options](recipes/compiler-preprocessing.md) |
+| Build and validate the complete Reference BLAS | [BLAS wrapper](blas-wrapper.md) |
 
 ## Planned Project Examples
 
-- [BLAS wrapper](blas-wrapper.md)
 - [LAPACK wrapper](lapack-wrapper.md)
 - [ODE solver](ode-solver.md)
 - [CFD mini-example](cfd-mini-example.md)
@@ -46,6 +47,6 @@ PRIK_C_DOCS_END -->
 
 ## TODO
 
-- TODO: Add runnable checked examples one at a time.
+- TODO: Add further runnable checked examples one at a time.
 - TODO: Keep examples with unavailable runtime support marked not yet
   implemented.

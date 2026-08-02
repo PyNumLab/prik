@@ -13,7 +13,6 @@ from prik.semantics.ownership import (
     SetterAction,
 )
 from prik.semantics.wrapper_policy import (
-    ArgumentConversionPhase,
     ArgumentHandoffMode,
     CallbackABIKind,
     CallbackResultAction,
@@ -5993,16 +5992,12 @@ class CBindingGenerator(ClassVisitor):
         )
 
     def _binding_conversion_order(self, plan: FunctionPlan) -> tuple[ArgumentTransferPlan, ...]:
-        """Apply the completed argument conversion schedule."""
-        return tuple(
-            sorted(
-                plan.arguments,
-                key=lambda argument: (
-                    argument.binding.conversion_phase is ArgumentConversionPhase.DEFERRED_REPLACEMENT,
-                    argument.python_position,
-                ),
-            )
-        )
+        """Apply the dependency-safe argument conversion schedule from the plan."""
+        arguments = {argument.owner_path: argument for argument in plan.arguments}
+        try:
+            return tuple(arguments[owner_path] for owner_path in plan.binding.argument_conversion_order)
+        except KeyError as error:
+            raise ValueError(f"Unknown binding argument conversion owner {error.args[0]!r}") from None
 
     def _visit_ArgumentTransferPlan(
         self,

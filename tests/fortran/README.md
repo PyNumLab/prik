@@ -95,8 +95,8 @@ artifact-consumer, and support-consumer inventories live under
 
 - Every pytest node below a feature `end_to_end/` carries
   `fortran_end_to_end`, and no other node does.
-- Only BLAS/LAPACK native-source end-to-end nodes additionally carry
-  `real_library`.
+- Only the complete `examples/blas/` correctness project and BLAS/LAPACK
+  native-source integration nodes additionally carry `real_library`.
 - `toolchain_smoke` will select exact portable rows from the completed ordinary
   end-to-end suite; it is not a separate directory.
 
@@ -106,6 +106,5 @@ Run all migrated Fortran evidence with:
 python3 -m pytest -q tests/fortran
 ```
 
-Until the real-library migration is complete, use the legacy exclusions
-documented in the repository-level test map and never run LAPACK locally
-without an explicit request.
+Run the BLAS project directly with `python3 -m pytest -q examples/blas`. Never
+run LAPACK locally without an explicit request.

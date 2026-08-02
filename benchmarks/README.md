@@ -15,7 +15,8 @@ after the timer stops. Both tools use their normal dependency-aware compiler
 concurrency. The workloads are:
 
 - the one-source, five-procedure module used by the runtime suite; and
-- the repository's 155-source reference BLAS fixture, with all 155 routines
+- the repository's authoritative 155-source Reference BLAS project under
+  `examples/blas/native/`, with all 155 routines
   required in each generated extension.
 
 One untimed warm-up precedes six measured clean builds of each workload by

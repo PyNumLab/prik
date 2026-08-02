@@ -388,7 +388,7 @@ directory. Audit and place every artifact beside its final behavioral owner.
 | `tests/data/fortran/wrapper/` | `tests/fortran/<feature>/end_to_end/fixtures/<case>/native/` |
 | `tests/data/fortran/general/` | Owning feature/stage; feature-neutral setup is minimized beside its final public-capability owner |
 | `tests/data/fortran/errors/` | Fixture directory of the first rejecting stage |
-| `tests/data/fortran/blas/` and `lapack/` | `tests/fortran/building_shared_library/end_to_end/real_libraries/{blas,lapack}/native/` |
+| `tests/data/fortran/blas/` and `lapack/` | `examples/blas/native/` and `tests/fortran/building_shared_library/end_to_end/real_libraries/lapack/native/` |
 | Parser regressions extracted from SciFortran | `tests/fortran/source_parsing/parsing/test_real_world_interaction_regressions.py` |
 | Parser source/JSON pairs | Beside their parser owner |
 | Language-neutral `.pyi` syntax | `tests/shared/contracts/` |
@@ -1219,7 +1219,8 @@ Historical regression ownership after reduction:
 ### BLAS and LAPACK
 
 - [x] Move the real-library projects to
-  `tests/fortran/building_shared_library/end_to_end/real_libraries/{blas,lapack}/`.
+  `examples/blas/` and
+  `tests/fortran/building_shared_library/end_to_end/real_libraries/lapack/`.
 - [x] Treat them only as full-pipeline evidence: build from the library sources,
   generate wrappers, compile/link, import the extension, and verify the public
   Python surface and representative runtime calls.
