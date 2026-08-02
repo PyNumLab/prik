@@ -68,6 +68,12 @@ medium, and bulk sampling budgets and are merged into one pyperf result per
 tool; this gives nanosecond-scale calls more independent samples without
 multiplying the cost of the largest array workloads.
 
+Documentation workflow concurrency is isolated by Git ref. Pull-request runs
+may cancel an older run for the same ref, but a `main` run is never canceled by
+a pull request or a newer `main` run. This lets the rigorous ARM64 benchmark
+finish and publish a complete result artifact while still superseding stale
+pull-request documentation checks.
+
 Enable the repository once through **Settings > Pages > Build and deployment >
 Source > GitHub Actions**. Then open **Actions > Documentation > Run workflow**,
 select `main`, and run it. Later documentation changes deploy automatically

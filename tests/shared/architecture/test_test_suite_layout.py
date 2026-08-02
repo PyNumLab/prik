@@ -349,6 +349,8 @@ def test_static_analysis_targets_the_renamed_package_tree() -> None:
 def test_documentation_workflow_generates_main_only_performance_snapshot() -> None:
     workflow = DOCS_WORKFLOW.read_text(encoding="utf-8")
 
+    assert "group: documentation-${{ github.ref }}" in workflow
+    assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in workflow
     assert "runs-on: ubuntu-24.04-arm" in workflow
     assert "if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'" in workflow
     assert "python tools/benchmark_host.py" in workflow

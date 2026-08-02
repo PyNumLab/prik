@@ -23,8 +23,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: pages
-  cancel-in-progress: true
+  group: documentation-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   PRIK_GFORTRAN_BINARY: gfortran-13
