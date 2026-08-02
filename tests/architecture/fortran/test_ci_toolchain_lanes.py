@@ -20,18 +20,18 @@ TESTS_WORKFLOW = REPO_ROOT / ".github/workflows/tests.yml"
 def test_workflow_declares_pinned_ifx_and_flang_pairs_on_ubuntu_2404() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
 
-    assert text.startswith("name: Smoke Tests\n")
+    assert text.startswith("name: Compiler Compatibility\n")
     assert "runs-on: ubuntu-24.04" in text
     assert 'PRIK_IFX_VERSION: "2026.1.1"' in text
     assert 'PRIK_FLANG_VERSION: "22.1.8"' in text
     assert 'PRIK_FLANG_RUNTIME_VERSION: "22.1.7"' in text
     for snippet in (
         "- toolchain: ifx",
-        "display_name: Linux · Intel IFX 2026.1.1 · Python 3.12",
+        "display_name: Ubuntu 24.04 · Intel IFX 2026.1.1 · Python 3.12",
         "fortran_compiler: ifx",
         "c_compiler: icx",
         "- toolchain: flang",
-        "display_name: Linux · LLVM Flang 22.1.8 · Python 3.12",
+        "display_name: Ubuntu 24.04 · LLVM Flang 22.1.8 · Python 3.12",
         "fortran_compiler: flang",
         "c_compiler: clang",
     ):
@@ -70,7 +70,7 @@ def test_macos_flang_lane_installs_a_coherent_pair_and_runs_strict_smoke() -> No
     macos_job = text.split("  macos-flang-smoke:\n", maxsplit=1)[1]
 
     for snippet in (
-        "name: macOS 15 ARM64 · LLVM Flang · Python 3.12",
+        "name: Compiler smoke · macOS 15 ARM64 · LLVM Flang · Python 3.12",
         "runs-on: macos-15",
         "brew install flang",
         'flang_prefix="$(brew --prefix flang)"',
@@ -97,7 +97,7 @@ def test_macos_lane_runs_strict_smoke_and_the_full_ordinary_suite() -> None:
     macos_job = text.split("  macos:\n", maxsplit=1)[1]
 
     for snippet in (
-        "name: macOS 15 ARM64 · Python 3.12",
+        "name: Unit tests · macOS 15 ARM64 · Python 3.12",
         "runs-on: macos-15",
         "PRIK_GFORTRAN_BINARY: gfortran-13",
         "PRIK_GCC_BINARY: gcc-13",
