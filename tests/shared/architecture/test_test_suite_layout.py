@@ -191,7 +191,10 @@ def test_full_real_library_nodes_have_one_dedicated_workflow() -> None:
     assert ordinary_jobs.count('-m "not real_library and not toolchain_smoke"') == 2
     assert FULL_REAL_LIBRARY_TEST not in ordinary_jobs
     assert "examples/blas" not in ordinary_jobs
+    assert "examples/lapack" not in ordinary_jobs
     assert "python -m pytest -q examples/blas" in dedicated_job
+    assert "python -m pytest -q examples/lapack" in dedicated_job
+    assert 'python -m pip install "scipy==1.18.0"' in dedicated_job
     assert (
         f'"{FULL_REAL_LIBRARY_TEST}::test_full_library_wrapper_imports_every_root_procedure_from_cached_shared_library[blas]"'
         in dedicated_job

@@ -10,9 +10,9 @@ publication: draft
 # Examples Gallery
 
 The maintained part of this section includes the checked recipes and the
-complete BLAS correctness project. Use them when you need a copy-paste command,
-a real-library project, or the current boundary between inspection and runtime
-wrapper support.
+complete BLAS and LAPACK correctness projects. Use them when you need a
+copy-paste command, a real-library project, or the current boundary between
+inspection and runtime wrapper support.
 
 The larger project examples below are placeholders for future complete runnable
 projects. Each one must include source, build command, import command, runtime
@@ -35,10 +35,10 @@ PRIK_C_DOCS_END -->
 | Use inspection APIs from Python | [Use Python inspection APIs](recipes/use-python-inspection-apis.md) |
 | Pass compiler and preprocessing options | [Use compiler preprocessing options](recipes/compiler-preprocessing.md) |
 | Build and validate the complete Reference BLAS | [BLAS wrapper](blas-wrapper.md) |
+| Build complete Reference LAPACK and validate the SciPy-backed float64 surface | [LAPACK wrapper](lapack-wrapper.md) |
 
 ## Planned Project Examples
 
-- [LAPACK wrapper](lapack-wrapper.md)
 - [ODE solver](ode-solver.md)
 - [CFD mini-example](cfd-mini-example.md)
 - [Object-oriented Fortran example](object-oriented-fortran.md)

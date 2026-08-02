@@ -27,7 +27,10 @@ the user guide, examples, and reference material.
 For a complete real-library example, see the
 [155-routine BLAS correctness project](examples/blas/README.md), which builds
 the same Reference BLAS sources with PRIK and f2py and checks both against
-independent numerical expectations.
+independent numerical expectations. The
+[LAPACK correctness project](examples/lapack/README.md) wraps the complete
+Reference LAPACK implementation corpus once and validates the reviewed 127
+SciPy-backed double-precision routines in the dedicated CI lane.
 
 The complete example below builds with one command:
 

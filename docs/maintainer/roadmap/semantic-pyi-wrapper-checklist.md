@@ -121,7 +121,7 @@ Runtime wrapper tests are organized by stable subjects under
 - [x] Native wrapper source fixtures live under shared `tests/data/fortran/`
   corpora: ordinary wrapper fixtures use `tests/data/fortran/wrapper/`, and
   real-library evidence reads `examples/blas/native/` and
-  `tests/fortran/building_shared_library/end_to_end/real_libraries/lapack/native/` directly. The wrapper test tree contains no
+  `examples/lapack/native/` directly. The wrapper test tree contains no
   Fortran source files.
 - [x] Runtime wrapper tests resolve native fixtures through
   `tests/wrapper/fortran/_support.py`, so moved tests no longer depend on
@@ -356,7 +356,7 @@ bundle, order, transitive-library, and failure-path evidence lives in
 `tests/fortran/building_shared_library/end_to_end/test_native_bundles.py`.
 
 - [x] Full real BLAS and LAPACK source corpora under `examples/blas/native/`
-  and `tests/fortran/building_shared_library/end_to_end/real_libraries/lapack/native/`
+  and `examples/lapack/native/`
   each generate an importable intermediate contract package inside the pytest
   temporary directory.
 - [x] The full generated BLAS and LAPACK contracts are audited dynamically for

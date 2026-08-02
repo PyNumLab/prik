@@ -19,8 +19,8 @@ from tests.fortran._support.wrapper_build import REPO_ROOT
 from prik import build_pyi_extension
 from prik.pipeline.pyi import pyi_paths_to_semantic_modules
 
-FORTRAN_LIBRARY_ROOT = Path(__file__).parent
 BLAS_SOURCE_ROOT = REPO_ROOT / "examples" / "blas" / "native"
+LAPACK_SOURCE_ROOT = REPO_ROOT / "examples" / "lapack" / "native"
 NATIVE_CACHE_ENV = "PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR"
 NATIVE_JOBS_ENV = "PRIK_REAL_LIBRARY_NATIVE_JOBS"
 DEFAULT_NATIVE_CACHE_ROOT = REPO_ROOT / ".pytest_cache" / "prik" / "real-library-native"
@@ -38,10 +38,10 @@ FULL_LIBRARY_CASES = {
         "sentinel_functions": {"dasum", "daxpy", "ddot", "dgemm", "dscal", "lsame", "xerbla"},
     },
     "lapack": {
-        "root_function_count": 2063,
+        "root_function_count": 2064,
         "source_stem_exceptions": {"la_constants", "la_xisnan"},
         "extra_function_names": {"dladiv1", "dladiv2", "sladiv1", "sladiv2"},
-        "sentinel_functions": {"dgesv", "dgetrf", "dgetrs", "dlamrg", "zgesv"},
+        "sentinel_functions": {"dgesv", "dgetrf", "dgetrs", "dlamch", "dlamrg", "zgesv"},
     },
 }
 LAPACK_RUNTIME_EXCLUDED_IMPORTS = {"from . import LA_CONSTANTS\n", "from . import LA_XISNAN\n"}
@@ -62,7 +62,7 @@ def _archiver() -> str:
 
 
 def _library_sources(library: str) -> tuple[Path, ...]:
-    root = BLAS_SOURCE_ROOT if library == "blas" else FORTRAN_LIBRARY_ROOT / library / "native"
+    root = BLAS_SOURCE_ROOT if library == "blas" else LAPACK_SOURCE_ROOT
     return tuple(sorted(path for path in root.iterdir() if path.is_file() and path.suffix.lower() in FORTRAN_SUFFIXES))
 
 
@@ -73,8 +73,8 @@ def _native_sources(library: str) -> tuple[Path, ...]:
     module_sources = tuple(
         source
         for source in (
-            FORTRAN_LIBRARY_ROOT / "lapack" / "native" / "la_constants.f90",
-            FORTRAN_LIBRARY_ROOT / "lapack" / "native" / "la_xisnan.F90",
+            LAPACK_SOURCE_ROOT / "la_constants.f90",
+            LAPACK_SOURCE_ROOT / "la_xisnan.F90",
         )
         if source.is_file()
     )
@@ -378,7 +378,7 @@ def _assert_lapack_runtime_smoke(module) -> None:
 @pytest.mark.real_library
 @pytest.mark.parametrize("library", ["blas", "lapack"])
 def test_full_library_wrapper_imports_every_root_procedure_from_cached_shared_library(library: str, tmp_path: Path):
-    source_root = BLAS_SOURCE_ROOT if library == "blas" else FORTRAN_LIBRARY_ROOT / library / "native"
+    source_root = BLAS_SOURCE_ROOT if library == "blas" else LAPACK_SOURCE_ROOT
     entry = _generate_contract(source_root, tmp_path / "contracts" / library)
 
     root = _root_module(entry.parent)

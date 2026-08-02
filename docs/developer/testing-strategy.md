@@ -88,8 +88,9 @@ Successful compilation or import without a public call is insufficient.
 
 Feature end-to-end tests live below the owning feature's `end_to_end/`
 directory and carry `fortran_end_to_end`. Full-library integration nodes carry
-`real_library`. The complete BLAS correctness example under `examples/blas/`
-uses both markers and runs only in the dedicated BLAS/LAPACK lane.
+`real_library`. The complete correctness examples under `examples/blas/` and
+`examples/lapack/` use both markers and run only in the dedicated BLAS/LAPACK
+lane.
 
 ## Diagnostics and unsupported behavior
 
@@ -115,7 +116,9 @@ Keep fixtures beside their final behavioral owner:
 - the authoritative full BLAS source set below `examples/blas/native/`, shared
   by the correctness example, full-library integration, LAPACK CI build, and
   build comparison tooling;
-- the LAPACK corpus below its dedicated real-library end-to-end owner.
+- the authoritative Reference LAPACK implementation corpus below
+  `examples/lapack/native/`, shared by its correctness example and full-library
+  integration.
 
 Generate build products and temporary contracts in pytest temporary
 directories. Check in generated `.pyi` only where exact generation text,
@@ -127,6 +130,14 @@ once through PRIK and once through f2py. `test_routine_coverage.py` audits the
 parsed source inventory, both export sets, visible named tests, and terminal
 outcomes. The older full-library BLAS node remains broader wrapper-build and
 native-link integration evidence, while LAPACK runtime remains CI-only.
+
+For LAPACK behavior, the dedicated lane runs
+`python3 -m pytest -q examples/lapack`. Its session fixtures wrap and compile
+the complete LAPACK corpus and required authoritative BLAS dependencies once,
+then reuse that module while explicitly testing the reviewed 127-routine
+SciPy 1.18.0 `float64` inventory. The inventory audit fails on SciPy drift,
+missing sources or exports, missing explicitly named tests, and divergent
+documentation totals.
 
 ## Ownership discipline
 

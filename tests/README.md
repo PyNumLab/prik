@@ -72,9 +72,10 @@ python3 -m pytest -q tests/architecture
 ```
 
 The full-library BLAS/LAPACK integration nodes and the complete correctness
-project in `examples/blas/` remain in the dedicated real-library job. The BLAS
-sources are owned by `examples/blas/native/`; LAPACK remains under its existing
-real-library owner and is not part of the default local verification command.
+projects in `examples/blas/` and `examples/lapack/` remain in the dedicated
+real-library job. The BLAS and LAPACK sources are owned by
+`examples/blas/native/` and `examples/lapack/native/`; LAPACK is not part of
+the default local verification command.
 
 ## Markers
 
