@@ -30,6 +30,14 @@ stem already supplied by LAPACK. No BLAS source is copied below this directory.
 
 ## Build topology
 
+On Python 3.12 and newer, NumPy's f2py uses its Meson backend. Install the
+same Meson, Ninja, and SciPy versions used by the dedicated BLAS/LAPACK CI lane
+before running this example:
+
+```console
+python3 -m pip install "meson==1.11.2" "ninja==1.13.0" "scipy==1.18.0"
+```
+
 The session fixture reuses the established complete-library integration path in
 `tests/fortran/building_shared_library/end_to_end/real_libraries/test_full_libraries.py`.
 It performs these operations once:

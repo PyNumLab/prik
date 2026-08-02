@@ -194,7 +194,9 @@ def test_full_real_library_nodes_have_one_dedicated_workflow() -> None:
     assert "examples/lapack" not in ordinary_jobs
     assert "python -m pytest -q examples/blas" in dedicated_job
     assert "python -m pytest -q examples/lapack" in dedicated_job
-    assert 'python -m pip install "scipy==1.18.0"' in dedicated_job
+    assert '"meson==1.11.2"' in dedicated_job
+    assert '"ninja==1.13.0"' in dedicated_job
+    assert '"scipy==1.18.0"' in dedicated_job
     assert (
         f'"{FULL_REAL_LIBRARY_TEST}::test_full_library_wrapper_imports_every_root_procedure_from_cached_shared_library[blas]"'
         in dedicated_job

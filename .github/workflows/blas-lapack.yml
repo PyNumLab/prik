@@ -38,7 +38,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[qa]"
-          python -m pip install "scipy==1.18.0"
+          python -m pip install \
+            "meson==1.11.2" \
+            "ninja==1.13.0" \
+            "scipy==1.18.0"
       - name: Install pinned GFortran
         shell: bash
         run: |

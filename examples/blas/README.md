@@ -26,6 +26,14 @@ license.
 
 ## Reproduce the two builds
 
+On Python 3.12 and newer, NumPy's f2py uses its Meson backend. Install the
+same Meson and Ninja versions used by the dedicated BLAS/LAPACK CI lane before
+running the example:
+
+```console
+python3 -m pip install "meson==1.11.2" "ninja==1.13.0"
+```
+
 The session fixtures use the following effective commands. Both commands
 receive the same sorted absolute source list and `-O0`; all artifacts stay in a
 temporary directory.
