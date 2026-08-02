@@ -53,6 +53,13 @@ def native_pivots(scipy_pivots: np.ndarray) -> np.ndarray:
     return np.asarray(scipy_pivots, dtype=np.int32) + np.int32(1)
 
 
+def gfortran_logical_mask(values) -> np.ndarray:
+    """Represent a default-GFortran LOGICAL vector through PRIK's bool buffer ABI."""
+    logical_bytes = np.zeros(len(values) * np.dtype(np.int32).itemsize, dtype=np.bool_)
+    logical_bytes[:: np.dtype(np.int32).itemsize] = np.asarray(values, dtype=np.bool_)
+    return logical_bytes
+
+
 def pivot_matrix(pivots: np.ndarray, size: int, *, one_based: bool) -> np.ndarray:
     """Build the row permutation represented by sequential LAPACK pivots."""
     permutation = np.eye(size, dtype=np.float64)

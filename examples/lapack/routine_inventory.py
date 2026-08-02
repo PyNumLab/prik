@@ -447,6 +447,16 @@ ORACLE_BY_FAMILY = {
     "svd": "SVD/CSD reconstruction, orthogonality, or secular equation",
 }
 
+F2PY_EXPORT_LIMITATIONS = {
+    "dgees": "NumPy f2py 2.5.1 generates an incomplete select callback declaration from the unannotated source",
+    "dgges": "NumPy f2py 2.5.1 generates an incomplete selctg callback declaration from the unannotated source",
+}
+
+PRIK_ABI_ADAPTERS = {
+    "dtgsen": "GFortran default-LOGICAL selection storage is four bytes per element while PRIK accepts a NumPy bool buffer",
+    "dtrsen": "GFortran default-LOGICAL selection storage is four bytes per element while PRIK accepts a NumPy bool buffer",
+}
+
 
 @dataclass(frozen=True)
 class RoutineSpec:
@@ -456,6 +466,7 @@ class RoutineSpec:
     source_file: str
     scipy_name: str
     prik_export: str
+    prik_adapter: str
     f2py_export: str
     f2py_limitation: str
     family: str
@@ -473,13 +484,17 @@ ROUTINE_SPECS = {
         source_file=f"{name}.f90" if name == "dlartg" else f"{name}.f",
         scipy_name=name,
         prik_export=name,
+        prik_adapter=PRIK_ABI_ADAPTERS.get(name, "none"),
         f2py_export=name,
-        f2py_limitation=F2PY_NUMERICAL_LIMITATIONS.get(
+        f2py_limitation=F2PY_EXPORT_LIMITATIONS.get(
             name,
-            (
-                "raw f2py exposes array mutation but not scalar subroutine writebacks from the intent-free source"
-                if name not in F2PY_FUNCTION_RESULTS
-                else "none"
+            F2PY_NUMERICAL_LIMITATIONS.get(
+                name,
+                (
+                    "raw f2py exposes array mutation but not scalar subroutine writebacks from the intent-free source"
+                    if name not in F2PY_FUNCTION_RESULTS
+                    else "none"
+                ),
             ),
         ),
         family=ROUTINE_FAMILIES[name],
@@ -500,6 +515,3 @@ ROUTINE_SPECS = {
     )
     for name in ROUTINES
 }
-
-# Populate only after a missing raw f2py export has been reproduced in CI.
-F2PY_EXPORT_LIMITATIONS: dict[str, str] = {}

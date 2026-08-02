@@ -25,15 +25,35 @@ def _general_tridiagonal():
     return lower, diagonal, upper, rhs, expected
 
 
+def _general_tridiagonal_factorization():
+    lower = np.array([1.0, 1.0], dtype=np.float64)
+    diagonal = np.array([4.0, 3.0, 2.0], dtype=np.float64)
+    upper = np.array([1.0, 1.0], dtype=np.float64)
+    rhs = np.array([[6.0], [10.0], [8.0]], dtype=np.float64, order="F")
+    expected = np.array([[1.0], [2.0], [3.0]], dtype=np.float64)
+    return lower, diagonal, upper, rhs, expected
+
+
 def test_dgbcon_estimates_general_band_condition(prik_lapack, scipy_lapack, f2py_lapack):
     factor = np.array([[4.0]], dtype=np.float64, order="F")
     native_ipiv = np.array([1], dtype=np.int32)
 
     prik_scalars = prik_lapack.dgbcon(
-        "1", 1, 0, 0, factor.copy(order="F"), 1, native_ipiv, 4.0, 0.0, np.empty(3), np.empty(1, dtype=np.int32), 0
+        "1",
+        np.int32(1),
+        np.int32(0),
+        np.int32(0),
+        factor.copy(order="F"),
+        np.int32(1),
+        native_ipiv,
+        np.float64(4.0),
+        np.float64(0.0),
+        np.empty(3),
+        np.empty(1, dtype=np.int32),
+        np.int32(0),
     )
     f2py_result = f2py_lapack.dgbcon(
-        b"1", 1, 0, 0, factor.copy(order="F"), 1, native_ipiv, 4.0, 0.0, np.empty(3), np.empty(1, dtype=np.int32), 0
+        b"1", 1, 0, 0, factor.copy(order="F"), native_ipiv, 4.0, 0.0, np.empty(3), np.empty(1, dtype=np.int32), 0
     )
     scipy_rcond, scipy_info = scipy_lapack.dgbcon(0, 0, factor.copy(order="F"), np.array([0], dtype=np.int32), 4.0)
 
@@ -48,8 +68,19 @@ def test_dgbsv_solves_general_band_system(prik_lapack, scipy_lapack, f2py_lapack
     prik_b, f2py_b = np.array([[8.0]], order="F"), np.array([[8.0]], order="F")
     prik_piv, f2py_piv = np.empty(1, dtype=np.int32), np.empty(1, dtype=np.int32)
 
-    prik_scalars = prik_lapack.dgbsv(1, 0, 0, 1, prik_ab, 1, prik_piv, prik_b, 1, 0)
-    f2py_result = f2py_lapack.dgbsv(1, 0, 0, 1, f2py_ab, 1, f2py_piv, f2py_b, 1, 0)
+    prik_scalars = prik_lapack.dgbsv(
+        np.int32(1),
+        np.int32(0),
+        np.int32(0),
+        np.int32(1),
+        prik_ab,
+        np.int32(1),
+        prik_piv,
+        prik_b,
+        np.int32(1),
+        np.int32(0),
+    )
+    f2py_result = f2py_lapack.dgbsv(1, 0, 0, 1, f2py_ab, f2py_piv, f2py_b, 0)
     scipy_lu, scipy_piv, scipy_x, scipy_info = scipy_lapack.dgbsv(
         0, 0, np.array([[4.0]], order="F"), np.array([[8.0]], order="F")
     )
@@ -70,8 +101,10 @@ def test_dgbtrf_factorizes_general_band_matrix(prik_lapack, scipy_lapack, f2py_l
     prik_ab, f2py_ab = band.copy(order="F"), band.copy(order="F")
     prik_piv, f2py_piv = np.empty(2, dtype=np.int32), np.empty(2, dtype=np.int32)
 
-    prik_scalars = prik_lapack.dgbtrf(2, 2, 1, 1, prik_ab, 4, prik_piv, 0)
-    f2py_result = f2py_lapack.dgbtrf(2, 2, 1, 1, f2py_ab, 4, f2py_piv, 0)
+    prik_scalars = prik_lapack.dgbtrf(
+        np.int32(2), np.int32(2), np.int32(1), np.int32(1), prik_ab, np.int32(4), prik_piv, np.int32(0)
+    )
+    f2py_result = f2py_lapack.dgbtrf(2, 2, 1, 1, f2py_ab, f2py_piv, 0)
     scipy_lu, scipy_piv, scipy_info = scipy_lapack.dgbtrf(band.copy(order="F"), 1, 1)
 
     assert f2py_result is None
@@ -91,8 +124,20 @@ def test_dgbtrs_solves_from_general_band_lu(prik_lapack, scipy_lapack, f2py_lapa
     rhs = np.array([[6.0], [7.0]], dtype=np.float64, order="F")
     prik_b, f2py_b = rhs.copy(order="F"), rhs.copy(order="F")
 
-    prik_scalars = prik_lapack.dgbtrs("N", 2, 1, 1, 1, scipy_lu.copy(order="F"), 4, native_ipiv, prik_b, 2, 0)
-    f2py_result = f2py_lapack.dgbtrs(b"N", 2, 1, 1, 1, scipy_lu.copy(order="F"), 4, native_ipiv, f2py_b, 2, 0)
+    prik_scalars = prik_lapack.dgbtrs(
+        "N",
+        np.int32(2),
+        np.int32(1),
+        np.int32(1),
+        np.int32(1),
+        scipy_lu.copy(order="F"),
+        np.int32(4),
+        native_ipiv,
+        prik_b,
+        np.int32(2),
+        np.int32(0),
+    )
+    f2py_result = f2py_lapack.dgbtrs(b"N", 2, 1, 1, 1, scipy_lu.copy(order="F"), native_ipiv, f2py_b, 0)
     scipy_x, scipy_info = scipy_lapack.dgbtrs(scipy_lu, 1, 1, rhs.copy(order="F"), scipy_piv)
 
     assert f2py_result is None
@@ -103,7 +148,7 @@ def test_dgbtrs_solves_from_general_band_lu(prik_lapack, scipy_lapack, f2py_lapa
 
 
 def test_dgtcon_estimates_tridiagonal_condition(prik_lapack, scipy_lapack, f2py_lapack):
-    lower, diagonal, upper, _rhs, _expected = _general_tridiagonal()
+    lower, diagonal, upper, _rhs, _expected = _general_tridiagonal_factorization()
     scipy_dl, scipy_d, scipy_du, scipy_du2, scipy_piv, factor_info = scipy_lapack.dgttrf(lower, diagonal, upper)
     assert factor_info == 0
     native_ipiv = native_pivots(scipy_piv)
@@ -111,21 +156,21 @@ def test_dgtcon_estimates_tridiagonal_condition(prik_lapack, scipy_lapack, f2py_
 
     prik_scalars = prik_lapack.dgtcon(
         "1",
-        2,
+        np.int32(3),
         scipy_dl,
         scipy_d,
         scipy_du,
         scipy_du2,
         native_ipiv,
-        anorm,
-        0.0,
-        np.empty(4),
-        np.empty(2, dtype=np.int32),
-        0,
+        np.float64(anorm),
+        np.float64(0.0),
+        np.empty(6),
+        np.empty(3, dtype=np.int32),
+        np.int32(0),
     )
     f2py_result = f2py_lapack.dgtcon(
         b"1",
-        2,
+        3,
         scipy_dl,
         scipy_d,
         scipy_du,
@@ -133,15 +178,15 @@ def test_dgtcon_estimates_tridiagonal_condition(prik_lapack, scipy_lapack, f2py_
         native_ipiv,
         anorm,
         0.0,
-        np.empty(4),
-        np.empty(2, dtype=np.int32),
+        np.empty(6),
+        np.empty(3, dtype=np.int32),
         0,
     )
     scipy_rcond, scipy_info = scipy_lapack.dgtcon(scipy_dl, scipy_d, scipy_du, scipy_du2, scipy_piv, anorm)
 
     assert f2py_result is None
     assert prik_scalars[-1] == scipy_info == 0
-    assert_allclose_float64(prik_scalars[-2], scipy_rcond, operation_size=2)
+    assert_allclose_float64(prik_scalars[-2], scipy_rcond, operation_size=3)
     assert 0.0 < scipy_rcond <= 1.0
 
 
@@ -151,8 +196,10 @@ def test_dgtsv_solves_general_tridiagonal_system(prik_lapack, scipy_lapack, f2py
     f2py_dl, f2py_d, f2py_du = lower.copy(), diagonal.copy(), upper.copy()
     prik_b, f2py_b = rhs.copy(order="F"), rhs.copy(order="F")
 
-    prik_scalars = prik_lapack.dgtsv(2, 1, prik_dl, prik_d, prik_du, prik_b, 2, 0)
-    f2py_result = f2py_lapack.dgtsv(2, 1, f2py_dl, f2py_d, f2py_du, f2py_b, 2, 0)
+    prik_scalars = prik_lapack.dgtsv(
+        np.int32(2), np.int32(1), prik_dl, prik_d, prik_du, prik_b, np.int32(2), np.int32(0)
+    )
+    f2py_result = f2py_lapack.dgtsv(2, 1, f2py_dl, f2py_d, f2py_du, f2py_b, 0)
     _du2, _d, _du, scipy_x, scipy_info = scipy_lapack.dgtsv(lower, diagonal, upper, rhs.copy(order="F"))
 
     assert f2py_result is None
@@ -176,8 +223,8 @@ def test_dgtsvx_solves_and_bounds_tridiagonal_error(prik_lapack, scipy_lapack, f
     prik_scalars = prik_lapack.dgtsvx(
         "N",
         "N",
-        2,
-        1,
+        np.int32(2),
+        np.int32(1),
         lower,
         diagonal,
         upper,
@@ -187,15 +234,15 @@ def test_dgtsvx_solves_and_bounds_tridiagonal_error(prik_lapack, scipy_lapack, f
         prik_du2,
         prik_piv,
         rhs.copy(order="F"),
-        2,
+        np.int32(2),
         prik_x,
-        2,
-        0.0,
+        np.int32(2),
+        np.float64(0.0),
         prik_ferr,
         prik_berr,
         np.empty(6),
         np.empty(2, dtype=np.int32),
-        0,
+        np.int32(0),
     )
     f2py_result = f2py_lapack.dgtsvx(
         b"N",
@@ -211,9 +258,7 @@ def test_dgtsvx_solves_and_bounds_tridiagonal_error(prik_lapack, scipy_lapack, f
         f2py_du2,
         f2py_piv,
         rhs.copy(order="F"),
-        2,
         f2py_x,
-        2,
         0.0,
         f2py_ferr,
         f2py_berr,
@@ -236,14 +281,14 @@ def test_dgtsvx_solves_and_bounds_tridiagonal_error(prik_lapack, scipy_lapack, f
 
 
 def test_dgttrf_factorizes_general_tridiagonal_matrix(prik_lapack, scipy_lapack, f2py_lapack):
-    lower, diagonal, upper, _rhs, _expected = _general_tridiagonal()
+    lower, diagonal, upper, _rhs, _expected = _general_tridiagonal_factorization()
     prik_dl, prik_d, prik_du = lower.copy(), diagonal.copy(), upper.copy()
     f2py_dl, f2py_d, f2py_du = lower.copy(), diagonal.copy(), upper.copy()
-    prik_du2, f2py_du2 = np.empty(0), np.empty(0)
-    prik_piv, f2py_piv = np.empty(2, dtype=np.int32), np.empty(2, dtype=np.int32)
+    prik_du2, f2py_du2 = np.empty(1), np.empty(1)
+    prik_piv, f2py_piv = np.empty(3, dtype=np.int32), np.empty(3, dtype=np.int32)
 
-    prik_scalars = prik_lapack.dgttrf(2, prik_dl, prik_d, prik_du, prik_du2, prik_piv, 0)
-    f2py_result = f2py_lapack.dgttrf(2, f2py_dl, f2py_d, f2py_du, f2py_du2, f2py_piv, 0)
+    prik_scalars = prik_lapack.dgttrf(np.int32(3), prik_dl, prik_d, prik_du, prik_du2, prik_piv, np.int32(0))
+    f2py_result = f2py_lapack.dgttrf(3, f2py_dl, f2py_d, f2py_du, f2py_du2, f2py_piv, 0)
     scipy_dl, scipy_d, scipy_du, _scipy_du2, scipy_piv, scipy_info = scipy_lapack.dgttrf(lower, diagonal, upper)
 
     assert f2py_result is None
@@ -254,26 +299,30 @@ def test_dgttrf_factorizes_general_tridiagonal_matrix(prik_lapack, scipy_lapack,
     assert_allclose_float64(f2py_dl, scipy_dl)
     assert_allclose_float64(f2py_d, scipy_d)
     assert_allclose_float64(f2py_du, scipy_du)
-    np.testing.assert_array_equal(prik_piv, native_pivots(scipy_piv))
-    np.testing.assert_array_equal(f2py_piv, native_pivots(scipy_piv))
+    # SciPy preserves LAPACK's one-based IPIV convention for DGTTRF.
+    np.testing.assert_array_equal(prik_piv, scipy_piv)
+    np.testing.assert_array_equal(f2py_piv, scipy_piv)
 
 
 def test_dgttrs_solves_from_tridiagonal_lu(prik_lapack, scipy_lapack, f2py_lapack):
-    lower, diagonal, upper, rhs, expected = _general_tridiagonal()
+    lower, diagonal, upper, rhs, expected = _general_tridiagonal_factorization()
     dl, d, du, du2, scipy_piv, factor_info = scipy_lapack.dgttrf(lower, diagonal, upper)
     assert factor_info == 0
-    native_ipiv = native_pivots(scipy_piv)
+    # DGTTRF/DGTTRS preserve native one-based pivots across all three wrappers.
+    native_ipiv = scipy_piv.copy()
     prik_b, f2py_b = rhs.copy(order="F"), rhs.copy(order="F")
 
-    prik_scalars = prik_lapack.dgttrs("N", 2, 1, dl, d, du, du2, native_ipiv, prik_b, 2, 0)
-    f2py_result = f2py_lapack.dgttrs(b"N", 2, 1, dl, d, du, du2, native_ipiv, f2py_b, 2, 0)
+    prik_scalars = prik_lapack.dgttrs(
+        "N", np.int32(3), np.int32(1), dl, d, du, du2, native_ipiv, prik_b, np.int32(3), np.int32(0)
+    )
+    f2py_result = f2py_lapack.dgttrs(b"N", 3, 1, dl, d, du, du2, native_ipiv, f2py_b, 0)
     scipy_x, scipy_info = scipy_lapack.dgttrs(dl, d, du, du2, scipy_piv, rhs.copy(order="F"))
 
     assert f2py_result is None
     assert prik_scalars[-1] == scipy_info == 0
-    assert_allclose_float64(prik_b, expected, operation_size=2)
-    assert_allclose_float64(f2py_b, expected, operation_size=2)
-    assert_allclose_float64(scipy_x, expected, operation_size=2)
+    assert_allclose_float64(prik_b, expected, operation_size=3)
+    assert_allclose_float64(f2py_b, expected, operation_size=3)
+    assert_allclose_float64(scipy_x, expected, operation_size=3)
 
 
 def test_dpbsv_solves_positive_definite_band_system(prik_lapack, scipy_lapack, f2py_lapack):
@@ -283,8 +332,10 @@ def test_dpbsv_solves_positive_definite_band_system(prik_lapack, scipy_lapack, f
     prik_ab, f2py_ab = band.copy(order="F"), band.copy(order="F")
     prik_b, f2py_b = rhs.copy(order="F"), rhs.copy(order="F")
 
-    prik_scalars = prik_lapack.dpbsv("U", 2, 1, 1, prik_ab, 2, prik_b, 2, 0)
-    f2py_result = f2py_lapack.dpbsv(b"U", 2, 1, 1, f2py_ab, 2, f2py_b, 2, 0)
+    prik_scalars = prik_lapack.dpbsv(
+        "U", np.int32(2), np.int32(1), np.int32(1), prik_ab, np.int32(2), prik_b, np.int32(2), np.int32(0)
+    )
+    f2py_result = f2py_lapack.dpbsv(b"U", 2, 1, 1, f2py_ab, f2py_b, 0)
     scipy_factor, scipy_x, scipy_info = scipy_lapack.dpbsv(band.copy(order="F"), rhs.copy(order="F"))
 
     assert f2py_result is None
@@ -301,8 +352,8 @@ def test_dpbtrf_factorizes_positive_definite_band_matrix(prik_lapack, scipy_lapa
     band = symmetric_band_storage(matrix, 1, lower=False)
     prik_ab, f2py_ab = band.copy(order="F"), band.copy(order="F")
 
-    prik_scalars = prik_lapack.dpbtrf("U", 2, 1, prik_ab, 2, 0)
-    f2py_result = f2py_lapack.dpbtrf(b"U", 2, 1, f2py_ab, 2, 0)
+    prik_scalars = prik_lapack.dpbtrf("U", np.int32(2), np.int32(1), prik_ab, np.int32(2), np.int32(0))
+    f2py_result = f2py_lapack.dpbtrf(b"U", 2, 1, f2py_ab, 0)
     scipy_factor, scipy_info = scipy_lapack.dpbtrf(band.copy(order="F"))
 
     assert f2py_result is None
@@ -319,8 +370,10 @@ def test_dpbtrs_solves_from_positive_definite_band_factor(prik_lapack, scipy_lap
     rhs = np.array([[6.0], [7.0]], dtype=np.float64, order="F")
     prik_b, f2py_b = rhs.copy(order="F"), rhs.copy(order="F")
 
-    prik_scalars = prik_lapack.dpbtrs("U", 2, 1, 1, factor, 2, prik_b, 2, 0)
-    f2py_result = f2py_lapack.dpbtrs(b"U", 2, 1, 1, factor, 2, f2py_b, 2, 0)
+    prik_scalars = prik_lapack.dpbtrs(
+        "U", np.int32(2), np.int32(1), np.int32(1), factor, np.int32(2), prik_b, np.int32(2), np.int32(0)
+    )
+    f2py_result = f2py_lapack.dpbtrs(b"U", 2, 1, 1, factor, f2py_b, 0)
     scipy_x, scipy_info = scipy_lapack.dpbtrs(factor, rhs.copy(order="F"))
 
     assert f2py_result is None
@@ -337,8 +390,8 @@ def test_dptsv_solves_spd_tridiagonal_system(prik_lapack, scipy_lapack, f2py_lap
     prik_e, f2py_e = upper.copy(), upper.copy()
     prik_b, f2py_b = rhs.copy(order="F"), rhs.copy(order="F")
 
-    prik_scalars = prik_lapack.dptsv(2, 1, prik_d, prik_e, prik_b, 2, 0)
-    f2py_result = f2py_lapack.dptsv(2, 1, f2py_d, f2py_e, f2py_b, 2, 0)
+    prik_scalars = prik_lapack.dptsv(np.int32(2), np.int32(1), prik_d, prik_e, prik_b, np.int32(2), np.int32(0))
+    f2py_result = f2py_lapack.dptsv(2, 1, f2py_d, f2py_e, f2py_b, 0)
     _d, _e, scipy_x, scipy_info = scipy_lapack.dptsv(diagonal, upper, rhs.copy(order="F"))
 
     assert f2py_result is None
@@ -358,21 +411,21 @@ def test_dptsvx_solves_and_bounds_spd_tridiagonal_error(prik_lapack, scipy_lapac
 
     prik_scalars = prik_lapack.dptsvx(
         "N",
-        2,
-        1,
+        np.int32(2),
+        np.int32(1),
         diagonal,
         offdiag,
         prik_df,
         prik_ef,
         rhs.copy(order="F"),
-        2,
+        np.int32(2),
         prik_x,
-        2,
-        0.0,
+        np.int32(2),
+        np.float64(0.0),
         prik_ferr,
         prik_berr,
         np.empty(4),
-        0,
+        np.int32(0),
     )
     f2py_result = f2py_lapack.dptsvx(
         b"N",
@@ -383,9 +436,7 @@ def test_dptsvx_solves_and_bounds_spd_tridiagonal_error(prik_lapack, scipy_lapac
         f2py_df,
         f2py_ef,
         rhs.copy(order="F"),
-        2,
         f2py_x,
-        2,
         0.0,
         f2py_ferr,
         f2py_berr,
@@ -411,7 +462,7 @@ def test_dpttrf_factorizes_spd_tridiagonal_matrix(prik_lapack, scipy_lapack, f2p
     prik_d, f2py_d = diagonal.copy(), diagonal.copy()
     prik_e, f2py_e = offdiag.copy(), offdiag.copy()
 
-    prik_scalars = prik_lapack.dpttrf(2, prik_d, prik_e, 0)
+    prik_scalars = prik_lapack.dpttrf(np.int32(2), prik_d, prik_e, np.int32(0))
     f2py_result = f2py_lapack.dpttrf(2, f2py_d, f2py_e, 0)
     scipy_d, scipy_e, scipy_info = scipy_lapack.dpttrf(diagonal, offdiag)
 
@@ -429,8 +480,8 @@ def test_dpttrs_solves_from_spd_tridiagonal_factor(prik_lapack, scipy_lapack, f2
     assert factor_info == 0
     prik_b, f2py_b = rhs.copy(order="F"), rhs.copy(order="F")
 
-    prik_scalars = prik_lapack.dpttrs(2, 1, factor_d, factor_e, prik_b, 2, 0)
-    f2py_result = f2py_lapack.dpttrs(2, 1, factor_d, factor_e, f2py_b, 2, 0)
+    prik_scalars = prik_lapack.dpttrs(np.int32(2), np.int32(1), factor_d, factor_e, prik_b, np.int32(2), np.int32(0))
+    f2py_result = f2py_lapack.dpttrs(2, 1, factor_d, factor_e, f2py_b, 0)
     scipy_x, scipy_info = scipy_lapack.dpttrs(factor_d, factor_e, rhs.copy(order="F"))
 
     assert f2py_result is None
@@ -447,8 +498,10 @@ def test_dtbtrs_solves_triangular_band_system(prik_lapack, scipy_lapack, f2py_la
     expected = np.array([[1.0], [2.0]], dtype=np.float64)
     prik_b, f2py_b = rhs.copy(order="F"), rhs.copy(order="F")
 
-    prik_scalars = prik_lapack.dtbtrs("U", "N", "N", 2, 1, 1, band, 2, prik_b, 2, 0)
-    f2py_result = f2py_lapack.dtbtrs(b"U", b"N", b"N", 2, 1, 1, band, 2, f2py_b, 2, 0)
+    prik_scalars = prik_lapack.dtbtrs(
+        "U", "N", "N", np.int32(2), np.int32(1), np.int32(1), band, np.int32(2), prik_b, np.int32(2), np.int32(0)
+    )
+    f2py_result = f2py_lapack.dtbtrs(b"U", b"N", b"N", 2, 1, 1, band, f2py_b, 0)
     scipy_x, scipy_info = scipy_lapack.dtbtrs(band, rhs.copy(order="F"), uplo=b"U", trans=b"N", diag=b"N")
 
     assert f2py_result is None

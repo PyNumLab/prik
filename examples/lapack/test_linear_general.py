@@ -25,10 +25,18 @@ def test_dgecon_estimates_reciprocal_condition(prik_lapack, scipy_lapack, f2py_l
     expected = 1.0
 
     prik_scalars = prik_lapack.dgecon(
-        "1", 1, factor.copy(order="F"), 1, 4.0, 0.0, np.empty(4), np.empty(1, dtype=np.int32), 0
+        "1",
+        np.int32(1),
+        factor.copy(order="F"),
+        np.int32(1),
+        np.float64(4.0),
+        np.float64(0.0),
+        np.empty(4),
+        np.empty(1, dtype=np.int32),
+        np.int32(0),
     )
     f2py_result = f2py_lapack.dgecon(
-        b"1", 1, factor.copy(order="F"), 1, 4.0, 0.0, np.empty(4), np.empty(1, dtype=np.int32), 0
+        b"1", 1, factor.copy(order="F"), 4.0, 0.0, np.empty(4), np.empty(1, dtype=np.int32), 0
     )
     scipy_rcond, scipy_info = scipy_lapack.dgecon(factor.copy(order="F"), 4.0, norm=b"1")
 
@@ -43,8 +51,19 @@ def test_dgeequ_computes_row_and_column_scaling(prik_lapack, scipy_lapack, f2py_
     prik_r, prik_c = np.empty(1), np.empty(1)
     f2py_r, f2py_c = np.empty(1), np.empty(1)
 
-    prik_scalars = prik_lapack.dgeequ(1, 1, matrix.copy(order="F"), 1, prik_r, prik_c, 0.0, 0.0, 0.0, 0)
-    f2py_result = f2py_lapack.dgeequ(1, 1, matrix.copy(order="F"), 1, f2py_r, f2py_c, 0.0, 0.0, 0.0, 0)
+    prik_scalars = prik_lapack.dgeequ(
+        np.int32(1),
+        np.int32(1),
+        matrix.copy(order="F"),
+        np.int32(1),
+        prik_r,
+        prik_c,
+        np.float64(0.0),
+        np.float64(0.0),
+        np.float64(0.0),
+        np.int32(0),
+    )
+    f2py_result = f2py_lapack.dgeequ(1, 1, matrix.copy(order="F"), f2py_r, f2py_c, 0.0, 0.0, 0.0, 0)
     scipy_r, scipy_c, scipy_rowcnd, scipy_colcnd, scipy_amax, scipy_info = scipy_lapack.dgeequ(matrix)
 
     assert f2py_result is None
@@ -63,8 +82,19 @@ def test_dgeequb_computes_radix_scaling(prik_lapack, scipy_lapack, f2py_lapack):
     prik_r, prik_c = np.empty(1), np.empty(1)
     f2py_r, f2py_c = np.empty(1), np.empty(1)
 
-    prik_scalars = prik_lapack.dgeequb(1, 1, matrix.copy(order="F"), 1, prik_r, prik_c, 0.0, 0.0, 0.0, 0)
-    f2py_result = f2py_lapack.dgeequb(1, 1, matrix.copy(order="F"), 1, f2py_r, f2py_c, 0.0, 0.0, 0.0, 0)
+    prik_scalars = prik_lapack.dgeequb(
+        np.int32(1),
+        np.int32(1),
+        matrix.copy(order="F"),
+        np.int32(1),
+        prik_r,
+        prik_c,
+        np.float64(0.0),
+        np.float64(0.0),
+        np.float64(0.0),
+        np.int32(0),
+    )
+    f2py_result = f2py_lapack.dgeequb(1, 1, matrix.copy(order="F"), f2py_r, f2py_c, 0.0, 0.0, 0.0, 0)
     scipy_r, scipy_c, scipy_rowcnd, scipy_colcnd, scipy_amax, scipy_info = scipy_lapack.dgeequb(matrix)
 
     assert f2py_result is None
@@ -82,8 +112,10 @@ def test_dgesc2_solves_complete_pivot_lu_system(prik_lapack, scipy_lapack, f2py_
     native_ipiv = np.array([1], dtype=np.int32)
     prik_rhs, f2py_rhs = np.array([8.0]), np.array([8.0])
 
-    prik_scalars = prik_lapack.dgesc2(1, factor.copy(order="F"), 1, prik_rhs, native_ipiv, native_ipiv, 0.0)
-    f2py_result = f2py_lapack.dgesc2(1, factor.copy(order="F"), 1, f2py_rhs, native_ipiv, native_ipiv, 0.0)
+    prik_scalars = prik_lapack.dgesc2(
+        np.int32(1), factor.copy(order="F"), np.int32(1), prik_rhs, native_ipiv, native_ipiv, np.float64(0.0)
+    )
+    f2py_result = f2py_lapack.dgesc2(1, factor.copy(order="F"), f2py_rhs, native_ipiv, native_ipiv, 0.0)
     scipy_x, scipy_scale = scipy_lapack.dgesc2(
         factor.copy(order="F"), np.array([8.0]), np.array([0], dtype=np.int32), np.array([0], dtype=np.int32)
     )
@@ -107,26 +139,26 @@ def test_dgesvx_solves_and_reports_error_bounds(prik_lapack, scipy_lapack, f2py_
     prik_scalars = prik_lapack.dgesvx(
         "N",
         "N",
-        1,
-        1,
+        np.int32(1),
+        np.int32(1),
         matrix.copy(order="F"),
-        1,
+        np.int32(1),
         prik_af,
-        1,
+        np.int32(1),
         prik_piv,
         "N",
         np.ones(1),
         np.ones(1),
         rhs.copy(order="F"),
-        1,
+        np.int32(1),
         prik_x,
-        1,
-        0.0,
+        np.int32(1),
+        np.float64(0.0),
         prik_ferr,
         prik_berr,
         np.empty(4),
         np.empty(1, dtype=np.int32),
-        0,
+        np.int32(0),
     )
     f2py_result = f2py_lapack.dgesvx(
         b"N",
@@ -134,17 +166,13 @@ def test_dgesvx_solves_and_reports_error_bounds(prik_lapack, scipy_lapack, f2py_
         1,
         1,
         matrix.copy(order="F"),
-        1,
         f2py_af,
-        1,
         f2py_piv,
         b"N",
         np.ones(1),
         np.ones(1),
         rhs.copy(order="F"),
-        1,
         f2py_x,
-        1,
         0.0,
         f2py_ferr,
         f2py_berr,
@@ -176,8 +204,8 @@ def test_dgetc2_factorizes_with_complete_pivoting(prik_lapack, scipy_lapack, f2p
     prik_ipiv, prik_jpiv = np.empty(1, dtype=np.int32), np.empty(1, dtype=np.int32)
     f2py_ipiv, f2py_jpiv = np.empty(1, dtype=np.int32), np.empty(1, dtype=np.int32)
 
-    prik_scalars = prik_lapack.dgetc2(1, prik_a, 1, prik_ipiv, prik_jpiv, 0)
-    f2py_result = f2py_lapack.dgetc2(1, f2py_a, 1, f2py_ipiv, f2py_jpiv, 0)
+    prik_scalars = prik_lapack.dgetc2(np.int32(1), prik_a, np.int32(1), prik_ipiv, prik_jpiv, np.int32(0))
+    f2py_result = f2py_lapack.dgetc2(1, f2py_a, f2py_ipiv, f2py_jpiv, 0)
     scipy_lu, scipy_ipiv, scipy_jpiv, scipy_info = scipy_lapack.dgetc2(matrix.copy(order="F"))
 
     assert f2py_result is None
@@ -194,8 +222,10 @@ def test_dgetri_inverts_lu_factorization(prik_lapack, scipy_lapack, f2py_lapack)
     native_ipiv = np.array([1], dtype=np.int32)
     prik_a, f2py_a = factor.copy(order="F"), factor.copy(order="F")
 
-    prik_scalars = prik_lapack.dgetri(1, prik_a, 1, native_ipiv, np.empty(8), 8, 0)
-    f2py_result = f2py_lapack.dgetri(1, f2py_a, 1, native_ipiv, np.empty(8), 8, 0)
+    prik_scalars = prik_lapack.dgetri(
+        np.int32(1), prik_a, np.int32(1), native_ipiv, np.empty(8), np.int32(8), np.int32(0)
+    )
+    f2py_result = f2py_lapack.dgetri(1, f2py_a, native_ipiv, np.empty(8), 8, 0)
     scipy_inverse, scipy_info = scipy_lapack.dgetri(factor.copy(order="F"), np.array([0], dtype=np.int32), lwork=8)
 
     assert f2py_result is None
@@ -215,8 +245,10 @@ def test_dgesv_solves_general_system(prik_lapack, scipy_lapack, f2py_lapack):
     prik_piv = np.empty(2, dtype=np.int32)
     f2py_piv = np.empty(2, dtype=np.int32)
 
-    prik_scalars = prik_lapack.dgesv(2, 1, prik_a, 2, prik_piv, prik_b, 2, 0)
-    f2py_result = f2py_lapack.dgesv(2, 1, f2py_a, 2, f2py_piv, f2py_b, 2, 0)
+    prik_scalars = prik_lapack.dgesv(
+        np.int32(2), np.int32(1), prik_a, np.int32(2), prik_piv, prik_b, np.int32(2), np.int32(0)
+    )
+    f2py_result = f2py_lapack.dgesv(2, 1, f2py_a, f2py_piv, f2py_b, 0)
     scipy_lu, scipy_piv, scipy_x, scipy_info = scipy_lapack.dgesv(
         original_a.copy(order="F"), original_b.copy(order="F")
     )
@@ -245,8 +277,8 @@ def test_dgetrf_reconstructs_pivoted_lu(prik_lapack, scipy_lapack, f2py_lapack):
     prik_piv = np.empty(2, dtype=np.int32)
     f2py_piv = np.empty(2, dtype=np.int32)
 
-    prik_scalars = prik_lapack.dgetrf(2, 2, prik_a, 2, prik_piv, 0)
-    f2py_result = f2py_lapack.dgetrf(2, 2, f2py_a, 2, f2py_piv, 0)
+    prik_scalars = prik_lapack.dgetrf(np.int32(2), np.int32(2), prik_a, np.int32(2), prik_piv, np.int32(0))
+    f2py_result = f2py_lapack.dgetrf(2, 2, f2py_a, f2py_piv, 0)
     scipy_lu, scipy_piv, scipy_info = scipy_lapack.dgetrf(original.copy(order="F"))
 
     assert prik_scalars == (2, 2, 2, 0)
@@ -272,8 +304,10 @@ def test_dgetrs_solves_from_native_lu(prik_lapack, scipy_lapack, f2py_lapack):
     prik_lu, f2py_lu = column_major(scipy_lu), column_major(scipy_lu)
     prik_b, f2py_b = column_major(original_b), column_major(original_b)
 
-    prik_scalars = prik_lapack.dgetrs("N", 2, 1, prik_lu, 2, native_ipiv.copy(), prik_b, 2, 0)
-    f2py_result = f2py_lapack.dgetrs(b"N", 2, 1, f2py_lu, 2, native_ipiv.copy(), f2py_b, 2, 0)
+    prik_scalars = prik_lapack.dgetrs(
+        "N", np.int32(2), np.int32(1), prik_lu, np.int32(2), native_ipiv.copy(), prik_b, np.int32(2), np.int32(0)
+    )
+    f2py_result = f2py_lapack.dgetrs(b"N", 2, 1, f2py_lu, native_ipiv.copy(), f2py_b, 0)
     scipy_x, scipy_info = scipy_lapack.dgetrs(scipy_lu, scipy_piv, original_b.copy(order="F"), trans=0)
 
     assert prik_scalars == (2, 1, 2, 2, 0)

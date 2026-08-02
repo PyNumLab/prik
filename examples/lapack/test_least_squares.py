@@ -34,8 +34,20 @@ def test_dgels_solves_full_rank_least_squares(prik_lapack, scipy_lapack, f2py_la
     prik_a, f2py_a = matrix.copy(order="F"), matrix.copy(order="F")
     prik_b, f2py_b = rhs.copy(order="F"), rhs.copy(order="F")
 
-    prik_scalars = prik_lapack.dgels("N", 3, 2, 1, prik_a, 3, prik_b, 3, np.empty(64), 64, 0)
-    f2py_result = f2py_lapack.dgels(b"N", 3, 2, 1, f2py_a, 3, f2py_b, 3, np.empty(64), 64, 0)
+    prik_scalars = prik_lapack.dgels(
+        "N",
+        np.int32(3),
+        np.int32(2),
+        np.int32(1),
+        prik_a,
+        np.int32(3),
+        prik_b,
+        np.int32(3),
+        np.empty(64),
+        np.int32(64),
+        np.int32(0),
+    )
+    f2py_result = f2py_lapack.dgels(b"N", 3, 2, 1, f2py_a, f2py_b, np.empty(64), 64, 0)
     _factor, scipy_b, scipy_info = scipy_lapack.dgels(matrix.copy(order="F"), rhs.copy(order="F"), trans=b"N", lwork=64)
 
     assert f2py_result is None
@@ -52,13 +64,26 @@ def test_dgelsd_solves_rank_revealing_least_squares(prik_lapack, scipy_lapack, f
     prik_s, f2py_s = np.empty(2), np.empty(2)
 
     prik_scalars = prik_lapack.dgelsd(
-        3, 2, 1, prik_a, 3, prik_b, 3, prik_s, -1.0, 0, np.empty(128), 128, np.empty(128, dtype=np.int32), 0
+        np.int32(3),
+        np.int32(2),
+        np.int32(1),
+        prik_a,
+        np.int32(3),
+        prik_b,
+        np.int32(3),
+        prik_s,
+        np.float64(-1.0),
+        np.int32(0),
+        np.empty(802),
+        np.int32(802),
+        np.empty(128, dtype=np.int32),
+        np.int32(0),
     )
     f2py_result = f2py_lapack.dgelsd(
-        3, 2, 1, f2py_a, 3, f2py_b, 3, f2py_s, -1.0, 0, np.empty(128), 128, np.empty(128, dtype=np.int32), 0
+        3, 2, 1, f2py_a, f2py_b, f2py_s, -1.0, 0, np.empty(802), 802, np.empty(128, dtype=np.int32), 0
     )
     scipy_x, scipy_s, scipy_rank, scipy_info = scipy_lapack.dgelsd(
-        matrix.copy(order="F"), rhs.copy(order="F"), 128, 128, cond=-1.0
+        matrix.copy(order="F"), rhs.copy(order="F"), 802, 128, cond=-1.0
     )
 
     assert f2py_result is None
@@ -77,8 +102,22 @@ def test_dgelss_solves_svd_least_squares(prik_lapack, scipy_lapack, f2py_lapack)
     prik_b, f2py_b = rhs.copy(order="F"), rhs.copy(order="F")
     prik_s, f2py_s = np.empty(2), np.empty(2)
 
-    prik_scalars = prik_lapack.dgelss(3, 2, 1, prik_a, 3, prik_b, 3, prik_s, -1.0, 0, np.empty(128), 128, 0)
-    f2py_result = f2py_lapack.dgelss(3, 2, 1, f2py_a, 3, f2py_b, 3, f2py_s, -1.0, 0, np.empty(128), 128, 0)
+    prik_scalars = prik_lapack.dgelss(
+        np.int32(3),
+        np.int32(2),
+        np.int32(1),
+        prik_a,
+        np.int32(3),
+        prik_b,
+        np.int32(3),
+        prik_s,
+        np.float64(-1.0),
+        np.int32(0),
+        np.empty(128),
+        np.int32(128),
+        np.int32(0),
+    )
+    f2py_result = f2py_lapack.dgelss(3, 2, 1, f2py_a, f2py_b, f2py_s, -1.0, 0, np.empty(128), 128, 0)
     _v, scipy_x, scipy_s, scipy_rank, _work, scipy_info = scipy_lapack.dgelss(
         matrix.copy(order="F"), rhs.copy(order="F"), cond=-1.0, lwork=128
     )
@@ -99,8 +138,22 @@ def test_dgelsy_solves_pivoted_rank_revealing_least_squares(prik_lapack, scipy_l
     prik_b, f2py_b = rhs.copy(order="F"), rhs.copy(order="F")
     prik_jpvt, f2py_jpvt = np.zeros(2, dtype=np.int32), np.zeros(2, dtype=np.int32)
 
-    prik_scalars = prik_lapack.dgelsy(3, 2, 1, prik_a, 3, prik_b, 3, prik_jpvt, -1.0, 0, np.empty(128), 128, 0)
-    f2py_result = f2py_lapack.dgelsy(3, 2, 1, f2py_a, 3, f2py_b, 3, f2py_jpvt, -1.0, 0, np.empty(128), 128, 0)
+    prik_scalars = prik_lapack.dgelsy(
+        np.int32(3),
+        np.int32(2),
+        np.int32(1),
+        prik_a,
+        np.int32(3),
+        prik_b,
+        np.int32(3),
+        prik_jpvt,
+        np.float64(-1.0),
+        np.int32(0),
+        np.empty(128),
+        np.int32(128),
+        np.int32(0),
+    )
+    f2py_result = f2py_lapack.dgelsy(3, 2, 1, f2py_a, f2py_b, f2py_jpvt, -1.0, 0, np.empty(128), 128, 0)
     _v, scipy_x, scipy_jpvt, scipy_rank, scipy_info = scipy_lapack.dgelsy(
         matrix.copy(order="F"), rhs.copy(order="F"), np.zeros(2, dtype=np.int32), -1.0, 128
     )
@@ -111,8 +164,9 @@ def test_dgelsy_solves_pivoted_rank_revealing_least_squares(prik_lapack, scipy_l
     for solution in (prik_b[:2], f2py_b[:2], scipy_x[:2]):
         assert_allclose_float64(solution, expected, operation_size=3)
         _assert_least_squares(matrix, rhs, solution)
-    np.testing.assert_array_equal(prik_jpvt, scipy_jpvt + 1)
-    np.testing.assert_array_equal(f2py_jpvt, scipy_jpvt + 1)
+    # SciPy preserves LAPACK's one-based JPVT convention for DGELSY.
+    np.testing.assert_array_equal(prik_jpvt, scipy_jpvt)
+    np.testing.assert_array_equal(f2py_jpvt, scipy_jpvt)
 
 
 def test_dgglse_solves_equality_constrained_least_squares(prik_lapack, scipy_lapack, f2py_lapack):
@@ -124,28 +178,26 @@ def test_dgglse_solves_equality_constrained_least_squares(prik_lapack, scipy_lap
     prik_x, f2py_x = np.empty(2), np.empty(2)
 
     prik_scalars = prik_lapack.dgglse(
-        2,
-        2,
-        1,
+        np.int32(2),
+        np.int32(2),
+        np.int32(1),
         matrix.copy(order="F"),
-        2,
+        np.int32(2),
         constraint.copy(order="F"),
-        1,
+        np.int32(1),
         target.copy(),
         constrained_value.copy(),
         prik_x,
         np.empty(128),
-        128,
-        0,
+        np.int32(128),
+        np.int32(0),
     )
     f2py_result = f2py_lapack.dgglse(
         2,
         2,
         1,
         matrix.copy(order="F"),
-        2,
         constraint.copy(order="F"),
-        1,
         target.copy(),
         constrained_value.copy(),
         f2py_x,

@@ -25,19 +25,19 @@ def test_dgejsv_reconstructs_matrix_with_jacobi_svd(prik_lapack, scipy_lapack, f
         "N",
         "N",
         "N",
-        2,
-        2,
+        np.int32(2),
+        np.int32(2),
         prik_a,
-        2,
+        np.int32(2),
         prik_s,
         prik_u,
-        2,
+        np.int32(2),
         prik_v,
-        2,
+        np.int32(2),
         np.empty(128),
-        128,
+        np.int32(128),
         np.empty(16, dtype=np.int32),
-        0,
+        np.int32(0),
     )
     f2py_result = f2py_lapack.dgejsv(
         b"A",
@@ -47,16 +47,11 @@ def test_dgejsv_reconstructs_matrix_with_jacobi_svd(prik_lapack, scipy_lapack, f
         b"N",
         b"N",
         2,
-        2,
         f2py_a,
-        2,
         f2py_s,
         f2py_u,
-        2,
         f2py_v,
-        2,
         np.empty(128),
-        128,
         np.empty(16, dtype=np.int32),
         0,
     )
@@ -81,10 +76,23 @@ def test_dgesdd_reconstructs_matrix_with_divide_and_conquer_svd(prik_lapack, sci
     prik_vt, f2py_vt = np.empty((2, 2), order="F"), np.empty((2, 2), order="F")
 
     prik_scalars = prik_lapack.dgesdd(
-        "A", 3, 2, prik_a, 3, prik_s, prik_u, 3, prik_vt, 2, np.empty(128), 128, np.empty(16, dtype=np.int32), 0
+        "A",
+        np.int32(3),
+        np.int32(2),
+        prik_a,
+        np.int32(3),
+        prik_s,
+        prik_u,
+        np.int32(3),
+        prik_vt,
+        np.int32(2),
+        np.empty(128),
+        np.int32(128),
+        np.empty(16, dtype=np.int32),
+        np.int32(0),
     )
     f2py_result = f2py_lapack.dgesdd(
-        b"A", 3, 2, f2py_a, 3, f2py_s, f2py_u, 3, f2py_vt, 2, np.empty(128), 128, np.empty(16, dtype=np.int32), 0
+        b"A", 3, 2, f2py_a, f2py_s, f2py_u, f2py_vt, np.empty(128), 128, np.empty(16, dtype=np.int32), 0
     )
     scipy_u, scipy_s, scipy_vt, scipy_info = scipy_lapack.dgesdd(
         matrix.copy(order="F"), compute_uv=1, full_matrices=1, lwork=128
@@ -107,8 +115,23 @@ def test_dgesvd_reconstructs_matrix(prik_lapack, scipy_lapack, f2py_lapack):
     prik_u, f2py_u = column_major(np.zeros((3, 3))), column_major(np.zeros((3, 3)))
     prik_vt, f2py_vt = column_major(np.zeros((2, 2))), column_major(np.zeros((2, 2)))
 
-    prik_scalars = prik_lapack.dgesvd("A", "A", 3, 2, prik_a, 3, prik_s, prik_u, 3, prik_vt, 2, np.empty(32), 32, 0)
-    f2py_result = f2py_lapack.dgesvd(b"A", b"A", 3, 2, f2py_a, 3, f2py_s, f2py_u, 3, f2py_vt, 2, np.empty(32), 32, 0)
+    prik_scalars = prik_lapack.dgesvd(
+        "A",
+        "A",
+        np.int32(3),
+        np.int32(2),
+        prik_a,
+        np.int32(3),
+        prik_s,
+        prik_u,
+        np.int32(3),
+        prik_vt,
+        np.int32(2),
+        np.empty(32),
+        np.int32(32),
+        np.int32(0),
+    )
+    f2py_result = f2py_lapack.dgesvd(b"A", b"A", 3, 2, f2py_a, f2py_s, f2py_u, f2py_vt, np.empty(32), 32, 0)
     scipy_u, scipy_s, scipy_vt, scipy_info = scipy_lapack.dgesvd(
         matrix.copy(order="F"), compute_uv=1, full_matrices=1, lwork=32
     )
@@ -147,30 +170,30 @@ def test_dorcsd_decomposes_partitioned_orthogonal_matrix(prik_lapack, scipy_lapa
         "Y",
         "N",
         "O",
-        2,
-        1,
-        1,
+        np.int32(2),
+        np.int32(1),
+        np.int32(1),
         prik_blocks[0],
-        1,
+        np.int32(1),
         prik_blocks[1],
-        1,
+        np.int32(1),
         prik_blocks[2],
-        1,
+        np.int32(1),
         prik_blocks[3],
-        1,
+        np.int32(1),
         prik_theta,
         prik_u1,
-        1,
+        np.int32(1),
         prik_u2,
-        1,
+        np.int32(1),
         prik_v1t,
-        1,
+        np.int32(1),
         prik_v2t,
-        1,
+        np.int32(1),
         np.empty(128),
-        128,
+        np.int32(128),
         np.empty(16, dtype=np.int32),
-        0,
+        np.int32(0),
     )
     f2py_result = f2py_lapack.dorcsd(
         b"Y",
@@ -183,22 +206,14 @@ def test_dorcsd_decomposes_partitioned_orthogonal_matrix(prik_lapack, scipy_lapa
         1,
         1,
         f2py_blocks[0],
-        1,
         f2py_blocks[1],
-        1,
         f2py_blocks[2],
-        1,
         f2py_blocks[3],
-        1,
         f2py_theta,
         f2py_u1,
-        1,
         f2py_u2,
-        1,
         f2py_v1t,
-        1,
         f2py_v2t,
-        1,
         np.empty(128),
         128,
         np.empty(16, dtype=np.int32),
@@ -229,7 +244,9 @@ def test_dlasd4_solves_rank_one_secular_equation(prik_lapack, scipy_lapack, f2py
     prik_delta, f2py_delta = np.empty(2), np.empty(2)
     prik_work, f2py_work = np.empty(2), np.empty(2)
 
-    prik_scalars = prik_lapack.dlasd4(2, 1, diagonal, update, prik_delta, rho, 0.0, prik_work, 0)
+    prik_scalars = prik_lapack.dlasd4(
+        np.int32(2), np.int32(1), diagonal, update, prik_delta, np.float64(rho), np.float64(0.0), prik_work, np.int32(0)
+    )
     f2py_result = f2py_lapack.dlasd4(2, 1, diagonal, update, f2py_delta, rho, 0.0, f2py_work, 0)
     scipy_delta, scipy_sigma, scipy_work, scipy_info = scipy_lapack.dlasd4(0, diagonal, update, rho=rho)
 

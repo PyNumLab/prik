@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from .helpers import assert_allclose_float64, assert_orthogonal
+from .helpers import assert_allclose_float64, assert_orthogonal, gfortran_logical_mask
 
 
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
@@ -16,8 +16,10 @@ def test_dgebal_preserves_eigenvalues_while_balancing(prik_lapack, scipy_lapack,
     prik_a, f2py_a = matrix.copy(order="F"), matrix.copy(order="F")
     prik_scale, f2py_scale = np.empty(2), np.empty(2)
 
-    prik_scalars = prik_lapack.dgebal("B", 2, prik_a, 2, 0, 0, prik_scale, 0)
-    f2py_result = f2py_lapack.dgebal(b"B", 2, f2py_a, 2, 0, 0, f2py_scale, 0)
+    prik_scalars = prik_lapack.dgebal(
+        "B", np.int32(2), prik_a, np.int32(2), np.int32(0), np.int32(0), prik_scale, np.int32(0)
+    )
+    f2py_result = f2py_lapack.dgebal(b"B", 2, f2py_a, 0, 0, f2py_scale, 0)
     scipy_a, scipy_lo, scipy_hi, scipy_scale, scipy_info = scipy_lapack.dgebal(
         matrix.copy(order="F"), scale=1, permute=1
     )
@@ -33,43 +35,37 @@ def test_dgebal_preserves_eigenvalues_while_balancing(prik_lapack, scipy_lapack,
     assert_allclose_float64(f2py_scale, scipy_scale)
 
 
-def test_dgees_computes_real_schur_decomposition(prik_lapack, scipy_lapack, f2py_lapack):
+def test_dgees_computes_real_schur_decomposition(prik_lapack, scipy_lapack):
     matrix = np.array([[1.0, 2.0], [0.0, 3.0]], dtype=np.float64, order="F")
-    prik_t, f2py_t = matrix.copy(order="F"), matrix.copy(order="F")
+    prik_t = matrix.copy(order="F")
     prik_wr, prik_wi = np.empty(2), np.empty(2)
-    f2py_wr, f2py_wi = np.empty(2), np.empty(2)
-    prik_vs, f2py_vs = np.empty((2, 2), order="F"), np.empty((2, 2), order="F")
+    prik_vs = np.empty((2, 2), order="F")
 
     prik_scalars = prik_lapack.dgees(
-        "V", "N", False, 2, prik_t, 2, 0, prik_wr, prik_wi, prik_vs, 2, np.empty(64), 64, np.zeros(2, dtype=np.bool_), 0
-    )
-    f2py_result = f2py_lapack.dgees(
-        b"V",
-        b"N",
-        lambda _wr, _wi: 0,
-        2,
-        f2py_t,
-        2,
-        0,
-        f2py_wr,
-        f2py_wi,
-        f2py_vs,
-        2,
+        "V",
+        "N",
+        np.bool_(False),
+        np.int32(2),
+        prik_t,
+        np.int32(2),
+        np.int32(0),
+        prik_wr,
+        prik_wi,
+        prik_vs,
+        np.int32(2),
         np.empty(64),
-        64,
-        np.zeros(2, dtype=np.int32),
-        0,
+        np.int32(64),
+        np.zeros(2, dtype=np.bool_),
+        np.int32(0),
     )
     scipy_t, scipy_sdim, scipy_wr, scipy_wi, scipy_vs, _work, scipy_info = scipy_lapack.dgees(
         lambda _wr, _wi: 0, matrix.copy(order="F"), compute_v=1, sort_t=0, lwork=64
     )
 
-    assert f2py_result is None
     assert prik_scalars[-1] == scipy_info == 0
     assert prik_scalars[3] == scipy_sdim == 0
     for t, vs, wr, wi in (
         (prik_t, prik_vs, prik_wr, prik_wi),
-        (f2py_t, f2py_vs, f2py_wr, f2py_wi),
         (scipy_t, scipy_vs, scipy_wr, scipy_wi),
     ):
         assert_orthogonal(vs)
@@ -87,11 +83,22 @@ def test_dgeev_returns_right_eigenvectors(prik_lapack, scipy_lapack, f2py_lapack
     f2py_vl, f2py_vr = np.empty((1, 2), order="F"), np.empty((2, 2), order="F")
 
     prik_scalars = prik_lapack.dgeev(
-        "N", "V", 2, prik_a, 2, prik_wr, prik_wi, prik_vl, 1, prik_vr, 2, np.empty(64), 64, 0
+        "N",
+        "V",
+        np.int32(2),
+        prik_a,
+        np.int32(2),
+        prik_wr,
+        prik_wi,
+        prik_vl,
+        np.int32(1),
+        prik_vr,
+        np.int32(2),
+        np.empty(64),
+        np.int32(64),
+        np.int32(0),
     )
-    f2py_result = f2py_lapack.dgeev(
-        b"N", b"V", 2, f2py_a, 2, f2py_wr, f2py_wi, f2py_vl, 1, f2py_vr, 2, np.empty(64), 64, 0
-    )
+    f2py_result = f2py_lapack.dgeev(b"N", b"V", 2, f2py_a, f2py_wr, f2py_wi, f2py_vl, f2py_vr, np.empty(64), 64, 0)
     scipy_wr, scipy_wi, _vl, scipy_vr, scipy_info = scipy_lapack.dgeev(
         matrix.copy(order="F"), compute_vl=0, compute_vr=1, lwork=64
     )
@@ -109,8 +116,10 @@ def test_dgehrd_reduces_matrix_to_upper_hessenberg(prik_lapack, scipy_lapack, f2
     prik_a, f2py_a = matrix.copy(order="F"), matrix.copy(order="F")
     prik_tau, f2py_tau = np.empty(1), np.empty(1)
 
-    prik_scalars = prik_lapack.dgehrd(2, 1, 2, prik_a, 2, prik_tau, np.empty(64), 64, 0)
-    f2py_result = f2py_lapack.dgehrd(2, 1, 2, f2py_a, 2, f2py_tau, np.empty(64), 64, 0)
+    prik_scalars = prik_lapack.dgehrd(
+        np.int32(2), np.int32(1), np.int32(2), prik_a, np.int32(2), prik_tau, np.empty(64), np.int32(64), np.int32(0)
+    )
+    f2py_result = f2py_lapack.dgehrd(2, 1, 2, f2py_a, f2py_tau, np.empty(64), 64, 0)
     scipy_a, scipy_tau, scipy_info = scipy_lapack.dgehrd(matrix.copy(order="F"), lo=0, hi=1, lwork=64)
 
     assert f2py_result is None
@@ -129,8 +138,10 @@ def test_dorghr_forms_hessenberg_similarity_transform(prik_lapack, scipy_lapack,
     assert factor_info == 0
     prik_q, f2py_q = factor.copy(order="F"), factor.copy(order="F")
 
-    prik_scalars = prik_lapack.dorghr(2, 1, 2, prik_q, 2, tau, np.empty(64), 64, 0)
-    f2py_result = f2py_lapack.dorghr(2, 1, 2, f2py_q, 2, tau, np.empty(64), 64, 0)
+    prik_scalars = prik_lapack.dorghr(
+        np.int32(2), np.int32(1), np.int32(2), prik_q, np.int32(2), tau, np.empty(64), np.int32(64), np.int32(0)
+    )
+    f2py_result = f2py_lapack.dorghr(2, 1, 2, f2py_q, tau, np.empty(64), 64, 0)
     scipy_q, scipy_info = scipy_lapack.dorghr(factor.copy(order="F"), tau, lo=0, hi=1, lwork=64)
 
     assert f2py_result is None
@@ -146,9 +157,11 @@ def test_dtrexc_reorders_real_schur_blocks(prik_lapack, scipy_lapack, f2py_lapac
     prik_t, f2py_t = schur.copy(order="F"), schur.copy(order="F")
     prik_q, f2py_q = identity.copy(order="F"), identity.copy(order="F")
 
-    prik_scalars = prik_lapack.dtrexc("V", 2, prik_t, 2, prik_q, 2, 1, 2, np.empty(2), 0)
-    f2py_result = f2py_lapack.dtrexc(b"V", 2, f2py_t, 2, f2py_q, 2, 1, 2, np.empty(2), 0)
-    scipy_t, scipy_q, scipy_info = scipy_lapack.dtrexc(schur.copy(order="F"), identity.copy(order="F"), 0, 1, wantq=1)
+    prik_scalars = prik_lapack.dtrexc(
+        "V", np.int32(2), prik_t, np.int32(2), prik_q, np.int32(2), np.int32(1), np.int32(2), np.empty(2), np.int32(0)
+    )
+    f2py_result = f2py_lapack.dtrexc(b"V", 2, f2py_t, f2py_q, 1, 2, np.empty(2), 0)
+    scipy_t, scipy_q, scipy_info = scipy_lapack.dtrexc(schur.copy(order="F"), identity.copy(order="F"), 1, 2, wantq=1)
 
     assert f2py_result is None
     assert prik_scalars[-1] == scipy_info == 0
@@ -166,26 +179,27 @@ def test_dtrsen_reorders_selected_schur_eigenvalue(prik_lapack, scipy_lapack, f2
     prik_wr, prik_wi = np.empty(2), np.empty(2)
     f2py_wr, f2py_wi = np.empty(2), np.empty(2)
     selection = np.array([False, True], dtype=np.bool_)
+    prik_selection = gfortran_logical_mask(selection)
 
     prik_scalars = prik_lapack.dtrsen(
         "N",
         "V",
-        selection,
-        2,
+        prik_selection,
+        np.int32(2),
         prik_t,
-        2,
+        np.int32(2),
         prik_q,
-        2,
+        np.int32(2),
         prik_wr,
         prik_wi,
-        0,
-        0.0,
-        0.0,
+        np.int32(0),
+        np.float64(0.0),
+        np.float64(0.0),
         np.empty(8),
-        8,
+        np.int32(8),
         np.empty(2, dtype=np.int32),
-        2,
-        0,
+        np.int32(2),
+        np.int32(0),
     )
     f2py_result = f2py_lapack.dtrsen(
         b"N",
@@ -193,9 +207,7 @@ def test_dtrsen_reorders_selected_schur_eigenvalue(prik_lapack, scipy_lapack, f2
         selection.astype(np.int32),
         2,
         f2py_t,
-        2,
         f2py_q,
-        2,
         f2py_wr,
         f2py_wi,
         0,
@@ -236,8 +248,22 @@ def test_dtrsyl_solves_sylvester_equation(prik_lapack, scipy_lapack, f2py_lapack
     c = np.array([[10.0]], dtype=np.float64, order="F")
     prik_c, f2py_c = c.copy(order="F"), c.copy(order="F")
 
-    prik_scalars = prik_lapack.dtrsyl("N", "N", 1, 1, 1, a, 1, b, 1, prik_c, 1, 0.0, 0)
-    f2py_result = f2py_lapack.dtrsyl(b"N", b"N", 1, 1, 1, a, 1, b, 1, f2py_c, 1, 0.0, 0)
+    prik_scalars = prik_lapack.dtrsyl(
+        "N",
+        "N",
+        np.int32(1),
+        np.int32(1),
+        np.int32(1),
+        a,
+        np.int32(1),
+        b,
+        np.int32(1),
+        prik_c,
+        np.int32(1),
+        np.float64(0.0),
+        np.int32(0),
+    )
+    f2py_result = f2py_lapack.dtrsyl(b"N", b"N", 1, 1, 1, a, b, f2py_c, 0.0, 0)
     scipy_x, scipy_scale, scipy_info = scipy_lapack.dtrsyl(a, b, c.copy(order="F"), trana=b"N", tranb=b"N", isgn=1)
 
     assert f2py_result is None

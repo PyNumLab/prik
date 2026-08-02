@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from .helpers import assert_allclose_float64, assert_orthogonal
+from .helpers import assert_allclose_float64, assert_orthogonal, gfortran_logical_mask
 
 
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
@@ -24,60 +24,35 @@ def _assert_generalized_eigenpairs(a, b, values, vectors):
     assert_allclose_float64(vectors.T @ b @ vectors, np.eye(2), operation_size=2)
 
 
-def test_dgges_computes_generalized_real_schur_form(prik_lapack, scipy_lapack, f2py_lapack):
+def test_dgges_computes_generalized_real_schur_form(prik_lapack, scipy_lapack):
     original_a, original_b = _generalized_problem()
-    prik_a, f2py_a = original_a.copy(order="F"), original_a.copy(order="F")
-    prik_b, f2py_b = original_b.copy(order="F"), original_b.copy(order="F")
+    prik_a = original_a.copy(order="F")
+    prik_b = original_b.copy(order="F")
     prik_ar, prik_ai, prik_beta = np.empty(2), np.empty(2), np.empty(2)
-    f2py_ar, f2py_ai, f2py_beta = np.empty(2), np.empty(2), np.empty(2)
     prik_vsl, prik_vsr = np.empty((2, 2), order="F"), np.empty((2, 2), order="F")
-    f2py_vsl, f2py_vsr = np.empty((2, 2), order="F"), np.empty((2, 2), order="F")
 
     prik_scalars = prik_lapack.dgges(
         "V",
         "V",
         "N",
-        False,
-        2,
+        np.bool_(False),
+        np.int32(2),
         prik_a,
-        2,
+        np.int32(2),
         prik_b,
-        2,
-        0,
+        np.int32(2),
+        np.int32(0),
         prik_ar,
         prik_ai,
         prik_beta,
         prik_vsl,
-        2,
+        np.int32(2),
         prik_vsr,
-        2,
+        np.int32(2),
         np.empty(64),
-        64,
+        np.int32(64),
         np.zeros(2, dtype=np.bool_),
-        0,
-    )
-    f2py_result = f2py_lapack.dgges(
-        b"V",
-        b"V",
-        b"N",
-        lambda _ar, _ai, _beta: 0,
-        2,
-        f2py_a,
-        2,
-        f2py_b,
-        2,
-        0,
-        f2py_ar,
-        f2py_ai,
-        f2py_beta,
-        f2py_vsl,
-        2,
-        f2py_vsr,
-        2,
-        np.empty(64),
-        64,
-        np.zeros(2, dtype=np.int32),
-        0,
+        np.int32(0),
     )
     scipy_a, scipy_b, scipy_sdim, scipy_ar, scipy_ai, scipy_beta, scipy_vsl, scipy_vsr, _work, scipy_info = (
         scipy_lapack.dgges(
@@ -91,12 +66,10 @@ def test_dgges_computes_generalized_real_schur_form(prik_lapack, scipy_lapack, f
         )
     )
 
-    assert f2py_result is None
     assert prik_scalars[-1] == scipy_info == 0
     assert prik_scalars[4] == scipy_sdim == 0
     for s, t, ar, ai, beta, q, z in (
         (prik_a, prik_b, prik_ar, prik_ai, prik_beta, prik_vsl, prik_vsr),
-        (f2py_a, f2py_b, f2py_ar, f2py_ai, f2py_beta, f2py_vsl, f2py_vsr),
         (scipy_a, scipy_b, scipy_ar, scipy_ai, scipy_beta, scipy_vsl, scipy_vsr),
     ):
         assert_orthogonal(q)
@@ -117,10 +90,26 @@ def test_dggev_computes_generalized_right_eigenvectors(prik_lapack, scipy_lapack
     f2py_vl, f2py_vr = np.empty((1, 2), order="F"), np.empty((2, 2), order="F")
 
     prik_scalars = prik_lapack.dggev(
-        "N", "V", 2, prik_a, 2, prik_b, 2, prik_ar, prik_ai, prik_beta, prik_vl, 1, prik_vr, 2, np.empty(64), 64, 0
+        "N",
+        "V",
+        np.int32(2),
+        prik_a,
+        np.int32(2),
+        prik_b,
+        np.int32(2),
+        prik_ar,
+        prik_ai,
+        prik_beta,
+        prik_vl,
+        np.int32(1),
+        prik_vr,
+        np.int32(2),
+        np.empty(64),
+        np.int32(64),
+        np.int32(0),
     )
     f2py_result = f2py_lapack.dggev(
-        b"N", b"V", 2, f2py_a, 2, f2py_b, 2, f2py_ar, f2py_ai, f2py_beta, f2py_vl, 1, f2py_vr, 2, np.empty(64), 64, 0
+        b"N", b"V", 2, f2py_a, f2py_b, f2py_ar, f2py_ai, f2py_beta, f2py_vl, f2py_vr, np.empty(64), 64, 0
     )
     scipy_ar, scipy_ai, scipy_beta, _vl, scipy_vr, _work, scipy_info = scipy_lapack.dggev(
         a.copy(order="F"), b.copy(order="F"), compute_vl=0, compute_vr=1, lwork=64
@@ -144,8 +133,10 @@ def test_dsygst_reduces_symmetric_generalized_problem(prik_lapack, scipy_lapack,
     expected = np.diag([2.0, 3.0])
     prik_a, f2py_a = a.copy(order="F"), a.copy(order="F")
 
-    prik_scalars = prik_lapack.dsygst(1, "U", 2, prik_a, 2, cholesky, 2, 0)
-    f2py_result = f2py_lapack.dsygst(1, b"U", 2, f2py_a, 2, cholesky, 2, 0)
+    prik_scalars = prik_lapack.dsygst(
+        np.int32(1), "U", np.int32(2), prik_a, np.int32(2), cholesky, np.int32(2), np.int32(0)
+    )
+    f2py_result = f2py_lapack.dsygst(1, b"U", 2, f2py_a, cholesky, 0)
     scipy_a, scipy_info = scipy_lapack.dsygst(a.copy(order="F"), cholesky, itype=1, lower=0)
 
     assert f2py_result is None
@@ -162,8 +153,21 @@ def test_dsygv_solves_symmetric_generalized_eigenproblem(prik_lapack, scipy_lapa
     prik_b, f2py_b = b.copy(order="F"), b.copy(order="F")
     prik_w, f2py_w = np.empty(2), np.empty(2)
 
-    prik_scalars = prik_lapack.dsygv(1, "V", "U", 2, prik_a, 2, prik_b, 2, prik_w, np.empty(64), 64, 0)
-    f2py_result = f2py_lapack.dsygv(1, b"V", b"U", 2, f2py_a, 2, f2py_b, 2, f2py_w, np.empty(64), 64, 0)
+    prik_scalars = prik_lapack.dsygv(
+        np.int32(1),
+        "V",
+        "U",
+        np.int32(2),
+        prik_a,
+        np.int32(2),
+        prik_b,
+        np.int32(2),
+        prik_w,
+        np.empty(64),
+        np.int32(64),
+        np.int32(0),
+    )
+    f2py_result = f2py_lapack.dsygv(1, b"V", b"U", 2, f2py_a, f2py_b, f2py_w, np.empty(64), 64, 0)
     scipy_w, scipy_v, scipy_info = scipy_lapack.dsygv(
         a.copy(order="F"), b.copy(order="F"), itype=1, jobz=b"V", uplo=b"U", lwork=64
     )
@@ -182,10 +186,23 @@ def test_dsygvd_solves_divide_and_conquer_generalized_problem(prik_lapack, scipy
     prik_w, f2py_w = np.empty(2), np.empty(2)
 
     prik_scalars = prik_lapack.dsygvd(
-        1, "V", "U", 2, prik_a, 2, prik_b, 2, prik_w, np.empty(64), 64, np.empty(32, dtype=np.int32), 32, 0
+        np.int32(1),
+        "V",
+        "U",
+        np.int32(2),
+        prik_a,
+        np.int32(2),
+        prik_b,
+        np.int32(2),
+        prik_w,
+        np.empty(64),
+        np.int32(64),
+        np.empty(32, dtype=np.int32),
+        np.int32(32),
+        np.int32(0),
     )
     f2py_result = f2py_lapack.dsygvd(
-        1, b"V", b"U", 2, f2py_a, 2, f2py_b, 2, f2py_w, np.empty(64), 64, np.empty(32, dtype=np.int32), 32, 0
+        1, b"V", b"U", 2, f2py_a, f2py_b, f2py_w, np.empty(64), 64, np.empty(32, dtype=np.int32), 32, 0
     )
     scipy_w, scipy_v, scipy_info = scipy_lapack.dsygvd(
         a.copy(order="F"), b.copy(order="F"), itype=1, jobz=b"V", uplo=b"U", lwork=64, liwork=32
@@ -207,29 +224,29 @@ def test_dsygvx_selects_generalized_eigenpairs(prik_lapack, scipy_lapack, f2py_l
     prik_ifail, f2py_ifail = np.empty(2, dtype=np.int32), np.empty(2, dtype=np.int32)
 
     prik_scalars = prik_lapack.dsygvx(
-        1,
+        np.int32(1),
         "V",
         "I",
         "U",
-        2,
+        np.int32(2),
         prik_a,
-        2,
+        np.int32(2),
         prik_b,
-        2,
-        0.0,
-        0.0,
-        1,
-        2,
-        0.0,
-        0,
+        np.int32(2),
+        np.float64(0.0),
+        np.float64(0.0),
+        np.int32(1),
+        np.int32(2),
+        np.float64(0.0),
+        np.int32(0),
         prik_w,
         prik_z,
-        2,
+        np.int32(2),
         np.empty(64),
-        64,
+        np.int32(64),
         np.empty(10, dtype=np.int32),
         prik_ifail,
-        0,
+        np.int32(0),
     )
     f2py_result = f2py_lapack.dsygvx(
         1,
@@ -238,9 +255,7 @@ def test_dsygvx_selects_generalized_eigenpairs(prik_lapack, scipy_lapack, f2py_l
         b"U",
         2,
         f2py_a,
-        2,
         f2py_b,
-        2,
         0.0,
         0.0,
         1,
@@ -249,7 +264,6 @@ def test_dsygvx_selects_generalized_eigenpairs(prik_lapack, scipy_lapack, f2py_l
         0,
         f2py_w,
         f2py_z,
-        2,
         np.empty(64),
         64,
         np.empty(10, dtype=np.int32),
@@ -279,16 +293,31 @@ def test_dtgexc_reorders_generalized_schur_blocks(prik_lapack, scipy_lapack, f2p
     prik_z, f2py_z = identity.copy(order="F"), identity.copy(order="F")
 
     prik_scalars = prik_lapack.dtgexc(
-        True, True, 2, prik_a, 2, prik_b, 2, prik_q, 2, prik_z, 2, 1, 2, np.empty(64), 64, 0
+        np.bool_(True),
+        np.bool_(True),
+        np.int32(2),
+        prik_a,
+        np.int32(2),
+        prik_b,
+        np.int32(2),
+        prik_q,
+        np.int32(2),
+        prik_z,
+        np.int32(2),
+        np.int32(1),
+        np.int32(2),
+        np.empty(64),
+        np.int32(64),
+        np.int32(0),
     )
-    f2py_result = f2py_lapack.dtgexc(1, 1, 2, f2py_a, 2, f2py_b, 2, f2py_q, 2, f2py_z, 2, 1, 2, np.empty(64), 64, 0)
+    f2py_result = f2py_lapack.dtgexc(1, 1, 2, f2py_a, f2py_b, f2py_q, f2py_z, 1, 2, np.empty(64), 64, 0)
     scipy_a, scipy_b, scipy_q, scipy_z, _work, scipy_info = scipy_lapack.dtgexc(
         a.copy(order="F"),
         b.copy(order="F"),
         identity.copy(order="F"),
         identity.copy(order="F"),
-        0,
         1,
+        2,
         wantq=1,
         wantz=1,
         lwork=64,
@@ -310,6 +339,7 @@ def test_dtgsen_reorders_selected_generalized_eigenvalue(prik_lapack, scipy_lapa
     a, b = _generalized_problem()
     identity = np.eye(2, dtype=np.float64, order="F")
     selection = np.array([False, True], dtype=np.bool_)
+    prik_selection = gfortran_logical_mask(selection)
     prik_a, f2py_a = a.copy(order="F"), a.copy(order="F")
     prik_b, f2py_b = b.copy(order="F"), b.copy(order="F")
     prik_q, f2py_q = identity.copy(order="F"), identity.copy(order="F")
@@ -319,31 +349,31 @@ def test_dtgsen_reorders_selected_generalized_eigenvalue(prik_lapack, scipy_lapa
     prik_dif, f2py_dif = np.empty(2), np.empty(2)
 
     prik_scalars = prik_lapack.dtgsen(
-        0,
-        True,
-        True,
-        selection,
-        2,
+        np.int32(0),
+        np.bool_(True),
+        np.bool_(True),
+        prik_selection,
+        np.int32(2),
         prik_a,
-        2,
+        np.int32(2),
         prik_b,
-        2,
+        np.int32(2),
         prik_ar,
         prik_ai,
         prik_beta,
         prik_q,
-        2,
+        np.int32(2),
         prik_z,
-        2,
-        0,
-        0.0,
-        0.0,
+        np.int32(2),
+        np.int32(0),
+        np.float64(0.0),
+        np.float64(0.0),
         prik_dif,
         np.empty(64),
-        64,
+        np.int32(64),
         np.empty(16, dtype=np.int32),
-        16,
-        0,
+        np.int32(16),
+        np.int32(0),
     )
     f2py_result = f2py_lapack.dtgsen(
         0,
@@ -352,16 +382,12 @@ def test_dtgsen_reorders_selected_generalized_eigenvalue(prik_lapack, scipy_lapa
         selection.astype(np.int32),
         2,
         f2py_a,
-        2,
         f2py_b,
-        2,
         f2py_ar,
         f2py_ai,
         f2py_beta,
         f2py_q,
-        2,
         f2py_z,
-        2,
         0,
         0.0,
         0.0,
@@ -413,51 +439,30 @@ def test_dtgsyl_solves_generalized_sylvester_equations(prik_lapack, scipy_lapack
 
     prik_scalars = prik_lapack.dtgsyl(
         "N",
-        0,
-        1,
-        1,
+        np.int32(0),
+        np.int32(1),
+        np.int32(1),
         a,
-        1,
+        np.int32(1),
         b,
-        1,
+        np.int32(1),
         prik_c,
-        1,
+        np.int32(1),
         d,
-        1,
+        np.int32(1),
         e,
-        1,
+        np.int32(1),
         prik_f,
-        1,
-        0.0,
-        0.0,
+        np.int32(1),
+        np.float64(0.0),
+        np.float64(0.0),
         np.empty(8),
-        8,
+        np.int32(8),
         np.empty(2, dtype=np.int32),
-        0,
+        np.int32(0),
     )
     f2py_result = f2py_lapack.dtgsyl(
-        b"N",
-        0,
-        1,
-        1,
-        a,
-        1,
-        b,
-        1,
-        f2py_c,
-        1,
-        d,
-        1,
-        e,
-        1,
-        f2py_f,
-        1,
-        0.0,
-        0.0,
-        np.empty(8),
-        8,
-        np.empty(2, dtype=np.int32),
-        0,
+        b"N", 0, 1, 1, a, b, f2py_c, d, e, f2py_f, 0.0, 0.0, np.empty(8), 8, np.empty(2, dtype=np.int32), 0
     )
     scipy_r, scipy_l, scipy_scale, scipy_dif, scipy_info = scipy_lapack.dtgsyl(
         a, b, c.copy(order="F"), d, e, f.copy(order="F"), trans=b"N", ijob=0, lwork=8

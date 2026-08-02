@@ -30,8 +30,10 @@ def test_dlangb_computes_frobenius_norm_of_band_storage(prik_lapack, scipy_lapac
     f2py_ab = prik_ab.copy(order="F")
     scipy_ab = prik_ab.copy(order="F")
 
-    prik_result = prik_lapack.dlangb("F", 3, 1, 1, prik_ab, 3, np.empty(3, dtype=np.float64))
-    f2py_value = f2py_lapack.dlangb(b"F", 3, 1, 1, f2py_ab, 3, np.empty(3, dtype=np.float64))
+    prik_result = prik_lapack.dlangb(
+        "F", np.int32(3), np.int32(1), np.int32(1), prik_ab, np.int32(3), np.empty(3, dtype=np.float64)
+    )
+    f2py_value = f2py_lapack.dlangb(b"F", 3, 1, 1, f2py_ab, np.empty(3, dtype=np.float64))
     scipy_value = scipy_lapack.dlangb(b"F", 1, 1, scipy_ab)
 
     assert prik_result[1:] == (3, 1, 1, 3)
@@ -45,8 +47,8 @@ def test_dlange_computes_one_norm(prik_lapack, scipy_lapack, f2py_lapack):
     expected = 11.0
     work = np.empty(3, dtype=np.float64)
 
-    prik_result = prik_lapack.dlange("1", 3, 2, matrix.copy(order="F"), 3, work.copy())
-    f2py_value = f2py_lapack.dlange(b"1", 3, 2, matrix.copy(order="F"), 3, work.copy())
+    prik_result = prik_lapack.dlange("1", np.int32(3), np.int32(2), matrix.copy(order="F"), np.int32(3), work.copy())
+    f2py_value = f2py_lapack.dlange(b"1", 3, 2, matrix.copy(order="F"), work.copy())
     scipy_value = scipy_lapack.dlange(b"1", matrix.copy(order="F"))
 
     assert prik_result[1:] == (3, 2, 3)
@@ -60,8 +62,10 @@ def test_dlantr_ignores_unused_triangle_and_unit_diagonal(prik_lapack, scipy_lap
     expected = float(np.sqrt(1.0 + 4.0 + 1.0 + 1.0 + 9.0 + 1.0))
     work = np.empty(3, dtype=np.float64)
 
-    prik_result = prik_lapack.dlantr("F", "U", "U", 3, 3, stored.copy(order="F"), 3, work.copy())
-    f2py_value = f2py_lapack.dlantr(b"F", b"U", b"U", 3, 3, stored.copy(order="F"), 3, work.copy())
+    prik_result = prik_lapack.dlantr(
+        "F", "U", "U", np.int32(3), np.int32(3), stored.copy(order="F"), np.int32(3), work.copy()
+    )
+    f2py_value = f2py_lapack.dlantr(b"F", b"U", b"U", 3, 3, stored.copy(order="F"), work.copy())
     scipy_value = scipy_lapack.dlantr(b"F", stored.copy(order="F"), uplo=b"U", diag=b"U")
 
     assert prik_result[1:] == (3, 3, 3)
@@ -78,8 +82,10 @@ def test_dlarf_applies_householder_reflector_from_left(prik_lapack, scipy_lapack
     expected = reflector @ original
     prik_c, f2py_c = column_major(original), column_major(original)
 
-    prik_scalars = prik_lapack.dlarf("L", 2, 2, vector, 1, tau, prik_c, 2, np.empty(2))
-    f2py_result = f2py_lapack.dlarf(b"L", 2, 2, vector, 1, tau, f2py_c, 2, np.empty(2))
+    prik_scalars = prik_lapack.dlarf(
+        "L", np.int32(2), np.int32(2), vector, np.int32(1), np.float64(tau), prik_c, np.int32(2), np.empty(2)
+    )
+    f2py_result = f2py_lapack.dlarf(b"L", 2, 2, vector, 1, tau, f2py_c, np.empty(2))
     scipy_c = scipy_lapack.dlarf(vector, tau, original.copy(order="F"), np.empty(2), side=b"L")
 
     assert prik_scalars == (2, 2, 1, tau, 2)
@@ -94,7 +100,7 @@ def test_dlarfg_constructs_a_valid_householder_reflector(prik_lapack, scipy_lapa
     original_x = np.array([3.0, 0.0], dtype=np.float64)
     prik_x, f2py_x = original_x.copy(), original_x.copy()
 
-    prik_scalars = prik_lapack.dlarfg(3, alpha, prik_x, 1, 0.0)
+    prik_scalars = prik_lapack.dlarfg(np.int32(3), np.float64(alpha), prik_x, np.int32(1), np.float64(0.0))
     f2py_result = f2py_lapack.dlarfg(3, alpha, f2py_x, 1, 0.0)
     scipy_beta, scipy_x, scipy_tau = scipy_lapack.dlarfg(3, alpha, original_x.copy())
 
@@ -113,7 +119,7 @@ def test_dlarfg_constructs_a_valid_householder_reflector(prik_lapack, scipy_lapa
 def test_dlartg_constructs_a_givens_rotation(prik_lapack, scipy_lapack, f2py_lapack):
     f, g = 3.0, 4.0
 
-    prik_scalars = prik_lapack.dlartg(f, g, 0.0, 0.0, 0.0)
+    prik_scalars = prik_lapack.dlartg(np.float64(f), np.float64(g), np.float64(0.0), np.float64(0.0), np.float64(0.0))
     f2py_result = f2py_lapack.dlartg(f, g, 0.0, 0.0, 0.0)
     scipy_c, scipy_s, scipy_r = scipy_lapack.dlartg(f, g)
 
@@ -132,8 +138,10 @@ def test_dlaswp_applies_native_one_based_row_pivots(prik_lapack, scipy_lapack, f
     expected = original[[2, 0, 1], :]
     prik_a, f2py_a = column_major(original), column_major(original)
 
-    prik_scalars = prik_lapack.dlaswp(2, prik_a, 3, 1, 2, native_ipiv, 1)
-    f2py_result = f2py_lapack.dlaswp(2, f2py_a, 3, 1, 2, native_ipiv, 1)
+    prik_scalars = prik_lapack.dlaswp(
+        np.int32(2), prik_a, np.int32(3), np.int32(1), np.int32(2), native_ipiv, np.int32(1)
+    )
+    f2py_result = f2py_lapack.dlaswp(2, f2py_a, 1, 2, native_ipiv, 1)
     scipy_a = scipy_lapack.dlaswp(original.copy(order="F"), scipy_pivots, k1=0, k2=1)
 
     assert prik_scalars == (2, 3, 1, 2, 1)

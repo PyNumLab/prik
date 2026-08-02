@@ -42,13 +42,15 @@ jobs:
             "meson==1.11.2" \
             "ninja==1.13.0" \
             "scipy==1.18.0"
-      - name: Install pinned GFortran
+      - name: Install pinned GFortran and LAPACK link dependencies
         shell: bash
         run: |
+          packages=(libblas-dev liblapack-dev)
           if ! command -v "$PRIK_GFORTRAN_BINARY" >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install --yes "$PRIK_GFORTRAN_PACKAGE"
+            packages+=("$PRIK_GFORTRAN_PACKAGE")
           fi
+          sudo apt-get update
+          sudo apt-get install --yes "${packages[@]}"
           compiler_dir="$RUNNER_TEMP/prik-gfortran"
           mkdir -p "$compiler_dir"
           ln -sf "$(command -v "$PRIK_GFORTRAN_BINARY")" "$compiler_dir/gfortran"

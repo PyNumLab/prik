@@ -21,6 +21,9 @@ EXAMPLE_ROOT = Path(__file__).resolve().parent
 NATIVE_ROOT = EXAMPLE_ROOT / "native"
 BUILD_FLAGS = "-O0"
 FORTRAN_SUFFIXES = (".f", ".f90", ".f95", ".f03", ".f08", ".for", ".f77", ".ftn")
+F2PY_BUILD_DEPENDENCIES = ("la_constants.f90",)
+F2PY_KIND_MAP = "{'real': {'wp': 'double'}}\n"
+F2PY_LINK_DEPENDENCIES = ("lapack", "blas")
 
 
 @dataclass(frozen=True)
@@ -91,6 +94,45 @@ def _selected_source(routine: str) -> Path:
     return matches[0]
 
 
+def _f2py_source_plan() -> tuple[Path, ...]:
+    """Return reviewed implementations plus their minimal compile dependency."""
+    dependencies = tuple(NATIVE_ROOT / name for name in F2PY_BUILD_DEPENDENCIES)
+    missing_dependencies = [str(path) for path in dependencies if not path.is_file()]
+    if missing_dependencies:
+        pytest.fail(f"missing f2py build dependencies: {missing_dependencies}")
+    selected = tuple(_selected_source(name) for name in ROUTINES if name not in F2PY_EXPORT_LIMITATIONS)
+    return dependencies + selected
+
+
+def _f2py_build_command(workdir: Path) -> tuple[str, ...]:
+    """Build only reviewed implementations and link external helper symbols."""
+    module_name = "f2py_reference_lapack_example"
+    f2cmap = workdir / ".f2py_f2cmap"
+    f2cmap.write_text(F2PY_KIND_MAP, encoding="utf-8")
+    selected_routines = tuple(name for name in ROUTINES if name not in F2PY_EXPORT_LIMITATIONS)
+    link_dependencies = tuple(item for dependency in F2PY_LINK_DEPENDENCIES for item in ("--dep", dependency))
+    return (
+        sys.executable,
+        "-m",
+        "numpy.f2py",
+        "-c",
+        "-m",
+        module_name,
+        *(str(source) for source in _f2py_source_plan()),
+        "only:",
+        *selected_routines,
+        ":",
+        *link_dependencies,
+        "--f2cmap",
+        str(f2cmap),
+        "--build-dir",
+        str(workdir / "generated"),
+        f"--f77flags={BUILD_FLAGS}",
+        f"--f90flags={BUILD_FLAGS}",
+        f"--opt={BUILD_FLAGS}",
+    )
+
+
 @pytest.fixture(scope="session")
 def prik_build(tmp_path_factory: pytest.TempPathFactory) -> BuiltLapack:
     """Build the one complete PRIK LAPACK wrapper through the established path."""
@@ -134,27 +176,11 @@ def prik_lapack(prik_build: BuiltLapack):
 
 @pytest.fixture(scope="session")
 def f2py_build(tmp_path_factory: pytest.TempPathFactory) -> BuiltLapack:
-    """Build one raw f2py comparison surface linked to the complete library."""
+    """Build one raw f2py surface from only the reviewed implementations."""
     compiler = full._compiler()
     workdir = tmp_path_factory.mktemp("f2py-reference-lapack-example")
-    shared = full._cached_native_shared_library("lapack")
     module_name = "f2py_reference_lapack_example"
-    selected_sources = tuple(_selected_source(name) for name in ROUTINES if name not in F2PY_EXPORT_LIMITATIONS)
-    command = (
-        sys.executable,
-        "-m",
-        "numpy.f2py",
-        "-c",
-        "-m",
-        module_name,
-        *(str(source) for source in selected_sources),
-        str(shared),
-        "--build-dir",
-        str(workdir / "generated"),
-        f"--f77flags={BUILD_FLAGS}",
-        f"--f90flags={BUILD_FLAGS}",
-        f"--opt={BUILD_FLAGS}",
-    )
+    command = _f2py_build_command(workdir)
     result = _run_build(command, workdir, compiler)
     return BuiltLapack(
         module=_import_built_module(module_name, workdir),

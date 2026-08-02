@@ -20,10 +20,19 @@ def test_dsycon_estimates_symmetric_reciprocal_condition(prik_lapack, scipy_lapa
     factor, native_ipiv = _negative_scalar_factor()
 
     prik_scalars = prik_lapack.dsycon(
-        "U", 1, factor.copy(order="F"), 1, native_ipiv, 4.0, 0.0, np.empty(2), np.empty(1, dtype=np.int32), 0
+        "U",
+        np.int32(1),
+        factor.copy(order="F"),
+        np.int32(1),
+        native_ipiv,
+        np.float64(4.0),
+        np.float64(0.0),
+        np.empty(2),
+        np.empty(1, dtype=np.int32),
+        np.int32(0),
     )
     f2py_result = f2py_lapack.dsycon(
-        b"U", 1, factor.copy(order="F"), 1, native_ipiv, 4.0, 0.0, np.empty(2), np.empty(1, dtype=np.int32), 0
+        b"U", 1, factor.copy(order="F"), native_ipiv, 4.0, 0.0, np.empty(2), np.empty(1, dtype=np.int32), 0
     )
     scipy_rcond, scipy_info = scipy_lapack.dsycon(factor.copy(order="F"), native_ipiv, 4.0)
 
@@ -38,8 +47,8 @@ def test_dsyconv_converts_bunch_kaufman_storage(prik_lapack, scipy_lapack, f2py_
     prik_a, f2py_a = factor.copy(order="F"), factor.copy(order="F")
     prik_e, f2py_e = np.full(1, np.nan), np.full(1, np.nan)
 
-    prik_scalars = prik_lapack.dsyconv("U", "C", 1, prik_a, 1, native_ipiv, prik_e, 0)
-    f2py_result = f2py_lapack.dsyconv(b"U", b"C", 1, f2py_a, 1, native_ipiv, f2py_e, 0)
+    prik_scalars = prik_lapack.dsyconv("U", "C", np.int32(1), prik_a, np.int32(1), native_ipiv, prik_e, np.int32(0))
+    f2py_result = f2py_lapack.dsyconv(b"U", b"C", 1, f2py_a, native_ipiv, f2py_e, 0)
     scipy_a, scipy_e, scipy_info = scipy_lapack.dsyconv(factor.copy(order="F"), native_ipiv, lower=0, way=0)
 
     assert f2py_result is None
@@ -54,8 +63,18 @@ def test_dsyequb_scales_symmetric_matrix(prik_lapack, scipy_lapack, f2py_lapack)
     matrix = np.array([[4.0]], dtype=np.float64, order="F")
     prik_s, f2py_s = np.empty(1), np.empty(1)
 
-    prik_scalars = prik_lapack.dsyequb("U", 1, matrix.copy(order="F"), 1, prik_s, 0.0, 0.0, np.empty(3), 0)
-    f2py_result = f2py_lapack.dsyequb(b"U", 1, matrix.copy(order="F"), 1, f2py_s, 0.0, 0.0, np.empty(3), 0)
+    prik_scalars = prik_lapack.dsyequb(
+        "U",
+        np.int32(1),
+        matrix.copy(order="F"),
+        np.int32(1),
+        prik_s,
+        np.float64(0.0),
+        np.float64(0.0),
+        np.empty(3),
+        np.int32(0),
+    )
+    f2py_result = f2py_lapack.dsyequb(b"U", 1, matrix.copy(order="F"), f2py_s, 0.0, 0.0, np.empty(3), 0)
     scipy_s, scipy_scond, scipy_amax, scipy_info = scipy_lapack.dsyequb(matrix.copy(order="F"))
 
     assert f2py_result is None
@@ -73,8 +92,20 @@ def test_dsysv_solves_symmetric_indefinite_system(prik_lapack, scipy_lapack, f2p
     prik_b, f2py_b = rhs.copy(order="F"), rhs.copy(order="F")
     prik_piv, f2py_piv = np.empty(1, dtype=np.int32), np.empty(1, dtype=np.int32)
 
-    prik_scalars = prik_lapack.dsysv("U", 1, 1, prik_a, 1, prik_piv, prik_b, 1, np.empty(8), 8, 0)
-    f2py_result = f2py_lapack.dsysv(b"U", 1, 1, f2py_a, 1, f2py_piv, f2py_b, 1, np.empty(8), 8, 0)
+    prik_scalars = prik_lapack.dsysv(
+        "U",
+        np.int32(1),
+        np.int32(1),
+        prik_a,
+        np.int32(1),
+        prik_piv,
+        prik_b,
+        np.int32(1),
+        np.empty(8),
+        np.int32(8),
+        np.int32(0),
+    )
+    f2py_result = f2py_lapack.dsysv(b"U", 1, 1, f2py_a, f2py_piv, f2py_b, np.empty(8), 8, 0)
     scipy_factor, _scipy_piv, scipy_x, scipy_info = scipy_lapack.dsysv(
         matrix.copy(order="F"), rhs.copy(order="F"), lwork=8
     )
@@ -101,24 +132,24 @@ def test_dsysvx_solves_and_bounds_symmetric_error(prik_lapack, scipy_lapack, f2p
     prik_scalars = prik_lapack.dsysvx(
         "N",
         "U",
-        1,
-        1,
+        np.int32(1),
+        np.int32(1),
         matrix.copy(order="F"),
-        1,
+        np.int32(1),
         prik_af,
-        1,
+        np.int32(1),
         prik_piv,
         rhs.copy(order="F"),
-        1,
+        np.int32(1),
         prik_x,
-        1,
-        0.0,
+        np.int32(1),
+        np.float64(0.0),
         prik_ferr,
         prik_berr,
         np.empty(3),
-        3,
+        np.int32(3),
         np.empty(1, dtype=np.int32),
-        0,
+        np.int32(0),
     )
     f2py_result = f2py_lapack.dsysvx(
         b"N",
@@ -126,14 +157,10 @@ def test_dsysvx_solves_and_bounds_symmetric_error(prik_lapack, scipy_lapack, f2p
         1,
         1,
         matrix.copy(order="F"),
-        1,
         f2py_af,
-        1,
         f2py_piv,
         rhs.copy(order="F"),
-        1,
         f2py_x,
-        1,
         0.0,
         f2py_ferr,
         f2py_berr,
@@ -163,8 +190,8 @@ def test_dsytf2_factorizes_symmetric_indefinite_matrix(prik_lapack, scipy_lapack
     prik_a, f2py_a = matrix.copy(order="F"), matrix.copy(order="F")
     prik_piv, f2py_piv = np.empty(1, dtype=np.int32), np.empty(1, dtype=np.int32)
 
-    prik_scalars = prik_lapack.dsytf2("U", 1, prik_a, 1, prik_piv, 0)
-    f2py_result = f2py_lapack.dsytf2(b"U", 1, f2py_a, 1, f2py_piv, 0)
+    prik_scalars = prik_lapack.dsytf2("U", np.int32(1), prik_a, np.int32(1), prik_piv, np.int32(0))
+    f2py_result = f2py_lapack.dsytf2(b"U", 1, f2py_a, f2py_piv, 0)
     scipy_factor, _scipy_piv, scipy_info = scipy_lapack.dsytf2(matrix.copy(order="F"))
 
     assert f2py_result is None
@@ -181,8 +208,10 @@ def test_dsytrf_factorizes_symmetric_indefinite_matrix(prik_lapack, scipy_lapack
     prik_a, f2py_a = matrix.copy(order="F"), matrix.copy(order="F")
     prik_piv, f2py_piv = np.empty(1, dtype=np.int32), np.empty(1, dtype=np.int32)
 
-    prik_scalars = prik_lapack.dsytrf("U", 1, prik_a, 1, prik_piv, np.empty(8), 8, 0)
-    f2py_result = f2py_lapack.dsytrf(b"U", 1, f2py_a, 1, f2py_piv, np.empty(8), 8, 0)
+    prik_scalars = prik_lapack.dsytrf(
+        "U", np.int32(1), prik_a, np.int32(1), prik_piv, np.empty(8), np.int32(8), np.int32(0)
+    )
+    f2py_result = f2py_lapack.dsytrf(b"U", 1, f2py_a, f2py_piv, np.empty(8), 8, 0)
     scipy_factor, _scipy_piv, scipy_info = scipy_lapack.dsytrf(matrix.copy(order="F"), lwork=8)
 
     assert f2py_result is None
@@ -197,8 +226,8 @@ def test_dsytri_inverts_symmetric_indefinite_factor(prik_lapack, scipy_lapack, f
     factor, native_ipiv = _negative_scalar_factor()
     prik_a, f2py_a = factor.copy(order="F"), factor.copy(order="F")
 
-    prik_scalars = prik_lapack.dsytri("U", 1, prik_a, 1, native_ipiv, np.empty(1), 0)
-    f2py_result = f2py_lapack.dsytri(b"U", 1, f2py_a, 1, native_ipiv, np.empty(1), 0)
+    prik_scalars = prik_lapack.dsytri("U", np.int32(1), prik_a, np.int32(1), native_ipiv, np.empty(1), np.int32(0))
+    f2py_result = f2py_lapack.dsytri(b"U", 1, f2py_a, native_ipiv, np.empty(1), 0)
     scipy_inverse, scipy_info = scipy_lapack.dsytri(factor.copy(order="F"), native_ipiv)
 
     assert f2py_result is None
@@ -213,8 +242,18 @@ def test_dsytrs_solves_from_symmetric_indefinite_factor(prik_lapack, scipy_lapac
     rhs = np.array([[8.0]], dtype=np.float64, order="F")
     prik_b, f2py_b = rhs.copy(order="F"), rhs.copy(order="F")
 
-    prik_scalars = prik_lapack.dsytrs("U", 1, 1, factor.copy(order="F"), 1, native_ipiv, prik_b, 1, 0)
-    f2py_result = f2py_lapack.dsytrs(b"U", 1, 1, factor.copy(order="F"), 1, native_ipiv, f2py_b, 1, 0)
+    prik_scalars = prik_lapack.dsytrs(
+        "U",
+        np.int32(1),
+        np.int32(1),
+        factor.copy(order="F"),
+        np.int32(1),
+        native_ipiv,
+        prik_b,
+        np.int32(1),
+        np.int32(0),
+    )
+    f2py_result = f2py_lapack.dsytrs(b"U", 1, 1, factor.copy(order="F"), native_ipiv, f2py_b, 0)
     scipy_x, scipy_info = scipy_lapack.dsytrs(factor.copy(order="F"), native_ipiv, rhs.copy(order="F"))
 
     assert f2py_result is None
