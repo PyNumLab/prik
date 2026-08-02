@@ -13,11 +13,16 @@ integration test, the LAPACK CI build, and the build comparison tooling.
 ## Provenance and license
 
 The sources are the Reference BLAS distributed by the University of Tennessee
-through [Netlib BLAS](https://www.netlib.org/blas/). The repository imported
-this corpus in commit `9113acde1f7d30af4c3eb3d90bb9f9da422639f2` on 2026-05-02;
-this change relocates those bytes without modifying or duplicating them. Their
-upstream provenance notices are retained in the files. No separate license file
-was present beside the imported corpus. The
+through [Netlib BLAS](https://www.netlib.org/blas/). More precisely, all 155
+files are byte-for-byte the `BLAS/SRC/` snapshot shipped in
+[Netlib LAPACK 3.12.1](https://www.netlib.org/lapack/lapack-3.12.1.html); the
+audited archive has SHA-256
+`37b00c90947488521f475b5a187fff4da4a5cfe61b525efcacf7a97f39a45ec6`.
+The repository imported this corpus in commit
+`9113acde1f7d30af4c3eb3d90bb9f9da422639f2` on 2026-05-02; this change
+relocates those bytes without modifying or duplicating them. Their upstream
+provenance notices are retained in the files. No separate license file was
+present beside the imported corpus. The
 [Netlib BLAS FAQ](https://www.netlib.org/blas/faq.html#1_5) describes BLAS as
 freely available, permits commercial use, and asks users to acknowledge Netlib
 and the authors. Consult that upstream statement when redistributing the native
@@ -31,7 +36,7 @@ same Meson and Ninja versions used by the dedicated BLAS/LAPACK CI lane before
 running the example:
 
 ```console
-python3 -m pip install "meson==1.11.2" "ninja==1.13.0"
+python3 -m pip install "numpy==2.5.1" "meson==1.11.2" "ninja==1.13.0"
 ```
 
 The session fixtures use the following effective commands. Both commands
@@ -39,8 +44,8 @@ receive the same sorted absolute source list and `-O0`; all artifacts stay in a
 temporary directory.
 
 ```bash
-REPOSITORY_ROOT="$(pwd)"
-BUILD_ROOT="$(mktemp -d)"
+export REPOSITORY_ROOT="$(pwd)"
+export BUILD_ROOT="$(mktemp -d)"
 mapfile -t BLAS_SOURCES < <(find "$REPOSITORY_ROOT/examples/blas/native" -maxdepth 1 -type f \( -name '*.f' -o -name '*.f90' \) -print | sort)
 mkdir -p "$BUILD_ROOT/prik" "$BUILD_ROOT/f2py"
 cd "$BUILD_ROOT/prik"
@@ -55,10 +60,12 @@ python3 -m numpy.f2py -c -m f2py_reference_blas "${BLAS_SOURCES[@]}" --build-dir
 Import the modules from their build directories:
 
 ```python
+import os
 import sys
 
-sys.path.insert(0, f"{BUILD_ROOT}/prik")
-sys.path.insert(0, f"{BUILD_ROOT}/f2py")
+build_root = os.environ["BUILD_ROOT"]
+sys.path.insert(0, f"{build_root}/prik")
+sys.path.insert(0, f"{build_root}/f2py")
 import prik_reference_blas
 import f2py_reference_blas
 ```
@@ -129,6 +136,25 @@ the full logical matrix. Banded helpers use the BLAS row mapping for general,
 symmetric, Hermitian, and triangular band storage. The tests reconstruct the
 logical matrix before calculating the independent expectation and preserve
 unused band rows exactly.
+
+### Test fixtures and helper vocabulary
+
+`prik_blas` and `f2py_blas` are session-scoped pytest fixtures from
+[`conftest.py`](conftest.py). They build and import each complete wrapper once.
+The named tests use narrow helpers from [`helpers.py`](helpers.py):
+
+| Helper | Responsibility |
+| --- | --- |
+| `assert_allclose_for_dtype` | Compares floating results with a tolerance derived from the real component dtype, expected magnitude, and operation length. |
+| `assert_storage_unchanged` | Uses exact equality, including NaNs, for input-only arrays, padding, and sentinel storage. |
+| `logical_vector` / `logical_positions` | Maps native positive or negative BLAS increments to logical vector elements. |
+| `packed_*` and `*_band_*` helpers | Reconstructs the logical matrix represented by packed or banded native storage. |
+| `symmetric_from_triangle`, `hermitian_from_triangle`, `triangular_from_triangle` | Reconstructs only the triangle the BLAS contract permits the routine to read. |
+
+Every wrapper call and independent formula remains visible in its test; these
+helpers only handle comparison or storage mechanics. The examples below assume
+`import numpy as np` and the corresponding imports from `helpers.py`, exactly as
+shown in the linked test files.
 
 ## Representative tests (source verified)
 

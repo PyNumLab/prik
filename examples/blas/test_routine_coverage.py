@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import ast
+import sys
 from pathlib import Path
 
 import pytest
 
-from conftest import BLAS_SOURCES, EXAMPLE_ROOT
+from conftest import BLAS_SOURCES, EXAMPLE_ROOT, _f2py_build_command, _prik_build_command
 from prik.parsers.fortran.parser import parse_fortran_file
 from routine_inventory import (
     ALL_ROUTINES,
@@ -38,6 +39,18 @@ TEST_MODULES = (
     "test_level3_triangular.py",
     "test_auxiliary.py",
 )
+
+
+def test_build_commands_use_the_documented_public_clis(tmp_path: Path):
+    prik_command = _prik_build_command(tmp_path / "prik", "/usr/bin/gfortran")
+    f2py_command = _f2py_build_command(tmp_path / "f2py")
+
+    assert prik_command[:3] == (sys.executable, "-m", "prik")
+    assert prik_command[prik_command.index("--out") + 1] == "prik_reference_blas"
+    assert f2py_command[:6] == (sys.executable, "-m", "numpy.f2py", "-c", "-m", "f2py_reference_blas")
+    for source in BLAS_SOURCES:
+        assert str(source) in prik_command
+        assert str(source) in f2py_command
 
 
 def _source_routines() -> tuple[str, ...]:

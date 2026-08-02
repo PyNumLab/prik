@@ -16,12 +16,17 @@ the coverage audit instead of shrinking the inventory.
 ## Source ownership, provenance, and license
 
 `examples/lapack/native/` is the repository's only owner of the Reference
-LAPACK implementation sources. It contains library implementation routines and
-the `la_constants`/`la_xisnan` modules required by the build; it excludes the
-upstream testing programs, timing programs, examples, and matrix generators.
-The corpus was originally imported from the Netlib Reference LAPACK distribution
-and is covered by the LAPACK three-clause BSD-style license. See the
-[Reference LAPACK site](https://www.netlib.org/lapack/) and
+LAPACK implementation sources. Of its 2,062 files, 2,061 are byte-for-byte the
+`SRC/` directory from
+[Netlib LAPACK 3.12.1](https://www.netlib.org/lapack/lapack-3.12.1.html); the
+repository adds its project-local `dlamch.f` machine-parameter implementation
+to the wrapper corpus. The audited upstream archive has SHA-256
+`37b00c90947488521f475b5a187fff4da4a5cfe61b525efcacf7a97f39a45ec6`.
+The boundary contains library implementation routines and the
+`la_constants`/`la_xisnan` modules required by the build; it excludes upstream
+testing programs, timing programs, examples, and matrix generators. The
+upstream source is covered by the LAPACK three-clause BSD-style license. See
+the [Reference LAPACK site](https://www.netlib.org/lapack/) and
 [license](https://www.netlib.org/lapack/LICENSE.txt).
 
 BLAS remains separately owned by `examples/blas/native/`. The complete LAPACK
@@ -36,7 +41,7 @@ before running this example:
 
 ```console
 sudo apt-get install libblas-dev liblapack-dev
-python3 -m pip install "meson==1.11.2" "ninja==1.13.0" "scipy==1.18.0"
+python3 -m pip install "numpy==2.5.1" "meson==1.11.2" "ninja==1.13.0" "scipy==1.18.0"
 ```
 
 The session fixture reuses the established complete-library integration path in
@@ -59,9 +64,30 @@ The contract-generation command is:
 python3 -m prik generate --pyi examples/lapack/native --language fortran --out /tmp/prik-lapack/contracts/lapack
 ```
 
-The extension build is performed by `build_pyi_extension` with the complete
-contract, the cached `libprik_full_lapack.so`, and `-O0` wrapper flags. The raw
-f2py command assembled by `conftest.py` is equivalent to:
+The intermediate contract separates LAPACK's root callable surface from its
+internal `LA_CONSTANTS` and `LA_XISNAN` modules. A direct merged source build
+would otherwise collide the module procedure `SISNAN` with the distinct
+external `SISNAN` routine and try to expose internal module constants. The
+contract is generated from all sources; no callable procedure is manually
+removed. All sources are still compiled into the native artifact.
+
+The final extension build uses the public CLI with the projected root contract
+and cached native shared library:
+
+```console
+python3 -m prik /tmp/prik-lapack/runtime-contract/lapack/__init__.pyi \
+  --out prik_reference_lapack_example \
+  --out-dir /tmp/prik-lapack/prik/generated \
+  --compiler "$(command -v gfortran)" \
+  --native-objects /tmp/prik-lapack/libprik_full_lapack.so \
+  --jobs 8 \
+  --wrapper-fortran-flags="-O0 -g0" \
+  --wrapper-c-flags="-O0 -g0"
+```
+
+The paths are illustrative; `conftest.py` creates their actual temporary/cache
+locations and records the exact executable command. The raw f2py command it
+assembles is equivalent to:
 
 ```console
 python3 -m numpy.f2py -c -m f2py_reference_lapack_example \
@@ -224,6 +250,30 @@ documented totals.
 Runtime success, f2py projection limitations, and any PRIK failures are CI
 outcomes and must be reported honestly; structural completion does not predict
 them.
+
+## Test fixtures and helper vocabulary
+
+`prik_lapack`, `f2py_lapack`, and `scipy_lapack` are session-scoped pytest
+fixtures from [`conftest.py`](conftest.py). They provide the complete PRIK
+wrapper, the selected raw-f2py comparison module, and SciPy's pinned low-level
+LAPACK module.
+
+The tests use explicit mechanics from [`helpers.py`](helpers.py):
+
+| Helper | Responsibility |
+| --- | --- |
+| `column_major` | Creates a Fortran-contiguous `np.float64` matrix for the native column-major contract. |
+| `active` | Selects the logical matrix while excluding leading-dimension padding. |
+| `native_pivots` | Converts SciPy's zero-based general-LU pivots to LAPACK's native one-based convention. |
+| `assert_allclose_float64` | Scales a float64-epsilon tolerance by operation length and expected magnitude. |
+| `assert_small_residual` | Checks an infinity-norm backward residual relative to the matrix and solution norms. |
+| `assert_storage_unchanged` | Uses exact equality, including NaNs, for unused triangles, padding, and input-only storage. |
+| `gfortran_logical_mask` | Represents the documented four-byte default-`LOGICAL` ABI used by the two selection-array tests. |
+| reconstruction helpers | Converts banded, tridiagonal, packed, RFP, LU, QR, and related native storage into matrices used by visible residuals and identities. |
+
+The helpers never invoke LAPACK and never hide a PRIK, SciPy, or f2py routine
+call. The source-verified examples below assume `import numpy as np` and the
+corresponding imports from `helpers.py`, as shown in their linked test modules.
 
 ## Representative source-verified tests
 

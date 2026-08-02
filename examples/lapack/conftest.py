@@ -20,6 +20,7 @@ from .routine_inventory import F2PY_EXPORT_LIMITATIONS, ROUTINES, SCIPY_VERSION
 EXAMPLE_ROOT = Path(__file__).resolve().parent
 NATIVE_ROOT = EXAMPLE_ROOT / "native"
 BUILD_FLAGS = "-O0"
+PRIK_WRAPPER_FLAGS = ("-O0", "-g0")
 FORTRAN_SUFFIXES = (".f", ".f90", ".f95", ".f03", ".f08", ".for", ".f77", ".ftn")
 F2PY_BUILD_DEPENDENCIES = ("la_constants.f90",)
 F2PY_KIND_MAP = "{'real': {'wp': 'double'}}\n"
@@ -65,7 +66,7 @@ def _run_build(command: tuple[str, ...], workdir: Path, compiler: str) -> subpro
     )
     if result.returncode:
         pytest.fail(
-            "Reference LAPACK comparison build failed\n"
+            "Reference LAPACK build failed\n"
             f"compiler: {full._compiler_identity(compiler)}\n"
             f"command: {shlex.join(command)}\n"
             f"stdout:\n{result.stdout or '<empty>'}\n"
@@ -133,38 +134,54 @@ def _f2py_build_command(workdir: Path) -> tuple[str, ...]:
     )
 
 
+def _prik_build_command(
+    runtime_entry: Path,
+    native_library: Path,
+    workdir: Path,
+    compiler: str,
+) -> tuple[str, ...]:
+    """Build the projected complete-library contract through PRIK's public CLI."""
+    jobs = max(1, min(os.cpu_count() or 1, 8))
+    joined_wrapper_flags = " ".join(PRIK_WRAPPER_FLAGS)
+    return (
+        sys.executable,
+        "-m",
+        "prik",
+        str(runtime_entry),
+        "--out",
+        "prik_reference_lapack_example",
+        "--out-dir",
+        str(workdir / "generated"),
+        "--compiler",
+        compiler,
+        "--native-objects",
+        str(native_library),
+        "--jobs",
+        str(jobs),
+        f"--wrapper-fortran-flags={joined_wrapper_flags}",
+        f"--wrapper-c-flags={joined_wrapper_flags}",
+    )
+
+
 @pytest.fixture(scope="session")
 def prik_build(tmp_path_factory: pytest.TempPathFactory) -> BuiltLapack:
-    """Build the one complete PRIK LAPACK wrapper through the established path."""
+    """Build the complete LAPACK wrapper through PRIK's public CLI once."""
     compiler = full._compiler()
     workdir = tmp_path_factory.mktemp("prik-reference-lapack-example")
     entry = full._generate_contract(NATIVE_ROOT, workdir / "contracts" / "lapack")
     shared = full._cached_native_shared_library("lapack")
     runtime_entry = full._runtime_entry("lapack", entry, workdir)
-    result = full.build_pyi_extension(
-        runtime_entry,
-        output_name="prik_reference_lapack_example",
-        output_dir=workdir / "build",
-        native_objects=[shared],
-        wrapper_fortran_flags=full.FULL_LIBRARY_WRAPPER_FLAGS,
-        wrapper_c_flags=full.FULL_LIBRARY_WRAPPER_FLAGS,
-    )
-    command = (
-        sys.executable,
-        "-m",
-        "prik",
-        "<generated-complete-lapack-contract>",
-        "--native-shared-library",
-        str(shared),
-    )
+    module_name = "prik_reference_lapack_example"
+    command = _prik_build_command(runtime_entry, shared, workdir, compiler)
+    result = _run_build(command, workdir, compiler)
     return BuiltLapack(
-        module=_import_built_module(result.module_name, result.output_dir),
-        module_name=result.module_name,
+        module=_import_built_module(module_name, workdir),
+        module_name=module_name,
         workdir=workdir,
         command=command,
         compiler_identity=full._compiler_identity(compiler),
-        stdout="",
-        stderr="",
+        stdout=result.stdout,
+        stderr=result.stderr,
     )
 
 

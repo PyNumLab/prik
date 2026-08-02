@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import sys
 from pathlib import Path
 
 import pytest
@@ -11,8 +12,10 @@ from .conftest import (
     F2PY_BUILD_DEPENDENCIES,
     F2PY_KIND_MAP,
     F2PY_LINK_DEPENDENCIES,
+    PRIK_WRAPPER_FLAGS,
     _f2py_build_command,
     _f2py_source_plan,
+    _prik_build_command,
 )
 from .routine_inventory import (
     EXPLICIT_TEST_NAMES,
@@ -139,6 +142,20 @@ def test_f2py_source_plan_includes_required_kind_module(tmp_path: Path):
     assert ":" in command
     assert not any("libprik_full_lapack" in value for value in command)
     assert (tmp_path / ".f2py_f2cmap").read_text(encoding="utf-8") == F2PY_KIND_MAP
+
+
+def test_prik_build_command_uses_the_public_cli(tmp_path: Path):
+    """The documented LAPACK wrapper build is a real PRIK CLI invocation."""
+    runtime_entry = tmp_path / "runtime" / "__init__.pyi"
+    native_library = tmp_path / "libprik_full_lapack.so"
+    command = _prik_build_command(runtime_entry, native_library, tmp_path, "/usr/bin/gfortran")
+
+    assert command[:4] == (sys.executable, "-m", "prik", str(runtime_entry))
+    assert command[command.index("--native-objects") + 1] == str(native_library)
+    assert "--native-shared-library" not in command
+    joined_flags = " ".join(PRIK_WRAPPER_FLAGS)
+    assert f"--wrapper-fortran-flags={joined_flags}" in command
+    assert f"--wrapper-c-flags={joined_flags}" in command
 
 
 def test_authoritative_native_source_boundary_is_complete_and_unique():

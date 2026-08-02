@@ -100,20 +100,16 @@ def _import_built_module(module_name: str, workdir: Path):
         sys.path.remove(str(workdir))
 
 
-@pytest.fixture(scope="session")
-def prik_build(tmp_path_factory: pytest.TempPathFactory) -> BuiltBLAS:
-    """Build and import the complete source set through PRIK once."""
-    compiler = _compiler()
-    workdir = tmp_path_factory.mktemp("prik-reference-blas")
-    module_name = "prik_reference_blas"
+def _prik_build_command(workdir: Path, compiler: str) -> tuple[str, ...]:
+    """Build the complete source set through PRIK's public CLI."""
     jobs = max(1, min(os.cpu_count() or 1, 8))
-    command = (
+    return (
         sys.executable,
         "-m",
         "prik",
         *(str(source) for source in BLAS_SOURCES),
         "--out",
-        module_name,
+        "prik_reference_blas",
         "--out-dir",
         str(workdir / "generated"),
         "--compiler",
@@ -124,6 +120,33 @@ def prik_build(tmp_path_factory: pytest.TempPathFactory) -> BuiltBLAS:
         f"--wrapper-fortran-flags={BUILD_FLAGS}",
         f"--wrapper-c-flags={BUILD_FLAGS}",
     )
+
+
+def _f2py_build_command(workdir: Path) -> tuple[str, ...]:
+    """Build the identical complete source set through NumPy f2py."""
+    return (
+        sys.executable,
+        "-m",
+        "numpy.f2py",
+        "-c",
+        "-m",
+        "f2py_reference_blas",
+        *(str(source) for source in BLAS_SOURCES),
+        "--build-dir",
+        str(workdir / "generated"),
+        f"--f77flags={BUILD_FLAGS}",
+        f"--f90flags={BUILD_FLAGS}",
+        f"--opt={BUILD_FLAGS}",
+    )
+
+
+@pytest.fixture(scope="session")
+def prik_build(tmp_path_factory: pytest.TempPathFactory) -> BuiltBLAS:
+    """Build and import the complete source set through PRIK once."""
+    compiler = _compiler()
+    workdir = tmp_path_factory.mktemp("prik-reference-blas")
+    module_name = "prik_reference_blas"
+    command = _prik_build_command(workdir, compiler)
     result = _run_build(command, workdir, compiler)
     return BuiltBLAS(
         module=_import_built_module(module_name, workdir),
@@ -142,20 +165,7 @@ def f2py_build(tmp_path_factory: pytest.TempPathFactory) -> BuiltBLAS:
     compiler = _compiler()
     workdir = tmp_path_factory.mktemp("f2py-reference-blas")
     module_name = "f2py_reference_blas"
-    command = (
-        sys.executable,
-        "-m",
-        "numpy.f2py",
-        "-c",
-        "-m",
-        module_name,
-        *(str(source) for source in BLAS_SOURCES),
-        "--build-dir",
-        str(workdir / "generated"),
-        f"--f77flags={BUILD_FLAGS}",
-        f"--f90flags={BUILD_FLAGS}",
-        f"--opt={BUILD_FLAGS}",
-    )
+    command = _f2py_build_command(workdir)
     result = _run_build(command, workdir, compiler)
     return BuiltBLAS(
         module=_import_built_module(module_name, workdir),
