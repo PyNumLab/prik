@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 import subprocess
 import sys
 
@@ -57,14 +58,14 @@ def test_lsame(prik_blas, f2py_blas):
     assert bool(prik_different) == bool(f2py_different)
 
 
-def test_xerbla(prik_build, f2py_build):
+def test_xerbla(prik_blas, f2py_blas):
     prik_environment = dict(os.environ)
     prik_environment["PYTHONPATH"] = os.pathsep.join(
-        filter(None, (str(prik_build.workdir), prik_environment.get("PYTHONPATH")))
+        filter(None, (str(Path(prik_blas.__file__).resolve().parent), prik_environment.get("PYTHONPATH")))
     )
     f2py_environment = dict(os.environ)
     f2py_environment["PYTHONPATH"] = os.pathsep.join(
-        filter(None, (str(f2py_build.workdir), f2py_environment.get("PYTHONPATH")))
+        filter(None, (str(Path(f2py_blas.__file__).resolve().parent), f2py_environment.get("PYTHONPATH")))
     )
 
     prik_result = subprocess.run(  # nosec B603 - fixed interpreter and test program
@@ -100,14 +101,14 @@ def test_xerbla(prik_build, f2py_build):
     assert f2py_result.stderr == ""
 
 
-def test_xerbla_array(prik_build, f2py_build):
+def test_xerbla_array(prik_blas, f2py_blas):
     prik_environment = dict(os.environ)
     prik_environment["PYTHONPATH"] = os.pathsep.join(
-        filter(None, (str(prik_build.workdir), prik_environment.get("PYTHONPATH")))
+        filter(None, (str(Path(prik_blas.__file__).resolve().parent), prik_environment.get("PYTHONPATH")))
     )
     f2py_environment = dict(os.environ)
     f2py_environment["PYTHONPATH"] = os.pathsep.join(
-        filter(None, (str(f2py_build.workdir), f2py_environment.get("PYTHONPATH")))
+        filter(None, (str(Path(f2py_blas.__file__).resolve().parent), f2py_environment.get("PYTHONPATH")))
     )
 
     prik_result = subprocess.run(  # nosec B603 - fixed interpreter and test program

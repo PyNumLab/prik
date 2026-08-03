@@ -26,9 +26,8 @@ QUALITY_ASSURANCE_DOC = REPO_ROOT / "docs/developer/quality-assurance.md"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
 MANIFEST = REPO_ROOT / "MANIFEST.in"
-FULL_REAL_LIBRARY_TEST = "tests/fortran/building_shared_library/end_to_end/real_libraries/test_full_libraries.py"
-BLAS_CI_FULL_SURFACE = "examples/blas/ci_full_surface.py"
-LAPACK_CI_FULL_SURFACE = "examples/lapack/ci_full_surface.py"
+BLAS_CI_FULL_SURFACE = "examples/blas/ci/full_surface.py"
+LAPACK_CI_FULL_SURFACE = "examples/lapack/ci/full_surface.py"
 
 LEGACY_TEST_ROOTS = {
     "benchmarks",
@@ -239,6 +238,30 @@ def test_native_library_examples_are_copyable_without_the_repository_test_packag
     assert repository_test_imports == []
 
 
+def test_native_library_examples_separate_user_tests_from_ci_audits() -> None:
+    fixture_names = {
+        "blas": {"prik_blas", "f2py_blas"},
+        "lapack": {"prik_lapack", "f2py_lapack", "scipy_lapack"},
+    }
+    for library, expected_fixtures in fixture_names.items():
+        root = EXAMPLES_ROOT / library
+        assert (root / "tests" / "helpers.py").is_file()
+        assert sorted((root / "tests").glob("test_*.py"))
+        assert {path.name for path in (root / "ci").glob("*.py")} == {
+            "__init__.py",
+            "full_surface.py",
+        }
+        assert all((root / script).is_file() for script in ("build_prik.sh", "build_f2py.sh", "build_all.sh"))
+
+        aggregate = (root / "build_all.sh").read_text(encoding="utf-8")
+        assert f"source examples/{library}/build_prik.sh" in aggregate
+        assert f'source "$EXAMPLE_WORKSPACE/examples/{library}/build_f2py.sh"' in aggregate
+
+        fixture_tree = ast.parse((root / "conftest.py").read_text(encoding="utf-8"))
+        functions = {node.name for node in fixture_tree.body if isinstance(node, ast.FunctionDef)}
+        assert functions == expected_fixtures
+
+
 def test_test_index_links_and_language_directories_exist() -> None:
     text = TEST_INDEX.read_text(encoding="utf-8")
     for target in re.findall(r"\[[^]]+\]\(([^)#]+)", text):
@@ -263,16 +286,14 @@ def test_real_library_examples_have_one_dedicated_workflow() -> None:
 
     assert '-m "not real_library and not toolchain_smoke"' in ordinary_jobs
     assert ordinary_jobs.count('-m "not real_library and not toolchain_smoke"') == 2
-    assert FULL_REAL_LIBRARY_TEST not in ordinary_jobs
     assert "examples/blas" not in ordinary_jobs
     assert "examples/lapack" not in ordinary_jobs
-    assert 'python -m pytest -q -o "python_files=test_*.py ci_full_surface.py"' in dedicated_job
-    assert dedicated_job.count("python_files=test_*.py ci_full_surface.py") == 2
-    assert f"examples/blas {BLAS_CI_FULL_SURFACE}" in dedicated_job
-    assert f"examples/lapack {LAPACK_CI_FULL_SURFACE}" in dedicated_job
+    assert "source examples/blas/build_all.sh" in dedicated_job
+    assert "source examples/lapack/build_all.sh" in dedicated_job
+    assert f"python -m pytest -q examples/blas/tests {BLAS_CI_FULL_SURFACE}" in dedicated_job
+    assert f"python -m pytest -q examples/lapack/tests {LAPACK_CI_FULL_SURFACE}" in dedicated_job
     assert BLAS_CI_FULL_SURFACE in dedicated_job
     assert LAPACK_CI_FULL_SURFACE in dedicated_job
-    assert FULL_REAL_LIBRARY_TEST not in dedicated_job
     assert '"meson==1.11.2"' in dedicated_job
     assert '"ninja==1.13.0"' in dedicated_job
     assert '"scipy==1.18.0"' in dedicated_job
@@ -424,13 +445,12 @@ def test_pull_request_declares_direct_staged_jobs_and_always_reports_the_gate() 
     native_libraries = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "native-libraries")
     assert "needs: [unit-tests, unit-tests-macos]" in native_libraries
     assert "ignore-real-library-wrappers" in native_libraries
-    assert 'python -m pytest -q -o "python_files=test_*.py ci_full_surface.py"' in native_libraries
-    assert native_libraries.count("python_files=test_*.py ci_full_surface.py") == 2
-    assert f"examples/blas {BLAS_CI_FULL_SURFACE}" in native_libraries
-    assert f"examples/lapack {LAPACK_CI_FULL_SURFACE}" in native_libraries
+    assert "source examples/blas/build_all.sh" in native_libraries
+    assert "source examples/lapack/build_all.sh" in native_libraries
+    assert f"python -m pytest -q examples/blas/tests {BLAS_CI_FULL_SURFACE}" in native_libraries
+    assert f"python -m pytest -q examples/lapack/tests {LAPACK_CI_FULL_SURFACE}" in native_libraries
     assert BLAS_CI_FULL_SURFACE in native_libraries
     assert LAPACK_CI_FULL_SURFACE in native_libraries
-    assert FULL_REAL_LIBRARY_TEST not in native_libraries
 
     benchmark = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "documentation-benchmark")
     assert "needs: native-libraries" in benchmark

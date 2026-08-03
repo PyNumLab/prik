@@ -8,17 +8,15 @@ from pathlib import Path
 
 import pytest
 
-from examples.blas.f2py_contract import F2PY_INOUT_ARGUMENTS
-from .conftest import (
-    BLAS_SOURCES,
-    EXAMPLE_ROOT,
-    _contract_command,
-    _f2py_build_command,
-    _f2py_signature_command,
-    _prik_build_command,
-)
 from prik.parsers.fortran.parser import parse_fortran_file
-from .routine_inventory import (
+
+from ..f2py_build import (
+    BLAS_SOURCES,
+    F2PY_INOUT_ARGUMENTS,
+    f2py_build_command,
+    f2py_signature_command,
+)
+from ..routine_inventory import (
     ALL_ROUTINES,
     DIFFERENTIALLY_TESTED_ROUTINES,
     EXPLICIT_TEST_NAMES,
@@ -30,6 +28,8 @@ from .routine_inventory import (
 
 
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
+TEST_ROOT = Path(__file__).resolve().parent
+EXAMPLE_ROOT = TEST_ROOT.parent
 
 TEST_MODULES = (
     "test_level1_real.py",
@@ -48,18 +48,11 @@ TEST_MODULES = (
 )
 
 
-def test_build_commands_use_the_documented_public_clis(tmp_path: Path):
+def test_f2py_commands_generate_signatures_and_reuse_the_native_library(tmp_path: Path):
     native_library = tmp_path / "native" / "libprik_full_blas.so"
-    contract_entry = tmp_path / "prik" / "contract" / "blas" / "__init__.pyi"
-    contract_command = _contract_command(tmp_path / "prik")
-    prik_command = _prik_build_command(contract_entry, native_library, tmp_path / "prik", "/usr/bin/gfortran")
-    signature_command = _f2py_signature_command(tmp_path / "f2py")
-    f2py_command = _f2py_build_command(tmp_path / "f2py", native_library)
+    signature_command = f2py_signature_command(tmp_path / "f2py")
+    f2py_command = f2py_build_command(tmp_path / "f2py", native_library)
 
-    assert contract_command[:5] == (sys.executable, "-m", "prik", "generate", "--pyi")
-    assert prik_command[:3] == (sys.executable, "-m", "prik")
-    assert prik_command[prik_command.index("--out") + 1] == "prik_reference_blas"
-    assert prik_command[prik_command.index("--native-objects") + 1] == str(native_library)
     assert signature_command[:5] == (sys.executable, "-m", "numpy.f2py", "-m", "f2py_reference_blas")
     assert f2py_command[:4] == (sys.executable, "-m", "numpy.f2py", "-c")
     assert f"-L{native_library.parent}" in f2py_command
@@ -69,12 +62,11 @@ def test_build_commands_use_the_documented_public_clis(tmp_path: Path):
             tmp_path / "f2py" / "f2py-intent-sources" / source.name if source.stem in F2PY_INOUT_ARGUMENTS else source
         )
         assert str(expected_f2py_source) in signature_command
-        assert str(source) not in prik_command
         assert str(source) not in f2py_command
 
 
 def test_f2py_scalar_writeback_overlays_are_explicit(tmp_path: Path):
-    command = _f2py_signature_command(tmp_path)
+    command = f2py_signature_command(tmp_path)
 
     for routine, arguments in F2PY_INOUT_ARGUMENTS.items():
         source = next(source for source in BLAS_SOURCES if source.stem == routine)
@@ -95,7 +87,7 @@ def _source_routines() -> tuple[str, ...]:
 def _explicit_test_functions() -> dict[str, tuple[Path, ast.FunctionDef]]:
     functions: dict[str, tuple[Path, ast.FunctionDef]] = {}
     for filename in TEST_MODULES:
-        path = EXAMPLE_ROOT / filename
+        path = TEST_ROOT / filename
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in tree.body:
             if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
@@ -119,9 +111,10 @@ def test_f2py_exports_every_expected_routine(f2py_blas):
     assert missing == []
 
 
-def test_both_wrappers_reuse_the_same_precompiled_native_library(prik_build, f2py_build):
-    assert prik_build.native_library == f2py_build.native_library
-    assert prik_build.native_library.name == "libprik_full_blas.so"
+def test_documented_scripts_place_both_wrappers_under_one_build_root(prik_blas, f2py_blas):
+    prik_root = Path(prik_blas.__file__).resolve().parent.parent
+    f2py_root = Path(f2py_blas.__file__).resolve().parent.parent
+    assert prik_root == f2py_root
 
 
 def test_every_routine_has_one_visible_explicit_test():

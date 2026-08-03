@@ -110,8 +110,8 @@ argument handoff from the native barrier action.
 
 Runtime wrapper tests are organized by stable subjects under
 `tests/wrapper/fortran/`: `build_from_source/`, `build_from_pyi/`,
-`multiple_files/`, `external_routines/`, `real_libraries/`,
-`edit_pyi_contracts/`, `arrays/`, `scalars/`, `function_calls/`,
+`multiple_files/`, `external_routines/`, `edit_pyi_contracts/`, `arrays/`,
+`scalars/`, `function_calls/`,
 `strings/`, `derived_types/`, `callbacks/`, `module_state/`,
 `runtime_behavior/`, `naming/`, and `layout_rules/`.
 
@@ -350,9 +350,9 @@ evidence lives in `tests/cli/`.
 
 ### Stage 7 — Library-Scale And Mixed-Bundle Evidence
 
-Real BLAS/LAPACK artifact-shape evidence lives in
-`tests/fortran/building_shared_library/end_to_end/real_libraries/test_full_libraries.py`. Native
-bundle, order, transitive-library, and failure-path evidence lives in
+Real BLAS/LAPACK artifact-shape evidence lives in `examples/blas/` and
+`examples/lapack/`. Native bundle, order, transitive-library, and failure-path
+evidence lives in
 `tests/fortran/building_shared_library/end_to_end/test_native_bundles.py`.
 
 - [x] Full real BLAS and LAPACK source corpora under `examples/blas/native/`
@@ -364,11 +364,11 @@ bundle, order, transitive-library, and failure-path evidence lives in
   helper declarations, imported symbols, and representative runtime behavior.
   Real-library evidence keeps no checked generated `.pyi`, edited `.pyi`, or
   source-free replay fixture.
-- [x] The full-library evidence builds each full root procedure contract with
-  `build_pyi_extension`, links it against a cached full native shared library,
-  imports every generated root procedure through the normalized Python names,
-  and checks that source stems and known generated helper declarations line up
-  with the shared native corpora.
+- [x] The example evidence builds each full root procedure contract through the
+  documented PRIK command, links it against one native shared library, imports
+  every generated root procedure through normalized Python names, and checks
+  that source stems and known generated helper declarations line up with the
+  shared native corpora.
 - [x] Full native BLAS/LAPACK object files are compiled once into a deterministic
   `.pytest_cache/prik/real-library-native` cache, archived once, and linked once
   into the shared libraries reused by repeated wrapper test runs; CI can move

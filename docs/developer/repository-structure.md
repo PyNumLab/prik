@@ -56,8 +56,10 @@ through `prik/__init__.py`.
 | `tests/fortran/infrastructure/` | Internal cross-feature policy, wrapper-generation, compiler, and runtime frameworks with no honest public-capability owner. |
 | `tests/c/` | C input-language parsing, preprocessing, probe, semantic, CLI, and fixture evidence. |
 | `tests/shared/` | Language-neutral product architecture, documentation, naming, tools, type mapping, and utility checks. |
-| `examples/blas/test_*.py` | Dedicated real-library correctness documentation: explicit independent and PRIK/f2py differential validation for every Reference BLAS routine. |
-| `examples/lapack/test_*.py` | CI-only real-library correctness documentation: explicit independent and PRIK/SciPy/f2py validation for the reviewed double-precision routine inventory. |
+| `examples/blas/tests/test_*.py` | User-facing real-library correctness documentation: explicit independent and PRIK/f2py differential validation for every Reference BLAS routine. |
+| `examples/blas/ci/full_surface.py` | Maintainer-only complete BLAS export and smoke audit, selected explicitly by CI. |
+| `examples/lapack/tests/test_*.py` | User-facing real-library correctness documentation: explicit independent and PRIK/SciPy/f2py validation for the reviewed double-precision routine inventory. |
+| `examples/lapack/ci/full_surface.py` | Maintainer-only complete LAPACK export and smoke audit, selected explicitly by CI. |
 
 <!-- PRIK_C_DOCS_START
 | `tests/c/fixtures/parser/` | C parser-specific tests and fixture maintenance. |

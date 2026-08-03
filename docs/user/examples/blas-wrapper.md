@@ -82,19 +82,14 @@ are installed, you can copy that directory alone.
 
 ## 2. Compile BLAS once and build the PRIK wrapper
 
-The authoritative implementation lives in the pytest fixture
-[`examples/blas/conftest.py`](../../../examples/blas/conftest.py).
-The commands below reproduce the cold build.
-Run them from the repository root:
+Run the first build script from the repository root:
 
+<!-- prik-doc-source: examples/blas/build_prik.sh -->
 ```bash
 export EXAMPLE_WORKSPACE="$PWD"
 export BLAS_BUILD_ROOT="$(mktemp -d)"
-export PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR="$BLAS_BUILD_ROOT/native-cache"
-
 export BLAS_SHARED_LIBRARY="$(
   python -m examples.native_library blas \
-    --cache-dir "$PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR" \
     --compiler "$(command -v gfortran)" \
     --jobs 8
 )"
@@ -130,37 +125,16 @@ performance.
 
 ## 3. Build f2py against the same native library
 
-Use the maintained command builder so the comparison matches the test suite:
+Run the same f2py build script exercised by the test suite:
 
+<!-- prik-doc-source: examples/blas/build_f2py.sh -->
 ```bash
 cd "$EXAMPLE_WORKSPACE"
-python - <<'PY'
-import os
-from pathlib import Path
-import subprocess
-
-from examples.blas.conftest import (
-    _build_environment,
-    _compiler,
-    _f2py_build_command,
-    _f2py_signature_command,
-)
-
-workdir = Path(os.environ["BLAS_BUILD_ROOT"]) / "f2py"
-workdir.mkdir(parents=True, exist_ok=True)
-compiler = _compiler()
-native_library = Path(os.environ["BLAS_SHARED_LIBRARY"])
-for command in (
-    _f2py_signature_command(workdir),
-    _f2py_build_command(workdir, native_library),
-):
-    subprocess.run(
-        command,
-        cwd=workdir,
-        env=_build_environment(compiler, native_library),
-        check=True,
-    )
-PY
+export BLAS_F2PY_ROOT="$BLAS_BUILD_ROOT/f2py"
+python -m examples.blas.f2py_build \
+  "$BLAS_F2PY_ROOT" \
+  "$BLAS_SHARED_LIBRARY" \
+  --compiler "$(command -v gfortran)"
 ```
 
 f2py reads the source declarations to generate its `.pyf` signature, compiles
@@ -196,17 +170,15 @@ PRIK deliberately follows the native scalar contract:
 
 ---
 
-## 4. Understand the test fixtures and helpers
+## 4. Run the correctness tests
 
 The names `prik_blas` and `f2py_blas` in the tests are session-scoped pytest
-fixtures from [`conftest.py`](../../../examples/blas/conftest.py). They build
-and import each complete module once, then reuse it for every test.
-GitHub Actions explicitly adds the non-discovered `ci_full_surface.py` to the
-same pytest invocation for maintainer-only full-surface checks; ordinary users
-running `pytest examples/blas` do not collect it.
+fixtures from [`conftest.py`](../../../examples/blas/conftest.py). After the
+build scripts finish, they import the modules and reuse them for every test
+under [`examples/blas/tests/`](../../../examples/blas/tests/).
 
 The tests import small, explicit helpers from
-[`helpers.py`](../../../examples/blas/helpers.py). The two helpers used below
+[`tests/helpers.py`](../../../examples/blas/tests/helpers.py). The two helpers used below
 are intentionally narrow:
 
 - `assert_allclose_for_dtype` chooses a tolerance from the result dtype and the
@@ -222,7 +194,7 @@ Both helper definitions and the test functions below assume:
 import numpy as np
 ```
 
-<!-- prik-doc-source: examples/blas/helpers.py::assert_allclose_for_dtype -->
+<!-- prik-doc-source: examples/blas/tests/helpers.py::assert_allclose_for_dtype -->
 ```python
 def assert_allclose_for_dtype(actual, expected, *, operation_size: int = 1) -> None:
     """Compare floating values with dtype- and accumulation-aware tolerances."""
@@ -241,7 +213,7 @@ def assert_allclose_for_dtype(actual, expected, *, operation_size: int = 1) -> N
     )
 ```
 
-<!-- prik-doc-source: examples/blas/helpers.py::assert_storage_unchanged -->
+<!-- prik-doc-source: examples/blas/tests/helpers.py::assert_storage_unchanged -->
 ```python
 def assert_storage_unchanged(actual: np.ndarray, original: np.ndarray) -> None:
     """Require exact preservation, including NaNs and sentinel padding."""
@@ -269,7 +241,7 @@ A documentation test compares these blocks with the Python AST, so the page and 
 
 ### DAXPY – in-place vector update
 
-<!-- prik-doc-source: examples/blas/test_level1_real.py::test_daxpy -->
+<!-- prik-doc-source: examples/blas/tests/test_level1_real.py::test_daxpy -->
 ```python
 def test_daxpy(prik_blas, f2py_blas):
     alpha = np.float64(-1.5)
@@ -296,7 +268,7 @@ The input-only array `x` must remain unchanged.
 
 ### DDOT – scalar function result
 
-<!-- prik-doc-source: examples/blas/test_level1_real.py::test_ddot -->
+<!-- prik-doc-source: examples/blas/tests/test_level1_real.py::test_ddot -->
 ```python
 def test_ddot(prik_blas, f2py_blas):
     x = np.array([1.0, -2.0, 4.0], dtype=np.float64)
@@ -322,25 +294,26 @@ def test_ddot(prik_blas, f2py_blas):
 
 ## 6. Run the maintained example
 
-Normally let pytest build each implementation once and reuse the modules:
+Build both wrappers once, then run any user-facing test selection:
 
 ```bash
 cd "$REPOSITORY_ROOT"
-python -m pytest -q examples/blas
+source examples/blas/build_all.sh
+python -m pytest -q examples/blas/tests
 ```
 
 Focused commands for quick debugging:
 
 ```bash
-python -m pytest -q examples/blas/test_level1_real.py
-python -m pytest -q examples/blas/test_level1_real.py::test_daxpy
-python -m pytest -q examples/blas -k dgemm
+python -m pytest -q examples/blas/tests/test_level1_real.py
+python -m pytest -q examples/blas/tests/test_level1_real.py::test_daxpy
+python -m pytest -q examples/blas/tests -k dgemm
 ```
 
-- Complete Level-1 examples → [`test_level1_real.py`](../../../examples/blas/test_level1_real.py)
-- Matrix / packed / banded / symmetric / Hermitian / triangular examples → files under [`examples/blas/`](../../../examples/blas/)
+- Complete Level-1 examples → [`test_level1_real.py`](../../../examples/blas/tests/test_level1_real.py)
+- Matrix / packed / banded / symmetric / Hermitian / triangular examples → files under [`examples/blas/tests/`](../../../examples/blas/tests/)
 - Authoritative classification → [`routine_inventory.py`](../../../examples/blas/routine_inventory.py)
-- Coverage guard → [`test_routine_coverage.py`](../../../examples/blas/test_routine_coverage.py)
+- Coverage guard → [`test_routine_coverage.py`](../../../examples/blas/tests/test_routine_coverage.py)
 
 For the full explanation of increments, leading dimensions, packed/banded storage, Hermitian conjugation, tolerances, coverage totals and known wrapper differences, see the
 [`examples/blas` project README](../../../examples/blas/README.md).
@@ -354,10 +327,10 @@ For the full explanation of increments, leading dimensions, packed/banded storag
 - Run a single failing test with more detail and keep the build directory:
 
   ```bash
-  python -m pytest -vv -s --basetemp=/tmp/prik-blas-debug examples/blas/test_level1_real.py::test_daxpy
+  python -m pytest -vv -s --basetemp=/tmp/prik-blas-debug examples/blas/tests/test_level1_real.py::test_daxpy
   ```
 
-- Read the full compiler identity, command, stdout and stderr that the fixture prints.
+- Read the compiler output from `build_all.sh`.
 - Keep correctness tests and benchmarking completely separate.
   This suite uses small deterministic inputs and makes no performance claims.
 

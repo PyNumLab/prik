@@ -37,15 +37,7 @@ def test_parse_convert_emit_representative_fortran_module(benchmark):
 
 @pytest.mark.benchmark
 def test_parse_real_lapack_dgesv(benchmark):
-    source = (
-        Path(__file__).resolve().parents[2]
-        / "building_shared_library"
-        / "end_to_end"
-        / "real_libraries"
-        / "lapack"
-        / "native"
-        / "dgesv.f"
-    ).read_text(
+    source = (Path(__file__).resolve().parents[4] / "examples" / "lapack" / "native" / "dgesv.f").read_text(
         encoding="utf-8",
     )
     parsed = benchmark(parse_fortran_file, source, filename="lapack/dgesv.f")

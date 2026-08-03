@@ -44,8 +44,8 @@ sudo apt-get install libblas-dev liblapack-dev
 python3 -m pip install "numpy==2.5.1" "meson==1.11.2" "ninja==1.13.0" "scipy==1.18.0"
 ```
 
-The session fixture uses the copyable builder in `examples/native_library.py`.
-It performs these operations once:
+The copyable builder in `examples/native_library.py` performs these operations
+once when `build_all.sh` runs:
 
 1. generate one semantic package for all LAPACK sources;
 2. compile all 2,062 LAPACK sources plus required BLAS dependencies into one
@@ -54,23 +54,35 @@ It performs these operations once:
    library;
 4. generate f2py signatures for the 125 reviewed compatible routines and link
    its wrapper to the same shared library; and
-5. reuse the three imported comparison surfaces for every correctness file;
-   CI explicitly adds the non-discovered `ci_full_surface.py` for the complete
-   PRIK root-export audit and runtime smoke call.
+5. reuse the three imported comparison surfaces for every correctness file.
 
 The complete build is one command sequence:
 
-```console
-export LAPACK_SHARED_LIBRARY="$(python3 -m examples.native_library lapack --cache-dir /tmp/prik-lapack/native-cache)"
-python3 -m prik generate --pyi examples/lapack/native --language fortran --out /tmp/prik-lapack/contracts/lapack
+<!-- prik-doc-source: examples/lapack/build_prik.sh -->
+```bash
+export EXAMPLE_WORKSPACE="$PWD"
+export LAPACK_BUILD_ROOT="$(mktemp -d)"
+export LAPACK_SHARED_LIBRARY="$(
+  python -m examples.native_library lapack \
+    --compiler "$(command -v gfortran)" \
+    --jobs 8
+)"
+
+python -m prik generate \
+  --pyi examples/lapack/native \
+  --language fortran \
+  --out "$LAPACK_BUILD_ROOT/contracts/lapack"
+
 # Remove the LA_CONSTANTS and LA_XISNAN imports from the generated root contract.
-python3 -c 'import sys; from pathlib import Path; p=Path(sys.argv[1]); s=p.read_text(encoding="utf-8")
+python -c 'import sys; from pathlib import Path; p=Path(sys.argv[1]); s=p.read_text(encoding="utf-8")
 p.write_text(s.replace("from . import LA_CONSTANTS\n", "").replace("from . import LA_XISNAN\n", ""), encoding="utf-8")' \
-  /tmp/prik-lapack/contracts/lapack/__init__.pyi
-mkdir -p /tmp/prik-lapack/prik/generated
-python3 -m prik /tmp/prik-lapack/contracts/lapack/__init__.pyi \
+  "$LAPACK_BUILD_ROOT/contracts/lapack/__init__.pyi"
+
+mkdir -p "$LAPACK_BUILD_ROOT/prik/generated"
+cd "$LAPACK_BUILD_ROOT/prik"
+python -m prik "$LAPACK_BUILD_ROOT/contracts/lapack/__init__.pyi" \
   --out prik_reference_lapack_example \
-  --out-dir /tmp/prik-lapack/prik/generated \
+  --out-dir "$LAPACK_BUILD_ROOT/prik/generated" \
   --compiler "$(command -v gfortran)" \
   --native-objects "$LAPACK_SHARED_LIBRARY" \
   --jobs 8 \
@@ -79,12 +91,19 @@ python3 -m prik /tmp/prik-lapack/contracts/lapack/__init__.pyi \
 ```
 
 The short contract command removes only the internal `LA_CONSTANTS` and
-`LA_XISNAN` root imports in place. All native sources remain in the shared
-library. The paths are illustrative; `conftest.py` creates the actual temporary
-locations and records the exact executable command.
+`LA_XISNAN` root imports in place. The f2py build uses the same tested script:
 
-The first call builds the library; an identical later call may reuse it. The
-f2py commands are equivalent to:
+<!-- prik-doc-source: examples/lapack/build_f2py.sh -->
+```bash
+cd "$EXAMPLE_WORKSPACE"
+export LAPACK_F2PY_ROOT="$LAPACK_BUILD_ROOT/f2py"
+python -m examples.lapack.f2py_build \
+  "$LAPACK_F2PY_ROOT" \
+  "$LAPACK_SHARED_LIBRARY" \
+  --compiler "$(command -v gfortran)"
+```
+
+The assembled f2py commands are equivalent to:
 
 ```console
 python3 -m numpy.f2py -m f2py_reference_lapack_example \
@@ -95,7 +114,7 @@ python3 -m numpy.f2py -m f2py_reference_lapack_example \
   --f2cmap /tmp/prik-lapack/.f2py_f2cmap \
   --overwrite-signature
 python3 -m numpy.f2py -c /tmp/prik-lapack/f2py_reference_lapack_example.pyf \
-  -L/tmp/prik-lapack/native-cache/<cache-key> -lprik_full_lapack \
+  -L<shared-library-directory> -lprik_full_lapack \
   --f2cmap /tmp/prik-lapack/.f2py_f2cmap \
   --build-dir /tmp/prik-lapack/f2py --f77flags=-O0 --f90flags=-O0 --opt=-O0
 ```
@@ -108,11 +127,11 @@ support metadata is not counted as a selected routine. Those files provide
 signature information only. f2py compiles its generated wrapper and reuses the
 complete native artifact already linked by PRIK.
 
-Build products stay in pytest temporary/cache directories. Failures report the
-compiler identity, command, stdout, and stderr. Neither build dirties the
+Build products stay outside the source tree. Neither build dirties the
 repository.
 
-The fixtures import the complete PRIK module, the f2py comparison module, and
+After `build_all.sh` completes, the fixtures import the complete PRIK module,
+the f2py comparison module, and
 `scipy.linalg.lapack`. Character flags are Python `str` through PRIK and
 `bytes` through SciPy/f2py. PRIK retains the complete native argument order.
 f2py retains the order of the arguments it exposes, but infers and hides
@@ -121,7 +140,7 @@ f2py call follows the generated wrapper signature. SciPy projects arrays and
 optional arguments into its documented Python API.
 
 Nine routines document essential scalar writebacks without declaring Fortran
-`intent`. The f2py fixture adds build-local intent directives and passes typed
+`intent`. The f2py build adds local intent directives, and the tests pass typed
 0-D arrays so every writeback is validated. PRIK needs neither the overlay nor
 carrier arrays: it returns unannotated scalar writebacks directly.
 
@@ -194,15 +213,15 @@ routine so a new conversion cannot be hidden in a generic adapter.
 The dedicated BLAS + LAPACK GitHub Actions lane runs runtime verification:
 
 ```console
-python3 -m pytest -q examples/lapack
-python3 -m pytest -q examples/lapack/test_linear_general.py
-python3 -m pytest -q examples/lapack/test_linear_general.py::test_dgesv_solves_general_system
-python3 -m pytest -q examples/lapack -k dgesvd
+source examples/lapack/build_all.sh
+python3 -m pytest -q examples/lapack/tests
+python3 -m pytest -q examples/lapack/tests/test_linear_general.py
+python3 -m pytest -q examples/lapack/tests/test_linear_general.py::test_dgesv_solves_general_system
+python3 -m pytest -q examples/lapack/tests -k dgesvd
 ```
 
-The dedicated CI lane explicitly adds `ci_full_surface.py` to that same pytest
-invocation. Its nonstandard filename keeps the maintainer-only audit out of
-ordinary example runs while still reusing the already-built extensions.
+User-run correctness tests live in `tests/`. The separate `ci/` directory owns
+the maintainer-only full-surface audit.
 
 Repository policy leaves LAPACK wrapper/runtime execution to that lane unless a
 maintainer explicitly requests a local run. Local work may collect tests and run
@@ -249,9 +268,9 @@ them.
 `prik_lapack`, `f2py_lapack`, and `scipy_lapack` are session-scoped pytest
 fixtures from [`conftest.py`](conftest.py). They provide the complete PRIK
 wrapper, the selected f2py comparison module, and SciPy's pinned low-level
-LAPACK module.
+LAPACK module to `tests/` after `build_all.sh` completes.
 
-The tests use explicit mechanics from [`helpers.py`](helpers.py):
+The tests use explicit mechanics from [`tests/helpers.py`](tests/helpers.py):
 
 | Helper | Responsibility |
 | --- | --- |
@@ -266,7 +285,7 @@ The tests use explicit mechanics from [`helpers.py`](helpers.py):
 
 The helpers never invoke LAPACK and never hide a PRIK, SciPy, or f2py routine
 call. The source-verified examples below assume `import numpy as np` and the
-corresponding imports from `helpers.py`, as shown in their linked test modules.
+corresponding imports from `tests/helpers.py`, as shown in their linked test modules.
 
 ## Representative source-verified tests
 
@@ -275,7 +294,7 @@ and fails if the displayed source diverges.
 
 ### DGESV
 
-<!-- prik-doc-source: examples/lapack/test_linear_general.py::test_dgesv_solves_general_system -->
+<!-- prik-doc-source: examples/lapack/tests/test_linear_general.py::test_dgesv_solves_general_system -->
 ```python
 def test_dgesv_solves_general_system(prik_lapack, scipy_lapack, f2py_lapack):
     original_a = np.array([[3.0, 1.0], [1.0, 2.0]], dtype=np.float64)
@@ -314,7 +333,7 @@ def test_dgesv_solves_general_system(prik_lapack, scipy_lapack, f2py_lapack):
 
 ### DGETRF
 
-<!-- prik-doc-source: examples/lapack/test_linear_general.py::test_dgetrf_reconstructs_pivoted_lu -->
+<!-- prik-doc-source: examples/lapack/tests/test_linear_general.py::test_dgetrf_reconstructs_pivoted_lu -->
 ```python
 def test_dgetrf_reconstructs_pivoted_lu(prik_lapack, scipy_lapack, f2py_lapack):
     original = np.array([[0.0, 2.0], [3.0, 4.0]], dtype=np.float64)
@@ -341,7 +360,7 @@ def test_dgetrf_reconstructs_pivoted_lu(prik_lapack, scipy_lapack, f2py_lapack):
 
 ### DPOTRF
 
-<!-- prik-doc-source: examples/lapack/test_linear_positive_definite.py::test_dpotrf_reconstructs_spd_matrix -->
+<!-- prik-doc-source: examples/lapack/tests/test_linear_positive_definite.py::test_dpotrf_reconstructs_spd_matrix -->
 ```python
 def test_dpotrf_reconstructs_spd_matrix(prik_lapack, scipy_lapack, f2py_lapack):
     logical = np.array([[4.0, 1.0], [1.0, 3.0]], dtype=np.float64)
@@ -369,7 +388,7 @@ def test_dpotrf_reconstructs_spd_matrix(prik_lapack, scipy_lapack, f2py_lapack):
 
 ### DGEQRF
 
-<!-- prik-doc-source: examples/lapack/test_orthogonal_factorizations.py::test_dgeqrf_reconstructs_qr_factorization -->
+<!-- prik-doc-source: examples/lapack/tests/test_orthogonal_factorizations.py::test_dgeqrf_reconstructs_qr_factorization -->
 ```python
 def test_dgeqrf_reconstructs_qr_factorization(prik_lapack, scipy_lapack, f2py_lapack):
     matrix = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 7.0]], dtype=np.float64)
@@ -399,7 +418,7 @@ def test_dgeqrf_reconstructs_qr_factorization(prik_lapack, scipy_lapack, f2py_la
 
 ### DSYEV
 
-<!-- prik-doc-source: examples/lapack/test_eigen_symmetric.py::test_dsyev_returns_orthonormal_eigenvectors -->
+<!-- prik-doc-source: examples/lapack/tests/test_eigen_symmetric.py::test_dsyev_returns_orthonormal_eigenvectors -->
 ```python
 def test_dsyev_returns_orthonormal_eigenvectors(prik_lapack, scipy_lapack, f2py_lapack):
     matrix = np.array([[2.0, 1.0], [1.0, 2.0]], dtype=np.float64)
@@ -429,7 +448,7 @@ def test_dsyev_returns_orthonormal_eigenvectors(prik_lapack, scipy_lapack, f2py_
 
 ### DGESVD
 
-<!-- prik-doc-source: examples/lapack/test_svd.py::test_dgesvd_reconstructs_matrix -->
+<!-- prik-doc-source: examples/lapack/tests/test_svd.py::test_dgesvd_reconstructs_matrix -->
 ```python
 def test_dgesvd_reconstructs_matrix(prik_lapack, scipy_lapack, f2py_lapack):
     matrix = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 7.0]], dtype=np.float64)
@@ -477,7 +496,7 @@ def test_dgesvd_reconstructs_matrix(prik_lapack, scipy_lapack, f2py_lapack):
 
 ### DTBTRS (banded storage)
 
-<!-- prik-doc-source: examples/lapack/test_linear_banded_tridiagonal.py::test_dtbtrs_solves_triangular_band_system -->
+<!-- prik-doc-source: examples/lapack/tests/test_linear_banded_tridiagonal.py::test_dtbtrs_solves_triangular_band_system -->
 ```python
 def test_dtbtrs_solves_triangular_band_system(prik_lapack, scipy_lapack, f2py_lapack):
     matrix = np.array([[2.0, 1.0], [0.0, 3.0]], dtype=np.float64)
@@ -502,7 +521,7 @@ def test_dtbtrs_solves_triangular_band_system(prik_lapack, scipy_lapack, f2py_la
 
 ### DGECON (condition estimation)
 
-<!-- prik-doc-source: examples/lapack/test_linear_general.py::test_dgecon_estimates_reciprocal_condition -->
+<!-- prik-doc-source: examples/lapack/tests/test_linear_general.py::test_dgecon_estimates_reciprocal_condition -->
 ```python
 def test_dgecon_estimates_reciprocal_condition(prik_lapack, scipy_lapack, f2py_lapack):
     factor = np.array([[4.0]], dtype=np.float64, order="F")

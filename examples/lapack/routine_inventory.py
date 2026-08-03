@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .f2py_contract import F2PY_INOUT_ARGUMENTS
-
-
 SCIPY_VERSION = "1.18.0"
 EXPECTED_LAPACK_SOURCE_FILES = 2062
 EXPECTED_LAPACK_ROOT_PROCEDURES = 2064
+F2PY_SCALAR_WRITEBACK_ROUTINES = frozenset(
+    {"dlarfg", "dlartg", "dgbcon", "dgecon", "dgtcon", "dpocon", "dppcon", "dsycon", "dtrcon"}
+)
 
 F2PY_FUNCTION_RESULTS = frozenset({"dlamch", "dlangb", "dlange", "dlantr"})
 ROUTINE_GROUPS = {
@@ -480,7 +480,7 @@ ROUTINE_SPECS = {
             name,
             (
                 "build-local intent directives expose caller-owned scalar writeback storage"
-                if name in F2PY_INOUT_ARGUMENTS
+                if name in F2PY_SCALAR_WRITEBACK_ROUTINES
                 else "none"
             ),
         ),

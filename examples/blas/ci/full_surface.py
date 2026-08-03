@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from examples.blas.helpers import assert_runtime_smoke
 from examples.blas.routine_inventory import ALL_ROUTINES
+from examples.blas.tests.helpers import assert_runtime_smoke
 
 
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]

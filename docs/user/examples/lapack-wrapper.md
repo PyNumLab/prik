@@ -83,12 +83,12 @@ are installed, you can copy that directory alone.
 Compile the native files once into a shared `.so` file so both wrappers can
 reuse it:
 
+<!-- prik-doc-source: examples/lapack/build_prik.sh -->
 ```bash
 export EXAMPLE_WORKSPACE="$PWD"
 export LAPACK_BUILD_ROOT="$(mktemp -d)"
 export LAPACK_SHARED_LIBRARY="$(
   python -m examples.native_library lapack \
-    --cache-dir "$LAPACK_BUILD_ROOT/native" \
     --compiler "$(command -v gfortran)" \
     --jobs 8
 )"
@@ -131,39 +131,17 @@ The f2py build adds temporary intent directives and the tests pass typed 0-D
 arrays. PRIK needs neither: it returns unannotated scalar writebacks directly,
 with ordinary scalar arguments.
 
-The exact command is assembled from the reviewed inventory by `_f2py_build_command`.
-This short reproducer runs that same command:
+The example-owned f2py builder assembles the reviewed inventory. Run the same
+script exercised by the test suite:
 
+<!-- prik-doc-source: examples/lapack/build_f2py.sh -->
 ```bash
 cd "$EXAMPLE_WORKSPACE"
-export LAPACK_F2PY_ROOT="$(mktemp -d)"
-python - <<'PY'
-import os
-from pathlib import Path
-import subprocess
-
-from examples.lapack.conftest import (
-    _build_environment,
-    _compiler,
-    _f2py_build_command,
-    _f2py_signature_command,
-)
-
-workdir = Path(os.environ["LAPACK_F2PY_ROOT"])
-compiler = _compiler()
-native_library = Path(os.environ["LAPACK_SHARED_LIBRARY"])
-for command in (
-    _f2py_signature_command(workdir),
-    _f2py_build_command(workdir, native_library),
-):
-    subprocess.run(
-        command,
-        cwd=workdir,
-        env=_build_environment(compiler, native_library),
-        check=True,
-    )
-print(workdir)
-PY
+export LAPACK_F2PY_ROOT="$LAPACK_BUILD_ROOT/f2py"
+python -m examples.lapack.f2py_build \
+  "$LAPACK_F2PY_ROOT" \
+  "$LAPACK_SHARED_LIBRARY" \
+  --compiler "$(command -v gfortran)"
 ```
 
 The assembled command has this shape:
@@ -224,16 +202,17 @@ It fails clearly if the SciPy version or the expected routine inventory drifts.
 
 ---
 
-## 5. Understand the test fixtures and helpers
+## 5. Run the correctness tests
 
 The arguments `prik_lapack`, `f2py_lapack`, and `scipy_lapack` are
 session-scoped pytest fixtures from
-[`conftest.py`](../../../examples/lapack/conftest.py). They provide the complete
-PRIK module, the selected f2py comparison module, and SciPy's pinned low-level LAPACK
-module respectively.
+[`conftest.py`](../../../examples/lapack/conftest.py). After the build scripts
+finish, they provide the complete PRIK module, selected f2py comparison module,
+and SciPy's pinned low-level LAPACK module to the tests under
+[`examples/lapack/tests/`](../../../examples/lapack/tests/).
 
 The displayed tests use small helpers from
-[`helpers.py`](../../../examples/lapack/helpers.py):
+[`tests/helpers.py`](../../../examples/lapack/tests/helpers.py):
 
 | Helper | Exact responsibility |
 | --- | --- |
@@ -250,7 +229,7 @@ The numerical and preservation checks are intentionally small and visible:
 import numpy as np
 ```
 
-<!-- prik-doc-source: examples/lapack/helpers.py::assert_allclose_float64 -->
+<!-- prik-doc-source: examples/lapack/tests/helpers.py::assert_allclose_float64 -->
 ```python
 def assert_allclose_float64(actual, expected, *, operation_size: int = 1) -> None:
     """Compare float64 LAPACK results with an accumulation-aware tolerance."""
@@ -265,7 +244,7 @@ def assert_allclose_float64(actual, expected, *, operation_size: int = 1) -> Non
     )
 ```
 
-<!-- prik-doc-source: examples/lapack/helpers.py::assert_small_residual -->
+<!-- prik-doc-source: examples/lapack/tests/helpers.py::assert_small_residual -->
 ```python
 def assert_small_residual(
     residual,
@@ -281,7 +260,7 @@ def assert_small_residual(
     assert scaled <= tolerance, f"scaled residual {scaled} exceeded {tolerance}"
 ```
 
-<!-- prik-doc-source: examples/lapack/helpers.py::assert_storage_unchanged -->
+<!-- prik-doc-source: examples/lapack/tests/helpers.py::assert_storage_unchanged -->
 ```python
 def assert_storage_unchanged(actual: np.ndarray, expected: np.ndarray) -> None:
     """Compare storage exactly, including NaN sentinels."""
@@ -306,7 +285,7 @@ Documentation CI verifies these blocks directly against their source functions.
 
 ### DGESV – solve a general linear system
 
-<!-- prik-doc-source: examples/lapack/test_linear_general.py::test_dgesv_solves_general_system -->
+<!-- prik-doc-source: examples/lapack/tests/test_linear_general.py::test_dgesv_solves_general_system -->
 ```python
 def test_dgesv_solves_general_system(prik_lapack, scipy_lapack, f2py_lapack):
     original_a = np.array([[3.0, 1.0], [1.0, 2.0]], dtype=np.float64)
@@ -348,7 +327,7 @@ PRIK preserves the native argument order and returns visible scalar arguments; b
 
 ### DPOTRF – reconstruct a Cholesky factorization
 
-<!-- prik-doc-source: examples/lapack/test_linear_positive_definite.py::test_dpotrf_reconstructs_spd_matrix -->
+<!-- prik-doc-source: examples/lapack/tests/test_linear_positive_definite.py::test_dpotrf_reconstructs_spd_matrix -->
 ```python
 def test_dpotrf_reconstructs_spd_matrix(prik_lapack, scipy_lapack, f2py_lapack):
     logical = np.array([[4.0, 1.0], [1.0, 3.0]], dtype=np.float64)
@@ -381,27 +360,28 @@ Correctness is established by reconstructing `A = L @ L.T`, not merely by compar
 
 ## 7. Run the maintained example
 
-The complete command builds the full PRIK library once, builds the selected f2py surface once, imports SciPy, and runs all 127 named tests:
+Build both wrappers once, then run all 127 named tests:
 
 ```bash
 cd "$REPOSITORY_ROOT"
-python -m pytest -q examples/lapack
+source examples/lapack/build_all.sh
+python -m pytest -q examples/lapack/tests
 ```
 
 Use a family or a single routine while diagnosing a failure:
 
 ```bash
-python -m pytest -q examples/lapack/test_linear_general.py
+python -m pytest -q examples/lapack/tests/test_linear_general.py
 python -m pytest -q \
-  examples/lapack/test_linear_general.py::test_dgesv_solves_general_system
-python -m pytest -q examples/lapack -k dgesvd
+  examples/lapack/tests/test_linear_general.py::test_dgesv_solves_general_system
+python -m pytest -q examples/lapack/tests -k dgesvd
 ```
 
-- Full DGESV and related general-system tests → [`test_linear_general.py`](../../../examples/lapack/test_linear_general.py)
-- Cholesky and other positive-definite examples → [`test_linear_positive_definite.py`](../../../examples/lapack/test_linear_positive_definite.py)
-- Other families live under [`examples/lapack/`](../../../examples/lapack/)
+- Full DGESV and related general-system tests → [`test_linear_general.py`](../../../examples/lapack/tests/test_linear_general.py)
+- Cholesky and other positive-definite examples → [`test_linear_positive_definite.py`](../../../examples/lapack/tests/test_linear_positive_definite.py)
+- Other families live under [`examples/lapack/tests/`](../../../examples/lapack/tests/)
 - Authoritative mapping of all 127 routines → [`routine_inventory.py`](../../../examples/lapack/routine_inventory.py)
-- Coverage audit → [`test_routine_coverage.py`](../../../examples/lapack/test_routine_coverage.py)
+- Coverage audit → [`test_routine_coverage.py`](../../../examples/lapack/tests/test_routine_coverage.py)
 
 Repository maintainers normally leave this expensive LAPACK wrapper/runtime command to the dedicated BLAS + LAPACK GitHub Actions job unless local execution is explicitly requested.
 The command is nevertheless complete and reproducible for users who have the listed native toolchain.
@@ -420,7 +400,7 @@ For storage formats, workspaces, pivot conventions, the f2py callback limitation
 
   ```bash
   python -m pytest -vv -s --basetemp=/tmp/prik-lapack-debug \
-    examples/lapack/test_linear_general.py::test_dgesv_solves_general_system
+    examples/lapack/tests/test_linear_general.py::test_dgesv_solves_general_system
   ```
 
 - Compare residuals and reconstructions **before** comparing raw factor bytes; several valid LAPACK decompositions are not unique.

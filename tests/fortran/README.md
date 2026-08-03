@@ -107,5 +107,6 @@ Run all migrated Fortran evidence with:
 python3 -m pytest -q tests/fortran
 ```
 
-Run the BLAS project directly with `python3 -m pytest -q examples/blas`. Never
-run LAPACK locally without an explicit request.
+Run the BLAS project by sourcing `examples/blas/build_all.sh`, then running
+`python3 -m pytest -q examples/blas/tests`. Never run LAPACK locally without an
+explicit request.

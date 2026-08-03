@@ -618,15 +618,16 @@ jobs:
         env:
           PYTHONPATH: .
           HYPOTHESIS_PROFILE: ci
-        run: >-
-          python -m pytest -q -o "python_files=test_*.py ci_full_surface.py"
-          examples/blas examples/blas/ci_full_surface.py
+          PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR: ${{ runner.temp }}/prik-real-library-native
+        run: |
+          source examples/blas/build_all.sh
+          python -m pytest -q examples/blas/tests examples/blas/ci/full_surface.py
       - name: Report reviewed LAPACK inventory
         env:
           PYTHONPATH: .
         run: |
           python - <<'PY'
-          from examples.lapack.f2py_contract import F2PY_INOUT_ARGUMENTS
+          from examples.lapack.f2py_build import F2PY_INOUT_ARGUMENTS
           from examples.lapack.routine_inventory import (
               EXPECTED_LAPACK_ROOT_PROCEDURES,
               EXPECTED_LAPACK_SOURCE_FILES,
@@ -648,9 +649,9 @@ jobs:
           PYTHONPATH: .
           HYPOTHESIS_PROFILE: ci
           PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR: ${{ runner.temp }}/prik-real-library-native
-        run: >-
-          python -m pytest -q -o "python_files=test_*.py ci_full_surface.py"
-          examples/lapack examples/lapack/ci_full_surface.py
+        run: |
+          source examples/lapack/build_all.sh
+          python -m pytest -q examples/lapack/tests examples/lapack/ci/full_surface.py
 
   documentation-benchmark:
     name: Documentation performance benchmark · Ubuntu 24.04 ARM64 · Python 3.12

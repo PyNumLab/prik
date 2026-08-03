@@ -93,9 +93,6 @@ tests/
     building_shared_library/
       pipeline/
       end_to_end/
-        real_libraries/
-          blas/
-          lapack/
     source_parsing/
       parsing/
     source_preprocessing/
@@ -260,8 +257,8 @@ Register a structural marker for cross-feature selection:
 - [x] Shared tests import no language-owned helpers.
 - [x] Fortran and C tests import neither each other's helpers nor fixtures.
 - [x] Feature-local fixtures live with their owner. Minimized parser
-  regressions live under `source_parsing/parsing/`; BLAS and LAPACK live only under
-  `building_shared_library/end_to_end/real_libraries/`.
+  regressions live under `source_parsing/parsing/`; BLAS and LAPACK live only
+  under `examples/blas/` and `examples/lapack/`.
 - [x] `python -m pytest tests/fortran/arrays` runs every stage of the
   Arrays contract without collecting unrelated features.
 - [x] Every node below a feature's `end_to_end/` directory carries
@@ -1219,8 +1216,7 @@ Historical regression ownership after reduction:
 ### BLAS and LAPACK
 
 - [x] Move the real-library projects to
-  `examples/blas/` and
-  `tests/fortran/building_shared_library/end_to_end/real_libraries/lapack/`.
+  `examples/blas/` and `examples/lapack/`.
 - [x] Treat them only as full-pipeline evidence: build from the library sources,
   generate wrappers, compile/link, import the extension, and verify the public
   Python surface and representative runtime calls.

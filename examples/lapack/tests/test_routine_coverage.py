@@ -8,23 +8,21 @@ from pathlib import Path
 
 import pytest
 
-from .conftest import (
+from ..f2py_build import (
     F2PY_BUILD_DEPENDENCIES,
+    F2PY_INOUT_ARGUMENTS,
     F2PY_KIND_MAP,
-    PRIK_WRAPPER_FLAGS,
-    _f2py_build_command,
-    _f2py_signature_command,
-    _f2py_source_plan,
-    _prik_build_command,
+    f2py_build_command,
+    f2py_signature_command,
+    f2py_source_plan,
 )
-from .contracts import remove_internal_root_imports
-from .f2py_contract import F2PY_INOUT_ARGUMENTS
-from .routine_inventory import (
+from ..routine_inventory import (
     EXPLICIT_TEST_NAMES,
     EXPECTED_LAPACK_ROOT_PROCEDURES,
     EXPECTED_LAPACK_SOURCE_FILES,
     F2PY_EXPORT_LIMITATIONS,
     F2PY_FUNCTION_RESULTS,
+    F2PY_SCALAR_WRITEBACK_ROUTINES,
     PRIK_ABI_ADAPTERS,
     ROUTINE_FAMILIES,
     ROUTINE_GROUPS,
@@ -34,7 +32,8 @@ from .routine_inventory import (
 )
 
 
-EXAMPLE_ROOT = Path(__file__).resolve().parent
+TEST_ROOT = Path(__file__).resolve().parent
+EXAMPLE_ROOT = TEST_ROOT.parent
 NATIVE_ROOT = EXAMPLE_ROOT / "native"
 FORTRAN_SUFFIXES = {".f", ".f90", ".f95", ".f03", ".f08", ".for", ".f77", ".ftn"}
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
@@ -42,7 +41,7 @@ pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
 
 def _explicit_test_owners() -> dict[str, list[tuple[str, Path]]]:
     owners: dict[str, list[tuple[str, Path]]] = {}
-    for path in sorted(EXAMPLE_ROOT.glob("test_*.py")):
+    for path in sorted(TEST_ROOT.glob("test_*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in tree.body:
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -92,6 +91,7 @@ def test_inventory_groups_form_one_complete_partition():
     assert len(set(grouped)) == len(grouped)
     assert set(ROUTINE_FAMILIES) == set(ROUTINES)
     assert set(ROUTINE_SPECS) == set(ROUTINES)
+    assert set(F2PY_INOUT_ARGUMENTS) == F2PY_SCALAR_WRITEBACK_ROUTINES
     for routine, spec in ROUTINE_SPECS.items():
         assert spec.native_name == routine
         assert spec.family == ROUTINE_FAMILIES[routine]
@@ -118,7 +118,7 @@ def test_inventory_groups_form_one_complete_partition():
 
 def test_f2py_source_plan_includes_required_kind_module(tmp_path: Path):
     """Signature discovery covers every selected implementation and reviewed overlay."""
-    plan = _f2py_source_plan(tmp_path)
+    plan = f2py_source_plan(tmp_path)
     dependency_count = len(F2PY_BUILD_DEPENDENCIES)
     assert tuple(path.name for path in plan[:dependency_count]) == F2PY_BUILD_DEPENDENCIES
     assert {path.stem for path in plan[dependency_count:]} == set(ROUTINES) - set(F2PY_EXPORT_LIMITATIONS)
@@ -131,7 +131,7 @@ def test_f2py_source_plan_includes_required_kind_module(tmp_path: Path):
         assert source.parent == tmp_path / "f2py-intent-sources"
         assert f"{prefix} intent(inout) {', '.join(arguments)}" in source.read_text(encoding="utf-8")
 
-    command = _f2py_signature_command(tmp_path)
+    command = f2py_signature_command(tmp_path)
     assert "only:" in command
     assert ":" in command
     assert (tmp_path / ".f2py_f2cmap").read_text(encoding="utf-8") == F2PY_KIND_MAP
@@ -139,7 +139,7 @@ def test_f2py_source_plan_includes_required_kind_module(tmp_path: Path):
 
 def test_f2py_build_command_reuses_the_precompiled_native_library(tmp_path: Path):
     native_library = tmp_path / "native" / "libprik_full_lapack.so"
-    command = _f2py_build_command(tmp_path, native_library)
+    command = f2py_build_command(tmp_path, native_library)
 
     assert command[:4] == (sys.executable, "-m", "numpy.f2py", "-c")
     assert str(tmp_path / "f2py_reference_lapack_example.pyf") in command
@@ -149,38 +149,10 @@ def test_f2py_build_command_reuses_the_precompiled_native_library(tmp_path: Path
     assert not any(str(NATIVE_ROOT) in value for value in command)
 
 
-def test_both_wrappers_reuse_the_same_precompiled_native_library(prik_build, f2py_build):
-    assert prik_build.native_library == f2py_build.native_library
-    assert prik_build.native_library.name == "libprik_full_lapack.so"
-
-
-def test_prik_build_command_uses_the_public_cli(tmp_path: Path):
-    """The documented LAPACK wrapper build is a real PRIK CLI invocation."""
-    runtime_entry = tmp_path / "runtime" / "__init__.pyi"
-    native_library = tmp_path / "libprik_full_lapack.so"
-    command = _prik_build_command(runtime_entry, native_library, tmp_path, "/usr/bin/gfortran")
-
-    assert command[:4] == (sys.executable, "-m", "prik", str(runtime_entry))
-    assert command[command.index("--native-objects") + 1] == str(native_library)
-    assert "--native-shared-library" not in command
-    joined_flags = " ".join(PRIK_WRAPPER_FLAGS)
-    assert f"--wrapper-fortran-flags={joined_flags}" in command
-    assert f"--wrapper-c-flags={joined_flags}" in command
-
-
-def test_runtime_contract_edit_removes_internal_imports_in_place(tmp_path: Path):
-    generated_package = tmp_path / "contracts" / "lapack"
-    generated_package.mkdir(parents=True)
-    entry = generated_package / "__init__.pyi"
-    entry.write_text(
-        "from . import LA_CONSTANTS\nfrom . import LA_XISNAN\ndef dgesv() -> None: ...\n",
-        encoding="utf-8",
-    )
-
-    runtime_entry = remove_internal_root_imports(entry)
-
-    assert runtime_entry == entry
-    assert entry.read_text(encoding="utf-8") == "def dgesv() -> None: ...\n"
+def test_documented_scripts_place_both_wrappers_under_one_build_root(prik_lapack, f2py_lapack):
+    prik_root = Path(prik_lapack.__file__).resolve().parent.parent
+    f2py_root = Path(f2py_lapack.__file__).resolve().parent.parent
+    assert prik_root == f2py_root
 
 
 def test_authoritative_native_source_boundary_is_complete_and_unique():

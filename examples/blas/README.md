@@ -39,45 +39,53 @@ running the example:
 python3 -m pip install "numpy==2.5.1" "meson==1.11.2" "ninja==1.13.0"
 ```
 
-The session fixtures compile the implementations once at `-O0`, then link both
+`build_all.sh` compiles the implementations once at `-O0`, then links both
 wrappers to that same native library. All artifacts stay in a temporary
-directory:
+directory. It sources these two scripts:
 
+<!-- prik-doc-source: examples/blas/build_prik.sh -->
 ```bash
-export EXAMPLE_WORKSPACE="$(pwd)"
-export BUILD_ROOT="$(mktemp -d)"
-export PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR="$BUILD_ROOT/native-cache"
-export BLAS_SHARED_LIBRARY="$(python3 -m examples.native_library blas --cache-dir "$PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR" --compiler "$(command -v gfortran)" --jobs 8)"
-python3 -m prik generate --pyi examples/blas/native --language fortran --out "$BUILD_ROOT/contract/blas"
-mkdir -p "$BUILD_ROOT/prik" "$BUILD_ROOT/f2py"
-cd "$BUILD_ROOT/prik"
-python3 -m prik "$BUILD_ROOT/contract/blas/__init__.pyi" --out prik_reference_blas --out-dir "$BUILD_ROOT/prik/generated" --compiler "$(command -v gfortran)" --native-objects "$BLAS_SHARED_LIBRARY" --jobs 8 --wrapper-fortran-flags="-O0 -g0" --wrapper-c-flags="-O0 -g0"
+export EXAMPLE_WORKSPACE="$PWD"
+export BLAS_BUILD_ROOT="$(mktemp -d)"
+export BLAS_SHARED_LIBRARY="$(
+  python -m examples.native_library blas \
+    --compiler "$(command -v gfortran)" \
+    --jobs 8
+)"
+
+python -m prik generate \
+  --pyi examples/blas/native \
+  --language fortran \
+  --out "$BLAS_BUILD_ROOT/contract/blas"
+
+mkdir -p "$BLAS_BUILD_ROOT/prik/generated"
+cd "$BLAS_BUILD_ROOT/prik"
+
+python -m prik "$BLAS_BUILD_ROOT/contract/blas/__init__.pyi" \
+  --out prik_reference_blas \
+  --out-dir "$BLAS_BUILD_ROOT/prik/generated" \
+  --compiler "$(command -v gfortran)" \
+  --native-objects "$BLAS_SHARED_LIBRARY" \
+  --jobs 8 \
+  --wrapper-fortran-flags="-O0 -g0" \
+  --wrapper-c-flags="-O0 -g0"
 ```
 
+<!-- prik-doc-source: examples/blas/build_f2py.sh -->
 ```bash
 cd "$EXAMPLE_WORKSPACE"
-python3 - <<'PY'
-import os
-from pathlib import Path
-import subprocess
-
-from examples.blas.conftest import _build_environment, _compiler, _f2py_build_command, _f2py_signature_command
-
-workdir = Path(os.environ["BUILD_ROOT"]) / "f2py"
-workdir.mkdir(parents=True, exist_ok=True)
-compiler = _compiler()
-native_library = Path(os.environ["BLAS_SHARED_LIBRARY"])
-for command in (_f2py_signature_command(workdir), _f2py_build_command(workdir, native_library)):
-    subprocess.run(command, cwd=workdir, env=_build_environment(compiler, native_library), check=True)
-PY
+export BLAS_F2PY_ROOT="$BLAS_BUILD_ROOT/f2py"
+python -m examples.blas.f2py_build \
+  "$BLAS_F2PY_ROOT" \
+  "$BLAS_SHARED_LIBRARY" \
+  --compiler "$(command -v gfortran)"
 ```
 
-The first native-builder call compiles all sources; later identical calls may
-reuse its cache. f2py reads the sources only to generate signatures and
-compiles its wrapper against `BLAS_SHARED_LIBRARY`.
+f2py reads the sources only to generate signatures and compiles its wrapper
+against `BLAS_SHARED_LIBRARY`.
 
 Six rotation routines document scalar writebacks without declaring Fortran
-`intent`. The f2py fixture adds build-local intent directives and passes typed
+`intent`. The f2py build adds local intent directives, and the tests pass typed
 0-D arrays so those writes are testable. PRIK needs neither the overlay nor
 carrier arrays: it returns unannotated scalar writebacks directly.
 
@@ -87,25 +95,25 @@ Import the modules from their build directories:
 import os
 import sys
 
-build_root = os.environ["BUILD_ROOT"]
+build_root = os.environ["BLAS_BUILD_ROOT"]
 sys.path.insert(0, f"{build_root}/prik")
 sys.path.insert(0, f"{build_root}/f2py")
 import prik_reference_blas
 import f2py_reference_blas
 ```
 
-For normal use, let pytest create, report, and clean those directories:
+Build once, then run any user-facing test selection:
 
 ```bash
-python3 -m pytest -q examples/blas
-python3 -m pytest -q examples/blas/test_level1_real.py
-python3 -m pytest -q examples/blas/test_level1_real.py::test_daxpy
-python3 -m pytest -q examples/blas -k dgemm
+source examples/blas/build_all.sh
+python3 -m pytest -q examples/blas/tests
+python3 -m pytest -q examples/blas/tests/test_level1_real.py
+python3 -m pytest -q examples/blas/tests/test_level1_real.py::test_daxpy
+python3 -m pytest -q examples/blas/tests -k dgemm
 ```
 
-The dedicated CI lane explicitly adds `ci_full_surface.py` to that same pytest
-invocation. Its nonstandard filename keeps the maintainer-only audit out of
-ordinary example runs while still reusing the already-built extensions.
+User-run correctness tests live in `tests/`. The separate `ci/` directory owns
+the maintainer-only full-surface audit.
 
 ## What each test proves
 
@@ -168,8 +176,9 @@ unused band rows exactly.
 ### Test fixtures and helper vocabulary
 
 `prik_blas` and `f2py_blas` are session-scoped pytest fixtures from
-[`conftest.py`](conftest.py). They build and import each complete wrapper once.
-The named tests use narrow helpers from [`helpers.py`](helpers.py):
+[`conftest.py`](conftest.py). After `build_all.sh` completes, they import each
+complete wrapper once and reuse the modules across `tests/`.
+The named tests use narrow helpers from [`tests/helpers.py`](tests/helpers.py):
 
 | Helper | Responsibility |
 | --- | --- |
@@ -181,7 +190,7 @@ The named tests use narrow helpers from [`helpers.py`](helpers.py):
 
 Every wrapper call and independent formula remains visible in its test; these
 helpers only handle comparison or storage mechanics. The examples below assume
-`import numpy as np` and the corresponding imports from `helpers.py`, exactly as
+`import numpy as np` and the corresponding imports from `tests/helpers.py`, exactly as
 shown in the linked test files.
 
 ## Representative tests (source verified)
@@ -192,7 +201,7 @@ diverges.
 
 ### DAXPY
 
-<!-- prik-doc-source: examples/blas/test_level1_real.py::test_daxpy -->
+<!-- prik-doc-source: examples/blas/tests/test_level1_real.py::test_daxpy -->
 ```python
 def test_daxpy(prik_blas, f2py_blas):
     alpha = np.float64(-1.5)
@@ -216,7 +225,7 @@ def test_daxpy(prik_blas, f2py_blas):
 
 ### DDOT
 
-<!-- prik-doc-source: examples/blas/test_level1_real.py::test_ddot -->
+<!-- prik-doc-source: examples/blas/tests/test_level1_real.py::test_ddot -->
 ```python
 def test_ddot(prik_blas, f2py_blas):
     x = np.array([1.0, -2.0, 4.0], dtype=np.float64)
@@ -240,7 +249,7 @@ def test_ddot(prik_blas, f2py_blas):
 
 ### DGEMV
 
-<!-- prik-doc-source: examples/blas/test_level2_general.py::test_dgemv_no_transpose -->
+<!-- prik-doc-source: examples/blas/tests/test_level2_general.py::test_dgemv_no_transpose -->
 ```python
 def test_dgemv_no_transpose(prik_blas, f2py_blas):
     alpha, beta = np.float64(2.0), np.float64(-1.0)
@@ -274,7 +283,7 @@ def test_dgemv_no_transpose(prik_blas, f2py_blas):
 
 ### DGEMM
 
-<!-- prik-doc-source: examples/blas/test_level3_general.py::test_dgemm -->
+<!-- prik-doc-source: examples/blas/tests/test_level3_general.py::test_dgemm -->
 ```python
 def test_dgemm(prik_blas, f2py_blas):
     alpha, beta = np.float64(2.0), np.float64(-0.5)
@@ -337,7 +346,7 @@ def test_dgemm(prik_blas, f2py_blas):
 
 ### DTRSV
 
-<!-- prik-doc-source: examples/blas/test_level2_triangular.py::test_dtrsv_upper_nonunit -->
+<!-- prik-doc-source: examples/blas/tests/test_level2_triangular.py::test_dtrsv_upper_nonunit -->
 ```python
 def test_dtrsv_upper_nonunit(prik_blas, f2py_blas):
     original_a = np.asfortranarray([[2.0, -1.0], [np.nan, 3.0], [91.0, 92.0]], dtype=np.float64)
@@ -361,7 +370,7 @@ def test_dtrsv_upper_nonunit(prik_blas, f2py_blas):
 
 ### CHEMV (complex Hermitian)
 
-<!-- prik-doc-source: examples/blas/test_level2_hermitian.py::test_chemv -->
+<!-- prik-doc-source: examples/blas/tests/test_level2_hermitian.py::test_chemv -->
 ```python
 def test_chemv(prik_blas, f2py_blas):
     alpha, beta = np.complex64(1.0 - 0.5j), np.complex64(0.25j)
@@ -390,7 +399,7 @@ def test_chemv(prik_blas, f2py_blas):
 
 ### SGBMV (general band)
 
-<!-- prik-doc-source: examples/blas/test_level2_banded.py::test_sgbmv -->
+<!-- prik-doc-source: examples/blas/tests/test_level2_banded.py::test_sgbmv -->
 ```python
 def test_sgbmv(prik_blas, f2py_blas):
     alpha, beta = np.float32(1.5), np.float32(-0.5)
@@ -478,7 +487,7 @@ through f2py. Tests keep both calls visible wherever these APIs differ.
 Keep a named temporary directory and display build output:
 
 ```bash
-python3 -m pytest -vv -s examples/blas -k dgemm --basetemp=/tmp/prik-blas-debug
+python3 -m pytest -vv -s examples/blas/tests -k dgemm --basetemp=/tmp/prik-blas-debug
 ```
 
 Build failures include the compiler identity, complete command, stdout, and

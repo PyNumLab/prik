@@ -27,7 +27,6 @@ PROHIBITED_PATH_PARTS = {
     "platforms",
     "profile",
     "profiles",
-    "real_libraries",
 }
 
 

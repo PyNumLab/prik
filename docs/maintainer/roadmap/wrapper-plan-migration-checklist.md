@@ -561,13 +561,10 @@ route easier to exercise.
   generates a runtime wrapper must use the wrapper-plan route after cutover.
   Tests that only inspect documentation, layout, parsing, or `.pyi` generation
   may be `not-applicable` but must still pass.
-- During active migration, every local and GitHub Actions pytest invocation
-  excludes
-  `tests/fortran/building_shared_library/end_to_end/real_libraries/test_full_libraries.py`. Mark its BLAS
-  and LAPACK rows `deferred-real-library`; do not use either corpus for lane
-  parity or general migration verification. General native-bundle tests in
-  `test_stage7_native_bundles.py` remain active because they test linker/build
-  mechanics independently of the full BLAS/LAPACK corpora.
+- During active migration, ordinary pytest invocations exclude the full BLAS
+  and LAPACK example projects. Their dedicated lane owns library-scale
+  verification. General native-bundle tests remain active because they test
+  linker/build mechanics independently of the full corpora.
 
 ### Wrapper Test Migration Matrix
 
@@ -795,7 +792,6 @@ already covered by the new generator.
 | `tests/wrapper/fortran/naming/test_phase9_class_overloads.py::*` | reduced direct-plan constructor and method overload runtime proof | class-owned exact predicates; constructor ownership; no speculative calls | `wrapper-plan` |
 | `tests/wrapper/fortran/naming/test_visibility_naming.py::test_strict_wrapper_names_reject_python_name_fixes` | direct wrapper/build route | naming/visibility/dispatch; classes/methods/properties/overloads | `wrapper-plan` |
 | `tests/wrapper/fortran/naming/test_visibility_naming.py::test_visibility_and_default_python_name_fixing_policy[*]` | source/generated-.pyi parity or parametrized route | naming/visibility/dispatch; classes/methods/properties/overloads | `wrapper-plan` |
-| `tests/fortran/building_shared_library/end_to_end/real_libraries/test_full_libraries.py::*` | canonical full BLAS/LAPACK wrapper generation; BLAS runs locally and both exact nodes run together in the dedicated GitHub Actions job | external symbols/native linkage; build/compile/link orchestration; broad wrapper corpus | `wrapper-plan` |
 | `tests/fortran/building_shared_library/end_to_end/test_native_bundles.py::test_duplicate_native_definitions_report_linker_error` | direct wrapper/build route | scalar external symbols; linker failure propagation | `wrapper-plan` |
 | `tests/fortran/building_shared_library/end_to_end/test_native_bundles.py::test_imported_contracts_resolve_from_one_archive_or_shared_library[*]` | source/generated-.pyi parity or parametrized route | external symbols/native linkage; build/compile/link orchestration | `wrapper-plan` |
 | `tests/fortran/building_shared_library/end_to_end/test_native_bundles.py::test_incompatible_native_artifact_reports_linker_error` | non-generating: validation/failure-path assertion | external symbols/native linkage; build/compile/link orchestration | `not-applicable` |
@@ -4679,8 +4675,8 @@ Implement in these dependency-ordered waves:
 
 - [x] Reconcile every remaining `legacy` or `dual-route` matrix row by owning
   test area: `build_from_source`, `build_from_pyi`, `edit_pyi_contracts`,
-  `external_routines`, `multiple_files`, `naming`, `runtime_behavior`, and
-  `real_libraries`.
+  `external_routines`, `multiple_files`, `naming`, `runtime_behavior`, and the
+  full BLAS/LAPACK examples.
 - [x] Group remaining rows into dependency-ordered waves by their actual
   unsupported owner paths. Do not implement a broad test directory as one
   special case and do not add per-test backend fallbacks.
