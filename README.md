@@ -36,6 +36,19 @@ independent numerical expectations. The
 Reference LAPACK implementation corpus once and validates the reviewed 127
 SciPy-backed double-precision routines in the dedicated CI lane.
 
+## Contents
+
+- [See it in action](#see-it-in-action)
+- [Key Features](#key-features)
+- [Performance](#performance)
+- [Installation & Quick Start](#installation--quick-start)
+- [How it works](#how-it-works)
+- [Native Project Inputs](#native-project-inputs)
+- [Python API](#python-api)
+- [Development](#development)
+- [License](#license)
+- [Documentation](#documentation)
+
 The complete example below builds with one command:
 
 ```bash
