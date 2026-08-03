@@ -33,11 +33,7 @@ PRIK_C_DOCS_END &#45;&#45;>
 <!&#45;&#45; PRIK_C_DOCS_START
 Parser-related pull requests should update this file when the documented
 feature inventory, public API, diagnostics, project behavior, semantic handoff,
-or maintenance workflow changes. The parser-reference guard checks C, Fortran,
-and semantic `.pyi` references independently. It watches `prik/parsers/c/`, `tests/c/fixtures/parser/`,
-`tests/c/fixtures/native/`, and C standard-type probe tests and expects
-`docs/developer/c-parser-reference.md` to change unless the PR is explicitly labeled to skip the
-guard.
+or maintenance workflow changes.
 PRIK_C_DOCS_END &#45;&#45;>
 
 <!&#45;&#45; PRIK_C_DOCS_START

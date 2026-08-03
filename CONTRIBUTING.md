@@ -1,35 +1,43 @@
-## Contributing
+# Contributing to PRIK
 
-### Contribution license
+Thanks for helping make native Python interfaces easier to build.
 
-prik is distributed under the MIT License. By submitting a contribution, you
-agree that your contribution is licensed under the same MIT terms and represent
-that you have the right to submit it. If an employer or another organization
-owns the work, obtain its authorization before contributing.
+## Get started
 
-### Pull requests
+Create a focused branch and install PRIK with its development tools:
 
-- **CI must be green before merging**: do not merge a PR unless all checks pass (including `test` and `parser-reference-guard`).
-- **Explain fixture/golden updates**: if you update a parser source or JSON model under `tests/fortran/source_parsing/parsing/fixtures/`, include a short note in the PR describing why the expected output changed.
-- **Run the QA stack for parser/compiler changes**: install `python -m pip install -e ".[qa]"` and use the workflows in `docs/developer/quality-assurance.md`.
+```bash
+python3 -m pip install -e ".[qa]"
+```
 
-### Parser reference guard
+Run the smallest relevant test while you work:
 
-This repo includes a CI guard that may require updating parser reference docs
-when parser-related files change.
+```bash
+PYTHONPATH=. python3 -m pytest -q path/to/tests
+```
 
-- **C parser changes**: if you change `prik/parsers/c/`, `tests/c/fixtures/parser/`, or
-  `tests/c/fixtures/native/`, update `docs/c_parser.md` when the change affects the
-  documented feature inventory, public API, diagnostics, fixtures, semantic
-  handoff, or maintenance workflow. The guard also treats
-  `tests/c/probes/test_c_types.py` as C parser related.
-- **Fortran parser changes**: if you change `prik/parsers/fortran/` or
-  `tests/fortran/source_parsing/parsing/`, update
-  `docs/developer/fortran-parser-reference.md` when the change affects the documented feature
-  inventory, public API, diagnostics, fixtures, semantic handoff, or
-  maintenance workflow. The guard also tracks focused Fortran parser tests
-  under `tests/fortran/source_parsing/parsing/`.
-- **Shared parser workflow changes**: if you change shared parser CLI or
-  preprocessing behavior, update `docs/c_parser.md` or
-  `docs/fortran_parser.md`, whichever parser behavior changed.
-- **Bypass (use sparingly)**: add the PR label `ignore-parser-reference-guard` to skip that guard for changes that do not meaningfully affect the reference.
+## Before opening a pull request
+
+- Add or update tests for changed behavior.
+- Update the user guide when the public API, CLI, or supported behavior changes.
+- Add user-visible changes to **Unreleased** in `CHANGELOG.md`.
+- Run Ruff and the relevant tests:
+
+```bash
+python3 -m ruff check .
+python3 -m ruff format --check .
+PYTHONPATH=. python3 -m pytest -q path/to/tests
+```
+
+Keep the pull request easy to review: explain the problem, the solution, and
+how you verified it. All required GitHub checks must pass before merge.
+
+For the complete workflow, see the
+[development guide](docs/developer/development-workflow.md) and
+[quality-assurance guide](docs/developer/quality-assurance.md).
+
+## License
+
+Contributions are accepted under the [MIT License](LICENSE). By submitting a
+contribution, you confirm that you have the right to license it under those
+terms.

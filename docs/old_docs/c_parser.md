@@ -22,11 +22,7 @@ changes documented here.
 
 Parser-related pull requests should update this file when the documented
 feature inventory, public API, diagnostics, project behavior, semantic handoff,
-or maintenance workflow changes. The parser-reference guard checks C and
-Fortran references independently. It watches `prik/c_parser/`, `tests/parser/c/`,
-`tests/data/c/`, and C standard-type probe tests and expects
-`docs/c_parser.md` to change unless the PR is explicitly labeled to skip the
-guard.
+or maintenance workflow changes.
 
 ## Purpose
 

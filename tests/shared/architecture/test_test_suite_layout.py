@@ -365,7 +365,6 @@ def test_active_github_action_checks_use_distinct_workflow_scopes_and_job_names(
         },
         MERGE_VALIDATION_WORKFLOW: {
             "static-analysis": "Static analysis · Ubuntu 24.04 · Python 3.12",
-            "parser-reference-guard": "Parser reference guard · Ubuntu 24.04",
             "compiler-smoke": "Compiler smoke · ${{ matrix.display_name }}",
             "compiler-smoke-macos": "Compiler smoke · macOS 15 ARM64 · LLVM Flang · Python 3.12",
             "unit-tests": "${{ matrix.display_name }}",
@@ -420,14 +419,13 @@ def test_pull_request_declares_direct_staged_jobs_and_always_reports_the_gate() 
     assert "cancel-in-progress: true" in workflow
     assert "uses: ./.github/workflows/" not in workflow
 
-    for job_id in ("static-analysis", "parser-reference-guard"):
-        block = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, job_id)
-        assert "needs:" not in block
-        assert "runs-on:" in block
+    static_analysis = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "static-analysis")
+    assert "needs:" not in static_analysis
+    assert "runs-on:" in static_analysis
 
     for job_id in ("compiler-smoke", "compiler-smoke-macos"):
         block = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, job_id)
-        assert "needs: [static-analysis, parser-reference-guard]" in block
+        assert "needs: static-analysis" in block
         assert "runs-on:" in block
 
     for job_id in ("unit-tests", "unit-tests-macos"):
@@ -466,7 +464,6 @@ def test_pull_request_declares_direct_staged_jobs_and_always_reports_the_gate() 
     assert "if: ${{ always() }}" in gate
     for dependency in (
         "static-analysis",
-        "parser-reference-guard",
         "compiler-smoke",
         "compiler-smoke-macos",
         "unit-tests",

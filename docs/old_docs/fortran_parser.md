@@ -122,7 +122,7 @@ or `prik.fortran_parser` package imports.
 
 This file is the single maintained Fortran parser reference. It replaces the
 older standalone implementation-reference document; parser feature inventory,
-testing workflow, and maintenance guard policy live here.
+testing workflow, and maintenance guidance live here.
 
 The implementation inventory is maintained across these surfaces:
 
@@ -141,12 +141,7 @@ The implementation inventory is maintained across these surfaces:
 
 Parser-related pull requests should update this file when the documented
 feature inventory, public API, diagnostics, project behavior, semantic handoff,
-or maintenance workflow changes. The parser-reference guard watches
-Fortran and C references independently. For Fortran, it watches
-`prik/fortran_parser/`, `tests/parser/fortran/`, `tests/data/fortran/`, and focused
-Fortran parser tests directly under `tests/parser/`. It expects
-`docs/fortran_parser.md` to change unless the PR is explicitly labeled to skip
-the guard.
+or maintenance workflow changes.
 
 `parse_file` is the central orchestration path. It first slices the source into
 direct file-level units, then each unit visitor parses only its own substring

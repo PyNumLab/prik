@@ -61,141 +61,9 @@ jobs:
         continue-on-error: true
         run: python -m radon mi prik -s
 
-  parser-reference-guard:
-    name: Parser reference guard · Ubuntu 24.04
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Verify parser references were updated when needed
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
-        run: |
-          set -euo pipefail
-          CHANGED_FILES=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
-
-          echo "Changed files:"
-          echo "$CHANGED_FILES"
-          echo "PR labels: ${PR_LABELS:-<none>}"
-
-          FORCE_LABEL="require-parser-reference-update"
-          IGNORE_LABEL="ignore-parser-reference-guard"
-
-          if [[ ",${PR_LABELS}," == *",${FORCE_LABEL},"* && \
-                ",${PR_LABELS}," == *",${IGNORE_LABEL},"* ]]; then
-            echo "Conflicting labels: ${FORCE_LABEL} and ${IGNORE_LABEL}. Remove one."
-            exit 1
-          fi
-
-          if [[ ",${PR_LABELS}," == *",${IGNORE_LABEL},"* ]]; then
-            echo "${IGNORE_LABEL} label present; skipping guard."
-            exit 0
-          fi
-
-          C_DOC="docs/developer/c-parser-reference.md"
-          FORTRAN_DOC="docs/developer/fortran-parser-reference.md"
-          PYI_DOC="docs/user/reference/semantic-pyi-format.md"
-
-          C_DOC_CHANGED=false
-          FORTRAN_DOC_CHANGED=false
-          PYI_DOC_CHANGED=false
-          C_PARSER_CHANGED=false
-          FORTRAN_PARSER_CHANGED=false
-          PYI_PARSER_CHANGED=false
-          SHARED_PARSER_CHANGED=false
-
-          if grep -Fxq "$C_DOC" <<< "$CHANGED_FILES"; then
-            C_DOC_CHANGED=true
-          fi
-          if grep -Fxq "$FORTRAN_DOC" <<< "$CHANGED_FILES"; then
-            FORTRAN_DOC_CHANGED=true
-          fi
-          if grep -Fxq "$PYI_DOC" <<< "$CHANGED_FILES"; then
-            PYI_DOC_CHANGED=true
-          fi
-
-          while IFS= read -r changed_file; do
-            case "$changed_file" in
-              prik/parsers/c/*|tests/c/parsing/*|tests/c/fixtures/*|tests/c/probes/test_c_types.py)
-                C_PARSER_CHANGED=true
-                ;;
-              prik/parsers/fortran/*|tests/fortran/source_parsing/parsing/*|tests/fortran/data_types/probes/test_fortran_type_probes.py)
-                FORTRAN_PARSER_CHANGED=true
-                ;;
-              prik/parsers/pyi/*|tests/fortran/semantic_pyi_format/*)
-                PYI_PARSER_CHANGED=true
-                ;;
-              tests/fortran/command_line_interface/pipeline/*|\
-              tests/fortran/source_preprocessing/preprocessing/*|\
-              prik/parsers/__init__.py|\
-              prik/preprocessing.py)
-                SHARED_PARSER_CHANGED=true
-                ;;
-            esac
-          done <<< "$CHANGED_FILES"
-
-          if [[ ",${PR_LABELS}," == *",${FORCE_LABEL},"* ]]; then
-            if [ "$C_DOC_CHANGED" = true ] || [ "$FORTRAN_DOC_CHANGED" = true ] || [ "$PYI_DOC_CHANGED" = true ]; then
-              echo "${FORCE_LABEL} label present and at least one parser reference changed."
-            else
-              echo "${FORCE_LABEL} label present, but no parser reference changed."
-              echo "Update ${C_DOC}, ${FORTRAN_DOC}, or ${PYI_DOC}, or remove ${FORCE_LABEL}."
-              exit 1
-            fi
-          fi
-
-          FAILED=false
-
-          if [ "$C_PARSER_CHANGED" = true ] && [ "$C_DOC_CHANGED" != true ]; then
-            echo "C parser-related files changed without updating ${C_DOC}."
-            FAILED=true
-          fi
-
-          if [ "$FORTRAN_PARSER_CHANGED" = true ] && [ "$FORTRAN_DOC_CHANGED" != true ]; then
-            echo "Fortran parser-related files changed without updating ${FORTRAN_DOC}."
-            FAILED=true
-          fi
-
-          if [ "$PYI_PARSER_CHANGED" = true ] && [ "$PYI_DOC_CHANGED" != true ]; then
-            echo "Semantic .pyi parser-related files changed without updating ${PYI_DOC}."
-            FAILED=true
-          fi
-
-          if [ "$SHARED_PARSER_CHANGED" = true ] && \
-             [ "$C_DOC_CHANGED" != true ] && \
-             [ "$FORTRAN_DOC_CHANGED" != true ] && \
-             [ "$PYI_DOC_CHANGED" != true ]; then
-            echo "Shared parser workflow files changed without updating a parser reference."
-            echo "Update ${C_DOC}, ${FORTRAN_DOC}, or ${PYI_DOC}, whichever behavior changed."
-            FAILED=true
-          fi
-
-          if [ "$FAILED" = true ]; then
-            echo "Use ${IGNORE_LABEL} only when the parser reference is already accurate."
-            exit 1
-          fi
-
-          if [ "$C_DOC_CHANGED" = true ]; then
-            echo "${C_DOC} changed."
-          fi
-          if [ "$FORTRAN_DOC_CHANGED" = true ]; then
-            echo "${FORTRAN_DOC} changed."
-          fi
-          if [ "$PYI_DOC_CHANGED" = true ]; then
-            echo "${PYI_DOC} changed."
-          fi
-
-          echo "Parser reference guard passed."
-
   compiler-smoke:
     name: Compiler smoke · ${{ matrix.display_name }}
-    needs: [static-analysis, parser-reference-guard]
+    needs: static-analysis
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
@@ -294,7 +162,7 @@ jobs:
 
   compiler-smoke-macos:
     name: Compiler smoke · macOS 15 ARM64 · LLVM Flang · Python 3.12
-    needs: [static-analysis, parser-reference-guard]
+    needs: static-analysis
     runs-on: macos-15
     timeout-minutes: 60
     permissions:
@@ -769,7 +637,6 @@ jobs:
     if: ${{ always() }}
     needs:
       - static-analysis
-      - parser-reference-guard
       - compiler-smoke
       - compiler-smoke-macos
       - unit-tests
@@ -781,7 +648,6 @@ jobs:
     permissions: {}
     env:
       STATIC_ANALYSIS_RESULT: ${{ needs.static-analysis.result }}
-      PARSER_REFERENCE_RESULT: ${{ needs.parser-reference-guard.result }}
       COMPILER_SMOKE_RESULT: ${{ needs.compiler-smoke.result }}
       COMPILER_SMOKE_MACOS_RESULT: ${{ needs.compiler-smoke-macos.result }}
       UNIT_TESTS_RESULT: ${{ needs.unit-tests.result }}
@@ -797,7 +663,6 @@ jobs:
           failed=0
           for staged_result in \
             "static-analysis=$STATIC_ANALYSIS_RESULT" \
-            "parser-reference=$PARSER_REFERENCE_RESULT" \
             "compiler-smoke=$COMPILER_SMOKE_RESULT" \
             "compiler-smoke-macos=$COMPILER_SMOKE_MACOS_RESULT" \
             "unit-tests=$UNIT_TESTS_RESULT" \

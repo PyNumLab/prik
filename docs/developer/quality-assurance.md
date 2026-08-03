@@ -33,9 +33,8 @@ testing and pre-commit are not part of the active stack.
 Active GitHub Actions checks use stable, self-contained job names. Pull requests
 are coordinated by `Pull Request` in five stages:
 
-1. Static analysis and the parser-reference contract run in parallel.
-2. Alternate-compiler smoke testing starts only after both fast policy checks
-   succeed.
+1. Static analysis runs first.
+2. Alternate-compiler smoke testing starts after static analysis succeeds.
 3. The unit-test matrix starts after compiler smoke testing succeeds; its
    Ubuntu Python 3.12 entry owns the project-coverage gate instead of repeating
    that suite in a separate job.
