@@ -5709,11 +5709,21 @@ def _scalar_module_variable_blockers(
     blockers = []
     if variable.visibility != "public":
         blockers.append("module variable is not public")
-    literal_string = (
-        getter_action is ModuleGetterAction.CONSTANT_VALUE
-        and variable.semantic_type.name == "String"
-        and int(variable.semantic_type.rank or 0) == 0
-    )
+    blockers.extend(_scalar_module_getter_blockers(variable, getter, getter_action))
+    blockers.extend(_scalar_module_optional_setter_blockers(setter, descriptor_kind, constant))
+    blockers.extend(_scalar_module_constant_value_blockers(variable, getter_action))
+    blockers.extend(_scalar_module_initializer_blockers(variable, setter))
+    return blockers
+
+
+def _scalar_module_getter_blockers(
+    variable: models.SemanticVariable,
+    getter: OwnershipDecision | None,
+    getter_action: ModuleGetterAction,
+) -> tuple[str, ...]:
+    """Validate one completed scalar or literal-string getter."""
+    blockers = []
+    literal_string = _is_binding_literal_string(variable, getter_action)
     if not (_is_first_lane_scalar_type(variable.semantic_type) or literal_string):
         blockers.append("module variable is not a primitive rank-zero scalar")
     expected_getter_kind = ObjectKind.STRING if literal_string else ObjectKind.SCALAR
@@ -5726,21 +5736,60 @@ def _scalar_module_variable_blockers(
         blockers.append("module variable getter is not a supported scalar policy")
     elif getter.codegen_action not in supported_getter_actions:
         blockers.append(f"module variable getter action {getter.codegen_action.value!r} is unsupported")
+    return tuple(blockers)
+
+
+def _is_binding_literal_string(
+    variable: models.SemanticVariable,
+    getter_action: ModuleGetterAction,
+) -> bool:
+    """Return whether the binding materializes one rank-zero string literal."""
+    return bool(
+        getter_action is ModuleGetterAction.CONSTANT_VALUE
+        and variable.semantic_type.name == "String"
+        and int(variable.semantic_type.rank or 0) == 0
+    )
+
+
+def _scalar_module_optional_setter_blockers(
+    setter: OwnershipDecision | None,
+    descriptor_kind: str | None,
+    constant: bool,
+) -> tuple[str, ...]:
+    """Validate presence and consistency of one completed scalar setter."""
     if setter is None:
-        blockers.append("module variable is missing completed setter policy")
-    else:
-        blockers.extend(_scalar_module_setter_blockers(setter, descriptor_kind, constant))
-    binding_constant = getter_action is ModuleGetterAction.CONSTANT_VALUE
-    if binding_constant and variable.default_value is None:
-        blockers.append("scalar module constant is missing its completed value")
-    elif binding_constant and not _is_scalar_module_literal(variable.default_value, variable.semantic_type.name):
-        blockers.append("scalar module constant value is not a supported literal")
+        return ("module variable is missing completed setter policy",)
+    return _scalar_module_setter_blockers(setter, descriptor_kind, constant)
+
+
+def _scalar_module_constant_value_blockers(
+    variable: models.SemanticVariable,
+    getter_action: ModuleGetterAction,
+) -> tuple[str, ...]:
+    """Validate a constant only when its value is binding-owned."""
+    if getter_action is not ModuleGetterAction.CONSTANT_VALUE:
+        return ()
+    if variable.default_value is None:
+        return ("scalar module constant is missing its completed value",)
+    if not _is_scalar_module_literal(variable.default_value, variable.semantic_type.name):
+        return ("scalar module constant value is not a supported literal",)
+    return ()
+
+
+def _scalar_module_initializer_blockers(
+    variable: models.SemanticVariable,
+    setter: OwnershipDecision | None,
+) -> tuple[str, ...]:
+    """Validate one optional import-time scalar initializer."""
     initializer = variable.metadata.get(models.RESOLVED_MODULE_VARIABLE_INITIALIZER_METADATA)
-    if initializer is not None and (setter is None or setter.setter_action is not SetterAction.WRITE_THROUGH):
+    if initializer is None:
+        return ()
+    blockers = []
+    if setter is None or setter.setter_action is not SetterAction.WRITE_THROUGH:
         blockers.append("module variable initializer requires a write-through setter")
-    if initializer is not None and not _is_scalar_module_literal(initializer, variable.semantic_type.name):
+    if not _is_scalar_module_literal(initializer, variable.semantic_type.name):
         blockers.append("module variable initializer is not a supported scalar literal")
-    return blockers
+    return tuple(blockers)
 
 
 def _scalar_module_setter_blockers(
