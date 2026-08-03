@@ -128,8 +128,11 @@ For BLAS behavior, run `python3 -m pytest -q examples/blas` or one of its named
 test functions. The session fixtures build the identical sorted 155-source set
 once through PRIK and once through f2py. `test_routine_coverage.py` audits the
 parsed source inventory, both export sets, visible named tests, and terminal
-outcomes. The older full-library BLAS node remains broader wrapper-build and
-native-link integration evidence, while LAPACK runtime remains CI-only.
+outcomes. The separate full-library node remains available as opt-in
+`build_pyi_extension` and native-link integration evidence, but the dedicated
+CI lane explicitly adds `examples/blas/ci_full_surface.py` to the same pytest
+invocation and does not rebuild its wrappers afterward. Ordinary example runs
+do not discover that CI-only file.
 
 For LAPACK behavior, the dedicated lane runs
 `python3 -m pytest -q examples/lapack`. Its session fixtures wrap and compile
@@ -137,7 +140,10 @@ the complete LAPACK corpus and required authoritative BLAS dependencies once,
 then reuse that module while explicitly testing the reviewed 127-routine
 SciPy 1.18.0 `float64` inventory. The inventory audit fails on SciPy drift,
 missing sources or exports, missing explicitly named tests, and divergent
-documentation totals.
+documentation totals. CI explicitly adds `examples/lapack/ci_full_surface.py`
+to the same pytest invocation, reusing the complete PRIK extension to require
+all 2,064 root exports and run a non-inventory runtime smoke call. Ordinary
+example runs do not discover that file.
 
 ## Ownership discipline
 

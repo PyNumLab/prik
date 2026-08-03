@@ -13,6 +13,9 @@ import sys
 
 import pytest
 
+from examples.f2py_intents import prepare_f2py_intent_sources
+from examples.blas.f2py_contract import F2PY_INOUT_ARGUMENTS
+
 
 EXAMPLE_ROOT = Path(__file__).resolve().parent
 REPOSITORY_ROOT = EXAMPLE_ROOT.parents[1]
@@ -123,7 +126,8 @@ def _prik_build_command(workdir: Path, compiler: str) -> tuple[str, ...]:
 
 
 def _f2py_build_command(workdir: Path) -> tuple[str, ...]:
-    """Build the identical complete source set through NumPy f2py."""
+    """Build the complete source set with reviewed f2py intent overlays."""
+    sources = prepare_f2py_intent_sources(BLAS_SOURCES, workdir, F2PY_INOUT_ARGUMENTS)
     return (
         sys.executable,
         "-m",
@@ -131,7 +135,7 @@ def _f2py_build_command(workdir: Path) -> tuple[str, ...]:
         "-c",
         "-m",
         "f2py_reference_blas",
-        *(str(source) for source in BLAS_SOURCES),
+        *(str(source) for source in sources),
         "--build-dir",
         str(workdir / "generated"),
         f"--f77flags={BUILD_FLAGS}",

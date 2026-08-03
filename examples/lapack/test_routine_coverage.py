@@ -17,13 +17,13 @@ from .conftest import (
     _f2py_source_plan,
     _prik_build_command,
 )
+from .f2py_contract import F2PY_INOUT_ARGUMENTS
 from .routine_inventory import (
     EXPLICIT_TEST_NAMES,
     EXPECTED_LAPACK_ROOT_PROCEDURES,
     EXPECTED_LAPACK_SOURCE_FILES,
     F2PY_EXPORT_LIMITATIONS,
     F2PY_FUNCTION_RESULTS,
-    F2PY_NUMERICAL_LIMITATIONS,
     PRIK_ABI_ADAPTERS,
     ROUTINE_FAMILIES,
     ROUTINE_GROUPS,
@@ -112,7 +112,7 @@ def test_inventory_groups_form_one_complete_partition():
                 spec.prik_export,
                 spec.prik_adapter,
                 spec.f2py_export,
-                spec.f2py_limitation,
+                spec.f2py_behavior,
                 spec.mutation,
                 spec.returns,
                 spec.workspace,
@@ -121,19 +121,24 @@ def test_inventory_groups_form_one_complete_partition():
             )
         )
     assert set(ROUTINES) >= F2PY_FUNCTION_RESULTS
-    assert set(F2PY_NUMERICAL_LIMITATIONS) <= set(ROUTINES)
     assert set(F2PY_EXPORT_LIMITATIONS) <= set(ROUTINES)
     assert set(PRIK_ABI_ADAPTERS) <= set(ROUTINES)
 
 
 def test_f2py_source_plan_includes_required_kind_module(tmp_path: Path):
     """The selected build closes dependencies without consuming PRIK's library."""
-    plan = _f2py_source_plan()
+    plan = _f2py_source_plan(tmp_path)
     dependency_count = len(F2PY_BUILD_DEPENDENCIES)
     assert tuple(path.name for path in plan[:dependency_count]) == F2PY_BUILD_DEPENDENCIES
     assert {path.stem for path in plan[dependency_count:]} == set(ROUTINES) - set(F2PY_EXPORT_LIMITATIONS)
     assert len(plan) == dependency_count + len(ROUTINES) - len(F2PY_EXPORT_LIMITATIONS)
     assert F2PY_KIND_MAP == "{'real': {'wp': 'double'}}\n"
+
+    for routine, arguments in F2PY_INOUT_ARGUMENTS.items():
+        source = next(path for path in plan if path.stem == routine)
+        prefix = "Cf2py" if source.suffix == ".f" else "!f2py"
+        assert source.parent == tmp_path / "f2py-intent-sources"
+        assert f"{prefix} intent(inout) {', '.join(arguments)}" in source.read_text(encoding="utf-8")
 
     command = _f2py_build_command(tmp_path)
     dependency_values = tuple(command[index + 1] for index, value in enumerate(command) if value == "--dep")
@@ -203,13 +208,13 @@ def test_documented_coverage_totals_match_inventory():
         "Discovered root LAPACK procedures": EXPECTED_LAPACK_ROOT_PROCEDURES,
         "Selected SciPy-backed float64 routines": len(ROUTINES),
         "Explicit correctness tests": len(EXPLICIT_TEST_NAMES),
-        "PRIK exports required in CI": len(ROUTINES),
+        "PRIK root exports required in CI": EXPECTED_LAPACK_ROOT_PROCEDURES,
+        "Selected PRIK routines independently validated": len(ROUTINES),
         "SciPy exports used": len(ROUTINES),
         "f2py exports required in CI": len(ROUTINES) - len(F2PY_EXPORT_LIMITATIONS),
-        "Routines satisfying the independent oracle through f2py": len(ROUTINES)
-        - len(set(F2PY_EXPORT_LIMITATIONS) | set(F2PY_NUMERICAL_LIMITATIONS)),
-        "Documented raw-f2py export limitations": len(F2PY_EXPORT_LIMITATIONS),
-        "Documented raw-f2py numerical projection limitations": len(F2PY_NUMERICAL_LIMITATIONS),
+        "Routines satisfying the independent oracle through f2py": len(ROUTINES) - len(F2PY_EXPORT_LIMITATIONS),
+        "Documented f2py source-parser export limitations": len(F2PY_EXPORT_LIMITATIONS),
+        "f2py scalar-writeback intent overlays": len(F2PY_INOUT_ARGUMENTS),
         "Documented PRIK default-LOGICAL ABI adapters": len(PRIK_ABI_ADAPTERS),
         "Documented unsupported/skipped routines": 0,
     }

@@ -72,6 +72,8 @@ def test_dpftrs_solves_from_rfp_cholesky_factor(prik_lapack, scipy_lapack, f2py_
 
 def test_dpocon_estimates_spd_reciprocal_condition(prik_lapack, scipy_lapack, f2py_lapack):
     factor = np.array([[2.0]], dtype=np.float64, order="F")
+    f2py_rcond = np.array(0.0, dtype=np.float64)
+    f2py_info = np.array(0, dtype=np.int32)
 
     prik_scalars = prik_lapack.dpocon(
         "U",
@@ -85,13 +87,14 @@ def test_dpocon_estimates_spd_reciprocal_condition(prik_lapack, scipy_lapack, f2
         np.int32(0),
     )
     f2py_result = f2py_lapack.dpocon(
-        b"U", 1, factor.copy(order="F"), 4.0, 0.0, np.empty(3), np.empty(1, dtype=np.int32), 0
+        b"U", 1, factor.copy(order="F"), 4.0, f2py_rcond, np.empty(3), np.empty(1, dtype=np.int32), f2py_info
     )
     scipy_rcond, scipy_info = scipy_lapack.dpocon(factor.copy(order="F"), 4.0, uplo=b"U")
 
     assert f2py_result is None
-    assert prik_scalars[-1] == scipy_info == 0
+    assert prik_scalars[-1] == f2py_info == scipy_info == 0
     assert_allclose_float64(prik_scalars[-2], 1.0)
+    assert_allclose_float64(f2py_rcond, 1.0)
     assert_allclose_float64(scipy_rcond, 1.0)
 
 
@@ -239,6 +242,8 @@ def test_dpotrs_solves_from_cholesky_factor(prik_lapack, scipy_lapack, f2py_lapa
 
 def test_dppcon_estimates_packed_spd_condition(prik_lapack, scipy_lapack, f2py_lapack):
     factor = np.array([2.0])
+    f2py_rcond = np.array(0.0, dtype=np.float64)
+    f2py_info = np.array(0, dtype=np.int32)
 
     prik_scalars = prik_lapack.dppcon(
         "U",
@@ -250,12 +255,15 @@ def test_dppcon_estimates_packed_spd_condition(prik_lapack, scipy_lapack, f2py_l
         np.empty(1, dtype=np.int32),
         np.int32(0),
     )
-    f2py_result = f2py_lapack.dppcon(b"U", 1, factor, 4.0, 0.0, np.empty(3), np.empty(1, dtype=np.int32), 0)
+    f2py_result = f2py_lapack.dppcon(
+        b"U", 1, factor, 4.0, f2py_rcond, np.empty(3), np.empty(1, dtype=np.int32), f2py_info
+    )
     scipy_rcond, scipy_info = scipy_lapack.dppcon(1, factor, 4.0)
 
     assert f2py_result is None
-    assert prik_scalars[-1] == scipy_info == 0
+    assert prik_scalars[-1] == f2py_info == scipy_info == 0
     assert_allclose_float64(prik_scalars[-2], 1.0)
+    assert_allclose_float64(f2py_rcond, 1.0)
     assert_allclose_float64(scipy_rcond, 1.0)
 
 

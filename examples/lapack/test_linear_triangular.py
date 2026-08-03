@@ -113,6 +113,8 @@ def test_dtpttr_converts_packed_to_full_triangular(prik_lapack, scipy_lapack, f2
 
 def test_dtrcon_estimates_triangular_reciprocal_condition(prik_lapack, scipy_lapack, f2py_lapack):
     _logical, stored, _packed = _upper_triangular()
+    f2py_rcond = np.array(0.0, dtype=np.float64)
+    f2py_info = np.array(0, dtype=np.int32)
 
     prik_scalars = prik_lapack.dtrcon(
         "1",
@@ -127,13 +129,22 @@ def test_dtrcon_estimates_triangular_reciprocal_condition(prik_lapack, scipy_lap
         np.int32(0),
     )
     f2py_result = f2py_lapack.dtrcon(
-        b"1", b"U", b"N", 2, stored.copy(order="F"), 0.0, np.empty(6), np.empty(2, dtype=np.int32), 0
+        b"1",
+        b"U",
+        b"N",
+        2,
+        stored.copy(order="F"),
+        f2py_rcond,
+        np.empty(6),
+        np.empty(2, dtype=np.int32),
+        f2py_info,
     )
     scipy_rcond, scipy_info = scipy_lapack.dtrcon(stored.copy(order="F"), norm=b"1", uplo=b"U", diag=b"N")
 
     assert f2py_result is None
-    assert prik_scalars[-1] == scipy_info == 0
+    assert prik_scalars[-1] == f2py_info == scipy_info == 0
     assert_allclose_float64(prik_scalars[-2], scipy_rcond, operation_size=2)
+    assert_allclose_float64(f2py_rcond, scipy_rcond, operation_size=2)
     assert 0.0 < scipy_rcond <= 1.0
 
 

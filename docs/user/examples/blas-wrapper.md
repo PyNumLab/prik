@@ -115,21 +115,35 @@ performance.
 
 ---
 
-## 3. Build the same sources with f2py
+## 3. Build the same implementations with f2py
 
-Use the identical source list and optimisation level:
+Use the maintained command builder so the comparison matches the test suite:
 
 ```bash
-mkdir -p "$BLAS_BUILD_ROOT/f2py/generated"
-cd "$BLAS_BUILD_ROOT/f2py"
+cd "$REPOSITORY_ROOT"
+python - <<'PY'
+import os
+from pathlib import Path
+import subprocess
 
-python -m numpy.f2py -c -m f2py_reference_blas \
-  "${BLAS_SOURCES[@]}" \
-  --build-dir "$BLAS_BUILD_ROOT/f2py/generated" \
-  --f77flags=-O0 \
-  --f90flags=-O0 \
-  --opt=-O0
+from examples.blas.conftest import _build_environment, _compiler, _f2py_build_command
+
+workdir = Path(os.environ["BLAS_BUILD_ROOT"]) / "f2py"
+workdir.mkdir(parents=True, exist_ok=True)
+compiler = _compiler()
+subprocess.run(
+    _f2py_build_command(workdir),
+    cwd=workdir,
+    env=_build_environment(compiler),
+    check=True,
+)
+PY
 ```
+
+Six rotation routines document scalar writebacks without declaring Fortran
+`intent`. The f2py build adds temporary intent directives and the tests pass
+typed 0-D arrays. PRIK needs neither: it returns unannotated scalar writebacks
+directly, with ordinary scalar arguments.
 
 Import both modules:
 
@@ -150,7 +164,7 @@ import prik_reference_blas
 PRIK deliberately follows the native scalar contract:
 
 - For a subroutine such as `DAXPY`, arrays are mutated in place and PRIK returns the visible input scalars because they are treated as inout.
-- Raw f2py also mutates the output array but returns `None`.
+- The f2py comparison module also mutates the output array but returns `None`.
 - Function routines such as `DDOT` return their numerical result through both wrappers.
 
 ---
@@ -160,6 +174,9 @@ PRIK deliberately follows the native scalar contract:
 The names `prik_blas` and `f2py_blas` in the tests are session-scoped pytest
 fixtures from [`conftest.py`](../../../examples/blas/conftest.py). They build
 and import each complete module once, then reuse it for every test.
+GitHub Actions explicitly adds the non-discovered `ci_full_surface.py` to the
+same pytest invocation for maintainer-only full-surface checks; ordinary users
+running `pytest examples/blas` do not collect it.
 
 The tests import small, explicit helpers from
 [`helpers.py`](../../../examples/blas/helpers.py). The two helpers used below

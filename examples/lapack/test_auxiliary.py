@@ -99,36 +99,50 @@ def test_dlarfg_constructs_a_valid_householder_reflector(prik_lapack, scipy_lapa
     alpha = 4.0
     original_x = np.array([3.0, 0.0], dtype=np.float64)
     prik_x, f2py_x = original_x.copy(), original_x.copy()
+    f2py_alpha = np.array(alpha, dtype=np.float64)
+    f2py_tau = np.array(0.0, dtype=np.float64)
 
     prik_scalars = prik_lapack.dlarfg(np.int32(3), np.float64(alpha), prik_x, np.int32(1), np.float64(0.0))
-    f2py_result = f2py_lapack.dlarfg(3, alpha, f2py_x, 1, 0.0)
+    f2py_result = f2py_lapack.dlarfg(3, f2py_alpha, f2py_x, 1, f2py_tau)
     scipy_beta, scipy_x, scipy_tau = scipy_lapack.dlarfg(3, alpha, original_x.copy())
 
     _, prik_beta, _, prik_tau = prik_scalars
     prik_vector = np.concatenate(([1.0], prik_x))
+    f2py_vector = np.concatenate(([1.0], f2py_x))
     original = np.concatenate(([alpha], original_x))
-    expected = np.array([prik_beta, 0.0, 0.0], dtype=np.float64)
-    assert f2py_result is None  # raw f2py cannot project the scalar ALPHA and TAU writebacks
-    assert_allclose_float64((np.eye(3) - prik_tau * np.outer(prik_vector, prik_vector)) @ original, expected)
+    prik_expected = np.array([prik_beta, 0.0, 0.0], dtype=np.float64)
+    f2py_expected = np.array([f2py_alpha, 0.0, 0.0], dtype=np.float64)
+    assert f2py_result is None
+    assert_allclose_float64((np.eye(3) - prik_tau * np.outer(prik_vector, prik_vector)) @ original, prik_expected)
+    assert_allclose_float64((np.eye(3) - f2py_tau * np.outer(f2py_vector, f2py_vector)) @ original, f2py_expected)
     assert_allclose_float64(prik_beta, scipy_beta)
+    assert_allclose_float64(f2py_alpha, scipy_beta)
     assert_allclose_float64(prik_x, scipy_x)
     assert_allclose_float64(f2py_x, scipy_x)
     assert_allclose_float64(prik_tau, scipy_tau)
+    assert_allclose_float64(f2py_tau, scipy_tau)
 
 
 def test_dlartg_constructs_a_givens_rotation(prik_lapack, scipy_lapack, f2py_lapack):
     f, g = 3.0, 4.0
+    f2py_c = np.array(0.0, dtype=np.float64)
+    f2py_s = np.array(0.0, dtype=np.float64)
+    f2py_r = np.array(0.0, dtype=np.float64)
 
     prik_scalars = prik_lapack.dlartg(np.float64(f), np.float64(g), np.float64(0.0), np.float64(0.0), np.float64(0.0))
-    f2py_result = f2py_lapack.dlartg(f, g, 0.0, 0.0, 0.0)
+    f2py_result = f2py_lapack.dlartg(f, g, f2py_c, f2py_s, f2py_r)
     scipy_c, scipy_s, scipy_r = scipy_lapack.dlartg(f, g)
 
     _, _, prik_c, prik_s, prik_r = prik_scalars
-    assert f2py_result is None  # raw f2py cannot project scalar-only subroutine outputs
+    assert f2py_result is None
     assert_allclose_float64(prik_c * f + prik_s * g, prik_r)
     assert_allclose_float64(-prik_s * f + prik_c * g, 0.0)
     assert_allclose_float64(prik_c * prik_c + prik_s * prik_s, 1.0)
     assert_allclose_float64([prik_c, prik_s, prik_r], [scipy_c, scipy_s, scipy_r])
+    assert_allclose_float64(f2py_c * f + f2py_s * g, f2py_r)
+    assert_allclose_float64(-f2py_s * f + f2py_c * g, 0.0)
+    assert_allclose_float64(f2py_c * f2py_c + f2py_s * f2py_s, 1.0)
+    assert_allclose_float64([f2py_c, f2py_s, f2py_r], [scipy_c, scipy_s, scipy_r])
 
 
 def test_dlaswp_applies_native_one_based_row_pivots(prik_lapack, scipy_lapack, f2py_lapack):

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 ROUTINE_GROUPS: dict[str, tuple[str, ...]] = {
     "BLAS Level 1 real": (
         "sasum",
@@ -190,20 +189,7 @@ ROUTINE_GROUPS: dict[str, tuple[str, ...]] = {
 ALL_ROUTINES = tuple(routine for routines in ROUTINE_GROUPS.values() for routine in routines)
 PRIK_TESTED_ROUTINES = frozenset(ALL_ROUTINES)
 
-# f2py infers these scalar arguments as input-only from the unannotated reference
-# sources. The native calls run, but updated scalar values are not projected back
-# to Python. Their tests validate PRIK completely and compare any observable f2py
-# array mutation.
-F2PY_LIMITATIONS: dict[str, str] = {
-    "srotg": "f2py returns None and exposes none of the four updated scalar arguments",
-    "drotg": "f2py returns None and exposes none of the four updated scalar arguments",
-    "crotg": "f2py returns None and exposes none of the four updated scalar arguments",
-    "zrotg": "f2py returns None and exposes none of the four updated scalar arguments",
-    "srotmg": "f2py exposes PARAM mutation but not the updated D1, D2, and X1 scalars",
-    "drotmg": "f2py exposes PARAM mutation but not the updated D1, D2, and X1 scalars",
-}
-
-DIFFERENTIALLY_TESTED_ROUTINES = frozenset(ALL_ROUTINES) - F2PY_LIMITATIONS.keys()
+DIFFERENTIALLY_TESTED_ROUTINES = frozenset(ALL_ROUTINES)
 
 UNSUPPORTED_ROUTINES: dict[str, str] = {}
 PERMANENTLY_SKIPPED_ROUTINES: dict[str, str] = {}

@@ -270,27 +270,37 @@ def test_drot(prik_blas, f2py_blas):
 
 def test_srotg(prik_blas, f2py_blas):
     a, b = np.float32(3.0), np.float32(4.0)
+    f2py_a = np.array(a, dtype=np.float32)
+    f2py_b = np.array(b, dtype=np.float32)
+    f2py_c = np.array(0.0, dtype=np.float32)
+    f2py_s = np.array(0.0, dtype=np.float32)
 
     prik_a, prik_b, c, s = prik_blas.srotg(a, b, np.float32(0.0), np.float32(0.0))
-    f2py_result = f2py_blas.srotg(a, b, np.float32(0.0), np.float32(0.0))
+    f2py_result = f2py_blas.srotg(f2py_a, f2py_b, f2py_c, f2py_s)
 
     assert_allclose_for_dtype(prik_a, np.float32(5.0))
     assert_allclose_for_dtype(prik_b, np.float32(5.0 / 3.0))
     assert_allclose_for_dtype(c * a + s * b, prik_a, operation_size=2)
     assert_allclose_for_dtype(-s * a + c * b, np.float32(0.0), operation_size=2)
+    assert_allclose_for_dtype([f2py_a, f2py_b, f2py_c, f2py_s], [prik_a, prik_b, c, s])
     assert f2py_result is None
 
 
 def test_drotg(prik_blas, f2py_blas):
     a, b = np.float64(3.0), np.float64(4.0)
+    f2py_a = np.array(a, dtype=np.float64)
+    f2py_b = np.array(b, dtype=np.float64)
+    f2py_c = np.array(0.0, dtype=np.float64)
+    f2py_s = np.array(0.0, dtype=np.float64)
 
     prik_a, prik_b, c, s = prik_blas.drotg(a, b, np.float64(0.0), np.float64(0.0))
-    f2py_result = f2py_blas.drotg(a, b, np.float64(0.0), np.float64(0.0))
+    f2py_result = f2py_blas.drotg(f2py_a, f2py_b, f2py_c, f2py_s)
 
     assert_allclose_for_dtype(prik_a, np.float64(5.0))
     assert_allclose_for_dtype(prik_b, np.float64(5.0 / 3.0))
     assert_allclose_for_dtype(c * a + s * b, prik_a, operation_size=2)
     assert_allclose_for_dtype(-s * a + c * b, np.float64(0.0), operation_size=2)
+    assert_allclose_for_dtype([f2py_a, f2py_b, f2py_c, f2py_s], [prik_a, prik_b, c, s])
     assert f2py_result is None
 
 
@@ -339,13 +349,16 @@ def test_drotm(prik_blas, f2py_blas):
 def test_srotmg(prik_blas, f2py_blas):
     prik_param = np.zeros(5, dtype=np.float32)
     f2py_param = np.zeros(5, dtype=np.float32)
+    f2py_scalars = [np.array(value, dtype=np.float32) for value in (1.0, 2.0, 3.0, 4.0)]
 
     prik_values = prik_blas.srotmg(np.float32(1.0), np.float32(2.0), np.float32(3.0), np.float32(4.0), prik_param)
-    f2py_result = f2py_blas.srotmg(np.float32(1.0), np.float32(2.0), np.float32(3.0), np.float32(4.0), f2py_param)
+    f2py_result = f2py_blas.srotmg(*f2py_scalars, f2py_param)
 
     expected_values = np.array([1.5609756, 0.7804878, 5.125, 4.0], dtype=np.float32)
     expected_param = np.array([1.0, 0.375, 0.0, 0.0, 0.75], dtype=np.float32)
     assert_allclose_for_dtype(prik_values, expected_values, operation_size=2)
+    assert_allclose_for_dtype(f2py_scalars, expected_values, operation_size=2)
+    assert_allclose_for_dtype(f2py_scalars, prik_values, operation_size=2)
     assert_allclose_for_dtype(prik_param, expected_param)
     assert_allclose_for_dtype(f2py_param, expected_param)
     assert_allclose_for_dtype(prik_param, f2py_param)
@@ -355,13 +368,16 @@ def test_srotmg(prik_blas, f2py_blas):
 def test_drotmg(prik_blas, f2py_blas):
     prik_param = np.zeros(5, dtype=np.float64)
     f2py_param = np.zeros(5, dtype=np.float64)
+    f2py_scalars = [np.array(value, dtype=np.float64) for value in (1.0, 2.0, 3.0, 4.0)]
 
     prik_values = prik_blas.drotmg(np.float64(1.0), np.float64(2.0), np.float64(3.0), np.float64(4.0), prik_param)
-    f2py_result = f2py_blas.drotmg(np.float64(1.0), np.float64(2.0), np.float64(3.0), np.float64(4.0), f2py_param)
+    f2py_result = f2py_blas.drotmg(*f2py_scalars, f2py_param)
 
     expected_values = np.array([1.5609756097560976, 0.7804878048780488, 5.125, 4.0])
     expected_param = np.array([1.0, 0.375, 0.0, 0.0, 0.75])
     assert_allclose_for_dtype(prik_values, expected_values, operation_size=2)
+    assert_allclose_for_dtype(f2py_scalars, expected_values, operation_size=2)
+    assert_allclose_for_dtype(f2py_scalars, prik_values, operation_size=2)
     assert_allclose_for_dtype(prik_param, expected_param)
     assert_allclose_for_dtype(f2py_param, expected_param)
     assert_allclose_for_dtype(prik_param, f2py_param)

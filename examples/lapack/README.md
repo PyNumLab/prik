@@ -53,10 +53,12 @@ It performs these operations once:
    cached shared library;
 3. build one PRIK extension from the complete generated contract and shared
    library;
-4. independently build one raw f2py comparison surface from the 125 reviewed
+4. independently build one f2py comparison surface from the 125 reviewed
    f2py-compatible routine sources and their minimal module dependency, linking unselected
    LAPACK and BLAS helper symbols from the system development libraries; and
-5. reuse the three imported comparison surfaces for every correctness file.
+5. reuse the three imported comparison surfaces for every correctness file;
+   CI explicitly adds the non-discovered `ci_full_surface.py` for the complete
+   PRIK root-export audit and runtime smoke call.
 
 The contract-generation command is:
 
@@ -86,7 +88,7 @@ python3 -m prik /tmp/prik-lapack/runtime-contract/lapack/__init__.pyi \
 ```
 
 The paths are illustrative; `conftest.py` creates their actual temporary/cache
-locations and records the exact executable command. The raw f2py command it
+locations and records the exact executable command. The f2py command it
 assembles is equivalent to:
 
 ```console
@@ -113,21 +115,18 @@ Build products stay in pytest temporary/cache directories. Failures report the
 compiler identity, command, stdout, and stderr. Neither build dirties the
 repository.
 
-The fixtures import the complete PRIK module, the raw f2py module, and
+The fixtures import the complete PRIK module, the f2py comparison module, and
 `scipy.linalg.lapack`. Character flags are Python `str` through PRIK and
 `bytes` through SciPy/f2py. PRIK retains the complete native argument order.
-Raw f2py retains the order of the arguments it exposes, but infers and hides
+f2py retains the order of the arguments it exposes, but infers and hides
 leading dimensions and a few other shape-only scalar arguments; each visible
 f2py call follows the generated wrapper signature. SciPy projects arrays and
 optional arguments into its documented Python API.
 
-The Reference LAPACK subroutines do not declare Fortran `intent`, so raw f2py
-does not project their scalar writebacks. It still exposes in-place array
-mutation, which provides enough output for the independent oracle in 112 of
-the 121 exported subroutines; the four exported LAPACK functions return their
-values normally. Nine subroutines have an essential scalar-only result, or need
-an unprojected scalar to validate their mutated vector, and are explicitly
-recorded in `F2PY_NUMERICAL_LIMITATIONS`.
+Nine routines document essential scalar writebacks without declaring Fortran
+`intent`. The f2py fixture adds build-local intent directives and passes typed
+0-D arrays so every writeback is validated. PRIK needs neither the overlay nor
+carrier arrays: it returns unannotated scalar writebacks directly.
 
 `dgees` and `dgges` remain in the 127-routine correctness inventory but are
 recorded in `F2PY_EXPORT_LIMITATIONS`. Their Reference LAPACK interfaces accept
@@ -135,16 +134,8 @@ external selection callbacks. From the unannotated implementation sources,
 NumPy f2py 2.5.1 generates incomplete callback declarations (`select_t` and
 `selctg_t`) and invalid C wrapper code. Those two routines are therefore
 validated through PRIK, SciPy, and independent Schur reconstruction without a
-raw-f2py call; the remaining 125 selected names must be exported by the one
+f2py call; the remaining 125 selected names must be exported by the one
 f2py comparison module.
-
-The nine reviewed limitations are:
-
-- `dlarfg`: the vector writeback is compared, but `ALPHA` and `TAU` are not
-  projected;
-- `dlartg`: `C`, `S`, and `R` are all unprojected scalar writebacks; and
-- `dgbcon`, `dgecon`, `dgtcon`, `dpocon`, `dppcon`, `dsycon`, and `dtrcon`:
-  `RCOND` and `INFO` are unprojected scalar writebacks.
 
 ## Correctness evidence
 
@@ -193,7 +184,7 @@ Workspace-bearing tests allocate the native `WORK`/`IWORK` arrays and keep
 covered where the exposed API supports it. `INFO == 0` is exact on normal paths.
 Invalid argument calls that could route through `XERBLA` are not made in-process.
 
-Native LAPACK pivots and positions are one-based. PRIK and the raw f2py surface
+Native LAPACK pivots and positions are one-based. PRIK and the f2py comparison surface
 preserve native values. SciPy converts several low-level pivot/index APIs to
 zero-based values, but preserves one-based `JPVT` for `DGELSY`/`DGEQP3`, one-based
 `IPIV` for the general-tridiagonal `DGTTRF`/`DGTTRS` family, and one-based Schur
@@ -211,6 +202,10 @@ python3 -m pytest -q examples/lapack/test_linear_general.py
 python3 -m pytest -q examples/lapack/test_linear_general.py::test_dgesv_solves_general_system
 python3 -m pytest -q examples/lapack -k dgesvd
 ```
+
+The dedicated CI lane explicitly adds `ci_full_surface.py` to that same pytest
+invocation. Its nonstandard filename keeps the maintainer-only audit out of
+ordinary example runs while still reusing the already-built extensions.
 
 Repository policy leaves LAPACK wrapper/runtime execution to that lane unless a
 maintainer explicitly requests a local run. Local work may collect tests and run
@@ -238,16 +233,17 @@ documented totals.
 | Discovered root LAPACK procedures | 2,064 |
 | Selected SciPy-backed float64 routines | 127 |
 | Explicit correctness tests | 127 |
-| PRIK exports required in CI | 127 |
+| PRIK root exports required in CI | 2,064 |
+| Selected PRIK routines independently validated | 127 |
 | SciPy exports used | 127 |
 | f2py exports required in CI | 125 |
-| Routines satisfying the independent oracle through f2py | 116 |
-| Documented raw-f2py export limitations | 2 |
-| Documented raw-f2py numerical projection limitations | 9 |
+| Routines satisfying the independent oracle through f2py | 125 |
+| Documented f2py source-parser export limitations | 2 |
+| f2py scalar-writeback intent overlays | 9 |
 | Documented PRIK default-LOGICAL ABI adapters | 2 |
 | Documented unsupported/skipped routines | 0 |
 
-Runtime success, f2py projection limitations, and any PRIK failures are CI
+Runtime success, f2py export limitations, and any PRIK failures are CI
 outcomes and must be reported honestly; structural completion does not predict
 them.
 
@@ -255,7 +251,7 @@ them.
 
 `prik_lapack`, `f2py_lapack`, and `scipy_lapack` are session-scoped pytest
 fixtures from [`conftest.py`](conftest.py). They provide the complete PRIK
-wrapper, the selected raw-f2py comparison module, and SciPy's pinned low-level
+wrapper, the selected f2py comparison module, and SciPy's pinned low-level
 LAPACK module.
 
 The tests use explicit mechanics from [`helpers.py`](helpers.py):
@@ -514,6 +510,8 @@ def test_dtbtrs_solves_triangular_band_system(prik_lapack, scipy_lapack, f2py_la
 def test_dgecon_estimates_reciprocal_condition(prik_lapack, scipy_lapack, f2py_lapack):
     factor = np.array([[4.0]], dtype=np.float64, order="F")
     expected = 1.0
+    f2py_rcond = np.array(0.0, dtype=np.float64)
+    f2py_info = np.array(0, dtype=np.int32)
 
     prik_scalars = prik_lapack.dgecon(
         "1",
@@ -527,12 +525,13 @@ def test_dgecon_estimates_reciprocal_condition(prik_lapack, scipy_lapack, f2py_l
         np.int32(0),
     )
     f2py_result = f2py_lapack.dgecon(
-        b"1", 1, factor.copy(order="F"), 4.0, 0.0, np.empty(4), np.empty(1, dtype=np.int32), 0
+        b"1", 1, factor.copy(order="F"), 4.0, f2py_rcond, np.empty(4), np.empty(1, dtype=np.int32), f2py_info
     )
     scipy_rcond, scipy_info = scipy_lapack.dgecon(factor.copy(order="F"), 4.0, norm=b"1")
 
     assert f2py_result is None
-    assert prik_scalars[-1] == scipy_info == 0
+    assert prik_scalars[-1] == f2py_info == scipy_info == 0
     assert_allclose_float64(prik_scalars[-2], expected)
+    assert_allclose_float64(f2py_rcond, expected)
     assert_allclose_float64(scipy_rcond, expected)
 ```

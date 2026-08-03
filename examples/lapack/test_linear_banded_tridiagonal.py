@@ -37,6 +37,8 @@ def _general_tridiagonal_factorization():
 def test_dgbcon_estimates_general_band_condition(prik_lapack, scipy_lapack, f2py_lapack):
     factor = np.array([[4.0]], dtype=np.float64, order="F")
     native_ipiv = np.array([1], dtype=np.int32)
+    f2py_rcond = np.array(0.0, dtype=np.float64)
+    f2py_info = np.array(0, dtype=np.int32)
 
     prik_scalars = prik_lapack.dgbcon(
         "1",
@@ -53,13 +55,24 @@ def test_dgbcon_estimates_general_band_condition(prik_lapack, scipy_lapack, f2py
         np.int32(0),
     )
     f2py_result = f2py_lapack.dgbcon(
-        b"1", 1, 0, 0, factor.copy(order="F"), native_ipiv, 4.0, 0.0, np.empty(3), np.empty(1, dtype=np.int32), 0
+        b"1",
+        1,
+        0,
+        0,
+        factor.copy(order="F"),
+        native_ipiv,
+        4.0,
+        f2py_rcond,
+        np.empty(3),
+        np.empty(1, dtype=np.int32),
+        f2py_info,
     )
     scipy_rcond, scipy_info = scipy_lapack.dgbcon(0, 0, factor.copy(order="F"), np.array([0], dtype=np.int32), 4.0)
 
     assert f2py_result is None
-    assert prik_scalars[-1] == scipy_info == 0
+    assert prik_scalars[-1] == f2py_info == scipy_info == 0
     assert_allclose_float64(prik_scalars[-2], 1.0)
+    assert_allclose_float64(f2py_rcond, 1.0)
     assert_allclose_float64(scipy_rcond, 1.0)
 
 
@@ -153,6 +166,8 @@ def test_dgtcon_estimates_tridiagonal_condition(prik_lapack, scipy_lapack, f2py_
     assert factor_info == 0
     native_ipiv = native_pivots(scipy_piv)
     anorm = 5.0
+    f2py_rcond = np.array(0.0, dtype=np.float64)
+    f2py_info = np.array(0, dtype=np.int32)
 
     prik_scalars = prik_lapack.dgtcon(
         "1",
@@ -177,16 +192,17 @@ def test_dgtcon_estimates_tridiagonal_condition(prik_lapack, scipy_lapack, f2py_
         scipy_du2,
         native_ipiv,
         anorm,
-        0.0,
+        f2py_rcond,
         np.empty(6),
         np.empty(3, dtype=np.int32),
-        0,
+        f2py_info,
     )
     scipy_rcond, scipy_info = scipy_lapack.dgtcon(scipy_dl, scipy_d, scipy_du, scipy_du2, scipy_piv, anorm)
 
     assert f2py_result is None
-    assert prik_scalars[-1] == scipy_info == 0
+    assert prik_scalars[-1] == f2py_info == scipy_info == 0
     assert_allclose_float64(prik_scalars[-2], scipy_rcond, operation_size=3)
+    assert_allclose_float64(f2py_rcond, scipy_rcond, operation_size=3)
     assert 0.0 < scipy_rcond <= 1.0
 
 

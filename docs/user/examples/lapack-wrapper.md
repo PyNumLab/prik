@@ -169,6 +169,10 @@ For your own already-built library, pass its shared-library path through
 
 This is still **one complete PRIK wrapper**.
 The correctness inventory does not cause per-routine, per-file or per-family PRIK builds.
+GitHub Actions explicitly adds the non-discovered `ci_full_surface.py` to reuse
+the same imported extension for the all-2,064-root export audit and runtime
+smoke call. Ordinary `pytest examples/lapack` runs do not collect that
+maintainer-only file, and CI does not rebuild a second wrapper for it.
 
 ---
 
@@ -176,6 +180,11 @@ The correctness inventory does not cause per-routine, per-file or per-family PRI
 
 The f2py side intentionally does less compilation.
 It wraps the 125 selected routines that are not affected by f2py’s callback-generation limitation, includes the minimal `la_constants.f90` dependency required by `dlartg`, and links unresolved helper symbols to the system `lapack` and `blas` libraries.
+
+Nine routines document scalar writebacks without declaring Fortran `intent`.
+The f2py build adds temporary intent directives and the tests pass typed 0-D
+arrays. PRIK needs neither: it returns unannotated scalar writebacks directly,
+with ordinary scalar arguments.
 
 The exact command is assembled from the reviewed inventory by `_f2py_build_command`.
 This short reproducer runs that same command:
@@ -219,9 +228,6 @@ python -m numpy.f2py -c -m f2py_reference_lapack_example \
 
 `dgees` and `dgges` remain in the 127-routine correctness inventory, but raw f2py 2.5.1 cannot generate valid callback declarations from their unannotated selection-callback interfaces.
 They are validated through PRIK, SciPy and independent Schur reconstruction.
-
-Nine additional routines have scalar writebacks that raw f2py does not project; those limitations are recorded explicitly in
-[`routine_inventory.py`](../../../examples/lapack/routine_inventory.py).
 
 Import the two built modules and SciPy's comparison surface from the repository
 root:
@@ -268,7 +274,7 @@ It fails clearly if the SciPy version or the expected routine inventory drifts.
 The arguments `prik_lapack`, `f2py_lapack`, and `scipy_lapack` are
 session-scoped pytest fixtures from
 [`conftest.py`](../../../examples/lapack/conftest.py). They provide the complete
-PRIK module, the selected raw-f2py module, and SciPy's pinned low-level LAPACK
+PRIK module, the selected f2py comparison module, and SciPy's pinned low-level LAPACK
 module respectively.
 
 The displayed tests use small helpers from
@@ -383,7 +389,7 @@ def test_dgesv_solves_general_system(prik_lapack, scipy_lapack, f2py_lapack):
 ```
 
 This test checks the known solution, the independently scaled residual `A @ X - B`, the LU output, native one-based pivots versus SciPy’s convention, and `INFO == 0`.
-PRIK preserves the native argument order and returns visible scalar arguments; both PRIK and raw f2py mutate the native output arrays.
+PRIK preserves the native argument order and returns visible scalar arguments; both PRIK and the f2py comparison module mutate the native output arrays.
 
 ### DPOTRF – reconstruct a Cholesky factorization
 
@@ -445,7 +451,7 @@ python -m pytest -q examples/lapack -k dgesvd
 Repository maintainers normally leave this expensive LAPACK wrapper/runtime command to the dedicated BLAS + LAPACK GitHub Actions job unless local execution is explicitly requested.
 The command is nevertheless complete and reproducible for users who have the listed native toolchain.
 
-For storage formats, workspaces, pivot conventions, f2py limitations, all representative families and audited coverage totals, continue to the
+For storage formats, workspaces, pivot conventions, the f2py callback limitation and scalar-intent overlays, all representative families and audited coverage totals, continue to the
 [`examples/lapack` project README](../../../examples/lapack/README.md).
 
 ---

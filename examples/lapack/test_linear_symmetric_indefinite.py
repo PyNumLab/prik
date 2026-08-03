@@ -18,6 +18,8 @@ def _negative_scalar_factor():
 
 def test_dsycon_estimates_symmetric_reciprocal_condition(prik_lapack, scipy_lapack, f2py_lapack):
     factor, native_ipiv = _negative_scalar_factor()
+    f2py_rcond = np.array(0.0, dtype=np.float64)
+    f2py_info = np.array(0, dtype=np.int32)
 
     prik_scalars = prik_lapack.dsycon(
         "U",
@@ -32,13 +34,22 @@ def test_dsycon_estimates_symmetric_reciprocal_condition(prik_lapack, scipy_lapa
         np.int32(0),
     )
     f2py_result = f2py_lapack.dsycon(
-        b"U", 1, factor.copy(order="F"), native_ipiv, 4.0, 0.0, np.empty(2), np.empty(1, dtype=np.int32), 0
+        b"U",
+        1,
+        factor.copy(order="F"),
+        native_ipiv,
+        4.0,
+        f2py_rcond,
+        np.empty(2),
+        np.empty(1, dtype=np.int32),
+        f2py_info,
     )
     scipy_rcond, scipy_info = scipy_lapack.dsycon(factor.copy(order="F"), native_ipiv, 4.0)
 
     assert f2py_result is None
-    assert prik_scalars[-1] == scipy_info == 0
+    assert prik_scalars[-1] == f2py_info == scipy_info == 0
     assert_allclose_float64(prik_scalars[-2], 1.0)
+    assert_allclose_float64(f2py_rcond, 1.0)
     assert_allclose_float64(scipy_rcond, 1.0)
 
 

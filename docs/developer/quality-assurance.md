@@ -100,10 +100,13 @@ For subprocess coverage investigations, mirror that command shape before
 deciding a fix. A plain local coverage run can miss subprocess data.
 Every Python version excludes the full BLAS/LAPACK real-library wrapper test
 while retaining general native-bundle coverage. The `Native Libraries`
-component runs the complete BLAS and LAPACK examples and full-library nodes on
-Python 3.12. A pull request may use the `ignore-real-library-wrappers` label to
-skip that expensive component without disabling the ordinary Python-version
-matrix.
+component runs the complete BLAS and LAPACK examples on Python 3.12. Those
+pytest invocations explicitly add each example's non-discovered
+`ci_full_surface.py`, reusing the session-scoped extension for complete
+root-export audits and runtime smoke calls instead of rebuilding the wrapper
+layer in a second process. A pull request may use the
+`ignore-real-library-wrappers` label to skip that expensive component without
+disabling the ordinary Python-version matrix.
 
 Every pull request and push to `main` runs the canonical Python 3.12 smoke and
 ordinary-suite selections through `Quality Metrics`, then combines and

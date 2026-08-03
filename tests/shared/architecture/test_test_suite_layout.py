@@ -25,6 +25,8 @@ PYPROJECT = REPO_ROOT / "pyproject.toml"
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
 MANIFEST = REPO_ROOT / "MANIFEST.in"
 FULL_REAL_LIBRARY_TEST = "tests/fortran/building_shared_library/end_to_end/real_libraries/test_full_libraries.py"
+BLAS_CI_FULL_SURFACE = "examples/blas/ci_full_surface.py"
+LAPACK_CI_FULL_SURFACE = "examples/lapack/ci_full_surface.py"
 
 LEGACY_TEST_ROOTS = {
     "benchmarks",
@@ -232,7 +234,7 @@ def test_maintained_docs_do_not_name_deprecated_pytest_locations() -> None:
     assert stale == []
 
 
-def test_full_real_library_nodes_have_one_dedicated_workflow() -> None:
+def test_real_library_examples_have_one_dedicated_workflow() -> None:
     ordinary_jobs = TESTS_WORKFLOW.read_text(encoding="utf-8")
     dedicated_job = BLAS_LAPACK_WORKFLOW.read_text(encoding="utf-8")
 
@@ -241,21 +243,18 @@ def test_full_real_library_nodes_have_one_dedicated_workflow() -> None:
     assert FULL_REAL_LIBRARY_TEST not in ordinary_jobs
     assert "examples/blas" not in ordinary_jobs
     assert "examples/lapack" not in ordinary_jobs
-    assert "python -m pytest -q examples/blas" in dedicated_job
-    assert "python -m pytest -q examples/lapack" in dedicated_job
+    assert 'python -m pytest -q -o "python_files=test_*.py ci_full_surface.py"' in dedicated_job
+    assert dedicated_job.count("python_files=test_*.py ci_full_surface.py") == 2
+    assert f"examples/blas {BLAS_CI_FULL_SURFACE}" in dedicated_job
+    assert f"examples/lapack {LAPACK_CI_FULL_SURFACE}" in dedicated_job
+    assert BLAS_CI_FULL_SURFACE in dedicated_job
+    assert LAPACK_CI_FULL_SURFACE in dedicated_job
+    assert FULL_REAL_LIBRARY_TEST not in dedicated_job
     assert '"meson==1.11.2"' in dedicated_job
     assert '"ninja==1.13.0"' in dedicated_job
     assert '"scipy==1.18.0"' in dedicated_job
     assert "libblas-dev" in dedicated_job
     assert "liblapack-dev" in dedicated_job
-    assert (
-        f'"{FULL_REAL_LIBRARY_TEST}::test_full_library_wrapper_imports_every_root_procedure_from_cached_shared_library[blas]"'
-        in dedicated_job
-    )
-    assert (
-        f'"{FULL_REAL_LIBRARY_TEST}::test_full_library_wrapper_imports_every_root_procedure_from_cached_shared_library[lapack]"'
-        in dedicated_job
-    )
     assert "ignore-real-library-wrappers" in dedicated_job
     assert "matrix.library" not in dedicated_job
 
@@ -402,8 +401,13 @@ def test_pull_request_declares_direct_staged_jobs_and_always_reports_the_gate() 
     native_libraries = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "native-libraries")
     assert "needs: [unit-tests, unit-tests-macos]" in native_libraries
     assert "ignore-real-library-wrappers" in native_libraries
-    assert "python -m pytest -q examples/blas" in native_libraries
-    assert "python -m pytest -q examples/lapack" in native_libraries
+    assert 'python -m pytest -q -o "python_files=test_*.py ci_full_surface.py"' in native_libraries
+    assert native_libraries.count("python_files=test_*.py ci_full_surface.py") == 2
+    assert f"examples/blas {BLAS_CI_FULL_SURFACE}" in native_libraries
+    assert f"examples/lapack {LAPACK_CI_FULL_SURFACE}" in native_libraries
+    assert BLAS_CI_FULL_SURFACE in native_libraries
+    assert LAPACK_CI_FULL_SURFACE in native_libraries
+    assert FULL_REAL_LIBRARY_TEST not in native_libraries
 
     benchmark = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "documentation-benchmark")
     assert "needs: native-libraries" in benchmark

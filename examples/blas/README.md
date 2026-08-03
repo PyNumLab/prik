@@ -39,9 +39,9 @@ running the example:
 python3 -m pip install "numpy==2.5.1" "meson==1.11.2" "ninja==1.13.0"
 ```
 
-The session fixtures use the following effective commands. Both commands
-receive the same sorted absolute source list and `-O0`; all artifacts stay in a
-temporary directory.
+The session fixtures build the same implementations at `-O0`; all artifacts
+stay in a temporary directory. PRIK consumes the authoritative sources
+directly:
 
 ```bash
 export REPOSITORY_ROOT="$(pwd)"
@@ -53,9 +53,30 @@ python3 -m prik "${BLAS_SOURCES[@]}" --out prik_reference_blas --out-dir "$BUILD
 ```
 
 ```bash
-cd "$BUILD_ROOT/f2py"
-python3 -m numpy.f2py -c -m f2py_reference_blas "${BLAS_SOURCES[@]}" --build-dir "$BUILD_ROOT/f2py/generated" --f77flags=-O0 --f90flags=-O0 --opt=-O0
+cd "$REPOSITORY_ROOT"
+python3 - <<'PY'
+import os
+from pathlib import Path
+import subprocess
+
+from examples.blas.conftest import _build_environment, _compiler, _f2py_build_command
+
+workdir = Path(os.environ["BUILD_ROOT"]) / "f2py"
+workdir.mkdir(parents=True, exist_ok=True)
+compiler = _compiler()
+subprocess.run(
+    _f2py_build_command(workdir),
+    cwd=workdir,
+    env=_build_environment(compiler),
+    check=True,
+)
+PY
 ```
+
+Six rotation routines document scalar writebacks without declaring Fortran
+`intent`. The f2py fixture adds build-local intent directives and passes typed
+0-D arrays so those writes are testable. PRIK needs neither the overlay nor
+carrier arrays: it returns unannotated scalar writebacks directly.
 
 Import the modules from their build directories:
 
@@ -78,6 +99,10 @@ python3 -m pytest -q examples/blas/test_level1_real.py
 python3 -m pytest -q examples/blas/test_level1_real.py::test_daxpy
 python3 -m pytest -q examples/blas -k dgemm
 ```
+
+The dedicated CI lane explicitly adds `ci_full_surface.py` to that same pytest
+invocation. Its nonstandard filename keeps the maintainer-only audit out of
+ordinary example runs while still reusing the already-built extensions.
 
 ## What each test proves
 
@@ -430,16 +455,14 @@ Current audited counts:
 | Discovered callable routines | 155 |
 | PRIK exports and independently validated routines | 155 |
 | f2py exports | 155 |
-| Full independent plus differential success | 149 |
-| Proven f2py scalar-writeback limitations | 6 |
+| Full independent plus differential success | 155 |
+| f2py scalar-writeback intent overlays | 6 |
 | Unsupported routines | 0 |
 | Environmentally skipped routines | 0 |
 
-The six f2py limitations are `srotg`, `drotg`, `crotg`, `zrotg`, `srotmg`, and
-`drotmg`. From these unannotated Reference BLAS sources, f2py treats the scalar
-writeback arguments as input-only. PRIK's scalar results are independently
-validated; f2py's observable return or `PARAM` mutation is still recorded.
-These are f2py projection limitations, not skipped PRIK checks.
+The overlays cover `srotg`, `drotg`, `crotg`, `zrotg`, `srotmg`, and `drotmg`.
+Their tests validate f2py's 0-D scalar storage against PRIK and independent
+mathematics; no routine is excluded from differential coverage.
 
 PRIK uses Python `str` for native character arguments while f2py uses `bytes`.
 PRIK returns detached scalar arguments alongside function/subroutine results;

@@ -4,24 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .f2py_contract import F2PY_INOUT_ARGUMENTS
+
 
 SCIPY_VERSION = "1.18.0"
 EXPECTED_LAPACK_SOURCE_FILES = 2062
 EXPECTED_LAPACK_ROOT_PROCEDURES = 2064
 
 F2PY_FUNCTION_RESULTS = frozenset({"dlamch", "dlangb", "dlange", "dlantr"})
-F2PY_NUMERICAL_LIMITATIONS = {
-    "dlarfg": "raw f2py exposes the vector mutation but not the scalar ALPHA and TAU writebacks",
-    "dlartg": "all three numerical outputs are scalar writebacks that raw f2py does not project",
-    "dgbcon": "RCOND and INFO are scalar writebacks that raw f2py does not project",
-    "dgecon": "RCOND and INFO are scalar writebacks that raw f2py does not project",
-    "dgtcon": "RCOND and INFO are scalar writebacks that raw f2py does not project",
-    "dpocon": "RCOND and INFO are scalar writebacks that raw f2py does not project",
-    "dppcon": "RCOND and INFO are scalar writebacks that raw f2py does not project",
-    "dsycon": "RCOND and INFO are scalar writebacks that raw f2py does not project",
-    "dtrcon": "RCOND and INFO are scalar writebacks that raw f2py does not project",
-}
-
 ROUTINE_GROUPS = {
     "auxiliary": (
         "dlamch",
@@ -468,7 +458,7 @@ class RoutineSpec:
     prik_export: str
     prik_adapter: str
     f2py_export: str
-    f2py_limitation: str
+    f2py_behavior: str
     family: str
     mutation: str
     returns: str
@@ -486,20 +476,17 @@ ROUTINE_SPECS = {
         prik_export=name,
         prik_adapter=PRIK_ABI_ADAPTERS.get(name, "none"),
         f2py_export=name,
-        f2py_limitation=F2PY_EXPORT_LIMITATIONS.get(
+        f2py_behavior=F2PY_EXPORT_LIMITATIONS.get(
             name,
-            F2PY_NUMERICAL_LIMITATIONS.get(
-                name,
-                (
-                    "raw f2py exposes array mutation but not scalar subroutine writebacks from the intent-free source"
-                    if name not in F2PY_FUNCTION_RESULTS
-                    else "none"
-                ),
+            (
+                "build-local intent directives expose caller-owned scalar writeback storage"
+                if name in F2PY_INOUT_ARGUMENTS
+                else "none"
             ),
         ),
         family=ROUTINE_FAMILIES[name],
         mutation="explicit in/out arrays and preserved inputs are asserted in the named test",
-        returns="PRIK native scalar tuple, SciPy projected tuple, and raw f2py observable writeback",
+        returns="PRIK native scalar tuple, SciPy projected tuple, and f2py observable writeback",
         workspace=(
             "explicit workspace arrays and sizes are visible in the named test"
             if name in WORKSPACE_ROUTINES

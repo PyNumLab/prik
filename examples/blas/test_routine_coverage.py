@@ -8,13 +8,13 @@ from pathlib import Path
 
 import pytest
 
+from examples.blas.f2py_contract import F2PY_INOUT_ARGUMENTS
 from conftest import BLAS_SOURCES, EXAMPLE_ROOT, _f2py_build_command, _prik_build_command
 from prik.parsers.fortran.parser import parse_fortran_file
 from routine_inventory import (
     ALL_ROUTINES,
     DIFFERENTIALLY_TESTED_ROUTINES,
     EXPLICIT_TEST_NAMES,
-    F2PY_LIMITATIONS,
     PERMANENTLY_SKIPPED_ROUTINES,
     PRIK_TESTED_ROUTINES,
     ROUTINE_GROUPS,
@@ -50,7 +50,21 @@ def test_build_commands_use_the_documented_public_clis(tmp_path: Path):
     assert f2py_command[:6] == (sys.executable, "-m", "numpy.f2py", "-c", "-m", "f2py_reference_blas")
     for source in BLAS_SOURCES:
         assert str(source) in prik_command
-        assert str(source) in f2py_command
+        expected_f2py_source = (
+            tmp_path / "f2py" / "f2py-intent-sources" / source.name if source.stem in F2PY_INOUT_ARGUMENTS else source
+        )
+        assert str(expected_f2py_source) in f2py_command
+
+
+def test_f2py_scalar_writeback_overlays_are_explicit(tmp_path: Path):
+    command = _f2py_build_command(tmp_path)
+
+    for routine, arguments in F2PY_INOUT_ARGUMENTS.items():
+        source = next(source for source in BLAS_SOURCES if source.stem == routine)
+        overlay = tmp_path / "f2py-intent-sources" / source.name
+        prefix = "Cf2py" if source.suffix == ".f" else "!f2py"
+        assert str(overlay) in command
+        assert f"{prefix} intent(inout) {', '.join(arguments)}" in overlay.read_text(encoding="utf-8")
 
 
 def _source_routines() -> tuple[str, ...]:
@@ -83,11 +97,6 @@ def test_source_routines_match_the_classified_inventory():
     assert sum(len(routines) for routines in ROUTINE_GROUPS.values()) == 155
 
 
-def test_prik_exports_every_source_routine(prik_blas):
-    missing = sorted(routine for routine in ALL_ROUTINES if not callable(getattr(prik_blas, routine, None)))
-    assert missing == []
-
-
 def test_f2py_exports_every_expected_routine(f2py_blas):
     missing = sorted(routine for routine in ALL_ROUTINES if not callable(getattr(f2py_blas, routine, None)))
     assert missing == []
@@ -114,7 +123,6 @@ def test_every_routine_has_one_visible_explicit_test():
 def test_every_routine_has_exactly_one_audited_outcome():
     outcomes = {
         "differential success": set(DIFFERENTIALLY_TESTED_ROUTINES),
-        "proven f2py limitation": set(F2PY_LIMITATIONS),
         "unsupported": set(UNSUPPORTED_ROUTINES),
         "environmental skip": set(PERMANENTLY_SKIPPED_ROUTINES),
     }
@@ -127,3 +135,19 @@ def test_every_routine_has_exactly_one_audited_outcome():
     assert set(ALL_ROUTINES) == PRIK_TESTED_ROUTINES
     assert UNSUPPORTED_ROUTINES == {}
     assert PERMANENTLY_SKIPPED_ROUTINES == {}
+
+
+def test_documented_coverage_totals_match_inventory():
+    readme = (EXAMPLE_ROOT / "README.md").read_text(encoding="utf-8")
+    expected_rows = {
+        "Native source files": len(BLAS_SOURCES),
+        "Discovered callable routines": len(ALL_ROUTINES),
+        "PRIK exports and independently validated routines": len(PRIK_TESTED_ROUTINES),
+        "f2py exports": len(ALL_ROUTINES),
+        "Full independent plus differential success": len(DIFFERENTIALLY_TESTED_ROUTINES),
+        "f2py scalar-writeback intent overlays": len(F2PY_INOUT_ARGUMENTS),
+        "Unsupported routines": len(UNSUPPORTED_ROUTINES),
+        "Environmentally skipped routines": len(PERMANENTLY_SKIPPED_ROUTINES),
+    }
+    for label, count in expected_rows.items():
+        assert f"| {label} | {count:,} |" in readme

@@ -228,25 +228,35 @@ def test_dznrm2(prik_blas, f2py_blas):
 
 def test_crotg(prik_blas, f2py_blas):
     a, b = np.complex64(3.0 + 1.0j), np.complex64(4.0 - 2.0j)
+    f2py_a = np.array(a, dtype=np.complex64)
+    f2py_b = np.array(b, dtype=np.complex64)
+    f2py_c = np.array(0.0, dtype=np.float32)
+    f2py_s = np.array(0.0j, dtype=np.complex64)
 
-    result, _, c, s = prik_blas.crotg(a, b, np.float32(0.0), np.complex64(0.0j))
-    f2py_result = f2py_blas.crotg(a, b, np.float32(0.0), np.complex64(0.0j))
+    result, prik_b, c, s = prik_blas.crotg(a, b, np.float32(0.0), np.complex64(0.0j))
+    f2py_result = f2py_blas.crotg(f2py_a, f2py_b, f2py_c, f2py_s)
 
     assert_allclose_for_dtype(c * a + s * b, result, operation_size=2)
     assert_allclose_for_dtype(-np.conj(s) * a + c * b, np.complex64(0.0j), operation_size=2)
     assert_allclose_for_dtype(c * c + abs(s) ** 2, np.float32(1.0), operation_size=2)
+    assert_allclose_for_dtype([f2py_a, f2py_b, f2py_c, f2py_s], [result, prik_b, c, s])
     assert f2py_result is None
 
 
 def test_zrotg(prik_blas, f2py_blas):
     a, b = np.complex128(3.0 + 1.0j), np.complex128(4.0 - 2.0j)
+    f2py_a = np.array(a, dtype=np.complex128)
+    f2py_b = np.array(b, dtype=np.complex128)
+    f2py_c = np.array(0.0, dtype=np.float64)
+    f2py_s = np.array(0.0j, dtype=np.complex128)
 
-    result, _, c, s = prik_blas.zrotg(a, b, np.float64(0.0), np.complex128(0.0j))
-    f2py_result = f2py_blas.zrotg(a, b, np.float64(0.0), np.complex128(0.0j))
+    result, prik_b, c, s = prik_blas.zrotg(a, b, np.float64(0.0), np.complex128(0.0j))
+    f2py_result = f2py_blas.zrotg(f2py_a, f2py_b, f2py_c, f2py_s)
 
     assert_allclose_for_dtype(c * a + s * b, result, operation_size=2)
     assert_allclose_for_dtype(-np.conj(s) * a + c * b, np.complex128(0.0j), operation_size=2)
     assert_allclose_for_dtype(c * c + abs(s) ** 2, np.float64(1.0), operation_size=2)
+    assert_allclose_for_dtype([f2py_a, f2py_b, f2py_c, f2py_s], [result, prik_b, c, s])
     assert f2py_result is None
 
 

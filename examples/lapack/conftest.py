@@ -12,8 +12,10 @@ import sys
 
 import pytest
 
+from examples.f2py_intents import prepare_f2py_intent_sources
 from tests.fortran.building_shared_library.end_to_end.real_libraries import test_full_libraries as full
 
+from .f2py_contract import F2PY_INOUT_ARGUMENTS
 from .routine_inventory import F2PY_EXPORT_LIMITATIONS, ROUTINES, SCIPY_VERSION
 
 
@@ -95,14 +97,14 @@ def _selected_source(routine: str) -> Path:
     return matches[0]
 
 
-def _f2py_source_plan() -> tuple[Path, ...]:
-    """Return reviewed implementations plus their minimal compile dependency."""
+def _f2py_source_plan(workdir: Path) -> tuple[Path, ...]:
+    """Return reviewed implementations with intent overlays and their dependency."""
     dependencies = tuple(NATIVE_ROOT / name for name in F2PY_BUILD_DEPENDENCIES)
     missing_dependencies = [str(path) for path in dependencies if not path.is_file()]
     if missing_dependencies:
         pytest.fail(f"missing f2py build dependencies: {missing_dependencies}")
     selected = tuple(_selected_source(name) for name in ROUTINES if name not in F2PY_EXPORT_LIMITATIONS)
-    return dependencies + selected
+    return prepare_f2py_intent_sources(dependencies + selected, workdir, F2PY_INOUT_ARGUMENTS)
 
 
 def _f2py_build_command(workdir: Path) -> tuple[str, ...]:
@@ -119,7 +121,7 @@ def _f2py_build_command(workdir: Path) -> tuple[str, ...]:
         "-c",
         "-m",
         module_name,
-        *(str(source) for source in _f2py_source_plan()),
+        *(str(source) for source in _f2py_source_plan(workdir)),
         "only:",
         *selected_routines,
         ":",
@@ -193,7 +195,7 @@ def prik_lapack(prik_build: BuiltLapack):
 
 @pytest.fixture(scope="session")
 def f2py_build(tmp_path_factory: pytest.TempPathFactory) -> BuiltLapack:
-    """Build one raw f2py surface from only the reviewed implementations."""
+    """Build one f2py comparison surface from the reviewed implementations."""
     compiler = full._compiler()
     workdir = tmp_path_factory.mktemp("f2py-reference-lapack-example")
     module_name = "f2py_reference_lapack_example"
@@ -212,7 +214,7 @@ def f2py_build(tmp_path_factory: pytest.TempPathFactory) -> BuiltLapack:
 
 @pytest.fixture(scope="session")
 def f2py_lapack(f2py_build: BuiltLapack):
-    """Return the session-scoped raw f2py comparison module."""
+    """Return the session-scoped f2py comparison module."""
     return f2py_build.module
 
 

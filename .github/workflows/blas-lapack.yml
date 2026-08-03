@@ -59,20 +59,22 @@ jobs:
         with:
           path: ${{ runner.temp }}/prik-real-library-native
           key: real-libraries-${{ runner.os }}-gfortran13-${{ hashFiles('examples/blas/native/**', 'examples/lapack/native/**') }}
-      - name: Run complete BLAS correctness example
+      - name: Run BLAS example and CI full-surface audit
         env:
           PYTHONPATH: .
           HYPOTHESIS_PROFILE: ci
-        run: python -m pytest -q examples/blas
+        run: >-
+          python -m pytest -q -o "python_files=test_*.py ci_full_surface.py"
+          examples/blas examples/blas/ci_full_surface.py
       - name: Report reviewed LAPACK inventory
         env:
           PYTHONPATH: .
         run: |
           python - <<'PY'
+          from examples.lapack.f2py_contract import F2PY_INOUT_ARGUMENTS
           from examples.lapack.routine_inventory import (
               EXPECTED_LAPACK_ROOT_PROCEDURES,
               EXPECTED_LAPACK_SOURCE_FILES,
-              F2PY_NUMERICAL_LIMITATIONS,
               ROUTINE_GROUPS,
               ROUTINES,
               SCIPY_VERSION,
@@ -82,22 +84,15 @@ jobs:
           print(f"LAPACK implementation sources: {EXPECTED_LAPACK_SOURCE_FILES}")
           print(f"Expected PRIK root procedures: {EXPECTED_LAPACK_ROOT_PROCEDURES}")
           print(f"Selected float64 correctness routines: {len(ROUTINES)}")
-          print(f"Raw-f2py numerical limitations: {len(F2PY_NUMERICAL_LIMITATIONS)}")
+          print(f"f2py scalar-writeback intent overlays: {len(F2PY_INOUT_ARGUMENTS)}")
           for family, routines in ROUTINE_GROUPS.items():
               print(f"  {family}: {len(routines)}")
           PY
-      - name: Run SciPy-exposed LAPACK correctness example
+      - name: Run LAPACK example and CI full-surface audit
         env:
           PYTHONPATH: .
           HYPOTHESIS_PROFILE: ci
           PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR: ${{ runner.temp }}/prik-real-library-native
-        run: python -m pytest -q examples/lapack
-      - name: Run full BLAS and LAPACK wrapper tests
-        env:
-          PYTHONPATH: .
-          HYPOTHESIS_PROFILE: ci
-          PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR: ${{ runner.temp }}/prik-real-library-native
-        run: |
-          python -m pytest -q --randomly-seed=1 \
-            "tests/fortran/building_shared_library/end_to_end/real_libraries/test_full_libraries.py::test_full_library_wrapper_imports_every_root_procedure_from_cached_shared_library[blas]" \
-            "tests/fortran/building_shared_library/end_to_end/real_libraries/test_full_libraries.py::test_full_library_wrapper_imports_every_root_procedure_from_cached_shared_library[lapack]"
+        run: >-
+          python -m pytest -q -o "python_files=test_*.py ci_full_surface.py"
+          examples/lapack examples/lapack/ci_full_surface.py
