@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).parents[3]
 TEST_ROOT = REPO_ROOT / "tests"
+EXAMPLES_ROOT = REPO_ROOT / "examples"
 TEST_INDEX = TEST_ROOT / "README.md"
 WORKFLOW_ROOT = REPO_ROOT / ".github/workflows"
 BLAS_LAPACK_WORKFLOW = REPO_ROOT / ".github/workflows/blas-lapack.yml"
@@ -214,6 +216,27 @@ def test_specialized_test_lanes_contain_only_owned_modules() -> None:
 
 def test_fortran_support_directory_contains_no_pytest_modules() -> None:
     assert sorted((TEST_ROOT / "fortran" / "_support").rglob("test_*.py")) == []
+
+
+def test_native_library_examples_are_copyable_without_the_repository_test_package() -> None:
+    assert (EXAMPLES_ROOT / "__init__.py").is_file()
+    assert (EXAMPLES_ROOT / "conftest.py").is_file()
+    assert (EXAMPLES_ROOT / "blas" / "__init__.py").is_file()
+    assert (EXAMPLES_ROOT / "lapack" / "__init__.py").is_file()
+
+    repository_test_imports = []
+    for path in sorted(EXAMPLES_ROOT.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module is not None and node.module.startswith("tests"):
+                repository_test_imports.append(f"{path.relative_to(REPO_ROOT)}: {node.module}")
+            if isinstance(node, ast.Import):
+                repository_test_imports.extend(
+                    f"{path.relative_to(REPO_ROOT)}: {alias.name}"
+                    for alias in node.names
+                    if alias.name.startswith("tests")
+                )
+    assert repository_test_imports == []
 
 
 def test_test_index_links_and_language_directories_exist() -> None:

@@ -39,39 +39,42 @@ running the example:
 python3 -m pip install "numpy==2.5.1" "meson==1.11.2" "ninja==1.13.0"
 ```
 
-The session fixtures build the same implementations at `-O0`; all artifacts
-stay in a temporary directory. PRIK consumes the authoritative sources
-directly:
+The session fixtures compile the implementations once at `-O0`, then link both
+wrappers to that same native library. All artifacts stay in a temporary
+directory:
 
 ```bash
-export REPOSITORY_ROOT="$(pwd)"
+export EXAMPLE_WORKSPACE="$(pwd)"
 export BUILD_ROOT="$(mktemp -d)"
-mapfile -t BLAS_SOURCES < <(find "$REPOSITORY_ROOT/examples/blas/native" -maxdepth 1 -type f \( -name '*.f' -o -name '*.f90' \) -print | sort)
+export PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR="$BUILD_ROOT/native-cache"
+export BLAS_SHARED_LIBRARY="$(python3 -m examples.native_library blas --cache-dir "$PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR" --compiler "$(command -v gfortran)" --jobs 8)"
+python3 -m prik generate --pyi examples/blas/native --language fortran --out "$BUILD_ROOT/contract/blas"
 mkdir -p "$BUILD_ROOT/prik" "$BUILD_ROOT/f2py"
 cd "$BUILD_ROOT/prik"
-python3 -m prik "${BLAS_SOURCES[@]}" --out prik_reference_blas --out-dir "$BUILD_ROOT/prik/generated" --compiler "$(command -v gfortran)" --jobs 8 --native-compile-flags=-O0 --wrapper-fortran-flags=-O0 --wrapper-c-flags=-O0
+python3 -m prik "$BUILD_ROOT/contract/blas/__init__.pyi" --out prik_reference_blas --out-dir "$BUILD_ROOT/prik/generated" --compiler "$(command -v gfortran)" --native-objects "$BLAS_SHARED_LIBRARY" --jobs 8 --wrapper-fortran-flags="-O0 -g0" --wrapper-c-flags="-O0 -g0"
 ```
 
 ```bash
-cd "$REPOSITORY_ROOT"
+cd "$EXAMPLE_WORKSPACE"
 python3 - <<'PY'
 import os
 from pathlib import Path
 import subprocess
 
-from examples.blas.conftest import _build_environment, _compiler, _f2py_build_command
+from examples.blas.conftest import _build_environment, _compiler, _f2py_build_command, _f2py_signature_command
 
 workdir = Path(os.environ["BUILD_ROOT"]) / "f2py"
 workdir.mkdir(parents=True, exist_ok=True)
 compiler = _compiler()
-subprocess.run(
-    _f2py_build_command(workdir),
-    cwd=workdir,
-    env=_build_environment(compiler),
-    check=True,
-)
+native_library = Path(os.environ["BLAS_SHARED_LIBRARY"])
+for command in (_f2py_signature_command(workdir), _f2py_build_command(workdir, native_library)):
+    subprocess.run(command, cwd=workdir, env=_build_environment(compiler, native_library), check=True)
 PY
 ```
+
+The first native-builder call compiles all sources; later identical calls may
+reuse its cache. f2py reads the sources only to generate signatures and
+compiles its wrapper against `BLAS_SHARED_LIBRARY`.
 
 Six rotation routines document scalar writebacks without declaring Fortran
 `intent`. The f2py fixture adds build-local intent directives and passes typed

@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from helpers import assert_allclose_for_dtype, assert_storage_unchanged, hermitian_from_triangle
+from .helpers import assert_allclose_for_dtype, assert_storage_unchanged, hermitian_from_triangle
 
 
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]

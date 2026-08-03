@@ -35,17 +35,16 @@ stem already supplied by LAPACK. No BLAS source is copied below this directory.
 
 ## Build topology
 
-On Python 3.12 and newer, NumPy's f2py uses its Meson backend. Install the
-same Meson, Ninja, and SciPy versions used by the dedicated BLAS/LAPACK CI lane
-before running this example:
+On Python 3.12 and newer, NumPy's f2py uses its Meson backend. The maintained
+environment currently installs the same system development packages and
+pinned Meson, Ninja, and SciPy versions as the dedicated CI lane:
 
 ```console
 sudo apt-get install libblas-dev liblapack-dev
 python3 -m pip install "numpy==2.5.1" "meson==1.11.2" "ninja==1.13.0" "scipy==1.18.0"
 ```
 
-The session fixture reuses the established complete-library integration path in
-`tests/fortran/building_shared_library/end_to_end/real_libraries/test_full_libraries.py`.
+The session fixture uses the copyable builder in `examples/native_library.py`.
 It performs these operations once:
 
 1. generate one semantic package for all LAPACK sources;
@@ -53,50 +52,50 @@ It performs these operations once:
    cached shared library;
 3. build one PRIK extension from the complete generated contract and shared
    library;
-4. independently build one f2py comparison surface from the 125 reviewed
-   f2py-compatible routine sources and their minimal module dependency, linking unselected
-   LAPACK and BLAS helper symbols from the system development libraries; and
+4. generate f2py signatures for the 125 reviewed compatible routines and link
+   its wrapper to the same shared library; and
 5. reuse the three imported comparison surfaces for every correctness file;
    CI explicitly adds the non-discovered `ci_full_surface.py` for the complete
    PRIK root-export audit and runtime smoke call.
 
-The contract-generation command is:
+The complete build is one command sequence:
 
 ```console
+export LAPACK_SHARED_LIBRARY="$(python3 -m examples.native_library lapack --cache-dir /tmp/prik-lapack/native-cache)"
 python3 -m prik generate --pyi examples/lapack/native --language fortran --out /tmp/prik-lapack/contracts/lapack
-```
-
-The intermediate contract separates LAPACK's root callable surface from its
-internal `LA_CONSTANTS` and `LA_XISNAN` modules. A direct merged source build
-would otherwise collide the module procedure `SISNAN` with the distinct
-external `SISNAN` routine and try to expose internal module constants. The
-contract is generated from all sources; no callable procedure is manually
-removed. All sources are still compiled into the native artifact.
-
-The final extension build uses the public CLI with the projected root contract
-and cached native shared library:
-
-```console
-python3 -m prik /tmp/prik-lapack/runtime-contract/lapack/__init__.pyi \
+# Remove the LA_CONSTANTS and LA_XISNAN imports from the generated root contract.
+python3 -c 'import sys; from pathlib import Path; p=Path(sys.argv[1]); s=p.read_text(encoding="utf-8")
+p.write_text(s.replace("from . import LA_CONSTANTS\n", "").replace("from . import LA_XISNAN\n", ""), encoding="utf-8")' \
+  /tmp/prik-lapack/contracts/lapack/__init__.pyi
+mkdir -p /tmp/prik-lapack/prik/generated
+python3 -m prik /tmp/prik-lapack/contracts/lapack/__init__.pyi \
   --out prik_reference_lapack_example \
   --out-dir /tmp/prik-lapack/prik/generated \
   --compiler "$(command -v gfortran)" \
-  --native-objects /tmp/prik-lapack/libprik_full_lapack.so \
+  --native-objects "$LAPACK_SHARED_LIBRARY" \
   --jobs 8 \
   --wrapper-fortran-flags="-O0 -g0" \
   --wrapper-c-flags="-O0 -g0"
 ```
 
-The paths are illustrative; `conftest.py` creates their actual temporary/cache
-locations and records the exact executable command. The f2py command it
-assembles is equivalent to:
+The short contract command removes only the internal `LA_CONSTANTS` and
+`LA_XISNAN` root imports in place. All native sources remain in the shared
+library. The paths are illustrative; `conftest.py` creates the actual temporary
+locations and records the exact executable command.
+
+The first call builds the library; an identical later call may reuse it. The
+f2py commands are equivalent to:
 
 ```console
-python3 -m numpy.f2py -c -m f2py_reference_lapack_example \
+python3 -m numpy.f2py -m f2py_reference_lapack_example \
+  -h /tmp/prik-lapack/f2py_reference_lapack_example.pyf \
   examples/lapack/native/la_constants.f90 \
   <the 125 f2py-compatible source files recorded in routine_inventory.py> \
   only: <the 125 f2py-compatible routine names> : \
-  --dep lapack --dep blas \
+  --f2cmap /tmp/prik-lapack/.f2py_f2cmap \
+  --overwrite-signature
+python3 -m numpy.f2py -c /tmp/prik-lapack/f2py_reference_lapack_example.pyf \
+  -L/tmp/prik-lapack/native-cache/<cache-key> -lprik_full_lapack \
   --f2cmap /tmp/prik-lapack/.f2py_f2cmap \
   --build-dir /tmp/prik-lapack/f2py --f77flags=-O0 --f90flags=-O0 --opt=-O0
 ```
@@ -104,12 +103,10 @@ python3 -m numpy.f2py -c -m f2py_reference_lapack_example \
 `dlartg.f90` imports the `LA_CONSTANTS` module and declares its arguments as
 `REAL(wp)`. The f2py build therefore includes `la_constants.f90` as a build-only
 dependency and supplies a kind map that resolves `wp` to C `double`. The
-`only:` list makes the 125 f2py-compatible routine wrappers explicit; module support metadata
-is not counted as a selected routine. The dependency is compiled only to
-satisfy f2py's standalone selected-source build. f2py does not compile or link
-PRIK's complete 2,062-source native artifact. The reviewed implementations come
-from `examples/lapack/native/`; only their unselected transitive LAPACK and BLAS
-dependencies come from the system libraries.
+`only:` list makes the 125 f2py-compatible routine wrappers explicit; module
+support metadata is not counted as a selected routine. Those files provide
+signature information only. f2py compiles its generated wrapper and reuses the
+complete native artifact already linked by PRIK.
 
 Build products stay in pytest temporary/cache directories. Failures report the
 compiler identity, command, stdout, and stderr. Neither build dirties the

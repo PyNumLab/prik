@@ -74,40 +74,53 @@ gfortran --version
 All remaining commands run from the repository root with the virtual
 environment active.
 
+The runnable material is self-contained in the repository's
+[`examples/` directory](../../../examples/). After PRIK and the listed tools
+are installed, you can copy that directory alone.
+
 ---
 
-## 2. Build the full source set with PRIK
+## 2. Compile BLAS once and build the PRIK wrapper
 
 The authoritative implementation lives in the pytest fixture
 [`examples/blas/conftest.py`](../../../examples/blas/conftest.py).
-The commands below reproduce the PRIK build.
+The commands below reproduce the cold build.
 Run them from the repository root:
 
 ```bash
-export REPOSITORY_ROOT="$PWD"
+export EXAMPLE_WORKSPACE="$PWD"
 export BLAS_BUILD_ROOT="$(mktemp -d)"
+export PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR="$BLAS_BUILD_ROOT/native-cache"
 
-# Collect all Fortran sources in sorted order
-mapfile -t BLAS_SOURCES < <(
-  find "$REPOSITORY_ROOT/examples/blas/native" -maxdepth 1 -type f \
-    \( -name '*.f' -o -name '*.f90' \) -print | sort
-)
+export BLAS_SHARED_LIBRARY="$(
+  python -m examples.native_library blas \
+    --cache-dir "$PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR" \
+    --compiler "$(command -v gfortran)" \
+    --jobs 8
+)"
+
+python -m prik generate \
+  --pyi examples/blas/native \
+  --language fortran \
+  --out "$BLAS_BUILD_ROOT/contract/blas"
 
 mkdir -p "$BLAS_BUILD_ROOT/prik/generated"
 cd "$BLAS_BUILD_ROOT/prik"
 
-python -m prik "${BLAS_SOURCES[@]}" \
+python -m prik "$BLAS_BUILD_ROOT/contract/blas/__init__.pyi" \
   --out prik_reference_blas \
   --out-dir "$BLAS_BUILD_ROOT/prik/generated" \
   --compiler "$(command -v gfortran)" \
+  --native-objects "$BLAS_SHARED_LIBRARY" \
   --jobs 8 \
-  --native-compile-flags=-O0 \
-  --wrapper-fortran-flags=-O0 \
-  --wrapper-c-flags=-O0
+  --wrapper-fortran-flags="-O0 -g0" \
+  --wrapper-c-flags="-O0 -g0"
 ```
 
-This is a single planning + generation + compilation step for the whole library
-(not 155 individual builds).
+`examples.native_library` compiles all 155 implementations on the first call
+and returns the resulting shared-library path. The cache is optional: an
+identical later call reuses it. PRIK generates the complete contract and links
+its wrapper to that artifact instead of compiling the implementations again.
 
 `-O0` keeps the PRIK and f2py correctness builds equivalent and avoids making
 optimization-dependent claims. This example focuses on correctness, not
@@ -115,30 +128,44 @@ performance.
 
 ---
 
-## 3. Build the same implementations with f2py
+## 3. Build f2py against the same native library
 
 Use the maintained command builder so the comparison matches the test suite:
 
 ```bash
-cd "$REPOSITORY_ROOT"
+cd "$EXAMPLE_WORKSPACE"
 python - <<'PY'
 import os
 from pathlib import Path
 import subprocess
 
-from examples.blas.conftest import _build_environment, _compiler, _f2py_build_command
+from examples.blas.conftest import (
+    _build_environment,
+    _compiler,
+    _f2py_build_command,
+    _f2py_signature_command,
+)
 
 workdir = Path(os.environ["BLAS_BUILD_ROOT"]) / "f2py"
 workdir.mkdir(parents=True, exist_ok=True)
 compiler = _compiler()
-subprocess.run(
-    _f2py_build_command(workdir),
-    cwd=workdir,
-    env=_build_environment(compiler),
-    check=True,
-)
+native_library = Path(os.environ["BLAS_SHARED_LIBRARY"])
+for command in (
+    _f2py_signature_command(workdir),
+    _f2py_build_command(workdir, native_library),
+):
+    subprocess.run(
+        command,
+        cwd=workdir,
+        env=_build_environment(compiler, native_library),
+        check=True,
+    )
 PY
 ```
+
+f2py reads the source declarations to generate its `.pyf` signature, compiles
+only its wrapper, and links that wrapper to `BLAS_SHARED_LIBRARY`. PRIK and
+f2py therefore exercise the same compiled BLAS implementations.
 
 Six rotation routines document scalar writebacks without declaring Fortran
 `intent`. The f2py build adds temporary intent directives and the tests pass

@@ -218,3 +218,26 @@ def triangular_from_band(
     if unit_diagonal:
         triangle += np.eye(n, dtype=storage.dtype)
     return triangle
+
+
+def assert_runtime_smoke(module) -> None:
+    """Exercise representative complete-library BLAS exports."""
+    x = np.array([1.0, 2.0, 3.0], dtype=np.float64)
+    y = np.array([10.0, 20.0, 30.0], dtype=np.float64)
+    daxpy_scalars = module.daxpy(np.int32(3), np.float64(2.0), x, np.int32(1), y, np.int32(1))
+    assert daxpy_scalars == (np.int32(3), np.float64(2.0), np.int32(1), np.int32(1))
+    np.testing.assert_allclose(y, [12.0, 24.0, 36.0])
+    assert module.ddot(np.int32(3), x, np.int32(1), y, np.int32(1)) == (
+        np.float64(168.0),
+        np.int32(3),
+        np.int32(1),
+        np.int32(1),
+    )
+    assert module.dasum(np.int32(3), y, np.int32(1)) == (
+        np.float64(72.0),
+        np.int32(3),
+        np.int32(1),
+    )
+    dscal_scalars = module.dscal(np.int32(3), np.float64(0.5), y, np.int32(1))
+    assert dscal_scalars == (np.int32(3), np.float64(0.5), np.int32(1))
+    np.testing.assert_allclose(y, [6.0, 12.0, 18.0])

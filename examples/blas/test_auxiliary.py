@@ -9,7 +9,7 @@ import sys
 import numpy as np
 import pytest
 
-from helpers import assert_allclose_for_dtype
+from .helpers import assert_allclose_for_dtype
 
 
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]

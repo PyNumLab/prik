@@ -1,4 +1,4 @@
-"""Session fixtures for the complete PRIK, f2py, and SciPy LAPACK surfaces."""
+"""Build one native LAPACK library and reuse it through PRIK and f2py."""
 
 from __future__ import annotations
 
@@ -13,8 +13,16 @@ import sys
 import pytest
 
 from examples.f2py_intents import prepare_f2py_intent_sources
-from tests.fortran.building_shared_library.end_to_end.real_libraries import test_full_libraries as full
+from examples.native_library import (
+    NativeLibrary,
+    build_reference_library,
+    compiler_identity,
+    linker_name,
+    native_cache_root,
+    require_tool,
+)
 
+from .contracts import remove_internal_root_imports
 from .f2py_contract import F2PY_INOUT_ARGUMENTS
 from .routine_inventory import F2PY_EXPORT_LIMITATIONS, ROUTINES, SCIPY_VERSION
 
@@ -26,7 +34,6 @@ PRIK_WRAPPER_FLAGS = ("-O0", "-g0")
 FORTRAN_SUFFIXES = (".f", ".f90", ".f95", ".f03", ".f08", ".for", ".f77", ".ftn")
 F2PY_BUILD_DEPENDENCIES = ("la_constants.f90",)
 F2PY_KIND_MAP = "{'real': {'wp': 'double'}}\n"
-F2PY_LINK_DEPENDENCIES = ("lapack", "blas")
 
 
 @dataclass(frozen=True)
@@ -40,9 +47,17 @@ class BuiltLapack:
     compiler_identity: str
     stdout: str
     stderr: str
+    native_library: Path
 
 
-def _build_environment(compiler: str) -> dict[str, str]:
+def _compiler() -> str:
+    try:
+        return require_tool("gfortran")
+    except RuntimeError as error:
+        pytest.skip(str(error))
+
+
+def _build_environment(compiler: str, native_library: Path | None = None) -> dict[str, str]:
     environment = dict(os.environ)
     environment.update(
         {
@@ -54,14 +69,22 @@ def _build_environment(compiler: str) -> dict[str, str]:
             "F90FLAGS": BUILD_FLAGS,
         }
     )
+    if native_library is not None:
+        rpath_flag = f"-Wl,-rpath,{native_library.parent}"
+        environment["LDFLAGS"] = " ".join(filter(None, (environment.get("LDFLAGS"), rpath_flag)))
     return environment
 
 
-def _run_build(command: tuple[str, ...], workdir: Path, compiler: str) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(  # nosec B603 - fixed tools and repository-owned sources
+def _run_build(
+    command: tuple[str, ...],
+    workdir: Path,
+    compiler: str,
+    native_library: Path | None = None,
+) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(  # nosec B603 - fixed tools and copied example inputs
         command,
         cwd=workdir,
-        env=_build_environment(compiler),
+        env=_build_environment(compiler, native_library),
         capture_output=True,
         text=True,
         check=False,
@@ -69,7 +92,7 @@ def _run_build(command: tuple[str, ...], workdir: Path, compiler: str) -> subpro
     if result.returncode:
         pytest.fail(
             "Reference LAPACK build failed\n"
-            f"compiler: {full._compiler_identity(compiler)}\n"
+            f"compiler: {compiler_identity(compiler)}\n"
             f"command: {shlex.join(command)}\n"
             f"stdout:\n{result.stdout or '<empty>'}\n"
             f"stderr:\n{result.stderr or '<empty>'}"
@@ -93,46 +116,80 @@ def _selected_source(routine: str) -> Path:
     """Resolve one reviewed routine to its authoritative native source file."""
     matches = tuple(path for suffix in FORTRAN_SUFFIXES if (path := NATIVE_ROOT / f"{routine}{suffix}").is_file())
     if len(matches) != 1:
-        pytest.fail(f"expected exactly one authoritative source for {routine}, found {[str(path) for path in matches]}")
+        raise FileNotFoundError(
+            f"expected exactly one authoritative source for {routine}, found {[str(path) for path in matches]}"
+        )
     return matches[0]
 
 
 def _f2py_source_plan(workdir: Path) -> tuple[Path, ...]:
-    """Return reviewed implementations with intent overlays and their dependency."""
+    """Return reviewed signatures with intent overlays and their kind dependency."""
     dependencies = tuple(NATIVE_ROOT / name for name in F2PY_BUILD_DEPENDENCIES)
     missing_dependencies = [str(path) for path in dependencies if not path.is_file()]
     if missing_dependencies:
-        pytest.fail(f"missing f2py build dependencies: {missing_dependencies}")
+        raise FileNotFoundError(f"missing f2py signature dependencies: {missing_dependencies}")
     selected = tuple(_selected_source(name) for name in ROUTINES if name not in F2PY_EXPORT_LIMITATIONS)
     return prepare_f2py_intent_sources(dependencies + selected, workdir, F2PY_INOUT_ARGUMENTS)
 
 
-def _f2py_build_command(workdir: Path) -> tuple[str, ...]:
-    """Build only reviewed implementations and link external helper symbols."""
+def _f2py_signature_command(workdir: Path) -> tuple[str, ...]:
+    """Generate reviewed f2py signatures without compiling implementations."""
     module_name = "f2py_reference_lapack_example"
     f2cmap = workdir / ".f2py_f2cmap"
     f2cmap.write_text(F2PY_KIND_MAP, encoding="utf-8")
     selected_routines = tuple(name for name in ROUTINES if name not in F2PY_EXPORT_LIMITATIONS)
-    link_dependencies = tuple(item for dependency in F2PY_LINK_DEPENDENCIES for item in ("--dep", dependency))
+    return (
+        sys.executable,
+        "-m",
+        "numpy.f2py",
+        "-m",
+        module_name,
+        "-h",
+        str(workdir / f"{module_name}.pyf"),
+        *(str(source) for source in _f2py_source_plan(workdir)),
+        "only:",
+        *selected_routines,
+        ":",
+        "--f2cmap",
+        str(f2cmap),
+        "--overwrite-signature",
+    )
+
+
+def _f2py_build_command(workdir: Path, native_library: Path) -> tuple[str, ...]:
+    """Build only f2py's wrapper and link the precompiled LAPACK implementation."""
+    module_name = "f2py_reference_lapack_example"
     return (
         sys.executable,
         "-m",
         "numpy.f2py",
         "-c",
-        "-m",
-        module_name,
-        *(str(source) for source in _f2py_source_plan(workdir)),
-        "only:",
-        *selected_routines,
-        ":",
-        *link_dependencies,
+        str(workdir / f"{module_name}.pyf"),
+        f"-L{native_library.parent}",
+        f"-l{linker_name(native_library)}",
         "--f2cmap",
-        str(f2cmap),
+        str(workdir / ".f2py_f2cmap"),
         "--build-dir",
         str(workdir / "generated"),
         f"--f77flags={BUILD_FLAGS}",
         f"--f90flags={BUILD_FLAGS}",
         f"--opt={BUILD_FLAGS}",
+    )
+
+
+def _contract_command(workdir: Path) -> tuple[str, ...]:
+    """Generate the complete LAPACK semantic contract through the public CLI."""
+    return (
+        sys.executable,
+        "-m",
+        "prik",
+        "generate",
+        "--pyi",
+        str(NATIVE_ROOT),
+        "--language",
+        "fortran",
+        "--out",
+        str(workdir / "contracts" / "lapack"),
     )
 
 
@@ -166,24 +223,40 @@ def _prik_build_command(
 
 
 @pytest.fixture(scope="session")
-def prik_build(tmp_path_factory: pytest.TempPathFactory) -> BuiltLapack:
+def native_build(tmp_path_factory: pytest.TempPathFactory) -> NativeLibrary:
+    """Compile complete LAPACK plus its BLAS dependencies once for both wrappers."""
+    compiler = _compiler()
+    cache_root = (
+        native_cache_root()
+        if os.environ.get("PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR")
+        else tmp_path_factory.mktemp("reference-lapack-native")
+    )
+    try:
+        return build_reference_library("lapack", cache_root=cache_root, compiler=compiler)
+    except (RuntimeError, subprocess.CalledProcessError) as error:
+        pytest.fail(f"Reference LAPACK native build failed with {compiler_identity(compiler)}\n{error}")
+
+
+@pytest.fixture(scope="session")
+def prik_build(tmp_path_factory: pytest.TempPathFactory, native_build: NativeLibrary) -> BuiltLapack:
     """Build the complete LAPACK wrapper through PRIK's public CLI once."""
-    compiler = full._compiler()
+    compiler = native_build.compiler
     workdir = tmp_path_factory.mktemp("prik-reference-lapack-example")
-    entry = full._generate_contract(NATIVE_ROOT, workdir / "contracts" / "lapack")
-    shared = full._cached_native_shared_library("lapack")
-    runtime_entry = full._runtime_entry("lapack", entry, workdir)
+    _run_build(_contract_command(workdir), workdir, compiler)
+    entry = workdir / "contracts" / "lapack" / "__init__.pyi"
+    runtime_entry = remove_internal_root_imports(entry)
     module_name = "prik_reference_lapack_example"
-    command = _prik_build_command(runtime_entry, shared, workdir, compiler)
+    command = _prik_build_command(runtime_entry, native_build.shared_library, workdir, compiler)
     result = _run_build(command, workdir, compiler)
     return BuiltLapack(
         module=_import_built_module(module_name, workdir),
         module_name=module_name,
         workdir=workdir,
         command=command,
-        compiler_identity=full._compiler_identity(compiler),
+        compiler_identity=compiler_identity(compiler),
         stdout=result.stdout,
         stderr=result.stderr,
+        native_library=native_build.shared_library,
     )
 
 
@@ -194,21 +267,23 @@ def prik_lapack(prik_build: BuiltLapack):
 
 
 @pytest.fixture(scope="session")
-def f2py_build(tmp_path_factory: pytest.TempPathFactory) -> BuiltLapack:
-    """Build one f2py comparison surface from the reviewed implementations."""
-    compiler = full._compiler()
+def f2py_build(tmp_path_factory: pytest.TempPathFactory, native_build: NativeLibrary) -> BuiltLapack:
+    """Build f2py against the same complete native LAPACK library."""
+    compiler = native_build.compiler
     workdir = tmp_path_factory.mktemp("f2py-reference-lapack-example")
+    _run_build(_f2py_signature_command(workdir), workdir, compiler)
     module_name = "f2py_reference_lapack_example"
-    command = _f2py_build_command(workdir)
-    result = _run_build(command, workdir, compiler)
+    command = _f2py_build_command(workdir, native_build.shared_library)
+    result = _run_build(command, workdir, compiler, native_build.shared_library)
     return BuiltLapack(
         module=_import_built_module(module_name, workdir),
         module_name=module_name,
         workdir=workdir,
         command=command,
-        compiler_identity=full._compiler_identity(compiler),
+        compiler_identity=compiler_identity(compiler),
         stdout=result.stdout,
         stderr=result.stderr,
+        native_library=native_build.shared_library,
     )
 
 

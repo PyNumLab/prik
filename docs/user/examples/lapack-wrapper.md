@@ -16,13 +16,13 @@ The surface contains the 127 double-precision real routines exposed by `scipy.li
 
 - PRIK wraps the **complete** LAPACK library (including its BLAS dependencies).
   All source-level wrapper and compilation coverage stays intact.
-- Raw f2py builds only the 125 selected routines it can expose safely.
-  Building all 2,062 LAPACK sources through f2py is unnecessary for the differential comparison.
+- Raw f2py generates wrappers for the 125 selected routines it can expose
+  safely and links them to the same complete native artifact as PRIK.
 - SciPy supplies the 127 reviewed low-level comparison functions.
 - Independent residuals, reconstructions and invariants remain the primary correctness oracle.
 
 This separation keeps a large real library manageable without weakening the claim:
-every LAPACK source compiles through the full PRIK path, while every selected float64 routine has one visible, named correctness test.
+every LAPACK source compiles once for the complete PRIK wrapper, while every selected float64 routine has one visible, named correctness test.
 
 You should already be comfortable with the BLAS wrapper example, NumPy arrays, and basic packaging.
 
@@ -60,8 +60,8 @@ python -m pip install -e ".[qa]" \
   "meson==1.11.2" "ninja==1.13.0"
 ```
 
-Install GNU Fortran plus the LAPACK and BLAS development libraries used by the
-selected f2py comparison build. On Ubuntu:
+Install GNU Fortran. The current repository setup also installs the LAPACK and
+BLAS development packages used by the existing CI environment. On Ubuntu:
 
 ```bash
 sudo apt-get update
@@ -72,83 +72,40 @@ gfortran --version
 All remaining commands run from the repository root with the virtual
 environment active.
 
-```bash
-export REPOSITORY_ROOT="$PWD"
-```
+The runnable material is self-contained in the repository's
+[`examples/` directory](../../../examples/). After PRIK and the listed tools
+are installed, you can copy that directory alone.
 
 ---
 
-## 2. Build the complete source set with PRIK
+## 2. Compile LAPACK once and build the PRIK wrapper
 
-LAPACK is large enough that a single enormous shell command would be fragile and hard to read.
-The maintained fixture in [`examples/lapack/conftest.py`](../../../examples/lapack/conftest.py) therefore reuses PRIK’s tested complete-library integration path.
-It performs these steps **once per pytest session**:
-
-1. Parse all 2,062 LAPACK sources and generate one complete `.pyi` contract.
-2. Compile those sources together with the required authoritative BLAS sources into one cached native shared library.
-3. Build one PRIK extension from that complete contract and shared library.
-4. Import and reuse the module across every correctness test file.
-
-Contract generation uses the public PRIK CLI:
+Compile the native files once into a shared `.so` file so both wrappers can
+reuse it:
 
 ```bash
+export EXAMPLE_WORKSPACE="$PWD"
 export LAPACK_BUILD_ROOT="$(mktemp -d)"
-export PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR="$LAPACK_BUILD_ROOT/native-cache"
+export LAPACK_SHARED_LIBRARY="$(
+  python -m examples.native_library lapack \
+    --cache-dir "$LAPACK_BUILD_ROOT/native" \
+    --compiler "$(command -v gfortran)" \
+    --jobs 8
+)"
+
 python -m prik generate \
   --pyi examples/lapack/native \
   --language fortran \
   --out "$LAPACK_BUILD_ROOT/contracts/lapack"
-```
 
-Why is there an intermediate generated contract when the BLAS example can use a
-single source command? Two LAPACK implementation details make the separation
-necessary:
+# Remove the LA_CONSTANTS and LA_XISNAN imports from the generated root contract.
+python -c 'import sys; from pathlib import Path; p=Path(sys.argv[1]); s=p.read_text(encoding="utf-8")
+p.write_text(s.replace("from . import LA_CONSTANTS\n", "").replace("from . import LA_XISNAN\n", ""), encoding="utf-8")' \
+  "$LAPACK_BUILD_ROOT/contracts/lapack/__init__.pyi"
 
-- `LA_XISNAN` contains a module procedure named `SISNAN`, while the corpus also
-  contains the external `SISNAN` routine. They are distinct native symbols but
-  cannot both become the same root Python export.
-- `LA_CONSTANTS` contains internal module constants needed to compile LAPACK,
-  but those constants are not part of the root callable-library surface.
-
-A direct one-step source wrapper tries to merge those internal modules into the
-root Python API. The generated contract lets the example expose the 2,064 root
-procedures while still compiling and linking every implementation source. It is
-generated from the sources on every clean build; it is not a hand-maintained or
-hand-edited substitute for them.
-
-The following preparation step reuses the repository's complete native-library
-compiler and creates the projected root contract. It writes the two resulting
-paths to a temporary file:
-
-```bash
-python - <<'PY'
-import os
-from pathlib import Path
-
-from tests.fortran.building_shared_library.end_to_end.real_libraries import (
-    test_full_libraries as full,
-)
-
-workdir = Path(os.environ["LAPACK_BUILD_ROOT"])
-entry = workdir / "contracts" / "lapack" / "__init__.pyi"
-native_library = full._cached_native_shared_library("lapack")
-runtime_entry = full._runtime_entry("lapack", entry, workdir)
-(workdir / "prik-inputs.txt").write_text(
-    f"{runtime_entry}\n{native_library}\n",
-    encoding="utf-8",
-)
-PY
-```
-
-The final wrapper build now uses the same public `python -m prik` CLI as BLAS:
-
-```bash
-mapfile -t PRIK_INPUTS < "$LAPACK_BUILD_ROOT/prik-inputs.txt"
-LAPACK_RUNTIME_CONTRACT="${PRIK_INPUTS[0]}"
-LAPACK_SHARED_LIBRARY="${PRIK_INPUTS[1]}"
 mkdir -p "$LAPACK_BUILD_ROOT/prik/generated"
 cd "$LAPACK_BUILD_ROOT/prik"
-python -m prik "$LAPACK_RUNTIME_CONTRACT" \
+python -m prik "$LAPACK_BUILD_ROOT/contracts/lapack/__init__.pyi" \
   --out prik_reference_lapack_example \
   --out-dir "$LAPACK_BUILD_ROOT/prik/generated" \
   --compiler "$(command -v gfortran)" \
@@ -158,28 +115,16 @@ python -m prik "$LAPACK_RUNTIME_CONTRACT" \
   --wrapper-c-flags="-O0 -g0"
 ```
 
-The native helper compiles the repository-owned LAPACK and BLAS sources instead
-of trusting an unrelated system LAPACK binary. It caches the artifact by
-compiler, platform, and source digest. The pytest fixture runs this complete
-sequence automatically and reports the real CLI command on failure.
-
-The small `_runtime_entry` projection is specific to this corpus: it removes root imports of LAPACK’s internal constants modules while retaining all 2,064 root procedures.
-For your own already-built library, pass its shared-library path through
-`--native-objects` with the generated contract in the same way.
-
-This is still **one complete PRIK wrapper**.
-The correctness inventory does not cause per-routine, per-file or per-family PRIK builds.
-GitHub Actions explicitly adds the non-discovered `ci_full_surface.py` to reuse
-the same imported extension for the all-2,064-root export audit and runtime
-smoke call. Ordinary `pytest examples/lapack` runs do not collect that
-maintainer-only file, and CI does not rebuild a second wrapper for it.
+The short contract command removes only the internal `LA_CONSTANTS` and
+`LA_XISNAN` root imports in place.
 
 ---
 
 ## 3. Build the reviewed f2py comparison surface
 
-The f2py side intentionally does less compilation.
-It wraps the 125 selected routines that are not affected by f2py’s callback-generation limitation, includes the minimal `la_constants.f90` dependency required by `dlartg`, and links unresolved helper symbols to the system `lapack` and `blas` libraries.
+The f2py side does not compile the implementations again. It reads the 125
+selected routines and `la_constants.f90` to generate reviewed signatures, then
+compiles only its wrapper and links it to `LAPACK_SHARED_LIBRARY`.
 
 Nine routines document scalar writebacks without declaring Fortran `intent`.
 The f2py build adds temporary intent directives and the tests pass typed 0-D
@@ -190,27 +135,33 @@ The exact command is assembled from the reviewed inventory by `_f2py_build_comma
 This short reproducer runs that same command:
 
 ```bash
-cd "$REPOSITORY_ROOT"
+cd "$EXAMPLE_WORKSPACE"
 export LAPACK_F2PY_ROOT="$(mktemp -d)"
 python - <<'PY'
 import os
 from pathlib import Path
 import subprocess
 
-from examples.lapack.conftest import _build_environment, _f2py_build_command
-from tests.fortran.building_shared_library.end_to_end.real_libraries import (
-    test_full_libraries as full,
+from examples.lapack.conftest import (
+    _build_environment,
+    _compiler,
+    _f2py_build_command,
+    _f2py_signature_command,
 )
 
 workdir = Path(os.environ["LAPACK_F2PY_ROOT"])
-compiler = full._compiler()
-command = _f2py_build_command(workdir)
-subprocess.run(
-    command,
-    cwd=workdir,
-    env=_build_environment(compiler),
-    check=True,
-)
+compiler = _compiler()
+native_library = Path(os.environ["LAPACK_SHARED_LIBRARY"])
+for command in (
+    _f2py_signature_command(workdir),
+    _f2py_build_command(workdir, native_library),
+):
+    subprocess.run(
+        command,
+        cwd=workdir,
+        env=_build_environment(compiler, native_library),
+        check=True,
+    )
 print(workdir)
 PY
 ```
@@ -218,10 +169,14 @@ PY
 The assembled command has this shape:
 
 ```text
-python -m numpy.f2py -c -m f2py_reference_lapack_example \
+python -m numpy.f2py -m f2py_reference_lapack_example \
+  -h f2py_reference_lapack_example.pyf \
   la_constants.f90 <125 reviewed implementation sources> \
   only: <125 reviewed routine names> : \
-  --dep lapack --dep blas --f2cmap <float64 kind map> \
+  --f2cmap <float64 kind map> --overwrite-signature
+python -m numpy.f2py -c f2py_reference_lapack_example.pyf \
+  -L<shared-library-directory> -lprik_full_lapack \
+  --f2cmap <float64 kind map> \
   --build-dir <temporary directory> \
   --f77flags=-O0 --f90flags=-O0 --opt=-O0
 ```
@@ -458,7 +413,7 @@ For storage formats, workspaces, pivot conventions, the f2py callback limitation
 
 ## Troubleshooting
 
-- Confirm that `gfortran`, `ar`, `meson` and `ninja` are on `PATH` and that the system LAPACK and BLAS development libraries are installed.
+- Confirm that `gfortran`, `ar`, `meson` and `ninja` are on `PATH`.
 - Keep SciPy at **exactly 1.18.0** for this reviewed inventory. A different version is treated as inventory drift, not silently accepted.
 - On Python 3.12 or newer, let f2py use Meson; do not force the removed distutils backend.
 - Rerun one named test with more detail and keep the build directory:

@@ -11,12 +11,13 @@ import pytest
 from .conftest import (
     F2PY_BUILD_DEPENDENCIES,
     F2PY_KIND_MAP,
-    F2PY_LINK_DEPENDENCIES,
     PRIK_WRAPPER_FLAGS,
     _f2py_build_command,
+    _f2py_signature_command,
     _f2py_source_plan,
     _prik_build_command,
 )
+from .contracts import remove_internal_root_imports
 from .f2py_contract import F2PY_INOUT_ARGUMENTS
 from .routine_inventory import (
     EXPLICIT_TEST_NAMES,
@@ -35,16 +36,6 @@ from .routine_inventory import (
 
 EXAMPLE_ROOT = Path(__file__).resolve().parent
 NATIVE_ROOT = EXAMPLE_ROOT / "native"
-OLD_NATIVE_ROOT = (
-    EXAMPLE_ROOT.parents[1]
-    / "tests"
-    / "fortran"
-    / "building_shared_library"
-    / "end_to_end"
-    / "real_libraries"
-    / "lapack"
-    / "native"
-)
 FORTRAN_SUFFIXES = {".f", ".f90", ".f95", ".f03", ".f08", ".for", ".f77", ".ftn"}
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
 
@@ -126,7 +117,7 @@ def test_inventory_groups_form_one_complete_partition():
 
 
 def test_f2py_source_plan_includes_required_kind_module(tmp_path: Path):
-    """The selected build closes dependencies without consuming PRIK's library."""
+    """Signature discovery covers every selected implementation and reviewed overlay."""
     plan = _f2py_source_plan(tmp_path)
     dependency_count = len(F2PY_BUILD_DEPENDENCIES)
     assert tuple(path.name for path in plan[:dependency_count]) == F2PY_BUILD_DEPENDENCIES
@@ -140,13 +131,27 @@ def test_f2py_source_plan_includes_required_kind_module(tmp_path: Path):
         assert source.parent == tmp_path / "f2py-intent-sources"
         assert f"{prefix} intent(inout) {', '.join(arguments)}" in source.read_text(encoding="utf-8")
 
-    command = _f2py_build_command(tmp_path)
-    dependency_values = tuple(command[index + 1] for index, value in enumerate(command) if value == "--dep")
-    assert dependency_values == F2PY_LINK_DEPENDENCIES
+    command = _f2py_signature_command(tmp_path)
     assert "only:" in command
     assert ":" in command
-    assert not any("libprik_full_lapack" in value for value in command)
     assert (tmp_path / ".f2py_f2cmap").read_text(encoding="utf-8") == F2PY_KIND_MAP
+
+
+def test_f2py_build_command_reuses_the_precompiled_native_library(tmp_path: Path):
+    native_library = tmp_path / "native" / "libprik_full_lapack.so"
+    command = _f2py_build_command(tmp_path, native_library)
+
+    assert command[:4] == (sys.executable, "-m", "numpy.f2py", "-c")
+    assert str(tmp_path / "f2py_reference_lapack_example.pyf") in command
+    assert f"-L{native_library.parent}" in command
+    assert "-lprik_full_lapack" in command
+    assert "--dep" not in command
+    assert not any(str(NATIVE_ROOT) in value for value in command)
+
+
+def test_both_wrappers_reuse_the_same_precompiled_native_library(prik_build, f2py_build):
+    assert prik_build.native_library == f2py_build.native_library
+    assert prik_build.native_library.name == "libprik_full_lapack.so"
 
 
 def test_prik_build_command_uses_the_public_cli(tmp_path: Path):
@@ -163,6 +168,21 @@ def test_prik_build_command_uses_the_public_cli(tmp_path: Path):
     assert f"--wrapper-c-flags={joined_flags}" in command
 
 
+def test_runtime_contract_edit_removes_internal_imports_in_place(tmp_path: Path):
+    generated_package = tmp_path / "contracts" / "lapack"
+    generated_package.mkdir(parents=True)
+    entry = generated_package / "__init__.pyi"
+    entry.write_text(
+        "from . import LA_CONSTANTS\nfrom . import LA_XISNAN\ndef dgesv() -> None: ...\n",
+        encoding="utf-8",
+    )
+
+    runtime_entry = remove_internal_root_imports(entry)
+
+    assert runtime_entry == entry
+    assert entry.read_text(encoding="utf-8") == "def dgesv() -> None: ...\n"
+
+
 def test_authoritative_native_source_boundary_is_complete_and_unique():
     """The maintained source owner contains the complete library corpus once."""
     sources = tuple(
@@ -175,7 +195,6 @@ def test_authoritative_native_source_boundary_is_complete_and_unique():
     for routine, spec in ROUTINE_SPECS.items():
         assert (NATIVE_ROOT / spec.source_file).is_file(), routine
     assert {"la_constants", "la_xisnan"} <= stems
-    assert not OLD_NATIVE_ROOT.exists()
 
 
 def test_selected_routines_have_one_explicit_named_test():

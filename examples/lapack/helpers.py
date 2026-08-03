@@ -165,3 +165,12 @@ def column_major(matrix: np.ndarray, *, rows: int | None = None) -> np.ndarray:
 def active(matrix: np.ndarray, rows: int, columns: int) -> np.ndarray:
     """Extract the logical matrix while preserving its column-major convention."""
     return np.asarray(matrix[:rows, :columns], dtype=np.float64)
+
+
+def assert_runtime_smoke(module) -> None:
+    """Exercise a representative complete-library LAPACK export."""
+    index = np.zeros(5, dtype=np.int32)
+    values = np.array([1.0, 4.0, 7.0, 2.0, 8.0], dtype=np.float64)
+    scalars = module.dlamrg(np.int32(3), np.int32(2), values, np.int32(1), np.int32(1), index)
+    assert scalars == (np.int32(3), np.int32(2), np.int32(1), np.int32(1))
+    np.testing.assert_array_equal(index, [1, 4, 2, 3, 5])

@@ -287,10 +287,11 @@ reports advisory/manual.
 issues, Ruff formatting drift, Vulture unused test parameters, and the
 too-strict Radon policy.
 
-**Native artifact cache:** dedicated Python 3.12 BLAS and LAPACK jobs restore a
-separate runner-local native cache for each library before executing the full
-wrapper test. The ordinary pytest matrix excludes that full corpus while
-retaining the lighter native-bundle tests. Requested coverage runs still
+**Native artifact cache:** dedicated Python 3.12 BLAS and LAPACK jobs restore
+the cache used by `examples.native_library`. On a miss, the example-owned
+builder compiles each implementation corpus once; PRIK and f2py reuse the same
+artifact. The ordinary pytest matrix excludes that full corpus while retaining
+the lighter native-bundle tests. Requested coverage runs still
 collect Python 3.12 coverage data; a final coverage job combines that artifact
 and uploads the XML report.
 
