@@ -4,7 +4,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from examples import native_library
+
+
+@pytest.mark.parametrize("example", ("blas", "lapack"))
+def test_aggregate_example_build_restores_the_workspace(example: str) -> None:
+    script = (native_library.EXAMPLES_ROOT / example / "build_all.sh").read_text(encoding="utf-8")
+    lines = script.splitlines()
+
+    f2py_build = next(index for index, line in enumerate(lines) if "build_f2py.sh" in line)
+    restore_workspace = lines.index('cd "$EXAMPLE_WORKSPACE"')
+    python_path_export = next(index for index, line in enumerate(lines) if line.startswith("export PYTHONPATH="))
+    assert f2py_build < restore_workspace < python_path_export
 
 
 def test_native_cache_preserves_module_files_for_wrapper_compilation(tmp_path: Path, monkeypatch) -> None:
