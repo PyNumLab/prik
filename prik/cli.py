@@ -881,12 +881,21 @@ def _wrapper_build_uses_pyi_contract(args: argparse.Namespace) -> bool:
 
 def _native_link_options_used(args: argparse.Namespace) -> bool:
     return bool(
-        getattr(args, "native_fortran_sources", None)
+        getattr(args, "no_compile_input_sources", False)
+        or getattr(args, "native_fortran_sources", None)
         or getattr(args, "native_compile_flags", None)
         or getattr(args, "native_objects", None)
         or getattr(args, "native_libraries", None)
         or getattr(args, "native_link_items", None)
         or getattr(args, "native_library_dirs", None)
+    )
+
+
+def _prebuilt_native_link_input_used(args: argparse.Namespace) -> bool:
+    return bool(
+        getattr(args, "native_objects", None)
+        or getattr(args, "native_libraries", None)
+        or getattr(args, "native_link_items", None)
     )
 
 
@@ -914,6 +923,8 @@ def _validate_pyi_wrapper_options(args: argparse.Namespace, parser: argparse.Arg
         parser.error("A .pyi wrapper build cannot mix positional native sources; pass native artifacts with flags")
     if len(args.paths) != 1:
         parser.error("A .pyi wrapper build accepts exactly one entry contract")
+    if getattr(args, "no_compile_input_sources", False):
+        parser.error("--no-compile-input-sources applies only to source-driven wrapper builds")
     if not (
         getattr(args, "native_fortran_sources", None)
         or getattr(args, "native_objects", None)
@@ -953,14 +964,22 @@ def _validate_manifest_wrapper_options(args: argparse.Namespace, parser: argpars
 
 def _validate_source_wrapper_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     if not args.paths:
-        parser.error("A wrapper build expects at least one Fortran source file or a semantic .pyi contract")
-    if any(Path(path).is_dir() for path in args.paths):
-        parser.error("A wrapper build expects Fortran source files, not directories")
-    unsupported = [path for path in args.paths if not _path_is_fortran_source(path)]
+        parser.error("A wrapper build expects at least one Fortran source, source directory, or semantic .pyi contract")
+    unsupported = [path for path in args.paths if not Path(path).is_dir() and not _path_is_fortran_source(path)]
     if unsupported:
         parser.error(
             "A wrapper build expects recognized Fortran source suffixes or one semantic .pyi contract; "
             f"unsupported input: {unsupported[0]}"
+        )
+    empty_directories = [path for path in args.paths if Path(path).is_dir() and not _collect_extensions(Path(path))]
+    if empty_directories:
+        parser.error(f"A wrapper build found no recognized Fortran sources under: {empty_directories[0]}")
+    if not getattr(args, "no_compile_input_sources", False):
+        return
+    if not (getattr(args, "native_fortran_sources", None) or _prebuilt_native_link_input_used(args)):
+        parser.error(
+            "--no-compile-input-sources requires --native-fortran-sources, --native-objects, "
+            "--native-library, or --native-link-item"
         )
 
 
@@ -1282,6 +1301,7 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
         output_name=_wrapper_output_name(args),
         preprocessing=preprocessing,
         strict_wrapper_names=getattr(args, "strict_wrapper_names", False),
+        compile_input_sources=not getattr(args, "no_compile_input_sources", False),
         native_fortran_sources=getattr(args, "native_fortran_sources", None),
         native_fortran_flags=_cli_native_compile_flags(getattr(args, "native_compile_flags", None)),
         native_objects=getattr(args, "native_objects", None),
@@ -1806,6 +1826,11 @@ def _add_build_manifest_option(
 
 def _add_native_compilation_options(group: argparse._ArgumentGroup) -> None:
     group.add_argument(
+        "--no-compile-input-sources",
+        action="store_true",
+        help="Read positional Fortran sources without compiling them; require an explicit native implementation",
+    )
+    group.add_argument(
         "--native-fortran-sources",
         dest="native_fortran_sources",
         action="extend",
@@ -1901,6 +1926,7 @@ _PIPELINE_DEFAULTS = {
     "print_limit": None,
     "vars_limit": None,
     "build_manifest": None,
+    "no_compile_input_sources": False,
     "native_fortran_sources": None,
     "native_compile_flags": None,
     "jobs": None,
@@ -1935,7 +1961,7 @@ def _add_build_arguments(parser: argparse.ArgumentParser) -> None:
     _add_paths(
         positional_group,
         metavar="INPUT",
-        help_text="Fortran source file(s), or exactly one semantic .pyi contract",
+        help_text="Fortran source file(s), one source directory, or exactly one semantic .pyi contract",
     )
     input_group = parser.add_argument_group("input selection")
     _add_language_option(
@@ -1943,6 +1969,7 @@ def _add_build_arguments(parser: argparse.ArgumentParser) -> None:
         choices=("fortran",),
         help_text="Input language (default: fortran)",
     )
+    parser.set_defaults(language="fortran")
     _add_build_manifest_option(input_group)
 
     output_group = parser.add_argument_group("output options")

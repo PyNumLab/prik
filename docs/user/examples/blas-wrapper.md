@@ -94,28 +94,24 @@ export BLAS_SHARED_LIBRARY="$(
     --jobs 8
 )"
 
-python -m prik generate \
-  --pyi examples/blas/native \
-  --language fortran \
-  --out "$BLAS_BUILD_ROOT/contract/blas"
-
 mkdir -p "$BLAS_BUILD_ROOT/prik/generated"
 cd "$BLAS_BUILD_ROOT/prik"
 
-python -m prik "$BLAS_BUILD_ROOT/contract/blas/__init__.pyi" \
+python -m prik "$EXAMPLE_WORKSPACE/examples/blas/native" \
   --out prik_reference_blas \
   --out-dir "$BLAS_BUILD_ROOT/prik/generated" \
   --compiler "$(command -v gfortran)" \
+  --no-compile-input-sources \
   --native-objects "$BLAS_SHARED_LIBRARY" \
   --jobs 8 \
   --wrapper-fortran-flags="-O0 -g0" \
   --wrapper-c-flags="-O0 -g0"
 ```
 
-`examples.native_library` compiles all 155 implementations on the first call
-and returns the resulting shared-library path. The cache is optional: an
-identical later call reuses it. PRIK generates the complete contract and links
-its wrapper to that artifact instead of compiling the implementations again.
+`examples.native_library` compiles all 155 implementations and returns the
+resulting shared-library path. PRIK reads the same source directory to build
+the Python API, skips native implementation compilation, and links that
+library.
 
 `-O0` keeps the PRIK and f2py correctness builds equivalent and avoids making
 optimization-dependent claims. This example focuses on correctness, not
@@ -131,20 +127,35 @@ Run the same f2py build script exercised by the test suite:
 ```bash
 cd "$EXAMPLE_WORKSPACE"
 export BLAS_F2PY_ROOT="$BLAS_BUILD_ROOT/f2py"
-python -m examples.blas.f2py_build \
-  "$BLAS_F2PY_ROOT" \
-  "$BLAS_SHARED_LIBRARY" \
-  --compiler "$(command -v gfortran)"
+mkdir -p "$BLAS_F2PY_ROOT/generated"
+cd "$BLAS_F2PY_ROOT"
+
+export FC="$(command -v gfortran)"
+export F77="$FC"
+export F90="$FC"
+export FFLAGS="-O0"
+export F90FLAGS="-O0"
+export LDFLAGS="${LDFLAGS:+$LDFLAGS }-Wl,-rpath,$(dirname "$BLAS_SHARED_LIBRARY")"
+
+python -m numpy.f2py -c \
+  "$EXAMPLE_WORKSPACE/examples/blas/blas.pyf" \
+  "-L$(dirname "$BLAS_SHARED_LIBRARY")" \
+  -lprik_full_blas \
+  --build-dir "$BLAS_F2PY_ROOT/generated" \
+  --f77flags=-O0 \
+  --f90flags=-O0 \
+  --opt=-O0
 ```
 
-f2py reads the source declarations to generate its `.pyf` signature, compiles
-only its wrapper, and links that wrapper to `BLAS_SHARED_LIBRARY`. PRIK and
-f2py therefore exercise the same compiled BLAS implementations.
+The committed [`blas.pyf`](../../../examples/blas/blas.pyf) is the reviewed
+f2py interface. f2py compiles only its wrapper and links it to
+`BLAS_SHARED_LIBRARY`, so both wrappers exercise the same compiled BLAS
+implementations.
 
 Six rotation routines document scalar writebacks without declaring Fortran
-`intent`. The f2py build adds temporary intent directives and the tests pass
-typed 0-D arrays. PRIK needs neither: it returns unannotated scalar writebacks
-directly, with ordinary scalar arguments.
+`intent`. Their reviewed `intent(inout)` declarations live directly in
+`blas.pyf`, and the tests pass typed 0-D arrays. PRIK needs neither: it returns
+unannotated scalar writebacks directly, with ordinary scalar arguments.
 
 Import both modules:
 
@@ -315,7 +326,7 @@ python -m pytest -q examples/blas/tests -k dgemm
 - Authoritative classification → [`routine_inventory.py`](../../../examples/blas/routine_inventory.py)
 - Coverage guard → [`test_routine_coverage.py`](../../../examples/blas/tests/test_routine_coverage.py)
 
-For the full explanation of increments, leading dimensions, packed/banded storage, Hermitian conjugation, tolerances, coverage totals and known wrapper differences, see the
+For the copyable build scripts, test commands, and source provenance, see the
 [`examples/blas` project README](../../../examples/blas/README.md).
 
 ---

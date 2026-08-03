@@ -6,22 +6,37 @@ from pathlib import Path
 
 import pytest
 
-from ..routine_inventory import EXPECTED_LAPACK_ROOT_PROCEDURES
+from ..routine_inventory import EXPECTED_LAPACK_PROCEDURES
 from examples.lapack.tests.helpers import assert_runtime_smoke
-from prik.pipeline.pyi import pyi_paths_to_semantic_modules
+from prik.parsers.fortran.parser import parse_fortran_file
 
 
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
+NATIVE_ROOT = Path(__file__).resolve().parents[1] / "native"
+FORTRAN_SUFFIXES = {".f", ".f90", ".f95", ".f03", ".f08", ".for", ".f77", ".ftn"}
+
+
+def _source_procedure_exports() -> set[tuple[str | None, str]]:
+    expected: set[tuple[str | None, str]] = set()
+    for path in sorted(NATIVE_ROOT.iterdir()):
+        if not path.is_file() or path.suffix.lower() not in FORTRAN_SUFFIXES:
+            continue
+        parsed = parse_fortran_file(path.read_text(encoding="utf-8"), filename=path.name)
+        expected.update((None, procedure.name.lower()) for procedure in parsed.procedures)
+        for module in parsed.modules:
+            expected.update((module.name.lower(), procedure.name.lower()) for procedure in module.procedures)
+    return expected
 
 
 def test_ci_complete_prik_surface_reuses_example_extension(prik_lapack):
-    build_root = Path(prik_lapack.__file__).resolve().parent.parent
-    runtime_package = build_root / "contracts" / "lapack"
-    modules = pyi_paths_to_semantic_modules([runtime_package])
-    root = next(module for module in modules if module.name == "__init__")
-    expected = {function.name for function in root.functions}
-    assert len(expected) == EXPECTED_LAPACK_ROOT_PROCEDURES
+    expected = _source_procedure_exports()
+    assert len(expected) == EXPECTED_LAPACK_PROCEDURES
+    assert all(getattr(prik_lapack, name, None) is not None for name in ("la_constants", "la_xisnan"))
 
-    missing = sorted(name for name in expected if not callable(getattr(prik_lapack, name, None)))
+    missing = []
+    for namespace, name in sorted(expected, key=lambda item: (item[0] or "", item[1])):
+        owner = prik_lapack if namespace is None else getattr(prik_lapack, namespace, None)
+        if owner is None or not callable(getattr(owner, name, None)):
+            missing.append(".".join(filter(None, (namespace, name))))
     assert missing == []
     assert_runtime_smoke(prik_lapack)

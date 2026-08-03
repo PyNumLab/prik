@@ -35,12 +35,12 @@ You should already be comfortable with the BLAS wrapper example, NumPy arrays, a
 | PRIK               | current repository checkout (`0.1.0`)                 |
 | Reference LAPACK   | Netlib LAPACK 3.12.1                                  |
 | Reference BLAS     | BLAS snapshot shipped in LAPACK 3.12.1                |
-| Python             | 3.12 (dedicated CI job)                               |
+| Python             | 3.12 or newer                                          |
 | NumPy / f2py       | NumPy 2.5.1                                           |
 | SciPy              | exactly 1.18.0 (reviewed inventory)                   |
 | Meson              | 1.11.2                                                |
 | Ninja              | 1.13.0                                                |
-| Fortran compiler   | GNU Fortran 13 in CI (any compatible `gfortran` works locally) |
+| Fortran compiler   | compatible `gfortran`                                  |
 
 ---
 
@@ -60,8 +60,7 @@ python -m pip install -e ".[qa]" \
   "meson==1.11.2" "ninja==1.13.0"
 ```
 
-Install GNU Fortran. The current repository setup also installs the LAPACK and
-BLAS development packages used by the existing CI environment. On Ubuntu:
+Install GNU Fortran and the LAPACK and BLAS development packages. On Ubuntu:
 
 ```bash
 sudo apt-get update
@@ -92,72 +91,69 @@ export LAPACK_SHARED_LIBRARY="$(
     --compiler "$(command -v gfortran)" \
     --jobs 8
 )"
-
-python -m prik generate \
-  --pyi examples/lapack/native \
-  --language fortran \
-  --out "$LAPACK_BUILD_ROOT/contracts/lapack"
-
-# Remove the LA_CONSTANTS and LA_XISNAN imports from the generated root contract.
-python -c 'import sys; from pathlib import Path; p=Path(sys.argv[1]); s=p.read_text(encoding="utf-8")
-p.write_text(s.replace("from . import LA_CONSTANTS\n", "").replace("from . import LA_XISNAN\n", ""), encoding="utf-8")' \
-  "$LAPACK_BUILD_ROOT/contracts/lapack/__init__.pyi"
+export LAPACK_MODULE_DIR="$(dirname "$LAPACK_SHARED_LIBRARY")/modules"
 
 mkdir -p "$LAPACK_BUILD_ROOT/prik/generated"
 cd "$LAPACK_BUILD_ROOT/prik"
-python -m prik "$LAPACK_BUILD_ROOT/contracts/lapack/__init__.pyi" \
+python -m prik "$EXAMPLE_WORKSPACE/examples/lapack/native" \
   --out prik_reference_lapack_example \
   --out-dir "$LAPACK_BUILD_ROOT/prik/generated" \
   --compiler "$(command -v gfortran)" \
+  --no-compile-input-sources \
   --native-objects "$LAPACK_SHARED_LIBRARY" \
+  -I "$LAPACK_MODULE_DIR" \
   --jobs 8 \
   --wrapper-fortran-flags="-O0 -g0" \
   --wrapper-c-flags="-O0 -g0"
 ```
 
-The short contract command removes only the internal `LA_CONSTANTS` and
-`LA_XISNAN` root imports in place.
+PRIK reads the sources to build the Python API, skips native implementation
+compilation, and links the shared library. The include path supplies the module
+metadata needed by the generated wrapper.
 
 ---
 
 ## 3. Build the reviewed f2py comparison surface
 
-The f2py side does not compile the implementations again. It reads the 125
-selected routines and `la_constants.f90` to generate reviewed signatures, then
-compiles only its wrapper and links it to `LAPACK_SHARED_LIBRARY`.
+The committed [`lapack.pyf`](../../../examples/lapack/lapack.pyf) contains the
+reviewed selected routines and `la_constants` module signature. f2py compiles
+only its wrapper and links `LAPACK_SHARED_LIBRARY`.
 
 Nine routines document scalar writebacks without declaring Fortran `intent`.
-The f2py build adds temporary intent directives and the tests pass typed 0-D
-arrays. PRIK needs neither: it returns unannotated scalar writebacks directly,
-with ordinary scalar arguments.
+Their reviewed `intent(inout)` declarations live directly in `lapack.pyf`, and
+the tests pass typed 0-D arrays. PRIK needs neither: it returns unannotated
+scalar writebacks directly, with ordinary scalar arguments.
 
-The example-owned f2py builder assembles the reviewed inventory. Run the same
-script exercised by the test suite:
+Run the same direct f2py command exercised by the test suite:
 
 <!-- prik-doc-source: examples/lapack/build_f2py.sh -->
 ```bash
 cd "$EXAMPLE_WORKSPACE"
 export LAPACK_F2PY_ROOT="$LAPACK_BUILD_ROOT/f2py"
-python -m examples.lapack.f2py_build \
-  "$LAPACK_F2PY_ROOT" \
-  "$LAPACK_SHARED_LIBRARY" \
-  --compiler "$(command -v gfortran)"
+mkdir -p "$LAPACK_F2PY_ROOT/generated"
+cd "$LAPACK_F2PY_ROOT"
+
+export FC="$(command -v gfortran)"
+export F77="$FC"
+export F90="$FC"
+export FFLAGS="-O0"
+export F90FLAGS="-O0"
+export LDFLAGS="${LDFLAGS:+$LDFLAGS }-Wl,-rpath,$(dirname "$LAPACK_SHARED_LIBRARY")"
+
+python -m numpy.f2py -c \
+  "$EXAMPLE_WORKSPACE/examples/lapack/lapack.pyf" \
+  "-L$(dirname "$LAPACK_SHARED_LIBRARY")" \
+  -lprik_full_lapack \
+  --f2cmap "$EXAMPLE_WORKSPACE/examples/lapack/lapack.f2cmap" \
+  --build-dir "$LAPACK_F2PY_ROOT/generated" \
+  --f77flags=-O0 \
+  --f90flags="-O0 -I$LAPACK_MODULE_DIR" \
+  --opt=-O0
 ```
 
-The assembled command has this shape:
-
-```text
-python -m numpy.f2py -m f2py_reference_lapack_example \
-  -h f2py_reference_lapack_example.pyf \
-  la_constants.f90 <125 reviewed implementation sources> \
-  only: <125 reviewed routine names> : \
-  --f2cmap <float64 kind map> --overwrite-signature
-python -m numpy.f2py -c f2py_reference_lapack_example.pyf \
-  -L<shared-library-directory> -lprik_full_lapack \
-  --f2cmap <float64 kind map> \
-  --build-dir <temporary directory> \
-  --f77flags=-O0 --f90flags=-O0 --opt=-O0
-```
+The native build retains the compiler-specific module files required by the
+generated wrapper. Support objects remain inside the shared library and are not
+compiled again.
 
 `dgees` and `dgges` remain in the 127-routine correctness inventory, but raw f2py 2.5.1 cannot generate valid callback declarations from their unannotated selection-callback interfaces.
 They are validated through PRIK, SciPy and independent Schur reconstruction.
@@ -281,7 +277,7 @@ Therefore byte-for-byte agreement is not the only oracle.
 Tests use explicit solutions, residuals, factor reconstructions, orthogonality, eigen equations and storage invariants.
 
 The two real tests below keep all three wrapper calls and the independent oracle visible.
-Documentation CI verifies these blocks directly against their source functions.
+The displayed blocks are copied directly from their source functions.
 
 ### DGESV – solve a general linear system
 
@@ -383,10 +379,9 @@ python -m pytest -q examples/lapack/tests -k dgesvd
 - Authoritative mapping of all 127 routines → [`routine_inventory.py`](../../../examples/lapack/routine_inventory.py)
 - Coverage audit → [`test_routine_coverage.py`](../../../examples/lapack/tests/test_routine_coverage.py)
 
-Repository maintainers normally leave this expensive LAPACK wrapper/runtime command to the dedicated BLAS + LAPACK GitHub Actions job unless local execution is explicitly requested.
-The command is nevertheless complete and reproducible for users who have the listed native toolchain.
+The command is complete and reproducible with the listed native toolchain.
 
-For storage formats, workspaces, pivot conventions, the f2py callback limitation and scalar-intent overlays, all representative families and audited coverage totals, continue to the
+For the copyable build scripts, test commands, and source provenance, see the
 [`examples/lapack` project README](../../../examples/lapack/README.md).
 
 ---

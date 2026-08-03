@@ -1,0 +1,1562 @@
+!    -*- f90 -*-
+! Note: the context of this file is case sensitive.
+
+python module f2py_reference_blas
+    interface
+        subroutine caxpy(n,ca,cx,incx,cy,incy)
+            integer :: n
+            complex :: ca
+            complex dimension(*) :: cx
+            integer :: incx
+            complex dimension(*) :: cy
+            integer :: incy
+        end subroutine caxpy
+        subroutine ccopy(n,cx,incx,cy,incy)
+            integer :: n
+            complex dimension(*) :: cx
+            integer :: incx
+            complex dimension(*) :: cy
+            integer :: incy
+        end subroutine ccopy
+        function cdotc(n,cx,incx,cy,incy)
+            integer :: n
+            complex dimension(*) :: cx
+            integer :: incx
+            complex dimension(*) :: cy
+            integer :: incy
+            complex :: cdotc
+        end function cdotc
+        function cdotu(n,cx,incx,cy,incy)
+            integer :: n
+            complex dimension(*) :: cx
+            integer :: incx
+            complex dimension(*) :: cy
+            integer :: incy
+            complex :: cdotu
+        end function cdotu
+        subroutine cgbmv(trans,m,n,kl,ku,alpha,a,lda,x,incx,beta,y,incy)
+            character :: trans
+            integer :: m
+            integer :: n
+            integer :: kl
+            integer :: ku
+            complex :: alpha
+            complex dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex dimension(*) :: x
+            integer :: incx
+            complex :: beta
+            complex dimension(*) :: y
+            integer :: incy
+        end subroutine cgbmv
+        subroutine cgemm(transa,transb,m,n,k,alpha,a,lda,b,ldb,beta,c,ldc)
+            character :: transa
+            character :: transb
+            integer :: m
+            integer :: n
+            integer :: k
+            complex :: alpha
+            complex dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            complex :: beta
+            complex dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine cgemm
+        subroutine cgemmtr(uplo,transa,transb,n,k,alpha,a,lda,b,ldb,beta,c,ldc)
+            character :: uplo
+            character :: transa
+            character :: transb
+            integer :: n
+            integer :: k
+            complex :: alpha
+            complex dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            complex :: beta
+            complex dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine cgemmtr
+        subroutine cgemv(trans,m,n,alpha,a,lda,x,incx,beta,y,incy)
+            character :: trans
+            integer :: m
+            integer :: n
+            complex :: alpha
+            complex dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex dimension(*) :: x
+            integer :: incx
+            complex :: beta
+            complex dimension(*) :: y
+            integer :: incy
+        end subroutine cgemv
+        subroutine cgerc(m,n,alpha,x,incx,y,incy,a,lda)
+            integer :: m
+            integer :: n
+            complex :: alpha
+            complex dimension(*) :: x
+            integer :: incx
+            complex dimension(*) :: y
+            integer :: incy
+            complex dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+        end subroutine cgerc
+        subroutine cgeru(m,n,alpha,x,incx,y,incy,a,lda)
+            integer :: m
+            integer :: n
+            complex :: alpha
+            complex dimension(*) :: x
+            integer :: incx
+            complex dimension(*) :: y
+            integer :: incy
+            complex dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+        end subroutine cgeru
+        subroutine chbmv(uplo,n,k,alpha,a,lda,x,incx,beta,y,incy)
+            character :: uplo
+            integer :: n
+            integer :: k
+            complex :: alpha
+            complex dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex dimension(*) :: x
+            integer :: incx
+            complex :: beta
+            complex dimension(*) :: y
+            integer :: incy
+        end subroutine chbmv
+        subroutine chemm(side,uplo,m,n,alpha,a,lda,b,ldb,beta,c,ldc)
+            character :: side
+            character :: uplo
+            integer :: m
+            integer :: n
+            complex :: alpha
+            complex dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            complex :: beta
+            complex dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine chemm
+        subroutine chemv(uplo,n,alpha,a,lda,x,incx,beta,y,incy)
+            character :: uplo
+            integer :: n
+            complex :: alpha
+            complex dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex dimension(*) :: x
+            integer :: incx
+            complex :: beta
+            complex dimension(*) :: y
+            integer :: incy
+        end subroutine chemv
+        subroutine cher(uplo,n,alpha,x,incx,a,lda)
+            character :: uplo
+            integer :: n
+            real :: alpha
+            complex dimension(*) :: x
+            integer :: incx
+            complex dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+        end subroutine cher
+        subroutine cher2(uplo,n,alpha,x,incx,y,incy,a,lda)
+            character :: uplo
+            integer :: n
+            complex :: alpha
+            complex dimension(*) :: x
+            integer :: incx
+            complex dimension(*) :: y
+            integer :: incy
+            complex dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+        end subroutine cher2
+        subroutine cher2k(uplo,trans,n,k,alpha,a,lda,b,ldb,beta,c,ldc)
+            character :: uplo
+            character :: trans
+            integer :: n
+            integer :: k
+            complex :: alpha
+            complex dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            real :: beta
+            complex dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine cher2k
+        subroutine cherk(uplo,trans,n,k,alpha,a,lda,beta,c,ldc)
+            character :: uplo
+            character :: trans
+            integer :: n
+            integer :: k
+            real :: alpha
+            complex dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            real :: beta
+            complex dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine cherk
+        subroutine chpmv(uplo,n,alpha,ap,x,incx,beta,y,incy)
+            character :: uplo
+            integer :: n
+            complex :: alpha
+            complex dimension(*) :: ap
+            complex dimension(*) :: x
+            integer :: incx
+            complex :: beta
+            complex dimension(*) :: y
+            integer :: incy
+        end subroutine chpmv
+        subroutine chpr(uplo,n,alpha,x,incx,ap)
+            character :: uplo
+            integer :: n
+            real :: alpha
+            complex dimension(*) :: x
+            integer :: incx
+            complex dimension(*) :: ap
+        end subroutine chpr
+        subroutine chpr2(uplo,n,alpha,x,incx,y,incy,ap)
+            character :: uplo
+            integer :: n
+            complex :: alpha
+            complex dimension(*) :: x
+            integer :: incx
+            complex dimension(*) :: y
+            integer :: incy
+            complex dimension(*) :: ap
+        end subroutine chpr2
+        subroutine crotg(a,b,c,s)
+            complex(kind=4) intent(inout) :: a
+            complex(kind=4) :: b
+            real(kind=4) intent(inout) :: c
+            complex(kind=4) intent(inout) :: s
+        end subroutine crotg
+        subroutine cscal(n,ca,cx,incx)
+            integer :: n
+            complex :: ca
+            complex dimension(*) :: cx
+            integer :: incx
+        end subroutine cscal
+        subroutine csrot(n,cx,incx,cy,incy,c,s)
+            integer :: n
+            complex dimension(*) :: cx
+            integer :: incx
+            complex dimension(*) :: cy
+            integer :: incy
+            real :: c
+            real :: s
+        end subroutine csrot
+        subroutine csscal(n,sa,cx,incx)
+            integer :: n
+            real :: sa
+            complex dimension(*) :: cx
+            integer :: incx
+        end subroutine csscal
+        subroutine cswap(n,cx,incx,cy,incy)
+            integer :: n
+            complex dimension(*) :: cx
+            integer :: incx
+            complex dimension(*) :: cy
+            integer :: incy
+        end subroutine cswap
+        subroutine csymm(side,uplo,m,n,alpha,a,lda,b,ldb,beta,c,ldc)
+            character :: side
+            character :: uplo
+            integer :: m
+            integer :: n
+            complex :: alpha
+            complex dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            complex :: beta
+            complex dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine csymm
+        subroutine csyr2k(uplo,trans,n,k,alpha,a,lda,b,ldb,beta,c,ldc)
+            character :: uplo
+            character :: trans
+            integer :: n
+            integer :: k
+            complex :: alpha
+            complex dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            complex :: beta
+            complex dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine csyr2k
+        subroutine csyrk(uplo,trans,n,k,alpha,a,lda,beta,c,ldc)
+            character :: uplo
+            character :: trans
+            integer :: n
+            integer :: k
+            complex :: alpha
+            complex dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex :: beta
+            complex dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine csyrk
+        subroutine ctbmv(uplo,trans,diag,n,k,a,lda,x,incx)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            integer :: k
+            complex dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex dimension(*) :: x
+            integer :: incx
+        end subroutine ctbmv
+        subroutine ctbsv(uplo,trans,diag,n,k,a,lda,x,incx)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            integer :: k
+            complex dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex dimension(*) :: x
+            integer :: incx
+        end subroutine ctbsv
+        subroutine ctpmv(uplo,trans,diag,n,ap,x,incx)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            complex dimension(*) :: ap
+            complex dimension(*) :: x
+            integer :: incx
+        end subroutine ctpmv
+        subroutine ctpsv(uplo,trans,diag,n,ap,x,incx)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            complex dimension(*) :: ap
+            complex dimension(*) :: x
+            integer :: incx
+        end subroutine ctpsv
+        subroutine ctrmm(side,uplo,transa,diag,m,n,alpha,a,lda,b,ldb)
+            character :: side
+            character :: uplo
+            character :: transa
+            character :: diag
+            integer :: m
+            integer :: n
+            complex :: alpha
+            complex dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+        end subroutine ctrmm
+        subroutine ctrmv(uplo,trans,diag,n,a,lda,x,incx)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            complex dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex dimension(*) :: x
+            integer :: incx
+        end subroutine ctrmv
+        subroutine ctrsm(side,uplo,transa,diag,m,n,alpha,a,lda,b,ldb)
+            character :: side
+            character :: uplo
+            character :: transa
+            character :: diag
+            integer :: m
+            integer :: n
+            complex :: alpha
+            complex dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+        end subroutine ctrsm
+        subroutine ctrsv(uplo,trans,diag,n,a,lda,x,incx)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            complex dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex dimension(*) :: x
+            integer :: incx
+        end subroutine ctrsv
+        function dasum(n,dx,incx)
+            integer :: n
+            double precision dimension(*) :: dx
+            integer :: incx
+            double precision :: dasum
+        end function dasum
+        subroutine daxpy(n,da,dx,incx,dy,incy)
+            integer :: n
+            double precision :: da
+            double precision dimension(*) :: dx
+            integer :: incx
+            double precision dimension(*) :: dy
+            integer :: incy
+        end subroutine daxpy
+        function dcabs1(z)
+            complex*16 :: z
+            double precision :: dcabs1
+        end function dcabs1
+        subroutine dcopy(n,dx,incx,dy,incy)
+            integer :: n
+            double precision dimension(*) :: dx
+            integer :: incx
+            double precision dimension(*) :: dy
+            integer :: incy
+        end subroutine dcopy
+        function ddot(n,dx,incx,dy,incy)
+            integer :: n
+            double precision dimension(*) :: dx
+            integer :: incx
+            double precision dimension(*) :: dy
+            integer :: incy
+            double precision :: ddot
+        end function ddot
+        subroutine dgbmv(trans,m,n,kl,ku,alpha,a,lda,x,incx,beta,y,incy)
+            character :: trans
+            integer :: m
+            integer :: n
+            integer :: kl
+            integer :: ku
+            double precision :: alpha
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: x
+            integer :: incx
+            double precision :: beta
+            double precision dimension(*) :: y
+            integer :: incy
+        end subroutine dgbmv
+        subroutine dgemm(transa,transb,m,n,k,alpha,a,lda,b,ldb,beta,c,ldc)
+            character :: transa
+            character :: transb
+            integer :: m
+            integer :: n
+            integer :: k
+            double precision :: alpha
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision :: beta
+            double precision dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine dgemm
+        subroutine dgemmtr(uplo,transa,transb,n,k,alpha,a,lda,b,ldb,beta,c,ldc)
+            character :: uplo
+            character :: transa
+            character :: transb
+            integer :: n
+            integer :: k
+            double precision :: alpha
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision :: beta
+            double precision dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine dgemmtr
+        subroutine dgemv(trans,m,n,alpha,a,lda,x,incx,beta,y,incy)
+            character :: trans
+            integer :: m
+            integer :: n
+            double precision :: alpha
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: x
+            integer :: incx
+            double precision :: beta
+            double precision dimension(*) :: y
+            integer :: incy
+        end subroutine dgemv
+        subroutine dger(m,n,alpha,x,incx,y,incy,a,lda)
+            integer :: m
+            integer :: n
+            double precision :: alpha
+            double precision dimension(*) :: x
+            integer :: incx
+            double precision dimension(*) :: y
+            integer :: incy
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+        end subroutine dger
+        function dnrm2(n,x,incx)
+            integer :: n
+            real(kind=8) dimension(*) :: x
+            integer :: incx
+            real(kind=8) :: dnrm2
+        end function dnrm2
+        subroutine drot(n,dx,incx,dy,incy,c,s)
+            integer :: n
+            double precision dimension(*) :: dx
+            integer :: incx
+            double precision dimension(*) :: dy
+            integer :: incy
+            double precision :: c
+            double precision :: s
+        end subroutine drot
+        subroutine drotg(a,b,c,s)
+            real(kind=8) intent(inout) :: a
+            real(kind=8) intent(inout) :: b
+            real(kind=8) intent(inout) :: c
+            real(kind=8) intent(inout) :: s
+        end subroutine drotg
+        subroutine drotm(n,dx,incx,dy,incy,dparam)
+            integer :: n
+            double precision dimension(*) :: dx
+            integer :: incx
+            double precision dimension(*) :: dy
+            integer :: incy
+            double precision dimension(5) :: dparam
+        end subroutine drotm
+        subroutine drotmg(dd1,dd2,dx1,dy1,dparam)
+            double precision intent(inout) :: dd1
+            double precision intent(inout) :: dd2
+            double precision intent(inout) :: dx1
+            double precision :: dy1
+            double precision dimension(5),intent(inout) :: dparam
+        end subroutine drotmg
+        subroutine dsbmv(uplo,n,k,alpha,a,lda,x,incx,beta,y,incy)
+            character :: uplo
+            integer :: n
+            integer :: k
+            double precision :: alpha
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: x
+            integer :: incx
+            double precision :: beta
+            double precision dimension(*) :: y
+            integer :: incy
+        end subroutine dsbmv
+        subroutine dscal(n,da,dx,incx)
+            integer :: n
+            double precision :: da
+            double precision dimension(*) :: dx
+            integer :: incx
+        end subroutine dscal
+        function dsdot(n,sx,incx,sy,incy)
+            integer :: n
+            real dimension(*) :: sx
+            integer :: incx
+            real dimension(*) :: sy
+            integer :: incy
+            double precision :: dsdot
+        end function dsdot
+        subroutine dspmv(uplo,n,alpha,ap,x,incx,beta,y,incy)
+            character :: uplo
+            integer :: n
+            double precision :: alpha
+            double precision dimension(*) :: ap
+            double precision dimension(*) :: x
+            integer :: incx
+            double precision :: beta
+            double precision dimension(*) :: y
+            integer :: incy
+        end subroutine dspmv
+        subroutine dspr(uplo,n,alpha,x,incx,ap)
+            character :: uplo
+            integer :: n
+            double precision :: alpha
+            double precision dimension(*) :: x
+            integer :: incx
+            double precision dimension(*) :: ap
+        end subroutine dspr
+        subroutine dspr2(uplo,n,alpha,x,incx,y,incy,ap)
+            character :: uplo
+            integer :: n
+            double precision :: alpha
+            double precision dimension(*) :: x
+            integer :: incx
+            double precision dimension(*) :: y
+            integer :: incy
+            double precision dimension(*) :: ap
+        end subroutine dspr2
+        subroutine dswap(n,dx,incx,dy,incy)
+            integer :: n
+            double precision dimension(*) :: dx
+            integer :: incx
+            double precision dimension(*) :: dy
+            integer :: incy
+        end subroutine dswap
+        subroutine dsymm(side,uplo,m,n,alpha,a,lda,b,ldb,beta,c,ldc)
+            character :: side
+            character :: uplo
+            integer :: m
+            integer :: n
+            double precision :: alpha
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision :: beta
+            double precision dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine dsymm
+        subroutine dsymv(uplo,n,alpha,a,lda,x,incx,beta,y,incy)
+            character :: uplo
+            integer :: n
+            double precision :: alpha
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: x
+            integer :: incx
+            double precision :: beta
+            double precision dimension(*) :: y
+            integer :: incy
+        end subroutine dsymv
+        subroutine dsyr(uplo,n,alpha,x,incx,a,lda)
+            character :: uplo
+            integer :: n
+            double precision :: alpha
+            double precision dimension(*) :: x
+            integer :: incx
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+        end subroutine dsyr
+        subroutine dsyr2(uplo,n,alpha,x,incx,y,incy,a,lda)
+            character :: uplo
+            integer :: n
+            double precision :: alpha
+            double precision dimension(*) :: x
+            integer :: incx
+            double precision dimension(*) :: y
+            integer :: incy
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+        end subroutine dsyr2
+        subroutine dsyr2k(uplo,trans,n,k,alpha,a,lda,b,ldb,beta,c,ldc)
+            character :: uplo
+            character :: trans
+            integer :: n
+            integer :: k
+            double precision :: alpha
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision :: beta
+            double precision dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine dsyr2k
+        subroutine dsyrk(uplo,trans,n,k,alpha,a,lda,beta,c,ldc)
+            character :: uplo
+            character :: trans
+            integer :: n
+            integer :: k
+            double precision :: alpha
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision :: beta
+            double precision dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine dsyrk
+        subroutine dtbmv(uplo,trans,diag,n,k,a,lda,x,incx)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            integer :: k
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: x
+            integer :: incx
+        end subroutine dtbmv
+        subroutine dtbsv(uplo,trans,diag,n,k,a,lda,x,incx)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            integer :: k
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: x
+            integer :: incx
+        end subroutine dtbsv
+        subroutine dtpmv(uplo,trans,diag,n,ap,x,incx)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            double precision dimension(*) :: ap
+            double precision dimension(*) :: x
+            integer :: incx
+        end subroutine dtpmv
+        subroutine dtpsv(uplo,trans,diag,n,ap,x,incx)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            double precision dimension(*) :: ap
+            double precision dimension(*) :: x
+            integer :: incx
+        end subroutine dtpsv
+        subroutine dtrmm(side,uplo,transa,diag,m,n,alpha,a,lda,b,ldb)
+            character :: side
+            character :: uplo
+            character :: transa
+            character :: diag
+            integer :: m
+            integer :: n
+            double precision :: alpha
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+        end subroutine dtrmm
+        subroutine dtrmv(uplo,trans,diag,n,a,lda,x,incx)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: x
+            integer :: incx
+        end subroutine dtrmv
+        subroutine dtrsm(side,uplo,transa,diag,m,n,alpha,a,lda,b,ldb)
+            character :: side
+            character :: uplo
+            character :: transa
+            character :: diag
+            integer :: m
+            integer :: n
+            double precision :: alpha
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+        end subroutine dtrsm
+        subroutine dtrsv(uplo,trans,diag,n,a,lda,x,incx)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: x
+            integer :: incx
+        end subroutine dtrsv
+        function dzasum(n,zx,incx)
+            integer :: n
+            complex*16 dimension(*) :: zx
+            integer :: incx
+            double precision :: dzasum
+        end function dzasum
+        function dznrm2(n,x,incx)
+            integer :: n
+            complex(kind=8) dimension(*) :: x
+            integer :: incx
+            real(kind=8) :: dznrm2
+        end function dznrm2
+        function icamax(n,cx,incx)
+            integer :: n
+            complex dimension(*) :: cx
+            integer :: incx
+            integer :: icamax
+        end function icamax
+        function idamax(n,dx,incx)
+            integer :: n
+            double precision dimension(*) :: dx
+            integer :: incx
+            integer :: idamax
+        end function idamax
+        function isamax(n,sx,incx)
+            integer :: n
+            real dimension(*) :: sx
+            integer :: incx
+            integer :: isamax
+        end function isamax
+        function izamax(n,zx,incx)
+            integer :: n
+            complex*16 dimension(*) :: zx
+            integer :: incx
+            integer :: izamax
+        end function izamax
+        function lsame(ca,cb)
+            character :: ca
+            character :: cb
+            logical :: lsame
+        end function lsame
+        function sasum(n,sx,incx)
+            integer :: n
+            real dimension(*) :: sx
+            integer :: incx
+            real :: sasum
+        end function sasum
+        subroutine saxpy(n,sa,sx,incx,sy,incy)
+            integer :: n
+            real :: sa
+            real dimension(*) :: sx
+            integer :: incx
+            real dimension(*) :: sy
+            integer :: incy
+        end subroutine saxpy
+        function scabs1(z)
+            complex :: z
+            real :: scabs1
+        end function scabs1
+        function scasum(n,cx,incx)
+            integer :: n
+            complex dimension(*) :: cx
+            integer :: incx
+            real :: scasum
+        end function scasum
+        function scnrm2(n,x,incx)
+            integer :: n
+            complex(kind=4) dimension(*) :: x
+            integer :: incx
+            real(kind=4) :: scnrm2
+        end function scnrm2
+        subroutine scopy(n,sx,incx,sy,incy)
+            integer :: n
+            real dimension(*) :: sx
+            integer :: incx
+            real dimension(*) :: sy
+            integer :: incy
+        end subroutine scopy
+        function sdot(n,sx,incx,sy,incy)
+            integer :: n
+            real dimension(*) :: sx
+            integer :: incx
+            real dimension(*) :: sy
+            integer :: incy
+            real :: sdot
+        end function sdot
+        function sdsdot(n,sb,sx,incx,sy,incy)
+            integer :: n
+            real :: sb
+            real dimension(*) :: sx
+            integer :: incx
+            real dimension(*) :: sy
+            integer :: incy
+            real :: sdsdot
+        end function sdsdot
+        subroutine sgbmv(trans,m,n,kl,ku,alpha,a,lda,x,incx,beta,y,incy)
+            character :: trans
+            integer :: m
+            integer :: n
+            integer :: kl
+            integer :: ku
+            real :: alpha
+            real dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            real dimension(*) :: x
+            integer :: incx
+            real :: beta
+            real dimension(*) :: y
+            integer :: incy
+        end subroutine sgbmv
+        subroutine sgemm(transa,transb,m,n,k,alpha,a,lda,b,ldb,beta,c,ldc)
+            character :: transa
+            character :: transb
+            integer :: m
+            integer :: n
+            integer :: k
+            real :: alpha
+            real dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            real dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            real :: beta
+            real dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine sgemm
+        subroutine sgemmtr(uplo,transa,transb,n,k,alpha,a,lda,b,ldb,beta,c,ldc)
+            character :: uplo
+            character :: transa
+            character :: transb
+            integer :: n
+            integer :: k
+            real :: alpha
+            real dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            real dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            real :: beta
+            real dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine sgemmtr
+        subroutine sgemv(trans,m,n,alpha,a,lda,x,incx,beta,y,incy)
+            character :: trans
+            integer :: m
+            integer :: n
+            real :: alpha
+            real dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            real dimension(*) :: x
+            integer :: incx
+            real :: beta
+            real dimension(*) :: y
+            integer :: incy
+        end subroutine sgemv
+        subroutine sger(m,n,alpha,x,incx,y,incy,a,lda)
+            integer :: m
+            integer :: n
+            real :: alpha
+            real dimension(*) :: x
+            integer :: incx
+            real dimension(*) :: y
+            integer :: incy
+            real dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+        end subroutine sger
+        function snrm2(n,x,incx)
+            integer :: n
+            real(kind=4) dimension(*) :: x
+            integer :: incx
+            real(kind=4) :: snrm2
+        end function snrm2
+        subroutine srot(n,sx,incx,sy,incy,c,s)
+            integer :: n
+            real dimension(*) :: sx
+            integer :: incx
+            real dimension(*) :: sy
+            integer :: incy
+            real :: c
+            real :: s
+        end subroutine srot
+        subroutine srotg(a,b,c,s)
+            real(kind=4) intent(inout) :: a
+            real(kind=4) intent(inout) :: b
+            real(kind=4) intent(inout) :: c
+            real(kind=4) intent(inout) :: s
+        end subroutine srotg
+        subroutine srotm(n,sx,incx,sy,incy,sparam)
+            integer :: n
+            real dimension(*) :: sx
+            integer :: incx
+            real dimension(*) :: sy
+            integer :: incy
+            real dimension(5) :: sparam
+        end subroutine srotm
+        subroutine srotmg(sd1,sd2,sx1,sy1,sparam)
+            real intent(inout) :: sd1
+            real intent(inout) :: sd2
+            real intent(inout) :: sx1
+            real :: sy1
+            real dimension(5),intent(inout) :: sparam
+        end subroutine srotmg
+        subroutine ssbmv(uplo,n,k,alpha,a,lda,x,incx,beta,y,incy)
+            character :: uplo
+            integer :: n
+            integer :: k
+            real :: alpha
+            real dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            real dimension(*) :: x
+            integer :: incx
+            real :: beta
+            real dimension(*) :: y
+            integer :: incy
+        end subroutine ssbmv
+        subroutine sscal(n,sa,sx,incx)
+            integer :: n
+            real :: sa
+            real dimension(*) :: sx
+            integer :: incx
+        end subroutine sscal
+        subroutine sspmv(uplo,n,alpha,ap,x,incx,beta,y,incy)
+            character :: uplo
+            integer :: n
+            real :: alpha
+            real dimension(*) :: ap
+            real dimension(*) :: x
+            integer :: incx
+            real :: beta
+            real dimension(*) :: y
+            integer :: incy
+        end subroutine sspmv
+        subroutine sspr(uplo,n,alpha,x,incx,ap)
+            character :: uplo
+            integer :: n
+            real :: alpha
+            real dimension(*) :: x
+            integer :: incx
+            real dimension(*) :: ap
+        end subroutine sspr
+        subroutine sspr2(uplo,n,alpha,x,incx,y,incy,ap)
+            character :: uplo
+            integer :: n
+            real :: alpha
+            real dimension(*) :: x
+            integer :: incx
+            real dimension(*) :: y
+            integer :: incy
+            real dimension(*) :: ap
+        end subroutine sspr2
+        subroutine sswap(n,sx,incx,sy,incy)
+            integer :: n
+            real dimension(*) :: sx
+            integer :: incx
+            real dimension(*) :: sy
+            integer :: incy
+        end subroutine sswap
+        subroutine ssymm(side,uplo,m,n,alpha,a,lda,b,ldb,beta,c,ldc)
+            character :: side
+            character :: uplo
+            integer :: m
+            integer :: n
+            real :: alpha
+            real dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            real dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            real :: beta
+            real dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine ssymm
+        subroutine ssymv(uplo,n,alpha,a,lda,x,incx,beta,y,incy)
+            character :: uplo
+            integer :: n
+            real :: alpha
+            real dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            real dimension(*) :: x
+            integer :: incx
+            real :: beta
+            real dimension(*) :: y
+            integer :: incy
+        end subroutine ssymv
+        subroutine ssyr(uplo,n,alpha,x,incx,a,lda)
+            character :: uplo
+            integer :: n
+            real :: alpha
+            real dimension(*) :: x
+            integer :: incx
+            real dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+        end subroutine ssyr
+        subroutine ssyr2(uplo,n,alpha,x,incx,y,incy,a,lda)
+            character :: uplo
+            integer :: n
+            real :: alpha
+            real dimension(*) :: x
+            integer :: incx
+            real dimension(*) :: y
+            integer :: incy
+            real dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+        end subroutine ssyr2
+        subroutine ssyr2k(uplo,trans,n,k,alpha,a,lda,b,ldb,beta,c,ldc)
+            character :: uplo
+            character :: trans
+            integer :: n
+            integer :: k
+            real :: alpha
+            real dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            real dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            real :: beta
+            real dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine ssyr2k
+        subroutine ssyrk(uplo,trans,n,k,alpha,a,lda,beta,c,ldc)
+            character :: uplo
+            character :: trans
+            integer :: n
+            integer :: k
+            real :: alpha
+            real dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            real :: beta
+            real dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine ssyrk
+        subroutine stbmv(uplo,trans,diag,n,k,a,lda,x,incx)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            integer :: k
+            real dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            real dimension(*) :: x
+            integer :: incx
+        end subroutine stbmv
+        subroutine stbsv(uplo,trans,diag,n,k,a,lda,x,incx)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            integer :: k
+            real dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            real dimension(*) :: x
+            integer :: incx
+        end subroutine stbsv
+        subroutine stpmv(uplo,trans,diag,n,ap,x,incx)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            real dimension(*) :: ap
+            real dimension(*) :: x
+            integer :: incx
+        end subroutine stpmv
+        subroutine stpsv(uplo,trans,diag,n,ap,x,incx)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            real dimension(*) :: ap
+            real dimension(*) :: x
+            integer :: incx
+        end subroutine stpsv
+        subroutine strmm(side,uplo,transa,diag,m,n,alpha,a,lda,b,ldb)
+            character :: side
+            character :: uplo
+            character :: transa
+            character :: diag
+            integer :: m
+            integer :: n
+            real :: alpha
+            real dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            real dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+        end subroutine strmm
+        subroutine strmv(uplo,trans,diag,n,a,lda,x,incx)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            real dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            real dimension(*) :: x
+            integer :: incx
+        end subroutine strmv
+        subroutine strsm(side,uplo,transa,diag,m,n,alpha,a,lda,b,ldb)
+            character :: side
+            character :: uplo
+            character :: transa
+            character :: diag
+            integer :: m
+            integer :: n
+            real :: alpha
+            real dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            real dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+        end subroutine strsm
+        subroutine strsv(uplo,trans,diag,n,a,lda,x,incx)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            real dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            real dimension(*) :: x
+            integer :: incx
+        end subroutine strsv
+        subroutine xerbla(srname,info)
+            character*(*) :: srname
+            integer :: info
+        end subroutine xerbla
+        subroutine xerbla_array(srname_array,srname_len,info)
+            character(len=1) dimension(srname_len) :: srname_array
+            integer, optional,check(shape(srname_array, 0) == srname_len),depend(srname_array) :: srname_len=shape(srname_array, 0)
+            integer :: info
+        end subroutine xerbla_array
+        subroutine zaxpy(n,za,zx,incx,zy,incy)
+            integer :: n
+            complex*16 :: za
+            complex*16 dimension(*) :: zx
+            integer :: incx
+            complex*16 dimension(*) :: zy
+            integer :: incy
+        end subroutine zaxpy
+        subroutine zcopy(n,zx,incx,zy,incy)
+            integer :: n
+            complex*16 dimension(*) :: zx
+            integer :: incx
+            complex*16 dimension(*) :: zy
+            integer :: incy
+        end subroutine zcopy
+        function zdotc(n,zx,incx,zy,incy)
+            integer :: n
+            complex*16 dimension(*) :: zx
+            integer :: incx
+            complex*16 dimension(*) :: zy
+            integer :: incy
+            complex*16 :: zdotc
+        end function zdotc
+        function zdotu(n,zx,incx,zy,incy)
+            integer :: n
+            complex*16 dimension(*) :: zx
+            integer :: incx
+            complex*16 dimension(*) :: zy
+            integer :: incy
+            complex*16 :: zdotu
+        end function zdotu
+        subroutine zdrot(n,zx,incx,zy,incy,c,s)
+            integer :: n
+            complex*16 dimension(*) :: zx
+            integer :: incx
+            complex*16 dimension(*) :: zy
+            integer :: incy
+            double precision :: c
+            double precision :: s
+        end subroutine zdrot
+        subroutine zdscal(n,da,zx,incx)
+            integer :: n
+            double precision :: da
+            complex*16 dimension(*) :: zx
+            integer :: incx
+        end subroutine zdscal
+        subroutine zgbmv(trans,m,n,kl,ku,alpha,a,lda,x,incx,beta,y,incy)
+            character :: trans
+            integer :: m
+            integer :: n
+            integer :: kl
+            integer :: ku
+            complex*16 :: alpha
+            complex*16 dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex*16 dimension(*) :: x
+            integer :: incx
+            complex*16 :: beta
+            complex*16 dimension(*) :: y
+            integer :: incy
+        end subroutine zgbmv
+        subroutine zgemm(transa,transb,m,n,k,alpha,a,lda,b,ldb,beta,c,ldc)
+            character :: transa
+            character :: transb
+            integer :: m
+            integer :: n
+            integer :: k
+            complex*16 :: alpha
+            complex*16 dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex*16 dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            complex*16 :: beta
+            complex*16 dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine zgemm
+        subroutine zgemmtr(uplo,transa,transb,n,k,alpha,a,lda,b,ldb,beta,c,ldc)
+            character :: uplo
+            character :: transa
+            character :: transb
+            integer :: n
+            integer :: k
+            complex*16 :: alpha
+            complex*16 dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex*16 dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            complex*16 :: beta
+            complex*16 dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine zgemmtr
+        subroutine zgemv(trans,m,n,alpha,a,lda,x,incx,beta,y,incy)
+            character :: trans
+            integer :: m
+            integer :: n
+            complex*16 :: alpha
+            complex*16 dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex*16 dimension(*) :: x
+            integer :: incx
+            complex*16 :: beta
+            complex*16 dimension(*) :: y
+            integer :: incy
+        end subroutine zgemv
+        subroutine zgerc(m,n,alpha,x,incx,y,incy,a,lda)
+            integer :: m
+            integer :: n
+            complex*16 :: alpha
+            complex*16 dimension(*) :: x
+            integer :: incx
+            complex*16 dimension(*) :: y
+            integer :: incy
+            complex*16 dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+        end subroutine zgerc
+        subroutine zgeru(m,n,alpha,x,incx,y,incy,a,lda)
+            integer :: m
+            integer :: n
+            complex*16 :: alpha
+            complex*16 dimension(*) :: x
+            integer :: incx
+            complex*16 dimension(*) :: y
+            integer :: incy
+            complex*16 dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+        end subroutine zgeru
+        subroutine zhbmv(uplo,n,k,alpha,a,lda,x,incx,beta,y,incy)
+            character :: uplo
+            integer :: n
+            integer :: k
+            complex*16 :: alpha
+            complex*16 dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex*16 dimension(*) :: x
+            integer :: incx
+            complex*16 :: beta
+            complex*16 dimension(*) :: y
+            integer :: incy
+        end subroutine zhbmv
+        subroutine zhemm(side,uplo,m,n,alpha,a,lda,b,ldb,beta,c,ldc)
+            character :: side
+            character :: uplo
+            integer :: m
+            integer :: n
+            complex*16 :: alpha
+            complex*16 dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex*16 dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            complex*16 :: beta
+            complex*16 dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine zhemm
+        subroutine zhemv(uplo,n,alpha,a,lda,x,incx,beta,y,incy)
+            character :: uplo
+            integer :: n
+            complex*16 :: alpha
+            complex*16 dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex*16 dimension(*) :: x
+            integer :: incx
+            complex*16 :: beta
+            complex*16 dimension(*) :: y
+            integer :: incy
+        end subroutine zhemv
+        subroutine zher(uplo,n,alpha,x,incx,a,lda)
+            character :: uplo
+            integer :: n
+            double precision :: alpha
+            complex*16 dimension(*) :: x
+            integer :: incx
+            complex*16 dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+        end subroutine zher
+        subroutine zher2(uplo,n,alpha,x,incx,y,incy,a,lda)
+            character :: uplo
+            integer :: n
+            complex*16 :: alpha
+            complex*16 dimension(*) :: x
+            integer :: incx
+            complex*16 dimension(*) :: y
+            integer :: incy
+            complex*16 dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+        end subroutine zher2
+        subroutine zher2k(uplo,trans,n,k,alpha,a,lda,b,ldb,beta,c,ldc)
+            character :: uplo
+            character :: trans
+            integer :: n
+            integer :: k
+            complex*16 :: alpha
+            complex*16 dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex*16 dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision :: beta
+            complex*16 dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine zher2k
+        subroutine zherk(uplo,trans,n,k,alpha,a,lda,beta,c,ldc)
+            character :: uplo
+            character :: trans
+            integer :: n
+            integer :: k
+            double precision :: alpha
+            complex*16 dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision :: beta
+            complex*16 dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine zherk
+        subroutine zhpmv(uplo,n,alpha,ap,x,incx,beta,y,incy)
+            character :: uplo
+            integer :: n
+            complex*16 :: alpha
+            complex*16 dimension(*) :: ap
+            complex*16 dimension(*) :: x
+            integer :: incx
+            complex*16 :: beta
+            complex*16 dimension(*) :: y
+            integer :: incy
+        end subroutine zhpmv
+        subroutine zhpr(uplo,n,alpha,x,incx,ap)
+            character :: uplo
+            integer :: n
+            double precision :: alpha
+            complex*16 dimension(*) :: x
+            integer :: incx
+            complex*16 dimension(*) :: ap
+        end subroutine zhpr
+        subroutine zhpr2(uplo,n,alpha,x,incx,y,incy,ap)
+            character :: uplo
+            integer :: n
+            complex*16 :: alpha
+            complex*16 dimension(*) :: x
+            integer :: incx
+            complex*16 dimension(*) :: y
+            integer :: incy
+            complex*16 dimension(*) :: ap
+        end subroutine zhpr2
+        subroutine zrotg(a,b,c,s)
+            complex(kind=8) intent(inout) :: a
+            complex(kind=8) :: b
+            real(kind=8) intent(inout) :: c
+            complex(kind=8) intent(inout) :: s
+        end subroutine zrotg
+        subroutine zscal(n,za,zx,incx)
+            integer :: n
+            complex*16 :: za
+            complex*16 dimension(*) :: zx
+            integer :: incx
+        end subroutine zscal
+        subroutine zswap(n,zx,incx,zy,incy)
+            integer :: n
+            complex*16 dimension(*) :: zx
+            integer :: incx
+            complex*16 dimension(*) :: zy
+            integer :: incy
+        end subroutine zswap
+        subroutine zsymm(side,uplo,m,n,alpha,a,lda,b,ldb,beta,c,ldc)
+            character :: side
+            character :: uplo
+            integer :: m
+            integer :: n
+            complex*16 :: alpha
+            complex*16 dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex*16 dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            complex*16 :: beta
+            complex*16 dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine zsymm
+        subroutine zsyr2k(uplo,trans,n,k,alpha,a,lda,b,ldb,beta,c,ldc)
+            character :: uplo
+            character :: trans
+            integer :: n
+            integer :: k
+            complex*16 :: alpha
+            complex*16 dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex*16 dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            complex*16 :: beta
+            complex*16 dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine zsyr2k
+        subroutine zsyrk(uplo,trans,n,k,alpha,a,lda,beta,c,ldc)
+            character :: uplo
+            character :: trans
+            integer :: n
+            integer :: k
+            complex*16 :: alpha
+            complex*16 dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex*16 :: beta
+            complex*16 dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+        end subroutine zsyrk
+        subroutine ztbmv(uplo,trans,diag,n,k,a,lda,x,incx)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            integer :: k
+            complex*16 dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex*16 dimension(*) :: x
+            integer :: incx
+        end subroutine ztbmv
+        subroutine ztbsv(uplo,trans,diag,n,k,a,lda,x,incx)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            integer :: k
+            complex*16 dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex*16 dimension(*) :: x
+            integer :: incx
+        end subroutine ztbsv
+        subroutine ztpmv(uplo,trans,diag,n,ap,x,incx)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            complex*16 dimension(*) :: ap
+            complex*16 dimension(*) :: x
+            integer :: incx
+        end subroutine ztpmv
+        subroutine ztpsv(uplo,trans,diag,n,ap,x,incx)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            complex*16 dimension(*) :: ap
+            complex*16 dimension(*) :: x
+            integer :: incx
+        end subroutine ztpsv
+        subroutine ztrmm(side,uplo,transa,diag,m,n,alpha,a,lda,b,ldb)
+            character :: side
+            character :: uplo
+            character :: transa
+            character :: diag
+            integer :: m
+            integer :: n
+            complex*16 :: alpha
+            complex*16 dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex*16 dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+        end subroutine ztrmm
+        subroutine ztrmv(uplo,trans,diag,n,a,lda,x,incx)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            complex*16 dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex*16 dimension(*) :: x
+            integer :: incx
+        end subroutine ztrmv
+        subroutine ztrsm(side,uplo,transa,diag,m,n,alpha,a,lda,b,ldb)
+            character :: side
+            character :: uplo
+            character :: transa
+            character :: diag
+            integer :: m
+            integer :: n
+            complex*16 :: alpha
+            complex*16 dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex*16 dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+        end subroutine ztrsm
+        subroutine ztrsv(uplo,trans,diag,n,a,lda,x,incx)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            complex*16 dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            complex*16 dimension(*) :: x
+            integer :: incx
+        end subroutine ztrsv
+    end interface 
+end python module f2py_reference_blas
+
+! This file was auto-generated with f2py (version:2.5.1).
+! See:
+! https://web.archive.org/web/20140822061353/http://cens.ioc.ee/projects/f2py2e

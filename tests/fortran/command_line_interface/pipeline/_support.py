@@ -57,6 +57,7 @@ def _main_args(**overrides):
         "makefile": False,
         "generate_sources": False,
         "build_manifest": None,
+        "no_compile_input_sources": False,
         "native_fortran_sources": None,
         "native_compile_flags": None,
         "native_objects": None,

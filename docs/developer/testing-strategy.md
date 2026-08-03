@@ -128,12 +128,13 @@ For BLAS behavior, source `examples/blas/build_all.sh`, then run
 `python3 -m pytest -q examples/blas/tests` or one of its named test functions.
 The aggregate script sources the exact documented `build_prik.sh` and
 `build_f2py.sh` sequences. This compiles the sorted 155-source implementation
-once and builds each wrapper once; f2py links to the native artifact produced
-by the PRIK script.
+once and builds each wrapper once; the direct f2py script compiles the
+committed reviewed `blas.pyf` and links the native artifact produced by the
+PRIK script.
 Documentation source markers require the displayed commands to remain
 byte-for-byte equal to the executed scripts. `test_routine_coverage.py` audits
-the parsed source inventory, both export sets, visible named tests, and terminal
-outcomes. The dedicated CI lane explicitly adds
+the parsed source inventory, f2py signature drift, both export sets, visible
+named tests, and terminal outcomes. The dedicated CI lane explicitly adds
 `examples/blas/ci/full_surface.py` to the same pytest invocation and does not
 rebuild its wrappers afterward. User-run correctness tests and maintainer-only
 audits therefore have separate directories.
@@ -142,14 +143,16 @@ For LAPACK behavior, the dedicated lane sources `examples/lapack/build_all.sh`
 and then runs `python3 -m pytest -q examples/lapack/tests`. The aggregate
 script sources the exact documented `build_prik.sh` and `build_f2py.sh`
 sequences. The complete native corpus is compiled once, each wrapper is built
-once, and the f2py script reuses the native artifact produced by the PRIK
-script while testing the reviewed 127-routine SciPy 1.18.0 `float64`
-inventory. Documentation source markers keep the displayed commands equal to
-the executed scripts. The inventory audit fails on SciPy drift, missing
-sources or exports, missing explicitly named tests, and divergent
-documentation totals. CI explicitly adds `examples/lapack/ci/full_surface.py`
+once, and the direct f2py script compiles the committed reviewed `lapack.pyf`
+against the native artifact produced by the PRIK script while testing the
+127-routine SciPy 1.18.0 `float64` inventory. Documentation source markers keep
+the displayed commands equal to the executed scripts. The inventory audit
+fails on SciPy drift, signature drift, missing sources or exports, missing
+explicitly named tests, and divergent documentation claims. CI explicitly
+adds `examples/lapack/ci/full_surface.py`
 to the same pytest invocation, reusing the complete PRIK extension to require
-all 2,064 root exports and run a non-inventory runtime smoke call. User-run
+all 2,064 procedure exports, including module namespaces, and run a
+non-inventory runtime smoke call. User-run
 correctness tests and maintainer-only audits have separate directories.
 
 The complete `examples/` tree is a copyable execution boundary. Example code

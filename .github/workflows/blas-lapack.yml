@@ -72,10 +72,10 @@ jobs:
           PYTHONPATH: .
         run: |
           python - <<'PY'
-          from examples.lapack.f2py_build import F2PY_INOUT_ARGUMENTS
           from examples.lapack.routine_inventory import (
-              EXPECTED_LAPACK_ROOT_PROCEDURES,
+              EXPECTED_LAPACK_PROCEDURES,
               EXPECTED_LAPACK_SOURCE_FILES,
+              F2PY_SCALAR_WRITEBACK_ROUTINES,
               ROUTINE_GROUPS,
               ROUTINES,
               SCIPY_VERSION,
@@ -83,9 +83,9 @@ jobs:
 
           print(f"SciPy version: {SCIPY_VERSION}")
           print(f"LAPACK implementation sources: {EXPECTED_LAPACK_SOURCE_FILES}")
-          print(f"Expected PRIK root procedures: {EXPECTED_LAPACK_ROOT_PROCEDURES}")
+          print(f"Expected PRIK procedures: {EXPECTED_LAPACK_PROCEDURES}")
           print(f"Selected float64 correctness routines: {len(ROUTINES)}")
-          print(f"f2py scalar-writeback intent overlays: {len(F2PY_INOUT_ARGUMENTS)}")
+          print(f"f2py scalar writebacks: {len(F2PY_SCALAR_WRITEBACK_ROUTINES)}")
           for family, routines in ROUTINE_GROUPS.items():
               print(f"  {family}: {len(routines)}")
           PY

@@ -20,7 +20,7 @@ BLAS_SOURCE_ROOT = EXAMPLES_ROOT / "blas" / "native"
 LAPACK_SOURCE_ROOT = EXAMPLES_ROOT / "lapack" / "native"
 NATIVE_CACHE_ENV = "PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR"
 NATIVE_JOBS_ENV = "PRIK_REAL_LIBRARY_NATIVE_JOBS"
-NATIVE_CACHE_VERSION = "copyable-examples-v1"
+NATIVE_CACHE_VERSION = "copyable-examples-v2-modules"
 NATIVE_MODULE_SOURCE_STEMS = frozenset({"la_constants", "la_xisnan"})
 DEFAULT_NATIVE_COMPILE_JOB_LIMIT = 8
 FORTRAN_SUFFIXES = frozenset({".f", ".f90", ".f95", ".f03", ".f08", ".for", ".f77", ".ftn"})
@@ -35,6 +35,7 @@ class NativeLibrary:
     shared_library: Path
     archive: Path
     cache_dir: Path
+    module_dir: Path
     sources: tuple[Path, ...]
     compiler: str
 
@@ -191,9 +192,17 @@ def _cached_objects(
     jobs: int,
 ) -> tuple[Path, ...]:
     objects_dir = cache_dir / "objects"
+    modules_dir = cache_dir / "modules"
     complete = cache_dir / "objects.complete"
     objects = tuple(_cached_object_path(objects_dir, source) for source in sources)
-    if complete.is_file() and all(native_object.is_file() for native_object in objects):
+    module_sources = tuple(source for source in sources if source.stem.lower() in NATIVE_MODULE_SOURCE_STEMS)
+    modules = tuple(modules_dir / f"{source.stem.lower()}.mod" for source in module_sources)
+    if (
+        complete.is_file()
+        and modules_dir.is_dir()
+        and all(native_object.is_file() for native_object in objects)
+        and all(module.is_file() for module in modules)
+    ):
         return objects
 
     process_suffix = str(os.getpid())
@@ -203,7 +212,6 @@ def _cached_objects(
     shutil.rmtree(temporary_modules, ignore_errors=True)
     temporary_objects.mkdir(parents=True)
     temporary_modules.mkdir(parents=True)
-    module_sources = tuple(source for source in sources if source.stem.lower() in NATIVE_MODULE_SOURCE_STEMS)
     module_source_set = set(module_sources)
     independent_sources = tuple(source for source in sources if source not in module_source_set)
     for source in module_sources:
@@ -211,7 +219,8 @@ def _cached_objects(
     _compile_independent_sources(compiler, independent_sources, temporary_objects, temporary_modules, jobs)
     shutil.rmtree(objects_dir, ignore_errors=True)
     temporary_objects.rename(objects_dir)
-    shutil.rmtree(temporary_modules, ignore_errors=True)
+    shutil.rmtree(modules_dir, ignore_errors=True)
+    temporary_modules.rename(modules_dir)
     complete.write_text(f"{NATIVE_CACHE_VERSION}\n", encoding="utf-8")
     (cache_dir / "archive.complete").unlink(missing_ok=True)
     (cache_dir / "shared.complete").unlink(missing_ok=True)
@@ -284,6 +293,7 @@ def build_reference_library(
         shared_library=shared_library,
         archive=archive,
         cache_dir=cache_dir,
+        module_dir=cache_dir / "modules",
         sources=selected_sources,
         compiler=selected_compiler,
     )

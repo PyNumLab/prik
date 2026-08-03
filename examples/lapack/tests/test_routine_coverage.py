@@ -3,22 +3,14 @@
 from __future__ import annotations
 
 import ast
-import sys
+import re
 from pathlib import Path
 
 import pytest
 
-from ..f2py_build import (
-    F2PY_BUILD_DEPENDENCIES,
-    F2PY_INOUT_ARGUMENTS,
-    F2PY_KIND_MAP,
-    f2py_build_command,
-    f2py_signature_command,
-    f2py_source_plan,
-)
 from ..routine_inventory import (
     EXPLICIT_TEST_NAMES,
-    EXPECTED_LAPACK_ROOT_PROCEDURES,
+    EXPECTED_LAPACK_PROCEDURES,
     EXPECTED_LAPACK_SOURCE_FILES,
     F2PY_EXPORT_LIMITATIONS,
     F2PY_FUNCTION_RESULTS,
@@ -35,8 +27,39 @@ from ..routine_inventory import (
 TEST_ROOT = Path(__file__).resolve().parent
 EXAMPLE_ROOT = TEST_ROOT.parent
 NATIVE_ROOT = EXAMPLE_ROOT / "native"
+LAPACK_PYF = EXAMPLE_ROOT / "lapack.pyf"
+LAPACK_F2CMAP = EXAMPLE_ROOT / "lapack.f2cmap"
 FORTRAN_SUFFIXES = {".f", ".f90", ".f95", ".f03", ".f08", ".for", ".f77", ".ftn"}
+F2PY_INOUT_ARGUMENTS: dict[str, tuple[str, ...]] = {
+    "dlarfg": ("alpha", "tau"),
+    "dlartg": ("c", "s", "r"),
+    "dgbcon": ("rcond", "info"),
+    "dgecon": ("rcond", "info"),
+    "dgtcon": ("rcond", "info"),
+    "dpocon": ("rcond", "info"),
+    "dppcon": ("rcond", "info"),
+    "dsycon": ("rcond", "info"),
+    "dtrcon": ("rcond", "info"),
+}
+PYF_PROCEDURE = re.compile(
+    r"^\s*(subroutine|function)\s+([a-z]\w*)\s*\(.*?^\s*end\s+\1\s+\2\s*$",
+    re.IGNORECASE | re.MULTILINE | re.DOTALL,
+)
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
+
+
+def _pyf_procedures() -> dict[str, str]:
+    text = LAPACK_PYF.read_text(encoding="utf-8")
+    return {match.group(2).lower(): match.group(0) for match in PYF_PROCEDURE.finditer(text)}
+
+
+def _inout_arguments(block: str) -> set[str]:
+    return {
+        argument.strip().lower()
+        for line in block.splitlines()
+        if "intent(inout)" in line.lower() and "::" in line
+        for argument in line.split("::", 1)[1].split(",")
+    }
 
 
 def _explicit_test_owners() -> dict[str, list[tuple[str, Path]]]:
@@ -116,37 +139,31 @@ def test_inventory_groups_form_one_complete_partition():
     assert set(PRIK_ABI_ADAPTERS) <= set(ROUTINES)
 
 
-def test_f2py_source_plan_includes_required_kind_module(tmp_path: Path):
-    """Signature discovery covers every selected implementation and reviewed overlay."""
-    plan = f2py_source_plan(tmp_path)
-    dependency_count = len(F2PY_BUILD_DEPENDENCIES)
-    assert tuple(path.name for path in plan[:dependency_count]) == F2PY_BUILD_DEPENDENCIES
-    assert {path.stem for path in plan[dependency_count:]} == set(ROUTINES) - set(F2PY_EXPORT_LIMITATIONS)
-    assert len(plan) == dependency_count + len(ROUTINES) - len(F2PY_EXPORT_LIMITATIONS)
-    assert F2PY_KIND_MAP == "{'real': {'wp': 'double'}}\n"
-
-    for routine, arguments in F2PY_INOUT_ARGUMENTS.items():
-        source = next(path for path in plan if path.stem == routine)
-        prefix = "Cf2py" if source.suffix == ".f" else "!f2py"
-        assert source.parent == tmp_path / "f2py-intent-sources"
-        assert f"{prefix} intent(inout) {', '.join(arguments)}" in source.read_text(encoding="utf-8")
-
-    command = f2py_signature_command(tmp_path)
-    assert "only:" in command
-    assert ":" in command
-    assert (tmp_path / ".f2py_f2cmap").read_text(encoding="utf-8") == F2PY_KIND_MAP
+def test_committed_f2py_signature_matches_selected_surface():
+    """The reviewed signature exposes exactly the supported comparison surface."""
+    procedures = _pyf_procedures()
+    expected = set(ROUTINES) - set(F2PY_EXPORT_LIMITATIONS)
+    assert len(procedures) == len(expected) == 125
+    assert set(procedures) == expected
+    assert re.search(r"^\s*module\s+la_constants\s*$", LAPACK_PYF.read_text(encoding="utf-8"), re.MULTILINE)
+    assert LAPACK_F2CMAP.read_text(encoding="utf-8") == "{'real': {'wp': 'double'}}\n"
 
 
-def test_f2py_build_command_reuses_the_precompiled_native_library(tmp_path: Path):
-    native_library = tmp_path / "native" / "libprik_full_lapack.so"
-    command = f2py_build_command(tmp_path, native_library)
+def test_committed_f2py_signature_records_scalar_writebacks():
+    observed = {
+        routine: arguments for routine, block in _pyf_procedures().items() if (arguments := _inout_arguments(block))
+    }
+    assert observed == {routine: set(arguments) for routine, arguments in F2PY_INOUT_ARGUMENTS.items()}
 
-    assert command[:4] == (sys.executable, "-m", "numpy.f2py", "-c")
-    assert str(tmp_path / "f2py_reference_lapack_example.pyf") in command
-    assert f"-L{native_library.parent}" in command
-    assert "-lprik_full_lapack" in command
-    assert "--dep" not in command
-    assert not any(str(NATIVE_ROOT) in value for value in command)
+
+def test_f2py_script_compiles_the_signature_and_reuses_the_native_library():
+    script = (EXAMPLE_ROOT / "build_f2py.sh").read_text(encoding="utf-8")
+    assert 'python -m numpy.f2py -c \\\n  "$EXAMPLE_WORKSPACE/examples/lapack/lapack.pyf"' in script
+    assert '"-L$(dirname "$LAPACK_SHARED_LIBRARY")"' in script
+    assert "-lprik_full_lapack" in script
+    assert '--f2cmap "$EXAMPLE_WORKSPACE/examples/lapack/lapack.f2cmap"' in script
+    assert '--f90flags="-O0 -I$LAPACK_MODULE_DIR"' in script
+    assert "examples/lapack/native" not in script
 
 
 def test_documented_scripts_place_both_wrappers_under_one_build_root(prik_lapack, f2py_lapack):
@@ -162,7 +179,7 @@ def test_authoritative_native_source_boundary_is_complete_and_unique():
     )
     stems = {path.stem.lower() for path in sources}
     assert len(sources) == EXPECTED_LAPACK_SOURCE_FILES
-    assert EXPECTED_LAPACK_ROOT_PROCEDURES == EXPECTED_LAPACK_SOURCE_FILES - 2 + 4
+    assert EXPECTED_LAPACK_PROCEDURES == EXPECTED_LAPACK_SOURCE_FILES - 2 + 4
     assert set(ROUTINES) <= stems
     for routine, spec in ROUTINE_SPECS.items():
         assert (NATIVE_ROOT / spec.source_file).is_file(), routine
@@ -191,26 +208,17 @@ def test_selected_tests_keep_all_wrapper_calls_visible():
     assert missing == {}
 
 
-def test_documented_coverage_totals_match_inventory():
-    """Published totals are derived from the reviewed inventory, not hand-waved."""
-    readme = (EXAMPLE_ROOT / "README.md").read_text(encoding="utf-8")
-    expected_rows = {
-        "Authoritative LAPACK implementation sources": EXPECTED_LAPACK_SOURCE_FILES,
-        "Discovered root LAPACK procedures": EXPECTED_LAPACK_ROOT_PROCEDURES,
-        "Selected SciPy-backed float64 routines": len(ROUTINES),
-        "Explicit correctness tests": len(EXPLICIT_TEST_NAMES),
-        "PRIK root exports required in CI": EXPECTED_LAPACK_ROOT_PROCEDURES,
-        "Selected PRIK routines independently validated": len(ROUTINES),
-        "SciPy exports used": len(ROUTINES),
-        "f2py exports required in CI": len(ROUTINES) - len(F2PY_EXPORT_LIMITATIONS),
-        "Routines satisfying the independent oracle through f2py": len(ROUTINES) - len(F2PY_EXPORT_LIMITATIONS),
-        "Documented f2py source-parser export limitations": len(F2PY_EXPORT_LIMITATIONS),
-        "f2py scalar-writeback intent overlays": len(F2PY_INOUT_ARGUMENTS),
-        "Documented PRIK default-LOGICAL ABI adapters": len(PRIK_ABI_ADAPTERS),
-        "Documented unsupported/skipped routines": 0,
-    }
-    for label, count in expected_rows.items():
-        assert f"| {label} | {count:,} |" in readme
+def test_documented_coverage_claims_match_inventory():
+    """Published claims are derived from the reviewed inventory."""
+    readme = " ".join((EXAMPLE_ROOT / "README.md").read_text(encoding="utf-8").split())
+    assert len(EXPLICIT_TEST_NAMES) == len(ROUTINES)
+    assert f"PRIK wraps all {EXPECTED_LAPACK_PROCEDURES:,} discovered procedures" in readme
+    assert f"the {len(ROUTINES)} `float64` routines" in readme
+    assert f"raw f2py supports {len(ROUTINES) - len(F2PY_EXPORT_LIMITATIONS)}" in readme
+    assert f"All {len(EXPLICIT_TEST_NAMES)} selected routines have explicit correctness tests" in readme
+    assert f"The {len(F2PY_INOUT_ARGUMENTS)} scalar-writeback routines" in readme
+    assert f"owns {EXPECTED_LAPACK_SOURCE_FILES:,} LAPACK implementation sources" in readme
+    assert "no unsupported or skipped routines" in readme
 
 
 def test_selected_routines_are_exported_by_prik(prik_lapack):
@@ -221,6 +229,7 @@ def test_selected_routines_are_exported_by_prik(prik_lapack):
 
 def test_expected_f2py_routines_are_exported(f2py_lapack):
     """Only reproduced and documented f2py limitations may lack an export."""
+    assert getattr(f2py_lapack, "la_constants", None) is not None
     expected = [name for name in ROUTINES if name not in F2PY_EXPORT_LIMITATIONS]
     missing = [name for name in expected if not hasattr(f2py_lapack, name)]
     assert missing == []

@@ -3,19 +3,13 @@
 from __future__ import annotations
 
 import ast
-import sys
+import re
 from pathlib import Path
 
 import pytest
 
 from prik.parsers.fortran.parser import parse_fortran_file
 
-from ..f2py_build import (
-    BLAS_SOURCES,
-    F2PY_INOUT_ARGUMENTS,
-    f2py_build_command,
-    f2py_signature_command,
-)
 from ..routine_inventory import (
     ALL_ROUTINES,
     DIFFERENTIALLY_TESTED_ROUTINES,
@@ -30,6 +24,24 @@ from ..routine_inventory import (
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
 TEST_ROOT = Path(__file__).resolve().parent
 EXAMPLE_ROOT = TEST_ROOT.parent
+NATIVE_ROOT = EXAMPLE_ROOT / "native"
+BLAS_PYF = EXAMPLE_ROOT / "blas.pyf"
+FORTRAN_SUFFIXES = frozenset({".f", ".f90", ".f95", ".f03", ".f08", ".for", ".f77", ".ftn"})
+BLAS_SOURCES = tuple(
+    sorted(path for path in NATIVE_ROOT.iterdir() if path.is_file() and path.suffix.lower() in FORTRAN_SUFFIXES)
+)
+F2PY_INOUT_ARGUMENTS: dict[str, tuple[str, ...]] = {
+    "srotg": ("a", "b", "c", "s"),
+    "drotg": ("a", "b", "c", "s"),
+    "crotg": ("a", "c", "s"),
+    "zrotg": ("a", "c", "s"),
+    "srotmg": ("sd1", "sd2", "sx1", "sparam"),
+    "drotmg": ("dd1", "dd2", "dx1", "dparam"),
+}
+PYF_PROCEDURE = re.compile(
+    r"^\s*(subroutine|function)\s+([a-z]\w*)\s*\(.*?^\s*end\s+\1\s+\2\s*$",
+    re.IGNORECASE | re.MULTILINE | re.DOTALL,
+)
 
 TEST_MODULES = (
     "test_level1_real.py",
@@ -48,32 +60,39 @@ TEST_MODULES = (
 )
 
 
-def test_f2py_commands_generate_signatures_and_reuse_the_native_library(tmp_path: Path):
-    native_library = tmp_path / "native" / "libprik_full_blas.so"
-    signature_command = f2py_signature_command(tmp_path / "f2py")
-    f2py_command = f2py_build_command(tmp_path / "f2py", native_library)
-
-    assert signature_command[:5] == (sys.executable, "-m", "numpy.f2py", "-m", "f2py_reference_blas")
-    assert f2py_command[:4] == (sys.executable, "-m", "numpy.f2py", "-c")
-    assert f"-L{native_library.parent}" in f2py_command
-    assert "-lprik_full_blas" in f2py_command
-    for source in BLAS_SOURCES:
-        expected_f2py_source = (
-            tmp_path / "f2py" / "f2py-intent-sources" / source.name if source.stem in F2PY_INOUT_ARGUMENTS else source
-        )
-        assert str(expected_f2py_source) in signature_command
-        assert str(source) not in f2py_command
+def _pyf_procedures() -> dict[str, str]:
+    text = BLAS_PYF.read_text(encoding="utf-8")
+    return {match.group(2).lower(): match.group(0) for match in PYF_PROCEDURE.finditer(text)}
 
 
-def test_f2py_scalar_writeback_overlays_are_explicit(tmp_path: Path):
-    command = f2py_signature_command(tmp_path)
+def _inout_arguments(block: str) -> set[str]:
+    return {
+        argument.strip().lower()
+        for line in block.splitlines()
+        if "intent(inout)" in line.lower() and "::" in line
+        for argument in line.split("::", 1)[1].split(",")
+    }
 
-    for routine, arguments in F2PY_INOUT_ARGUMENTS.items():
-        source = next(source for source in BLAS_SOURCES if source.stem == routine)
-        overlay = tmp_path / "f2py-intent-sources" / source.name
-        prefix = "Cf2py" if source.suffix == ".f" else "!f2py"
-        assert str(overlay) in command
-        assert f"{prefix} intent(inout) {', '.join(arguments)}" in overlay.read_text(encoding="utf-8")
+
+def test_committed_f2py_signature_matches_source_inventory():
+    procedures = _pyf_procedures()
+    assert len(procedures) == len(BLAS_SOURCES) == 155
+    assert set(procedures) == set(_source_routines())
+
+
+def test_committed_f2py_signature_records_scalar_writebacks():
+    observed = {
+        routine: arguments for routine, block in _pyf_procedures().items() if (arguments := _inout_arguments(block))
+    }
+    assert observed == {routine: set(arguments) for routine, arguments in F2PY_INOUT_ARGUMENTS.items()}
+
+
+def test_f2py_script_compiles_the_signature_and_reuses_the_native_library():
+    script = (EXAMPLE_ROOT / "build_f2py.sh").read_text(encoding="utf-8")
+    assert 'python -m numpy.f2py -c \\\n  "$EXAMPLE_WORKSPACE/examples/blas/blas.pyf"' in script
+    assert '"-L$(dirname "$BLAS_SHARED_LIBRARY")"' in script
+    assert "-lprik_full_blas" in script
+    assert "examples/blas/native" not in script
 
 
 def _source_routines() -> tuple[str, ...]:
@@ -152,17 +171,13 @@ def test_every_routine_has_exactly_one_audited_outcome():
     assert PERMANENTLY_SKIPPED_ROUTINES == {}
 
 
-def test_documented_coverage_totals_match_inventory():
-    readme = (EXAMPLE_ROOT / "README.md").read_text(encoding="utf-8")
-    expected_rows = {
-        "Native source files": len(BLAS_SOURCES),
-        "Discovered callable routines": len(ALL_ROUTINES),
-        "PRIK exports and independently validated routines": len(PRIK_TESTED_ROUTINES),
-        "f2py exports": len(ALL_ROUTINES),
-        "Full independent plus differential success": len(DIFFERENTIALLY_TESTED_ROUTINES),
-        "f2py scalar-writeback intent overlays": len(F2PY_INOUT_ARGUMENTS),
-        "Unsupported routines": len(UNSUPPORTED_ROUTINES),
-        "Environmentally skipped routines": len(PERMANENTLY_SKIPPED_ROUTINES),
-    }
-    for label, count in expected_rows.items():
-        assert f"| {label} | {count:,} |" in readme
+def test_documented_coverage_claims_match_inventory():
+    readme = " ".join((EXAMPLE_ROOT / "README.md").read_text(encoding="utf-8").split())
+    assert len(BLAS_SOURCES) == len(ALL_ROUTINES) == len(PRIK_TESTED_ROUTINES)
+    assert len(ALL_ROUTINES) == len(DIFFERENTIALLY_TESTED_ROUTINES)
+    assert f"All {len(ALL_ROUTINES):,} routines are exported and validated through both wrappers" in readme
+    assert f"The {len(F2PY_INOUT_ARGUMENTS)} rotation routines" in readme
+    assert f"contains the {len(BLAS_SOURCES):,} files" in readme
+    assert UNSUPPORTED_ROUTINES == {}
+    assert PERMANENTLY_SKIPPED_ROUTINES == {}
+    assert "no unsupported or skipped routines" in readme

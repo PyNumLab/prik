@@ -802,13 +802,28 @@ def _project_compile_batches(
 
 
 def _source_paths(sources: str | Path | Iterable[str | Path]) -> tuple[Path, ...]:
-    paths = (Path(sources),) if isinstance(sources, str | Path) else tuple(Path(source) for source in sources)
-    if not paths:
-        raise ValueError("wrapper build requires at least one Fortran source file")
-    for path in paths:
+    inputs = (Path(sources),) if isinstance(sources, str | Path) else tuple(Path(source) for source in sources)
+    if not inputs:
+        raise ValueError("wrapper build requires at least one Fortran source file or directory")
+
+    paths: list[Path] = []
+    for path in inputs:
+        if path.is_dir():
+            discovered = sorted(
+                candidate
+                for candidate in path.rglob("*")
+                if candidate.is_file() and candidate.suffix.lower() in _FORTRAN_SOURCE_SUFFIXES
+            )
+            if not discovered:
+                raise ValueError(f"No recognized Fortran sources found under: {path}")
+            paths.extend(discovered)
+            continue
         if not path.is_file():
             raise FileNotFoundError(f"Fortran source not found: {path}")
-    return paths
+        if path.suffix.lower() not in _FORTRAN_SOURCE_SUFFIXES:
+            raise ValueError(f"Unrecognized Fortran source suffix: {path}")
+        paths.append(path)
+    return tuple(dict.fromkeys(paths))
 
 
 def _wrapper_output_paths(output_dir: str | Path | None) -> tuple[Path, Path]:
@@ -1341,7 +1356,7 @@ def _native_build_inputs(
         and not complete_link_items
     ):
         raise ValueError(
-            ".pyi wrapper build requires at least one native source, object, archive, shared library, "
+            "Wrapper build requires at least one native source, object, archive, shared library, "
             "ordered link item, or -l name"
         )
     return _NativeBuildInputs(
@@ -1913,6 +1928,7 @@ def build_fortran_extension(
     fortran_type_probe_runner: list[str] | None = None,
     fortran_type_probe_cache_dir: str | Path | None = None,
     refresh_fortran_type_probe: bool = False,
+    compile_input_sources: bool = True,
     native_fortran_sources: Iterable[str | Path] | None = None,
     native_fortran_flags: Iterable[str] | None = None,
     native_objects: Iterable[str | Path] | None = None,
@@ -1946,8 +1962,10 @@ def build_fortran_extension(
     output_path.mkdir(parents=True, exist_ok=True)
     preprocessing = preprocessing or _default_preprocessing_config()
     supplemental_source_paths = tuple(Path(path) for path in (native_fortran_sources or ()))
+    input_implementation_paths = source_paths if compile_input_sources else ()
+    implementation_source_paths = (*input_implementation_paths, *supplemental_source_paths)
     native_inputs = _native_build_inputs(
-        native_fortran_sources=(*source_paths, *supplemental_source_paths),
+        native_fortran_sources=implementation_source_paths,
         native_fortran_flags=native_fortran_flags,
         native_objects=native_objects,
         native_libraries=native_libraries,
@@ -2018,7 +2036,7 @@ def build_fortran_extension(
         library_dirs=native_inputs.library_dirs,
         explicit_include_dirs=native_inputs.explicit_include_dirs,
         include_dirs=include_dirs,
-        module_dir=output_path,
+        module_dir=output_path if native_source_objects else None,
     )
     _validate_native_link_paths(native_build_plan)
     native_compile_batches = _project_compile_batches(parsed, native_source_objects)

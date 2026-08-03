@@ -1,0 +1,1638 @@
+!    -*- f90 -*-
+! Note: the context of this file is case sensitive.
+
+python module f2py_reference_lapack_example
+    interface
+        module la_constants
+            integer, parameter,optional :: sp=kind(1.e0)
+            real(kind=4), parameter,optional :: szero=0.0_sp
+            real(kind=4), parameter,optional :: shalf=0.5_sp
+            real(kind=4), parameter,optional :: sone=1.0_sp
+            real(kind=4), parameter,optional :: stwo=2.0_sp
+            real(kind=4), parameter,optional :: sthree=3.0_sp
+            real(kind=4), parameter,optional :: sfour=4.0_sp
+            real(kind=4), parameter,optional :: seight=8.0_sp
+            real(kind=4), parameter,optional :: sten=10.0_sp
+            complex(kind=4), parameter,optional :: czero=(0.0_sp, 0.0_sp)
+            complex(kind=4), parameter,optional :: chalf=(0.5_sp, 0.0_sp)
+            complex(kind=4), parameter,optional :: cone=(1.0_sp, 0.0_sp)
+            character*1, parameter,optional :: sprefix='s'
+            character*1, parameter,optional :: cprefix='c'
+            real(kind=4), parameter,optional :: sulp=epsilon(0._sp)
+            real(kind=4), parameter,optional,depend(sulp) :: seps=sulp*0.5_sp
+            real(kind=4), parameter,optional,depend(sp) :: ssafmin=real(radix(0._sp),sp)**max(minexponent(0._sp)-1,1-maxexponent(0._sp))
+            real(kind=4), parameter,optional,depend(sone,ssafmin,sp) :: ssafmax=1.0
+            real(kind=4), parameter,optional,depend(sulp,ssafmin,sp) :: ssmlnum=1.0
+            real(kind=4), parameter,optional,depend(sulp,ssafmax,sone,ssafmin,sp) :: sbignum=4.0
+            real(kind=4), parameter,optional,depend(ssmlnum,sulp,ssafmin,sp) :: srtmin=sqrt(ssmlnum)
+            real(kind=4), parameter,optional,depend(sbignum,sulp,ssafmax,sone,ssafmin,sp) :: srtmax=sqrt(sbignum)
+            real(kind=4), parameter,optional,depend(sp) :: stsml=real(radix(0._sp), sp)**ceiling((minexponent(0._sp)-1)*0.5_sp)
+            real(kind=4), parameter,optional,depend(sp) :: stbig=real(radix(0._sp), sp)**floor((maxexponent(0._sp)-digits(0._sp)+1)*0.5_sp)
+            real(kind=4), parameter,optional,depend(sp) :: sssml=real(radix(0._sp), sp)**(-floor((minexponent(0._sp)-digits(0._sp))*0.5_sp))
+            real(kind=4), parameter,optional,depend(sp) :: ssbig=real(radix(0._sp), sp)**(-ceiling((maxexponent(0._sp)+digits(0._sp)-1)*0.5_sp))
+            integer, parameter,optional :: dp=kind(1.d0)
+            real(kind=8), parameter,optional :: dzero=0.0_dp
+            real(kind=8), parameter,optional :: dhalf=0.5_dp
+            real(kind=8), parameter,optional :: done=1.0_dp
+            real(kind=8), parameter,optional :: dtwo=2.0_dp
+            real(kind=8), parameter,optional :: dthree=3.0_dp
+            real(kind=8), parameter,optional :: dfour=4.0_dp
+            real(kind=8), parameter,optional :: deight=8.0_dp
+            real(kind=8), parameter,optional :: dten=10.0_dp
+            complex(kind=8), parameter,optional :: zzero=(0.0_dp, 0.0_dp)
+            complex(kind=8), parameter,optional :: zhalf=(0.5_dp, 0.0_dp)
+            complex(kind=8), parameter,optional :: zone=(1.0_dp, 0.0_dp)
+            character*1, parameter,optional :: dprefix='d'
+            character*1, parameter,optional :: zprefix='z'
+            real(kind=8), parameter,optional :: dulp=epsilon(0._dp)
+            real(kind=8), parameter,optional,depend(dulp) :: deps=dulp*0.5_dp
+            real(kind=8), parameter,optional,depend(dp) :: dsafmin=real(radix(0._dp),dp)**max(minexponent(0._dp)-1,1-maxexponent(0._dp))
+            real(kind=8), parameter,optional,depend(done,dsafmin,dp) :: dsafmax=1.0
+            real(kind=8), parameter,optional,depend(dulp,dsafmin,dp) :: dsmlnum=1.0
+            real(kind=8), parameter,optional,depend(dulp,dsafmax,done,dsafmin,dp) :: dbignum=4.0
+            real(kind=8), parameter,optional,depend(dsmlnum,dulp,dsafmin,dp) :: drtmin=sqrt(dsmlnum)
+            real(kind=8), parameter,optional,depend(dbignum,dulp,dsafmax,done,dsafmin,dp) :: drtmax=sqrt(dbignum)
+            real(kind=8), parameter,optional,depend(dp) :: dtsml=real(radix(0._dp), dp)**ceiling((minexponent(0._dp)-1)*0.5_dp)
+            real(kind=8), parameter,optional,depend(dp) :: dtbig=real(radix(0._dp), dp)**floor((maxexponent(0._dp)-digits(0._dp)+1)*0.5_dp)
+            real(kind=8), parameter,optional,depend(dp) :: dssml=real(radix(0._dp), dp)**(-floor((minexponent(0._dp)-digits(0._dp))*0.5_dp))
+            real(kind=8), parameter,optional,depend(dp) :: dsbig=real(radix(0._dp), dp)**(-ceiling((maxexponent(0._dp)+digits(0._dp)-1)*0.5_dp))
+        end module la_constants
+        function dlamch(cmach)
+            character :: cmach
+            double precision :: dlamch
+        end function dlamch
+        function dlangb(norm,n,kl,ku,ab,ldab,work)
+            character :: norm
+            integer :: n
+            integer :: kl
+            integer :: ku
+            double precision dimension(ldab,*) :: ab
+            integer, optional,check(shape(ab, 0) == ldab),depend(ab) :: ldab=shape(ab, 0)
+            double precision dimension(*) :: work
+            double precision :: dlangb
+        end function dlangb
+        function dlange(norm,m,n,a,lda,work)
+            character :: norm
+            integer :: m
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: work
+            double precision :: dlange
+        end function dlange
+        function dlantr(norm,uplo,diag,m,n,a,lda,work)
+            character :: norm
+            character :: uplo
+            character :: diag
+            integer :: m
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: work
+            double precision :: dlantr
+        end function dlantr
+        subroutine dlarf(side,m,n,v,incv,tau,c,ldc,work)
+            character :: side
+            integer :: m
+            integer :: n
+            double precision dimension(*) :: v
+            integer :: incv
+            double precision :: tau
+            double precision dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+            double precision dimension(*) :: work
+        end subroutine dlarf
+        subroutine dlarfg(n,alpha,x,incx,tau)
+            integer :: n
+            double precision intent(inout) :: alpha
+            double precision dimension(*) :: x
+            integer :: incx
+            double precision intent(inout) :: tau
+        end subroutine dlarfg
+        subroutine dlartg(f,g,c,s,r)
+            use la_constants, only: wp=>dp,zero=>dzero,half=>dhalf,one=>done,safmin=>dsafmin,safmax=>dsafmax
+            real(kind=wp) :: f
+            real(kind=wp) :: g
+            real(kind=wp) intent(inout) :: c
+            real(kind=wp) intent(inout) :: s
+            real(kind=wp) intent(inout) :: r
+        end subroutine dlartg
+        subroutine dlaswp(n,a,lda,k1,k2,ipiv,incx)
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            integer :: k1
+            integer :: k2
+            integer dimension(*) :: ipiv
+            integer :: incx
+        end subroutine dlaswp
+        subroutine dgecon(norm,n,a,lda,anorm,rcond,work,iwork,info)
+            character :: norm
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision :: anorm
+            double precision intent(inout) :: rcond
+            double precision dimension(*) :: work
+            integer dimension(*) :: iwork
+            integer intent(inout) :: info
+        end subroutine dgecon
+        subroutine dgeequ(m,n,a,lda,r,c,rowcnd,colcnd,amax,info)
+            integer :: m
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: r
+            double precision dimension(*) :: c
+            double precision :: rowcnd
+            double precision :: colcnd
+            double precision :: amax
+            integer :: info
+        end subroutine dgeequ
+        subroutine dgeequb(m,n,a,lda,r,c,rowcnd,colcnd,amax,info)
+            integer :: m
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: r
+            double precision dimension(*) :: c
+            double precision :: rowcnd
+            double precision :: colcnd
+            double precision :: amax
+            integer :: info
+        end subroutine dgeequb
+        subroutine dgesc2(n,a,lda,rhs,ipiv,jpiv,scale)
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: rhs
+            integer dimension(*) :: ipiv
+            integer dimension(*) :: jpiv
+            double precision :: scale
+        end subroutine dgesc2
+        subroutine dgesv(n,nrhs,a,lda,ipiv,b,ldb,info)
+            integer :: n
+            integer :: nrhs
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            integer dimension(*) :: ipiv
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            integer :: info
+        end subroutine dgesv
+        subroutine dgesvx(fact,trans,n,nrhs,a,lda,af,ldaf,ipiv,equed,r,c,b,ldb,x,ldx,rcond,ferr,berr,work,iwork,info)
+            character :: fact
+            character :: trans
+            integer :: n
+            integer :: nrhs
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldaf,*) :: af
+            integer, optional,check(shape(af, 0) == ldaf),depend(af) :: ldaf=shape(af, 0)
+            integer dimension(*) :: ipiv
+            character :: equed
+            double precision dimension(*) :: r
+            double precision dimension(*) :: c
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision dimension(ldx,*) :: x
+            integer, optional,check(shape(x, 0) == ldx),depend(x) :: ldx=shape(x, 0)
+            double precision :: rcond
+            double precision dimension(*) :: ferr
+            double precision dimension(*) :: berr
+            double precision dimension(*) :: work
+            integer dimension(*) :: iwork
+            integer :: info
+        end subroutine dgesvx
+        subroutine dgetc2(n,a,lda,ipiv,jpiv,info)
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            integer dimension(*) :: ipiv
+            integer dimension(*) :: jpiv
+            integer :: info
+        end subroutine dgetc2
+        subroutine dgetrf(m,n,a,lda,ipiv,info)
+            integer :: m
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            integer dimension(*) :: ipiv
+            integer :: info
+        end subroutine dgetrf
+        subroutine dgetri(n,a,lda,ipiv,work,lwork,info)
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            integer dimension(*) :: ipiv
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dgetri
+        subroutine dgetrs(trans,n,nrhs,a,lda,ipiv,b,ldb,info)
+            character :: trans
+            integer :: n
+            integer :: nrhs
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            integer dimension(*) :: ipiv
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            integer :: info
+        end subroutine dgetrs
+        subroutine dsycon(uplo,n,a,lda,ipiv,anorm,rcond,work,iwork,info)
+            character :: uplo
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            integer dimension(*) :: ipiv
+            double precision :: anorm
+            double precision intent(inout) :: rcond
+            double precision dimension(*) :: work
+            integer dimension(*) :: iwork
+            integer intent(inout) :: info
+        end subroutine dsycon
+        subroutine dsyconv(uplo,way,n,a,lda,ipiv,e,info)
+            character :: uplo
+            character :: way
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            integer dimension(*) :: ipiv
+            double precision dimension(*) :: e
+            integer :: info
+        end subroutine dsyconv
+        subroutine dsyequb(uplo,n,a,lda,s,scond,amax,work,info)
+            character :: uplo
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: s
+            double precision :: scond
+            double precision :: amax
+            double precision dimension(*) :: work
+            integer :: info
+        end subroutine dsyequb
+        subroutine dsysv(uplo,n,nrhs,a,lda,ipiv,b,ldb,work,lwork,info)
+            character :: uplo
+            integer :: n
+            integer :: nrhs
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            integer dimension(*) :: ipiv
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dsysv
+        subroutine dsysvx(fact,uplo,n,nrhs,a,lda,af,ldaf,ipiv,b,ldb,x,ldx,rcond,ferr,berr,work,lwork,iwork,info)
+            character :: fact
+            character :: uplo
+            integer :: n
+            integer :: nrhs
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldaf,*) :: af
+            integer, optional,check(shape(af, 0) == ldaf),depend(af) :: ldaf=shape(af, 0)
+            integer dimension(*) :: ipiv
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision dimension(ldx,*) :: x
+            integer, optional,check(shape(x, 0) == ldx),depend(x) :: ldx=shape(x, 0)
+            double precision :: rcond
+            double precision dimension(*) :: ferr
+            double precision dimension(*) :: berr
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer dimension(*) :: iwork
+            integer :: info
+        end subroutine dsysvx
+        subroutine dsytf2(uplo,n,a,lda,ipiv,info)
+            character :: uplo
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            integer dimension(*) :: ipiv
+            integer :: info
+        end subroutine dsytf2
+        subroutine dsytrf(uplo,n,a,lda,ipiv,work,lwork,info)
+            character :: uplo
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            integer dimension(*) :: ipiv
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dsytrf
+        subroutine dsytri(uplo,n,a,lda,ipiv,work,info)
+            character :: uplo
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            integer dimension(*) :: ipiv
+            double precision dimension(*) :: work
+            integer :: info
+        end subroutine dsytri
+        subroutine dsytrs(uplo,n,nrhs,a,lda,ipiv,b,ldb,info)
+            character :: uplo
+            integer :: n
+            integer :: nrhs
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            integer dimension(*) :: ipiv
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            integer :: info
+        end subroutine dsytrs
+        subroutine dlauum(uplo,n,a,lda,info)
+            character :: uplo
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            integer :: info
+        end subroutine dlauum
+        subroutine dpftrf(transr,uplo,n,a,info)
+            character :: transr
+            character :: uplo
+            integer :: n
+            double precision dimension(*) :: a
+            integer :: info
+        end subroutine dpftrf
+        subroutine dpftri(transr,uplo,n,a,info)
+            character :: transr
+            character :: uplo
+            integer :: n
+            double precision dimension(*) :: a
+            integer :: info
+        end subroutine dpftri
+        subroutine dpftrs(transr,uplo,n,nrhs,a,b,ldb,info)
+            character :: transr
+            character :: uplo
+            integer :: n
+            integer :: nrhs
+            double precision dimension(*) :: a
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            integer :: info
+        end subroutine dpftrs
+        subroutine dpocon(uplo,n,a,lda,anorm,rcond,work,iwork,info)
+            character :: uplo
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision :: anorm
+            double precision intent(inout) :: rcond
+            double precision dimension(*) :: work
+            integer dimension(*) :: iwork
+            integer intent(inout) :: info
+        end subroutine dpocon
+        subroutine dposv(uplo,n,nrhs,a,lda,b,ldb,info)
+            character :: uplo
+            integer :: n
+            integer :: nrhs
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            integer :: info
+        end subroutine dposv
+        subroutine dposvx(fact,uplo,n,nrhs,a,lda,af,ldaf,equed,s,b,ldb,x,ldx,rcond,ferr,berr,work,iwork,info)
+            character :: fact
+            character :: uplo
+            integer :: n
+            integer :: nrhs
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldaf,*) :: af
+            integer, optional,check(shape(af, 0) == ldaf),depend(af) :: ldaf=shape(af, 0)
+            character :: equed
+            double precision dimension(*) :: s
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision dimension(ldx,*) :: x
+            integer, optional,check(shape(x, 0) == ldx),depend(x) :: ldx=shape(x, 0)
+            double precision :: rcond
+            double precision dimension(*) :: ferr
+            double precision dimension(*) :: berr
+            double precision dimension(*) :: work
+            integer dimension(*) :: iwork
+            integer :: info
+        end subroutine dposvx
+        subroutine dpotrf(uplo,n,a,lda,info)
+            character :: uplo
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            integer :: info
+        end subroutine dpotrf
+        subroutine dpotri(uplo,n,a,lda,info)
+            character :: uplo
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            integer :: info
+        end subroutine dpotri
+        subroutine dpotrs(uplo,n,nrhs,a,lda,b,ldb,info)
+            character :: uplo
+            integer :: n
+            integer :: nrhs
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            integer :: info
+        end subroutine dpotrs
+        subroutine dppcon(uplo,n,ap,anorm,rcond,work,iwork,info)
+            character :: uplo
+            integer :: n
+            double precision dimension(*) :: ap
+            double precision :: anorm
+            double precision intent(inout) :: rcond
+            double precision dimension(*) :: work
+            integer dimension(*) :: iwork
+            integer intent(inout) :: info
+        end subroutine dppcon
+        subroutine dppsv(uplo,n,nrhs,ap,b,ldb,info)
+            character :: uplo
+            integer :: n
+            integer :: nrhs
+            double precision dimension(*) :: ap
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            integer :: info
+        end subroutine dppsv
+        subroutine dpptrf(uplo,n,ap,info)
+            character :: uplo
+            integer :: n
+            double precision dimension(*) :: ap
+            integer :: info
+        end subroutine dpptrf
+        subroutine dpptri(uplo,n,ap,info)
+            character :: uplo
+            integer :: n
+            double precision dimension(*) :: ap
+            integer :: info
+        end subroutine dpptri
+        subroutine dpptrs(uplo,n,nrhs,ap,b,ldb,info)
+            character :: uplo
+            integer :: n
+            integer :: nrhs
+            double precision dimension(*) :: ap
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            integer :: info
+        end subroutine dpptrs
+        subroutine dpstf2(uplo,n,a,lda,piv,rank_bn,tol,work,info)
+            character :: uplo
+            integer, optional,check(shape(piv, 0) == n),depend(piv) :: n=shape(piv, 0)
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            integer dimension(n) :: piv
+            integer :: rank_bn
+            double precision :: tol
+            double precision dimension(2 * n),depend(n) :: work
+            integer :: info
+        end subroutine dpstf2
+        subroutine dpstrf(uplo,n,a,lda,piv,rank_bn,tol,work,info)
+            character :: uplo
+            integer, optional,check(shape(piv, 0) == n),depend(piv) :: n=shape(piv, 0)
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            integer dimension(n) :: piv
+            integer :: rank_bn
+            double precision :: tol
+            double precision dimension(2 * n),depend(n) :: work
+            integer :: info
+        end subroutine dpstrf
+        subroutine dsfrk(transr,uplo,trans,n,k,alpha,a,lda,beta,c)
+            character :: transr
+            character :: uplo
+            character :: trans
+            integer :: n
+            integer :: k
+            double precision :: alpha
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision :: beta
+            double precision dimension(*) :: c
+        end subroutine dsfrk
+        subroutine dgbcon(norm,n,kl,ku,ab,ldab,ipiv,anorm,rcond,work,iwork,info)
+            character :: norm
+            integer :: n
+            integer :: kl
+            integer :: ku
+            double precision dimension(ldab,*) :: ab
+            integer, optional,check(shape(ab, 0) == ldab),depend(ab) :: ldab=shape(ab, 0)
+            integer dimension(*) :: ipiv
+            double precision :: anorm
+            double precision intent(inout) :: rcond
+            double precision dimension(*) :: work
+            integer dimension(*) :: iwork
+            integer intent(inout) :: info
+        end subroutine dgbcon
+        subroutine dgbsv(n,kl,ku,nrhs,ab,ldab,ipiv,b,ldb,info)
+            integer :: n
+            integer :: kl
+            integer :: ku
+            integer :: nrhs
+            double precision dimension(ldab,*) :: ab
+            integer, optional,check(shape(ab, 0) == ldab),depend(ab) :: ldab=shape(ab, 0)
+            integer dimension(*) :: ipiv
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            integer :: info
+        end subroutine dgbsv
+        subroutine dgbtrf(m,n,kl,ku,ab,ldab,ipiv,info)
+            integer :: m
+            integer :: n
+            integer :: kl
+            integer :: ku
+            double precision dimension(ldab,*) :: ab
+            integer, optional,check(shape(ab, 0) == ldab),depend(ab) :: ldab=shape(ab, 0)
+            integer dimension(*) :: ipiv
+            integer :: info
+        end subroutine dgbtrf
+        subroutine dgbtrs(trans,n,kl,ku,nrhs,ab,ldab,ipiv,b,ldb,info)
+            character :: trans
+            integer :: n
+            integer :: kl
+            integer :: ku
+            integer :: nrhs
+            double precision dimension(ldab,*) :: ab
+            integer, optional,check(shape(ab, 0) == ldab),depend(ab) :: ldab=shape(ab, 0)
+            integer dimension(*) :: ipiv
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            integer :: info
+        end subroutine dgbtrs
+        subroutine dgtcon(norm,n,dl,d,du,du2,ipiv,anorm,rcond,work,iwork,info)
+            character :: norm
+            integer :: n
+            double precision dimension(*) :: dl
+            double precision dimension(*) :: d
+            double precision dimension(*) :: du
+            double precision dimension(*) :: du2
+            integer dimension(*) :: ipiv
+            double precision :: anorm
+            double precision intent(inout) :: rcond
+            double precision dimension(*) :: work
+            integer dimension(*) :: iwork
+            integer intent(inout) :: info
+        end subroutine dgtcon
+        subroutine dgtsv(n,nrhs,dl,d,du,b,ldb,info)
+            integer :: n
+            integer :: nrhs
+            double precision dimension(*) :: dl
+            double precision dimension(*) :: d
+            double precision dimension(*) :: du
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            integer :: info
+        end subroutine dgtsv
+        subroutine dgtsvx(fact,trans,n,nrhs,dl,d,du,dlf,df,duf,du2,ipiv,b,ldb,x,ldx,rcond,ferr,berr,work,iwork,info)
+            character :: fact
+            character :: trans
+            integer :: n
+            integer :: nrhs
+            double precision dimension(*) :: dl
+            double precision dimension(*) :: d
+            double precision dimension(*) :: du
+            double precision dimension(*) :: dlf
+            double precision dimension(*) :: df
+            double precision dimension(*) :: duf
+            double precision dimension(*) :: du2
+            integer dimension(*) :: ipiv
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision dimension(ldx,*) :: x
+            integer, optional,check(shape(x, 0) == ldx),depend(x) :: ldx=shape(x, 0)
+            double precision :: rcond
+            double precision dimension(*) :: ferr
+            double precision dimension(*) :: berr
+            double precision dimension(*) :: work
+            integer dimension(*) :: iwork
+            integer :: info
+        end subroutine dgtsvx
+        subroutine dgttrf(n,dl,d,du,du2,ipiv,info)
+            integer :: n
+            double precision dimension(*) :: dl
+            double precision dimension(*) :: d
+            double precision dimension(*) :: du
+            double precision dimension(*) :: du2
+            integer dimension(*) :: ipiv
+            integer :: info
+        end subroutine dgttrf
+        subroutine dgttrs(trans,n,nrhs,dl,d,du,du2,ipiv,b,ldb,info)
+            character :: trans
+            integer :: n
+            integer :: nrhs
+            double precision dimension(*) :: dl
+            double precision dimension(*) :: d
+            double precision dimension(*) :: du
+            double precision dimension(*) :: du2
+            integer dimension(*) :: ipiv
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            integer :: info
+        end subroutine dgttrs
+        subroutine dpbsv(uplo,n,kd,nrhs,ab,ldab,b,ldb,info)
+            character :: uplo
+            integer :: n
+            integer :: kd
+            integer :: nrhs
+            double precision dimension(ldab,*) :: ab
+            integer, optional,check(shape(ab, 0) == ldab),depend(ab) :: ldab=shape(ab, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            integer :: info
+        end subroutine dpbsv
+        subroutine dpbtrf(uplo,n,kd,ab,ldab,info)
+            character :: uplo
+            integer :: n
+            integer :: kd
+            double precision dimension(ldab,*) :: ab
+            integer, optional,check(shape(ab, 0) == ldab),depend(ab) :: ldab=shape(ab, 0)
+            integer :: info
+        end subroutine dpbtrf
+        subroutine dpbtrs(uplo,n,kd,nrhs,ab,ldab,b,ldb,info)
+            character :: uplo
+            integer :: n
+            integer :: kd
+            integer :: nrhs
+            double precision dimension(ldab,*) :: ab
+            integer, optional,check(shape(ab, 0) == ldab),depend(ab) :: ldab=shape(ab, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            integer :: info
+        end subroutine dpbtrs
+        subroutine dptsv(n,nrhs,d,e,b,ldb,info)
+            integer :: n
+            integer :: nrhs
+            double precision dimension(*) :: d
+            double precision dimension(*) :: e
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            integer :: info
+        end subroutine dptsv
+        subroutine dptsvx(fact,n,nrhs,d,e,df,ef,b,ldb,x,ldx,rcond,ferr,berr,work,info)
+            character :: fact
+            integer :: n
+            integer :: nrhs
+            double precision dimension(*) :: d
+            double precision dimension(*) :: e
+            double precision dimension(*) :: df
+            double precision dimension(*) :: ef
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision dimension(ldx,*) :: x
+            integer, optional,check(shape(x, 0) == ldx),depend(x) :: ldx=shape(x, 0)
+            double precision :: rcond
+            double precision dimension(*) :: ferr
+            double precision dimension(*) :: berr
+            double precision dimension(*) :: work
+            integer :: info
+        end subroutine dptsvx
+        subroutine dpttrf(n,d,e,info)
+            integer :: n
+            double precision dimension(*) :: d
+            double precision dimension(*) :: e
+            integer :: info
+        end subroutine dpttrf
+        subroutine dpttrs(n,nrhs,d,e,b,ldb,info)
+            integer :: n
+            integer :: nrhs
+            double precision dimension(*) :: d
+            double precision dimension(*) :: e
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            integer :: info
+        end subroutine dpttrs
+        subroutine dtbtrs(uplo,trans,diag,n,kd,nrhs,ab,ldab,b,ldb,info)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            integer :: kd
+            integer :: nrhs
+            double precision dimension(ldab,*) :: ab
+            integer, optional,check(shape(ab, 0) == ldab),depend(ab) :: ldab=shape(ab, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            integer :: info
+        end subroutine dtbtrs
+        subroutine dtfsm(transr,side,uplo,trans,diag,m,n,alpha,a,b,ldb)
+            character :: transr
+            character :: side
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: m
+            integer :: n
+            double precision :: alpha
+            double precision dimension(*) :: a
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+        end subroutine dtfsm
+        subroutine dtfttp(transr,uplo,n,arf,ap,info)
+            character :: transr
+            character :: uplo
+            integer :: n
+            double precision dimension(*) :: arf
+            double precision dimension(*) :: ap
+            integer :: info
+        end subroutine dtfttp
+        subroutine dtfttr(transr,uplo,n,arf,a,lda,info)
+            character :: transr
+            character :: uplo
+            integer :: n
+            double precision dimension(*) :: arf
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            integer :: info
+        end subroutine dtfttr
+        subroutine dtpttf(transr,uplo,n,ap,arf,info)
+            character :: transr
+            character :: uplo
+            integer :: n
+            double precision dimension(*) :: ap
+            double precision dimension(*) :: arf
+            integer :: info
+        end subroutine dtpttf
+        subroutine dtpttr(uplo,n,ap,a,lda,info)
+            character :: uplo
+            integer :: n
+            double precision dimension(*) :: ap
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            integer :: info
+        end subroutine dtpttr
+        subroutine dtrcon(norm,uplo,diag,n,a,lda,rcond,work,iwork,info)
+            character :: norm
+            character :: uplo
+            character :: diag
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision intent(inout) :: rcond
+            double precision dimension(*) :: work
+            integer dimension(*) :: iwork
+            integer intent(inout) :: info
+        end subroutine dtrcon
+        subroutine dtrtri(uplo,diag,n,a,lda,info)
+            character :: uplo
+            character :: diag
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            integer :: info
+        end subroutine dtrtri
+        subroutine dtrtrs(uplo,trans,diag,n,nrhs,a,lda,b,ldb,info)
+            character :: uplo
+            character :: trans
+            character :: diag
+            integer :: n
+            integer :: nrhs
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            integer :: info
+        end subroutine dtrtrs
+        subroutine dtrttf(transr,uplo,n,a,lda,arf,info)
+            character :: transr
+            character :: uplo
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: arf
+            integer :: info
+        end subroutine dtrttf
+        subroutine dtrttp(uplo,n,a,lda,ap,info)
+            character :: uplo
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: ap
+            integer :: info
+        end subroutine dtrttp
+        subroutine dgels(trans,m,n,nrhs,a,lda,b,ldb,work,lwork,info)
+            character :: trans
+            integer :: m
+            integer :: n
+            integer :: nrhs
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dgels
+        subroutine dgelsd(m,n,nrhs,a,lda,b,ldb,s,rcond,rank_bn,work,lwork,iwork,info)
+            integer :: m
+            integer :: n
+            integer :: nrhs
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision dimension(*) :: s
+            double precision :: rcond
+            integer :: rank_bn
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer dimension(*) :: iwork
+            integer :: info
+        end subroutine dgelsd
+        subroutine dgelss(m,n,nrhs,a,lda,b,ldb,s,rcond,rank_bn,work,lwork,info)
+            integer :: m
+            integer :: n
+            integer :: nrhs
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision dimension(*) :: s
+            double precision :: rcond
+            integer :: rank_bn
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dgelss
+        subroutine dgelsy(m,n,nrhs,a,lda,b,ldb,jpvt,rcond,rank_bn,work,lwork,info)
+            integer :: m
+            integer :: n
+            integer :: nrhs
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            integer dimension(*) :: jpvt
+            double precision :: rcond
+            integer :: rank_bn
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dgelsy
+        subroutine dgglse(m,n,p,a,lda,b,ldb,c,d,x,work,lwork,info)
+            integer :: m
+            integer :: n
+            integer :: p
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision dimension(*) :: c
+            double precision dimension(*) :: d
+            double precision dimension(*) :: x
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dgglse
+        subroutine dgemqrt(side,trans,m,n,k,nb,v,ldv,t,ldt,c,ldc,work,info)
+            character :: side
+            character :: trans
+            integer :: m
+            integer :: n
+            integer :: k
+            integer :: nb
+            double precision dimension(ldv,*) :: v
+            integer, optional,check(shape(v, 0) == ldv),depend(v) :: ldv=shape(v, 0)
+            double precision dimension(ldt,*) :: t
+            integer, optional,check(shape(t, 0) == ldt),depend(t) :: ldt=shape(t, 0)
+            double precision dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+            double precision dimension(*) :: work
+            integer :: info
+        end subroutine dgemqrt
+        subroutine dgeqp3(m,n,a,lda,jpvt,tau,work,lwork,info)
+            integer :: m
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            integer dimension(*) :: jpvt
+            double precision dimension(*) :: tau
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dgeqp3
+        subroutine dgeqrf(m,n,a,lda,tau,work,lwork,info)
+            integer :: m
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: tau
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dgeqrf
+        subroutine dgeqrfp(m,n,a,lda,tau,work,lwork,info)
+            integer :: m
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: tau
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dgeqrfp
+        subroutine dgeqrt(m,n,nb,a,lda,t,ldt,work,info)
+            integer :: m
+            integer :: n
+            integer :: nb
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldt,*) :: t
+            integer, optional,check(shape(t, 0) == ldt),depend(t) :: ldt=shape(t, 0)
+            double precision dimension(*) :: work
+            integer :: info
+        end subroutine dgeqrt
+        subroutine dgerqf(m,n,a,lda,tau,work,lwork,info)
+            integer :: m
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: tau
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dgerqf
+        subroutine dorgqr(m,n,k,a,lda,tau,work,lwork,info)
+            integer :: m
+            integer :: n
+            integer :: k
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: tau
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dorgqr
+        subroutine dorgrq(m,n,k,a,lda,tau,work,lwork,info)
+            integer :: m
+            integer :: n
+            integer :: k
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: tau
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dorgrq
+        subroutine dormqr(side,trans,m,n,k,a,lda,tau,c,ldc,work,lwork,info)
+            character :: side
+            character :: trans
+            integer :: m
+            integer :: n
+            integer :: k
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: tau
+            double precision dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dormqr
+        subroutine dormrz(side,trans,m,n,k,l,a,lda,tau,c,ldc,work,lwork,info)
+            character :: side
+            character :: trans
+            integer :: m
+            integer :: n
+            integer :: k
+            integer :: l
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: tau
+            double precision dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dormrz
+        subroutine dtpmqrt(side,trans,m,n,k,l,nb,v,ldv,t,ldt,a,lda,b,ldb,work,info)
+            character :: side
+            character :: trans
+            integer :: m
+            integer :: n
+            integer :: k
+            integer :: l
+            integer :: nb
+            double precision dimension(ldv,*) :: v
+            integer, optional,check(shape(v, 0) == ldv),depend(v) :: ldv=shape(v, 0)
+            double precision dimension(ldt,*) :: t
+            integer, optional,check(shape(t, 0) == ldt),depend(t) :: ldt=shape(t, 0)
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision dimension(*) :: work
+            integer :: info
+        end subroutine dtpmqrt
+        subroutine dtpqrt(m,n,l,nb,a,lda,b,ldb,t,ldt,work,info)
+            integer :: m
+            integer :: n
+            integer :: l
+            integer :: nb
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision dimension(ldt,*) :: t
+            integer, optional,check(shape(t, 0) == ldt),depend(t) :: ldt=shape(t, 0)
+            double precision dimension(*) :: work
+            integer :: info
+        end subroutine dtpqrt
+        subroutine dtzrzf(m,n,a,lda,tau,work,lwork,info)
+            integer :: m
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: tau
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dtzrzf
+        subroutine dgebal(job,n,a,lda,ilo,ihi,scale,info)
+            character :: job
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            integer :: ilo
+            integer :: ihi
+            double precision dimension(*) :: scale
+            integer :: info
+        end subroutine dgebal
+        subroutine dgeev(jobvl,jobvr,n,a,lda,wr,wi,vl,ldvl,vr,ldvr,work,lwork,info)
+            character :: jobvl
+            character :: jobvr
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: wr
+            double precision dimension(*) :: wi
+            double precision dimension(ldvl,*) :: vl
+            integer, optional,check(shape(vl, 0) == ldvl),depend(vl) :: ldvl=shape(vl, 0)
+            double precision dimension(ldvr,*) :: vr
+            integer, optional,check(shape(vr, 0) == ldvr),depend(vr) :: ldvr=shape(vr, 0)
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dgeev
+        subroutine dgehrd(n,ilo,ihi,a,lda,tau,work,lwork,info)
+            integer :: n
+            integer :: ilo
+            integer :: ihi
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: tau
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dgehrd
+        subroutine dorghr(n,ilo,ihi,a,lda,tau,work,lwork,info)
+            integer :: n
+            integer :: ilo
+            integer :: ihi
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: tau
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dorghr
+        subroutine dtrexc(compq,n,t,ldt,q,ldq,ifst,ilst,work,info)
+            character :: compq
+            integer :: n
+            double precision dimension(ldt,*) :: t
+            integer, optional,check(shape(t, 0) == ldt),depend(t) :: ldt=shape(t, 0)
+            double precision dimension(ldq,*) :: q
+            integer, optional,check(shape(q, 0) == ldq),depend(q) :: ldq=shape(q, 0)
+            integer :: ifst
+            integer :: ilst
+            double precision dimension(*) :: work
+            integer :: info
+        end subroutine dtrexc
+        subroutine dtrsen(job,compq,select,n,t,ldt,q,ldq,wr,wi,m,s,sep,work,lwork,iwork,liwork,info)
+            character :: job
+            character :: compq
+            logical dimension(*) :: select
+            integer :: n
+            double precision dimension(ldt,*) :: t
+            integer, optional,check(shape(t, 0) == ldt),depend(t) :: ldt=shape(t, 0)
+            double precision dimension(ldq,*) :: q
+            integer, optional,check(shape(q, 0) == ldq),depend(q) :: ldq=shape(q, 0)
+            double precision dimension(*) :: wr
+            double precision dimension(*) :: wi
+            integer :: m
+            double precision :: s
+            double precision :: sep
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer dimension(*) :: iwork
+            integer :: liwork
+            integer :: info
+        end subroutine dtrsen
+        subroutine dtrsyl(trana,tranb,isgn,m,n,a,lda,b,ldb,c,ldc,scale,info)
+            character :: trana
+            character :: tranb
+            integer :: isgn
+            integer :: m
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+            double precision :: scale
+            integer :: info
+        end subroutine dtrsyl
+        subroutine dpteqr(compz,n,d,e,z,ldz,work,info)
+            character :: compz
+            integer :: n
+            double precision dimension(*) :: d
+            double precision dimension(*) :: e
+            double precision dimension(ldz,*) :: z
+            integer, optional,check(shape(z, 0) == ldz),depend(z) :: ldz=shape(z, 0)
+            double precision dimension(*) :: work
+            integer :: info
+        end subroutine dpteqr
+        subroutine dsbev(jobz,uplo,n,kd,ab,ldab,w,z,ldz,work,info)
+            character :: jobz
+            character :: uplo
+            integer :: n
+            integer :: kd
+            double precision dimension(ldab,*) :: ab
+            integer, optional,check(shape(ab, 0) == ldab),depend(ab) :: ldab=shape(ab, 0)
+            double precision dimension(*) :: w
+            double precision dimension(ldz,*) :: z
+            integer, optional,check(shape(z, 0) == ldz),depend(z) :: ldz=shape(z, 0)
+            double precision dimension(*) :: work
+            integer :: info
+        end subroutine dsbev
+        subroutine dsbevd(jobz,uplo,n,kd,ab,ldab,w,z,ldz,work,lwork,iwork,liwork,info)
+            character :: jobz
+            character :: uplo
+            integer :: n
+            integer :: kd
+            double precision dimension(ldab,*) :: ab
+            integer, optional,check(shape(ab, 0) == ldab),depend(ab) :: ldab=shape(ab, 0)
+            double precision dimension(*) :: w
+            double precision dimension(ldz,*) :: z
+            integer, optional,check(shape(z, 0) == ldz),depend(z) :: ldz=shape(z, 0)
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer dimension(*) :: iwork
+            integer :: liwork
+            integer :: info
+        end subroutine dsbevd
+        subroutine dsbevx(jobz,range,uplo,n,kd,ab,ldab,q,ldq,vl,vu,il,iu,abstol,m,w,z,ldz,work,iwork,ifail,info)
+            character :: jobz
+            character :: range
+            character :: uplo
+            integer :: n
+            integer :: kd
+            double precision dimension(ldab,*) :: ab
+            integer, optional,check(shape(ab, 0) == ldab),depend(ab) :: ldab=shape(ab, 0)
+            double precision dimension(ldq,*) :: q
+            integer, optional,check(shape(q, 0) == ldq),depend(q) :: ldq=shape(q, 0)
+            double precision :: vl
+            double precision :: vu
+            integer :: il
+            integer :: iu
+            double precision :: abstol
+            integer :: m
+            double precision dimension(*) :: w
+            double precision dimension(ldz,*) :: z
+            integer, optional,check(shape(z, 0) == ldz),depend(z) :: ldz=shape(z, 0)
+            double precision dimension(*) :: work
+            integer dimension(*) :: iwork
+            integer dimension(*) :: ifail
+            integer :: info
+        end subroutine dsbevx
+        subroutine dstebz(range,order,n,vl,vu,il,iu,abstol,d,e,m,nsplit,w,iblock,isplit,work,iwork,info)
+            character :: range
+            character :: order
+            integer :: n
+            double precision :: vl
+            double precision :: vu
+            integer :: il
+            integer :: iu
+            double precision :: abstol
+            double precision dimension(*) :: d
+            double precision dimension(*) :: e
+            integer :: m
+            integer :: nsplit
+            double precision dimension(*) :: w
+            integer dimension(*) :: iblock
+            integer dimension(*) :: isplit
+            double precision dimension(*) :: work
+            integer dimension(*) :: iwork
+            integer :: info
+        end subroutine dstebz
+        subroutine dstein(n,d,e,m,w,iblock,isplit,z,ldz,work,iwork,ifail,info)
+            integer :: n
+            double precision dimension(*) :: d
+            double precision dimension(*) :: e
+            integer :: m
+            double precision dimension(*) :: w
+            integer dimension(*) :: iblock
+            integer dimension(*) :: isplit
+            double precision dimension(ldz,*) :: z
+            integer, optional,check(shape(z, 0) == ldz),depend(z) :: ldz=shape(z, 0)
+            double precision dimension(*) :: work
+            integer dimension(*) :: iwork
+            integer dimension(*) :: ifail
+            integer :: info
+        end subroutine dstein
+        subroutine dstemr(jobz,range,n,d,e,vl,vu,il,iu,m,w,z,ldz,nzc,isuppz,tryrac,work,lwork,iwork,liwork,info)
+            character :: jobz
+            character :: range
+            integer :: n
+            double precision dimension(*) :: d
+            double precision dimension(*) :: e
+            double precision :: vl
+            double precision :: vu
+            integer :: il
+            integer :: iu
+            integer :: m
+            double precision dimension(*) :: w
+            double precision dimension(ldz,*) :: z
+            integer, optional,check(shape(z, 0) == ldz),depend(z) :: ldz=shape(z, 0)
+            integer :: nzc
+            integer dimension(*) :: isuppz
+            logical :: tryrac
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer dimension(*) :: iwork
+            integer :: liwork
+            integer :: info
+        end subroutine dstemr
+        subroutine dsterf(n,d,e,info)
+            integer :: n
+            double precision dimension(*) :: d
+            double precision dimension(*) :: e
+            integer :: info
+        end subroutine dsterf
+        subroutine dstev(jobz,n,d,e,z,ldz,work,info)
+            character :: jobz
+            integer :: n
+            double precision dimension(*) :: d
+            double precision dimension(*) :: e
+            double precision dimension(ldz,*) :: z
+            integer, optional,check(shape(z, 0) == ldz),depend(z) :: ldz=shape(z, 0)
+            double precision dimension(*) :: work
+            integer :: info
+        end subroutine dstev
+        subroutine dstevd(jobz,n,d,e,z,ldz,work,lwork,iwork,liwork,info)
+            character :: jobz
+            integer :: n
+            double precision dimension(*) :: d
+            double precision dimension(*) :: e
+            double precision dimension(ldz,*) :: z
+            integer, optional,check(shape(z, 0) == ldz),depend(z) :: ldz=shape(z, 0)
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer dimension(*) :: iwork
+            integer :: liwork
+            integer :: info
+        end subroutine dstevd
+        subroutine dsyev(jobz,uplo,n,a,lda,w,work,lwork,info)
+            character :: jobz
+            character :: uplo
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: w
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dsyev
+        subroutine dsyevd(jobz,uplo,n,a,lda,w,work,lwork,iwork,liwork,info)
+            character :: jobz
+            character :: uplo
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: w
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer dimension(*) :: iwork
+            integer :: liwork
+            integer :: info
+        end subroutine dsyevd
+        subroutine dsyevr(jobz,range,uplo,n,a,lda,vl,vu,il,iu,abstol,m,w,z,ldz,isuppz,work,lwork,iwork,liwork,info)
+            character :: jobz
+            character :: range
+            character :: uplo
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision :: vl
+            double precision :: vu
+            integer :: il
+            integer :: iu
+            double precision :: abstol
+            integer :: m
+            double precision dimension(*) :: w
+            double precision dimension(ldz,*) :: z
+            integer, optional,check(shape(z, 0) == ldz),depend(z) :: ldz=shape(z, 0)
+            integer dimension(*) :: isuppz
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer dimension(*) :: iwork
+            integer :: liwork
+            integer :: info
+        end subroutine dsyevr
+        subroutine dsyevx(jobz,range,uplo,n,a,lda,vl,vu,il,iu,abstol,m,w,z,ldz,work,lwork,iwork,ifail,info)
+            character :: jobz
+            character :: range
+            character :: uplo
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision :: vl
+            double precision :: vu
+            integer :: il
+            integer :: iu
+            double precision :: abstol
+            integer :: m
+            double precision dimension(*) :: w
+            double precision dimension(ldz,*) :: z
+            integer, optional,check(shape(z, 0) == ldz),depend(z) :: ldz=shape(z, 0)
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer dimension(*) :: iwork
+            integer dimension(*) :: ifail
+            integer :: info
+        end subroutine dsyevx
+        subroutine dsytrd(uplo,n,a,lda,d,e,tau,work,lwork,info)
+            character :: uplo
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: d
+            double precision dimension(*) :: e
+            double precision dimension(*) :: tau
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dsytrd
+        subroutine dggev(jobvl,jobvr,n,a,lda,b,ldb,alphar,alphai,beta,vl,ldvl,vr,ldvr,work,lwork,info)
+            character :: jobvl
+            character :: jobvr
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision dimension(*) :: alphar
+            double precision dimension(*) :: alphai
+            double precision dimension(*) :: beta
+            double precision dimension(ldvl,*) :: vl
+            integer, optional,check(shape(vl, 0) == ldvl),depend(vl) :: ldvl=shape(vl, 0)
+            double precision dimension(ldvr,*) :: vr
+            integer, optional,check(shape(vr, 0) == ldvr),depend(vr) :: ldvr=shape(vr, 0)
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dggev
+        subroutine dsygst(itype,uplo,n,a,lda,b,ldb,info)
+            integer :: itype
+            character :: uplo
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            integer :: info
+        end subroutine dsygst
+        subroutine dsygv(itype,jobz,uplo,n,a,lda,b,ldb,w,work,lwork,info)
+            integer :: itype
+            character :: jobz
+            character :: uplo
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision dimension(*) :: w
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dsygv
+        subroutine dsygvd(itype,jobz,uplo,n,a,lda,b,ldb,w,work,lwork,iwork,liwork,info)
+            integer :: itype
+            character :: jobz
+            character :: uplo
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision dimension(*) :: w
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer dimension(*) :: iwork
+            integer :: liwork
+            integer :: info
+        end subroutine dsygvd
+        subroutine dsygvx(itype,jobz,range,uplo,n,a,lda,b,ldb,vl,vu,il,iu,abstol,m,w,z,ldz,work,lwork,iwork,ifail,info)
+            integer :: itype
+            character :: jobz
+            character :: range
+            character :: uplo
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision :: vl
+            double precision :: vu
+            integer :: il
+            integer :: iu
+            double precision :: abstol
+            integer :: m
+            double precision dimension(*) :: w
+            double precision dimension(ldz,*) :: z
+            integer, optional,check(shape(z, 0) == ldz),depend(z) :: ldz=shape(z, 0)
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer dimension(*) :: iwork
+            integer dimension(*) :: ifail
+            integer :: info
+        end subroutine dsygvx
+        subroutine dtgexc(wantq,wantz,n,a,lda,b,ldb,q,ldq,z,ldz,ifst,ilst,work,lwork,info)
+            logical :: wantq
+            logical :: wantz
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision dimension(ldq,*) :: q
+            integer, optional,check(shape(q, 0) == ldq),depend(q) :: ldq=shape(q, 0)
+            double precision dimension(ldz,*) :: z
+            integer, optional,check(shape(z, 0) == ldz),depend(z) :: ldz=shape(z, 0)
+            integer :: ifst
+            integer :: ilst
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dtgexc
+        subroutine dtgsen(ijob,wantq,wantz,select,n,a,lda,b,ldb,alphar,alphai,beta,q,ldq,z,ldz,m,pl,pr,dif,work,lwork,iwork,liwork,info)
+            integer :: ijob
+            logical :: wantq
+            logical :: wantz
+            logical dimension(*) :: select
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision dimension(*) :: alphar
+            double precision dimension(*) :: alphai
+            double precision dimension(*) :: beta
+            double precision dimension(ldq,*) :: q
+            integer, optional,check(shape(q, 0) == ldq),depend(q) :: ldq=shape(q, 0)
+            double precision dimension(ldz,*) :: z
+            integer, optional,check(shape(z, 0) == ldz),depend(z) :: ldz=shape(z, 0)
+            integer :: m
+            double precision :: pl
+            double precision :: pr
+            double precision dimension(*) :: dif
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer dimension(*) :: iwork
+            integer :: liwork
+            integer :: info
+        end subroutine dtgsen
+        subroutine dtgsyl(trans,ijob,m,n,a,lda,b,ldb,c,ldc,d,ldd,e,lde,f,ldf,scale,dif,work,lwork,iwork,info)
+            character :: trans
+            integer :: ijob
+            integer :: m
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(ldb,*) :: b
+            integer, optional,check(shape(b, 0) == ldb),depend(b) :: ldb=shape(b, 0)
+            double precision dimension(ldc,*) :: c
+            integer, optional,check(shape(c, 0) == ldc),depend(c) :: ldc=shape(c, 0)
+            double precision dimension(ldd,*) :: d
+            integer, optional,check(shape(d, 0) == ldd),depend(d) :: ldd=shape(d, 0)
+            double precision dimension(lde,*) :: e
+            integer, optional,check(shape(e, 0) == lde),depend(e) :: lde=shape(e, 0)
+            double precision dimension(ldf,*) :: f
+            integer, optional,check(shape(f, 0) == ldf),depend(f) :: ldf=shape(f, 0)
+            double precision :: scale
+            double precision :: dif
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer dimension(*) :: iwork
+            integer :: info
+        end subroutine dtgsyl
+        subroutine dgejsv(joba,jobu,jobv,jobr,jobt,jobp,m,n,a,lda,sva,u,ldu,v,ldv,work,lwork,iwork,info)
+            character*1 :: joba
+            character*1 :: jobu
+            character*1 :: jobv
+            character*1 :: jobr
+            character*1 :: jobt
+            character*1 :: jobp
+            integer :: m
+            integer, optional,check(shape(sva, 0) == n),depend(sva) :: n=shape(sva, 0)
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(n) :: sva
+            double precision dimension(ldu,*) :: u
+            integer, optional,check(shape(u, 0) == ldu),depend(u) :: ldu=shape(u, 0)
+            double precision dimension(ldv,*) :: v
+            integer, optional,check(shape(v, 0) == ldv),depend(v) :: ldv=shape(v, 0)
+            double precision dimension(lwork) :: work
+            integer, optional,check(shape(work, 0) == lwork),depend(work) :: lwork=shape(work, 0)
+            integer dimension(*) :: iwork
+            integer :: info
+        end subroutine dgejsv
+        subroutine dgesdd(jobz,m,n,a,lda,s,u,ldu,vt,ldvt,work,lwork,iwork,info)
+            character :: jobz
+            integer :: m
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: s
+            double precision dimension(ldu,*) :: u
+            integer, optional,check(shape(u, 0) == ldu),depend(u) :: ldu=shape(u, 0)
+            double precision dimension(ldvt,*) :: vt
+            integer, optional,check(shape(vt, 0) == ldvt),depend(vt) :: ldvt=shape(vt, 0)
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer dimension(*) :: iwork
+            integer :: info
+        end subroutine dgesdd
+        subroutine dgesvd(jobu,jobvt,m,n,a,lda,s,u,ldu,vt,ldvt,work,lwork,info)
+            character :: jobu
+            character :: jobvt
+            integer :: m
+            integer :: n
+            double precision dimension(lda,*) :: a
+            integer, optional,check(shape(a, 0) == lda),depend(a) :: lda=shape(a, 0)
+            double precision dimension(*) :: s
+            double precision dimension(ldu,*) :: u
+            integer, optional,check(shape(u, 0) == ldu),depend(u) :: ldu=shape(u, 0)
+            double precision dimension(ldvt,*) :: vt
+            integer, optional,check(shape(vt, 0) == ldvt),depend(vt) :: ldvt=shape(vt, 0)
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer :: info
+        end subroutine dgesvd
+        subroutine dorcsd(jobu1,jobu2,jobv1t,jobv2t,trans,signs,m,p,q,x11,ldx11,x12,ldx12,x21,ldx21,x22,ldx22,theta,u1,ldu1,u2,ldu2,v1t,ldv1t,v2t,ldv2t,work,lwork,iwork,info)
+            character :: jobu1
+            character :: jobu2
+            character :: jobv1t
+            character :: jobv2t
+            character :: trans
+            character :: signs
+            integer :: m
+            integer :: p
+            integer :: q
+            double precision dimension(ldx11,*) :: x11
+            integer, optional,check(shape(x11, 0) == ldx11),depend(x11) :: ldx11=shape(x11, 0)
+            double precision dimension(ldx12,*) :: x12
+            integer, optional,check(shape(x12, 0) == ldx12),depend(x12) :: ldx12=shape(x12, 0)
+            double precision dimension(ldx21,*) :: x21
+            integer, optional,check(shape(x21, 0) == ldx21),depend(x21) :: ldx21=shape(x21, 0)
+            double precision dimension(ldx22,*) :: x22
+            integer, optional,check(shape(x22, 0) == ldx22),depend(x22) :: ldx22=shape(x22, 0)
+            double precision dimension(*) :: theta
+            double precision dimension(ldu1,*) :: u1
+            integer, optional,check(shape(u1, 0) == ldu1),depend(u1) :: ldu1=shape(u1, 0)
+            double precision dimension(ldu2,*) :: u2
+            integer, optional,check(shape(u2, 0) == ldu2),depend(u2) :: ldu2=shape(u2, 0)
+            double precision dimension(ldv1t,*) :: v1t
+            integer, optional,check(shape(v1t, 0) == ldv1t),depend(v1t) :: ldv1t=shape(v1t, 0)
+            double precision dimension(ldv2t,*) :: v2t
+            integer, optional,check(shape(v2t, 0) == ldv2t),depend(v2t) :: ldv2t=shape(v2t, 0)
+            double precision dimension(*) :: work
+            integer :: lwork
+            integer dimension(*) :: iwork
+            integer :: info
+        end subroutine dorcsd
+        subroutine dlasd4(n,i,d,z,delta,rho,sigma,work,info)
+            integer :: n
+            integer :: i
+            double precision dimension(*) :: d
+            double precision dimension(*) :: z
+            double precision dimension(*) :: delta
+            double precision :: rho
+            double precision :: sigma
+            double precision dimension(*) :: work
+            integer :: info
+        end subroutine dlasd4
+    end interface 
+end python module f2py_reference_lapack_example
+
+! This file was auto-generated with f2py (version:2.5.1).
+! See:
+! https://web.archive.org/web/20140822061353/http://cens.ioc.ee/projects/f2py2e

@@ -225,13 +225,19 @@ that mode the `.pyi` is the Python API source of truth; native source is not
 reparsed during wrapper generation.
 
 Both routes produce the same native extension build plan. In a source-driven
-build, positional Fortran files are semantic inputs and native compilation
-units. `--native-compile-flags` applies to those units, while additional
-`--native-fortran-sources`, objects, libraries, include directories, library
-directories, and ordered link items may complete the implementation without
-changing the parsed Python API. `--wrapper-fortran-flags` applies only to the
-generated Fortran bridge; `--wrapper-c-flags` applies to the generated binding
-and extension-link command.
+build, positional Fortran files are semantic inputs and, by default, native
+compilation units. Add `--no-compile-input-sources` to use them only as semantic
+inputs and link an already-built object, archive, shared library, or named
+library instead. Explicit `--native-fortran-sources` remain hidden
+implementation sources and are still compiled.
+
+`--native-compile-flags` applies to native compilation when it is enabled and
+always describes the compile model used for preprocessing and datatype
+measurement. Objects, libraries, include directories, library directories,
+and ordered link items may complete the implementation without changing the
+parsed Python API. `--wrapper-fortran-flags` applies only to the generated
+Fortran bridge; `--wrapper-c-flags` applies to the generated binding and
+extension-link command.
 
 For example, this command supplies every common build input shown by
 `python3 -m prik --help` and produces the Python shared library under
@@ -294,6 +300,20 @@ The latter is passed as both a link search path and a runtime search path. At
 least one native implementation input is required.
 Use `--native-fortran-sources` when prik should compile the implementation and
 `--native-objects` when objects, archives, or shared libraries are already built.
+
+To wrap an already-built library directly from its source directory, keep the
+sources as the semantic input and disable their automatic native compilation:
+
+```bash
+python3 -m prik path/to/fortran-sources \
+  --no-compile-input-sources \
+  --native-objects path/to/libsolver.so \
+  -I path/to/mod-files \
+  --out solver
+```
+
+PRIK reads the directory recursively in deterministic path order, compiles
+only its generated bridge and binding, and links the supplied native library.
 
 Semantic `.pyi` Makefile mode writes `<out-dir>/prik-build.json` first and then
 generates `<out-dir>/Makefile.prik` from that manifest. The manifest can be
