@@ -179,7 +179,7 @@ def test_authoritative_native_source_boundary_is_complete_and_unique():
     )
     stems = {path.stem.lower() for path in sources}
     assert len(sources) == EXPECTED_LAPACK_SOURCE_FILES
-    assert EXPECTED_LAPACK_PROCEDURES == EXPECTED_LAPACK_SOURCE_FILES - 2 + 4
+    assert EXPECTED_LAPACK_PROCEDURES == EXPECTED_LAPACK_SOURCE_FILES + 4
     assert set(ROUTINES) <= stems
     for routine, spec in ROUTINE_SPECS.items():
         assert (NATIVE_ROOT / spec.source_file).is_file(), routine

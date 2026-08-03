@@ -5,7 +5,7 @@ and NumPy f2py wrappers to the same native library. It validates 127 reviewed
 double-precision routines with SciPy and independent residuals,
 reconstructions, and storage checks.
 
-PRIK wraps all 2,064 discovered procedures. The comparison suite selects
+PRIK wraps all 2,066 discovered procedures. The comparison suite selects
 the 127 `float64` routines exposed by SciPy 1.18.0; raw f2py supports 125 of
 those source interfaces. All 127 selected routines have explicit correctness
 tests, with no unsupported or skipped routines.

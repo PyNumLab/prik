@@ -151,7 +151,7 @@ fails on SciPy drift, signature drift, missing sources or exports, missing
 explicitly named tests, and divergent documentation claims. CI explicitly
 adds `examples/lapack/ci/full_surface.py`
 to the same pytest invocation, reusing the complete PRIK extension to require
-all 2,064 procedure exports, including module namespaces, and run a
+all 2,066 procedure exports, including module namespaces, and run a
 non-inventory runtime smoke call. User-run
 correctness tests and maintainer-only audits have separate directories.
 
