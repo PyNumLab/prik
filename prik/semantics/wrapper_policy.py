@@ -242,6 +242,7 @@ class ModuleGetterAction(str, Enum):
     """Completed Python-visible read behavior for a module variable."""
 
     CONSTANT_VALUE = "constant_value"
+    NATIVE_CONSTANT_VALUE = "native_constant_value"
     DIRECT_VALUE = "direct_value"
     NULLABLE_SNAPSHOT = "nullable_snapshot"
     BORROWED_ARRAY_VIEW = "borrowed_array_view"
@@ -1981,11 +1982,19 @@ def _scalar_module_variable_policy(
     constant: bool,
 ) -> ModuleVariablePolicy:
     """Build one scalar value, snapshot, or constant module policy."""
-    blockers = _scalar_module_variable_blockers(variable, getter, setter, descriptor_kind, constant)
+    getter_action = _scalar_module_getter_action(variable, getter, constant)
+    blockers = _scalar_module_variable_blockers(
+        variable,
+        getter,
+        setter,
+        descriptor_kind,
+        constant,
+        getter_action,
+    )
     initializer = variable.metadata.get(models.RESOLVED_MODULE_VARIABLE_INITIALIZER_METADATA)
     return ModuleVariablePolicy(
         **_module_variable_policy_base(variable, module_name, owner_path),
-        getter_action=_scalar_module_getter_action(getter, constant),
+        getter_action=getter_action,
         getter=getter,
         setter_action=setter.setter_action if setter is not None else SetterAction.OMIT,
         native_assignment=_scalar_module_native_assignment(setter),
@@ -1996,7 +2005,7 @@ def _scalar_module_variable_policy(
         ),
         constant_value=(
             _scalar_module_literal_value(variable.default_value, variable.semantic_type.name)
-            if constant and variable.default_value is not None
+            if getter_action is ModuleGetterAction.CONSTANT_VALUE and variable.default_value is not None
             else None
         ),
         supported=not blockers,
@@ -5694,26 +5703,37 @@ def _scalar_module_variable_blockers(
     setter: OwnershipDecision | None,
     descriptor_kind: str | None,
     constant: bool,
+    getter_action: ModuleGetterAction,
 ) -> list[str]:
     """Return Phase 4 blockers for one module variable."""
     blockers = []
     if variable.visibility != "public":
         blockers.append("module variable is not public")
-    if not _is_first_lane_scalar_type(variable.semantic_type):
+    literal_string = (
+        getter_action is ModuleGetterAction.CONSTANT_VALUE
+        and variable.semantic_type.name == "String"
+        and int(variable.semantic_type.rank or 0) == 0
+    )
+    if not (_is_first_lane_scalar_type(variable.semantic_type) or literal_string):
         blockers.append("module variable is not a primitive rank-zero scalar")
+    expected_getter_kind = ObjectKind.STRING if literal_string else ObjectKind.SCALAR
+    supported_getter_actions = (
+        {CodegenAction.COPY_OUT} if literal_string else {CodegenAction.DIRECT_VALUE, CodegenAction.SNAPSHOT_COPY}
+    )
     if getter is None:
         blockers.append("module variable is missing completed getter policy")
-    elif getter.is_blocked or getter.kind is not ObjectKind.SCALAR:
+    elif getter.is_blocked or getter.kind is not expected_getter_kind:
         blockers.append("module variable getter is not a supported scalar policy")
-    elif getter.codegen_action not in {CodegenAction.DIRECT_VALUE, CodegenAction.SNAPSHOT_COPY}:
+    elif getter.codegen_action not in supported_getter_actions:
         blockers.append(f"module variable getter action {getter.codegen_action.value!r} is unsupported")
     if setter is None:
         blockers.append("module variable is missing completed setter policy")
     else:
         blockers.extend(_scalar_module_setter_blockers(setter, descriptor_kind, constant))
-    if constant and variable.default_value is None:
+    binding_constant = getter_action is ModuleGetterAction.CONSTANT_VALUE
+    if binding_constant and variable.default_value is None:
         blockers.append("scalar module constant is missing its completed value")
-    elif constant and not _is_scalar_module_literal(variable.default_value, variable.semantic_type.name):
+    elif binding_constant and not _is_scalar_module_literal(variable.default_value, variable.semantic_type.name):
         blockers.append("scalar module constant value is not a supported literal")
     initializer = variable.metadata.get(models.RESOLVED_MODULE_VARIABLE_INITIALIZER_METADATA)
     if initializer is not None and (setter is None or setter.setter_action is not SetterAction.WRITE_THROUGH):
@@ -5747,14 +5767,29 @@ def _scalar_module_setter_blockers(
 
 
 def _scalar_module_getter_action(
+    variable: models.SemanticVariable,
     getter: OwnershipDecision | None,
     constant: bool,
 ) -> ModuleGetterAction:
     if constant:
+        if _source_parameter_needs_native_getter(variable):
+            return ModuleGetterAction.NATIVE_CONSTANT_VALUE
         return ModuleGetterAction.CONSTANT_VALUE
     if getter is not None and getter.codegen_action is CodegenAction.SNAPSHOT_COPY and getter.nullable:
         return ModuleGetterAction.NULLABLE_SNAPSHOT
     return ModuleGetterAction.DIRECT_VALUE
+
+
+def _source_parameter_needs_native_getter(variable: models.SemanticVariable) -> bool:
+    """Return whether a source parameter value remains compiler-owned."""
+    return bool(
+        variable.origin.source_language == "fortran"
+        and variable.origin.source_kind == "variable"
+        and (
+            variable.default_value is None
+            or not _is_scalar_module_literal(variable.default_value, variable.semantic_type.name)
+        )
+    )
 
 
 def _scalar_module_native_assignment(
@@ -5798,6 +5833,8 @@ def _scalar_module_literal_value(value: object, semantic_type_name: str) -> obje
             return True
         if lowered in {".false.", "false"}:
             return False
+    if semantic_type_name == "String":
+        return ast.literal_eval(text)
     normalized = text.replace("D", "e").replace("d", "e")
     parsed = ast.literal_eval(normalized)
     if semantic_type_name in {"Complex64", "Complex128"} and isinstance(parsed, tuple):

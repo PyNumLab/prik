@@ -34,6 +34,7 @@ module declaration_interactions
   integer, parameter :: truth = 1 < 2
   real, parameter :: scale = 1.25d0
   character(len=*), parameter :: label = "timer"
+  character*1, parameter :: prefix = 'D'
   complex, parameter :: imaginary = (0.d0, 1.d0)
 end module declaration_interactions
 """,
@@ -52,6 +53,9 @@ end module declaration_interactions
     assert variables["truth"].value == "1"
     assert variables["scale"].value == "1.25d0"
     assert variables["label"].value == '"timer"'
+    assert variables["prefix"].is_parameter is True
+    assert variables["prefix"].value == "'D'"
+    assert variables["prefix"].symbolic_value == "'D'"
     assert variables["imaginary"].value == "(0.d0, 1.d0)"
 
 

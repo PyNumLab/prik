@@ -3545,7 +3545,7 @@ class FortranParser(ClassVisitor):
     def _strip_legacy_star_kind_prefix(left: str) -> str:
         """Remove an intrinsic `type*kind` prefix from a legacy declaration."""
         return re.sub(
-            r"^(integer|real|complex|logical)\s*\*\s*[0-9]+\s*",
+            r"^(integer|real|complex|logical|character)\s*\*\s*[0-9]+\s*",
             "",
             left,
             flags=re.IGNORECASE,

@@ -21,6 +21,8 @@ SCALAR_MODULE_SOURCE = """\
 module fscalar_module_state_f90
   implicit none
   integer(4), parameter :: nmax = 12
+  integer(4), parameter :: computed_limit = kind(1.0) * 2
+  character*1, parameter :: prefix = 'D'
   integer(4) :: counter = 3
   real(8), target :: target_scale = 1.5_8
   real(8), allocatable :: optional_scale
@@ -123,6 +125,8 @@ def test_whole_scalar_module_variable_behavior_uses_canonical_plan(
     assert {path.name for path in result.generated_sources} == expected_sources
 
     assert module.nmax == np.int32(12)
+    assert module.computed_limit == np.int32(8)
+    assert module.prefix == "D"
     assert module.counter == np.int32(3)
     assert module.target_scale == np.float64(1.5)
     assert module.optional_scale is None
@@ -184,10 +188,13 @@ def test_whole_scalar_module_variable_behavior_uses_canonical_plan(
     c_source = (build_dir / "fscalar_module_state_f90_wrapper.c").read_text(encoding="utf-8")
     fortran_source = (build_dir / "bind_c_fscalar_module_state_f90_wrapper.f90").read_text(encoding="utf-8")
     assert "bind_c_get_counter" in c_source
+    assert "bind_c_get_computed_limit" in c_source
+    assert 'PyUnicode_FromString("D")' in c_source
     assert "bind_c_set_counter" in c_source
     assert "bind_c_get_optional_scale" in c_source
     assert "bind_c_get_selected_scale" in c_source
     assert "function bind_c_get_counter()" in fortran_source
+    assert "function bind_c_get_computed_limit()" in fortran_source
     assert "subroutine bind_c_set_counter(" in fortran_source
     assert "function bind_c_get_optional_scale()" in fortran_source
     assert "function bind_c_get_selected_scale()" in fortran_source

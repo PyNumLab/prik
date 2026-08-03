@@ -818,14 +818,9 @@ class WrapperCodeGenerator:
         if action is ModuleGetterAction.BORROWED_ARRAY_VIEW:
             return self._module_borrowed_array_view_diagnostics(plan)
         if action is ModuleGetterAction.CONSTANT_VALUE:
-            diagnostics = []
-            if plan.bridge.getter_role is not None:
-                diagnostics.append(
-                    self._diagnostic(plan.owner_path, "constant-has-bridge-getter", plan.bridge.getter_role)
-                )
-            if plan.binding.constant_value is None:
-                diagnostics.append(self._diagnostic(plan.owner_path, "missing-module-constant-value", plan.owner_path))
-            return tuple(diagnostics)
+            return self._binding_constant_getter_diagnostics(plan)
+        if action is ModuleGetterAction.NATIVE_CONSTANT_VALUE:
+            return self._native_constant_getter_diagnostics(plan)
         if action is ModuleGetterAction.DERIVED_OBJECT:
             return self._derived_module_getter_role_diagnostics(plan)
         if plan.bridge.getter_role is None:
@@ -836,6 +831,36 @@ class WrapperCodeGenerator:
         }:
             return (self._diagnostic(plan.owner_path, "missing-module-descriptor-kind", action.value),)
         return ()
+
+    def _binding_constant_getter_diagnostics(
+        self,
+        plan: ModuleVariablePlan,
+    ) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Validate one binding-materialized module constant."""
+        diagnostics = []
+        if plan.bridge.getter_role is not None:
+            diagnostics.append(self._diagnostic(plan.owner_path, "constant-has-bridge-getter", plan.bridge.getter_role))
+        if plan.binding.constant_value is None:
+            diagnostics.append(self._diagnostic(plan.owner_path, "missing-module-constant-value", plan.owner_path))
+        return tuple(diagnostics)
+
+    def _native_constant_getter_diagnostics(
+        self,
+        plan: ModuleVariablePlan,
+    ) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Validate one compiler-evaluated module constant."""
+        diagnostics = []
+        if plan.bridge.getter_role is None:
+            diagnostics.append(
+                self._diagnostic(
+                    plan.owner_path,
+                    "missing-module-getter-role",
+                    plan.binding.getter_action.value,
+                )
+            )
+        if plan.binding.constant_value is not None:
+            diagnostics.append(self._diagnostic(plan.owner_path, "native-constant-has-binding-value", plan.owner_path))
+        return tuple(diagnostics)
 
     def _module_borrowed_array_view_diagnostics(
         self,
@@ -993,7 +1018,10 @@ class WrapperCodeGenerator:
             "pointer",
         }:
             return (self._diagnostic(plan.owner_path, "rejected-module-setter-without-descriptor", action.value),)
-        if action is SetterAction.OMIT and plan.binding.getter_action is not ModuleGetterAction.CONSTANT_VALUE:
+        if action is SetterAction.OMIT and plan.binding.getter_action not in {
+            ModuleGetterAction.CONSTANT_VALUE,
+            ModuleGetterAction.NATIVE_CONSTANT_VALUE,
+        }:
             return (self._diagnostic(plan.owner_path, "omitted-nonconstant-module-setter", action.value),)
         return ()
 

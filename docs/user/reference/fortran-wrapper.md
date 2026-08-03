@@ -1575,10 +1575,12 @@ print(counter)  # 5
 print(max_count)  # 100
 ```
 
-Parameters become `Final[...]` constants when their value is representable as
-a Python literal; no setter is generated. Rebinding `module.max_count` only
-shadows the Python attribute and does not change native Fortran state. Private
-variables are omitted.
+Parameters become `Final[...]` constants and have no native setter. A literal
+value is materialized directly by the binding. When a numeric initializer
+remains a Fortran expression, a generated bridge getter reads the
+compiler-evaluated parameter while the Python module is initialized. Rebinding
+`module.max_count` only shadows the Python attribute and does not change native
+Fortran state. Private variables are omitted.
 
 Allocatable module arrays are attributes returning persistent
 `Allocatable[T[...]]` handles:
