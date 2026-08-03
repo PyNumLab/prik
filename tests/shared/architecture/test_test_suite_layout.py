@@ -521,7 +521,7 @@ def test_pypi_package_identity_is_complete_and_consistent() -> None:
 
     for declaration in (
         'name = "prik"',
-        'version = "0.1.0"',
+        'version = "0.1.1"',
         '"Development Status :: 3 - Alpha"',
         'prik = "prik.cli:main"',
         'Homepage = "https://pynumlab.github.io/prik/"',
@@ -530,7 +530,7 @@ def test_pypi_package_identity_is_complete_and_consistent() -> None:
         'Changelog = "https://github.com/PyNumLab/prik/blob/main/CHANGELOG.md"',
     ):
         assert declaration in pyproject
-    assert "## 0.1.0 — 2026-08-03" in changelog
+    assert "## 0.1.1 — 2026-08-03" in changelog
     assert "`prik --version`" in changelog
     assert "`prik.__version__`" in changelog
     assert "**Project status: Alpha (`0.1.x`).**" in root_readme
