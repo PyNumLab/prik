@@ -19,6 +19,10 @@ writing low-level binding code. PRIK preserves modules, derived types, arrays,
 and native behavior, and generates an editable `.pyi` contract so you can
 shape the Python API.
 
+**Project status: Alpha (`0.1.x`).** Core Fortran wrapper workflows are
+implemented and tested across supported compilers, but public APIs may still
+change before `1.0`.
+
 The complete example below builds with one command:
 
 ```bash

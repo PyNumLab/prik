@@ -7,6 +7,17 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+_No unreleased changes._
+
+## 0.1.0 — 2026-08-03
+
+- First public release under the PRIK name.
+- Build importable Python extensions from supported Fortran sources.
+- Generate, inspect, edit, and rebuild from semantic `.pyi` contracts.
+- Expose the `prik` console command and the equivalent `python -m prik`
+  module command.
+- Report the installed release through `prik --version` and
+  `prik.__version__`.
 - Added a complete runnable Reference BLAS correctness example covering all 155
   discovered routines through PRIK, independent mathematical expectations, and
   f2py differential comparisons.
@@ -23,13 +34,3 @@ release tags add a leading `v` to the package version.
 - Fixed dependency-safe Python argument conversion ordering for wrappers whose
   array extents depend on later native scalar arguments, including padded BLAS
   leading dimensions.
-
-## 0.1.0 — 2026-08-01
-
-- First public release under the PRIK name.
-- Build importable Python extensions from supported Fortran sources.
-- Generate, inspect, edit, and rebuild from semantic `.pyi` contracts.
-- Expose the `prik` console command and the equivalent `python -m prik`
-  module command.
-- Report the installed release through `prik --version` and
-  `prik.__version__`.

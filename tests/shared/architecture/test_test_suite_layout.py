@@ -519,10 +519,13 @@ def test_pull_request_jobs_share_the_reviewed_component_workflow_steps() -> None
 def test_pypi_package_identity_is_complete_and_consistent() -> None:
     pyproject = PYPROJECT.read_text(encoding="utf-8")
     changelog = CHANGELOG.read_text(encoding="utf-8")
+    root_readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    website_home = (REPO_ROOT / "docs/index.md").read_text(encoding="utf-8")
 
     for declaration in (
         'name = "prik"',
         'version = "0.1.0"',
+        '"Development Status :: 3 - Alpha"',
         'prik = "prik.cli:main"',
         'Homepage = "https://pynumlab.github.io/prik/"',
         'Repository = "https://github.com/PyNumLab/prik"',
@@ -530,9 +533,11 @@ def test_pypi_package_identity_is_complete_and_consistent() -> None:
         'Changelog = "https://github.com/PyNumLab/prik/blob/main/CHANGELOG.md"',
     ):
         assert declaration in pyproject
-    assert "## 0.1.0 — 2026-08-01" in changelog
+    assert "## 0.1.0 — 2026-08-03" in changelog
     assert "`prik --version`" in changelog
     assert "`prik.__version__`" in changelog
+    assert "**Project status: Alpha (`0.1.x`).**" in root_readme
+    assert "**Project status: Alpha (`0.1.x`).**" in website_home
     assert MANIFEST.read_text(encoding="utf-8") == "include CHANGELOG.md\n"
 
 
