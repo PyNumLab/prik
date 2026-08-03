@@ -144,11 +144,7 @@ The implementation inventory is maintained across these surfaces:
 <!-- PRIK_C_DOCS_START
 Parser-related pull requests should update this file when the documented
 feature inventory, public API, diagnostics, project behavior, semantic handoff,
-or maintenance workflow changes. The parser-reference guard watches C,
-Fortran, and semantic `.pyi` references independently. For Fortran, it watches
-`prik/parsers/fortran/` and `tests/fortran/source_parsing/parsing/`. It expects
-`docs/developer/fortran-parser-reference.md` to change unless the PR is explicitly labeled to skip
-the guard.
+or maintenance workflow changes.
 PRIK_C_DOCS_END -->
 
 `parse_file` is the central orchestration path. It first slices the source into

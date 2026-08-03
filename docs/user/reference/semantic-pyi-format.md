@@ -46,8 +46,8 @@ Status terms used below:
 - **Roadmap**: design direction, not implemented wrapper behavior.
 
 Parser-related pull requests that change `prik/parsers/pyi/` or its focused
-loading tests must update this reference. The parser-reference guard checks
-that contract independently from the language parser references.
+loading tests should update this reference when the documented behavior
+changes.
 
 ## Contract Imports
 
