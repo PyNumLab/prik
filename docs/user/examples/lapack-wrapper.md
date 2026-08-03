@@ -80,7 +80,8 @@ are installed, you can copy that directory alone.
 ## 2. Compile LAPACK once and build the PRIK wrapper
 
 Compile the native files once into a shared `.so` file so both wrappers can
-reuse it:
+reuse it. The native builder links the installed LAPACK and BLAS development
+libraries for companion support symbols:
 
 <!-- prik-doc-source: examples/lapack/build_prik.sh -->
 ```bash

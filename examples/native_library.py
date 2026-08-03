@@ -20,8 +20,12 @@ BLAS_SOURCE_ROOT = EXAMPLES_ROOT / "blas" / "native"
 LAPACK_SOURCE_ROOT = EXAMPLES_ROOT / "lapack" / "native"
 NATIVE_CACHE_ENV = "PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR"
 NATIVE_JOBS_ENV = "PRIK_REAL_LIBRARY_NATIVE_JOBS"
-NATIVE_CACHE_VERSION = "copyable-examples-v2-modules"
+NATIVE_CACHE_VERSION = "copyable-examples-v3-link-dependencies"
 NATIVE_MODULE_SOURCE_STEMS = frozenset({"la_constants", "la_xisnan"})
+NATIVE_LINK_DEPENDENCIES = {
+    "blas": (),
+    "lapack": ("-llapack", "-lblas"),
+}
 DEFAULT_NATIVE_COMPILE_JOB_LIMIT = 8
 FORTRAN_SUFFIXES = frozenset({".f", ".f90", ".f95", ".f03", ".f08", ".for", ".f77", ".ftn"})
 SUPPORTED_LIBRARIES = ("blas", "lapack")
@@ -259,6 +263,7 @@ def _cached_shared_library(cache_dir: Path, library: str, archive: Path, compile
             "-Wl,--whole-archive",
             str(archive),
             "-Wl,--no-whole-archive",
+            *NATIVE_LINK_DEPENDENCIES[library],
         ),
         check=True,
     )

@@ -12,7 +12,14 @@ tests, with no unsupported or skipped routines.
 
 ## Requirements
 
-Install GNU Fortran, `ar`, and the pinned Python tools:
+Install GNU Fortran, `ar`, the LAPACK and BLAS development libraries, and the
+pinned Python tools. On Ubuntu:
+
+```console
+sudo apt-get install gfortran liblapack-dev libblas-dev
+```
+
+Then install the Python tools:
 
 ```console
 python3 -m pip install \
@@ -24,9 +31,10 @@ Run every command from the directory that contains `examples/`.
 
 ## Build both wrappers
 
-The native builder compiles LAPACK and its BLAS dependencies once. Internal
-support objects are included once in the shared library, while their
-compiler-specific `.mod` files are retained for generated wrappers.
+The native builder compiles the bundled LAPACK and BLAS sources once and links
+the development libraries for companion support symbols. Internal support
+objects are included once in the shared library, while their compiler-specific
+`.mod` files are retained for generated wrappers.
 
 `build_all.sh` runs these two scripts:
 

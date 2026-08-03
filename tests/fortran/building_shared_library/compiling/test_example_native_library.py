@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -63,3 +64,41 @@ def test_native_cache_preserves_module_files_for_wrapper_compilation(tmp_path: P
 
     monkeypatch.setattr(native_library, "_compile_source", fail_if_recompiled)
     assert native_library._cached_objects(cache_dir, sources, "gfortran", 2) == objects
+
+
+@pytest.mark.parametrize(
+    ("library", "expected_dependencies"),
+    (("blas", ()), ("lapack", ("-llapack", "-lblas"))),
+)
+def test_shared_example_library_links_its_native_dependencies(
+    tmp_path: Path,
+    monkeypatch,
+    library: str,
+    expected_dependencies: tuple[str, ...],
+) -> None:
+    commands = []
+
+    def run(command: tuple[str, ...], *, check: bool) -> None:
+        assert check is True
+        commands.append(command)
+        Path(command[3]).touch()
+
+    monkeypatch.setattr(native_library.subprocess, "run", run)
+    archive = tmp_path / f"libprik_full_{library}.a"
+    archive.touch()
+
+    shared_library = native_library._cached_shared_library(tmp_path, library, archive, "gfortran")
+
+    assert shared_library.is_file()
+    assert commands == [
+        (
+            "gfortran",
+            "-shared",
+            "-o",
+            str(tmp_path / f"{shared_library.name}.{os.getpid()}.tmp"),
+            "-Wl,--whole-archive",
+            str(archive),
+            "-Wl,--no-whole-archive",
+            *expected_dependencies,
+        )
+    ]
