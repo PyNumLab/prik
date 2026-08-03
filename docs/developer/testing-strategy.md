@@ -86,9 +86,11 @@ generate wrappers, compile and link an extension, import it from an isolated
 build directory, call the public Python surface, and verify visible behavior.
 Successful compilation or import without a public call is insufficient.
 
-All such tests live below the owning feature's `end_to_end/` directory and
-carry `fortran_end_to_end`. BLAS and LAPACK additionally carry `real_library`
-and remain native-source end-to-end evidence only.
+Feature end-to-end tests live below the owning feature's `end_to_end/`
+directory and carry `fortran_end_to_end`. Full-library integration nodes carry
+`real_library`. The complete correctness examples under `examples/blas/` and
+`examples/lapack/` use both markers and run only in the dedicated BLAS/LAPACK
+lane.
 
 ## Diagnostics and unsupported behavior
 
@@ -111,11 +113,54 @@ Keep fixtures beside their final behavioral owner:
 - complete native projects below feature-local `end_to_end/fixtures/`;
 - edited `.pyi` below the edit family it proves;
 - minimized real-world parser interactions with source parsing; and
-- BLAS/LAPACK below their dedicated real-library end-to-end owner.
+- the authoritative full BLAS source set below `examples/blas/native/`, shared
+  by the correctness example, full-library integration, LAPACK CI build, and
+  build comparison tooling;
+- the authoritative Reference LAPACK implementation corpus below
+  `examples/lapack/native/`, shared by its correctness example and full-library
+  integration.
 
-Generate build products and temporary contracts in pytest temporary
-directories. Check in generated `.pyi` only where exact generation text,
+Generate build products and temporary contracts in temporary directories.
+Check in generated `.pyi` only where exact generation text,
 imports, placement, or package shape is the invariant.
+
+For BLAS behavior, source `examples/blas/build_all.sh`, then run
+`python3 -m pytest -q examples/blas/tests` or one of its named test functions.
+The aggregate script sources the exact documented `build_prik.sh` and
+`build_f2py.sh` sequences. This compiles the sorted 155-source implementation
+once and builds each wrapper once; the direct f2py script compiles the
+committed reviewed `blas.pyf` and links the native artifact produced by the
+PRIK script.
+Documentation source markers require the displayed commands to remain
+byte-for-byte equal to the executed scripts. `test_routine_coverage.py` audits
+the parsed source inventory, f2py signature drift, both export sets, visible
+named tests, and terminal outcomes. The dedicated CI lane explicitly adds
+`examples/blas/ci/full_surface.py` to the same pytest invocation and does not
+rebuild its wrappers afterward. User-run correctness tests and maintainer-only
+audits therefore have separate directories.
+
+For LAPACK behavior, the dedicated lane sources `examples/lapack/build_all.sh`
+and then runs `python3 -m pytest -q examples/lapack/tests`. The aggregate
+script sources the exact documented `build_prik.sh` and `build_f2py.sh`
+sequences. The complete native corpus is compiled once, each wrapper is built
+once, and the direct f2py script compiles the committed reviewed `lapack.pyf`
+against the native artifact produced by the PRIK script while testing the
+127-routine SciPy 1.18.0 `float64` inventory. Documentation source markers keep
+the displayed commands equal to the executed scripts. The inventory audit
+fails on SciPy drift, signature drift, missing sources or exports, missing
+explicitly named tests, and divergent documentation claims. CI explicitly
+adds `examples/lapack/ci/full_surface.py`
+to the same pytest invocation, reusing the complete PRIK extension to require
+all 2,066 procedure exports, including module namespaces, and run a
+non-inventory runtime smoke call. User-run
+correctness tests and maintainer-only audits have separate directories.
+
+The complete `examples/` tree is a copyable execution boundary. Example code
+may depend on an installed `prik` and its documented external toolchain, but it
+must not import repository-only helpers from `tests/`. The workflow must source
+the documented build scripts through `build_all.sh` before starting pytest,
+rather than run a second build test that repeats native compilation or wrapper
+construction.
 
 ## Ownership discipline
 

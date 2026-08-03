@@ -1,17 +1,14 @@
-name: Static Analysis
+name: Code Quality
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
   push:
     branches:
       - main
       - release/*
-  workflow_call:
 
 jobs:
   static-analysis:
-    name: Python 3.12
+    name: Static analysis · Ubuntu 24.04 · Python 3.12
     runs-on: ubuntu-24.04
     permissions:
       contents: read

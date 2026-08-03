@@ -8,6 +8,7 @@ from dataclasses import replace
 from prik.semantics import models
 from prik.semantics.native_array_handles import NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER
 from prik.semantics.wrapper_policy import (
+    ArgumentConversionPhase,
     ArgumentHandoffMode,
     ArrayHandoffPolicy,
     CallbackHandoffPolicy,
@@ -943,6 +944,7 @@ class WrapperPlanner(ClassVisitor):
                 ),
                 release_gil=policy.release_gil,
                 status_error=status_error,
+                argument_conversion_order=self._binding_argument_conversion_order(arguments),
                 public=public,
             ),
             bridge=BridgeFunctionPlan(
@@ -963,6 +965,81 @@ class WrapperPlanner(ClassVisitor):
             cleanup_actions=tuple(self.visit(action) for action in policy.cleanup_actions),
             release_actions=tuple(self.visit(action) for action in policy.release_actions),
         )
+
+    @staticmethod
+    def _binding_argument_conversion_order(
+        arguments: tuple[ArgumentTransferPlan, ...],
+    ) -> tuple[str, ...]:
+        """Plan a stable conversion order that satisfies array-extent dependencies."""
+        role_owners = {argument.binding.handoff_role: argument.owner_path for argument in arguments}
+        dependencies = WrapperPlanner._binding_conversion_dependencies(arguments, role_owners)
+        ordered: list[str] = []
+        converted: set[str] = set()
+        remaining = list(WrapperPlanner._ranked_binding_arguments(arguments))
+        while remaining:
+            ready_index = WrapperPlanner._ready_binding_argument_index(remaining, dependencies, converted)
+            if ready_index is None:
+                owners = tuple(argument.owner_path for argument in remaining)
+                raise ValueError(f"Cyclic binding argument conversion dependencies: {owners!r}")
+            argument = remaining.pop(ready_index)
+            ordered.append(argument.owner_path)
+            converted.add(argument.owner_path)
+        return tuple(ordered)
+
+    @staticmethod
+    def _binding_conversion_dependencies(
+        arguments: tuple[ArgumentTransferPlan, ...],
+        role_owners: dict[str, str],
+    ) -> dict[str, set[str]]:
+        """Map each planned argument to the argument conversions it requires."""
+        return {
+            argument.owner_path: WrapperPlanner._binding_extent_dependency_owners(argument, role_owners)
+            for argument in arguments
+        }
+
+    @staticmethod
+    def _ranked_binding_arguments(
+        arguments: tuple[ArgumentTransferPlan, ...],
+    ) -> tuple[ArgumentTransferPlan, ...]:
+        """Preserve the established phase and Python-position preference."""
+        return tuple(
+            sorted(
+                arguments,
+                key=lambda argument: (
+                    argument.binding.conversion_phase is ArgumentConversionPhase.DEFERRED_REPLACEMENT,
+                    argument.python_position,
+                ),
+            )
+        )
+
+    @staticmethod
+    def _ready_binding_argument_index(
+        remaining: list[ArgumentTransferPlan],
+        dependencies: dict[str, set[str]],
+        converted: set[str],
+    ) -> int | None:
+        """Find the first preferred argument whose dependencies are converted."""
+        return next(
+            (index for index, argument in enumerate(remaining) if dependencies[argument.owner_path] <= converted),
+            None,
+        )
+
+    @staticmethod
+    def _binding_extent_dependency_owners(
+        argument: ArgumentTransferPlan,
+        role_owners: dict[str, str],
+    ) -> set[str]:
+        """Resolve the planned arguments needed before one array conversion."""
+        if argument.array is None:
+            return set()
+        owners = {
+            role_owners[role]
+            for axis_roles in argument.array.extent_reference_roles
+            for role in axis_roles
+            if role in role_owners
+        }
+        owners.discard(argument.owner_path)
+        return owners
 
     def _native_slot_plans(self, policy: FunctionWrapperPolicy) -> tuple[NativeCallSlotPlan, ...]:
         """Project ordered native call slots with their completed symbolic roles."""

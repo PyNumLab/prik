@@ -330,6 +330,7 @@ Generation without compilation belongs to the `generate` subcommand.
 | `-I DIR`, `--include-dir DIR` | Adds a build-wide compiler include directory. Source builds use it during preprocessing; source and `.pyi` builds use it for native and generated wrapper compilation. Repeat to preserve search order. |
 | `--strict-wrapper-names` | Rejects Python wrapper names that require escaping or collision suffixes. |
 | `--build-manifest PATH` | Reads an existing semantic `.pyi` wrapper build manifest and replays its saved build. It does not generate the manifest. |
+| `--no-compile-input-sources` | Treats positional Fortran sources as semantic inputs only. Requires an explicit native input; `--native-fortran-sources` remain compiled hidden implementation sources. |
 | `--native-fortran-sources PATH [PATH ...]` | Compiles additional native Fortran implementation sources without using them as semantic inputs. |
 | `--native-compile-flags FLAG [FLAG ...]` | Adds compiler flags to native implementation source compilation. Native source compilation is currently Fortran-only. |
 | `--native-objects PATH [PATH ...]` | Links one or more native object, static archive, or shared library paths into the extension. |
@@ -351,6 +352,13 @@ Important boundaries:
 - `.pyi` wrapper builds require at least one native implementation input such
   as `--native-fortran-sources`, `--native-objects`, `--native-library`, or
   `--native-link-item`.
+- Source-driven builds accept individual Fortran files or directories.
+  Directories are expanded recursively in deterministic path order.
+- `--no-compile-input-sources` keeps positional Fortran sources as semantic inputs
+  but removes them from native compilation. It requires an explicit native
+  implementation through `--native-fortran-sources`, `--native-objects`,
+  `--native-library`, or `--native-link-item`. Sources passed through
+  `--native-fortran-sources` are still compiled without becoming public API.
 - Source-driven builds may use the same native source, object, library,
   include-directory, library-directory, and ordered-link options to complete
   the extension build. These inputs augment the positional implementation

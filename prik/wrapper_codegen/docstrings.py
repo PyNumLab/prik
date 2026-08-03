@@ -263,7 +263,10 @@ class WrapperDocstringBuilder:
         nullable = variable.binding.getter_action is ModuleGetterAction.NULLABLE_SNAPSHOT
         lines = [f"{name} : {self._type(variable, nullable=nullable, signature=False)}"]
         lines.extend(self._array_lines(variable.array))
-        if variable.binding.getter_action is ModuleGetterAction.CONSTANT_VALUE:
+        if variable.binding.getter_action in {
+            ModuleGetterAction.CONSTANT_VALUE,
+            ModuleGetterAction.NATIVE_CONSTANT_VALUE,
+        }:
             lines.append("    Read-only constant.")
         elif variable.binding.getter_action is ModuleGetterAction.BORROWED_ARRAY_VIEW:
             lines.append("    Native-owned borrowed view; mutations affect module storage.")

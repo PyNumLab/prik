@@ -93,9 +93,6 @@ tests/
     building_shared_library/
       pipeline/
       end_to_end/
-        real_libraries/
-          blas/
-          lapack/
     source_parsing/
       parsing/
     source_preprocessing/
@@ -260,8 +257,8 @@ Register a structural marker for cross-feature selection:
 - [x] Shared tests import no language-owned helpers.
 - [x] Fortran and C tests import neither each other's helpers nor fixtures.
 - [x] Feature-local fixtures live with their owner. Minimized parser
-  regressions live under `source_parsing/parsing/`; BLAS and LAPACK live only under
-  `building_shared_library/end_to_end/real_libraries/`.
+  regressions live under `source_parsing/parsing/`; BLAS and LAPACK live only
+  under `examples/blas/` and `examples/lapack/`.
 - [x] `python -m pytest tests/fortran/arrays` runs every stage of the
   Arrays contract without collecting unrelated features.
 - [x] Every node below a feature's `end_to_end/` directory carries
@@ -388,7 +385,7 @@ directory. Audit and place every artifact beside its final behavioral owner.
 | `tests/data/fortran/wrapper/` | `tests/fortran/<feature>/end_to_end/fixtures/<case>/native/` |
 | `tests/data/fortran/general/` | Owning feature/stage; feature-neutral setup is minimized beside its final public-capability owner |
 | `tests/data/fortran/errors/` | Fixture directory of the first rejecting stage |
-| `tests/data/fortran/blas/` and `lapack/` | `tests/fortran/building_shared_library/end_to_end/real_libraries/{blas,lapack}/native/` |
+| `tests/data/fortran/blas/` and `lapack/` | `examples/blas/native/` and `examples/lapack/native/` |
 | Parser regressions extracted from SciFortran | `tests/fortran/source_parsing/parsing/test_real_world_interaction_regressions.py` |
 | Parser source/JSON pairs | Beside their parser owner |
 | Language-neutral `.pyi` syntax | `tests/shared/contracts/` |
@@ -1219,7 +1216,7 @@ Historical regression ownership after reduction:
 ### BLAS and LAPACK
 
 - [x] Move the real-library projects to
-  `tests/fortran/building_shared_library/end_to_end/real_libraries/{blas,lapack}/`.
+  `examples/blas/` and `examples/lapack/`.
 - [x] Treat them only as full-pipeline evidence: build from the library sources,
   generate wrappers, compile/link, import the extension, and verify the public
   Python surface and representative runtime calls.

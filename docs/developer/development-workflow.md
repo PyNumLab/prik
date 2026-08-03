@@ -811,6 +811,11 @@ probe configuration from preprocessing plus the native Fortran compiler flags;
 this keeps flags such as `-fdefault-real-8` aligned between semantic lowering
 and native compilation. The standalone `prik probe` report is an inspection and
 verification output, not an alternate semantic-stage input.
+
+Post-IR module-variable policy distinguishes literal constants from symbolic
+numeric source parameters. Literal constants use binding-owned materialization;
+symbolic numeric source parameters use a read-only Fortran bridge getter and
+never require binding or bridge lowering to recover the initializer value.
 PRIK_C_DOCS_END -->
 
 <!-- PRIK_C_DOCS_START

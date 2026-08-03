@@ -13,7 +13,6 @@ from prik.semantics.ownership import (
     SetterAction,
 )
 from prik.semantics.wrapper_policy import (
-    ArgumentConversionPhase,
     ArgumentHandoffMode,
     CallbackABIKind,
     CallbackResultAction,
@@ -5463,6 +5462,8 @@ class CBindingGenerator(ClassVisitor):
         match action:
             case ModuleGetterAction.CONSTANT_VALUE:
                 return self._lower_module_getter_constant_value(plan)
+            case ModuleGetterAction.NATIVE_CONSTANT_VALUE:
+                return self._lower_module_getter_native_constant_value(plan)
             case ModuleGetterAction.DIRECT_VALUE:
                 return self._lower_module_getter_direct_value(plan)
             case ModuleGetterAction.NULLABLE_SNAPSHOT:
@@ -5477,6 +5478,10 @@ class CBindingGenerator(ClassVisitor):
 
     def _lower_module_getter_constant_value(self, _plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
         """Constants are materialized in the module dictionary at initialization."""
+        return ()
+
+    def _lower_module_getter_native_constant_value(self, _plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
+        """Compiler-evaluated constants are materialized from their bridge getter."""
         return ()
 
     def _lower_module_getter_direct_value(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
@@ -5993,16 +5998,12 @@ class CBindingGenerator(ClassVisitor):
         )
 
     def _binding_conversion_order(self, plan: FunctionPlan) -> tuple[ArgumentTransferPlan, ...]:
-        """Apply the completed argument conversion schedule."""
-        return tuple(
-            sorted(
-                plan.arguments,
-                key=lambda argument: (
-                    argument.binding.conversion_phase is ArgumentConversionPhase.DEFERRED_REPLACEMENT,
-                    argument.python_position,
-                ),
-            )
-        )
+        """Apply the dependency-safe argument conversion schedule from the plan."""
+        arguments = {argument.owner_path: argument for argument in plan.arguments}
+        try:
+            return tuple(arguments[owner_path] for owner_path in plan.binding.argument_conversion_order)
+        except KeyError as error:
+            raise ValueError(f"Unknown binding argument conversion owner {error.args[0]!r}") from None
 
     def _visit_ArgumentTransferPlan(
         self,
@@ -10399,7 +10400,10 @@ class CBindingGenerator(ClassVisitor):
         plan: ModuleVariablePlan,
     ) -> tuple[CFunctionPrototype, ...]:
         """Declare C helpers before the generated module-type routing code."""
-        if plan.binding.getter_action is ModuleGetterAction.CONSTANT_VALUE:
+        if plan.binding.getter_action in {
+            ModuleGetterAction.CONSTANT_VALUE,
+            ModuleGetterAction.NATIVE_CONSTANT_VALUE,
+        }:
             return ()
         prototypes = [CFunctionPrototype(self._module_getter_name(plan), "PyObject *", storage="static")]
         if plan.binding.setter_action is SetterAction.WRITE_THROUGH:
@@ -10431,7 +10435,8 @@ class CBindingGenerator(ClassVisitor):
                 reject_replacement=(variable.binding.setter_action is SetterAction.REJECT_REPLACEMENT),
             )
             for variable in namespace.variables
-            if variable.binding.getter_action is not ModuleGetterAction.CONSTANT_VALUE
+            if variable.binding.getter_action
+            not in {ModuleGetterAction.CONSTANT_VALUE, ModuleGetterAction.NATIVE_CONSTANT_VALUE}
             for python_name in variable.binding.python_names
         )
         if not entries:
@@ -11688,24 +11693,17 @@ class CBindingGenerator(ClassVisitor):
         nodes = []
         index = 0
         for variable in namespace.variables:
-            if variable.binding.getter_action is not ModuleGetterAction.CONSTANT_VALUE:
+            if variable.binding.getter_action not in {
+                ModuleGetterAction.CONSTANT_VALUE,
+                ModuleGetterAction.NATIVE_CONSTANT_VALUE,
+            }:
                 continue
-            scalar_type = PrimitiveScalarTypeRegistry.type_for(variable.semantic_type_name)
             for python_name in variable.binding.python_names:
                 value_name = f"constant_{variable.symbol_name}_value_{index}"
                 object_name = f"constant_{variable.symbol_name}_object_{index}"
                 nodes.extend(
                     (
-                        CDeclaration(
-                            value_name,
-                            scalar_type.c_spelling,
-                            CodeExpression(self._module_literal(variable, variable.binding.constant_value)),
-                        ),
-                        CDeclaration(
-                            object_name,
-                            "PyObject *",
-                            CodeExpression(self._scalar_result_expression(scalar_type, f"&{value_name}", module=True)),
-                        ),
+                        *self._module_constant_declarations(variable, value_name, object_name),
                         CExpressionStatement(
                             CodeExpression(f"if ({object_name} == NULL) {{ Py_DECREF(mod); return NULL; }}")
                         ),
@@ -11719,6 +11717,37 @@ class CBindingGenerator(ClassVisitor):
                 )
                 index += 1
         return tuple(nodes)
+
+    def _module_constant_declarations(
+        self,
+        variable: ModuleVariablePlan,
+        value_name: str,
+        object_name: str,
+    ) -> tuple[CDeclaration, ...]:
+        """Materialize one planned binding or native constant value."""
+        if variable.datatype_family is DatatypeFamily.STRING:
+            literal = self._c_string_literal(str(variable.binding.constant_value))
+            return (
+                CDeclaration(
+                    object_name,
+                    "PyObject *",
+                    CodeExpression(f"PyUnicode_FromString({literal})"),
+                ),
+            )
+        scalar_type = PrimitiveScalarTypeRegistry.type_for(variable.semantic_type_name)
+        value_expression = (
+            f"{self._module_bridge_getter_name(variable)}()"
+            if variable.binding.getter_action is ModuleGetterAction.NATIVE_CONSTANT_VALUE
+            else self._module_literal(variable, variable.binding.constant_value)
+        )
+        return (
+            CDeclaration(value_name, scalar_type.c_spelling, CodeExpression(value_expression)),
+            CDeclaration(
+                object_name,
+                "PyObject *",
+                CodeExpression(self._scalar_result_expression(scalar_type, f"&{value_name}", module=True)),
+            ),
+        )
 
     def _module_literal(self, plan: ModuleVariablePlan, value: object) -> str:
         """Dispatch one completed datatype family to its C literal spelling."""

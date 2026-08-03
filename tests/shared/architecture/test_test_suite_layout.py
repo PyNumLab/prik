@@ -2,26 +2,32 @@
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).parents[3]
 TEST_ROOT = REPO_ROOT / "tests"
+EXAMPLES_ROOT = REPO_ROOT / "examples"
 TEST_INDEX = TEST_ROOT / "README.md"
+WORKFLOW_ROOT = REPO_ROOT / ".github/workflows"
 BLAS_LAPACK_WORKFLOW = REPO_ROOT / ".github/workflows/blas-lapack.yml"
 CLAUDE_WORKFLOW = REPO_ROOT / ".github/workflows/claude.yml"
 COVERAGE_WORKFLOW = REPO_ROOT / ".github/workflows/coverage.yml"
 CODECOV_CONFIG = REPO_ROOT / "codecov.yml"
 DOCS_WORKFLOW = REPO_ROOT / ".github/workflows/docs.yml"
-PARSER_REFERENCE_WORKFLOW = REPO_ROOT / ".github/workflows/parser-reference-guard.yml"
+FORTRAN_SMOKE_WORKFLOW = REPO_ROOT / ".github/workflows/fortran-toolchain-smoke.yml"
+MERGE_VALIDATION_WORKFLOW = REPO_ROOT / ".github/workflows/merge-validation.yml"
 PUBLISH_WORKFLOW = REPO_ROOT / ".github/workflows/publish-to-pypi.yml"
 STATIC_ANALYSIS_WORKFLOW = REPO_ROOT / ".github/workflows/static-analysis.yml"
 TESTS_WORKFLOW = REPO_ROOT / ".github/workflows/tests.yml"
+QUALITY_ASSURANCE_DOC = REPO_ROOT / "docs/developer/quality-assurance.md"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
 MANIFEST = REPO_ROOT / "MANIFEST.in"
-FULL_REAL_LIBRARY_TEST = "tests/fortran/building_shared_library/end_to_end/real_libraries/test_full_libraries.py"
+BLAS_CI_FULL_SURFACE = "examples/blas/ci/full_surface.py"
+LAPACK_CI_FULL_SURFACE = "examples/lapack/ci/full_surface.py"
 
 LEGACY_TEST_ROOTS = {
     "benchmarks",
@@ -115,6 +121,52 @@ def _maintained_path_reference_files() -> list[Path]:
     )
 
 
+def _github_action_job_display_names(workflow: Path) -> dict[str, str]:
+    names: dict[str, str] = {}
+    current_job: str | None = None
+    in_jobs = False
+    for line in workflow.read_text(encoding="utf-8").splitlines():
+        if line == "jobs:":
+            in_jobs = True
+            continue
+        if not in_jobs:
+            continue
+        job_match = re.fullmatch(r"  ([a-z0-9-]+):", line)
+        if job_match:
+            current_job = job_match.group(1)
+            continue
+        if current_job is not None and line.startswith("    name: "):
+            names[current_job] = line.removeprefix("    name: ")
+    return names
+
+
+def _github_action_workflow_name(workflow: Path) -> str:
+    first_line = workflow.read_text(encoding="utf-8").splitlines()[0]
+    assert first_line.startswith("name: ")
+    return first_line.removeprefix("name: ")
+
+
+def _github_matrix_display_names(workflow: Path) -> tuple[str, ...]:
+    prefix = "display_name: "
+    return tuple(
+        line.strip().removeprefix(prefix)
+        for line in workflow.read_text(encoding="utf-8").splitlines()
+        if line.strip().startswith(prefix)
+    )
+
+
+def _github_action_job_block(workflow: Path, job_id: str) -> str:
+    remainder = workflow.read_text(encoding="utf-8").split(f"  {job_id}:\n", maxsplit=1)[1]
+    next_job = re.search(r"\n  [a-z0-9-]+:\n", remainder)
+    return remainder if next_job is None else remainder[: next_job.start()]
+
+
+def _github_action_job_steps(workflow: Path, job_id: str) -> tuple[str, ...]:
+    block = _github_action_job_block(workflow, job_id)
+    steps = block.split("    steps:\n", maxsplit=1)[1]
+    return tuple(line for line in steps.splitlines() if line.strip())
+
+
 def test_pytest_modules_have_one_allowed_primary_owner() -> None:
     root_modules = sorted(path.name for path in TEST_ROOT.glob("test_*.py"))
     assert root_modules == []
@@ -165,6 +217,51 @@ def test_fortran_support_directory_contains_no_pytest_modules() -> None:
     assert sorted((TEST_ROOT / "fortran" / "_support").rglob("test_*.py")) == []
 
 
+def test_native_library_examples_are_copyable_without_the_repository_test_package() -> None:
+    assert (EXAMPLES_ROOT / "__init__.py").is_file()
+    assert (EXAMPLES_ROOT / "conftest.py").is_file()
+    assert (EXAMPLES_ROOT / "blas" / "__init__.py").is_file()
+    assert (EXAMPLES_ROOT / "lapack" / "__init__.py").is_file()
+
+    repository_test_imports = []
+    for path in sorted(EXAMPLES_ROOT.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module is not None and node.module.startswith("tests"):
+                repository_test_imports.append(f"{path.relative_to(REPO_ROOT)}: {node.module}")
+            if isinstance(node, ast.Import):
+                repository_test_imports.extend(
+                    f"{path.relative_to(REPO_ROOT)}: {alias.name}"
+                    for alias in node.names
+                    if alias.name.startswith("tests")
+                )
+    assert repository_test_imports == []
+
+
+def test_native_library_examples_separate_user_tests_from_ci_audits() -> None:
+    fixture_names = {
+        "blas": {"prik_blas", "f2py_blas"},
+        "lapack": {"prik_lapack", "f2py_lapack", "scipy_lapack"},
+    }
+    for library, expected_fixtures in fixture_names.items():
+        root = EXAMPLES_ROOT / library
+        assert (root / "tests" / "helpers.py").is_file()
+        assert sorted((root / "tests").glob("test_*.py"))
+        assert {path.name for path in (root / "ci").glob("*.py")} == {
+            "__init__.py",
+            "full_surface.py",
+        }
+        assert all((root / script).is_file() for script in ("build_prik.sh", "build_f2py.sh", "build_all.sh"))
+
+        aggregate = (root / "build_all.sh").read_text(encoding="utf-8")
+        assert f"source examples/{library}/build_prik.sh" in aggregate
+        assert f'source "$EXAMPLE_WORKSPACE/examples/{library}/build_f2py.sh"' in aggregate
+
+        fixture_tree = ast.parse((root / "conftest.py").read_text(encoding="utf-8"))
+        functions = {node.name for node in fixture_tree.body if isinstance(node, ast.FunctionDef)}
+        assert functions == expected_fixtures
+
+
 def test_test_index_links_and_language_directories_exist() -> None:
     text = TEST_INDEX.read_text(encoding="utf-8")
     for target in re.findall(r"\[[^]]+\]\(([^)#]+)", text):
@@ -183,21 +280,25 @@ def test_maintained_docs_do_not_name_deprecated_pytest_locations() -> None:
     assert stale == []
 
 
-def test_full_real_library_nodes_have_one_dedicated_workflow() -> None:
+def test_real_library_examples_have_one_dedicated_workflow() -> None:
     ordinary_jobs = TESTS_WORKFLOW.read_text(encoding="utf-8")
     dedicated_job = BLAS_LAPACK_WORKFLOW.read_text(encoding="utf-8")
 
     assert '-m "not real_library and not toolchain_smoke"' in ordinary_jobs
     assert ordinary_jobs.count('-m "not real_library and not toolchain_smoke"') == 2
-    assert FULL_REAL_LIBRARY_TEST not in ordinary_jobs
-    assert (
-        f'"{FULL_REAL_LIBRARY_TEST}::test_full_library_wrapper_imports_every_root_procedure_from_cached_shared_library[blas]"'
-        in dedicated_job
-    )
-    assert (
-        f'"{FULL_REAL_LIBRARY_TEST}::test_full_library_wrapper_imports_every_root_procedure_from_cached_shared_library[lapack]"'
-        in dedicated_job
-    )
+    assert "examples/blas" not in ordinary_jobs
+    assert "examples/lapack" not in ordinary_jobs
+    assert "source examples/blas/build_all.sh" in dedicated_job
+    assert "source examples/lapack/build_all.sh" in dedicated_job
+    assert f"python -m pytest -q examples/blas/tests {BLAS_CI_FULL_SURFACE}" in dedicated_job
+    assert f"python -m pytest -q examples/lapack/tests {LAPACK_CI_FULL_SURFACE}" in dedicated_job
+    assert BLAS_CI_FULL_SURFACE in dedicated_job
+    assert LAPACK_CI_FULL_SURFACE in dedicated_job
+    assert '"meson==1.11.2"' in dedicated_job
+    assert '"ninja==1.13.0"' in dedicated_job
+    assert '"scipy==1.18.0"' in dedicated_job
+    assert "libblas-dev" in dedicated_job
+    assert "liblapack-dev" in dedicated_job
     assert "ignore-real-library-wrappers" in dedicated_job
     assert "matrix.library" not in dedicated_job
 
@@ -237,50 +338,182 @@ def test_codecov_keeps_project_coverage_blocking_and_patch_coverage_informationa
     )
 
 
-def test_active_github_action_jobs_use_purpose_first_display_names() -> None:
+def test_active_github_action_checks_use_distinct_workflow_scopes_and_job_names() -> None:
+    workflow_names = {
+        BLAS_LAPACK_WORKFLOW: "Native Libraries",
+        CLAUDE_WORKFLOW: "Repository Automation",
+        COVERAGE_WORKFLOW: "Quality Metrics",
+        DOCS_WORKFLOW: "Documentation",
+        FORTRAN_SMOKE_WORKFLOW: "Compiler Compatibility",
+        MERGE_VALIDATION_WORKFLOW: "Pull Request",
+        PUBLISH_WORKFLOW: "Release Automation",
+        STATIC_ANALYSIS_WORKFLOW: "Code Quality",
+        TESTS_WORKFLOW: "Test Matrix",
+    }
     expected = {
-        DOCS_WORKFLOW: (
-            "name: Documentation",
-            "    name: Benchmark",
-            "    name: Build",
-            "    name: Deploy",
-        ),
-        PARSER_REFERENCE_WORKFLOW: (
-            "name: Parser Reference",
-            "    name: Guard",
-        ),
-        STATIC_ANALYSIS_WORKFLOW: (
-            "name: Static Analysis",
-            "    name: Python 3.12",
-        ),
-        TESTS_WORKFLOW: (
-            "name: Tests",
-            "    name: Python ${{ matrix.python-version }}",
-            "    name: macOS 15 ARM64 · Python 3.12",
-        ),
-        BLAS_LAPACK_WORKFLOW: (
-            "name: BLAS + LAPACK",
-            "    name: Python 3.12",
-        ),
-        COVERAGE_WORKFLOW: (
-            "name: Coverage",
-            "    name: Python 3.12",
-        ),
-        PUBLISH_WORKFLOW: (
-            "name: Publish to PyPI",
-            "    name: Build and validate distributions",
-            "    name: Publish distributions",
-        ),
-        CLAUDE_WORKFLOW: (
-            "name: Claude Code",
-            "    name: Respond",
-        ),
+        BLAS_LAPACK_WORKFLOW: {"real-library-wrappers": "BLAS + LAPACK · Ubuntu 24.04 · Python 3.12"},
+        CLAUDE_WORKFLOW: {"claude": "Claude Code response to mention"},
+        COVERAGE_WORKFLOW: {"coverage": "Project coverage · Ubuntu 24.04 · Python 3.12"},
+        DOCS_WORKFLOW: {
+            "benchmark": "Documentation performance benchmark · Ubuntu 24.04 ARM64 · Python 3.12",
+            "build": "Documentation site build · Ubuntu 24.04 · Python 3.12",
+            "deploy": "Documentation deployment · GitHub Pages",
+        },
+        FORTRAN_SMOKE_WORKFLOW: {
+            "toolchain-smoke": "Compiler smoke · ${{ matrix.display_name }}",
+            "macos-flang-smoke": "Compiler smoke · macOS 15 ARM64 · LLVM Flang · Python 3.12",
+        },
+        MERGE_VALIDATION_WORKFLOW: {
+            "static-analysis": "Static analysis · Ubuntu 24.04 · Python 3.12",
+            "parser-reference-guard": "Parser reference guard · Ubuntu 24.04",
+            "compiler-smoke": "Compiler smoke · ${{ matrix.display_name }}",
+            "compiler-smoke-macos": "Compiler smoke · macOS 15 ARM64 · LLVM Flang · Python 3.12",
+            "unit-tests": "${{ matrix.display_name }}",
+            "unit-tests-macos": "Unit tests · macOS 15 ARM64 · Python 3.12",
+            "native-libraries": "BLAS + LAPACK · Ubuntu 24.04 · Python 3.12",
+            "documentation-benchmark": "Documentation performance benchmark · Ubuntu 24.04 ARM64 · Python 3.12",
+            "documentation-build": "Documentation site build · Ubuntu 24.04 · Python 3.12",
+            "merge-gate": "Validation · all required checks",
+        },
+        PUBLISH_WORKFLOW: {
+            "build": "PyPI distribution build · Ubuntu 24.04 · Python 3.12",
+            "publish": "PyPI trusted publishing · pypi",
+        },
+        STATIC_ANALYSIS_WORKFLOW: {"static-analysis": "Static analysis · Ubuntu 24.04 · Python 3.12"},
+        TESTS_WORKFLOW: {
+            "test": "Unit tests · Ubuntu 24.04 · Python ${{ matrix.python-version }}",
+            "macos": "Unit tests · macOS 15 ARM64 · Python 3.12",
+        },
     }
 
-    for workflow, names in expected.items():
+    assert set(workflow_names) == set(expected) == set(WORKFLOW_ROOT.glob("*.yml"))
+    assert {workflow: _github_action_workflow_name(workflow) for workflow in workflow_names} == workflow_names
+    assert len(workflow_names.values()) == len(set(workflow_names.values()))
+    assert {workflow: _github_action_job_display_names(workflow) for workflow in expected} == expected
+
+    display_names = [name for jobs in expected.values() for name in jobs.values()]
+    check_contexts = [
+        f"{workflow_names[workflow]} / {job_name}" for workflow, jobs in expected.items() for job_name in jobs.values()
+    ]
+    assert len(check_contexts) == len(set(check_contexts))
+    assert all(not re.fullmatch(r"Python(?:\s+.*)?", name) for name in display_names)
+
+    smoke_matrix_names = _github_matrix_display_names(FORTRAN_SMOKE_WORKFLOW)
+    assert smoke_matrix_names == (
+        "Ubuntu 24.04 · Intel IFX 2026.1.1 · Python 3.12",
+        "Ubuntu 24.04 · LLVM Flang 22.1.8 · Python 3.12",
+    )
+    assert 'python-version: ["3.10", "3.11", "3.12"]' in TESTS_WORKFLOW.read_text(encoding="utf-8")
+    documented_contexts = ("Pull Request / Validation · all required checks",)
+    quality_assurance = QUALITY_ASSURANCE_DOC.read_text(encoding="utf-8")
+    assert len(documented_contexts) == len(set(documented_contexts))
+    for context in documented_contexts:
+        assert f"`{context}`" in quality_assurance
+
+
+def test_pull_request_declares_direct_staged_jobs_and_always_reports_the_gate() -> None:
+    workflow = MERGE_VALIDATION_WORKFLOW.read_text(encoding="utf-8")
+
+    assert workflow.startswith("name: Pull Request\n")
+    assert "  pull_request:\n    types: [opened, synchronize, reopened, labeled, unlabeled]" in workflow
+    assert "group: pull-request-${{ github.ref }}" in workflow
+    assert "cancel-in-progress: true" in workflow
+    assert "uses: ./.github/workflows/" not in workflow
+
+    for job_id in ("static-analysis", "parser-reference-guard"):
+        block = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, job_id)
+        assert "needs:" not in block
+        assert "runs-on:" in block
+
+    for job_id in ("compiler-smoke", "compiler-smoke-macos"):
+        block = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, job_id)
+        assert "needs: [static-analysis, parser-reference-guard]" in block
+        assert "runs-on:" in block
+
+    for job_id in ("unit-tests", "unit-tests-macos"):
+        block = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, job_id)
+        assert "needs: [compiler-smoke, compiler-smoke-macos]" in block
+        assert "runs-on:" in block
+
+    unit_tests = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "unit-tests")
+    assert "Unit tests + project coverage · Ubuntu 24.04 · Python 3.12" in unit_tests
+    assert "python -m coverage combine" in unit_tests
+    assert "python -m coverage report" in unit_tests
+    assert "uses: codecov/codecov-action@v6" in unit_tests
+    assert "id-token: write" in unit_tests
+
+    native_libraries = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "native-libraries")
+    assert "needs: [unit-tests, unit-tests-macos]" in native_libraries
+    assert "ignore-real-library-wrappers" in native_libraries
+    assert "source examples/blas/build_all.sh" in native_libraries
+    assert "source examples/lapack/build_all.sh" in native_libraries
+    assert f"python -m pytest -q examples/blas/tests {BLAS_CI_FULL_SURFACE}" in native_libraries
+    assert f"python -m pytest -q examples/lapack/tests {LAPACK_CI_FULL_SURFACE}" in native_libraries
+    assert BLAS_CI_FULL_SURFACE in native_libraries
+    assert LAPACK_CI_FULL_SURFACE in native_libraries
+
+    benchmark = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "documentation-benchmark")
+    assert "needs: native-libraries" in benchmark
+    assert "always()" in benchmark
+    assert "bash benchmarks/run.sh" in benchmark
+
+    documentation = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "documentation-build")
+    assert "needs: documentation-benchmark" in documentation
+    assert "python -m pytest -q tests/shared/docs" in documentation
+    assert "python -m mkdocs build --strict" in documentation
+
+    gate = _github_action_job_block(MERGE_VALIDATION_WORKFLOW, "merge-gate")
+    assert "if: ${{ always() }}" in gate
+    for dependency in (
+        "static-analysis",
+        "parser-reference-guard",
+        "compiler-smoke",
+        "compiler-smoke-macos",
+        "unit-tests",
+        "unit-tests-macos",
+        "native-libraries",
+        "documentation-benchmark",
+        "documentation-build",
+    ):
+        assert f"      - {dependency}" in gate
+        assert f"needs.{dependency}.result" in gate
+    assert 'if [[ "$result" != "success" ]]' in gate
+    assert 'exit "$failed"' in gate
+
+
+def test_purpose_specific_workflows_do_not_create_duplicate_pull_request_runs() -> None:
+    for workflow in (
+        TESTS_WORKFLOW,
+        STATIC_ANALYSIS_WORKFLOW,
+        BLAS_LAPACK_WORKFLOW,
+        FORTRAN_SMOKE_WORKFLOW,
+        COVERAGE_WORKFLOW,
+        DOCS_WORKFLOW,
+    ):
         text = workflow.read_text(encoding="utf-8")
-        for name in names:
-            assert name in text
+        assert "  workflow_call:" not in text
+        assert "  pull_request:" not in text
+
+    assert "run-coverage" not in COVERAGE_WORKFLOW.read_text(encoding="utf-8")
+
+
+def test_pull_request_jobs_share_the_reviewed_component_workflow_steps() -> None:
+    for pull_request_job, component_workflow, component_job in (
+        ("static-analysis", STATIC_ANALYSIS_WORKFLOW, "static-analysis"),
+        ("compiler-smoke", FORTRAN_SMOKE_WORKFLOW, "toolchain-smoke"),
+        ("compiler-smoke-macos", FORTRAN_SMOKE_WORKFLOW, "macos-flang-smoke"),
+        ("unit-tests-macos", TESTS_WORKFLOW, "macos"),
+        ("native-libraries", BLAS_LAPACK_WORKFLOW, "real-library-wrappers"),
+        ("documentation-benchmark", DOCS_WORKFLOW, "benchmark"),
+    ):
+        assert _github_action_job_steps(MERGE_VALIDATION_WORKFLOW, pull_request_job) == _github_action_job_steps(
+            component_workflow, component_job
+        )
+
+    pull_request_build = _github_action_job_steps(MERGE_VALIDATION_WORKFLOW, "documentation-build")
+    main_build = _github_action_job_steps(DOCS_WORKFLOW, "build")
+    configure_pages = main_build.index("      - name: Configure GitHub Pages")
+    assert pull_request_build == main_build[:configure_pages]
 
 
 def test_pypi_package_identity_is_complete_and_consistent() -> None:
@@ -341,22 +574,31 @@ def test_static_analysis_targets_the_renamed_package_tree() -> None:
         assert removed_root not in workflow
 
 
-def test_documentation_workflow_generates_main_only_performance_snapshot() -> None:
-    workflow = DOCS_WORKFLOW.read_text(encoding="utf-8")
+def test_pull_request_and_main_generate_equivalent_documentation_performance_snapshots() -> None:
+    pull_request = MERGE_VALIDATION_WORKFLOW.read_text(encoding="utf-8")
+    main = DOCS_WORKFLOW.read_text(encoding="utf-8")
 
-    assert "group: documentation-${{ github.ref }}" in workflow
-    assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in workflow
-    assert "runs-on: ubuntu-24.04-arm" in workflow
-    assert "if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'" in workflow
-    assert "python tools/benchmark_host.py" in workflow
-    assert "--require-machine aarch64" in workflow
-    assert "--require-arm-part 0xd49" in workflow
-    assert '--github-env "$GITHUB_ENV"' in workflow
-    assert "bash benchmarks/run.sh" in workflow
-    assert "python tools/generate_performance_docs.py" in workflow
-    assert "name: performance-snapshot" in workflow
-    assert "benchmarks/results/f2py.json" in workflow
-    assert "benchmarks/results/prik.json" in workflow
-    assert "benchmarks/results/f2py-build.json" in workflow
-    assert "benchmarks/results/prik-build.json" in workflow
-    assert "uses: actions/download-artifact@v4" in workflow
+    assert "group: documentation-${{ github.ref }}" in main
+    assert "cancel-in-progress: true" in main
+    assert "  workflow_call:" not in main
+    for declaration in (
+        "runs-on: ubuntu-24.04-arm",
+        "python tools/benchmark_host.py",
+        "--require-machine aarch64",
+        "--require-arm-part 0xd49",
+        '--github-env "$GITHUB_ENV"',
+        "bash benchmarks/run.sh",
+        "python tools/generate_performance_docs.py",
+        "name: performance-snapshot",
+        "benchmarks/results/f2py.json",
+        "benchmarks/results/prik.json",
+        "benchmarks/results/f2py-build.json",
+        "benchmarks/results/prik-build.json",
+        "uses: actions/download-artifact@v4",
+        "python -m pytest -q tests/shared/docs",
+        "python -m mkdocs build --strict",
+    ):
+        assert declaration in pull_request
+        assert declaration in main
+
+    assert main.count("github.ref == 'refs/heads/main' && github.event_name != 'pull_request'") == 3

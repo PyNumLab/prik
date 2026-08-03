@@ -148,6 +148,19 @@ File: empty.f90
             "A wrapper build expects recognized Fortran source suffixes or one semantic .pyi contract; "
             "unsupported input: input.unknown",
         ),
+        (
+            {"no_compile_input_sources": True},
+            "--no-compile-input-sources requires --native-fortran-sources, --native-objects, "
+            "--native-library, or --native-link-item",
+        ),
+        (
+            {
+                "paths": ["input.pyi"],
+                "no_compile_input_sources": True,
+                "native_objects": ["implementation.o"],
+            },
+            "--no-compile-input-sources applies only to source-driven wrapper builds",
+        ),
     ],
 )
 def test_prik_main_preserves_validation_diagnostics(monkeypatch, overrides, expected):
@@ -282,6 +295,28 @@ def test_cli_native_compile_flags_split_grouped_shell_words():
         "-g0",
         "-DNAME=value with spaces",
     )
+
+
+def test_source_build_routes_disabled_input_compilation_to_the_pipeline(monkeypatch):
+    from prik.pipeline import build as pipeline_build
+
+    calls = []
+    result = types.SimpleNamespace(compiled=False)
+    monkeypatch.setattr(
+        pipeline_build,
+        "build_fortran_extension",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or result,
+    )
+    args = _main_args(
+        paths=["native"],
+        no_compile_input_sources=True,
+        native_objects=["libnative.so"],
+    )
+
+    assert prik_cli._run_wrap_build(args, types.SimpleNamespace(compiler="gfortran")) is result
+    assert calls[0][0] == (["native"],)
+    assert calls[0][1]["compile_input_sources"] is False
+    assert calls[0][1]["native_objects"] == ["libnative.so"]
 
 
 @pytest.mark.parametrize("jobs", ("0", "many"))
@@ -520,7 +555,10 @@ def test_prik_command_parsers_group_options_by_user_intent():
     assert "Add a compiler include search directory" in build_help
     assert "default: gfortran" in normalized_build_help
     assert "default: ./__prik__" in normalized_build_help
-    assert "Fortran source file(s), or exactly one semantic .pyi contract" in normalized_build_help
+    assert (
+        "Fortran source file(s), one source directory, or exactly one semantic .pyi contract" in normalized_build_help
+    )
+    assert "--no-compile-input-sources" in build_help
     assert "Input language (default: fortran)" in normalized_build_help
     assert "Rebuild the extension from an existing prik-build.json" in normalized_build_help
     assert "Name the Python extension and stable NAME.so library" in normalized_build_help

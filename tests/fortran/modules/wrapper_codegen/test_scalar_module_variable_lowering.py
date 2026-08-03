@@ -8,6 +8,9 @@ from unittest.mock import Mock
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
+from prik.parsers.fortran.parser import parse_fortran_project
+from prik.pipeline.build import _apply_source_python_exports, _merge_wrapper_modules
+from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.semantics.ownership import AssignmentMode, SetterAction
 from prik.semantics.policy_completion import complete_semantic_policies
 from prik.semantics.wrapper_policy import ModuleGetterAction
@@ -29,6 +32,24 @@ def summarize() -> Int32: ...
 
 def _plan():
     module = parse_pyi_text(SCALAR_MODULE_CONTRACT, module_name="scalar_state")
+    complete_semantic_policies(module)
+    return WrapperPlanner().build(module)
+
+
+def _computed_constant_plan():
+    parsed = parse_fortran_project(
+        {
+            "computed_constants.f90": """
+module computed_constants
+  integer, parameter :: computed = kind(1.0) * 2
+  character*1, parameter :: prefix = 'D'
+end module computed_constants
+"""
+        }
+    )
+    modules = fortran_project_to_semantic_modules(parsed)
+    _apply_source_python_exports(modules)
+    module = _merge_wrapper_modules(modules, name="computed_constants_wrapper")
     complete_semantic_policies(module)
     return WrapperPlanner().build(module)
 
@@ -64,6 +85,28 @@ def test_module_variable_plan_contains_only_completed_dispatch_facts():
     assert variables["optional_scale"].bridge.native_assignment is AssignmentMode.NONE
     assert variables["selected_scale"].bridge.descriptor_kind == "pointer"
     assert variables["selected_scale"].bridge.native_assignment is AssignmentMode.NONE
+
+
+def test_symbolic_source_parameter_reuses_scalar_bridge_getter_for_module_initialization():
+    plan = _computed_constant_plan()
+    variables = {variable.binding.python_names[0]: variable for variable in plan.namespaces[1].variables}
+    computed = variables["computed"]
+    assert computed.binding.getter_action is ModuleGetterAction.NATIVE_CONSTANT_VALUE
+    assert computed.binding.constant_value is None
+    assert computed.bridge.getter_role == "computed_constants.computed:getter"
+    assert computed.binding.setter_action is SetterAction.OMIT
+
+    artifacts = WrapperCodeGenerator().generate(plan)
+    c_source = _source(artifacts, ".c")
+    fortran_source = _source(artifacts, ".f90")
+    assert "int32_t bind_c_get_computed(void);" in c_source
+    assert "int32_t constant_computed_value_0 = bind_c_get_computed();" in c_source
+    assert 'PyUnicode_FromString("D")' in c_source
+    assert "native_computed => computed" in fortran_source
+    assert "function bind_c_get_computed()" in fortran_source
+    assert "result = native_computed" in fortran_source
+    assert "bind_c_set_computed" not in c_source
+    assert "bind_c_set_computed" not in fortran_source
 
 
 def test_module_variable_visitors_consume_their_backend_owned_actions():

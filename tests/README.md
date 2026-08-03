@@ -71,8 +71,11 @@ python3 -m pytest -q tests/shared
 python3 -m pytest -q tests/architecture
 ```
 
-BLAS and LAPACK remain in the dedicated real-library job. LAPACK is not part
-of the default local verification command.
+The full-library BLAS/LAPACK integration nodes and the complete correctness
+projects in `examples/blas/` and `examples/lapack/` remain in the dedicated
+real-library job. The BLAS and LAPACK sources are owned by
+`examples/blas/native/` and `examples/lapack/native/`; LAPACK is not part of
+the default local verification command.
 
 ## Markers
 
@@ -81,8 +84,8 @@ selection:
 
 - `fortran_end_to_end` selects every compiled, imported, and called Fortran
   feature test, and nothing else;
-- `real_library` selects only the dedicated BLAS/LAPACK native-source
-  end-to-end tests;
+- `real_library` selects only the dedicated BLAS correctness example and
+  BLAS/LAPACK native-source end-to-end integration tests;
 - `property`, `regression`, `benchmark`, and `slow` retain their ordinary
   meanings; and
 - `toolchain_smoke` selects only the bounded portable compiler-profile subset

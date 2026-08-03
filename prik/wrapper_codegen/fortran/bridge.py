@@ -1624,6 +1624,8 @@ class FortranBridgeGenerator(ClassVisitor):
         match action:
             case ModuleGetterAction.CONSTANT_VALUE:
                 return self._lower_module_getter_constant_value(plan)
+            case ModuleGetterAction.NATIVE_CONSTANT_VALUE:
+                return self._lower_module_getter_direct_value(plan)
             case ModuleGetterAction.DIRECT_VALUE:
                 return self._lower_module_getter_direct_value(plan)
             case ModuleGetterAction.NULLABLE_SNAPSHOT:

@@ -11,13 +11,11 @@ from pathlib import Path
 DEFAULT_LIBRARIES = ("blas", "lapack")
 
 
-def _real_library_cache_module():
+def _native_library_module():
     repo_root = Path(__file__).resolve().parents[1]
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
-    return importlib.import_module(
-        "tests.fortran.building_shared_library.end_to_end.real_libraries.test_full_libraries"
-    )
+    return importlib.import_module("examples.native_library")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -39,11 +37,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             + " (choose from blas, lapack)"
         )
 
-    cache_module = _real_library_cache_module()
-    print(f"native cache root: {cache_module._native_cache_root()}")
+    native_library = _native_library_module()
+    print(f"native cache root: {native_library.native_cache_root()}")
     for library in libraries:
-        shared = cache_module._cached_native_shared_library(library)
-        print(f"{library}: {shared}")
+        build = native_library.build_reference_library(library)
+        print(f"{library}: {build.shared_library}")
     return 0
 
 

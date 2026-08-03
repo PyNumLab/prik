@@ -392,6 +392,111 @@ def test_source_build_reuses_native_plan_for_additional_compile_and_link_inputs(
     )
 
 
+def test_source_directory_can_plan_a_wrapper_without_compiling_input_sources(tmp_path: Path):
+    source_dir = tmp_path / "native"
+    nested_dir = source_dir / "nested"
+    output_dir = tmp_path / "generated"
+    native_library = tmp_path / "libnative.so"
+    source_dir.mkdir()
+    nested_dir.mkdir()
+    shutil.copyfile(VERBOSE_SOURCE, source_dir / VERBOSE_SOURCE.name)
+    shutil.copyfile(SCALE_SOURCE, nested_dir / SCALE_SOURCE.name)
+    native_library.write_bytes(b"prebuilt native library fixture")
+
+    result = build_fortran_extension(
+        source_dir,
+        output_name="prebuilt_sources",
+        output_dir=output_dir,
+        compile_input_sources=False,
+        native_objects=[native_library],
+        generate_sources=True,
+    )
+
+    plan = result.native_build_plan
+    assert result.sources == (nested_dir / SCALE_SOURCE.name, source_dir / VERBOSE_SOURCE.name)
+    assert plan.compilation_units == ()
+    assert plan.produced_objects == ()
+    assert [artifact.path for artifact in plan.prebuilt_artifacts] == [native_library]
+    assert plan.module_dirs == ()
+    assert plan.link_items == (NativeLinkItem("shared_library", native_library),)
+
+
+def test_source_build_still_compiles_explicit_hidden_sources_when_input_compilation_is_disabled(tmp_path: Path):
+    source = tmp_path / SCALAR_SOURCE.name
+    support = tmp_path / VERBOSE_SOURCE.name
+    native_library = tmp_path / "libnative.so"
+    shutil.copyfile(SCALAR_SOURCE, source)
+    shutil.copyfile(VERBOSE_SOURCE, support)
+    native_library.write_bytes(b"prebuilt native library fixture")
+
+    result = build_fortran_extension(
+        source,
+        output_dir=tmp_path / "generated",
+        compile_input_sources=False,
+        native_fortran_sources=[support],
+        native_objects=[native_library],
+        generate_sources=True,
+    )
+
+    plan = result.native_build_plan
+    assert [unit.source for unit in plan.compilation_units] == [support]
+    assert source not in [unit.source for unit in plan.compilation_units]
+
+
+def test_cli_builds_from_a_source_directory_and_prebuilt_object_only(tmp_path: Path):
+    source_dir = tmp_path / "native"
+    native_dir = tmp_path / "prebuilt"
+    output_dir = tmp_path / "wrapper"
+    source_dir.mkdir()
+    native_dir.mkdir()
+    source = source_dir / SCALE_SOURCE.name
+    native_object = native_dir / "scale.o"
+    shutil.copyfile(SCALE_SOURCE, source)
+    subprocess.run(
+        ["gfortran", "-c", "-fPIC", str(source), "-o", str(native_object)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "prik",
+            str(source_dir),
+            "--no-compile-input-sources",
+            "--native-objects",
+            str(native_object),
+            "--out",
+            "prebuilt_scale",
+            "--out-dir",
+            str(output_dir),
+            "--json",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+    )
+    payload = json.loads(completed.stdout)
+    plan = payload["native_build_plan"]
+
+    assert payload["sources"] == [str(source)]
+    assert plan["compilation_units"] == []
+    assert plan["produced_objects"] == []
+    assert plan["prebuilt_artifacts"] == [{"kind": "object", "path": str(native_object)}]
+    assert not (output_dir / "scale.o").exists()
+
+    sys.modules.pop("prebuilt_scale", None)
+    sys.path.insert(0, str(tmp_path))
+    try:
+        module = importlib.import_module("prebuilt_scale")
+    finally:
+        sys.path.remove(str(tmp_path))
+    assert module.scale(np.float64(3.0), np.float64(2.5)) == np.float64(7.5)
+
+
 def test_native_link_plan_serializes_interleaved_item_kinds():
     plan = NativeBuildPlan(
         link_items=(

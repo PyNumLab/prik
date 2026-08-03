@@ -20,6 +20,8 @@ from prik import pyi_text_to_semantic_module
 ROOT = Path(__file__).parents[3]
 DOC_PATHS = [
     ROOT / "README.md",
+    ROOT / "examples/blas/README.md",
+    ROOT / "examples/lapack/README.md",
     *sorted(path for path in (ROOT / "docs").rglob("*.md") if "old_docs" not in path.parts),
 ]
 AUDITED_PYTHON_DOC_PATHS = [
@@ -64,6 +66,7 @@ class DocumentedSource:
     path: Path
     line: int
     source_path: Path
+    selector: str | None
     source_text: str
 
     @property
@@ -148,11 +151,14 @@ def _documented_content_from_path(path: Path) -> tuple[list[DocumentationExample
         if source_marker is not None:
             marker_line = index + 1
             source_text, index, _language = _fenced_block(lines, index + 1)
+            source_reference = source_marker.group(1)
+            source_path, separator, selector = source_reference.partition("::")
             sources.append(
                 DocumentedSource(
                     path=path,
                     line=marker_line,
-                    source_path=ROOT / source_marker.group(1),
+                    source_path=ROOT / source_path,
+                    selector=selector if separator else None,
                     source_text=source_text,
                 )
             )
@@ -263,7 +269,14 @@ def test_documentation_has_automatically_verified_examples():
 @pytest.mark.parametrize("source", DOCUMENTED_SOURCES, ids=lambda source: source.test_id)
 def test_documented_source_input(source: DocumentedSource):
     assert source.source_path.is_file(), f"{source.test_id}: documented source does not exist: {source.source_path}"
-    assert source.source_text.rstrip("\n") == source.source_path.read_text(encoding="utf-8").rstrip("\n")
+    file_text = source.source_path.read_text(encoding="utf-8")
+    expected_text = file_text
+    if source.selector is not None:
+        tree = ast.parse(file_text, filename=str(source.source_path))
+        selected = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == source.selector]
+        assert len(selected) == 1, f"{source.test_id}: source selector {source.selector!r} did not name one function"
+        expected_text = ast.get_source_segment(file_text, selected[0]) or ""
+    assert source.source_text.rstrip("\n") == expected_text.rstrip("\n")
 
 
 @pytest.mark.parametrize("block", DOCUMENTED_PYTHON_BLOCKS, ids=lambda block: block.test_id)

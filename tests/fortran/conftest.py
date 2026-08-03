@@ -219,14 +219,6 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             errors.append(
                 f"fortran_end_to_end path/marker mismatch ({is_end_to_end=}, {has_end_to_end_mark=}): {item.nodeid}"
             )
-        real_library = item.get_closest_marker("real_library") is not None
-        is_full_library = (
-            _relative_test_path(item).as_posix()
-            == "tests/fortran/building_shared_library/end_to_end/real_libraries/test_full_libraries.py"
-            and item.name.startswith("test_full_library_wrapper_imports_every_root_procedure")
-        )
-        if real_library != is_full_library:
-            errors.append(f"real_library does not identify exactly a full BLAS/LAPACK node: {item.nodeid}")
         _validate_smoke_item(item, errors)
 
     if errors:

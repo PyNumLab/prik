@@ -29,6 +29,8 @@ artifacts used by tests. Navigate by ownership boundary first, then by file.
 | `prik/binding_support/` | Bundled header-only native support copied into generated wrapper builds. |
 | `prik/naming/` | Unified public-name and generated-symbol policy. |
 | `prik/utilities/` | Small shared Python utilities. |
+| `examples/blas/` | Complete runnable Reference BLAS correctness project and the repository's single authoritative full BLAS source set under `native/`. |
+| `examples/lapack/` | Complete Reference LAPACK build and SciPy-backed float64 correctness project, with the repository's single authoritative LAPACK implementation source set under `native/`. |
 | `benchmarks/` | Local prik/f2py correctness and performance comparison harness. Benchmark sources and scripts are maintained; native builds and result files are generated locally. |
 | `tools/generate_performance_docs.py` | Validates paired runtime and clean-build `pyperf` results and generates the bounded public Performance snapshot and both charts. |
 
@@ -54,6 +56,10 @@ through `prik/__init__.py`.
 | `tests/fortran/infrastructure/` | Internal cross-feature policy, wrapper-generation, compiler, and runtime frameworks with no honest public-capability owner. |
 | `tests/c/` | C input-language parsing, preprocessing, probe, semantic, CLI, and fixture evidence. |
 | `tests/shared/` | Language-neutral product architecture, documentation, naming, tools, type mapping, and utility checks. |
+| `examples/blas/tests/test_*.py` | User-facing real-library correctness documentation: explicit independent and PRIK/f2py differential validation for every Reference BLAS routine. |
+| `examples/blas/ci/full_surface.py` | Maintainer-only complete BLAS export and smoke audit, selected explicitly by CI. |
+| `examples/lapack/tests/test_*.py` | User-facing real-library correctness documentation: explicit independent and PRIK/SciPy/f2py validation for the reviewed double-precision routine inventory. |
+| `examples/lapack/ci/full_surface.py` | Maintainer-only complete LAPACK export and smoke audit, selected explicitly by CI. |
 
 <!-- PRIK_C_DOCS_START
 | `tests/c/fixtures/parser/` | C parser-specific tests and fixture maintenance. |
@@ -93,6 +99,12 @@ Source navigation is considered maintained when these files agree:
   them without committing the raw files.
 - Parser and `.pyi` fixture files should be regenerated with the documented
   fixture commands instead of edited loosely.
+- `examples/blas/native/` is maintained source, not generated test output. The
+  full-library and LAPACK integrations consume it directly rather than owning
+  another BLAS copy.
+- `examples/lapack/native/` is maintained Reference LAPACK implementation
+  source, not generated test output. Upstream testing, timing, example, and
+  matrix-generator programs are outside this ownership boundary.
 - `prik.egg-info/`, caches, and benchmark output are generated local artifacts,
   not source ownership boundaries.
 

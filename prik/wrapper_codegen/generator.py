@@ -818,14 +818,9 @@ class WrapperCodeGenerator:
         if action is ModuleGetterAction.BORROWED_ARRAY_VIEW:
             return self._module_borrowed_array_view_diagnostics(plan)
         if action is ModuleGetterAction.CONSTANT_VALUE:
-            diagnostics = []
-            if plan.bridge.getter_role is not None:
-                diagnostics.append(
-                    self._diagnostic(plan.owner_path, "constant-has-bridge-getter", plan.bridge.getter_role)
-                )
-            if plan.binding.constant_value is None:
-                diagnostics.append(self._diagnostic(plan.owner_path, "missing-module-constant-value", plan.owner_path))
-            return tuple(diagnostics)
+            return self._binding_constant_getter_diagnostics(plan)
+        if action is ModuleGetterAction.NATIVE_CONSTANT_VALUE:
+            return self._native_constant_getter_diagnostics(plan)
         if action is ModuleGetterAction.DERIVED_OBJECT:
             return self._derived_module_getter_role_diagnostics(plan)
         if plan.bridge.getter_role is None:
@@ -836,6 +831,36 @@ class WrapperCodeGenerator:
         }:
             return (self._diagnostic(plan.owner_path, "missing-module-descriptor-kind", action.value),)
         return ()
+
+    def _binding_constant_getter_diagnostics(
+        self,
+        plan: ModuleVariablePlan,
+    ) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Validate one binding-materialized module constant."""
+        diagnostics = []
+        if plan.bridge.getter_role is not None:
+            diagnostics.append(self._diagnostic(plan.owner_path, "constant-has-bridge-getter", plan.bridge.getter_role))
+        if plan.binding.constant_value is None:
+            diagnostics.append(self._diagnostic(plan.owner_path, "missing-module-constant-value", plan.owner_path))
+        return tuple(diagnostics)
+
+    def _native_constant_getter_diagnostics(
+        self,
+        plan: ModuleVariablePlan,
+    ) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Validate one compiler-evaluated module constant."""
+        diagnostics = []
+        if plan.bridge.getter_role is None:
+            diagnostics.append(
+                self._diagnostic(
+                    plan.owner_path,
+                    "missing-module-getter-role",
+                    plan.binding.getter_action.value,
+                )
+            )
+        if plan.binding.constant_value is not None:
+            diagnostics.append(self._diagnostic(plan.owner_path, "native-constant-has-binding-value", plan.owner_path))
+        return tuple(diagnostics)
 
     def _module_borrowed_array_view_diagnostics(
         self,
@@ -993,7 +1018,10 @@ class WrapperCodeGenerator:
             "pointer",
         }:
             return (self._diagnostic(plan.owner_path, "rejected-module-setter-without-descriptor", action.value),)
-        if action is SetterAction.OMIT and plan.binding.getter_action is not ModuleGetterAction.CONSTANT_VALUE:
+        if action is SetterAction.OMIT and plan.binding.getter_action not in {
+            ModuleGetterAction.CONSTANT_VALUE,
+            ModuleGetterAction.NATIVE_CONSTANT_VALUE,
+        }:
             return (self._diagnostic(plan.owner_path, "omitted-nonconstant-module-setter", action.value),)
         return ()
 
@@ -1014,6 +1042,7 @@ class WrapperCodeGenerator:
             ),
             *self._duplicate_role_diagnostics(plan),
             *self._available_role_diagnostics(plan),
+            *self._binding_conversion_order_diagnostics(plan),
             *self._function_output_diagnostics(plan),
             *self._string_result_aggregation_diagnostics(plan),
             *self._status_error_diagnostics(plan),
@@ -1033,6 +1062,58 @@ class WrapperCodeGenerator:
         diagnostics.extend(self._writeback_phase_diagnostics(plan))
         diagnostics.extend(self._string_writeback_diagnostics(plan))
         return tuple(diagnostics)
+
+    def _binding_conversion_order_diagnostics(
+        self,
+        plan: FunctionPlan,
+    ) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Require complete dependency-safe binding conversion ownership."""
+        order = plan.binding.argument_conversion_order
+        owners = tuple(argument.owner_path for argument in plan.arguments)
+        diagnostics = []
+        if Counter(order) != Counter(owners):
+            diagnostics.append(self._diagnostic(plan.owner_path, "invalid-binding-conversion-order", order))
+            return tuple(diagnostics)
+
+        positions = {owner: position for position, owner in enumerate(order)}
+        role_owners = {argument.binding.handoff_role: argument.owner_path for argument in plan.arguments}
+        diagnostics.extend(self._late_binding_extent_conversion_diagnostics(plan, positions, role_owners))
+        return tuple(diagnostics)
+
+    def _late_binding_extent_conversion_diagnostics(
+        self,
+        plan: FunctionPlan,
+        positions: dict[str, int],
+        role_owners: dict[str, str],
+    ) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Reject a planned array conversion scheduled before a used extent."""
+        diagnostics = []
+        for argument in plan.arguments:
+            for dependency in self._binding_extent_dependency_owners(argument, role_owners):
+                if dependency != argument.owner_path and positions[dependency] > positions[argument.owner_path]:
+                    diagnostics.append(
+                        self._diagnostic(
+                            argument.owner_path,
+                            "late-binding-extent-conversion",
+                            dependency,
+                        )
+                    )
+        return tuple(diagnostics)
+
+    @staticmethod
+    def _binding_extent_dependency_owners(
+        argument: ArgumentTransferPlan,
+        role_owners: dict[str, str],
+    ) -> tuple[str, ...]:
+        """Return planned owners referenced by one array's extent roles."""
+        if argument.array is None:
+            return ()
+        return tuple(
+            role_owners[role]
+            for axis_roles in argument.array.extent_reference_roles
+            for role in axis_roles
+            if role in role_owners
+        )
 
     def _optional_literal_combination_diagnostics(
         self,

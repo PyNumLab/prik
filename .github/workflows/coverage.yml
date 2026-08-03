@@ -1,13 +1,10 @@
-name: Coverage
+name: Quality Metrics
 
 on:
   push:
     branches:
       - main
-  pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
   workflow_dispatch:
-  workflow_call:
 
 env:
   PRIK_GFORTRAN_BINARY: gfortran-13
@@ -15,12 +12,7 @@ env:
 
 jobs:
   coverage:
-    name: Python 3.12
-    if: >-
-      ${{
-        github.event_name != 'pull_request' ||
-        contains(github.event.pull_request.labels.*.name, 'run-coverage')
-      }}
+    name: Project coverage · Ubuntu 24.04 · Python 3.12
     runs-on: ubuntu-24.04
     permissions:
       contents: read

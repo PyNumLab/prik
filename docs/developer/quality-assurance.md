@@ -23,25 +23,41 @@ testing and pre-commit are not part of the active stack.
 
 | Cadence | Tools |
 | --- | --- |
-| Pull request and protected-branch push | pytest, bounded property/fuzz cases, stable-seed pytest-randomly, Ruff, Bandit, Vulture, staged Radon policy |
+| Pull request and protected-branch push | pytest, bounded property/fuzz cases, stable-seed pytest-randomly, Ruff, Bandit, Vulture, staged Radon policy, and project coverage |
 | Pull request, protected-branch push, weekly, and manual | Pinned Intel IFX/ICX and LLVM Flang/Clang profile checks plus strict Fortran toolchain smoke |
-| Main-branch push and requested coverage run | coverage.py report from the Python 3.12 test job |
+| Validated pull request and main-branch push | Pinned ARM64 prik/f2py correctness and rigorous performance benchmark |
 | Manual discovery | Fuzz-marked parser tests with the deeper Hypothesis fuzz profile |
 | Manual triage | Full Radon reports and low-severity Bandit review |
 | Annual dependency review | Dependency vulnerability audit outside the routine per-change gate |
 
-Active GitHub Actions checks use short `workflow / job` names:
+Active GitHub Actions checks use stable, self-contained job names. Pull requests
+are coordinated by `Pull Request` in five stages:
 
-- `Documentation / Build` and `Documentation / Deploy`;
-- `Smoke Tests / Intel IFX 2026.1.1 · Python 3.12` and
-  `Smoke Tests / LLVM Flang 22.1.8 · Python 3.12`;
-- `Parser Reference / Guard`;
-- `Static Analysis / Python 3.12`;
-- `Tests / Python 3.10`, `Tests / Python 3.11`, and
-  `Tests / Python 3.12`;
-- `BLAS + LAPACK / Python 3.12`;
-- `Coverage / Python 3.12`; and
-- `Claude Code / Respond` when the optional `@claude` integration is invoked.
+1. Static analysis and the parser-reference contract run in parallel.
+2. Alternate-compiler smoke testing starts only after both fast policy checks
+   succeed.
+3. The unit-test matrix starts after compiler smoke testing succeeds; its
+   Ubuntu Python 3.12 entry owns the project-coverage gate instead of repeating
+   that suite in a separate job.
+4. BLAS/LAPACK validation starts only after the complete unit-test matrix,
+   including its coverage entry, succeeds.
+5. The same pinned ARM64 documentation performance benchmark used on `main`
+   runs after native-library validation, and its generated snapshot is consumed
+   by the strict documentation build.
+
+An aggregate job runs with `always()` after every stage and fails unless all
+required stage results succeeded. Configure the repository ruleset with this
+single required status check:
+
+- `Pull Request / Validation · all required checks`.
+
+Treat that string as ruleset API. If its workflow or job display name changes,
+replace the corresponding required-status-check entry; do not retain an alias
+job for the previous name. The pull-request workflow declares its jobs directly
+so check names contain only the `Pull Request` workflow name and the actual job
+name; it does not add reusable-workflow caller stages between them. The
+purpose-specific workflows retain the same complete job names for their
+independent main, release, scheduled, and manual runs.
 
 ## Install
 
@@ -82,19 +98,24 @@ python -m coverage report
 
 For subprocess coverage investigations, mirror that command shape before
 deciding a fix. A plain local coverage run can miss subprocess data.
-GitHub Actions runs ordinary PR tests without coverage overhead. Every Python
-version excludes the full BLAS/LAPACK real-library wrapper test while retaining
-general native-bundle coverage. The separate `BLAS + LAPACK` workflow runs the
-two full real-library nodes together on Python 3.12. A pull request may use the
-`ignore-real-library-wrappers` label to skip that expensive workflow without
+Every Python version excludes the full BLAS/LAPACK real-library wrapper test
+while retaining general native-bundle coverage. The `Native Libraries`
+component runs the complete BLAS and LAPACK examples on Python 3.12. Each job
+step sources `build_all.sh`, which sources the exact `build_prik.sh` and
+`build_f2py.sh` sequences displayed in the user documentation, before starting
+pytest. Each f2py script reuses the native library from its PRIK script, and
+each explicitly selected `ci/full_surface.py` audit reuses the PRIK extension.
+The job therefore verifies the copyable commands without repeating native
+compilation or wrapper construction in a second process. A
+pull request may use the
+`ignore-real-library-wrappers` label to skip that expensive component without
 disabling the ordinary Python-version matrix.
 
-Pushes to `main` run the same canonical Python 3.12 smoke and ordinary-suite
-selections in the separate `Coverage` workflow, then combine and publish their
-coverage data. Add the `run-coverage` PR label, manually dispatch that workflow,
-or call it as a reusable workflow to request the same coverage gate elsewhere.
-The combined coverage.py report is the blocking project gate and must remain at
-or above 90%. Codecov repeats that project target for hosted reporting. Its
+Every pull request and push to `main` runs the canonical Python 3.12 smoke and
+ordinary-suite selections through `Quality Metrics`, then combines and
+publishes their coverage data. The combined coverage.py report is the blocking
+project gate and must remain at or above 90%. Codecov repeats that project
+target for hosted reporting. Its
 patch status is informational: changed-line coverage remains visible for
 review, but a tiny defensive branch cannot independently fail an otherwise
 passing project report. New reachable behavior should still receive focused
@@ -269,10 +290,11 @@ reports advisory/manual.
 issues, Ruff formatting drift, Vulture unused test parameters, and the
 too-strict Radon policy.
 
-**Native artifact cache:** dedicated Python 3.12 BLAS and LAPACK jobs restore a
-separate runner-local native cache for each library before executing the full
-wrapper test. The ordinary pytest matrix excludes that full corpus while
-retaining the lighter native-bundle tests. Requested coverage runs still
+**Native artifact cache:** dedicated Python 3.12 BLAS and LAPACK jobs restore
+the cache used by `examples.native_library`. On a miss, the example-owned
+builder compiles each implementation corpus once; PRIK and f2py reuse the same
+artifact. The ordinary pytest matrix excludes that full corpus while retaining
+the lighter native-bundle tests. Requested coverage runs still
 collect Python 3.12 coverage data; a final coverage job combines that artifact
 and uploads the XML report.
 

@@ -13,7 +13,8 @@ FORTRAN_ROOT = TEST_ROOT / "fortran"
 FEATURE_ROOT = FORTRAN_ROOT
 FORTRAN_INDEX = FORTRAN_ROOT / "README.md"
 ROADMAP = REPO_ROOT / "docs/maintainer/roadmap/fortran-test-suite-cleanup-checklist.md"
-REAL_LIBRARY_ROOT = FEATURE_ROOT / "building_shared_library" / "end_to_end" / "real_libraries"
+BLAS_EXAMPLE_ROOT = REPO_ROOT / "examples" / "blas"
+LAPACK_EXAMPLE_ROOT = REPO_ROOT / "examples" / "lapack"
 
 FEATURE_DOCS = {
     "data_types": "docs/user/guide/data-types.md",
@@ -180,15 +181,11 @@ def test_fortran_index_names_every_infrastructure_owner() -> None:
         assert f"`{owner}`" in text
 
 
-def test_real_library_owner_contains_only_full_blas_and_lapack_native_projects() -> None:
-    assert {path.name for path in REAL_LIBRARY_ROOT.glob("test_*.py")} == {"test_full_libraries.py"}
-    assert {path.name for path in REAL_LIBRARY_ROOT.iterdir() if path.is_dir() and path.name != "__pycache__"} == {
-        "blas",
-        "lapack",
-    }
-    for library in ("blas", "lapack"):
-        assert (REAL_LIBRARY_ROOT / library / "native").is_dir()
-    assert sorted(REAL_LIBRARY_ROOT.rglob("*.pyi")) == []
+def test_real_library_examples_have_single_native_source_owners() -> None:
+    assert (BLAS_EXAMPLE_ROOT / "native").is_dir()
+    assert (LAPACK_EXAMPLE_ROOT / "native").is_dir()
+    assert len(tuple((BLAS_EXAMPLE_ROOT / "native").iterdir())) == 155
+    assert len(tuple((LAPACK_EXAMPLE_ROOT / "native").iterdir())) == 2062
 
 
 def test_final_language_roots_do_not_cross_import_or_read_fixtures() -> None:
