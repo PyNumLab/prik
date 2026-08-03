@@ -404,6 +404,33 @@ end program driver
     assert project.interfaces["child_mod.child_callback"] is project.interfaces["child_callback"]
 
 
+@pytest.mark.parametrize("standalone_first", [False, True])
+def test_standalone_procedure_owns_unqualified_name_shared_with_module_member(standalone_first):
+    module_source = """
+module nan_mod
+contains
+  logical function sisnan(value)
+    real, intent(in) :: value
+  end function sisnan
+end module nan_mod
+"""
+    standalone_source = """
+logical function sisnan(value)
+  real, intent(in) :: value
+end function sisnan
+"""
+    sources = [("standalone.f90", standalone_source), ("module.f90", module_source)]
+    if not standalone_first:
+        sources.reverse()
+
+    project = parse_fortran_project(dict(sources))
+    module_procedure = project.modules["nan_mod"].procedures[0]
+    standalone_procedure = next(procedure for parsed_file in project.files for procedure in parsed_file.procedures)
+
+    assert project.procedures["nan_mod.sisnan"] is module_procedure
+    assert project.procedures["sisnan"] is standalone_procedure
+
+
 def test_parse_file_preserves_top_level_models_but_limits_file_symbol_registry():
     parsed = FortranParser().parse_file(
         """

@@ -995,12 +995,7 @@ class FortranParser(ClassVisitor):
         for program in parsed_file.programs:
             self._helper_index_project_program(project, program)
         for procedure in parsed_file.procedures:
-            self._insert_unique_scope_symbol(
-                project.procedures,
-                procedure.name.lower(),
-                procedure,
-                label="project procedure scope",
-            )
+            self._helper_index_project_standalone_procedure(project, procedure)
         for dtype in parsed_file.derived_types:
             self._insert_unique_scope_symbol(
                 project.derived_types,
@@ -1060,6 +1055,24 @@ class FortranParser(ClassVisitor):
             project.derived_types.setdefault(dtype.name.lower(), dtype)
         for interface in owner.interfaces:
             self._helper_index_project_interface(project, interface, owner_key)
+
+    def _helper_index_project_standalone_procedure(
+        self,
+        project: FortranProject,
+        procedure: FortranProcedureSignature,
+    ) -> None:
+        """Index a standalone procedure ahead of any unqualified owner alias."""
+        procedure_key = procedure.name.lower()
+        existing = project.procedures.get(procedure_key)
+        if existing is not None and existing.module is not None:
+            project.procedures[procedure_key] = procedure
+            return
+        self._insert_unique_scope_symbol(
+            project.procedures,
+            procedure_key,
+            procedure,
+            label="project procedure scope",
+        )
 
     def _helper_index_project_program(self, project: FortranProject, program: FortranProgram) -> None:
         """Index one named program and its module dependencies."""
