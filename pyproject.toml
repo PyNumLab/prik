@@ -4,19 +4,31 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "prik"
-version = "0.1.0"
-description = "Python Runtime Interop Kit"
+version = "0.1.1"
+description = "Fortran-to-Python native extensions with editable .pyi contracts"
 readme = "README.md"
 authors = [
-    { name = "Said Hadjout" },
+    { name = "Said Hadjout" , email = "saidaissa.hadjout@gmail.com"},
 ]
-keywords = ["fortran", "interop", "native-extension", "numpy", "wrapper-generator"]
+keywords = [
+    "fortran",
+    "f2py",
+    "interop",
+    "bindings",
+    "native-extension",
+    "cpython-extension",
+    "numpy",
+    "wrapper-generator",
+    "scientific-computing",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
+    "Programming Language :: Fortran",
+    "Programming Language :: C",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",

@@ -5,9 +5,11 @@ This file is the canonical record of user-visible PRIK changes. Add changes to
 release preparation. Versions use [Semantic Versioning](https://semver.org/);
 release tags add a leading `v` to the package version.
 
-## Unreleased
+## 0.1.1 — 2026-08-03
 
-_No unreleased changes._
+- Update README and CONTRIBUTING
+- Change the Description section and add more tags
+
 
 ## 0.1.0 — 2026-08-03
 
