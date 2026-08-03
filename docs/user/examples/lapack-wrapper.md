@@ -152,12 +152,14 @@ python -m numpy.f2py -c \
   --opt=-O0
 ```
 
-The native build retains the compiler-specific module files required by the
-generated wrapper. Support objects remain inside the shared library and are not
-compiled again.
+`LAPACK_MODULE_DIR` provides the compiler-generated module files needed to
+compile each wrapper. Both wrappers link the existing shared library instead of
+recompiling LAPACK.
 
-`dgees` and `dgges` remain in the 127-routine correctness inventory, but raw f2py 2.5.1 cannot generate valid callback declarations from their unannotated selection-callback interfaces.
-They are validated through PRIK, SciPy and independent Schur reconstruction.
+The committed `lapack.pyf` excludes `dgees` and `dgges` because f2py 2.5.1
+generates incomplete declarations for their selection callbacks. Their tests
+exercise PRIK and SciPy, then independently verify the resulting Schur
+decompositions.
 
 Import the two built modules and SciPy's comparison surface from the repository
 root:

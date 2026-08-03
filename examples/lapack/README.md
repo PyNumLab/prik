@@ -1,14 +1,13 @@
 # Wrap Reference LAPACK with PRIK
 
-This copyable example builds the complete Reference LAPACK once and links PRIK
-and NumPy f2py wrappers to the same native library. It validates 127 reviewed
-double-precision routines with SciPy and independent residuals,
-reconstructions, and storage checks.
+Build the complete Reference LAPACK once, wrap it with PRIK and NumPy f2py, and
+validate a reviewed double-precision surface against SciPy and independent
+numerical checks.
 
-PRIK wraps all 2,066 discovered procedures. The comparison suite selects
-the 127 `float64` routines exposed by SciPy 1.18.0; raw f2py supports 125 of
-those source interfaces. All 127 selected routines have explicit correctness
-tests, with no unsupported or skipped routines.
+PRIK wraps all 2,066 discovered procedures. For focused validation, the suite
+selects the 127 `float64` routines exposed by SciPy 1.18.0; raw f2py supports
+125 of those source interfaces. All 127 selected routines have explicit
+correctness tests, with no unsupported or skipped routines.
 
 ## Requirements
 
@@ -27,16 +26,35 @@ python3 -m pip install \
   "meson==1.11.2" "ninja==1.13.0" pytest
 ```
 
-Run every command from the directory that contains `examples/`.
+Run the remaining commands from the repository root.
 
-## Build both wrappers
+## Quick start
 
-The native builder compiles the bundled LAPACK and BLAS sources once and links
-the development libraries for companion support symbols. Internal support
-objects are included once in the shared library, while their compiler-specific
-`.mod` files are retained for generated wrappers.
+Build both wrappers and run the 127-routine comparison:
 
-`build_all.sh` runs these two scripts:
+```bash
+source examples/lapack/build_all.sh
+python3 -m pytest -q examples/lapack/tests
+```
+
+Use `source` so the build paths exported by `build_all.sh` remain available to
+the test process.
+
+## How the build works
+
+The builder compiles the bundled LAPACK and BLAS sources once. It also links
+the installed LAPACK and BLAS libraries for support routines outside the
+bundled source set. PRIK and f2py then link the same shared library, so LAPACK
+implementation code is not compiled twice.
+
+The native build also retains its compiler-generated module files in
+`LAPACK_MODULE_DIR`. Both generated wrappers use that directory when they
+compile.
+
+`build_all.sh` runs the following two scripts. The commands are shown so you
+can reuse or adapt either build independently.
+
+### Build the PRIK wrapper
 
 <!-- prik-doc-source: examples/lapack/build_prik.sh -->
 ```bash
@@ -63,6 +81,12 @@ python -m prik "$EXAMPLE_WORKSPACE/examples/lapack/native" \
   --wrapper-c-flags="-O0 -g0"
 ```
 
+PRIK reads the complete source tree to generate its Python API.
+`--no-compile-input-sources` makes it reuse `LAPACK_SHARED_LIBRARY` instead of
+compiling those native sources again.
+
+### Build the f2py comparison wrapper
+
 <!-- prik-doc-source: examples/lapack/build_f2py.sh -->
 ```bash
 cd "$EXAMPLE_WORKSPACE"
@@ -88,20 +112,13 @@ python -m numpy.f2py -c \
   --opt=-O0
 ```
 
-PRIK keeps the module namespaces discovered from the complete sources. The
-committed reviewed [`lapack.pyf`](lapack.pyf) exposes `la_constants`, and f2py
-compiles its generated wrapper with the retained module directory.
+The committed reviewed [`lapack.pyf`](lapack.pyf) defines the 125-routine f2py
+comparison surface and exposes `la_constants`. f2py compiles only its generated
+wrapper and reuses the native library and module directory.
 
-No LAPACK implementation or support object is compiled twice.
+## Run focused tests
 
-Build and validate the example:
-
-```bash
-source examples/lapack/build_all.sh
-python3 -m pytest -q examples/lapack/tests
-```
-
-You can also run one family or routine:
+After the quick-start build, run one family or routine:
 
 ```bash
 python3 -m pytest -q examples/lapack/tests/test_linear_general.py
@@ -110,21 +127,22 @@ python3 -m pytest -q \
 python3 -m pytest -q examples/lapack/tests -k dgesvd
 ```
 
-## What the comparison shows
+## What is validated
 
 PRIK preserves native argument order, storage, indexes, and scalar writebacks.
 The 9 scalar-writeback routines omit Fortran `intent` for scalar outputs.
-Their reviewed signature declarations use `intent(inout)` and typed NumPy 0-D
-arrays, while PRIK returns those values directly.
+[`lapack.pyf`](lapack.pyf) records them as `intent(inout)`, so f2py receives
+typed NumPy 0-D arrays. PRIK returns the same writebacks directly.
 
 The tests cover linear solves, factorizations, eigenproblems, singular values,
 banded and packed layouts, workspaces, pivots, untouched storage, and `INFO`.
 Equivalent decompositions are checked with mathematical invariants rather than
 byte equality.
 
-`dgees` and `dgges` use unannotated selection callbacks that raw f2py 2.5.1
-cannot generate safely. They remain covered through PRIK, SciPy, and independent
-Schur reconstruction.
+The committed [`lapack.pyf`](lapack.pyf) excludes `dgees` and `dgges` because
+f2py 2.5.1 generates incomplete declarations for their selection callbacks.
+Their tests exercise PRIK and SciPy, then independently verify the resulting
+Schur decompositions.
 
 ## Sources and license
 

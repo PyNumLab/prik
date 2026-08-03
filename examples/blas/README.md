@@ -1,26 +1,53 @@
 # Wrap Reference BLAS with PRIK
 
-This copyable example builds the complete Reference BLAS once, then links both
-PRIK and NumPy f2py wrappers to the same native library. Its 155 named tests
-compare both wrappers with small independent formulas, storage checks, and each
-other.
+Build the complete Reference BLAS once, wrap it with PRIK and NumPy f2py, and
+compare both Python APIs with 155 named correctness tests.
 
 All 155 routines are exported and validated through both wrappers, with no
-unsupported or skipped routines.
+unsupported or skipped routines. The tests use small independent formulas and
+storage checks, so the comparison does not depend on either wrapper as its sole
+oracle.
 
 ## Requirements
 
-Install GNU Fortran and the Python build tools:
+Install GNU Fortran. On Ubuntu:
+
+```console
+sudo apt-get update
+sudo apt-get install --yes gfortran
+```
+
+Install the pinned Python build tools:
 
 ```console
 python3 -m pip install "numpy==2.5.1" "meson==1.11.2" "ninja==1.13.0" pytest
 ```
 
-Run every command from the directory that contains `examples/`.
+Run the remaining commands from the repository root.
 
-## Build both wrappers
+## Quick start
 
-`build_all.sh` runs these two scripts:
+Build both wrappers and run the complete comparison:
+
+```bash
+source examples/blas/build_all.sh
+python3 -m pytest -q examples/blas/tests
+```
+
+Use `source` so the build paths exported by `build_all.sh` remain available to
+the test process.
+
+## How the build works
+
+The native sources are compiled once into a shared library. PRIK reads the
+complete source tree to generate its Python API, skips native source
+compilation, and links that library. f2py compiles the committed reviewed
+[`blas.pyf`](blas.pyf) and links the same library.
+
+`build_all.sh` runs the following two scripts. The commands are shown so you
+can reuse or adapt either build independently.
+
+### Build the PRIK wrapper
 
 <!-- prik-doc-source: examples/blas/build_prik.sh -->
 ```bash
@@ -46,6 +73,8 @@ python -m prik "$EXAMPLE_WORKSPACE/examples/blas/native" \
   --wrapper-c-flags="-O0 -g0"
 ```
 
+### Build the f2py comparison wrapper
+
 <!-- prik-doc-source: examples/blas/build_f2py.sh -->
 ```bash
 cd "$EXAMPLE_WORKSPACE"
@@ -70,14 +99,9 @@ python -m numpy.f2py -c \
   --opt=-O0
 ```
 
-Build and validate the example:
+## Run focused tests
 
-```bash
-source examples/blas/build_all.sh
-python3 -m pytest -q examples/blas/tests
-```
-
-You can also run one family or routine:
+After the quick-start build, run one family or routine:
 
 ```bash
 python3 -m pytest -q examples/blas/tests/test_level1_real.py
@@ -86,21 +110,19 @@ python3 -m pytest -q \
 python3 -m pytest -q examples/blas/tests -k dgemm
 ```
 
-## What the comparison shows
+## What is validated
 
 PRIK preserves the native BLAS argument order and returns visible scalar
-writebacks. f2py compiles the committed reviewed [`blas.pyf`](blas.pyf) and
-links the existing shared library.
+writebacks.
 
-The 6 rotation routines do not declare Fortran `intent` for scalar writebacks.
-The reviewed signature records their `intent(inout)` declarations and the
-comparison passes typed NumPy 0-D arrays. PRIK needs neither: it returns those
-scalar writebacks directly.
+The 6 rotation routines omit Fortran `intent` for scalar writebacks.
+[`blas.pyf`](blas.pyf) records them as `intent(inout)`, so f2py receives typed
+NumPy 0-D arrays. PRIK returns the same writebacks directly.
 
 The tests cover positive and negative increments, leading-dimension padding,
 packed and banded layouts, triangular and Hermitian storage, native one-based
 indexes, input preservation, and dtype-aware numerical tolerances. The
-independent oracle remains visible beside every wrapper call.
+independent formula or invariant remains visible beside each wrapper call.
 
 ## Sources and license
 
