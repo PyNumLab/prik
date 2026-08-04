@@ -812,7 +812,7 @@ class FortranToIRConverter(ClassVisitor):
         module_variables = [
             self.visit(var, as_data_member=True, derived_type_context=context)
             for var in getattr(module, "variables", [])
-            if var.name.casefold() not in common_variables
+            if var.name.casefold() not in common_variables and self._is_representable_module_variable(var)
         ]
         for variable in module_variables:
             if variable.origin.native_scope is None:
@@ -833,6 +833,11 @@ class FortranToIRConverter(ClassVisitor):
                 source_kind="module",
             ),
         )
+
+    @staticmethod
+    def _is_representable_module_variable(variable: FortranVariable) -> bool:
+        """Omit parameter arrays that have no addressable native module storage."""
+        return not (variable.is_parameter and variable.rank > 0)
 
     def procedures_to_semantic_module(
         self,
@@ -1186,6 +1191,8 @@ class FortranToIRConverter(ClassVisitor):
             metadata["polymorphic"] = True
         if getattr(var, "is_parameter", False):
             metadata["constant"] = True
+        if var.declared_storage_bits is not None:
+            metadata["declared_storage_bits"] = var.declared_storage_bits
         return metadata
 
     @staticmethod
@@ -1551,7 +1558,7 @@ class FortranToIRConverter(ClassVisitor):
             inline_lookup = {
                 signature.name.casefold(): self.visit(
                     signature,
-                    visibility=self._symbol_visibility(module, interface.name),
+                    visibility=self._symbol_visibility(module, signature.name),
                     derived_type_context=context,
                 )
                 for signature in interface.procedures

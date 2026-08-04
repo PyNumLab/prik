@@ -27,6 +27,21 @@ def hidden() -> Float64[3]: ...
     return WrapperPlanner().build(module)
 
 
+def _size_intrinsic_result_plan():
+    module = parse_pyi_text(
+        """
+from prik.contracts import Float64
+
+def vector(values: Float64[:]) -> Float64[size(values)]: ...
+def flattened(values: Float64[:, :]) -> Float64[size(values)]: ...
+def columns(values: Float64[:, :]) -> Float64[size(values, 2)]: ...
+""",
+        module_name="size_intrinsic_results",
+    )
+    complete_semantic_policies(module)
+    return WrapperPlanner().build(module)
+
+
 def test_array_results_record_producer_shape_copy_ownership_and_shared_hidden_slot():
     direct_function, hidden_function = _result_plan().namespaces[0].functions
     direct = direct_function.results[0]
@@ -77,6 +92,27 @@ def test_array_result_lowering_transfers_bridge_copy_to_capsule_owned_numpy_stor
     assert "result_copy = reshape(result_value, [size(result_value)])" in bridge_source
     assert "real(c_double), dimension(3) :: out_value" in bridge_source
     assert "call native_hidden(out_value)" in bridge_source
+
+
+def test_size_intrinsic_results_reuse_input_array_extent_roles_in_both_backends():
+    plan = _size_intrinsic_result_plan()
+    vector, flattened, columns = plan.namespaces[0].functions
+
+    assert vector.results[0].array.shape == ("__prik_extent_values_0",)
+    assert vector.results[0].array.extent_reference_tokens == (("__prik_extent_values_0",),)
+    assert vector.results[0].array.extent_reference_roles == (("size_intrinsic_results.vector.values:extent:0",),)
+    assert flattened.results[0].array.shape == ("__prik_extent_values_0 * __prik_extent_values_1",)
+    assert columns.results[0].array.shape == ("__prik_extent_values_1",)
+
+    artifacts = WrapperCodeGenerator().generate(plan)
+    c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
+    bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
+
+    assert "npy_intp result_obj_dims[] = {bound_values_extent_0};" in c_source
+    assert "npy_intp result_obj_dims[] = {bound_values_extent_0 * bound_values_extent_1};" in c_source
+    assert "real(c_double), dimension(values_extent_0) :: result_value" in bridge_source
+    assert "dimension(values_extent_0 * values_extent_1) :: result_value" in bridge_source
+    assert "real(c_double), dimension(values_extent_1) :: result_value" in bridge_source
 
 
 @pytest.mark.parametrize(

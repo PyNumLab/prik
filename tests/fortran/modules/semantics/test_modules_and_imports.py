@@ -79,6 +79,24 @@ end module constants_mod
     assert variables["origin"].shape == ["3"]
 
 
+def test_parameter_array_without_addressable_storage_is_omitted_but_remains_usable_by_routines():
+    source = """
+module constants_mod
+  real, parameter :: machine_values(3) = [1.0, 2.0, 3.0]
+  integer, parameter :: count = 3
+contains
+  real function second_value() result(value)
+    value = machine_values(2)
+  end function second_value
+end module constants_mod
+"""
+
+    module = fortran_module_to_semantic_module(parse_fortran_source(source))
+
+    assert [variable.name for variable in module.variables] == ["count"]
+    assert [function.name for function in module.functions] == ["second_value"]
+
+
 def test_complex_module():
     source = """
 module fem_mod
@@ -218,3 +236,22 @@ end module m
     assert semantic_dtype.visibility == "private"
     assert semantic_proc.visibility == "public"
     assert semantic_file_modules[0].name == "m"
+
+
+def test_declaration_level_private_module_constant_is_not_exported():
+    parsed = parse_fortran_source(
+        """
+module constants
+  real, parameter, private :: epsilon = 1.0
+  real, parameter :: visible = 2.0
+end module constants
+""",
+        filename="constants.f90",
+    )
+
+    semantic_module = fortran_module_to_semantic_module(parsed)
+
+    assert [(variable.name, variable.visibility) for variable in semantic_module.variables] == [
+        ("epsilon", "private"),
+        ("visible", "public"),
+    ]

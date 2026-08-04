@@ -35,6 +35,12 @@ dummy list. Ordinary scalar inputs are value-shaped, such as `Int32` or
 native scalar slot. Arrays, strings, derived objects, optional values, and
 callbacks keep their explicit semantic annotations.
 
+For a public Fortran generic whose specific module procedures are private,
+each generated overload keeps the private specific as its contract link but
+calls the public generic name. The bridge never imports an inaccessible
+specific procedure merely because that procedure supplied the candidate
+signature.
+
 ## Return Projection
 
 A Fortran function's direct result is the first Python return value. Projected

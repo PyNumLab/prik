@@ -249,6 +249,36 @@ def test_multi_file_standalone_procedures_build_one_merged_extension(tmp_path: P
     assert module.double_value(np.int32(4)) == (8, 4)
 
 
+def test_multi_file_build_resolves_reexported_intrinsic_kind_alias(tmp_path: Path):
+    module, payload = _build_sources_and_import(
+        [
+            (
+                "kind_consumer.f90",
+                """function twice(value) result(output)
+  use fftpack_kind, only: dp => rk
+  implicit none
+  real(dp), intent(in) :: value
+  real(dp) :: output
+  output = 2.0_dp * value
+end function twice
+""",
+            ),
+            (
+                "fftpack_kind.f90",
+                """module fftpack_kind
+  use, intrinsic :: iso_fortran_env, only: rk => real64
+  implicit none
+end module fftpack_kind
+""",
+            ),
+        ],
+        tmp_path,
+    )
+
+    assert payload["module_name"] == "kind_consumer"
+    assert module.twice(np.float64(1.25)) == np.float64(2.5)
+
+
 def test_multi_source_pyi_out_writes_one_flat_combined_package(tmp_path: Path):
     sources = _write_combined_sources(tmp_path)
     package = tmp_path / "contracts"

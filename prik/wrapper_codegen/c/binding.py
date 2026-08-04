@@ -6872,13 +6872,17 @@ class CBindingGenerator(ClassVisitor):
     ) -> str:
         """Lower one validated extent expression through its planned role references."""
         lowered = expression
-        for role in handoff.extent_reference_roles[axis]:
+        references = zip(
+            handoff.extent_reference_tokens[axis],
+            handoff.extent_reference_roles[axis],
+            strict=True,
+        )
+        for token, role in references:
             try:
                 value_name = context.role_values[role]
             except KeyError:
                 raise ValueError(f"Array extent role {role!r} has no binding value") from None
-            reference_name = role.rsplit(".", 1)[-1].split(":", 1)[0]
-            lowered = re.sub(rf"\b{re.escape(reference_name)}\b", value_name, lowered)
+            lowered = re.sub(rf"\b{re.escape(token)}\b", value_name, lowered)
         return lowered
 
     def _array_extraction_nodes(
@@ -9365,13 +9369,22 @@ class CBindingGenerator(ClassVisitor):
         arguments: dict[str, _CArgumentNames],
     ) -> dict[str, str]:
         """Map completed handoff roles to their binding value locals."""
-        return {
+        values = {
             argument.binding.handoff_role: self._argument_role_value(
                 argument,
                 arguments[argument.owner_path].value_name,
             )
             for argument in plan.arguments
         }
+        values.update(
+            {
+                role: arguments[argument.owner_path].extent_names[axis]
+                for argument in plan.arguments
+                if argument.array is not None
+                for axis, role in enumerate(argument.array.extent_roles)
+            }
+        )
+        return values
 
     @staticmethod
     def _argument_role_value(argument: ArgumentTransferPlan, value_name: str) -> str:

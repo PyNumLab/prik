@@ -971,7 +971,7 @@ class WrapperPlanner(ClassVisitor):
         arguments: tuple[ArgumentTransferPlan, ...],
     ) -> tuple[str, ...]:
         """Plan a stable conversion order that satisfies array-extent dependencies."""
-        role_owners = {argument.binding.handoff_role: argument.owner_path for argument in arguments}
+        role_owners = WrapperPlanner._argument_role_owners(arguments)
         dependencies = WrapperPlanner._binding_conversion_dependencies(arguments, role_owners)
         ordered: list[str] = []
         converted: set[str] = set()
@@ -985,6 +985,31 @@ class WrapperPlanner(ClassVisitor):
             ordered.append(argument.owner_path)
             converted.add(argument.owner_path)
         return tuple(ordered)
+
+    @staticmethod
+    def _argument_role_owners(
+        arguments: tuple[ArgumentTransferPlan, ...],
+    ) -> dict[str, str]:
+        """Map every binding-produced value or extent role to its argument owner."""
+        owners = {argument.binding.handoff_role: argument.owner_path for argument in arguments}
+        owners.update(
+            {
+                role: argument.owner_path
+                for argument in arguments
+                if argument.array is not None
+                for role in argument.array.extent_roles
+            }
+        )
+        return owners
+
+    @staticmethod
+    def _argument_extent_roles(arguments: tuple[ArgumentTransferPlan, ...]) -> tuple[str, ...]:
+        """Return every binding-produced array extent role in argument order."""
+        return tuple(
+            role
+            for argument in arguments
+            for role in (argument.array.extent_roles if argument.array is not None else ())
+        )
 
     @staticmethod
     def _binding_conversion_dependencies(
@@ -1110,6 +1135,8 @@ class WrapperPlanner(ClassVisitor):
                 callback=policy.callback,
             ),
             character_length=policy.character_length,
+            scalar_logical_abi=policy.scalar_logical_abi,
+            scalar_native_type=policy.scalar_native_type,
             array_writeback_abi=policy.array_writeback_abi,
             object_kind=policy.ownership.kind,
             ownership_owner=policy.ownership.owner,
@@ -1444,6 +1471,8 @@ class WrapperPlanner(ClassVisitor):
             bridge_data_action=slot.bridge_data_action,
             bridge_copy_reason=slot.bridge_copy_reason,
             object_kind=slot.object_kind,
+            scalar_logical_abi=slot.scalar_logical_abi,
+            scalar_native_type=slot.scalar_native_type,
             literal_type=slot.literal_type,
             literal_value=slot.literal_value,
             result_position=slot.result_position,
@@ -1711,7 +1740,8 @@ class WrapperPlanner(ClassVisitor):
             category=policy.category,
             data_role=self._value_role(owner_path),
             extent_roles=tuple(f"{owner_path}:extent:{axis}" for axis in range(abi_rank)),
-            extent_reference_roles=self._array_extent_reference_roles(owner_path, policy.extent_references),
+            extent_reference_tokens=policy.extent_references,
+            extent_reference_roles=policy.extent_reference_roles,
             upper_bound_roles=self._array_layout_roles(owner_path, abi_rank, policy.contiguous, "upper-bound"),
             stride_roles=self._array_layout_roles(owner_path, abi_rank, policy.contiguous, "stride"),
             dense_actual_role=self._array_dense_actual_role(
@@ -1773,15 +1803,6 @@ class WrapperPlanner(ClassVisitor):
             return ()
         return tuple(f"{owner_path}:{label}:{axis}" for axis in range(rank))
 
-    def _array_extent_reference_roles(
-        self,
-        owner_path: str,
-        references: tuple[tuple[str, ...], ...],
-    ) -> tuple[tuple[str, ...], ...]:
-        """Resolve completed extent names to existing argument handoff roles."""
-        function_path = owner_path.rsplit(".", 1)[0]
-        return tuple(tuple(f"{function_path}.{name}:value" for name in axis) for axis in references)
-
     def _status_error_plan(
         self,
         policy: NativeStatusErrorPolicy | None,
@@ -1832,6 +1853,7 @@ class WrapperPlanner(ClassVisitor):
     ) -> tuple[str, ...]:
         """Return symbolic roles available after the native call."""
         roles = [argument.binding.handoff_role for argument in arguments]
+        roles.extend(self._argument_extent_roles(arguments))
         roles.extend(
             role
             for argument in arguments

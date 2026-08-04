@@ -43,6 +43,11 @@ def test_array_results_follow_data_buffer_and_descriptor_handle_contracts(
     np.testing.assert_allclose(automatic, np.array([2.0, 4.0, 6.0, 8.0], dtype=np.float64))
     assert automatic.base is not None
 
+    intrinsic_source = np.arange(1.0, 6.0, dtype=np.float64)
+    intrinsic = module.size_intrinsic_vector(intrinsic_source)
+    np.testing.assert_allclose(intrinsic, 3.0 * intrinsic_source)
+    assert intrinsic.base is not None
+
     matrix = module.automatic_matrix(np.int32(2), np.int32(3))
     np.testing.assert_allclose(
         matrix,

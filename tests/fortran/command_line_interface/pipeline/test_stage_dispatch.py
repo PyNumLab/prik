@@ -3,6 +3,7 @@
 from tests.fortran.command_line_interface.pipeline._support import (
     FortranParseError,
     Path,
+    PreprocessingConfig,
     PreprocessingDiagnostic,
     PreprocessingError,
     TEST_FILE,
@@ -19,6 +20,7 @@ from tests.fortran.command_line_interface.pipeline._support import (
     types,
     prik_cli,
 )
+from prik.semantics.fortran2ir import collect_semantic_compile_time_requirements
 
 
 def test_cli_keeps_free_procedure_when_module_has_same_name(tmp_path: Path):
@@ -233,6 +235,33 @@ end module physics
 
     assert semantic_type["metadata"]["external_type_ref"]["wrapped"] is True
     assert "class particle" not in payload[str(physics)]["pyi"]
+
+
+def test_single_file_cli_resolves_direct_intrinsic_kind_rename_before_probing(tmp_path: Path):
+    source = tmp_path / "direct_intrinsic_kind.f90"
+    source.write_text(
+        """
+module direct_intrinsic_kind
+  use iso_fortran_env, only: wp => real64
+  real(wp), parameter :: scale = 2.0_wp
+contains
+  real(wp) function twice(value) result(output)
+    real(wp), intent(in) :: value
+    output = scale*value
+  end function twice
+end module direct_intrinsic_kind
+""",
+        encoding="utf-8",
+    )
+
+    parsed_files = prik_cli._parse_fortran_source_files([source], PreprocessingConfig())
+    parsed = parsed_files[0][1]
+    module = parsed.modules[0]
+
+    assert module.variables[0].kind == "real64"
+    assert module.procedures[0].arguments[0].kind == "real64"
+    assert module.procedures[0].result.kind == "real64"
+    assert collect_semantic_compile_time_requirements(parsed) == []
 
 
 def test_prik_pyi_report_writes_opaque_dependency_stub_for_external_type(tmp_path: Path, monkeypatch):

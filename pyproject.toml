@@ -95,7 +95,7 @@ markers = [
     "fortran_end_to_end: compiled, imported, and called Fortran feature tests",
     "fuzz: randomized parser robustness tests",
     "property: Hypothesis property-based tests",
-    "real_library: dedicated BLAS/LAPACK native-source end-to-end tests",
+    "real_library: opt-in full-library native-source numerical end-to-end tests",
     "regression: tests that pin previously fixed bugs",
     "slow: tests that are useful but too expensive for the default inner loop",
     "toolchain_smoke: portable compiled Fortran end-to-end cases reused across compiler, OS, and architecture lanes",

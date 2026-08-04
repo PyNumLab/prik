@@ -69,6 +69,7 @@ from prik.semantics.wrapper_policy import (
     NativeArraySourceKind,
     NativeDescriptorHandoffABI,
     NativeInvocationKind,
+    ScalarLogicalABI,
     OptionalMode,
     PythonExceptionKind,
     TransformationAction,
@@ -296,6 +297,7 @@ class ArrayHandoffPlan(StageRecord):
     category: str | None
     data_role: str
     extent_roles: tuple[str, ...]
+    extent_reference_tokens: tuple[tuple[str, ...], ...] = ()
     extent_reference_roles: tuple[tuple[str, ...], ...] = ()
     upper_bound_roles: tuple[str, ...] = ()
     stride_roles: tuple[str, ...] = ()
@@ -599,6 +601,8 @@ class NativeCallSlotPlan(StageRecord):
     bridge_data_action: BridgeDataAction
     bridge_copy_reason: str | None
     object_kind: ObjectKind | None
+    scalar_logical_abi: ScalarLogicalABI = ScalarLogicalABI.NOT_APPLICABLE
+    scalar_native_type: str | None = None
     literal_type: str | None = None
     literal_value: Any = None
     result_position: int | None = None
@@ -690,6 +694,8 @@ class ArgumentTransferPlan(StageRecord):
     semantic_type_name: str
     datatype_family: DatatypeFamily
     character_length: int | None
+    scalar_logical_abi: ScalarLogicalABI
+    scalar_native_type: str | None
     array_writeback_abi: ArrayWritebackABI
     object_kind: ObjectKind
     ownership_owner: OwnershipOwner

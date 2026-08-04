@@ -1575,12 +1575,14 @@ print(counter)  # 5
 print(max_count)  # 100
 ```
 
-Parameters become `Final[...]` constants and have no native setter. A literal
-value is materialized directly by the binding. When a numeric initializer
-remains a Fortran expression, a generated bridge getter reads the
-compiler-evaluated parameter while the Python module is initialized. Rebinding
-`module.max_count` only shadows the Python attribute and does not change native
-Fortran state. Private variables are omitted.
+Representable rank-zero parameters become `Final[...]` constants and have no
+native setter. A literal value is materialized directly by the binding. When a
+numeric initializer remains a Fortran expression, a generated bridge getter
+reads the compiler-evaluated parameter while the Python module is initialized.
+Rank-positive parameter arrays are omitted because they have no addressable
+module storage for the live-array getter; wrapped procedures may still use
+them internally. Rebinding `module.max_count` only shadows the Python attribute
+and does not change native Fortran state. Private variables are omitted.
 
 Allocatable module arrays are attributes returning persistent
 `Allocatable[T[...]]` handles:
@@ -1750,6 +1752,15 @@ truth bit as `integer(c_int8_t)`. The C binding explicitly converts that `0` or
 `1` value to `bool`. This prevents processor-specific noncanonical logical bit
 patterns from being interpreted as C truth values while leaving native
 Fortran logical evaluation unchanged.
+
+Scalar Boolean arguments keep a C-interoperable `logical(c_bool)` at the
+binding boundary. When the native dummy uses default `logical` or another
+non-`c_bool` kind, the completed wrapper policy selects an exact-kind Fortran
+local: input values are assigned into that local before the native call and
+mutable/output values are assigned back afterward. This kind adaptation is
+required even when both declarations represent Boolean values, because an
+explicit Fortran interface rejects calls whose dummy and actual logical kinds
+differ.
 
 Mutable ordinary Boolean array buffers use the same low-bit rule on writeback.
 After the native call, the bridge normalizes every returned byte with

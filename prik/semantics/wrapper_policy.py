@@ -80,6 +80,7 @@ RAW_STRING_ADDRESS_COPY_REASON = (
     "materialize fixed-length Fortran character storage from a caller-supplied raw address and copy mutation back"
 )
 DERIVED_VALUE_COPY_REASON = "pass an exact derived pointee through a typed native value dummy"
+LOGICAL_SCALAR_KIND_COPY_REASON = "adapt a C-interoperable Boolean through storage with the native Fortran logical kind"
 
 
 class OptionalMode(str, Enum):
@@ -132,6 +133,14 @@ class ArrayWritebackABI(str, Enum):
     NOT_APPLICABLE = "not_applicable"
     NATIVE_ARRAY = "native_array"
     LOGICAL_LOW_BIT_INT8 = "logical_low_bit_int8"
+
+
+class ScalarLogicalABI(str, Enum):
+    """Completed scalar logical adaptation between the C and native dummies."""
+
+    NOT_APPLICABLE = "not_applicable"
+    C_BOOL = "c_bool"
+    NATIVE_KIND_COPY = "native_kind_copy"
 
 
 _ARRAY_VALUE_OPTIONAL_MODES = frozenset({OptionalMode.REQUIRED, OptionalMode.NULLABLE_VALUE})
@@ -890,6 +899,8 @@ class ArrayHandoffPolicy:
     itemsize: int | None = None
     category: str | None = None
     extent_references: tuple[tuple[str, ...], ...] = ()
+    extent_reference_roles: tuple[tuple[str, ...], ...] = ()
+    extent_blockers: tuple[tuple[str, ...], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1047,6 +1058,8 @@ class ArgumentPolicy:
     native_position: int
     semantic_type_name: str
     rank: int
+    scalar_logical_abi: ScalarLogicalABI
+    scalar_native_type: str | None
     array_writeback_abi: ArrayWritebackABI
     optional: bool
     optional_mode: OptionalMode
@@ -1144,6 +1157,8 @@ class NativeCallSlotPolicy:
     bridge_data_action: BridgeDataAction
     bridge_copy_reason: str | None
     object_kind: ObjectKind | None
+    scalar_logical_abi: ScalarLogicalABI = ScalarLogicalABI.NOT_APPLICABLE
+    scalar_native_type: str | None = None
     literal_type: str | None = None
     literal_value: Any = None
     result_position: int | None = None
@@ -2383,6 +2398,13 @@ def build_function_wrapper_policy(
         class_call,
     )
     results, result_blockers = _result_policies(function, owner_path, completed_derived_types)
+    arguments, results, native_call_slots = _complete_function_array_extent_policies(
+        function,
+        owner_path,
+        arguments,
+        results,
+        native_call_slots,
+    )
     writeback_actions, lifecycle_blockers = _lifecycle_policies(arguments)
     cleanup_actions, release_actions = _derived_result_lifecycle_policies(results)
     status_error = _completed_native_status_error_policy(function)
@@ -2394,7 +2416,7 @@ def build_function_wrapper_policy(
         + slot_blockers
         + lifecycle_blockers
         + _result_position_blockers(results, arguments)
-        + _array_extent_reference_blockers(function, arguments, results)
+        + _array_extent_reference_blockers(arguments, results)
         + _runtime_status_plan_blockers(status_error)
         + _string_result_status_blockers(results, status_error)
         + _string_writeback_status_blockers(arguments, status_error)
@@ -2568,6 +2590,7 @@ def _argument_policy(
 ) -> tuple[ArgumentPolicy, tuple[str, ...]]:
     """Complete one visible argument without mixing it with list traversal."""
     argument_path = f"{owner_path}.{argument.name}"
+    scalar_logical_abi, scalar_native_type = _scalar_logical_argument_abi(argument)
     optional_mode = _optional_mode(argument, decision)
     callback = _callback_handoff_policy(argument)
     array_policy = _array_handoff_policy(argument.semantic_type)
@@ -2588,6 +2611,7 @@ def _argument_policy(
         or _is_exported_passed_object_argument(function, native_position),
     )
     bridge_data_action, bridge_copy_reason = _completed_argument_bridge_action(
+        argument,
         decision,
         optional_mode,
         native_slot,
@@ -2617,6 +2641,8 @@ def _argument_policy(
             native_position=native_position,
             semantic_type_name=argument.semantic_type.name,
             rank=int(argument.semantic_type.rank or 0),
+            scalar_logical_abi=scalar_logical_abi,
+            scalar_native_type=scalar_native_type,
             array_writeback_abi=_array_writeback_abi(
                 argument.semantic_type,
                 decision,
@@ -2715,6 +2741,7 @@ def _is_exported_passed_object_argument(function: models.SemanticFunction, nativ
 
 
 def _completed_argument_bridge_action(
+    argument: models.SemanticArgument,
     decision: OwnershipDecision,
     optional_mode: OptionalMode,
     native_slot: NativeCallSlotPolicy | None,
@@ -2729,7 +2756,8 @@ def _completed_argument_bridge_action(
         optional_mode,
         native_slot.value_kind if native_slot is not None else None,
     )
-    return _derived_argument_bridge_data_action(derived, action, reason)
+    action, reason = _derived_argument_bridge_data_action(derived, action, reason)
+    return _scalar_logical_bridge_action(argument, action, reason)
 
 
 def _argument_boundary_policy(
@@ -2972,6 +3000,11 @@ def _hidden_result_policies(
             argument.semantic_type,
             descriptor_kind=mapping.value_kind,
         )
+        bridge_data_action, bridge_copy_reason = _scalar_logical_bridge_action(
+            argument,
+            bridge_data_action,
+            bridge_copy_reason,
+        )
         if bridge_data_action is BridgeDataAction.BLOCKED and decision.kind is not ObjectKind.SCALAR:
             blockers = (*blockers, f"hidden result {argument.name!r} has no completed bridge data action")
         derived = _derived_handoff_policy(
@@ -3157,6 +3190,7 @@ def _projected_argument_slot(
     argument_path = f"{owner_path}.{argument.name}"
     value_kind = _native_argument_value_kind(argument, mapping.value_kind or "arg")
     callback = _callback_handoff_policy(argument)
+    scalar_logical_abi, scalar_native_type = _scalar_logical_argument_abi(argument)
     derived = _argument_derived_handoff(argument, decision, callback, argument_path, derived_types)
     bridge_data_action, bridge_copy_reason = _completed_projected_bridge_action(
         argument,
@@ -3185,6 +3219,8 @@ def _projected_argument_slot(
             bridge_data_action=bridge_data_action,
             bridge_copy_reason=bridge_copy_reason,
             object_kind=decision.kind,
+            scalar_logical_abi=scalar_logical_abi,
+            scalar_native_type=scalar_native_type,
             result_position=mapping.result_position,
             semantic_type_name=argument.semantic_type.name,
             character_length=_character_length(argument.semantic_type),
@@ -3216,7 +3252,8 @@ def _completed_projected_bridge_action(
         _optional_mode(argument, decision),
         value_kind,
     )
-    return _derived_argument_bridge_data_action(derived, action, reason)
+    action, reason = _derived_argument_bridge_data_action(derived, action, reason)
+    return _scalar_logical_bridge_action(argument, action, reason)
 
 
 def _native_slot_barrier_actions(
@@ -3301,6 +3338,12 @@ def _hidden_result_native_call_slot_policy(
         argument.semantic_type,
         descriptor_kind=mapping.value_kind,
     )
+    bridge_data_action, bridge_copy_reason = _scalar_logical_bridge_action(
+        argument,
+        bridge_data_action,
+        bridge_copy_reason,
+    )
+    scalar_logical_abi, scalar_native_type = _scalar_logical_argument_abi(argument)
     blockers = (
         (f"native-call result slot {native_position} has no completed bridge data action",)
         if bridge_data_action is BridgeDataAction.BLOCKED
@@ -3320,6 +3363,8 @@ def _hidden_result_native_call_slot_policy(
             bridge_data_action=bridge_data_action,
             bridge_copy_reason=bridge_copy_reason,
             object_kind=decision.kind,
+            scalar_logical_abi=scalar_logical_abi,
+            scalar_native_type=scalar_native_type,
             result_position=mapping.result_position,
             semantic_type_name=argument.semantic_type.name,
             character_length=_character_length(argument.semantic_type),
@@ -3409,6 +3454,7 @@ def _implicit_native_call_slot_policies(
             blockers.append(f"implicit native-call slot {position} references argument without completed policy")
             continue
         value_kind = _native_argument_value_kind(argument, "arg")
+        scalar_logical_abi, scalar_native_type = _scalar_logical_argument_abi(argument)
         callback = argument.semantic_type.metadata.get(models.RESOLVED_CALLBACK_POLICY_METADATA)
         callback = callback if isinstance(callback, CallbackHandoffPolicy) else None
         derived = (
@@ -3436,6 +3482,11 @@ def _implicit_native_call_slot_policies(
                 bridge_data_action,
                 bridge_copy_reason,
             )
+            bridge_data_action, bridge_copy_reason = _scalar_logical_bridge_action(
+                argument,
+                bridge_data_action,
+                bridge_copy_reason,
+            )
         if bridge_data_action is BridgeDataAction.BLOCKED:
             blockers.append(f"implicit native-call slot {position} has no completed bridge data action")
         positions[position] = position
@@ -3455,6 +3506,8 @@ def _implicit_native_call_slot_policies(
                 bridge_data_action=bridge_data_action,
                 bridge_copy_reason=bridge_copy_reason,
                 object_kind=decision.kind,
+                scalar_logical_abi=scalar_logical_abi,
+                scalar_native_type=scalar_native_type,
                 semantic_type_name=argument.semantic_type.name,
                 character_length=_character_length(argument.semantic_type),
                 array=_array_handoff_policy(argument.semantic_type),
@@ -6034,6 +6087,41 @@ def _string_argument_bridge_data_action(
 
 
 # Scalar bridge data policy.
+def _scalar_logical_argument_abi(
+    argument: models.SemanticArgument,
+) -> tuple[ScalarLogicalABI, str | None]:
+    """Complete exact native-kind storage for one Fortran logical scalar."""
+    semantic_type = argument.semantic_type
+    origin = argument.origin
+    source_type = str(origin.source_type or "").strip()
+    if (
+        semantic_type.name != "Bool"
+        or int(semantic_type.rank or 0) != 0
+        or origin.source_language != "fortran"
+        or not source_type.casefold().startswith("logical")
+    ):
+        return ScalarLogicalABI.NOT_APPLICABLE, None
+    compact = "".join(source_type.casefold().split())
+    if compact == "logical(kind=c_bool)":
+        return ScalarLogicalABI.C_BOOL, "logical(c_bool)"
+    declared_bits = origin.metadata.get("declared_storage_bits")
+    if source_type.casefold() == "logical" and isinstance(declared_bits, int) and declared_bits > 0:
+        source_type = f"logical(kind={declared_bits // 8})"
+    return ScalarLogicalABI.NATIVE_KIND_COPY, source_type
+
+
+def _scalar_logical_bridge_action(
+    argument: models.SemanticArgument,
+    action: BridgeDataAction,
+    reason: str | None,
+) -> tuple[BridgeDataAction, str | None]:
+    """Select an explicit representation copy for a non-C logical kind."""
+    abi, _native_type = _scalar_logical_argument_abi(argument)
+    if abi is ScalarLogicalABI.NATIVE_KIND_COPY:
+        return BridgeDataAction.COPY_REPRESENTATION, LOGICAL_SCALAR_KIND_COPY_REASON
+    return action, reason
+
+
 def _scalar_argument_bridge_data_action(
     decision: OwnershipDecision,
     optional_mode: OptionalMode,
@@ -6355,6 +6443,154 @@ def _raw_array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandof
     )
 
 
+def _complete_function_array_extent_policies(
+    function: models.SemanticFunction,
+    owner_path: str,
+    arguments: list[ArgumentPolicy],
+    results: tuple[ResultPolicy, ...],
+    native_call_slots: tuple[NativeCallSlotPolicy, ...],
+) -> tuple[list[ArgumentPolicy], tuple[ResultPolicy, ...], tuple[NativeCallSlotPolicy, ...]]:
+    """Resolve callable shape expressions to completed scalar or array-extent roles."""
+    scalar_roles, array_roles = _function_array_extent_sources(function, owner_path)
+
+    def complete(array: ArrayHandoffPolicy | None) -> ArrayHandoffPolicy | None:
+        if array is None:
+            return None
+        resolutions = tuple(
+            _resolve_array_extent_expression(expression, scalar_roles, array_roles) for expression in array.shape
+        )
+        return replace(
+            array,
+            shape=tuple(item[0] for item in resolutions),
+            extent_references=tuple(item[1] for item in resolutions),
+            extent_reference_roles=tuple(item[2] for item in resolutions),
+            extent_blockers=tuple(item[3] for item in resolutions),
+        )
+
+    return (
+        [replace(argument, array=complete(argument.array)) for argument in arguments],
+        tuple(replace(result, array=complete(result.array)) for result in results),
+        tuple(replace(slot, array=complete(slot.array)) for slot in native_call_slots),
+    )
+
+
+def _function_array_extent_sources(
+    function: models.SemanticFunction,
+    owner_path: str,
+) -> tuple[dict[str, tuple[str, str]], dict[str, tuple[str, tuple[str, ...]]]]:
+    """Return visible scalar values and concrete input-array extents by source name."""
+    scalar_roles: dict[str, tuple[str, str]] = {}
+    array_roles: dict[str, tuple[str, tuple[str, ...]]] = {}
+    for argument in function.arguments:
+        decision = _ownership_decision(argument, models.RESOLVED_OWNERSHIP_POLICY_METADATA)
+        if decision is None or not decision.python_visible:
+            continue
+        argument_path = f"{owner_path}.{argument.name}"
+        if int(argument.semantic_type.rank or 0) == 0:
+            scalar_roles[argument.name.casefold()] = (argument.name, f"{argument_path}:value")
+            continue
+        array = _array_handoff_policy(argument.semantic_type)
+        if array is None or array.rank is None:
+            continue
+        roles = tuple(f"{argument_path}:extent:{axis}" for axis in range(array.rank))
+        array_roles[argument.name.casefold()] = (argument.name, roles)
+    return scalar_roles, array_roles
+
+
+class _ArrayExtentExpressionResolver(ast.NodeTransformer):
+    """Normalize supported shape intrinsics and record their completed ABI roles."""
+
+    def __init__(
+        self,
+        scalar_roles: dict[str, tuple[str, str]],
+        array_roles: dict[str, tuple[str, tuple[str, ...]]],
+    ) -> None:
+        self.scalar_roles = scalar_roles
+        self.array_roles = array_roles
+        self.references: dict[str, str] = {}
+        self.blockers: list[str] = []
+        self.used_intrinsic = False
+
+    def visit_Name(self, node: ast.Name) -> ast.AST:
+        source = self.scalar_roles.get(node.id.casefold())
+        if source is None:
+            self.blockers.append(node.id)
+            return node
+        self.references.setdefault(node.id, source[1])
+        return node
+
+    def visit_Call(self, node: ast.Call) -> ast.AST:
+        if not isinstance(node.func, ast.Name) or node.func.id.casefold() != "size":
+            self.blockers.append("<invalid>")
+            return node
+        replacement = self._size_replacement(node)
+        if replacement is None:
+            self.blockers.append("<invalid>")
+            return node
+        self.used_intrinsic = True
+        return ast.copy_location(replacement, node)
+
+    def _size_replacement(self, node: ast.Call) -> ast.AST | None:
+        parsed = self._size_source_and_dimension(node)
+        if parsed is None:
+            return None
+        source_name, roles, dimension = parsed
+        axes = range(len(roles)) if dimension is None else (dimension - 1,)
+        tokens = tuple(f"__prik_extent_{source_name}_{axis}" for axis in axes)
+        for token, axis in zip(tokens, axes, strict=True):
+            self.references.setdefault(token, roles[axis])
+        expression = " * ".join(tokens)
+        return ast.parse(expression, mode="eval").body
+
+    def _size_source_and_dimension(self, node: ast.Call) -> tuple[str, tuple[str, ...], int | None] | None:
+        if not 1 <= len(node.args) <= 2 or len(node.keywords) > 1:
+            return None
+        source_node = node.args[0]
+        if not isinstance(source_node, ast.Name):
+            return None
+        source = self.array_roles.get(source_node.id.casefold())
+        if source is None:
+            return None
+        dimension_node = node.args[1] if len(node.args) == 2 else None
+        if node.keywords:
+            keyword = node.keywords[0]
+            if keyword.arg is None or keyword.arg.casefold() != "dim" or dimension_node is not None:
+                return None
+            dimension_node = keyword.value
+        if dimension_node is None:
+            return source[0], source[1], None
+        if not isinstance(dimension_node, ast.Constant) or not _is_integer_constant(dimension_node):
+            return None
+        dimension = int(dimension_node.value)
+        if not 1 <= dimension <= len(source[1]):
+            return None
+        return source[0], source[1], dimension
+
+
+def _resolve_array_extent_expression(
+    expression: str,
+    scalar_roles: dict[str, tuple[str, str]],
+    array_roles: dict[str, tuple[str, tuple[str, ...]]],
+) -> tuple[str, tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    """Resolve one extent to backend-neutral tokens and completed producer roles."""
+    if expression in {":", "::Strided", "...", "Flat"}:
+        return expression, (), (), ()
+    try:
+        tree = ast.parse(expression, mode="eval")
+    except SyntaxError:
+        return expression, ("<invalid>",), (), ("<invalid>",)
+    resolver = _ArrayExtentExpressionResolver(scalar_roles, array_roles)
+    resolved = resolver.visit(tree)
+    ast.fix_missing_locations(resolved)
+    if resolver.blockers or not _valid_array_extent_expression(resolved):
+        blockers = tuple(dict.fromkeys(resolver.blockers or ("<invalid>",)))
+        return expression, blockers, (), blockers
+    references = tuple(resolver.references)
+    roles = tuple(resolver.references.values())
+    lowered = ast.unparse(resolved) if resolver.used_intrinsic else expression
+    return lowered, references, roles, ()
+
+
 def _array_extent_references(expression: str) -> tuple[str, ...]:
     """Return stable scalar names used by one declared extent expression."""
     if expression in {":", "::Strided", "...", "Flat"}:
@@ -6394,24 +6630,15 @@ def _is_integer_constant(node: ast.AST) -> bool:
 
 
 def _array_extent_reference_blockers(
-    function: models.SemanticFunction,
     arguments: list[ArgumentPolicy],
     results: tuple[ResultPolicy, ...],
 ) -> tuple[str, ...]:
-    """Require every declared extent name to come from a visible scalar argument."""
-    scalar_names = {
-        argument.name
-        for argument in function.arguments
-        if int(argument.semantic_type.rank or 0) == 0
-        and (decision := _ownership_decision(argument, models.RESOLVED_OWNERSHIP_POLICY_METADATA)) is not None
-        and decision.python_visible
-    }
+    """Require every declared extent dependency to have a completed visible role."""
     blockers = []
     for owner in (*arguments, *results):
         if owner.array is None:
             continue
-        for axis, references in enumerate(owner.array.extent_references):
-            missing = tuple(name for name in references if name not in scalar_names)
+        for axis, missing in enumerate(owner.array.extent_blockers):
             if missing:
                 blockers.append(
                     f"array owner {owner.owner_path!r} extent axis {axis} has unavailable scalar references {missing}"

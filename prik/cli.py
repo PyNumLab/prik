@@ -496,36 +496,24 @@ def _parse_fortran_source_files(
         code, _preprocessing_recipe = _fortran_source_for_path(path, preprocessing)
         parsed_files.append((path, parser.parse_file(code, filename=str(path))))
 
-    if len(parsed_files) > 1:
-        _resolve_fortran_project_parameters(parser, [parsed for _path, parsed in parsed_files])
+    _resolve_fortran_project_parameters(parser, [parsed for _path, parsed in parsed_files])
     return parsed_files
 
 
 def _resolve_fortran_project_parameters(parser: FortranParser, parsed_files) -> None:
     """Apply project-wide parameter facts without enforcing global symbols."""
-    module_params: dict[str, dict[str, str]] = {}
-    for parsed_file in parsed_files:
-        if parsed_file.source is not None:
-            module_params.update(parser._collect_module_parameters(parsed_file.source, parsed_file.filename))
+    module_params = parser._helper_project_module_symbols(parsed_files)
 
     seen_procedures: set[int] = set()
     for parsed_file in parsed_files:
-        for proc in parsed_file.procedures:
+        for proc in parser._helper_project_file_procedures(parsed_file):
             if id(proc) not in seen_procedures:
                 parser._resolve_signature_kinds(proc, module_params, resolve_shapes=False)
                 seen_procedures.add(id(proc))
         for module in parsed_file.modules:
             parser._resolve_module_variable_kinds(module, module_params)
-            for proc in module.procedures:
-                if id(proc) not in seen_procedures:
-                    parser._resolve_signature_kinds(proc, module_params, resolve_shapes=False)
-                    seen_procedures.add(id(proc))
         for submodule in parsed_file.submodules:
             parser._resolve_module_variable_kinds(submodule, module_params)
-            for proc in submodule.procedures:
-                if id(proc) not in seen_procedures:
-                    parser._resolve_signature_kinds(proc, module_params, resolve_shapes=False)
-                    seen_procedures.add(id(proc))
         for program in parsed_file.programs:
             parser._resolve_module_variable_kinds(program, module_params)
         for block_data in parsed_file.block_data_units:

@@ -7,12 +7,45 @@ import pytest
 
 from tests.fortran._support.wrapper_build import (
     _build_source_or_generated_pyi_and_import,
+    _build_sources_and_import,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
 OVERLOAD_F90_SOURCE = FIXTURES / "foverloads_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
+
+PRIVATE_INLINE_GENERIC_MODULE = """\
+module private_inline_generic
+  implicit none
+  private
+  public :: shift
+
+  interface shift
+    module function shift_integer(value) result(output)
+      integer, intent(in) :: value
+      integer :: output
+    end function shift_integer
+    module function shift_real(value) result(output)
+      real(8), intent(in) :: value
+      real(8) :: output
+    end function shift_real
+  end interface shift
+end module private_inline_generic
+"""
+
+PRIVATE_INLINE_GENERIC_SUBMODULE = """\
+submodule(private_inline_generic) private_inline_generic_impl
+contains
+  module procedure shift_integer
+    output = value + 1
+  end procedure shift_integer
+
+  module procedure shift_real
+    output = value + 0.5_8
+  end procedure shift_real
+end submodule private_inline_generic_impl
+"""
 
 
 @pytest.fixture
@@ -69,3 +102,21 @@ def test_fortran_generic_interfaces_dispatch_in_generated_c_extension(
         module.convert("not numeric")
     with pytest.raises(TypeError):
         value.add(np.complex128(1.0 + 0.0j))
+
+
+def test_public_generic_dispatches_to_private_inline_submodule_specifics(tmp_path: Path):
+    module, _payload = _build_sources_and_import(
+        [
+            ("private_inline_generic.f90", PRIVATE_INLINE_GENERIC_MODULE),
+            ("private_inline_generic_impl.f90", PRIVATE_INLINE_GENERIC_SUBMODULE),
+        ],
+        tmp_path,
+    )
+
+    assert module.private_inline_generic.shift(np.int32(4)) == np.int32(5)
+    assert module.private_inline_generic.shift(np.float64(4.0)) == np.float64(4.5)
+    bridge = (tmp_path / "bind_c_private_inline_generic_wrapper.f90").read_text(encoding="utf-8").lower()
+    assert "native__prik_overload_shift_0 => shift" in bridge
+    assert "native__prik_overload_shift_1 => shift" in bridge
+    assert "=> shift_integer" not in bridge
+    assert "=> shift_real" not in bridge

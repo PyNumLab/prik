@@ -157,6 +157,7 @@ _FORTRAN_LINEMARKER_RE = re.compile(
     r'^\s*#\s*(?:line\s+)?\d+(?:\s+(?:"(?:[^"\\]|\\.)*"|\S+))?(?:\s+\d+)*\s*$',
     re.IGNORECASE,
 )
+_INTRINSIC_COMPILE_TIME_MODULES = frozenset({"iso_c_binding", "iso_fortran_env"})
 
 
 _PreprocessedLines = list[tuple[str, int | None, str | None]]
@@ -964,11 +965,8 @@ class FortranParser(ClassVisitor):
         return [self.parse_file(path, encoding=encoding) for path in files]
 
     def _helper_resolve_project_kinds(self, parsed_files: list[FortranFile]) -> None:
-        """Resolve cross-file procedure kinds once per procedure model."""
-        module_params: dict[str, dict[str, str]] = {}
-        for parsed_file in parsed_files:
-            if parsed_file.source is not None:
-                module_params.update(self._collect_module_parameters(parsed_file.source, parsed_file.filename))
+        """Resolve project procedure and module-variable kinds from shared symbols."""
+        module_params = self._helper_project_module_symbols(parsed_files)
 
         seen_procedures: set[int] = set()
         for parsed_file in parsed_files:
@@ -976,15 +974,78 @@ class FortranParser(ClassVisitor):
                 if id(procedure) not in seen_procedures:
                     self._resolve_signature_kinds(procedure, module_params, resolve_shapes=False)
                     seen_procedures.add(id(procedure))
+            for owner in (
+                *parsed_file.modules,
+                *parsed_file.submodules,
+                *parsed_file.programs,
+                *parsed_file.block_data_units,
+            ):
+                self._resolve_module_variable_kinds(owner, module_params)
+
+    def _helper_project_module_symbols(self, parsed_files: list[FortranFile]) -> dict[str, dict[str, str]]:
+        """Resolve module symbols and submodule host associations."""
+        module_params: dict[str, dict[str, str]] = {}
+        owners: dict[str, FortranModule | FortranSubmodule] = {}
+        for parsed_file in parsed_files:
+            if parsed_file.source is not None:
+                module_params.update(self._collect_module_parameters(parsed_file.source, parsed_file.filename))
+            owners.update((module.name.lower(), module) for module in parsed_file.modules)
+            owners.update((submodule.name.lower(), submodule) for submodule in parsed_file.submodules)
+
+        resolved = self._resolve_module_parameter_values(module_params)
+        for _ in range(len(owners) + 1):
+            changed = False
+            for owner_name, owner in owners.items():
+                symbols = dict(resolved.get(owner_name, {}))
+                if isinstance(owner, FortranSubmodule):
+                    if owner.ancestor:
+                        symbols.update(resolved.get(owner.ancestor.lower(), {}))
+                    symbols.update(resolved.get(owner.parent.lower(), {}))
+                symbols.update(self._helper_owner_imported_symbols(owner, resolved))
+                updated = self._resolve_module_parameter_values({owner_name: symbols})[owner_name]
+                if updated != resolved.get(owner_name, {}):
+                    resolved[owner_name] = updated
+                    changed = True
+            if not changed:
+                break
+        return resolved
+
+    @staticmethod
+    def _helper_owner_imported_symbols(
+        owner: FortranModule | FortranSubmodule,
+        resolved_modules: dict[str, dict[str, str]],
+    ) -> dict[str, str]:
+        """Return explicit compile-time symbols imported into one owner."""
+        imported: dict[str, str] = {}
+        for dependency, mappings in owner.uses.items():
+            dependency_name = dependency.lower()
+            dependency_symbols = resolved_modules.get(dependency_name, {})
+            if not mappings:
+                imported.update(dependency_symbols)
+                continue
+            for mapping in mappings:
+                source_name = mapping.source.lower()
+                expression = dependency_symbols.get(source_name)
+                if expression is None and dependency_name in _INTRINSIC_COMPILE_TIME_MODULES:
+                    expression = mapping.source
+                if expression is not None:
+                    imported[mapping.local_name.lower()] = expression
+        return imported
 
     @staticmethod
     def _helper_project_file_procedures(parsed_file: FortranFile):
-        """Yield one parsed file's procedures in established project order."""
+        """Yield direct and interface procedures in project resolution order."""
         yield from parsed_file.procedures
+        for interface in parsed_file.interfaces:
+            yield from interface.procedures
         for module in parsed_file.modules:
             yield from module.procedures
+            for interface in module.interfaces:
+                yield from interface.procedures
         for submodule in parsed_file.submodules:
             yield from submodule.procedures
+            for interface in submodule.interfaces:
+                yield from interface.procedures
 
     def _helper_index_project_file(self, project: FortranProject, parsed_file: FortranFile) -> None:
         """Add one parsed file's public models to project registries."""
@@ -3415,11 +3476,22 @@ class FortranParser(ClassVisitor):
                 continue
             var = FortranArgument(name=normalized_name)
             self._apply(var, entity_meta, shape)
+            self._record_declaration_visibility(scope, target, var, entity_meta)
             if initializer is not None and meta["parameter"]:
                 var.value = self._normalize_parameter_value(initializer)
                 var.symbolic_value = initializer
                 var.value_type = "expression"
             target.variables.append(var)
+
+    @staticmethod
+    def _record_declaration_visibility(scope: _ParserScope, target, var: FortranArgument, meta: dict) -> None:
+        """Make declaration-level module visibility survive finalization."""
+        visibility = meta.get("explicit_visibility")
+        if scope.kind != "module" or visibility not in {"public", "private"}:
+            return
+        symbols = getattr(target, f"{visibility}_symbols")
+        if var.name.casefold() not in {name.casefold() for name in symbols}:
+            symbols.append(var.name)
 
     @staticmethod
     def _entity_decl_meta(raw_name: str, meta: dict) -> dict:
@@ -3457,6 +3529,7 @@ class FortranParser(ClassVisitor):
             "parameter": False,
             "polymorphic": False,
             "visibility": "public",
+            "explicit_visibility": None,
         }
 
     @staticmethod
@@ -3525,6 +3598,7 @@ class FortranParser(ClassVisitor):
                 meta["parameter"] = True
             elif la in {"public", "private"}:
                 meta["visibility"] = la
+                meta["explicit_visibility"] = la
             elif la.startswith("dimension") and "(" in a and ")" in a:
                 shape = split_csv(a[a.find("(") + 1 : a.rfind(")")])
                 meta["shape"] = shape
@@ -4195,7 +4269,10 @@ class FortranParser(ClassVisitor):
         resolved: dict[str, dict[str, str]] = {}
         for module_name, params in module_params.items():
             resolver = _CompileTimeResolver(params)
-            resolved[module_name.lower()] = {name.lower(): resolver.resolve(value) for name, value in params.items()}
+            resolved[module_name.lower()] = {
+                name.lower(): resolver.resolve(FortranParser._resolve_symbol_reference(value, resolver.symbols))
+                for name, value in params.items()
+            }
         return resolved
 
     @staticmethod

@@ -7,6 +7,10 @@ def automatic_vector(
     n: Int32
 ) -> Float64[n]: ...
 
+def size_intrinsic_vector(
+    x: Float64[::]
+) -> Float64[size(x)]: ...
+
 @native_call([Addr(Arg(0)), Addr(Arg(1))])
 def automatic_matrix(
     rows: Int32,

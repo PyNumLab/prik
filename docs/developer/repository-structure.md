@@ -54,6 +54,7 @@ through `prik/__init__.py`.
 | `tests/fortran/<feature>/` | User-visible Fortran and semantic `.pyi` behavior, with documented features directly below the language root and stages below each feature. |
 | `tests/fortran/{source_parsing,source_preprocessing,command_line_interface,semantic_ir}/` | Public cross-feature capabilities that begin from source or expose an inspection/reporting surface. |
 | `tests/fortran/infrastructure/` | Internal cross-feature policy, wrapper-generation, compiler, and runtime frameworks with no honest public-capability owner. |
+| `tests/fortran/building_shared_library/end_to_end/real_libraries/` | Opt-in numerical showcase tests that build actual FFTPACK and MINPACK checkouts, call their generated Python routines, and verify known results. |
 | `tests/c/` | C input-language parsing, preprocessing, probe, semantic, CLI, and fixture evidence. |
 | `tests/shared/` | Language-neutral product architecture, documentation, naming, tools, type mapping, and utility checks. |
 | `examples/blas/tests/test_*.py` | User-facing real-library correctness documentation: explicit independent and PRIK/f2py differential validation for every Reference BLAS routine. |

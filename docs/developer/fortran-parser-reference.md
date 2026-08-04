@@ -1167,6 +1167,15 @@ consumed by the `.pyi` printer and current Fortran wrapper/runtime stages.
 Compiler-backed shared-CLI semantic stages resolve compiler-dependent kind
 expressions, measure numeric and logical intrinsic storage with `storage_size`,
 attach those facts to semantic types, and reuse memory and persistent caches.
+The shared CLI applies project symbol completion even when the input contains
+only one source file. That completion follows explicit renamed `use`
+associations through project modules and propagates parent/ancestor
+host-associated symbols into submodules before compiler-backed stages run.
+This includes both a direct intrinsic rename such as `wp => real64` in a
+single-file module and a re-exported chain such as `dp => rk => real64`; the
+standalone compiler probe therefore receives the intrinsic expression
+(`real64`) rather than a project-local alias that is out of scope in the
+generated probe program.
 Character declarations are excluded from storage probing: their semantic type
 is `String`, while fixed or deferred element length is carried separately from
 the declaration or runtime descriptor. The generated mapping report describes

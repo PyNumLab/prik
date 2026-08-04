@@ -32,6 +32,25 @@ end module public_mod
     assert modules["public_mod"].variables[0].visibility == "public"
 
 
+def test_declaration_level_private_attribute_overrides_public_module_default():
+    parsed = parse_fortran_file(
+        """
+module constants
+  real, parameter, private :: epsilon = 1.0
+  real, parameter :: visible = 2.0
+end module constants
+"""
+    )
+
+    module = parsed.modules[0]
+
+    assert {variable.name: variable.visibility for variable in module.variables} == {
+        "epsilon": "private",
+        "visible": "public",
+    }
+    assert module.private_symbols == ["epsilon"]
+
+
 def test_submodule_types_interfaces_and_project_dependencies_attach_to_public_models():
     code = """
 submodule (ancestor_mod:parent_mod) child_mod
@@ -306,6 +325,88 @@ end module solver_mod
         ("wide", "local_wide"),
     ]
     assert project.dependencies["solver_mod"] == {"precision_mod"}
+
+
+def test_project_resolves_reexported_intrinsic_kind_renames():
+    project = parse_fortran_project(
+        {
+            "consumer.f90": """
+subroutine consume(x)
+  use fftpack_kind, only: dp => rk
+  real(dp), intent(inout) :: x
+end subroutine consume
+""",
+            "kind.f90": """
+module fftpack_kind
+  use, intrinsic :: iso_fortran_env, only: rk => real64
+end module fftpack_kind
+""",
+        }
+    )
+
+    assert project.procedures["consume"].arguments[0].kind == "real64"
+
+
+def test_single_file_project_resolves_intrinsic_kind_rename_for_module_variables():
+    project = parse_fortran_project(
+        {
+            "minpack.f90": """
+module minpack_module
+  use iso_fortran_env, only: wp => real64
+  real(wp), parameter :: dpmpar(3) = 0.0_wp
+contains
+  real(wp) function enorm(value) result(output)
+    real(wp), intent(in) :: value
+    output = value
+  end function enorm
+end module minpack_module
+"""
+        }
+    )
+
+    module = project.modules["minpack_module"]
+    assert module.variables[0].kind == "real64"
+    assert module.procedures[0].arguments[0].kind == "real64"
+    assert module.procedures[0].result.kind == "real64"
+
+
+def test_project_resolves_submodule_host_associated_kind():
+    project = parse_fortran_project(
+        {
+            "implementation.f90": """
+submodule(transform_api) transform_impl
+contains
+  module function twice(value) result(output)
+    real(rk), intent(in) :: value
+    real(rk) :: output
+  end function twice
+end submodule transform_impl
+""",
+            "parent.f90": """
+module transform_api
+  use precision
+  interface
+    module function twice(value) result(output)
+      real(rk), intent(in) :: value
+      real(rk) :: output
+    end function twice
+  end interface
+end module transform_api
+""",
+            "kind.f90": """
+module precision
+  use, intrinsic :: iso_fortran_env, only: rk => real64
+end module precision
+""",
+        }
+    )
+
+    procedure = project.submodules["transform_impl"].procedures[0]
+    assert procedure.arguments[0].kind == "real64"
+    assert procedure.result.kind == "real64"
+    prototype = project.modules["transform_api"].interfaces[0].procedures[0]
+    assert prototype.arguments[0].kind == "real64"
+    assert prototype.result.kind == "real64"
 
 
 def test_directory_namespace_records_missing_and_parent_only_submodule_dependencies(tmp_path):

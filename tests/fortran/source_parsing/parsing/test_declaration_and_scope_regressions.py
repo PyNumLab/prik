@@ -66,7 +66,9 @@ def test_compile_time_resolution_helpers_preserve_kind_shape_values_and_literal_
 
     assert parser._resolve_kind_expression("len=n + 1", {"n": "3"}) == "len=4"
     assert parser._resolve_symbol_reference("alias", {"alias": "target", "target": "8"}) == "8"
-    assert parser._resolve_module_parameter_values({"M": {"a": "4", "b": "a + 2"}}) == {"m": {"a": "4", "b": "6"}}
+    assert parser._resolve_module_parameter_values(
+        {"M": {"a": "4", "b": "a + 2", "rk": "selected_real_kind(12)", "dp": "rk"}}
+    ) == {"m": {"a": "4", "b": "6", "rk": "selected_real_kind(12)", "dp": "selected_real_kind(12)"}}
     assert parser._collect_relevant_local_params(
         FortranProcedureSignature(
             "shape",

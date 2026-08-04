@@ -1071,8 +1071,12 @@ axes. Edited contracts may still use the explicit `::Strided` and
 Wrapper planning uses the structured array contract to distinguish layout dimensions
 from extent expressions. Names such as `Strided` and `Flat` remain ordinary
 symbols when they occur in native extent expressions. Called Fortran shape
-intrinsics such as `size(v)` are recognized only after visible symbols are
-resolved; the referenced value `v` must still be visible in the interface.
+intrinsics are resolved only after visible symbols are known. `size(v)` uses
+the product of the runtime extents of the visible array argument `v`, while
+`size(v, k)` uses its one-based axis `k`; `k` must be an integer literal in
+range. The referenced array must be visible in the Python interface. Wrapper
+planning records those input-array extent dependencies, so binding and bridge
+generation only substitute their planned ABI roles.
 
 <!-- PRIK_C_DOCS_START
 `Flat` must appear exactly once at either edge of a concrete-rank array.

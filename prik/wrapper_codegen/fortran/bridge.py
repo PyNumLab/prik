@@ -41,6 +41,7 @@ from prik.semantics.wrapper_policy import (
     NativeDescriptorHandoffABI,
     NativeInvocationKind,
     OptionalMode,
+    ScalarLogicalABI,
 )
 from prik.wrapper_codegen.nodes import (
     CodeExpression,
@@ -263,6 +264,7 @@ class FortranBridgeGenerator(ClassVisitor):
         native_body = (
             *self._derived_pointer_call_initializers(plan),
             *function_body,
+            *self._logical_scalar_argument_finalizers(plan),
             *self._array_writeback_finalizers(plan),
             *self._derived_pointer_call_finalizers(plan),
             *self._required_descriptor_finalizers(plan),
@@ -283,6 +285,7 @@ class FortranBridgeGenerator(ClassVisitor):
                 *self._callback_external_declarations(plan),
                 *self._native_external_declarations(plan),
                 *self._optional_declarations(plan),
+                *self._logical_scalar_argument_declarations(plan),
                 *self._opaque_address_declarations(plan),
                 *self._array_declarations(plan),
                 *self._raw_array_address_declarations(plan),
@@ -296,6 +299,7 @@ class FortranBridgeGenerator(ClassVisitor):
             body=(
                 *self._descriptor_initializers(plan),
                 *self._required_descriptor_initializers(plan),
+                *self._logical_scalar_argument_initializers(plan),
                 *self._opaque_address_initializers(plan),
                 *self._array_initializers(plan),
                 *self._raw_array_address_initializers(plan),
@@ -3220,6 +3224,8 @@ class FortranBridgeGenerator(ClassVisitor):
             return name
         if plan.bridge.optional_mode in {OptionalMode.REQUIRED_DESCRIPTOR, OptionalMode.DESCRIPTOR}:
             return f"{name}_descriptor"
+        if plan.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_COPY:
+            return f"{name}_native"
         return name
 
     def _presence_condition(self, plan: ArgumentTransferPlan) -> str:
@@ -3307,6 +3313,9 @@ class FortranBridgeGenerator(ClassVisitor):
         plan: ArgumentTransferPlan,
     ) -> tuple[FortranCall | FortranAssignment | FortranIf, ...]:
         """Copy only when completed policy requires a different native representation."""
+        if plan.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_COPY:
+            name = plan.bridge.native_name.lower()
+            return (FortranAssignment(f"{name}_native", CodeExpression(name)),)
         if plan.bridge.handoff_mode is ArgumentHandoffMode.CHARACTER_BUFFER:
             return self._string_value_initializer_nodes(plan)
         if self._is_derived_value_copy(plan):
@@ -3381,6 +3390,57 @@ class FortranBridgeGenerator(ClassVisitor):
         if mode is OptionalMode.REQUIRED_DESCRIPTOR and argument.bridge.descriptor_output_role is not None:
             declarations.append(FortranDeclaration(f"{name}_output", scalar_type.fortran_spelling, ("pointer",)))
         return tuple(declarations)
+
+    def _logical_scalar_argument_declarations(
+        self,
+        plan: FunctionPlan,
+    ) -> tuple[FortranDeclaration, ...]:
+        """Declare exact-kind native locals selected by scalar logical policy."""
+        declarations = []
+        for argument in plan.arguments:
+            if argument.scalar_logical_abi is not ScalarLogicalABI.NATIVE_KIND_COPY:
+                continue
+            if not argument.scalar_native_type:
+                raise ValueError(f"Logical argument {argument.owner_path!r} has no native type spelling")
+            declarations.append(
+                FortranDeclaration(
+                    f"{argument.bridge.native_name.lower()}_native",
+                    argument.scalar_native_type,
+                )
+            )
+        return tuple(declarations)
+
+    def _logical_scalar_argument_initializers(
+        self,
+        plan: FunctionPlan,
+    ) -> tuple[FortranAssignment, ...]:
+        """Copy required C Boolean values into their exact native kinds."""
+        return tuple(
+            FortranAssignment(
+                f"{argument.bridge.native_name.lower()}_native",
+                CodeExpression(argument.bridge.native_name.lower()),
+            )
+            for argument in plan.arguments
+            if argument.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_COPY
+            and argument.bridge.optional_mode is OptionalMode.REQUIRED
+        )
+
+    def _logical_scalar_argument_finalizers(
+        self,
+        plan: FunctionPlan,
+    ) -> tuple[FortranAssignment | FortranIf, ...]:
+        """Copy mutable exact-kind logical values back to C Boolean storage."""
+        nodes = []
+        for argument in plan.arguments:
+            if argument.scalar_logical_abi is not ScalarLogicalABI.NATIVE_KIND_COPY or not argument.mutates_native:
+                continue
+            name = argument.bridge.native_name.lower()
+            assignment = FortranAssignment(name, CodeExpression(f"{name}_native"))
+            if argument.bridge.optional_mode is OptionalMode.REQUIRED:
+                nodes.append(assignment)
+            else:
+                nodes.append(FortranIf(CodeExpression(self._presence_condition(argument)), body=(assignment,)))
+        return tuple(nodes)
 
     def _opaque_address_declarations(self, plan: FunctionPlan) -> tuple[FortranDeclaration, ...]:
         """Return typed pointer locals for required opaque scalar addresses."""
@@ -4526,6 +4586,15 @@ class FortranBridgeGenerator(ClassVisitor):
         slot: NativeCallSlotPlan,
     ) -> tuple[FortranDeclaration, ...]:
         """Declare storage only for one justified representation-copy output."""
+        if slot.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_COPY:
+            if not slot.scalar_native_type:
+                raise ValueError(f"Logical output {slot.owner_path!r} has no native type spelling")
+            return (
+                FortranDeclaration(
+                    f"{slot.native_name.lower()}_value",
+                    slot.scalar_native_type,
+                ),
+            )
         if slot.object_kind is ObjectKind.DERIVED_TYPE:
             if slot.derived is None:
                 raise ValueError(f"Derived output {slot.owner_path!r} has no handoff plan")
@@ -4770,6 +4839,9 @@ class FortranBridgeGenerator(ClassVisitor):
         slot: NativeCallSlotPlan,
     ) -> tuple[FortranAssignment | FortranIf, ...]:
         """Copy one native output only through the explicit policy permission."""
+        if slot.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_COPY:
+            name = slot.native_name.lower()
+            return (FortranAssignment(name, CodeExpression(f"{name}_value")),)
         if slot.object_kind is ObjectKind.NUMPY_ARRAY:
             if slot.array is None:
                 raise ValueError(f"Array output {slot.owner_path!r} has no shape plan")
@@ -4972,6 +5044,8 @@ class FortranBridgeGenerator(ClassVisitor):
     def _native_output_value_name(self, slot: NativeCallSlotPlan) -> str:
         """Return the native-call expression selected for one output slot."""
         name = slot.native_name.lower()
+        if slot.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_COPY:
+            return f"{name}_value"
         if slot.scalar_descriptor is not None:
             return f"{name}_value"
         if self._is_owned_native_array_slot(slot):
@@ -6868,6 +6942,8 @@ class FortranBridgeGenerator(ClassVisitor):
                 if dependencies <= emitted_roles:
                     declarations.append(parameter)
                     emitted_roles.add(slot.symbolic_role)
+                    if slot.array is not None:
+                        emitted_roles.update(slot.array.extent_roles)
                     pending.pop(index)
                     break
             else:
@@ -7132,18 +7208,30 @@ class FortranBridgeGenerator(ClassVisitor):
         return self._array_shape_from_roles(slot.array, plan.arguments)
 
     def _array_shape_from_roles(self, array, arguments) -> tuple[str, ...]:
-        """Replace validated shape references with their native dummy names."""
+        """Replace validated shape tokens with their planned native role names."""
         lowered_shape = []
         role_names = {argument.binding.handoff_role: argument.bridge.native_name.lower() for argument in arguments}
+        role_names.update(
+            {
+                role: f"{argument.bridge.native_name.lower()}_extent_{axis}"
+                for argument in arguments
+                if argument.array is not None
+                for axis, role in enumerate(argument.array.extent_roles)
+            }
+        )
         for axis, expression in enumerate(array.shape):
             lowered = expression
-            for role in array.extent_reference_roles[axis]:
-                native_name = role_names.get(role)
-                if native_name is None:
-                    reference_name = role.rsplit(".", 1)[-1].split(":", 1)[0]
-                    native_name = reference_name
-                reference_name = role.rsplit(".", 1)[-1].split(":", 1)[0]
-                lowered = re.sub(rf"\b{re.escape(reference_name)}\b", native_name, lowered)
+            references = zip(
+                array.extent_reference_tokens[axis],
+                array.extent_reference_roles[axis],
+                strict=True,
+            )
+            for token, role in references:
+                try:
+                    native_name = role_names[role]
+                except KeyError:
+                    raise ValueError(f"Array extent role {role!r} has no bridge value") from None
+                lowered = re.sub(rf"\b{re.escape(token)}\b", native_name, lowered)
             lowered_shape.append(lowered)
         return tuple(lowered_shape)
 

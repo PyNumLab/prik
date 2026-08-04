@@ -76,6 +76,7 @@ from prik.semantics.wrapper_policy import (
     PythonExceptionKind,
     RAW_STRING_ADDRESS_COPY_REASON,
     SCALAR_DESCRIPTOR_RESULT_COPY_REASON,
+    ScalarLogicalABI,
     STRING_INPUT_COPY_REASON,
     STRING_REPLACEMENT_COPY_REASON,
     STRING_STORAGE_COPY_REASON,
@@ -1077,6 +1078,14 @@ class WrapperCodeGenerator:
 
         positions = {owner: position for position, owner in enumerate(order)}
         role_owners = {argument.binding.handoff_role: argument.owner_path for argument in plan.arguments}
+        role_owners.update(
+            {
+                role: argument.owner_path
+                for argument in plan.arguments
+                if argument.array is not None
+                for role in argument.array.extent_roles
+            }
+        )
         diagnostics.extend(self._late_binding_extent_conversion_diagnostics(plan, positions, role_owners))
         return tuple(diagnostics)
 
@@ -1829,6 +1838,22 @@ class WrapperCodeGenerator:
                     plan.native_call_slot.object_kind,
                 )
             )
+        if plan.native_call_slot.scalar_logical_abi is not plan.scalar_logical_abi:
+            diagnostics.append(
+                self._diagnostic(
+                    plan.owner_path,
+                    "inconsistent-scalar-logical-abi",
+                    plan.native_call_slot.scalar_logical_abi.value,
+                )
+            )
+        if plan.native_call_slot.scalar_native_type != plan.scalar_native_type:
+            diagnostics.append(
+                self._diagnostic(
+                    plan.owner_path,
+                    "inconsistent-scalar-native-type",
+                    plan.native_call_slot.scalar_native_type,
+                )
+            )
         return tuple(diagnostics)
 
     def _argument_slot_consistency_diagnostics(
@@ -1874,6 +1899,8 @@ class WrapperCodeGenerator:
         """Return the data action implied by completed orthogonal selectors."""
         if plan.callback is not None:
             return BridgeDataAction.DIRECT_TRANSFER
+        if plan.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_COPY:
+            return BridgeDataAction.COPY_REPRESENTATION
         if self._uses_typed_derived_value(plan):
             return BridgeDataAction.COPY_REPRESENTATION
         return self._expected_handoff_data_action(plan)
@@ -2786,6 +2813,17 @@ class WrapperCodeGenerator:
             diagnostics.append(
                 self._diagnostic(plan.owner_path, "invalid-array-extent-reference-count", array.extent_reference_roles)
             )
+        if len(array.extent_reference_tokens) != len(array.shape):
+            diagnostics.append(
+                self._diagnostic(plan.owner_path, "invalid-array-extent-token-count", array.extent_reference_tokens)
+            )
+        elif len(array.extent_reference_roles) == len(array.shape) and any(
+            len(tokens) != len(roles)
+            for tokens, roles in zip(array.extent_reference_tokens, array.extent_reference_roles, strict=True)
+        ):
+            diagnostics.append(
+                self._diagnostic(plan.owner_path, "inconsistent-array-extent-references", array.extent_reference_tokens)
+            )
         return tuple(diagnostics)
 
     def _array_itemsize_diagnostics(
@@ -3269,6 +3307,8 @@ class WrapperCodeGenerator:
             diagnostics.append(self._diagnostic(plan.owner_path, "unknown-result-source", plan.source_kind))
         diagnostics.extend(self._direct_result_abi_diagnostics(plan))
         diagnostics.extend(self._result_family_diagnostics(plan))
+        if plan.array is not None:
+            diagnostics.extend(self._array_extent_reference_diagnostics(plan, available_roles))
         return tuple(diagnostics)
 
     def _direct_result_abi_diagnostics(self, plan: ResultPlan) -> tuple[WrapperPlanDiagnostic, ...]:
@@ -3825,7 +3865,20 @@ class WrapperCodeGenerator:
         if (
             array is not None
             and array.rank is not None
-            and (len(array.shape) != array.rank or len(array.extent_roles) != array.rank)
+            and (
+                len(array.shape) != array.rank
+                or len(array.extent_roles) != array.rank
+                or len(array.extent_reference_tokens) != array.rank
+                or len(array.extent_reference_roles) != array.rank
+                or any(
+                    len(tokens) != len(roles)
+                    for tokens, roles in zip(
+                        array.extent_reference_tokens,
+                        array.extent_reference_roles,
+                        strict=True,
+                    )
+                )
+            )
         ):
             return (self._diagnostic(plan.owner_path, "inconsistent-array-result-shape", array.shape),)
         return ()
@@ -3977,6 +4030,7 @@ class WrapperCodeGenerator:
             BridgeDataAction.COPY_REPRESENTATION
             if plan.object_kind in {ObjectKind.STRING, ObjectKind.NUMPY_ARRAY, ObjectKind.DERIVED_TYPE}
             or plan.scalar_descriptor is not None
+            or plan.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_COPY
             else BridgeDataAction.DIRECT_TRANSFER
         )
         if plan.bridge_data_action is not expected:
@@ -4403,6 +4457,7 @@ class WrapperCodeGenerator:
     def _duplicate_role_diagnostics(self, plan: FunctionPlan) -> tuple[WrapperPlanDiagnostic, ...]:
         """Return duplicate symbolic producer/consumer role diagnostics."""
         roles = [argument.binding.handoff_role for argument in plan.arguments]
+        roles.extend(self._argument_extent_roles(plan.arguments))
         roles.extend(slot.symbolic_role for slot in plan.native_call_slots if slot.source_kind == "literal")
         roles.extend(slot.symbolic_role for slot in plan.native_call_slots if slot.source_kind == "result")
         roles.extend(
@@ -4417,6 +4472,7 @@ class WrapperCodeGenerator:
     def _available_role_diagnostics(self, plan: FunctionPlan) -> tuple[WrapperPlanDiagnostic, ...]:
         """Require the advertised roles to match argument and result producers."""
         expected = [argument.binding.handoff_role for argument in plan.arguments]
+        expected.extend(self._argument_extent_roles(plan.arguments))
         expected.extend(
             role
             for argument in plan.arguments
@@ -4433,6 +4489,15 @@ class WrapperCodeGenerator:
         if Counter(plan.available_roles) != Counter(expected):
             return (self._diagnostic(plan.owner_path, "inconsistent-available-roles", plan.available_roles),)
         return ()
+
+    @staticmethod
+    def _argument_extent_roles(arguments: tuple[ArgumentTransferPlan, ...]) -> tuple[str, ...]:
+        """Return every binding-produced array extent role in argument order."""
+        return tuple(
+            role
+            for argument in arguments
+            for role in (argument.array.extent_roles if argument.array is not None else ())
+        )
 
     def _diagnostic(self, owner_path: str, code: str, detail: object) -> WrapperPlanDiagnostic:
         return WrapperPlanDiagnostic(owner_path, code, str(detail))

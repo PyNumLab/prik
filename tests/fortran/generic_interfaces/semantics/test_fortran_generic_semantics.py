@@ -8,6 +8,7 @@ from tests.fortran._support.semantic_conversion import (
     parse_fortran_source,
     pytest,
 )
+from prik.semantics.metadata import BIND_TARGET_METADATA
 
 OPERATOR_F90_SOURCE = Path(__file__).parents[1] / "end_to_end" / "fixtures" / "foperators_f90.f90"
 
@@ -56,6 +57,33 @@ end module generic_mod
         ("set", ["set_integer", "set_real"])
     ]
     assert all(proc.visibility == "public" for proc in box.overload_sets[0].procedures)
+
+
+def test_public_generic_binds_private_inline_module_function_specifics_to_the_generic_name():
+    source = """
+module generic_mod
+  implicit none
+  private
+  public :: shift
+  interface shift
+    module function shift_integer(value) result(output)
+      integer, intent(in) :: value
+      integer :: output
+    end function shift_integer
+    module function shift_real(value) result(output)
+      real, intent(in) :: value
+      real :: output
+    end function shift_real
+  end interface shift
+end module generic_mod
+"""
+
+    module = FortranToIRConverter().visit(parse_fortran_source(source).modules[0])
+    candidates = module.overload_sets[0].procedures
+
+    assert [candidate.name for candidate in candidates] == ["shift_integer", "shift_real"]
+    assert [candidate.native_name for candidate in candidates] == ["shift", "shift"]
+    assert [candidate.metadata[BIND_TARGET_METADATA] for candidate in candidates] == ["shift", "shift"]
 
 
 def test_converter_rejects_generic_constructor_interfaces_during_semantic_conversion():
