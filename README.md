@@ -1,13 +1,14 @@
-# PRIK
-
-**Python Runtime Interop Kit.**
+# PRIK — Python Runtime Interop Kit
 
 **Turn Fortran into natural Python APIs.**
 
-Build clean, importable native extensions from supported Fortran without
-writing low-level binding code. PRIK preserves modules, derived types, arrays,
-and native behavior, and generates an editable `.pyi` contract so you can
-shape the Python API.
+PRIK is a Fortran-to-Python binding generator that creates clean,
+importable native extensions without requiring you to write low-level
+binding code.
+
+It preserves Fortran modules, derived types, arrays, callbacks, and native
+behavior while generating an editable `.pyi` contract that lets you shape
+the resulting Python API.
 
 **Project status: Alpha (`0.1.x`).** Core Fortran wrapper workflows are
 implemented and tested across supported compilers, but public APIs may still
