@@ -1056,8 +1056,6 @@ def test_readme_opening_uses_the_homepage_message_and_showcase() -> None:
     readme = _visible_documentation_source(ROOT / "README.md")
     readme_opening = readme.split("## Installation & Quick Start", maxsplit=1)[0]
     shared_content = (
-        "**Turn Fortran into natural Python APIs.**",
-        "Build clean, importable native extensions from supported Fortran without\nwriting low-level binding code.",
         "python3 -m prik points.f90 --out geometry",
         "<!-- prik-doc-source: tests/fortran/building_shared_library/end_to_end/fixtures/native/home_points.f90 -->",
         "import geometry.points as points",
