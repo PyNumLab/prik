@@ -2,9 +2,9 @@
 
 **Turn Fortran into natural Python APIs.**
 
-PRIK is a Fortran-to-Python binding generator that creates clean,
-importable native extensions without requiring you to write low-level
-binding code.
+PRIK is a **Fortran-to-Python binding generator** that creates clean,
+importable native extensions without writing low-level binding code.
+It is designed to produce a more natural Python API than traditional tools.
 
 It preserves Fortran modules, derived types, arrays, callbacks, and native
 behavior while generating an editable `.pyi` contract that lets you shape
