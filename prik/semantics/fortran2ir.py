@@ -2641,6 +2641,3 @@ def fortran_project_to_semantic_modules(
 ) -> list[SemanticModule]:
     return _converter_for(compile_time_values, type_facts=type_facts).visit(project)
 
-
-if __name__ == "__main__":
-    pass

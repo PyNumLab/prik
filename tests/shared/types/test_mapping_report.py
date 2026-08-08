@@ -1,6 +1,9 @@
 """Target-specific datatype mapping report tests."""
 
 import shutil
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -99,3 +102,21 @@ def test_character_mapping_fact_is_modeled_without_compiler_probe_metadata():
     semantic_type = type("SemanticType", (), {"metadata": {}})()
 
     assert type_mapping_report._fortran_fact_text(semantic_type, ("character", "c_char")) == "8-bit storage"
+
+
+def test_type_mapping_report_direct_script_runs_its_no_argument_example():
+    if shutil.which("cc") is None:
+        pytest.skip("cc is required for the direct type-mapping example")
+
+    completed = subprocess.run(
+        [sys.executable, "prik/probes/report.py"],
+        cwd=Path(__file__).resolve().parents[3],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    row = completed.stdout.strip()
+    assert row.startswith("| `int` | ")
+    assert "signed" in row
+    assert "numpy." in row
