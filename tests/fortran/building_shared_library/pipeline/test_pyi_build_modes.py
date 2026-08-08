@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 from prik import build_pyi_extension
-from prik.pipeline.build import build_fortran_extension
+from prik.pipeline.build import WrapperBuildResult, build_fortran_extension
 from tests.fortran._support.pyi_fixtures import assert_generated_pyi_package_matches_fixture
 
 FEATURE_ROOT = Path(__file__).resolve().parents[1]
@@ -109,6 +109,36 @@ def _sole_native_module(module):
 
 def _assert_scale_runtime_contract(module) -> None:
     assert module.scale(np.float64(2.0), np.float64(4.0)) == np.float64(8.0)
+
+
+def test_wrapper_build_result_import_module_loads_and_caches_a_built_extension(tmp_path: Path):
+    result = build_fortran_extension(SOURCE, output_dir=tmp_path / "source_build")
+
+    sys.modules.pop(result.module_name, None)
+    try:
+        module = result.import_module()
+        assert module.__file__ == str(result.shared_library)
+        native_module = _sole_native_module(module)
+        assert native_module.scale(np.float64(3.0), np.float64(2.5)) == np.float64(7.5)
+        assert result.import_module() is module
+    finally:
+        sys.modules.pop(result.module_name, None)
+
+
+def test_wrapper_build_result_import_module_requires_a_built_artifact(tmp_path: Path):
+    result = WrapperBuildResult(
+        sources=(),
+        module_name="missing_extension",
+        output_dir=tmp_path,
+        shared_library=tmp_path / "missing_extension.so",
+        build_makefile=None,
+        compiled=False,
+        generated_sources=(),
+        generated_files=(),
+    )
+
+    with pytest.raises(FileNotFoundError, match=r"Built extension not found: .+missing_extension\.so"):
+        result.import_module()
 
 
 @pytest.fixture
