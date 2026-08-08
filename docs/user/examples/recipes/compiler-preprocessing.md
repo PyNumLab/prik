@@ -2,7 +2,7 @@
 title: Use Compiler Preprocessing Options
 audience: users, developers
 prerequisites: installation, native project compiler flags
-related: ../../../developer/c-parser-reference.md, ../../../developer/fortran-parser-reference.md
+related: ../../../developer/compiler-preprocessing.md, ../../../developer/c-parser-reference.md, ../../../developer/fortran-parser-reference.md
 status: maintained
 publication: draft
 ---
@@ -40,6 +40,8 @@ PRIK_C_DOCS_END -->
 
 ## Notes
 
+- For the pipeline model, adapters, diagnostics, and include-exposure policy,
+  see the [compiler preprocessing reference](../../../developer/compiler-preprocessing.md).
 - Pass the same important include paths, macros, and target flags used by the
   native project.
 - Compiler-backed semantic and `.pyi` stages can also probe target datatype

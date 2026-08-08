@@ -117,6 +117,7 @@ nav:
       - Source Map: developer/source-map.md
       - Feature To Code Map: developer/feature-to-code-map.md
       - Repository Structure: developer/repository-structure.md
+      - Compiler Preprocessing Reference: developer/compiler-preprocessing.md
       # PRIK_C_DOCS: - C Parser Reference: developer/c-parser-reference.md
       - Fortran Parser Reference: developer/fortran-parser-reference.md
       - Quality Assurance: developer/quality-assurance.md
