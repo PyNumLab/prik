@@ -8,16 +8,16 @@ below documents the same file order with a control-flow example.
 
 from __future__ import annotations
 
-import re
 import ast
+import re
 from copy import deepcopy
-from pathlib import Path
 from dataclasses import dataclass, replace
+from pathlib import Path
 
 from prik.utilities.visitor import ClassVisitor
 
-from .lexer import preprocess_lines
-from .models import (
+from prik.parsers.fortran.lexer import preprocess_lines
+from prik.parsers.fortran.models import (
     FortranArgument,
     FortranBlockData,
     FortranDerivedType,
@@ -34,8 +34,8 @@ from .models import (
     FortranUseMapping,
     FortranVariable,
 )
-from .type_resolver import extract_kind_from_type_spec
-from .utils import split_csv
+from prik.parsers.fortran.type_resolver import extract_kind_from_type_spec
+from prik.parsers.fortran.utils import split_csv
 
 _PARSER_ARCHITECTURE_GUIDE = """
 Parser architecture quick guide
@@ -166,6 +166,13 @@ _SourceOrLines = str | _PreprocessedLines
 
 @dataclass(frozen=True)
 class SourceUnit:
+    """Represent one recursively sliced Fortran grammar unit.
+
+    The slicer retains the unit's normalized lines and original source bounds
+    so visitors can parse a local region without losing diagnostic locations.
+    Concrete subclasses select the matching ``_visit_*`` handler.
+    """
+
     kind: str
     name: str | None
     lines: _PreprocessedLines
@@ -227,6 +234,14 @@ _SOURCE_UNIT_TYPES = {
 
 @dataclass
 class _ParserScope:
+    """Carry explicit ownership and mutable state while visiting one unit.
+
+    ``model`` receives parsed declarations, ``parent`` preserves lexical
+    ownership, and procedure visitors use ``state`` for their temporary symbol
+    table.  Helpers receive this record explicitly rather than relying on
+    parser-global scope.
+    """
+
     kind: str
     name: str | None
     model: object | None = None
@@ -237,6 +252,8 @@ class _ParserScope:
 
 @dataclass(frozen=True)
 class _UnitGrammar:
+    """Describe the regions and declaration role allowed by one unit kind."""
+
     kind: str
     has_execution_part: bool = False
     has_contains_part: bool = False
@@ -246,6 +263,12 @@ class _UnitGrammar:
 
 @dataclass(frozen=True)
 class _UnitParts:
+    """Store a sliced unit's header, grammar regions, and optional footer.
+
+    The four regions retain their original line mappings.  Visitors parse only
+    the regions supported by their corresponding :class:`_UnitGrammar`.
+    """
+
     header: tuple[str, int | None, str | None] | None
     specification: _PreprocessedLines
     execution: _PreprocessedLines
@@ -255,6 +278,12 @@ class _UnitParts:
 
 @dataclass
 class _ParsedFileUnits:
+    """Accumulate visited file-level models before building ``FortranFile``.
+
+    Interface procedures remain attached to their interface rather than the
+    standalone-procedure list; all other collections preserve source order.
+    """
+
     modules: list[FortranModule]
     submodules: list[FortranSubmodule]
     programs: list[FortranProgram]
@@ -380,13 +409,27 @@ class FortranParser(ClassVisitor):
         filename: str | None = None,
         encoding: str = "utf-8",
     ) -> FortranFile:
-        """Parse one source string/path into a `FortranFile` aggregate model."""
+        """Parse one source string or path into a ``FortranFile`` model.
+
+        Use this primary entrypoint for one Fortran translation unit.  A path
+        is read with ``encoding`` when ``filename`` is omitted; otherwise the
+        input is treated as source text and ``filename`` supplies diagnostic
+        provenance.  The returned parse-only model feeds project parsing or
+        semantic conversion and raises :class:`FortranParseError` for malformed
+        or unsupported wrapper-relevant syntax.
+        """
+
+        # Stage 1: obtain normalized input and slice direct file-level units.
         code, filename = self._helper_read_source(source_or_path, filename, encoding)
         lines, root_scope, top_units = self._helper_prepare_source_units(code, filename)
+
+        # Stage 2: visit each unit and attach cross-unit parser facts.
         units = self._helper_parse_file_units(top_units, root_scope, filename)
         self._helper_resolve_file_types(units)
         interfaces = self._helper_attach_file_interfaces(lines, filename, units)
         self._helper_resolve_file_kinds(lines, filename, units)
+
+        # Stage 3: assemble the stable file model and its source metadata.
         return self._helper_build_fortran_file(code, filename, encoding, units, interfaces)
 
     def parse_project(
@@ -395,8 +438,19 @@ class FortranParser(ClassVisitor):
         *,
         encoding: str = "utf-8",
     ) -> FortranProject:
-        """Parse many sources and merge them into one dependency-aware project model."""
+        """Parse explicit sources or paths into one dependency-aware project.
+
+        Use this after collecting a related set of files, or pass a directory
+        for the supported Fortran source forms.  The parser preserves the file
+        models while resolving project-level kind references and indexing
+        modules, procedures, and types.  Duplicate project symbols and source
+        failures raise :class:`FortranParseError`.
+        """
+
+        # Stage 1: parse each requested source in dependency-aware order.
         parsed_files = self._helper_parse_project_files(files, encoding)
+
+        # Stage 2: complete cross-file kinds and construct project indexes.
         self._helper_resolve_project_kinds(parsed_files)
         project = FortranProject(files=parsed_files)
         for parsed_file in parsed_files:
@@ -404,7 +458,13 @@ class FortranParser(ClassVisitor):
         return project
 
     def parse_module(self, code: _SourceOrLines, filename: str | None = None) -> FortranModule:
-        """Parse exactly one module unit from inline source or normalized lines.
+        """Parse exactly one module unit from source text or normalized lines.
+
+        Use this narrow entrypoint when the caller expects a single module
+        rather than a whole ``FortranFile``.  Its result includes module
+        variables, imports, contained procedures, interfaces, and derived
+        types.  Inputs with zero or multiple module units raise
+        :class:`FortranParseError`.
 
         Example:
             >>> FortranParser().parse_module("module m\\nend module m\\n").name
@@ -427,7 +487,13 @@ class FortranParser(ClassVisitor):
         return self._visit(unit, parent_scope=root_scope, filename=filename)
 
     def parse_submodule(self, code: _SourceOrLines, filename: str | None = None) -> FortranSubmodule:
-        """Parse exactly one submodule unit from inline source or normalized lines."""
+        """Parse exactly one submodule from source text or normalized lines.
+
+        Use this narrow entrypoint when a caller already knows the input is one
+        submodule.  It returns the submodule's parent/ancestor metadata and
+        wrapper-relevant specification facts, rejecting zero or multiple
+        submodule units with :class:`FortranParseError`.
+        """
         _lines, root_scope, all_units = self._helper_prepare_source_units(code, filename)
         unit = self._expect_single_parse_result(
             [unit for unit in all_units if unit.kind == "submodule"],
@@ -438,7 +504,13 @@ class FortranParser(ClassVisitor):
         return self._visit(unit, parent_scope=root_scope, filename=filename)
 
     def parse_interface(self, code: _SourceOrLines, filename: str | None = None) -> FortranInterface:
-        """Parse exactly one interface block, including nested procedure declarations."""
+        """Parse exactly one interface block and its procedure declarations.
+
+        Use this for an isolated interface source fragment.  The returned
+        model preserves generic specifics and interface-only procedure facts;
+        source containing zero or multiple interface blocks raises
+        :class:`FortranParseError`.
+        """
         unit, scope = self._expect_single_parse_result(
             self._collect_interface_source_units(code, filename),
             parser_name="parse_interface",
@@ -448,7 +520,13 @@ class FortranParser(ClassVisitor):
         return self._visit(unit, parent_scope=scope, filename=filename)
 
     def parse_derived_type(self, code: _SourceOrLines, filename: str | None = None) -> FortranDerivedType:
-        """Parse exactly one derived-type block and its wrapper-relevant fields."""
+        """Parse exactly one derived type and its wrapper-relevant fields.
+
+        Use this for an isolated ``type`` definition or a containing source
+        with one discoverable derived type.  The result includes inheritance,
+        fields, and type-bound declarations; ambiguous input raises
+        :class:`FortranParseError`.
+        """
         unit, scope = self._expect_single_parse_result(
             self._collect_derived_type_source_units(code, filename),
             parser_name="parse_derived_type",
@@ -458,7 +536,13 @@ class FortranParser(ClassVisitor):
         return self._visit(unit, parent_scope=scope, filename=filename)
 
     def parse_program(self, code: _SourceOrLines, filename: str | None = None) -> FortranProgram:
-        """Parse exactly one program unit and its specification declarations."""
+        """Parse exactly one program unit and its specification declarations.
+
+        Use this when inspecting a single main program.  Executable statements
+        are intentionally not represented, while declarations, imports, and
+        supported enumerations become parser facts.  Ambiguous input raises
+        :class:`FortranParseError`.
+        """
         _lines, root_scope, all_units = self._helper_prepare_source_units(code, filename)
         unit = self._expect_single_parse_result(
             [unit for unit in all_units if unit.kind == "program"],
@@ -469,7 +553,12 @@ class FortranParser(ClassVisitor):
         return self._visit(unit, parent_scope=root_scope, filename=filename)
 
     def parse_block_data(self, code: _SourceOrLines, filename: str | None = None) -> FortranBlockData:
-        """Parse exactly one block-data unit and its specification declarations."""
+        """Parse exactly one block-data unit and its specification declarations.
+
+        Use this narrow entrypoint for a single ``block data`` source unit.
+        It returns common-block and variable facts but no execution model, and
+        raises :class:`FortranParseError` when the input is not singular.
+        """
         _lines, root_scope, all_units = self._helper_prepare_source_units(code, filename)
         unit = self._expect_single_parse_result(
             [unit for unit in all_units if unit.kind == "block_data"],
@@ -554,10 +643,23 @@ class FortranParser(ClassVisitor):
 
     @staticmethod
     def _belongs_to_module_like(item, target, *, exclude_interface: bool = False) -> bool:
+        """Return whether one visited model belongs to a module-like owner.
+
+        Ownership comparison is case-insensitive, matching Fortran naming.
+        ``exclude_interface`` keeps interface procedure signatures attached to
+        their interface instead of duplicating them in ``target.procedures``.
+        """
         belongs = bool(item.module and item.module.lower() == target.name.lower())
         return belongs and not (exclude_interface and item.in_interface)
 
     def _populate_module_like_children(self, target, child_units, *, scope, filename) -> None:
+        """Visit direct children and append the ones owned by ``target``.
+
+        The method preserves source order within each child category and shares
+        the caller's scope/filename for diagnostics.  Interface-contained
+        procedure declarations are deliberately excluded from a module's
+        standalone procedure collection.
+        """
         signatures = self._parse_children_of_type(child_units, ProcedureUnit, scope=scope, filename=filename)
         types = self._parse_children_of_type(child_units, DerivedTypeUnit, scope=scope, filename=filename)
         interfaces = self._parse_children_of_type(child_units, InterfaceUnit, scope=scope, filename=filename)
@@ -2072,6 +2174,13 @@ class FortranParser(ClassVisitor):
         symbols: dict[str, str],
         next_value: int | None,
     ) -> tuple[FortranEnumerator, int | None]:
+        """Parse one enumerator and calculate the following implicit value.
+
+        ``symbols`` is updated only when this item resolves to a value, so later
+        explicit expressions can refer to it.  The returned counter is ``None``
+        after a non-integer value, preserving the existing no-guessing rule for
+        later implicit enumerators.
+        """
         stripped = item.strip()
         match = re.fullmatch(r"(?P<name>[A-Za-z_]\w*)(?:\s*=\s*(?P<value>.+))?", stripped)
         if match is None:
@@ -2484,6 +2593,12 @@ class FortranParser(ClassVisitor):
         )
 
     def _module_procedure_scope(self, match, module: str | None, in_interface: bool):
+        """Create temporary procedure state for one ``module procedure`` header.
+
+        Such implementation declarations have no explicit dummy list here.
+        The returned state owns an empty symbol table and is finalized through
+        the same procedure path as regular subroutines and functions.
+        """
         sig = FortranProcedureSignature(
             name=match.group("name"),
             kind="module procedure",
@@ -2494,6 +2609,12 @@ class FortranParser(ClassVisitor):
         return self._new_procedure_scope_state(sig, symbols={})
 
     def _subroutine_scope(self, match, module: str | None, in_interface: bool):
+        """Create procedure state from one recognized subroutine header.
+
+        The header match supplies attributes, dummy names, optional ``bind(c)``
+        metadata, and interface ownership.  Dummy arguments become the initial
+        case-insensitive symbol table for subsequent declarations.
+        """
         attributes = self._attrs(match.group("prefix"), match.group("tail"))
         args = [
             FortranArgument(name=name, procedure=match.group("name")) for name in split_csv(match.group("args") or "")
@@ -2519,6 +2640,13 @@ class FortranParser(ClassVisitor):
         lineno: int | None,
         source_line: str | None,
     ):
+        """Create procedure state from one recognized function header.
+
+        The helper initializes dummy arguments and the result symbol, parses an
+        optional result-type prefix, and raises a source-located error for an
+        unsupported prefix.  Its result symbol stays in the same scope table as
+        arguments so finalization can detect shadowing and missing declarations.
+        """
         prefix = (match.group("prefix") or "").strip()
         args = [
             FortranArgument(name=name, procedure=match.group("name")) for name in split_csv(match.group("args") or "")
@@ -2943,6 +3071,11 @@ class FortranParser(ClassVisitor):
         self._raise_unsupported_module_like_declaration(target, stripped, filename, lineno, source_line)
 
     def _raise_unsupported_openmp_declaration(self, target, line, filename, lineno, source_line) -> None:
+        """Raise the stable diagnostic for an unsupported OpenMP declaration.
+
+        ``target`` determines the parser scope label; the remaining arguments
+        preserve the original source location in the emitted error.
+        """
         owner_kind, owner_name = self._variable_scope_label(target)
         raise FortranParseError(
             f"Unsupported OpenMP declarative directive in {owner_kind} '{owner_name or '<unnamed>'}': {line}",
@@ -2954,6 +3087,12 @@ class FortranParser(ClassVisitor):
 
     @staticmethod
     def _apply_default_module_visibility(scope: _ParserScope, target, line: str) -> bool:
+        """Apply a bare module-wide ``public`` or ``private`` statement.
+
+        Returns ``True`` only when it consumed a module visibility statement;
+        callers then avoid treating the line as a declaration.  ``target`` is
+        mutated in place and all other scope kinds are left untouched.
+        """
         if scope.kind != "module" or line not in {"private", "public"}:
             return False
         target.default_visibility = line
@@ -2961,6 +3100,13 @@ class FortranParser(ClassVisitor):
 
     @staticmethod
     def _apply_module_attribute_statement(scope: _ParserScope, target, attribute: str, value: str) -> bool:
+        """Apply a supported module attribute statement and report consumption.
+
+        The helper records named ``public``/``private`` visibility in source
+        order or updates the default visibility for an empty list.  It also
+        consumes grammar-only ``module procedure`` and ``import`` lines; other
+        attributes return ``False`` for normal declaration handling.
+        """
         if attribute in {"module procedure", "import"}:
             return True
         if scope.kind != "module" or attribute not in {"public", "private"}:
@@ -2973,6 +3119,12 @@ class FortranParser(ClassVisitor):
         return True
 
     def _handle_non_declaration_spec_line(self, scope, target, line, filename, lineno, source_line) -> bool:
+        """Consume ignored specification text or reject illegal executable text.
+
+        Returns ``True`` when the caller should stop processing ``line``.  A
+        program may contain execution statements after its declaration region;
+        other module-like scopes receive a source-located error instead.
+        """
         executable = self._is_executable_statement_start(line)
         if not executable and not self._is_ignored_spec_statement(line):
             return False
@@ -2989,6 +3141,12 @@ class FortranParser(ClassVisitor):
         return True
 
     def _raise_unsupported_module_like_declaration(self, target, line, filename, lineno, source_line) -> None:
+        """Raise the precise unsupported-declaration error for one scope line.
+
+        Clearly non-declarative text is first classified as invalid syntax;
+        declaration-like text retains the established unsupported-datatype
+        diagnostic.  Both errors preserve the owner label and source location.
+        """
         owner_kind, owner_name = self._variable_scope_label(target)
         if "::" not in line and not self._looks_like_declaration_or_spec(line):
             self._raise_invalid_fortran_syntax_line(
@@ -3495,6 +3653,13 @@ class FortranParser(ClassVisitor):
 
     @staticmethod
     def _entity_decl_meta(raw_name: str, meta: dict) -> dict:
+        """Copy character metadata when one entity supplies ``*length`` syntax.
+
+        Non-character entities and declarations without an entity-level star
+        return the original ``meta`` mapping unchanged.  For ``character``
+        entities, a copied mapping records the length as ``kind`` without
+        mutating sibling entities' declaration metadata.
+        """
         if meta["base_type"] != "character":
             return meta
         match = re.search(r"\*\s*(\([^)]*\)|\*|[A-Za-z_]\w*|\d+)\s*$", raw_name)
@@ -5022,7 +5187,14 @@ def parse_fortran_file(
     filename: str | None = None,
     encoding: str = "utf-8",
 ) -> FortranFile:
-    """Parse one Fortran source string or path with the shared parser.
+    """Parse one source string or path using the shared ``FortranParser``.
+
+    This is the normal public API for parser clients.  Pass inline source with
+    an optional ``filename`` for diagnostics, or pass an existing path without
+    ``filename`` to read it using ``encoding``.  The returned ``FortranFile``
+    is parser-stage data that is normally passed to project aggregation or
+    semantic conversion; malformed or unsupported source raises
+    :class:`FortranParseError`.
 
     Example:
         >>> parse_fortran_file("subroutine ping()\\nend subroutine ping\\n").procedures[0].name
@@ -5038,9 +5210,35 @@ def parse_fortran_file(
 def parse_fortran_project(files, *, encoding: str = "utf-8") -> FortranProject:
     """Parse explicit Fortran sources or a directory into one project model.
 
+    Use this module-level convenience API for cross-file parsing.  ``files``
+    may be a mapping of names to source, explicit paths, or a directory; the
+    returned project indexes the parsed files and completed project symbols.
+    File and duplicate-symbol errors propagate as :class:`FortranParseError`.
+
     Example:
         >>> project = parse_fortran_project({"types.f90": "module types\\nend module types\\n"})
         >>> sorted(project.modules)
         ['types']
     """
     return _DEFAULT_PARSER.parse_project(files, encoding=encoding)
+
+
+if __name__ == "__main__":
+    source = """\
+module metrics
+  integer, parameter :: n = 4
+contains
+  subroutine scale(values)
+    real, intent(inout) :: values(n)
+  end subroutine scale
+end module metrics
+"""
+
+    parsed = parse_fortran_file(source, filename="metrics.f90")
+    module = parsed.modules[0]
+    procedure = module.procedures[0]
+    argument = procedure.arguments[0]
+
+    print(f"Module: {module.name}")
+    print(f"Parameter: {module.variables[0].name} = {module.variables[0].value}")
+    print(f"Procedure: {procedure.name}({argument.name}: {argument.base_type}[{argument.rank}])")

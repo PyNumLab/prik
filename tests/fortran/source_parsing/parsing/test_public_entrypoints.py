@@ -1,11 +1,30 @@
 """Public parser entrypoints and source/path input contracts."""
 
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 
 from prik.parsers.fortran.parser import FortranParser
 from prik import FortranParseError, parse_fortran_file, parse_fortran_project
 from prik.parsers.fortran.parser import FortranParser as PackageFortranParser
 from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
+
+
+def test_fortran_parser_module_direct_execution_example():
+    """Run the parser's documented source-to-model example from the repository root."""
+    repository_root = Path(__file__).parents[4]
+
+    result = subprocess.run(
+        [sys.executable, "prik/parsers/fortran/parser.py"],
+        cwd=repository_root,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout == "Module: metrics\nParameter: n = 4\nProcedure: scale(values: real[1])\n"
 
 
 def test_parser_public_entrypoint_aliases_and_singular_contracts_use_inline_sources():

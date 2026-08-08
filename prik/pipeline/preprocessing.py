@@ -1703,7 +1703,7 @@ if __name__ == "__main__":
         example_directory = Path(directory)
         root_path = example_directory / "greeting.F90"
         include_path = example_directory / "constants.inc"
-        source = (
+        fortran_source = (
             "module greeting\n"
             "include 'constants.inc'\n"
             "contains\n"
@@ -1712,16 +1712,43 @@ if __name__ == "__main__":
             "end subroutine show_answer\n"
             "end module greeting\n"
         )
-        root_path.write_text(source, encoding="utf-8")
+        root_path.write_text(fortran_source, encoding="utf-8")
         include_path.write_text("integer, parameter :: answer = 42\n", encoding="utf-8")
 
+        # Native Fortran INCLUDE expansion after compiler CPP output.
+        print("Before Fortran include expansion:")
+        print(fortran_source, end="")
+        print()
         expanded_source, included_files, _mappings, diagnostics = expand_native_fortran_includes(
-            source,
+            fortran_source,
             root_path=root_path,
             include_dirs=[],
         )
         parser_input = [line for line in expanded_source.splitlines() if not line.lstrip().startswith("#")]
 
-        print("Expanded Fortran parser input:")
+        print("After Fortran include expansion:")
         print("\n".join(parser_input))
         print(f"Native includes: {len(included_files)}; diagnostics: {len(diagnostics)}")
+        print()
+
+        # Compiler-backed C include and macro expansion.
+        c_source_path = example_directory / "state.c"
+        c_header_path = example_directory / "state.h"
+        c_source = '#include "state.h"\nint state_id = STATE_ID;\n'
+        c_header_path.write_text("#define STATE_ID 42\n", encoding="utf-8")
+        c_source_path.write_text(c_source, encoding="utf-8")
+
+        print("Before C compiler preprocessing:")
+        print(c_source, end="")
+        print()
+        c_result = preprocess_source(
+            c_source_path,
+            language="c",
+            config=PreprocessingConfig(mode="compiler", compiler="cc"),
+        )
+        c_parser_input = [
+            line.strip() for line in c_result.source.splitlines() if line.strip() and not line.lstrip().startswith("#")
+        ]
+
+        print("After C compiler preprocessing:")
+        print("\n".join(c_parser_input))

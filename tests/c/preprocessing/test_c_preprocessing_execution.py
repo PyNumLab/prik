@@ -26,7 +26,16 @@ def test_preprocessing_module_direct_execution_example():
     )
 
     assert result.stdout == (
-        "Expanded Fortran parser input:\n"
+        "Before Fortran include expansion:\n"
+        "module greeting\n"
+        "include 'constants.inc'\n"
+        "contains\n"
+        "subroutine show_answer()\n"
+        "print *, answer\n"
+        "end subroutine show_answer\n"
+        "end module greeting\n"
+        "\n"
+        "After Fortran include expansion:\n"
         "module greeting\n"
         "integer, parameter :: answer = 42\n"
         "contains\n"
@@ -35,6 +44,13 @@ def test_preprocessing_module_direct_execution_example():
         "end subroutine show_answer\n"
         "end module greeting\n"
         "Native includes: 1; diagnostics: 0\n"
+        "\n"
+        "Before C compiler preprocessing:\n"
+        '#include "state.h"\n'
+        "int state_id = STATE_ID;\n"
+        "\n"
+        "After C compiler preprocessing:\n"
+        "int state_id = 42;\n"
     )
 
 

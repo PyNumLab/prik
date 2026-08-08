@@ -52,6 +52,14 @@ and pragma metadata only; macro-shaped source requires compiler preprocessing.
 Compiler/preprocessed input is parsed by the same route after linemarkers are
 mapped back to original source locations.
 
+The parser deliberately stops at parser-stage facts.  In a single `CFile`, a
+use such as `struct state *value` can contain a source-local reference object
+separate from the `struct state { ... }` definition.  `parse_c_project(...)`
+assembles the explicitly supplied files, indexes their declarations, and uses
+the type resolver to link those references to the project-wide definitions.
+It records includes as graph facts; it never follows includes to discover more
+parser inputs.
+
 Executable walkthroughs live in
 ``tests/c/parsing/test_c_parser_developer_tutorial.py``.
 """
@@ -64,7 +72,7 @@ import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path, PurePosixPath
 
-from .lexer import (
+from prik.parsers.c.lexer import (
     CLogicalRecord,
     CTopLevelSegment,
     lex_c_source,
@@ -76,7 +84,7 @@ from .lexer import (
     top_level_split,
     top_level_split_with_offsets,
 )
-from .models import (
+from prik.parsers.c.models import (
     CArray,
     CAtomic,
     CBool,
@@ -121,8 +129,8 @@ from .models import (
     CLongDoubleComplex,
     CLongLong,
 )
-from .preprocessor import collect_preprocessor_metadata
-from .type_resolver import resolve_project_types
+from prik.parsers.c.preprocessor import collect_preprocessor_metadata
+from prik.parsers.c.type_resolver import resolve_project_types
 
 _C_SOURCE_SUFFIXES = {".c", ".h", ".i"}
 _IDENTIFIER_RE = re.compile(r"[A-Za-z_]\w*")
@@ -280,14 +288,14 @@ _PRIMITIVE_TYPE_SIGNATURES = {
 
 @dataclass
 class _PointerOp:
-    """Declarator operation representing one pointer layer."""
+    """Store one pointer layer and its source-order qualifier spellings."""
 
     qualifiers: list[str]
 
 
 @dataclass
 class _ArrayOp:
-    """Declarator operation representing one array suffix."""
+    """Store one array suffix, including bound and parameter-array modifiers."""
 
     size: str | None = None
     static: bool = False
@@ -297,7 +305,7 @@ class _ArrayOp:
 
 @dataclass
 class _FunctionOp:
-    """Declarator operation representing one function suffix."""
+    """Store one function suffix with parsed parameters and prototype facts."""
 
     parameters: list[CParameter]
     variadic: bool = False
@@ -306,7 +314,7 @@ class _FunctionOp:
 
 @dataclass
 class _ParsedDeclarator:
-    """Name plus type-construction operations parsed from a declarator."""
+    """Store a declarator name and operations in syntax-to-type construction order."""
 
     name: str | None
     operations: list[_PointerOp | _ArrayOp | _FunctionOp]
@@ -384,9 +392,14 @@ def _is_source_key(key: str) -> bool:
 class CParser:
     """Parser orchestration object for the partial typed C model.
 
-    The instance carries no parse stack; per-call input and preprocessing
-    configuration flow explicitly through `parse_file` and `parse_project`.
-    See the module sketch and developer tutorial tests for the helper path.
+    Use this class when parsing several files with a deliberately scoped
+    configuration, or use `parse_c_file` / `parse_c_project` for ordinary
+    calls. The instance carries no parse stack; per-call input and
+    preprocessing configuration flow explicitly through `parse_file` and
+    `parse_project`. Each call returns a parse-only model for semantic
+    conversion or wrapper planning, and malformed supported syntax raises
+    `CParseError`. See the module sketch and developer tutorial tests for the
+    helper path.
 
     Class section map:
     - public file/project parse entrypoints;
@@ -410,12 +423,25 @@ class CParser:
         preprocessing: str = "raw",
         encoding: str = "utf-8",
     ) -> CFile:
-        """Parse one source string/path into a `CFile` parser model.
+        """Parse one C source string or existing path into a `CFile` model.
 
-        The current implementation supports raw preprocessing metadata,
-        compiler-fed preprocessed text, and the partial grammar subset
-        documented in `docs/c_parser.md`.
+        Use this entrypoint for one explicit translation unit. Pass inline
+        source with `filename` to retain diagnostic provenance, or an existing
+        path to read source using `encoding`. In `raw` mode, quoted/system
+        includes and pragmas become metadata but macros and conditional
+        directives raise `CParseError`; use `compiler` or `preprocessed` for
+        compiler-expanded input and line-marker provenance. The returned
+        parser-stage model is normally passed to `parse_project` or semantic
+        conversion. It does not resolve cross-file references or recursively
+        parse includes.
+
+        Raises:
+            CParseError: If supported C syntax is malformed or raw source
+                needs compiler preprocessing.
+            ValueError: If `preprocessing` is not `raw`, `compiler`, or
+                `preprocessed`.
         """
+        # Stage 1: obtain source text and determine its preprocessing mode.
         source_path: Path | None = None
         if _looks_like_existing_source_path(source_or_path):
             path = Path(source_or_path)
@@ -434,6 +460,7 @@ class CParser:
 
         parsed = CFile(filename=filename, preprocessing=preprocessing)
         if preprocessing == "raw":
+            # Stage 2a: collect non-expanding preprocessing metadata and parse.
             self._raise_for_raw_preprocessing_directives(source, filename)
             effective_include_dirs = list(include_dirs or ())
             if source_path is not None:
@@ -462,6 +489,7 @@ class CParser:
             parsed.diagnostics.extend(parser_diagnostics)
             self._normalize_redeclarations(parsed)
         elif preprocessing in {"compiler", "preprocessed"}:
+            # Stage 2b: parse compiler output and recover original locations.
             parsed.preprocessed_source_path = inferred_preprocessed_path
             functions, structs, unions, enums, typedefs, variables, parser_diagnostics = self._parse_translation_unit(
                 source,
@@ -557,13 +585,23 @@ class CParser:
         preprocessing: str = "raw",
         encoding: str = "utf-8",
     ) -> CProject:
-        """Parse explicit project inputs without recursively parsing includes.
+        """Parse explicit C files and assemble their resolved `CProject` view.
 
-        A directory input explicitly supplies all supported source files below
-        that directory. Include directives are recorded and resolved as graph
-        facts where possible, but they never cause another file to be opened.
+        Use this entrypoint when declarations in supplied files need common
+        indexes and type links. `files` may be a mapping of file names to
+        source, explicit paths, or a directory of `.c`, `.h`, and `.i` files.
+        Each requested input follows `parse_file`'s preprocessing rules, then
+        project assembly resolves typedef/tag uses among those inputs. Includes
+        remain metadata and include-graph edges; even a resolved header is not
+        opened unless it was explicitly supplied.
+
+        Raises:
+            CParseError: If a requested source contains unsupported malformed
+                syntax or raw preprocessing that requires a compiler.
+            ValueError: If `preprocessing` is not a supported parser mode.
         """
         if isinstance(files, Mapping):
+            # Stage 1: parse caller-owned in-memory sources without discovery.
             parsed_files = {
                 name: self.parse_file(
                     source,
@@ -576,6 +614,7 @@ class CParser:
             }
             return self._assemble_project(parsed_files)
 
+        # Stage 1: turn explicit paths or one directory into stable inputs.
         paths: list[Path] = []
         root: Path | None = None
         if isinstance(files, str | Path):
@@ -588,6 +627,7 @@ class CParser:
         else:
             paths = [Path(p) for p in files]
 
+        # Stage 2: parse each explicit input, then assemble project-wide links.
         parsed_files: dict[str, CFile] = {}
         for path in sorted(paths):
             key = path.name if root is not None else str(path)
@@ -607,6 +647,8 @@ class CParser:
 
         This helper is useful when an orchestration layer preprocesses each
         source first and attaches recipe metadata before project resolution.
+        It consumes caller-owned file models, makes an internal mapping copy,
+        and returns indexes/type links without parsing or opening more files.
 
         Example:
             >>> parser = CParser()
@@ -2823,12 +2865,16 @@ class CParser:
         list[CVariable],
         list[CDiagnostic],
     ]:
-        """Dispatch top-level C external declarations by grammar role.
+        """Dispatch top-level segments and return their typed parser facts.
 
-        The ordering here is intentional: aggregate definitions are parsed
-        before function/declaration fallback, and ordinary `;` declarations
-        all flow through the shared declaration backend.
+        `source` has already been assigned a preprocessing mode by
+        `parse_file`. The ordering is intentional: aggregate definitions are
+        parsed before function/declaration fallback, and ordinary `;`
+        declarations all flow through the shared declaration backend. Invalid
+        syntax raises `CParseError`; tolerable unsupported declarators become
+        ordered diagnostics rather than partial declarations.
         """
+        # Stage 1: reject old-style definitions before splitting source.
         self._raise_for_unsupported_old_style_definitions(
             source,
             filename,
@@ -2836,6 +2882,7 @@ class CParser:
             normalize_compiler_extensions=normalize_compiler_extensions,
         )
 
+        # Stage 2: prepare result collections in declaration encounter order.
         functions: list[CFunction] = []
         structs: list[CStruct] = []
         unions: list[CUnion] = []
@@ -2844,6 +2891,7 @@ class CParser:
         variables: list[CVariable] = []
         diagnostics: list[CDiagnostic] = []
 
+        # Stage 3: normalize compiler extensions and dispatch each grammar role.
         for segment in split_top_level_c_source(
             source,
             filename=filename,
@@ -2919,9 +2967,17 @@ class CParser:
         return functions, structs, unions, enums, typedefs, variables, diagnostics
 
     def _build_project(self, parsed_files: dict[str, CFile]) -> CProject:
-        """Build project indexes, include graph facts, and resolved type links."""
+        """Build indexes, include graph facts, and canonical type links.
+
+        Consumes only already parsed explicit files. It preserves file-level
+        declaration ordering, merges project indexes according to existing
+        redeclaration rules, and appends project diagnostics without opening
+        include targets.
+        """
         project = CProject(files=parsed_files)
         all_functions: list[CFunction] = []
+
+        # Stage 1: index each file's local declarations and include facts.
         for filename, file in parsed_files.items():
             project.functions_by_file[filename] = [function.name for function in file.functions]
             all_functions.extend(file.functions)
@@ -2947,8 +3003,12 @@ class CParser:
                 project.includes[f"{filename}:{include.target}"] = include
             project.diagnostics.extend(file.diagnostics)
             self._index_file_includes(project, filename, file)
+
+        # Stage 2: derive cross-file reporting relations and canonical types.
         self._index_header_source_pairs(project)
         resolve_project_types(project)
+
+        # Stage 3: choose one project function per compatible declaration set.
         normalized_functions = self._deduplicate_functions(all_functions, project.diagnostics)
         for function in normalized_functions:
             project.functions[function.name] = function
@@ -3118,7 +3178,13 @@ def parse_c_file(
     preprocessing: str = "raw",
     encoding: str = "utf-8",
 ) -> CFile:
-    """Parse one C source string/path using the default parser instance.
+    """Parse one C source string or path with the shared `CParser`.
+
+    This is the usual public API for a single translation unit. It has the
+    same source/path and preprocessing behavior as `CParser.parse_file`; use
+    `filename` for inline-source diagnostics, and consume the returned
+    `CFile` directly or supply it to project/semantic stages. Syntax and raw
+    preprocessing failures raise `CParseError`.
 
     Example:
         >>> parse_c_file("int answer(void);", filename="api.h").functions[0].name
@@ -3140,7 +3206,13 @@ def parse_c_project(
     preprocessing: str = "raw",
     encoding: str = "utf-8",
 ) -> CProject:
-    """Parse multiple C files or a directory using the default parser instance.
+    """Parse explicitly supplied C inputs into one resolved project model.
+
+    Use this convenience API when the supplied units must share typedef/tag
+    resolution and project indexes. Inputs may be a source mapping, paths, or
+    a directory; includes are recorded but never recursively parsed. The
+    returned `CProject` is normally consumed by semantic conversion or wrapper
+    generation, while parse/preprocessing errors propagate as `CParseError`.
 
     Example:
         >>> project = parse_c_project({"api.h": "int answer(void);"})
@@ -3153,3 +3225,24 @@ def parse_c_project(
         preprocessing=preprocessing,
         encoding=encoding,
     )
+
+
+if __name__ == "__main__":
+    source = """\
+typedef unsigned long api_size;
+struct state { int id; };
+api_size count(void);
+void step(struct state *value);
+"""
+
+    parsed = parse_c_file(source, filename="state_api.h")
+    count = next(function for function in parsed.functions if function.name == "count")
+    step = next(function for function in parsed.functions if function.name == "step")
+    state = parsed.structs[0]
+    state_reference = step.parameters[0].type.components[-1]
+
+    print(f"Parsed: {parsed.filename}")
+    print(f"Typedef: {parsed.typedefs[0].name} -> unsigned long")
+    print(f"Struct: {state.name} ({state.members[0].name})")
+    print(f"Function: {count.name}() -> {count.result_type.name}")
+    print(f"Function: {step.name}({step.parameters[0].name}) -> pointer to struct {state_reference.name}")
