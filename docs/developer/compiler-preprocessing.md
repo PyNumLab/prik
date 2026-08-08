@@ -1,4 +1,13 @@
-# Compiler-Backed Preprocessing Notes
+---
+title: Compiler Preprocessing Reference
+audience: developers, contributors
+prerequisites: repository structure, native project compiler flags
+related: source-map.md, c-parser-reference.md, fortran-parser-reference.md, ../user/examples/recipes/compiler-preprocessing.md
+status: maintained
+publication: draft
+---
+
+# Compiler-Backed Preprocessing Reference
 
 `prik/pipeline/preprocessing.py` owns compiler-backed preprocessing for the wrapper
 pipeline. The parsers consume one expanded source stream; they do not evaluate
@@ -40,8 +49,7 @@ Built-in adapters cover GCC-compatible C/Clang (`-E -x c`), GNU Fortran
 compiler families. A custom template must write expanded source to stdout:
 
 ```bash
-python -m prik parse include/api.h --language c \
-  --preprocess compiler \
+python -m prik parse include/api.h --language c --preprocess compiler \
   --preprocessor-adapter command-template \
   --preprocess-template 'vendor-cc --preprocess {include_dirs} {defines} {source}'
 ```
