@@ -9,7 +9,33 @@ from tests.c._support.preprocessing import (
     pytest,
     run_compiler_preprocessor,
     run_compiler_preprocessor_with_recipe,
+    subprocess,
+    sys,
 )
+
+
+def test_preprocessing_module_direct_execution_example():
+    repository_root = Path(__file__).parents[3]
+
+    result = subprocess.run(
+        [sys.executable, "prik/pipeline/preprocessing.py"],
+        cwd=repository_root,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout == (
+        "Expanded Fortran parser input:\n"
+        "module greeting\n"
+        "integer, parameter :: answer = 42\n"
+        "contains\n"
+        "subroutine show_answer()\n"
+        "print *, answer\n"
+        "end subroutine show_answer\n"
+        "end module greeting\n"
+        "Native includes: 1; diagnostics: 0\n"
+    )
 
 
 def test_run_compiler_preprocessor_success_and_failures(monkeypatch, tmp_path: Path):

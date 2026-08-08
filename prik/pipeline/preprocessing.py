@@ -1,8 +1,11 @@
-"""Compiler-backed preprocessing support for prik wrapper pipelines.
+"""Prepare C and Fortran source for the parser frontends.
 
-The parser frontends intentionally parse one source stream. This module owns the
-compiler/preprocessor invocation, side-channel metadata, source provenance, and
-the native Fortran INCLUDE expansion that GNU Fortran CPP leaves unresolved.
+The parsers intentionally consume one expanded source stream.  This module
+therefore owns compiler/preprocessor invocation, provenance and dependency
+metadata, and the textual expansion of native Fortran ``INCLUDE`` statements
+that compiler CPP leaves unresolved.  It does not parse declarations or make
+semantic policy decisions; callers pass :class:`PreprocessResult.source` to the
+appropriate parser after this stage completes.
 """
 
 from __future__ import annotations
@@ -36,8 +39,27 @@ DependencyKind = Literal["root", "project", "system"]
 Exposure = Literal["public", "private"]
 
 
+# Compiler output syntax and supported source forms.
+_VALID_LANGUAGES = {"c", "fortran"}
+_C_SOURCE_SUFFIXES = {".c", ".h", ".i"}
+_FORTRAN_SOURCE_SUFFIXES = {".f", ".for", ".ftn", ".f77", ".f90", ".f95", ".f03", ".f08"}
+_DEFINE_RE = re.compile(r"^\s*#\s*define\s+([A-Za-z_]\w*)(\(([^)]*)\))?(?:\s+(.*))?$")
+_LINEMARKER_RE = re.compile(
+    r'^\s*#\s+(?P<line>\d+)\s+(?:"(?P<quoted>(?:[^"\\]|\\.)*)"|(?P<bare>\S+))(?P<flags>(?:\s+\d+)*)\s*$'
+)
+_LINE_DIRECTIVE_RE = re.compile(
+    r'^\s*#\s*line\s+(?P<line>\d+)(?:\s+(?:"(?P<quoted>(?:[^"\\]|\\.)*)"|(?P<bare>\S+)))?\s*$'
+)
+_FORTRAN_INCLUDE_RE = re.compile(r"^\s*include\s*(?P<quote>['\"])(?P<path>[^'\"]+)(?P=quote)\s*$", re.IGNORECASE)
+
+
 class PreprocessingError(Exception):
-    """Raised when preprocessing configuration or execution fails."""
+    """Report a preprocessing configuration, compiler, or include failure.
+
+    Callers normally surface ``category`` and ``diagnostics`` through the CLI
+    or parser payload.  The exception message remains the concise
+    user-facing summary.
+    """
 
     def __init__(
         self,
@@ -46,6 +68,13 @@ class PreprocessingError(Exception):
         category: PreprocessingCategory = "PREPROCESSOR_FAILED",
         diagnostics: Sequence[PreprocessingDiagnostic] | None = None,
     ) -> None:
+        """Initialize a failure with its stable category and diagnostic details.
+
+        Args:
+            message: Concise explanation presented to callers.
+            category: Stable machine-readable failure classification.
+            diagnostics: Optional detailed diagnostics to retain with the error.
+        """
         self.category = category
         self.diagnostics = list(diagnostics or [])
         super().__init__(message)
@@ -53,7 +82,12 @@ class PreprocessingError(Exception):
 
 @dataclass
 class Invocation:
-    """Concrete command line used to obtain preprocessed source."""
+    """Describe one concrete compiler command used to expand source.
+
+    Invocation builders return this record when a caller needs to inspect the
+    exact argv and working directory before execution.  ``preprocess_source``
+    consumes it internally and records the same facts in its result recipe.
+    """
 
     argv: list[str]
     cwd: str | None = None
@@ -67,6 +101,12 @@ class Invocation:
 
 @dataclass
 class PreprocessingDiagnostic:
+    """Store one preprocessing diagnostic with optional source provenance.
+
+    Results and errors retain these records so CLI and API callers can report
+    stable categories without reparsing compiler stderr.
+    """
+
     category: PreprocessingCategory
     message: str
     severity: Literal["error", "warning", "note"] = "error"
@@ -75,6 +115,7 @@ class PreprocessingDiagnostic:
     command: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, object]:
+        """Return a detached JSON-compatible representation of this diagnostic."""
         return {
             "category": self.category,
             "message": self.message,
@@ -87,6 +128,12 @@ class PreprocessingDiagnostic:
 
 @dataclass
 class PreprocessingPlan:
+    """Represent the requested preprocessing inputs before command selection.
+
+    This JSON-compatible value is useful to callers that need to display or
+    persist a requested operation rather than execute it immediately.
+    """
+
     language: str
     source_path: str
     adapter: str
@@ -101,6 +148,7 @@ class PreprocessingPlan:
     command_template: str | None = None
 
     def to_dict(self) -> dict[str, object]:
+        """Return a detached JSON-compatible representation of the requested plan."""
         return {
             "language": self.language,
             "source_path": self.source_path,
@@ -119,6 +167,13 @@ class PreprocessingPlan:
 
 @dataclass
 class IncludedFile:
+    """Describe one root or include edge discovered during preprocessing.
+
+    ``mechanism`` identifies whether compiler markers or native Fortran
+    expansion found the edge.  Downstream parsers consume these records as
+    dependency and public-exposure facts.
+    """
+
     path: str
     included_by: str | None = None
     include_line: int | None = None
@@ -127,6 +182,7 @@ class IncludedFile:
     exposure: Exposure = "public"
 
     def to_dict(self) -> dict[str, object]:
+        """Return a detached JSON-compatible representation of this include edge."""
         return {
             "path": self.path,
             "included_by": self.included_by,
@@ -139,12 +195,19 @@ class IncludedFile:
 
 @dataclass
 class SourceMapping:
+    """Map one generated source line back to its original source location.
+
+    ``include_stack`` preserves the active inclusion chain for provenance-aware
+    parsers and diagnostics.
+    """
+
     generated_line: int
     original_path: str
     original_line: int
     include_stack: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, object]:
+        """Return a detached JSON-compatible representation of this mapping."""
         return {
             "generated_line": self.generated_line,
             "original_path": self.original_path,
@@ -155,6 +218,13 @@ class SourceMapping:
 
 @dataclass
 class MacroDefinition:
+    """Record an active macro when compiler output exposes its definition.
+
+    Macro metadata is descriptive rather than executable: semantic conversion
+    may consume supported object-like values, while callers retain function-like
+    definitions as provenance only.
+    """
+
     name: str
     value: str | None = None
     function_like: bool = False
@@ -164,6 +234,7 @@ class MacroDefinition:
     builtin: bool = False
 
     def to_dict(self) -> dict[str, object]:
+        """Return a detached JSON-compatible representation of this macro."""
         return {
             "name": self.name,
             "value": self.value,
@@ -177,6 +248,13 @@ class MacroDefinition:
 
 @dataclass
 class PreprocessResult:
+    """Return expanded source together with all preprocessing side-channel data.
+
+    Pass ``source`` to a C or Fortran parser.  ``recipe`` and the metadata
+    collections are normally attached to the parser or build report so later
+    stages can preserve compiler provenance.
+    """
+
     source: str
     recipe: dict[str, object]
     included_files: list[IncludedFile] = field(default_factory=list)
@@ -185,6 +263,7 @@ class PreprocessResult:
     diagnostics: list[PreprocessingDiagnostic] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, object]:
+        """Return a detached JSON-compatible representation of this result."""
         return {
             "source": self.source,
             "recipe": dict(self.recipe),
@@ -197,7 +276,12 @@ class PreprocessResult:
 
 @dataclass
 class PreprocessingRecipe:
-    """JSON-compatible metadata about one preprocessing operation."""
+    """Store JSON-compatible provenance for one completed preprocessing operation.
+
+    Use this record when a caller wants expanded source and a typed recipe from
+    :func:`run_compiler_preprocessor_with_recipe`.  ``to_dict`` is the payload
+    shape stored alongside parser results.
+    """
 
     language: str
     compiler: str | None
@@ -222,10 +306,11 @@ class PreprocessingRecipe:
 
     @property
     def std(self) -> str | None:
-        """Backward-compatible alias for older callers."""
+        """Return the configured language standard under its historical name."""
         return self.standard
 
     def to_dict(self) -> dict[str, object]:
+        """Return a detached JSON-compatible representation of this recipe."""
         return {
             "language": self.language,
             "compiler": self.compiler,
@@ -254,7 +339,13 @@ class PreprocessingRecipe:
 
 @dataclass
 class PreprocessingConfig:
-    """Configuration for compiler-backed preprocessing operations."""
+    """Configure compiler-backed source expansion and dependency exposure.
+
+    Use ``mode="compiler"`` with ``preprocess_source`` or either convenience
+    runner.  Select a direct compiler, compile database, or command template;
+    include paths and macro options apply to the selected invocation and to
+    native Fortran ``INCLUDE`` expansion.
+    """
 
     mode: str = "internal"
     compiler: str | None = None
@@ -273,9 +364,16 @@ class PreprocessingConfig:
 
     @property
     def uses_compiler(self) -> bool:
+        """Whether this configuration authorizes compiler-backed preprocessing."""
         return self.mode == "compiler"
 
     def fortran_internal_recipe(self, path: Path) -> dict[str, object] | None:
+        """Return parser-test macro metadata when compiler invocation is absent.
+
+        ``None`` means no internal recipe is needed.  The method does not read
+        ``path`` or execute a compiler; it only records the macros supplied to
+        the internal Fortran parser-test path.
+        """
         if self.uses_compiler or not (self.defines or self.undefs):
             return None
         return PreprocessingRecipe(
@@ -291,6 +389,12 @@ class PreprocessingConfig:
 
 
 class CompilerAdapter(Protocol):
+    """Describe the adapter façade used by callers with custom compiler families.
+
+    Implementations build an invocation and expose metadata already present in
+    a :class:`PreprocessResult`; they do not run the compiler themselves.
+    """
+
     name: str
     capabilities: dict[str, bool]
 
@@ -300,30 +404,36 @@ class CompilerAdapter(Protocol):
         *,
         language: str,
         config: PreprocessingConfig,
-    ) -> Invocation: ...
+    ) -> Invocation:
+        """Build the adapter-specific command for ``source_path`` and ``language``."""
+        ...
 
-    def collect_dependencies(self, result: PreprocessResult) -> list[IncludedFile]: ...
+    def collect_dependencies(self, result: PreprocessResult) -> list[IncludedFile]:
+        """Return the dependency records already collected in ``result``."""
+        ...
 
-    def collect_macros(self, result: PreprocessResult) -> list[MacroDefinition]: ...
+    def collect_macros(self, result: PreprocessResult) -> list[MacroDefinition]:
+        """Return the macro records already collected in ``result``."""
+        ...
 
-    def parse_linemarkers(self, source: str, filename: str | None = None) -> list[SourceMapping]: ...
+    def parse_linemarkers(self, source: str, filename: str | None = None) -> list[SourceMapping]:
+        """Map non-marker lines in compiler output back to their source locations."""
+        ...
 
 
-_VALID_LANGUAGES = {"c", "fortran"}
-_C_SOURCE_SUFFIXES = {".c", ".h", ".i"}
-_FORTRAN_SOURCE_SUFFIXES = {".f", ".for", ".ftn", ".f77", ".f90", ".f95", ".f03", ".f08"}
-_DEFINE_RE = re.compile(r"^\s*#\s*define\s+([A-Za-z_]\w*)(\(([^)]*)\))?(?:\s+(.*))?$")
-_LINEMARKER_RE = re.compile(
-    r'^\s*#\s+(?P<line>\d+)\s+(?:"(?P<quoted>(?:[^"\\]|\\.)*)"|(?P<bare>\S+))(?P<flags>(?:\s+\d+)*)\s*$'
-)
-_LINE_DIRECTIVE_RE = re.compile(
-    r'^\s*#\s*line\s+(?P<line>\d+)(?:\s+(?:"(?P<quoted>(?:[^"\\]|\\.)*)"|(?P<bare>\S+)))?\s*$'
-)
-_FORTRAN_INCLUDE_RE = re.compile(r"^\s*include\s*(?P<quote>['\"])(?P<path>[^'\"]+)(?P=quote)\s*$", re.IGNORECASE)
+# Configuration validation and command option normalization.
 
 
 def validate_macro_name(macro_str: str, context: str) -> None:
-    """Validate that a command-line macro definition has a usable name."""
+    """Validate one ``-D`` or ``-U`` style macro argument before invocation.
+
+    Use this at a configuration boundary when accepting macro text from a user.
+    The macro value, if any, is left untouched; only the identifier before the
+    first ``=`` is validated.
+
+    Raises:
+        PreprocessingError: If the macro text has no valid identifier.
+    """
 
     if not macro_str:
         raise PreprocessingError(
@@ -344,6 +454,11 @@ def validate_macro_name(macro_str: str, context: str) -> None:
 
 
 def _require_language(language: str) -> None:
+    """Reject languages without a compiler-preprocessing adapter.
+
+    The helper consumes the user-facing language selector and raises the stable
+    invalid-argument error before any command or filesystem work occurs.
+    """
     if language not in _VALID_LANGUAGES:
         raise PreprocessingError(
             f"compiler preprocessing is not supported for language {language!r}",
@@ -352,6 +467,11 @@ def _require_language(language: str) -> None:
 
 
 def _compiler_required(config: PreprocessingConfig, language: str) -> str:
+    """Return the explicit compiler required by a direct invocation.
+
+    Direct mode intentionally requires an exact configured executable, while
+    compile-database and command-template modes obtain their command elsewhere.
+    """
     if not config.compiler:
         raise PreprocessingError(
             f"{language} compiler preprocessing requires --compiler with an exact executable",
@@ -361,7 +481,11 @@ def _compiler_required(config: PreprocessingConfig, language: str) -> str:
 
 
 def _fortran_preprocessor_profile(compiler: str) -> tuple[str, tuple[str, ...], dict[str, bool]]:
-    """Return vendor-specific preprocessing arguments and advertised facts."""
+    """Return the Fortran adapter name, extra flags, and provenance capabilities.
+
+    Unknown compilers retain the GNU-compatible profile.  LLVM Flang suppresses
+    line markers, so its capability record explicitly reports that limitation.
+    """
     try:
         token, _vendor, _c_compiler = fortran_compiler_family(compiler)
     except ValueError:
@@ -379,6 +503,19 @@ def _fortran_preprocessor_profile(compiler: str) -> tuple[str, tuple[str, ...], 
     )
 
 
+def _invocation_adapter_profile(language: str, compiler: str) -> tuple[str, dict[str, bool]]:
+    """Return the selected adapter label and a fresh capability mapping.
+
+    Both direct and compile-database invocation builders use this shared
+    profile so their recorded adapter facts stay identical for the same
+    language/compiler pair.
+    """
+    if language == "fortran":
+        adapter, _vendor_args, capabilities = _fortran_preprocessor_profile(compiler)
+        return adapter, capabilities
+    return "gcc-compatible-c", {"dependency_output": True, "macro_dump": True, "linemarkers": True}
+
+
 def _preprocessor_options(
     config: PreprocessingConfig,
     *,
@@ -386,6 +523,13 @@ def _preprocessor_options(
     include_language_flag: bool,
     compiler: str,
 ) -> list[str]:
+    """Build common compiler flags in their established invocation order.
+
+    The returned flags begin with compiler preprocessing mode, followed by the
+    language mode, include directories, macro controls, standard, and raw
+    compiler arguments.  The caller decides where source and compile-database
+    arguments are placed around this sequence.
+    """
     args: list[str] = ["-E"]
     if include_language_flag and language == "c":
         args.extend(["-x", "c"])
@@ -406,12 +550,23 @@ def _preprocessor_options(
 
 
 def _fortran_source_language_hint(source: Path) -> list[str]:
+    """Return a source-form hint only for Fortran paths with unknown suffixes."""
     if source.suffix.lower() in _FORTRAN_SOURCE_SUFFIXES:
         return []
     return ["-x", "f95-cpp-input"]
 
 
+# Adapter facades for callers that need the protocol rather than direct execution.
+
+
 class GCCCompatibleCAdapter:
+    """Provide the GCC/Clang-compatible C adapter contract.
+
+    Use this façade when a caller needs direct-command construction and
+    metadata access through the :class:`CompilerAdapter` protocol.  Execution
+    remains owned by :func:`preprocess_source`.
+    """
+
     name = "gcc-compatible-c"
     capabilities: ClassVar[dict[str, bool]] = {"dependency_output": True, "macro_dump": True, "linemarkers": True}
 
@@ -422,23 +577,31 @@ class GCCCompatibleCAdapter:
         language: str,
         config: PreprocessingConfig,
     ) -> Invocation:
+        """Build this adapter's direct compiler command for one C source path."""
         return build_direct_preprocess_invocation(source_path, language=language, config=config)
 
     def collect_dependencies(self, result: PreprocessResult) -> list[IncludedFile]:
+        """Return a shallow copy of the include records stored in ``result``."""
         return list(result.included_files)
 
     def collect_macros(self, result: PreprocessResult) -> list[MacroDefinition]:
+        """Return a shallow copy of the macro records stored in ``result``."""
         return list(result.macros)
 
     def parse_linemarkers(self, source: str, filename: str | None = None) -> list[SourceMapping]:
+        """Return source mappings parsed from this adapter's compiler output."""
         return parse_linemarker_mappings(source, filename=filename)
 
 
 class GNUFortranAdapter(GCCCompatibleCAdapter):
+    """Expose GNU-compatible Fortran preprocessing through the shared façade."""
+
     name = "gnu-fortran"
 
 
 class CommandTemplateAdapter(GCCCompatibleCAdapter):
+    """Build custom-template commands while retaining shared metadata helpers."""
+
     name = "command-template"
     capabilities: ClassVar[dict[str, bool]] = {"dependency_output": False, "macro_dump": False, "linemarkers": False}
 
@@ -449,7 +612,11 @@ class CommandTemplateAdapter(GCCCompatibleCAdapter):
         language: str,
         config: PreprocessingConfig,
     ) -> Invocation:
+        """Expand this configuration's custom template for the selected source."""
         return build_template_preprocess_invocation(source_path, language=language, config=config)
+
+
+# Compiler command construction.
 
 
 def build_direct_preprocess_invocation(
@@ -458,7 +625,15 @@ def build_direct_preprocess_invocation(
     language: str,
     config: PreprocessingConfig,
 ) -> Invocation:
-    """Build an exact direct compiler invocation for preprocessing."""
+    """Build the exact direct compiler command used to expand one source file.
+
+    Use this for inspection or tests when the caller has an explicit compiler.
+    It validates the language and compiler setting but neither reads the source
+    nor executes the returned command.
+
+    Raises:
+        PreprocessingError: If the language is unsupported or no compiler was configured.
+    """
 
     _require_language(language)
     compiler = _compiler_required(config, language)
@@ -474,11 +649,7 @@ def build_direct_preprocess_invocation(
         *(_fortran_source_language_hint(source) if language == "fortran" else []),
         str(source),
     ]
-    if language == "fortran":
-        adapter, _vendor_args, capabilities = _fortran_preprocessor_profile(compiler)
-    else:
-        adapter = "gcc-compatible-c"
-        capabilities = {"dependency_output": True, "macro_dump": True, "linemarkers": True}
+    adapter, capabilities = _invocation_adapter_profile(language, compiler)
     return Invocation(
         argv=argv,
         cwd=None,
@@ -490,6 +661,12 @@ def build_direct_preprocess_invocation(
 
 
 def _load_compile_commands(path: str | os.PathLike[str] | None) -> list[dict[str, object]]:
+    """Load and validate the top-level list in a compile-commands database.
+
+    The helper reads UTF-8 JSON only and intentionally preserves each entry's
+    raw fields for recipe provenance.  Entry-level validation happens when the
+    selected source is resolved.
+    """
     if not path:
         raise PreprocessingError(
             "compile_commands database path is missing",
@@ -519,6 +696,12 @@ def _load_compile_commands(path: str | os.PathLike[str] | None) -> list[dict[str
 
 
 def _entry_file_path(entry: dict[str, object]) -> Path:
+    """Resolve one compile-database entry's source path against its directory.
+
+    The returned path may remain relative when the entry omits ``directory``;
+    that preserves compile-database working-directory semantics for later
+    source matching.
+    """
     if "file" not in entry:
         raise PreprocessingError(
             "compile_commands entry is missing 'file'",
@@ -532,6 +715,7 @@ def _entry_file_path(entry: dict[str, object]) -> Path:
 
 
 def _same_source(left: Path, right: Path) -> bool:
+    """Compare source paths while tolerating filesystem resolution failures."""
     try:
         return left.resolve() == right.resolve()
     except OSError:
@@ -539,6 +723,11 @@ def _same_source(left: Path, right: Path) -> bool:
 
 
 def _compile_command_argv(entry: dict[str, object]) -> list[str]:
+    """Extract one non-empty compiler argv from a compile-database entry.
+
+    ``arguments`` is already tokenized; ``command`` is tokenized with shell
+    quoting rules.  Invalid entry shapes raise the stable configuration error.
+    """
     if "arguments" in entry:
         arguments = entry["arguments"]
         if not isinstance(arguments, list):
@@ -569,6 +758,7 @@ def _compile_command_argv(entry: dict[str, object]) -> list[str]:
 
 
 def _is_source_arg(arg: str, source: Path, cwd: Path) -> bool:
+    """Return whether one compile argument names the selected source file."""
     path = Path(arg)
     if not path.suffix:
         return False
@@ -577,6 +767,12 @@ def _is_source_arg(arg: str, source: Path, cwd: Path) -> bool:
 
 
 def _filter_compile_only_args(args: list[str], source: Path, cwd: Path) -> list[str]:
+    """Remove compile-only output, dependency, and source arguments from ``args``.
+
+    The remaining order is preserved because compiler target and include flags
+    can be significant.  The helper deliberately does not normalize any other
+    argument text from the database.
+    """
     filtered: list[str] = []
     index = 0
     while index < len(args):
@@ -608,6 +804,11 @@ def _filter_compile_only_args(args: list[str], source: Path, cwd: Path) -> list[
 
 
 def _compile_commands_entry(source_path: Path, database: list[dict[str, object]]) -> dict[str, object]:
+    """Select the sole compile-database entry that matches ``source_path``.
+
+    Missing and ambiguous matches are configuration errors rather than an
+    arbitrary selection, so the recipe always identifies one exact command.
+    """
     matches: list[dict[str, object]] = []
     for entry in database:
         if not isinstance(entry, dict):
@@ -637,7 +838,15 @@ def build_compile_commands_invocation(
     config: PreprocessingConfig,
     language: str = "c",
 ) -> Invocation:
-    """Build a preprocessing invocation from a compile_commands.json entry."""
+    """Build one preprocessing command from a matching ``compile_commands`` entry.
+
+    Use this when the project build command, rather than a standalone compiler
+    setting, is authoritative.  Compile-only arguments are removed, then the
+    normal preprocessing flags are inserted ahead of retained build flags.
+
+    Raises:
+        PreprocessingError: If the database cannot provide one valid matching entry.
+    """
 
     _require_language(language)
     source = Path(source_path)
@@ -658,11 +867,7 @@ def build_compile_commands_invocation(
         *compile_args,
         str(source),
     ]
-    if language == "fortran":
-        adapter, _vendor_args, capabilities = _fortran_preprocessor_profile(compiler)
-    else:
-        adapter = "gcc-compatible-c"
-        capabilities = {"dependency_output": True, "macro_dump": True, "linemarkers": True}
+    adapter, capabilities = _invocation_adapter_profile(language, compiler)
     return Invocation(
         argv=argv,
         cwd=str(cwd),
@@ -676,6 +881,13 @@ def build_compile_commands_invocation(
 
 
 def _template_token_value(token: str, source: Path, language: str, config: PreprocessingConfig) -> list[str]:
+    """Expand one command-template token into zero or more argv elements.
+
+    Collection placeholders retain the configured order, while ordinary tokens
+    use the scalar placeholders accepted by ``str.format``.  Unknown format
+    fields intentionally propagate their ``KeyError`` to preserve template
+    validation behavior.
+    """
     if token == "{source}":
         return [str(source)]
     if token == "{compiler}":
@@ -708,6 +920,15 @@ def build_template_preprocess_invocation(
     language: str,
     config: PreprocessingConfig,
 ) -> Invocation:
+    """Build a custom-template preprocessing command without executing it.
+
+    A template must expand to a non-empty command that writes preprocessed
+    source to stdout.  Use the documented placeholders for source, compiler,
+    language, include paths, macro controls, standard, and compiler arguments.
+
+    Raises:
+        PreprocessingError: If no template is configured or expansion is empty.
+    """
     _require_language(language)
     if not config.command_template:
         raise PreprocessingError(
@@ -738,7 +959,12 @@ def build_preprocess_invocation(
     language: str,
     config: PreprocessingConfig,
 ) -> Invocation:
-    """Build the selected compiler adapter invocation."""
+    """Build the command selected by one preprocessing configuration.
+
+    Command templates take precedence when configured, followed by compile
+    databases and then direct compiler mode.  This function only selects and
+    builds the command; use :func:`preprocess_source` to execute it.
+    """
 
     _require_language(language)
     if config.adapter == "command-template" or config.command_template:
@@ -748,7 +974,15 @@ def build_preprocess_invocation(
     return build_direct_preprocess_invocation(source_path, language=language, config=config)
 
 
+# Compiler provenance: line markers, dependency edges, and macro metadata.
+
+
 def _unescape_linemarker_filename(text: str) -> str:
+    """Decode the limited C-preprocessor escapes used in quoted marker paths.
+
+    Unknown escape sequences intentionally lose only their escape marker,
+    matching compiler marker interpretation used by existing provenance tests.
+    """
     out: list[str] = []
     escaped = False
     for char in text:
@@ -765,6 +999,11 @@ def _unescape_linemarker_filename(text: str) -> str:
 
 
 def _parse_linemarker(line: str) -> tuple[int, str | None, list[int]] | None:
+    """Parse one GCC-style marker or ``#line`` directive, if present.
+
+    The result is ``(original_line, path, flags)``.  Non-marker source lines
+    return ``None`` so callers can retain their generated-line accounting.
+    """
     match = _LINE_DIRECTIVE_RE.match(line.strip())
     if match is not None:
         filename = match.group("quoted") or match.group("bare")
@@ -778,6 +1017,11 @@ def _parse_linemarker(line: str) -> tuple[int, str | None, list[int]] | None:
 
 
 def _dependency_kind(path: str, flags: Sequence[int] = ()) -> DependencyKind:
+    """Classify a marker path as a project or system dependency.
+
+    Marker flag ``3`` and fully bracketed pseudo paths represent system inputs;
+    all other paths remain project dependencies until a caller marks the root.
+    """
     if 3 in flags:
         return "system"
     if path.startswith("<") and path.endswith(">"):
@@ -786,6 +1030,11 @@ def _dependency_kind(path: str, flags: Sequence[int] = ()) -> DependencyKind:
 
 
 def _exposure_for(path: str, kind: DependencyKind, config: PreprocessingConfig) -> Exposure:
+    """Choose public or private dependency exposure in precedence order.
+
+    Explicit private patterns win, explicit public patterns come next, and the
+    remaining decision follows system/private and roots-only policy.
+    """
     if any(Path(path).match(pattern) or pattern in path for pattern in config.private_includes):
         return "private"
     if any(Path(path).match(pattern) or pattern in path for pattern in config.public_includes):
@@ -798,6 +1047,13 @@ def _exposure_for(path: str, kind: DependencyKind, config: PreprocessingConfig) 
 
 
 def parse_linemarker_mappings(source: str, filename: str | None = None) -> list[SourceMapping]:
+    """Map each non-marker output line to original compiler-source provenance.
+
+    Use this for GCC-style output or native Fortran expansion when downstream
+    parser diagnostics need original paths, lines, and nested include stacks.
+    Marker lines themselves have no mapping because they are directives rather
+    than parser input.
+    """
     mappings: list[SourceMapping] = []
     current_path = filename or "<preprocessed>"
     current_line = 1
@@ -841,6 +1097,12 @@ def _included_files_from_linemarkers(
     language: str,
     config: PreprocessingConfig,
 ) -> list[IncludedFile]:
+    """Derive root and compiler-include edges from line-marker transitions.
+
+    The returned list keeps first-seen compiler includes in output order while
+    always retaining the root as its first public dependency.  Native Fortran
+    include edges are added separately by :func:`expand_native_fortran_includes`.
+    """
     files: list[IncludedFile] = [
         IncludedFile(
             path=str(root_path),
@@ -887,6 +1149,12 @@ def _included_files_from_linemarkers(
 
 
 def _parse_macro_definitions(source: str, mappings: Sequence[SourceMapping]) -> list[MacroDefinition]:
+    """Extract ``#define`` records and attach available line-marker provenance.
+
+    The helper only describes definitions present in the supplied source; it
+    does not evaluate macros or synthesize definitions absent from compiler
+    output.
+    """
     macros: list[MacroDefinition] = []
     mapping_by_generated = {mapping.generated_line: mapping for mapping in mappings}
     for generated_line, line in enumerate(source.splitlines(), start=1):
@@ -914,6 +1182,7 @@ def _parse_macro_definitions(source: str, mappings: Sequence[SourceMapping]) -> 
 def _mapping_for_generated_line(
     mappings: Sequence[SourceMapping], generated_line: int, fallback: Path
 ) -> SourceMapping:
+    """Return a generated-line mapping or construct the established root fallback."""
     for mapping in mappings:
         if mapping.generated_line == generated_line:
             return mapping
@@ -926,6 +1195,11 @@ def _mapping_for_generated_line(
 
 
 def _resolve_fortran_include(target: str, including_file: str, include_dirs: Sequence[str]) -> Path | None:
+    """Find a native Fortran include beside its source before configured paths.
+
+    Filesystem lookup errors on one candidate do not prevent checking later
+    include directories.  The first existing regular file wins.
+    """
     candidates = [Path(including_file).parent / target]
     candidates.extend(Path(include_dir) / target for include_dir in include_dirs)
     for candidate in candidates:
@@ -938,9 +1212,13 @@ def _resolve_fortran_include(target: str, including_file: str, include_dirs: Seq
 
 
 def _line_marker(line: int, path: str, flag: int | None = None) -> str:
+    """Render one escaped GCC-style line marker for expanded Fortran source."""
     escaped = path.replace("\\", "\\\\").replace('"', '\\"')
     suffix = f" {flag}" if flag is not None else ""
     return f'# {line} "{escaped}"{suffix}'
+
+
+# Native Fortran textual include expansion.
 
 
 def expand_native_fortran_includes(
@@ -950,7 +1228,19 @@ def expand_native_fortran_includes(
     include_dirs: Sequence[str],
     config: PreprocessingConfig | None = None,
 ) -> tuple[str, list[IncludedFile], list[SourceMapping], list[PreprocessingDiagnostic]]:
-    """Resolve native Fortran INCLUDE statements by textual insertion."""
+    """Expand native Fortran ``INCLUDE`` statements after compiler CPP output.
+
+    Use this for a Fortran source stream that may still contain textual
+    ``include "file.inc"`` statements.  The return value contains expanded
+    parser input, discovered include edges, generated-to-original mappings, and
+    recoverable diagnostics.  Missing files and cycles are recorded while later
+    source lines continue to be emitted; :func:`preprocess_source` promotes
+    error diagnostics after it records the complete result.
+
+    Relative includes resolve beside the including file before configured
+    include directories.  Repeated non-cyclic includes are expanded repeatedly
+    and retain their separate dependency edges.
+    """
 
     config = config or PreprocessingConfig()
     diagnostics: list[PreprocessingDiagnostic] = []
@@ -959,6 +1249,11 @@ def expand_native_fortran_includes(
     line_counter = 0
 
     def emit_line(line: str, mapping: SourceMapping, out: list[str]) -> None:
+        """Append one output line and its corresponding generated-line mapping.
+
+        ``line_counter`` is shared across recursive expansions so mappings
+        retain output order even when included text contributes many lines.
+        """
         nonlocal line_counter
         out.append(line)
         line_counter += 1
@@ -972,6 +1267,12 @@ def expand_native_fortran_includes(
         )
 
     def expand_text(text: str, current_file: Path, stack: list[Path]) -> list[str]:
+        """Recursively replace include lines in one source fragment.
+
+        ``stack`` contains resolved paths currently being expanded and is used
+        only for cycle detection.  The function appends diagnostics instead of
+        raising so siblings and following source survive independent failures.
+        """
         out: list[str] = []
         mappings = parse_linemarker_mappings(text, filename=str(current_file))
         mapping_by_line = {mapping.generated_line: mapping for mapping in mappings}
@@ -1058,6 +1359,9 @@ def expand_native_fortran_includes(
     )
 
 
+# Result recipe construction and compiler execution.
+
+
 def _recipe_from_invocation(
     source_path: Path,
     language: str,
@@ -1065,6 +1369,12 @@ def _recipe_from_invocation(
     invocation: Invocation,
     result: PreprocessResult | None = None,
 ) -> PreprocessingRecipe:
+    """Project an invocation and collected result metadata into a typed recipe.
+
+    The function copies every mutable collection so the resulting recipe is a
+    stable snapshot of this operation rather than an alias of caller-owned
+    configuration or result records.
+    """
     return PreprocessingRecipe(
         language=language,
         compiler=invocation.compiler,
@@ -1089,21 +1399,51 @@ def _recipe_from_invocation(
     )
 
 
-def preprocess_source(
-    source_path: Path | str,
-    *,
-    language: str,
-    config: PreprocessingConfig,
-) -> PreprocessResult:
-    """Run compiler preprocessing and return expanded source plus provenance."""
+def _recipe_from_result(result: PreprocessResult) -> PreprocessingRecipe:
+    """Restore the typed recipe record from a result's JSON-compatible payload.
 
-    if not config.uses_compiler:
-        raise PreprocessingError(
-            "Compiler preprocessing not configured",
-            category="INVALID_COMPILER_ARGUMENTS",
-        )
-    source = Path(source_path)
-    invocation = build_preprocess_invocation(source, language=language, config=config)
+    ``PreprocessResult.recipe`` is intentionally a dictionary for parser
+    payload compatibility.  This helper supplies the historic sparse-payload
+    defaults used by :func:`run_compiler_preprocessor_with_recipe`.
+    """
+    return PreprocessingRecipe(
+        language=str(result.recipe.get("language")),
+        compiler=result.recipe.get("compiler") if isinstance(result.recipe.get("compiler"), str) else None,
+        mode=str(result.recipe.get("mode") or "compiler"),
+        adapter=str(result.recipe.get("adapter") or "direct"),
+        argv=list(result.recipe.get("argv") or []),
+        cwd=result.recipe.get("cwd") if isinstance(result.recipe.get("cwd"), str) else None,
+        include_dirs=list(result.recipe.get("include_dirs") or []),
+        defines=list(result.recipe.get("defines") or []),
+        undefs=list(result.recipe.get("undefs") or []),
+        standard=result.recipe.get("standard") if isinstance(result.recipe.get("standard"), str) else None,
+        compiler_args=list(result.recipe.get("compiler_args") or []),
+        source_path=result.recipe.get("source_path") if isinstance(result.recipe.get("source_path"), str) else None,
+        compile_commands=result.recipe.get("compile_commands")
+        if isinstance(result.recipe.get("compile_commands"), str)
+        else None,
+        compile_commands_entry=result.recipe.get("compile_commands_entry")
+        if isinstance(result.recipe.get("compile_commands_entry"), dict)
+        else None,
+        command_template=result.recipe.get("command_template")
+        if isinstance(result.recipe.get("command_template"), str)
+        else None,
+        included_files=list(result.recipe.get("included_files") or []),
+        source_mappings=list(result.recipe.get("source_mappings") or []),
+        macros=list(result.recipe.get("macros") or []),
+        diagnostics=list(result.recipe.get("diagnostics") or []),
+        capabilities=dict(result.recipe.get("capabilities") or {}),
+    )
+
+
+def _run_preprocess_invocation(invocation: Invocation) -> str:
+    """Execute one prepared compiler command and normalize execution failures.
+
+    The helper performs the existing bare-executable availability check before
+    running the process.  It returns stdout only after a zero exit status and
+    raises :class:`PreprocessingError` with the exact invocation attached to
+    each execution failure.
+    """
     executable = invocation.argv[0] if invocation.argv else ""
     if executable and os.sep not in executable and shutil.which(executable) is None:
         raise PreprocessingError(
@@ -1179,12 +1519,27 @@ def preprocess_source(
                 )
             ],
         )
+    return completed.stdout
 
-    expanded_source = completed.stdout
-    mappings = parse_linemarker_mappings(expanded_source, filename=str(source))
+
+def _collect_compiler_metadata(
+    expanded_source: str,
+    *,
+    source_path: Path,
+    language: str,
+    config: PreprocessingConfig,
+    invocation: Invocation,
+) -> tuple[list[SourceMapping], list[IncludedFile], list[MacroDefinition], list[PreprocessingDiagnostic]]:
+    """Collect compiler-output provenance without changing the expanded source.
+
+    The returned collections retain compiler output order.  A no-linemarker
+    capability records the existing warning only when no source mappings can be
+    recovered from the output.
+    """
+    mappings = parse_linemarker_mappings(expanded_source, filename=str(source_path))
     included_files = _included_files_from_linemarkers(
         expanded_source,
-        root_path=source,
+        root_path=source_path,
         language=language,
         config=config,
     )
@@ -1198,8 +1553,65 @@ def preprocess_source(
                 command=list(invocation.argv),
             )
         )
-    macros = _parse_macro_definitions(expanded_source, mappings)
+    return mappings, included_files, _parse_macro_definitions(expanded_source, mappings), diagnostics
 
+
+def _raise_for_error_diagnostics(diagnostics: Sequence[PreprocessingDiagnostic]) -> None:
+    """Raise the first error diagnostic after all preprocessing facts are collected.
+
+    Warnings return normally.  Passing every diagnostic into the error preserves
+    sibling include failures and their original discovery order for callers.
+    """
+    first_error = next((diagnostic for diagnostic in diagnostics if diagnostic.severity == "error"), None)
+    if first_error is not None:
+        raise PreprocessingError(
+            first_error.message,
+            category=first_error.category,
+            diagnostics=diagnostics,
+        )
+
+
+def preprocess_source(
+    source_path: Path | str,
+    *,
+    language: str,
+    config: PreprocessingConfig,
+) -> PreprocessResult:
+    """Expand one C or Fortran source path and collect its preprocessing facts.
+
+    Use this as the primary API before passing ``result.source`` to the
+    language parser.  It validates compiler mode, selects and executes the
+    configured adapter, collects compiler provenance, then expands remaining
+    native Fortran includes.  The returned recipe is ready to attach to parser
+    or build output.
+
+    Raises:
+        PreprocessingError: If configuration, execution, or native include
+            expansion produces an error diagnostic.
+    """
+
+    # Stage 1: validate the requested compiler route and build its exact command.
+    if not config.uses_compiler:
+        raise PreprocessingError(
+            "Compiler preprocessing not configured",
+            category="INVALID_COMPILER_ARGUMENTS",
+        )
+    source = Path(source_path)
+    invocation = build_preprocess_invocation(source, language=language, config=config)
+
+    # Stage 2: execute the compiler and normalize process failures.
+    expanded_source = _run_preprocess_invocation(invocation)
+
+    # Stage 3: collect compiler-provided source, dependency, and macro metadata.
+    mappings, included_files, macros, diagnostics = _collect_compiler_metadata(
+        expanded_source,
+        source_path=source,
+        language=language,
+        config=config,
+        invocation=invocation,
+    )
+
+    # Stage 4: resolve native Fortran includes that compiler CPP does not expand.
     if language == "fortran":
         expanded_source, native_includes, native_mappings, native_diagnostics = expand_native_fortran_includes(
             expanded_source,
@@ -1211,6 +1623,7 @@ def preprocess_source(
         mappings = native_mappings or parse_linemarker_mappings(expanded_source, filename=str(source))
         diagnostics.extend(native_diagnostics)
 
+    # Stage 5: snapshot all facts into the result and recipe payload.
     result = PreprocessResult(
         source=expanded_source,
         recipe={},
@@ -1220,13 +1633,7 @@ def preprocess_source(
         diagnostics=diagnostics,
     )
     result.recipe = _recipe_from_invocation(source, language, config, invocation, result).to_dict()
-    if any(diagnostic.severity == "error" for diagnostic in diagnostics):
-        first = next(diagnostic for diagnostic in diagnostics if diagnostic.severity == "error")
-        raise PreprocessingError(
-            first.message,
-            category=first.category,
-            diagnostics=diagnostics,
-        )
+    _raise_for_error_diagnostics(diagnostics)
     return result
 
 
@@ -1235,38 +1642,15 @@ def run_compiler_preprocessor_with_recipe(
     language: str,
     config: PreprocessingConfig,
 ) -> tuple[str, PreprocessingRecipe]:
-    """Run compiler preprocessing and return expanded source plus recipe."""
+    """Return expanded parser input and a typed provenance recipe.
+
+    Use this compatibility-shaped convenience API when a caller needs a tuple
+    rather than :class:`PreprocessResult`.  It executes the same full workflow
+    as :func:`preprocess_source` and preserves sparse-recipe defaults.
+    """
 
     result = preprocess_source(source_path, language=language, config=config)
-    recipe = PreprocessingRecipe(
-        language=str(result.recipe.get("language")),
-        compiler=result.recipe.get("compiler") if isinstance(result.recipe.get("compiler"), str) else None,
-        mode=str(result.recipe.get("mode") or "compiler"),
-        adapter=str(result.recipe.get("adapter") or "direct"),
-        argv=list(result.recipe.get("argv") or []),
-        cwd=result.recipe.get("cwd") if isinstance(result.recipe.get("cwd"), str) else None,
-        include_dirs=list(result.recipe.get("include_dirs") or []),
-        defines=list(result.recipe.get("defines") or []),
-        undefs=list(result.recipe.get("undefs") or []),
-        standard=result.recipe.get("standard") if isinstance(result.recipe.get("standard"), str) else None,
-        compiler_args=list(result.recipe.get("compiler_args") or []),
-        source_path=result.recipe.get("source_path") if isinstance(result.recipe.get("source_path"), str) else None,
-        compile_commands=result.recipe.get("compile_commands")
-        if isinstance(result.recipe.get("compile_commands"), str)
-        else None,
-        compile_commands_entry=result.recipe.get("compile_commands_entry")
-        if isinstance(result.recipe.get("compile_commands_entry"), dict)
-        else None,
-        command_template=result.recipe.get("command_template")
-        if isinstance(result.recipe.get("command_template"), str)
-        else None,
-        included_files=list(result.recipe.get("included_files") or []),
-        source_mappings=list(result.recipe.get("source_mappings") or []),
-        macros=list(result.recipe.get("macros") or []),
-        diagnostics=list(result.recipe.get("diagnostics") or []),
-        capabilities=dict(result.recipe.get("capabilities") or {}),
-    )
-    return result.source, recipe
+    return result.source, _recipe_from_result(result)
 
 
 def run_compiler_preprocessor(
@@ -1274,6 +1658,12 @@ def run_compiler_preprocessor(
     language: str,
     config: PreprocessingConfig,
 ) -> str:
+    """Return only compiler-expanded parser input for one configured source path.
+
+    Use :func:`run_compiler_preprocessor_with_recipe` or
+    :func:`preprocess_source` instead when recipe or provenance metadata is
+    needed by the next pipeline stage.
+    """
     source, _recipe = run_compiler_preprocessor_with_recipe(source_path, language, config)
     return source
 
@@ -1304,3 +1694,34 @@ __all__ = (
     "run_compiler_preprocessor_with_recipe",
     "validate_macro_name",
 )
+
+
+if __name__ == "__main__":
+    from tempfile import TemporaryDirectory
+
+    with TemporaryDirectory() as directory:
+        example_directory = Path(directory)
+        root_path = example_directory / "greeting.F90"
+        include_path = example_directory / "constants.inc"
+        source = (
+            "module greeting\n"
+            "include 'constants.inc'\n"
+            "contains\n"
+            "subroutine show_answer()\n"
+            "print *, answer\n"
+            "end subroutine show_answer\n"
+            "end module greeting\n"
+        )
+        root_path.write_text(source, encoding="utf-8")
+        include_path.write_text("integer, parameter :: answer = 42\n", encoding="utf-8")
+
+        expanded_source, included_files, _mappings, diagnostics = expand_native_fortran_includes(
+            source,
+            root_path=root_path,
+            include_dirs=[],
+        )
+        parser_input = [line for line in expanded_source.splitlines() if not line.lstrip().startswith("#")]
+
+        print("Expanded Fortran parser input:")
+        print("\n".join(parser_input))
+        print(f"Native includes: {len(included_files)}; diagnostics: {len(diagnostics)}")
