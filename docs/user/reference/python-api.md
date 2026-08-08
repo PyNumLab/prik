@@ -187,7 +187,7 @@ plain NumPy arrays are for ordinary array-data parameters.
 | `build_fortran_extension` | Builds a Python extension from semantic Fortran source inputs plus optional native-only sources, artifacts, compiler flags, include paths, libraries, and ordered link items. |
 | `build_pyi_extension` | Builds a Python extension from semantic `.pyi` contracts plus explicit native artifacts. |
 | `build_pyi_extension_from_manifest` | Replays a saved semantic `.pyi` wrapper build manifest, either building directly or regenerating `Makefile.prik`. |
-| `WrapperBuildResult` | Result model returned by wrapper build functions. |
+| `WrapperBuildResult` | Result model returned by wrapper build functions; `import_module()` explicitly loads its built extension. |
 | `NativeBuildPlan` | Structured native implementation compile/link plan attached to a wrapper build result. |
 | `NativeCompilationUnit` | Native source compilation unit and produced object recorded in a native build plan. |
 | `NativePrebuiltArtifact` | Caller-supplied native object, archive, or shared library recorded in a native build plan. |
@@ -204,6 +204,13 @@ directories, library directories, or ordered native link items separately from
 the semantic contract paths. Semantic `.pyi` build results also expose a
 normalized replay `manifest`; Makefile mode writes that manifest to
 `<out-dir>/prik-build.json` before generating `Makefile.prik`.
+
+When a program needs the generated extension immediately, call
+`result.import_module()`. It loads `result.shared_library` under
+`result.module_name` without changing `sys.path` and returns the imported
+module. The method requires that the shared-library file already exists, so a
+direct build can import at once and a Makefile result can import after `make`
+has produced the extension.
 
 ## Target type and NumPy helpers
 

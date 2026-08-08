@@ -1,11 +1,11 @@
 [build-system]
-requires = ["setuptools>=77.0.3", "wheel"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "prik"
 version = "0.1.1"
-description = "Fortran-to-Python native extensions with editable .pyi contracts"
+description = "Fortran-to-Python binding generator with editable .pyi contracts"
 readme = "README.md"
 authors = [
     { name = "Said Hadjout" , email = "saidaissa.hadjout@gmail.com"},
@@ -19,6 +19,10 @@ keywords = [
     "cpython-extension",
     "numpy",
     "wrapper-generator",
+    "fortran-python",
+    "python-bindings",
+    "wrapper",
+    "f2py-alternative",
     "scientific-computing",
 ]
 classifiers = [
