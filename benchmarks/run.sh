@@ -51,11 +51,10 @@ echo "========================================"
 echo " Benchmarking clean end-to-end builds"
 echo "========================================"
 python3 build_time.py \
-    --runs "${PRIK_BUILD_BENCHMARK_RUNS:-6}" \
+    --runs "${PRIK_BUILD_BENCHMARK_RUNS:-4}" \
     --warmups "${PRIK_BUILD_BENCHMARK_WARMUPS:-1}" \
     --first "$benchmark_first"
 
-echo "Benchmark order: ${binding_tools[*]}"
 runtime_groups=(
     calls
     vector-latency
@@ -65,21 +64,45 @@ runtime_groups=(
     matrix-update-latency
     matrix-update-bulk
 )
-for binding_tool in "${binding_tools[@]}"; do
-    result_args=(-o "results/$binding_tool.json")
-    for runtime_group in "${runtime_groups[@]}"; do
-        BINDING_TOOL="$binding_tool" \
-        PRIK_RUNTIME_BENCHMARK_GROUP="$runtime_group" \
-        OMP_NUM_THREADS=1 \
-        OPENBLAS_NUM_THREADS=1 \
-        MKL_NUM_THREADS=1 \
-        python3 runtime.py \
-            --rigorous \
-            --affinity=0 \
-            --inherit-environ=BINDING_TOOL,PRIK_RUNTIME_BENCHMARK_GROUP,PRIK_BENCHMARK_CPU_MODEL,OMP_NUM_THREADS,OPENBLAS_NUM_THREADS,MKL_NUM_THREADS \
-            "${result_args[@]}"
-        result_args=(--append "results/$binding_tool.json")
+runtime_passes=(prik-first f2py-first)
+for runtime_group in "${runtime_groups[@]}"; do
+    for runtime_pass in "${runtime_passes[@]}"; do
+        case "$runtime_pass" in
+            prik-first)
+                binding_tools=(prik f2py)
+                ;;
+            f2py-first)
+                binding_tools=(f2py prik)
+                ;;
+        esac
+        echo "Runtime benchmark order ($runtime_group, $runtime_pass): ${binding_tools[*]}"
+        for binding_tool in "${binding_tools[@]}"; do
+            result_file="results/$binding_tool-$runtime_pass.json"
+            if [[ -f "$result_file" ]]; then
+                result_args=(--append "$result_file")
+            else
+                result_args=(-o "$result_file")
+            fi
+            BINDING_TOOL="$binding_tool" \
+            PRIK_RUNTIME_BENCHMARK_GROUP="$runtime_group" \
+            PRIK_RUNTIME_ORDER_PASS="$runtime_pass" \
+            OMP_NUM_THREADS=1 \
+            OPENBLAS_NUM_THREADS=1 \
+            MKL_NUM_THREADS=1 \
+            python3 runtime.py \
+                --rigorous \
+                --affinity=0 \
+                --inherit-environ=BINDING_TOOL,PRIK_RUNTIME_BENCHMARK_GROUP,PRIK_RUNTIME_ORDER_PASS,PRIK_BENCHMARK_CPU_MODEL,OMP_NUM_THREADS,OPENBLAS_NUM_THREADS,MKL_NUM_THREADS \
+                "${result_args[@]}"
+        done
     done
+done
+
+for binding_tool in prik f2py; do
+    python3 -m pyperf convert \
+        "results/$binding_tool-prik-first.json" \
+        --add "results/$binding_tool-f2py-first.json" \
+        --output "results/$binding_tool.json"
 done
 
 python3 -m pyperf compare_to \

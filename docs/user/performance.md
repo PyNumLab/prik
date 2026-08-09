@@ -102,6 +102,12 @@ The suite wraps one set of Fortran kernels with the default PRIK and f2py
 interfaces. It checks both extensions for the same results before measuring
 them. No benchmark-only wrapper mode is used.
 
+Each runtime group uses an A/B/B/A sequence with equal PRIK-first and f2py-first
+process budgets. The two passes are merged before significance, winner counts
+and geometric means are calculated, preventing either tool from consistently
+benefiting from being measured second. Clean-build rounds alternate tool order
+independently.
+
 <!-- prik-performance-environment:start -->
 - Runtime native and generated sources use `-O3 -march=native -mtune=native`.
 - Clean builds use development (`-O0`) and optimized

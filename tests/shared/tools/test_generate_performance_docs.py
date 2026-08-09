@@ -27,6 +27,7 @@ COMMON_METADATA = {
     "perf_version": "2.10.0",
     "platform_details": "Linux-test-x86_64",
     "python_version": "3.12.11 (test build)",
+    "runtime_order_protocol": "balanced_ab_ba",
     "unit": "second",
 }
 TEST_OS = "Test Linux 1.0"
@@ -81,7 +82,7 @@ def _paired_suites(tmp_path: Path) -> tuple[Path, Path]:
 def _paired_build_suites(tmp_path: Path) -> tuple[Path, Path]:
     metadata = {
         "build_profiles": "development:-O0;optimized:-O3 -march=native -mtune=native",
-        "build_runs": 6,
+        "build_runs": 4,
         "build_scope": "clean source-to-extension generation, compilation, and linking",
         "build_warmups": 1,
         "compiler": "/usr/bin/gfortran",
@@ -191,7 +192,8 @@ def test_render_page_updates_only_marked_blocks(tmp_path: Path) -> None:
     assert "Development (`-O0`) · full reference BLAS (155 sources)" in rendered
     assert "Optimized (`-O3 -march=native -mtune=native`) · small module" in rendered
     assert "Optimized (`-O3 -march=native -mtune=native`) · full reference BLAS" in rendered
-    assert "mean of 6 clean builds after 1 untimed warm-up" in rendered
+    assert "mean of 4 clean builds after 1 untimed warm-up" in rendered
+    assert "equal PRIK-first and f2py-first process budgets" in rendered
     assert "up to 4 concurrent compiler" in rendered
     assert "f2py uses its normal Meson/Ninja scheduler" in rendered
     assert "private-runner-name" not in rendered

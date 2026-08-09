@@ -87,11 +87,13 @@ The pre-merge benchmark catches code-induced failures before `main`. The
 `main` run is still required because it generates the deployment artifact for
 the merged commit; external runner or service failures can still occur and
 must be retried or diagnosed honestly. The workflow pins the benchmark
-toolchain and alternates whether prik or f2py is measured first to avoid a
-systematic ordering advantage. Runtime cases use separate latency, medium, and
-bulk sampling budgets and are merged into one pyperf result per tool; this
-gives nanosecond-scale calls more independent samples without multiplying the
-cost of the largest array workloads.
+toolchain. Each runtime group uses an A/B/B/A sequence that splits a reduced
+worker budget evenly between PRIK-first and f2py-first measurements, then
+merges both passes before publication. Clean-build rounds alternate tool order.
+Runtime cases use separate latency, medium, and bulk sampling budgets, giving
+nanosecond-scale calls more independent samples without multiplying the cost of
+the largest array workloads. The combined budget targets roughly 20 minutes on
+the pinned runner while retaining all workloads.
 
 Documentation workflow concurrency is isolated by Git ref. Pull-request runs
 may cancel an older run for the same ref, but a `main` run is never canceled by

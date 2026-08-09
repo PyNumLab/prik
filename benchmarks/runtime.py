@@ -22,20 +22,23 @@ def get_function(api: Any, name: str) -> Callable[..., Any]:
 
 tool = os.environ.get("BINDING_TOOL")
 benchmark_group = os.environ.get("PRIK_RUNTIME_BENCHMARK_GROUP", "all")
+order_pass = os.environ.get("PRIK_RUNTIME_ORDER_PASS")
 group_settings = {
-    "all": (20, 3),
-    "calls": (64, 4),
-    "vector-latency": (64, 4),
-    "vector-bulk": (16, 3),
-    "matrix-sum-latency": (64, 4),
-    "matrix-sum-bulk": (4, 3),
-    "matrix-update-latency": (64, 4),
-    "matrix-update-bulk": (32, 3),
+    "all": (8, 3),
+    "calls": (16, 4),
+    "vector-latency": (16, 4),
+    "vector-bulk": (4, 3),
+    "matrix-sum-latency": (16, 4),
+    "matrix-sum-bulk": (2, 3),
+    "matrix-update-latency": (16, 4),
+    "matrix-update-bulk": (8, 3),
 }
 
 if benchmark_group not in group_settings:
     choices = ", ".join(group_settings)
     raise RuntimeError(f"Unknown PRIK_RUNTIME_BENCHMARK_GROUP {benchmark_group!r}; choose one of: {choices}.")
+if order_pass not in {"prik-first", "f2py-first"}:
+    raise RuntimeError("Set PRIK_RUNTIME_ORDER_PASS to 'prik-first' or 'f2py-first'.")
 
 if tool == "prik":
     extension = importlib.import_module("bench_prik")
@@ -59,6 +62,8 @@ metadata = {
     "python_version": sys.version,
     "numpy_version": np.__version__,
     "platform_details": platform.platform(),
+    "runtime_order_pass": order_pass,
+    "runtime_order_protocol": "balanced_ab_ba",
 }
 if cpu_model := os.environ.get("PRIK_BENCHMARK_CPU_MODEL"):
     metadata["cpu_model_name"] = cpu_model

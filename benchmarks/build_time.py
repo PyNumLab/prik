@@ -331,7 +331,7 @@ def run_build_benchmarks(
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--runs", type=int, default=6)
+    parser.add_argument("--runs", type=int, default=4)
     parser.add_argument("--warmups", type=int, default=1)
     parser.add_argument("--first", choices=TOOLS, default="prik")
     parser.add_argument("--compiler", default="gfortran")

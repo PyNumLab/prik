@@ -209,6 +209,9 @@ add an architecture-neutral CPU identity to every runtime and build result
 because pyperf's Linux metadata collector does not report `cpu_model_name` on
 every ARM64 `/proc/cpuinfo` format. Documentation generation continues to
 require matching CPU metadata across each prik/f2py result pair.
+Runtime results combine equal reduced worker budgets from PRIK-first and
+f2py-first passes in the same job. The merged suites drive publication, while
+the order-specific suites remain in the uploaded artifact for auditability.
 
 ## Continuous Documentation Quality
 

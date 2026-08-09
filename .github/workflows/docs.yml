@@ -94,6 +94,10 @@ jobs:
           path: |
             benchmarks/results/f2py.json
             benchmarks/results/prik.json
+            benchmarks/results/f2py-prik-first.json
+            benchmarks/results/f2py-f2py-first.json
+            benchmarks/results/prik-prik-first.json
+            benchmarks/results/prik-f2py-first.json
             benchmarks/results/f2py-build.json
             benchmarks/results/prik-build.json
             docs/user/performance.md

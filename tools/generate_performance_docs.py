@@ -39,6 +39,7 @@ SHARED_METADATA = (
     "perf_version",
     "platform_details",
     "python_version",
+    "runtime_order_protocol",
 )
 BUILD_SHARED_METADATA = (
     "build_profiles",
@@ -401,6 +402,7 @@ def _environment_markdown(snapshot: PerformanceSnapshot, build_snapshot: Perform
         "- Both interfaces keep the GIL held.",
         "- OpenMP, OpenBLAS, and MKL are limited to one thread.",
         f"- `pyperf --rigorous` pins each benchmark to logical CPU `{affinity}`.",
+        "- Runtime samples combine equal PRIK-first and f2py-first process budgets.",
         f"- PRIK build timings use up to {int(build_snapshot.metadata['prik_build_jobs'])} concurrent compiler",
         "  processes; f2py uses its normal Meson/Ninja scheduler.",
         "- Build timings alternate tool order, use clean output directories, and exclude",
