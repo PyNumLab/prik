@@ -1,4 +1,12 @@
-"""Completed wrapper policies for the currently supported generation lanes."""
+"""Project completed semantic decisions into backend-neutral wrapper policies.
+
+This module consumes semantic signatures and ownership decisions completed by
+``policy_completion``.  It produces immutable records for wrapper planning:
+Python/native boundaries, ordered call slots, result projections, lifecycle,
+module and derived-object access, and fail-closed support blockers.  Planners
+and backend generators consume these records without inferring replacement
+policy from a datatype or native declaration.
+"""
 
 from __future__ import annotations
 
@@ -1173,7 +1181,13 @@ class NativeCallSlotPolicy:
 
 @dataclass(frozen=True)
 class FunctionWrapperPolicy:
-    """Completed wrapper policy for one semantic function."""
+    """Completed wrapper-facing contract for one semantic function.
+
+    ``build_function_wrapper_policy`` constructs this record after ownership
+    policy completion.  Wrapper planning consumes the ordered arguments,
+    results, native-call slots, and lifecycle actions; a policy with
+    ``supported=False`` must be rejected using its ``blockers``.
+    """
 
     owner_path: str
     python_exports: tuple[PythonExportPolicy, ...]
@@ -1783,7 +1797,12 @@ def _derived_field_setter_blockers(
 def completed_module_variable_policy(
     variable: models.SemanticVariable,
 ) -> ModuleVariablePolicy:
-    """Return the completed module-variable policy or fail closed."""
+    """Return a lowering-ready module-variable policy or fail before planning.
+
+    Use this after post-IR policy completion.  Missing or unsupported records
+    raise ``ValueError`` so getter/setter lowering cannot infer an alternate
+    storage or replacement policy.
+    """
     policy = variable.metadata.get(models.RESOLVED_MODULE_VARIABLE_POLICY_METADATA)
     if not isinstance(policy, ModuleVariablePolicy):
         raise ValueError(f"Semantic variable {variable.name!r} has no completed module-variable policy")
@@ -1799,8 +1818,15 @@ def build_module_variable_policy(
     module_name: str,
     derived_types: dict[tuple[str, str], DerivedTypePolicy] | None = None,
 ) -> ModuleVariablePolicy:
-    """Build one module-variable policy from completed decisions."""
+    """Build one module-variable access policy from completed semantic decisions.
+
+    The function selects an already-defined family for descriptor handles,
+    derived objects, ordinary arrays, or scalar values, then validates runtime
+    and initialization requirements.  It returns a new record and does not
+    mutate ``variable``.
+    """
     owner_path = f"{module_name}.{variable.name}"
+    # Gather semantic decisions shared by all module-variable policy families.
     getter = _ownership_decision(variable, models.RESOLVED_GETTER_OWNERSHIP_POLICY_METADATA)
     setter = _ownership_decision(variable, models.RESOLVED_SETTER_OWNERSHIP_POLICY_METADATA)
     descriptor_kind = _scalar_module_descriptor_kind(variable)
@@ -1811,6 +1837,7 @@ def build_module_variable_policy(
         owner_path,
     )
     array = _array_handoff_policy(variable.semantic_type)
+    # Select the one completed access family without backend-specific inference.
     if native_array_handle is not None:
         policy = _native_array_module_variable_policy(
             variable,
@@ -1849,6 +1876,7 @@ def build_module_variable_policy(
             descriptor_kind,
             constant,
         )
+    # Add runtime and import-time initialization blockers to the selected family.
     return _complete_module_variable_policy(variable, policy)
 
 
@@ -2059,7 +2087,12 @@ def _ordinary_array_module_variable_blockers(
 
 
 def completed_function_wrapper_policy(function: models.SemanticFunction) -> FunctionWrapperPolicy:
-    """Return a completed function wrapper policy or fail before planning."""
+    """Return a lowering-ready function policy stored by post-IR completion.
+
+    Use this at the planning boundary.  Missing policy or an unsupported policy
+    raises ``ValueError`` with the completed-policy diagnostic, preventing
+    lower stages from substituting a fallback behavior.
+    """
 
     policy = function.metadata.get(models.RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA)
     if not isinstance(policy, FunctionWrapperPolicy):
@@ -2078,7 +2111,13 @@ def build_callback_handoff_policy(
     *,
     owner_path: str,
 ) -> CallbackHandoffPolicy:
-    """Complete one immediate callback without consulting lowering details."""
+    """Complete one immediate callback's ABI, transfers, lifecycle, and blockers.
+
+    The semantic type must carry a resolved callback prototype and nested
+    ownership decisions.  The returned record is consumed by wrapper policy
+    and planning; unsupported signatures remain represented with blockers.
+    """
+    # Validate the call-scoped callback envelope before inspecting its signature.
     raw_arguments = semantic_type.metadata.get("callback_arguments")
     return_type = semantic_type.metadata.get("return")
     blockers = list(_callback_envelope_blockers(semantic_type))
@@ -2088,6 +2127,7 @@ def build_callback_handoff_policy(
         blockers.append("callback signature is missing ordered argument records")
         arguments: tuple[CallbackTransferPolicy, ...] = ()
     else:
+        # Complete each callback transfer and collect signature-level failures.
         arguments = tuple(
             _callback_transfer_policy(argument, owner_path=f"{owner_path}.callback_arg_{index}")
             for index, argument in enumerate(raw_arguments)
@@ -2099,6 +2139,7 @@ def build_callback_handoff_policy(
         )
     result = _callback_result_policy(return_type, owner_path=f"{owner_path}.callback_result")
     blockers.extend(_callback_result_blockers(return_type, result))
+    # Resolve the native declaration after argument and result ABI facts exist.
     prototype_ref = semantic_type.metadata.get(models.PROTOTYPE_REF_METADATA)
     prototype_name = prototype_ref.get("name") if isinstance(prototype_ref, dict) else None
     prototype_module = prototype_ref.get("origin_module") if isinstance(prototype_ref, dict) else None
@@ -2155,6 +2196,7 @@ def _callback_declaration_mode(
 
 
 def _prototype_argument_requires_explicit_interface(argument: models.SemanticArgument) -> bool:
+    """Report whether one callback dummy uses ABI facts unavailable to an implicit interface."""
     semantic_type = argument.semantic_type
     storage = semantic_type.storage
     array = storage.array if storage is not None else None
@@ -2175,6 +2217,7 @@ def _prototype_argument_requires_explicit_interface(argument: models.SemanticArg
 
 
 def _prototype_result_requires_explicit_interface(return_type: models.SemanticType) -> bool:
+    """Report whether one callback result requires an explicit native interface declaration."""
     if return_type.name == "None":
         return False
     if return_type.rank > 0:
@@ -2380,9 +2423,17 @@ def build_function_wrapper_policy(
     polymorphic_variants: dict[tuple[str, str], tuple[tuple[str, str], ...]] | None = None,
     native_dispatch_name: str | None = None,
 ) -> FunctionWrapperPolicy:
-    """Build typed function policy from completed post-IR decisions."""
+    """Build a complete wrapper-facing function policy from post-IR decisions.
+
+    Use this only after ownership, callback, status, and export policy are
+    complete.  It preserves signature and projection order while producing
+    arguments, results, native call slots, lifecycle actions, and all support
+    blockers.  The input function is read without mutation; callers normally
+    store the returned record in its resolved-policy metadata.
+    """
 
     completed_derived_types = derived_types or {}
+    # Establish native ABI order before projecting Python-visible arguments.
     argument_native_positions, native_call_slots, slot_blockers = _native_call_slot_policies(
         function,
         owner_path,
@@ -2397,6 +2448,7 @@ def build_function_wrapper_policy(
         polymorphic_variants or {},
         class_call,
     )
+    # Complete result representation, then resolve array-extent producer roles.
     results, result_blockers = _result_policies(function, owner_path, completed_derived_types)
     arguments, results, native_call_slots = _complete_function_array_extent_policies(
         function,
@@ -2405,10 +2457,12 @@ def build_function_wrapper_policy(
         results,
         native_call_slots,
     )
+    # Record ordered writeback, cleanup, and ownership-transfer lifecycle work.
     writeback_actions, lifecycle_blockers = _lifecycle_policies(arguments)
     cleanup_actions, release_actions = _derived_result_lifecycle_policies(results)
     status_error = _completed_native_status_error_policy(function)
     native_module = _native_module(function, owner_path)
+    # Aggregate all support validation before exposing the immutable plan input.
     blockers = (
         _function_shape_blockers(function, class_call)
         + argument_blockers
@@ -3064,6 +3118,12 @@ def _native_call_slot_policies(
     owner_path: str,
     derived_types: dict[tuple[str, str], DerivedTypePolicy],
 ) -> tuple[dict[int, int], tuple[NativeCallSlotPolicy, ...], tuple[str, ...]]:
+    """Complete ordered native call slots from explicit projections or declaration order.
+
+    The returned mapping connects visible Python argument positions to native
+    positions; slot records preserve native ABI order and blockers diagnose
+    missing completed decisions without mutating ``function``.
+    """
     if function.projection:
         return _projected_native_call_slot_policies(function, owner_path, derived_types)
     return _implicit_native_call_slot_policies(function, owner_path, derived_types)
@@ -3445,6 +3505,12 @@ def _implicit_native_call_slot_policies(
     owner_path: str,
     derived_types: dict[tuple[str, str], DerivedTypePolicy],
 ) -> tuple[dict[int, int], tuple[NativeCallSlotPolicy, ...], tuple[str, ...]]:
+    """Build declaration-ordered slots when no explicit native projection exists.
+
+    Every argument consumes its completed ownership/callback/derived policy.
+    Missing or unsupported bridge decisions are accumulated as blockers while
+    the returned slots preserve source argument order.
+    """
     slots: list[NativeCallSlotPolicy] = []
     positions: dict[int, int] = {}
     blockers: list[str] = []
@@ -3750,6 +3816,12 @@ def _derived_payload_dummy_case(
     category: DerivedDummyCategory,
     storage: DerivedObjectStorage,
 ) -> DerivedCallCasePolicy:
+    """Return the compatibility matrix cell for a non-descriptor derived dummy.
+
+    ``category`` distinguishes value from ordinary object dummies; ``storage``
+    selects address access, required presence, and target lifetime without
+    changing the established matrix.
+    """
     action = DerivedCallAction.TYPED_VALUE_COPY if category is DerivedDummyCategory.VALUE else None
     table = {
         DerivedObjectStorage.DIRECT: (
@@ -3813,6 +3885,7 @@ def _derived_payload_dummy_case(
 
 
 def _derived_allocatable_dummy_case(storage: DerivedObjectStorage) -> DerivedCallCasePolicy:
+    """Return the supported allocatable-dummy cell or an explicit incompatible result."""
     if storage is DerivedObjectStorage.ALLOCATABLE_HOLDER:
         return DerivedCallCasePolicy(
             storage,
@@ -3848,6 +3921,11 @@ def _derived_pointer_dummy_case(
     *,
     projects_result: bool,
 ) -> DerivedCallCasePolicy:
+    """Return the supported pointer-dummy cell, including projected-writeback rejection.
+
+    Pointer holders and module pointers retain their distinct transaction
+    mechanisms.  Other non-projected storage reuses payload input adaptation.
+    """
     if storage is DerivedObjectStorage.POINTER_HOLDER:
         access = DerivedActualAccess.POINTER_HOLDER
         return DerivedCallCasePolicy(
@@ -3890,6 +3968,7 @@ def _derived_incompatible_case(
     kind: str,
     message: str,
 ) -> DerivedCallCasePolicy:
+    """Create one explicit unsupported derived-actual matrix cell with its diagnostic."""
     return DerivedCallCasePolicy(
         storage,
         DerivedCallAction.INCOMPATIBLE,
@@ -5003,11 +5082,13 @@ def _function_shape_blockers(
 def _completed_native_status_error_policy(
     function: models.SemanticFunction,
 ) -> NativeStatusErrorPolicy | None:
+    """Return the status-error record completed upstream, without reconstructing it."""
     policy = function.metadata.get(models.RESOLVED_RUNTIME_STATUS_ERROR_POLICY_METADATA)
     return policy if isinstance(policy, NativeStatusErrorPolicy) else None
 
 
 def _runtime_status_output_owner_paths(function: models.SemanticFunction) -> frozenset[str]:
+    """Return stable owner paths for the status and optional message native outputs."""
     policy = _completed_native_status_error_policy(function)
     if policy is None:
         return frozenset()
@@ -5030,6 +5111,7 @@ def _runtime_status_plan_blockers(policy: NativeStatusErrorPolicy | None) -> tup
 
 
 def _character_length(semantic_type: models.SemanticType) -> int | None:
+    """Return a positive fixed Fortran character length, normalizing accepted metadata spellings."""
     value = semantic_type.metadata.get("fortran_character_length")
     if isinstance(value, int) and not isinstance(value, bool) and value > 0:
         return value
@@ -5097,6 +5179,7 @@ def _derived_result_lifecycle_policies(
 
 
 def _native_position_blockers(native_positions: object) -> tuple[str, ...]:
+    """Reject slot positions that do not cover the contiguous native ABI order exactly once."""
     positions = tuple(native_positions)
     if sorted(positions) != list(range(len(positions))):
         return ("native-call slots must cover each native position exactly once in order",)
@@ -5104,11 +5187,13 @@ def _native_position_blockers(native_positions: object) -> tuple[str, ...]:
 
 
 def _ownership_decision(owner: object, metadata_key: str) -> OwnershipDecision | None:
+    """Read one typed completed ownership record from metadata, returning ``None`` when absent."""
     decision = getattr(owner, "metadata", {}).get(metadata_key)
     return decision if isinstance(decision, OwnershipDecision) else None
 
 
 def _is_first_lane_scalar_type(semantic_type: models.SemanticType) -> bool:
+    """Report whether a rank-zero primitive uses the supported ordinary scalar lane."""
     scalar_name = semantic_type.dtype or semantic_type.name
     return bool(
         int(semantic_type.rank or 0) == 0
@@ -5119,6 +5204,7 @@ def _is_first_lane_scalar_type(semantic_type: models.SemanticType) -> bool:
 
 
 def _is_scalar_storage_type(semantic_type: models.SemanticType) -> bool:
+    """Report whether a type carries rank-zero array-backed scalar storage metadata."""
     storage = semantic_type.storage
     array = storage.array if storage is not None else None
     return bool(array is not None and array.category == SCALAR_STORAGE_CATEGORY)
@@ -5873,6 +5959,7 @@ def _scalar_module_getter_action(
     getter: OwnershipDecision | None,
     constant: bool,
 ) -> ModuleGetterAction:
+    """Select scalar module getter behavior from constant and completed getter policy."""
     if constant:
         if _source_parameter_needs_native_getter(variable):
             return ModuleGetterAction.NATIVE_CONSTANT_VALUE
@@ -5904,6 +5991,7 @@ def _scalar_module_native_assignment(
 
 
 def _scalar_module_descriptor_kind(variable: models.SemanticVariable) -> str | None:
+    """Return the scalar descriptor family recorded on a module variable, if any."""
     metadata = variable.semantic_type.metadata
     if metadata.get("fortran_allocatable"):
         return "allocatable"
@@ -5913,10 +6001,12 @@ def _scalar_module_descriptor_kind(variable: models.SemanticVariable) -> str | N
 
 
 def _is_scalar_module_constant(variable: models.SemanticVariable) -> bool:
+    """Report whether a module variable is constrained as a semantic constant."""
     return any(constraint.name == "Constant" for constraint in variable.semantic_type.constraints)
 
 
 def _is_scalar_module_literal(value: object, semantic_type_name: str) -> bool:
+    """Report whether a module initializer parses as a supported scalar literal."""
     try:
         _scalar_module_literal_value(value, semantic_type_name)
     except (TypeError, ValueError, SyntaxError):
@@ -6001,6 +6091,7 @@ def _array_argument_bridge_data_action(
 
 
 def _scalar_storage_array_bridge_uses_view(decision: OwnershipDecision, optional_mode: OptionalMode) -> bool:
+    """Report whether rank-zero scalar storage uses the ordinary array-view bridge path."""
     return (
         optional_mode in _ARRAY_VALUE_OPTIONAL_MODES
         and decision.python_barrier_action is PythonBarrierAction.SCALAR_STORAGE
@@ -6010,6 +6101,7 @@ def _scalar_storage_array_bridge_uses_view(decision: OwnershipDecision, optional
 
 
 def _copy_in_out_array_bridge_uses_view(decision: OwnershipDecision, optional_mode: OptionalMode) -> bool:
+    """Report whether a projected copy-in/out array retains its supported view handoff."""
     return (
         optional_mode is OptionalMode.REQUIRED
         and decision.python_barrier_action is PythonBarrierAction.ARRAY_STORAGE
@@ -6023,6 +6115,7 @@ def _native_descriptor_array_bridge_data_action(
     decision: OwnershipDecision,
     optional_mode: OptionalMode,
 ) -> BridgeDataAction | None:
+    """Return descriptor-handle bridge movement for a completed descriptor action, else ``None``."""
     if optional_mode not in _ARRAY_DESCRIPTOR_OPTIONAL_MODES:
         return None
     if decision.python_barrier_action is not PythonBarrierAction.WRAPPER_INSTANCE:
@@ -6037,6 +6130,7 @@ def _native_descriptor_array_bridge_data_action(
 
 
 def _raw_array_address_bridge_uses_view(decision: OwnershipDecision, optional_mode: OptionalMode) -> bool:
+    """Report whether a required raw array address can use the existing view bridge path."""
     return (
         optional_mode is OptionalMode.REQUIRED
         and decision.python_barrier_action is PythonBarrierAction.RAW_ADDRESS
@@ -6046,6 +6140,7 @@ def _raw_array_address_bridge_uses_view(decision: OwnershipDecision, optional_mo
 
 
 def _array_storage_bridge_uses_view(decision: OwnershipDecision, optional_mode: OptionalMode) -> bool:
+    """Report whether ordinary array storage uses the established contiguous view handoff."""
     return (
         optional_mode in _ARRAY_VALUE_OPTIONAL_MODES
         and decision.python_barrier_action is PythonBarrierAction.ARRAY_STORAGE
@@ -6392,6 +6487,7 @@ def _is_phase6_ordinary_array_type(semantic_type: models.SemanticType) -> bool:
 
 
 def _is_scalar_storage_array_policy(array_policy: ArrayHandoffPolicy | None) -> bool:
+    """Report whether a handoff policy represents rank-zero scalar array storage."""
     return bool(
         array_policy is not None and array_policy.rank == 0 and array_policy.category == SCALAR_STORAGE_CATEGORY
     )
@@ -6505,6 +6601,12 @@ class _ArrayExtentExpressionResolver(ast.NodeTransformer):
         scalar_roles: dict[str, tuple[str, str]],
         array_roles: dict[str, tuple[str, tuple[str, ...]]],
     ) -> None:
+        """Store visible extent producers and initialize mutable resolution diagnostics.
+
+        The visitor records stable producer roles, invalid references, and
+        whether ``size(...)`` was rewritten.  Each resolver instance handles
+        exactly one expression.
+        """
         self.scalar_roles = scalar_roles
         self.array_roles = array_roles
         self.references: dict[str, str] = {}
@@ -6512,6 +6614,7 @@ class _ArrayExtentExpressionResolver(ast.NodeTransformer):
         self.used_intrinsic = False
 
     def visit_Name(self, node: ast.Name) -> ast.AST:
+        """Resolve a scalar extent name to its producer role or record it as unavailable."""
         source = self.scalar_roles.get(node.id.casefold())
         if source is None:
             self.blockers.append(node.id)
@@ -6520,6 +6623,7 @@ class _ArrayExtentExpressionResolver(ast.NodeTransformer):
         return node
 
     def visit_Call(self, node: ast.Call) -> ast.AST:
+        """Rewrite a supported ``size(...)`` call or record an invalid extent intrinsic."""
         if not isinstance(node.func, ast.Name) or node.func.id.casefold() != "size":
             self.blockers.append("<invalid>")
             return node
@@ -6531,6 +6635,7 @@ class _ArrayExtentExpressionResolver(ast.NodeTransformer):
         return ast.copy_location(replacement, node)
 
     def _size_replacement(self, node: ast.Call) -> ast.AST | None:
+        """Build a backend-neutral product of extent tokens for one validated ``size(...)`` call."""
         parsed = self._size_source_and_dimension(node)
         if parsed is None:
             return None
@@ -6543,6 +6648,7 @@ class _ArrayExtentExpressionResolver(ast.NodeTransformer):
         return ast.parse(expression, mode="eval").body
 
     def _size_source_and_dimension(self, node: ast.Call) -> tuple[str, tuple[str, ...], int | None] | None:
+        """Validate ``size(array[, dim])`` syntax and return its source roles or ``None``."""
         if not 1 <= len(node.args) <= 2 or len(node.keywords) > 1:
             return None
         source_node = node.args[0]
@@ -6626,6 +6732,7 @@ def _valid_array_extent_expression(tree: ast.AST) -> bool:
 
 
 def _is_integer_constant(node: ast.AST) -> bool:
+    """Allow integer constants while rejecting Boolean and non-integer literal nodes in extents."""
     return not isinstance(node, ast.Constant) or (isinstance(node.value, int) and not isinstance(node.value, bool))
 
 
@@ -6668,6 +6775,7 @@ def _visible_projected_arguments(function: models.SemanticFunction) -> tuple[mod
 
 
 def _native_name(function: models.SemanticFunction) -> str:
+    """Return the callable's resolved native spelling, preferring explicit semantic identity."""
     return str(function.native_name or function.origin.native_name or function.name)
 
 
@@ -6684,6 +6792,7 @@ def _native_is_subroutine(function: models.SemanticFunction) -> bool:
 
 
 def _is_external(function: models.SemanticFunction) -> bool:
+    """Report whether a Fortran callable has no native module scope and needs external handling."""
     return bool(function.origin.source_language == "fortran" and function.origin.native_scope is None)
 
 
@@ -6692,7 +6801,45 @@ def _argument_native_name(
     python_position: int,
     argument: models.SemanticArgument,
 ) -> str:
+    """Return an argument's projected native spelling, falling back to its semantic name."""
     for mapping in function.projection:
         if mapping.python_position == python_position:
             return mapping.native_name or argument.name
     return argument.name
+
+
+# Direct wrapper-policy example.
+
+
+if __name__ == "__main__":
+    semantic_function = models.SemanticFunction(
+        name="scale",
+        arguments=[models.SemanticArgument("value", models.SemanticType("Float64", dtype="Float64"))],
+        return_type=models.SemanticType("Float64", dtype="Float64"),
+    )
+    semantic_argument = semantic_function.arguments[0]
+    semantic_argument.metadata[models.RESOLVED_OWNERSHIP_POLICY_METADATA] = OwnershipDecision(
+        kind=ObjectKind.SCALAR,
+        owner=OwnershipOwner.CALLER,
+        transfer=TransferMode.CALL_LOCAL,
+        destruction=DestructionPolicy.NONE,
+        codegen_action=CodegenAction.CALL_LOCAL_INPUT,
+        python_barrier_action=PythonBarrierAction.SCALAR_VALUE,
+        native_barrier_action=NativeBarrierAction.PASS_VALUE,
+    )
+    semantic_function.metadata[models.RESOLVED_RETURN_OWNERSHIP_POLICY_METADATA] = OwnershipDecision(
+        kind=ObjectKind.SCALAR,
+        owner=OwnershipOwner.PYTHON,
+        transfer=TransferMode.BY_VALUE,
+        destruction=DestructionPolicy.PYTHON_REFCOUNT,
+        codegen_action=CodegenAction.DIRECT_VALUE,
+        python_barrier_action=PythonBarrierAction.NONE,
+        native_barrier_action=NativeBarrierAction.NONE,
+    )
+    print(f"before: math.scale({semantic_argument.name}): {semantic_argument.semantic_type.name} semantic IR")
+    policy = build_function_wrapper_policy(semantic_function, owner_path="math.scale")
+    print(
+        f"after: {policy.arguments[0].bridge_data_action.value}; "
+        f"result={policy.results[0].direct_result_abi.value}; "
+        f"native={policy.native_call_slots[0].native_barrier_action.value}"
+    )

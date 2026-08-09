@@ -1,4 +1,6 @@
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -578,3 +580,20 @@ def test_missing_wrapper_policy_fails_before_planning():
 
     with pytest.raises(ValueError, match="missing completed wrapper policy"):
         completed_function_wrapper_policy(function)
+
+
+def test_wrapper_policy_direct_example_is_runnable():
+    repository_root = Path(__file__).resolve().parents[4]
+
+    result = subprocess.run(
+        [sys.executable, "prik/semantics/wrapper_policy.py"],
+        cwd=repository_root,
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+
+    assert result.stdout == (
+        "before: math.scale(value): Float64 semantic IR\n"
+        "after: direct_transfer; result=native_scalar; native=pass_value\n"
+    )

@@ -1,4 +1,10 @@
-"""Complete post-IR semantic policies before wrapper planning or lowering."""
+"""Complete semantic policy decisions after IR construction and before planning.
+
+This module turns full semantic signatures into the ownership, transfer,
+destruction, mutability, storage, accessor, projection, and ABI decisions that
+wrapper planning consumes.  It is the final semantic authority: lower stages
+may dispatch from its completed policies but must not infer replacements.
+"""
 
 from __future__ import annotations
 
@@ -89,6 +95,9 @@ _POINTER_RESIZE_PERMISSION_VALUES = frozenset(
 )
 
 
+# Public completion entrypoint
+
+
 def complete_semantic_policies(
     semantic_ir: models.SemanticModule | Iterable[models.SemanticModule],
     *,
@@ -96,20 +105,32 @@ def complete_semantic_policies(
 ) -> list[models.SemanticModule]:
     """Complete policy decisions for semantic modules after parser-to-IR conversion.
 
-    This is the shared post-IR boundary for policies that need full semantic
-    context. It completes entry export reachability, ownership, transfer, destruction,
-    mutability/writeback, projection, nullability, release, codegen action, and
-    contract/boundary storage modes, getter behavior, native setter assignment,
-    and Python setter exposure. Future policy passes must be added here instead
-    of in wrapper planning, lowering, bridges, or bindings.
+    Use this after semantic conversion and before wrapper planning.  It accepts
+    either one module or any iterable of modules, mutates each in place, and
+    returns an ordered list of those same objects for pipeline chaining.
+    ``strict_wrapper_names`` is forwarded to export and class-surface policy
+    validation.  Invalid or incomplete semantic contracts raise ``ValueError``
+    rather than leaving a lower stage to choose a fallback.
+
+    This shared post-IR boundary completes entry export reachability, ownership,
+    transfer, destruction, mutability/writeback, projection, nullability,
+    release, codegen action, contract/boundary storage modes, getter behavior,
+    native setter assignment, and Python setter exposure. Future policy passes
+    belong here, not in planning, lowering, bridges, or bindings.
     """
 
     modules = list(semantic_ir) if not isinstance(semantic_ir, models.SemanticModule) else [semantic_ir]
     for module in modules:
+        # Limit entry declarations before completing their dependent policies.
         _complete_entry_export_policy(module)
         complete_python_export_policy(module, strict_wrapper_names=strict_wrapper_names)
+
+        # Resolve all remaining ownership and wrapper-facing semantic choices.
         _complete_ownership_policies(module, strict_wrapper_names=strict_wrapper_names)
     return modules
+
+
+# Entry export reachability
 
 
 def _complete_entry_export_policy(module: models.SemanticModule) -> None:
@@ -124,12 +145,14 @@ def _complete_entry_export_policy(module: models.SemanticModule) -> None:
 
 
 def _is_entry_export_reachable(declaration: object) -> bool:
+    """Keep private declarations and public declarations selected by entry exports."""
     if getattr(declaration, "visibility", "public") == "private":
         return True
     return bool(_entry_exports(declaration))
 
 
 def _entry_exports(declaration: object) -> object:
+    """Return a declaration's entry-export metadata, with overloads using their first procedure."""
     if isinstance(declaration, models.ProcedureOverloadSet):
         if not declaration.procedures:
             return ()
@@ -151,11 +174,15 @@ def _complete_ownership_policies(
     signatures are known and before ``ir2ast`` lowering.
     """
 
+    # Resolve identities before any class, field, or callable policy uses them.
     _complete_local_derived_type_identities(module)
+
+    # Complete persistent module state and its accessors first.
     for variable in module.variables:
         _complete_variable(variable, OwnershipContext.module_variable())
         _complete_accessor_policies(variable, OwnershipContext.module_variable())
         _complete_module_variable_initializer(variable)
+    # Complete classes, derived-type graph facts, and wrapper-facing surfaces.
     for semantic_class in module.classes:
         class_scope = str(semantic_class.origin.native_scope or module.name)
         _complete_class(semantic_class, f"{class_scope}.{semantic_class.name}")
@@ -173,6 +200,7 @@ def _complete_ownership_policies(
         polymorphic_variants,
     )
     _complete_class_overload_policies(module.classes)
+    # Attach module-variable policies after their type and accessor facts exist.
     for variable in module.variables:
         variable_scope = str(variable.origin.native_scope or module.name)
         variable.metadata[models.RESOLVED_MODULE_VARIABLE_POLICY_METADATA] = build_module_variable_policy(
@@ -180,6 +208,7 @@ def _complete_ownership_policies(
             module_name=variable_scope,
             derived_types=derived_types,
         )
+    # Complete direct functions and overload candidates with their full context.
     for function in module.functions:
         function_scope = str(function.origin.native_scope or module.name)
         _complete_function(
@@ -197,6 +226,7 @@ def _complete_ownership_policies(
                 f"{procedure_scope}.{overload_set.name}.{procedure.name}",
                 derived_types=derived_types,
             )
+    # Build resolved module overload tables after every candidate is complete.
     overload_functions = {
         f"{(procedure.origin.native_scope or module.name)!s}.{overload_set.name}.{procedure.name}": procedure
         for overload_set in module.overload_sets
@@ -214,12 +244,16 @@ def _complete_ownership_policies(
     return module
 
 
+# Derived-type identity and class policy completion
+
+
 def _complete_local_derived_type_identities(module: models.SemanticModule) -> None:
     """Attach canonical native identities to unqualified local type references."""
     identities: dict[str, set[tuple[str, str]]] = {}
     scoped_identities: dict[tuple[str, str], set[tuple[str, str]]] = {}
 
     def collect_class(semantic_class: models.SemanticClass) -> None:
+        """Index one nested class under unscoped and native-scope identity keys."""
         identity = (
             str(semantic_class.origin.native_scope or module.name),
             str(semantic_class.native_name or semantic_class.name),
@@ -233,6 +267,7 @@ def _complete_local_derived_type_identities(module: models.SemanticModule) -> No
         collect_class(semantic_class)
 
     def annotate(semantic_type: models.SemanticType | None, native_scope: str) -> None:
+        """Attach a unique local derived identity while leaving external references untouched."""
         if semantic_type is None or models.EXTERNAL_TYPE_REF_METADATA in semantic_type.metadata:
             return
         matches = scoped_identities.get((native_scope, semantic_type.name), set())
@@ -242,12 +277,14 @@ def _complete_local_derived_type_identities(module: models.SemanticModule) -> No
             semantic_type.metadata[models.RESOLVED_DERIVED_TYPE_IDENTITY_METADATA] = next(iter(matches))
 
     def annotate_function(function: models.SemanticFunction) -> None:
+        """Annotate one function's argument and direct-return type identities."""
         native_scope = str(function.origin.native_scope or module.name)
         for argument in function.arguments:
             annotate(argument.semantic_type, native_scope)
         annotate(function.return_type, native_scope)
 
     def annotate_class(semantic_class: models.SemanticClass) -> None:
+        """Recursively annotate one class's fields, methods, overloads, and nested classes."""
         native_scope = str(semantic_class.origin.native_scope or module.name)
         for field in semantic_class.fields:
             annotate(field.semantic_type, native_scope)
@@ -271,6 +308,11 @@ def _complete_local_derived_type_identities(module: models.SemanticModule) -> No
 
 
 def _complete_class(semantic_class: models.SemanticClass, owner_path: str) -> None:
+    """Complete one class's instance, self, field, accessor, and derived-type policies.
+
+    The class and its fields are mutated in place, then nested classes receive
+    the corresponding owner path.  The method does not construct wrapper plans.
+    """
     class_type = models.SemanticType(name=semantic_class.name, dtype=semantic_class.name)
     semantic_class.metadata[models.RESOLVED_CLASS_INSTANCE_POLICY_METADATA] = (
         default_ownership_policy.decide_semantic_type(class_type, OwnershipContext.result())
@@ -301,6 +343,7 @@ def _derived_type_policy_map(
     policies: dict[tuple[str, str], DerivedTypePolicy] = {}
 
     def collect(semantic_class: models.SemanticClass) -> None:
+        """Store an already-completed class policy under its canonical identity."""
         policy = semantic_class.metadata.get(models.RESOLVED_DERIVED_TYPE_POLICY_METADATA)
         if isinstance(policy, DerivedTypePolicy):
             policies[policy.type_identity] = policy
@@ -319,6 +362,7 @@ def _complete_derived_type_graph_policies(
     policies = _derived_type_policy_map(classes)
 
     def complete(semantic_class: models.SemanticClass) -> None:
+        """Complete recursive member-path policies for one class before indexing it."""
         policy = semantic_class.metadata.get(models.RESOLVED_DERIVED_TYPE_POLICY_METADATA)
         if isinstance(policy, DerivedTypePolicy):
             _paths, graph_blockers = derived_member_path_policies(policy, policies)
@@ -800,6 +844,7 @@ def _polymorphic_variant_map(
     bases = {surface.type_identity: surface.base_identities for surface in surfaces}
 
     def extends(candidate: tuple[str, str], base: tuple[str, str]) -> bool:
+        """Report whether a completed class identity is the base or extends it transitively."""
         return candidate == base or any(extends(parent, base) for parent in bases.get(candidate, ()))
 
     identities = tuple(surface.type_identity for surface in surfaces)
@@ -846,7 +891,16 @@ def _complete_function(
     polymorphic_variants: dict[tuple[str, str], tuple[tuple[str, str], ...]] | None = None,
     native_dispatch_name: str | None = None,
 ) -> None:
+    """Complete one function's arguments, result, special policies, and wrapper policy.
+
+    The function is mutated in place.  It first validates/normalizes address
+    projections, then resolves per-argument and result ownership, adds native
+    handle and status policies, and finally builds the wrapper-facing policy.
+    """
+    # Normalize signature-level ABI facts before ownership uses them.
     _complete_callable_address_policy(function)
+
+    # Complete inputs and the direct return's ownership policy.
     for argument in function.arguments:
         _complete_variable(
             argument,
@@ -861,6 +915,7 @@ def _complete_function(
     else:
         function.metadata.pop(models.RESOLVED_RETURN_OWNERSHIP_POLICY_METADATA, None)
         function.metadata.pop(models.RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA, None)
+    # Complete cross-result status handling before the wrapper policy consumes it.
     _complete_native_status_error_policy(function, owner_path)
     function.metadata[models.RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA] = build_function_wrapper_policy(
         function,
@@ -956,6 +1011,7 @@ def _native_status_output(
 
 
 def _is_compatible_status_handoff(decision: OwnershipDecision) -> bool:
+    """Report whether a hidden scalar/string result has a valid status handoff action."""
     expected_action = {
         ObjectKind.SCALAR: CodegenAction.DIRECT_VALUE,
         ObjectKind.STRING: CodegenAction.COPY_OUT,
@@ -964,6 +1020,7 @@ def _is_compatible_status_handoff(decision: OwnershipDecision) -> bool:
 
 
 def _is_scalar_integer_status(semantic_type_name: str) -> bool:
+    """Report whether a semantic scalar name can serve as a native status code."""
     return semantic_type_name in {
         "Byte",
         "CEnum",
@@ -982,6 +1039,7 @@ def _is_scalar_integer_status(semantic_type_name: str) -> bool:
 
 
 def _fixed_character_length(semantic_type: models.SemanticType) -> int | None:
+    """Return a positive rank-zero character length if the contract provides one."""
     if semantic_type.rank != 0:
         return None
     value = semantic_type.metadata.get("fortran_character_length")
@@ -996,6 +1054,7 @@ def _complete_native_array_handle_result_policy(
     function: models.SemanticFunction,
     decision: OwnershipDecision,
 ) -> None:
+    """Attach or clear a direct-result native-array-handle policy on a function."""
     return_type = function.return_type
     descriptor_kind = native_array_descriptor_kind(return_type)
     if descriptor_kind is None or return_type is None:
@@ -1023,6 +1082,12 @@ def _complete_native_array_handle_variable_policy(
     variable: models.SemanticVariable,
     context: OwnershipContext,
 ) -> None:
+    """Attach or clear a native-array-handle policy for one variable or argument.
+
+    The variable's resolved ownership policy must already exist; a descriptor
+    type receives a completed handle policy derived from that decision and its
+    semantic context.
+    """
     descriptor_kind = native_array_descriptor_kind(variable.semantic_type)
     if descriptor_kind is None:
         variable.metadata.pop(models.RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA, None)
@@ -1046,6 +1111,12 @@ def _native_array_handle_policy(
     *,
     variable: models.SemanticVariable | None = None,
 ) -> NativeArrayHandlePolicy:
+    """Build the complete runtime contract for one native allocatable/pointer handle.
+
+    This pure policy builder combines descriptor kind, completed ownership, and
+    declaration context into ownership, access, lifetime, operations, and ABI
+    facts.  It does not mutate the semantic type or generate wrapper code.
+    """
     optional_absent = bool(
         variable is not None and variable.optional and semantic_type.metadata.get(OPTIONAL_ABSENT_HANDLE_METADATA)
     )
@@ -1096,6 +1167,7 @@ def _native_array_handle_kind(
     *,
     optional_absent: bool,
 ) -> str:
+    """Classify a descriptor by declaration context and optional-absence state."""
     if optional_absent:
         return "optional_absent_handle"
     if context.is_module_variable:
@@ -1129,6 +1201,7 @@ def _native_array_default_construction(
 
 
 def _native_array_handle_origin(context: OwnershipContext) -> str:
+    """Return the semantic origin label used by a completed descriptor policy."""
     if context.is_module_variable:
         return "module_variable"
     if context.is_field:
@@ -1143,6 +1216,7 @@ def _native_array_handle_origin(context: OwnershipContext) -> str:
 
 
 def _native_array_handle_owner(handle_kind: str) -> str:
+    """Return the owner category prescribed for one completed descriptor kind."""
     return {
         "argument_descriptor": "caller",
         "borrowed_field_descriptor": "wrapper",
@@ -1153,6 +1227,7 @@ def _native_array_handle_owner(handle_kind: str) -> str:
 
 
 def _native_array_owner_retention(handle_kind: str) -> str:
+    """Return the object or storage that retains a descriptor policy's owner."""
     return {
         "argument_descriptor": "caller_handle",
         "borrowed_field_descriptor": "parent_wrapper",
@@ -1163,6 +1238,7 @@ def _native_array_owner_retention(handle_kind: str) -> str:
 
 
 def _native_array_descriptor_ownership(handle_kind: str) -> str:
+    """Return whether the descriptor object itself is owned, borrowed, or unknown."""
     if handle_kind == "owned_result_descriptor":
         return "owned"
     if handle_kind == "unsupported":
@@ -1171,6 +1247,7 @@ def _native_array_descriptor_ownership(handle_kind: str) -> str:
 
 
 def _native_array_getter_behavior(handle_kind: str, context: OwnershipContext, blocker: str | None) -> str:
+    """Choose a descriptor getter result only when the completed policy is supported."""
     if blocker is not None:
         return "blocked"
     if context.is_module_variable or context.is_field:
@@ -1181,6 +1258,7 @@ def _native_array_getter_behavior(handle_kind: str, context: OwnershipContext, b
 
 
 def _native_array_python_setter(variable: models.SemanticVariable | None) -> str:
+    """Return the resolved Python setter action for a descriptor variable, if applicable."""
     setter = None if variable is None else variable.metadata.get(models.RESOLVED_SETTER_OWNERSHIP_POLICY_METADATA)
     if setter is None:
         return "none"
@@ -1188,6 +1266,7 @@ def _native_array_python_setter(variable: models.SemanticVariable | None) -> str
 
 
 def _native_array_native_setter(variable: models.SemanticVariable | None) -> str:
+    """Return the resolved native assignment action for a descriptor variable, if applicable."""
     setter = None if variable is None else variable.metadata.get(models.RESOLVED_SETTER_OWNERSHIP_POLICY_METADATA)
     if setter is None:
         return "none"
@@ -1199,6 +1278,7 @@ def _native_array_output_projection(
     handle_kind: str,
     context: OwnershipContext,
 ) -> str:
+    """Return how a descriptor becomes a Python-visible output in its context."""
     if handle_kind == "unsupported":
         return "unsupported"
     if context.is_result:
@@ -1214,6 +1294,7 @@ def _native_array_result_allocation(
     context: OwnershipContext,
     semantic_type: models.SemanticType,
 ) -> str:
+    """Return the allocation guarantee for an allocatable descriptor function result."""
     if context.is_result and descriptor_kind == "allocatable" and handle_kind == "owned_result_descriptor":
         if semantic_type.metadata.get(MAYBE_UNALLOCATED_METADATA):
             return "maybe_unallocated"
@@ -1222,6 +1303,7 @@ def _native_array_result_allocation(
 
 
 def _native_array_release_responsibility(handle_kind: str) -> str:
+    """Return the component responsible for releasing one descriptor handle kind."""
     return {
         "argument_descriptor": "none",
         "borrowed_field_descriptor": "wrapper_dealloc",
@@ -1238,6 +1320,7 @@ def _native_array_target_lifetime(
     semantic_type: models.SemanticType,
     blocker: str | None,
 ) -> str:
+    """Return the declared target lifetime, honoring explicit pointer-lifetime metadata."""
     if handle_kind == "unsupported":
         return "unknown"
     if descriptor_kind == "pointer":
@@ -1258,6 +1341,7 @@ def _native_array_target_lifetime(
 
 
 def _native_array_destroy_behavior(handle_kind: str, blocker: str | None) -> str:
+    """Return the allowed destruction behavior, blocking unsafe lifetime/release policies."""
     if handle_kind == "unsupported" or (
         blocker is not None
         and any(reason in blocker for reason in ("release policy", "stable owner storage", "target lifetime"))
@@ -1279,6 +1363,7 @@ def _native_array_to_numpy_policy(
     decision: OwnershipDecision,
     semantic_type: models.SemanticType,
 ) -> str:
+    """Return the supported NumPy exposure policy for a completed descriptor handle."""
     if handle_kind == "unsupported":
         return "unsupported"
     if descriptor_kind == "pointer":
@@ -1291,6 +1376,7 @@ def _native_array_to_numpy_policy(
 
 
 def _native_array_pointer_to_numpy_policy(semantic_type: models.SemanticType) -> str:
+    """Choose pointer NumPy exposure from explicit pointer-policy metadata only."""
     pointer_policy = _pointer_policy_metadata(semantic_type)
     if not pointer_policy:
         return "unsupported"
@@ -1305,6 +1391,7 @@ def _native_array_handle_operations(
     context: OwnershipContext,
     semantic_type: models.SemanticType,
 ) -> tuple[str, ...]:
+    """Return the sorted descriptor operations allowed by kind, context, and metadata."""
     if handle_kind == "unsupported":
         return ()
     if descriptor_kind == "allocatable":
@@ -1337,6 +1424,7 @@ def _native_array_descriptor_interop_requirement(
     handle_kind: str,
     semantic_type: models.SemanticType,
 ) -> str:
+    """Return the C-descriptor interop mechanism required by a supported handle."""
     if descriptor_kind == "allocatable" and handle_kind == "owned_result_descriptor":
         return "owned_allocatable_c_descriptor"
     if (
@@ -1351,24 +1439,29 @@ def _native_array_descriptor_interop_requirement(
 
 
 def _pointer_policy_metadata(semantic_type: models.SemanticType) -> dict[str, object]:
+    """Copy pointer-policy metadata into a safe mutable mapping, or return an empty mapping."""
     policy = semantic_type.metadata.get(POINTER_POLICY_METADATA)
     return dict(policy) if isinstance(policy, dict) else {}
 
 
 def _pointer_policy_value(policy: dict[str, object], key: str) -> str:
+    """Normalize one string pointer-policy value for membership checks."""
     value = policy.get(key)
     return str(value).strip().casefold() if isinstance(value, str) else ""
 
 
 def _pointer_policy_allows_allocate(policy: dict[str, object]) -> bool:
+    """Report whether reassociation metadata permits pointer allocation."""
     return _pointer_policy_value(policy, "reassociation") in _POINTER_ALLOCATE_PERMISSION_VALUES
 
 
 def _pointer_policy_allows_deallocate(policy: dict[str, object]) -> bool:
+    """Report whether deallocation metadata permits pointer deallocation."""
     return _pointer_policy_value(policy, "deallocation") in _POINTER_DEALLOCATE_PERMISSION_VALUES
 
 
 def _pointer_policy_allows_resize(policy: dict[str, object]) -> bool:
+    """Report whether both pointer-policy dimensions permit resize operations."""
     reassociation = _pointer_policy_value(policy, "reassociation")
     deallocation = _pointer_policy_value(policy, "deallocation")
     return reassociation in _POINTER_RESIZE_PERMISSION_VALUES and deallocation in _POINTER_RESIZE_PERMISSION_VALUES
@@ -1379,11 +1472,15 @@ def _native_array_handle_blocker(
     handle_kind: str,
     decision: OwnershipDecision,
 ) -> str | None:
+    """Return the inherited ownership blocker or reject an unsupported descriptor origin."""
     if decision.is_blocked:
         return decision.blocker or decision.reason
     if handle_kind == "unsupported":
         return "native array handle origin is unsupported before wrapper lowering"
     return None
+
+
+# Callable projections and raw-address validation
 
 
 def _complete_callable_address_policy(function: models.SemanticFunction) -> None:
@@ -1424,6 +1521,7 @@ def _complete_hidden_scalar_output_projections(function: models.SemanticFunction
 
 
 def _complete_native_address_projections(function: models.SemanticFunction) -> None:
+    """Validate ``Addr(Arg(i))`` mappings and mutate eligible scalars to address storage."""
     arguments_by_name = {argument.name: argument for argument in function.arguments}
     for mapping in function.projection:
         if mapping.value_kind != "addr":
@@ -1450,6 +1548,12 @@ def _complete_native_address_projections(function: models.SemanticFunction) -> N
 
 
 def _apply_scalar_address_projection(argument: models.SemanticArgument) -> None:
+    """Replace an eligible scalar argument's storage with its completed address projection.
+
+    The argument type is mutated in place.  A declared call-local transfer stays
+    read-only unless the argument projects a result; all other scalar address
+    projections become writable native storage.
+    """
     semantic_type = argument.semantic_type
     storage = semantic_type.storage
     metadata = dict(storage.metadata) if storage is not None else {}
@@ -1476,6 +1580,7 @@ def _is_primitive_scalar_value(
     *,
     allow_completed_projection: bool = False,
 ) -> bool:
+    """Report whether a type is a plain scalar value or an allowed completed address projection."""
     if semantic_type.rank != 0 or semantic_type.name == "String":
         return False
     if (semantic_type.dtype or semantic_type.name) not in SEMANTIC_SCALAR_TYPE_NAMES:
@@ -1492,6 +1597,7 @@ def _is_primitive_scalar_value(
 
 
 def _is_visible_extent_source(semantic_type: models.SemanticType) -> bool:
+    """Report whether a scalar type can safely supply an array/raw-address extent name."""
     if _is_primitive_scalar_value(semantic_type, allow_completed_projection=True):
         return True
     storage = semantic_type.storage
@@ -1512,6 +1618,12 @@ def _validate_raw_address_type(
     item: str,
     visible_scalar_names: set[str],
 ) -> None:
+    """Reject unsupported raw-address shape, type, depth, and extent combinations.
+
+    Types without raw-address metadata are ignored.  Raw arrays and strings
+    must be primitive and fully described by literals or visible scalar
+    arguments; unsupported contracts fail before wrapper planning.
+    """
     storage = semantic_type.storage
     if storage is None or storage.metadata.get(ADDRESS_ROLE_METADATA) != ADDRESS_ROLE_RAW:
         return
@@ -1548,6 +1660,7 @@ def _validate_raw_address_type(
 
 
 def _semantic_shape(semantic_type: models.SemanticType) -> list[str]:
+    """Return a type's semantic shape, falling back to array storage source shape."""
     if semantic_type.shape:
         return [str(dimension) for dimension in semantic_type.shape]
     storage = semantic_type.storage
@@ -1558,6 +1671,7 @@ def _semantic_shape(semantic_type: models.SemanticType) -> list[str]:
 
 
 def _is_resolved_extent(value: object, visible_scalar_names: set[str]) -> bool:
+    """Report whether an extent is concrete or references only visible scalar inputs."""
     text = str(value).strip()
     if not text or text in {":", "*", "...", ".."} or ":" in text:
         return False
@@ -1571,6 +1685,12 @@ def _complete_variable(
     *,
     owner_path: str | None = None,
 ) -> None:
+    """Attach ownership, callback, and descriptor-handle policies to one variable.
+
+    The variable and nested callback type metadata are mutated in place.
+    ``MaybeUnallocated`` is rejected outside direct function returns so later
+    stages never receive an ambiguous variable contract.
+    """
     if variable.semantic_type.metadata.get(MAYBE_UNALLOCATED_METADATA):
         raise ValueError(
             f"MaybeUnallocated metadata on {owner_path or variable.name!r} is only valid on function return types"
@@ -1582,6 +1702,7 @@ def _complete_variable(
 
 
 def _complete_accessor_policies(variable: models.SemanticVariable, context: OwnershipContext) -> None:
+    """Attach resolved getter and setter decisions, then refresh descriptor-handle facts."""
     variable.metadata[models.RESOLVED_GETTER_OWNERSHIP_POLICY_METADATA] = (
         default_ownership_policy.decide_semantic_getter(variable, context)
     )
@@ -1592,6 +1713,7 @@ def _complete_accessor_policies(variable: models.SemanticVariable, context: Owne
 
 
 def _complete_module_variable_initializer(variable: models.SemanticVariable) -> None:
+    """Record a safe scalar write-through module initializer, or remove stale metadata."""
     variable.metadata.pop(models.RESOLVED_MODULE_VARIABLE_INITIALIZER_METADATA, None)
     if variable.default_value is None or _is_constant(variable):
         return
@@ -1602,7 +1724,11 @@ def _complete_module_variable_initializer(variable: models.SemanticVariable) -> 
 
 
 def _is_constant(variable: models.SemanticVariable) -> bool:
+    """Report whether a semantic variable is constrained as a compile-time constant."""
     return any(constraint.name == "Constant" for constraint in variable.semantic_type.constraints)
+
+
+# Callback prototype completion
 
 
 def _complete_prototype_reference_policy(
@@ -1610,6 +1736,12 @@ def _complete_prototype_reference_policy(
     *,
     owner_path: str,
 ) -> None:
+    """Complete callback handoff policy and validate nested callback ABI contracts.
+
+    Non-callback types are left untouched.  Callback arguments and returns are
+    completed in place with callback-specific ownership contexts before the
+    final handoff policy is stored on the outer semantic type.
+    """
     if semantic_type.storage is None or semantic_type.storage.kind != "callback":
         return
 
@@ -1653,12 +1785,14 @@ def _complete_prototype_reference_policy(
 
 
 def _callback_argument_ownership_context(argument: models.SemanticArgument) -> OwnershipContext:
+    """Return the read-only/value or writable/reference context declared by a callback argument."""
     if bool(getattr(argument.origin, "metadata", {}).get("value")):
         return OwnershipContext.argument(reads_argument=True, writes_argument=False)
     return OwnershipContext.argument(reads_argument=True, writes_argument=True)
 
 
 def _validate_callback_argument_contract(argument: models.SemanticArgument) -> None:
+    """Require reference callback strings to use mutable scalar character storage."""
     semantic_type = argument.semantic_type
     if semantic_type.name != "String":
         return
@@ -1670,6 +1804,7 @@ def _validate_callback_argument_contract(argument: models.SemanticArgument) -> N
 
 
 def _is_scalar_string_storage(semantic_type: models.SemanticType) -> bool:
+    """Report whether a type uses the rank-zero scalar-character storage representation."""
     storage = semantic_type.storage
     array = storage.array if storage is not None else None
     return bool(
@@ -1678,4 +1813,33 @@ def _is_scalar_string_storage(semantic_type: models.SemanticType) -> bool:
         and array is not None
         and array.rank == 0
         and array.category == SCALAR_STORAGE_CATEGORY
+    )
+
+
+if __name__ == "__main__":
+    from prik.semantics.models import SemanticArgument, SemanticFunction, SemanticModule, SemanticType
+
+    semantic_module = SemanticModule(
+        name="math",
+        functions=[
+            SemanticFunction(
+                name="scale",
+                arguments=[SemanticArgument("value", SemanticType("Float64", dtype="Float64"))],
+                return_type=SemanticType("Float64", dtype="Float64"),
+            )
+        ],
+    )
+    semantic_function = semantic_module.functions[0]
+    semantic_argument = semantic_function.arguments[0]
+    print(
+        f"before: {semantic_module.name}.{semantic_function.name}({semantic_argument.name}): "
+        f"{semantic_argument.semantic_type.name} semantic IR"
+    )
+    complete_semantic_policies(semantic_module)
+    function_policy = semantic_function.metadata[models.RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
+    argument_policy = function_policy.arguments[0]
+    native_slot = function_policy.native_call_slots[0]
+    print(
+        f"after: {semantic_module.name}.{semantic_function.name}({argument_policy.python_name}): "
+        f"{argument_policy.python_barrier_action.value} -> {native_slot.native_barrier_action.value}"
     )

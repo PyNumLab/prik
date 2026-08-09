@@ -1,5 +1,9 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
+from pathlib import Path
+import subprocess
+import sys
+
 from tests.fortran._support.semantic_conversion import (
     FortranArgument,
     FortranBlockData,
@@ -30,6 +34,18 @@ from tests.fortran._support.semantic_conversion import (
     resolve_semantic_compile_time_values,
     semantic_models,
 )
+
+
+def test_fortran_to_ir_direct_script_runs_its_no_argument_example():
+    completed = subprocess.run(
+        [sys.executable, "prik/semantics/fortran2ir.py"],
+        cwd=Path(__file__).resolve().parents[4],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert completed.stdout.strip() == "math.scale(value): Float64 via reference storage"
 
 
 def test_semantic_compile_time_requirements_can_be_supplied_for_kind_selection():

@@ -1,5 +1,9 @@
 """Tests split by stable ownership concept from `test_functions_and_callbacks.py`."""
 
+from pathlib import Path
+import subprocess
+import sys
+
 from tests.c.semantics.conversion._support import (
     CEnum,
     CFile,
@@ -31,6 +35,18 @@ from tests.c.semantics.conversion._support import (
     parse_c_project,
     pytest,
 )
+
+
+def test_c_to_ir_direct_script_runs_its_no_argument_example():
+    completed = subprocess.run(
+        [sys.executable, "prik/semantics/c2ir.py"],
+        cwd=Path(__file__).resolve().parents[4],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert completed.stdout.strip() == "math.scale(value): Int <- Int"
 
 
 def test_c2ir_explicit_project_headers_import_types_from_their_owner_module():
