@@ -105,8 +105,28 @@ def test_fortran2ir_uses_compiler_probed_storage_facts_and_preserves_provenance(
         FortranVariable(name="flag", base_type="logical", kind="1")
     )
 
-    assert logical_type.name == "Bool"
+    assert logical_type.name == "Bool8"
     assert logical_type.metadata["fortran_type_fact"] == logical_fact
+
+
+@pytest.mark.parametrize(
+    ("bits", "expected"),
+    [(8, "Bool8"), (16, "Bool16"), (32, "Bool32"), (64, "Bool64")],
+)
+def test_fortran2ir_maps_probed_logical_storage_to_language_neutral_boolean_widths(bits, expected):
+    fact = {
+        "base_type": "logical",
+        "kind": str(bits // 8),
+        "bits": bits,
+        "expression": f"storage_size(logical(.false.,kind={bits // 8}))",
+    }
+
+    semantic_type = FortranToIRConverter(type_facts={("logical", str(bits // 8)): fact}).visit(
+        FortranVariable(name="flag", base_type="logical", kind=str(bits // 8))
+    )
+
+    assert semantic_type.name == expected
+    assert semantic_type.dtype == expected
 
 
 def test_fortran2ir_rejects_compiler_storage_without_semantic_dtype():

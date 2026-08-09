@@ -7,6 +7,7 @@ from typing import Any
 
 EXTERNAL_TYPE_REF_METADATA = "external_type_ref"
 PROTOTYPE_REF_METADATA = "prototype_ref"
+PROTOTYPE_INTENT_METADATA = "prototype_intent"
 INTERNAL_MODULE_VARIABLE_ACCESS_METADATA = "internal_module_variable_access"
 INTERNAL_MODULE_VARIABLE_NAME_METADATA = "internal_module_variable_name"
 INTERNAL_NATIVE_ARRAY_HANDLE_OPERATION_METADATA = "internal_native_array_handle_operation"
@@ -18,6 +19,7 @@ RUNTIME_RELEASE_GIL_METADATA = "runtime_release_gil"
 RUNTIME_RETAIN_RESULT_OWNER_METADATA = "runtime_retain_result_owner"
 RUNTIME_STATUS_ERROR_METADATA = "runtime_status_error"
 RESOLVED_RUNTIME_STATUS_ERROR_POLICY_METADATA = "resolved_runtime_status_error_policy"
+DECLARATION_EXPRESSION_CALLABLES_METADATA = "declaration_expression_callables"
 
 
 # ============================================================
@@ -73,7 +75,35 @@ class SemanticOrigin:
 
 
 @dataclass
+class SemanticExpressionCallable:
+    """Identify a native callable referenced by a declaration expression.
+
+    ``name`` is the spelling used by the semantic contract. ``native_name``
+    and ``native_scope`` preserve the source declaration reached by normal
+    language name resolution. ``placement`` distinguishes a concrete standalone
+    interface from an unresolved name when neither has a module scope. The
+    optional declaration link is semantic-only and lets post-IR policy validate
+    exact prototype characteristics without duplicating them on the call site.
+    """
+
+    name: str
+    native_name: str | None = None
+    native_scope: str | None = None
+    source_language: str | None = None
+    placement: str | None = None
+    declaration: SemanticFunction | None = field(default=None, compare=False, repr=False)
+
+
+@dataclass
 class SemanticArrayContract:
+    """Describe an array's semantic shape, storage layout, and provenance.
+
+    Shape entries use the public language-neutral expression dialect.
+    The ``expression_callables`` property is parallel to ``shape`` and records
+    native procedure identities used by each axis; source bounds retain the
+    original declaration syntax for diagnostics and source-oriented consumers.
+    """
+
     rank: int | None = None
     shape: list[str] = field(default_factory=list)
     # Native-source provenance, excluded from public contract equality.
@@ -88,6 +118,29 @@ class SemanticArrayContract:
     allocatable: bool = False
     pointer: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def expression_callables(self) -> list[list[SemanticExpressionCallable]]:
+        """Return native callable references aligned with the array's shape axes.
+
+        Empty axes are represented by empty lists. Arrays without any callable
+        reference return an empty list and do not gain serialized metadata.
+        """
+        value = self.metadata.get(DECLARATION_EXPRESSION_CALLABLES_METADATA, [])
+        return value if isinstance(value, list) else []
+
+    @expression_callables.setter
+    def expression_callables(self, value: list[list[SemanticExpressionCallable]]) -> None:
+        """Store nonempty per-axis references or remove empty provenance.
+
+        The setter consumes a shape-aligned list and mutates only ``metadata``.
+        Omitting all-empty data preserves the historical serialization of
+        arrays that do not use declaration functions.
+        """
+        if any(value):
+            self.metadata[DECLARATION_EXPRESSION_CALLABLES_METADATA] = value
+        else:
+            self.metadata.pop(DECLARATION_EXPRESSION_CALLABLES_METADATA, None)
 
 
 @dataclass
@@ -275,6 +328,7 @@ class SemanticFunction:
             getattr(self, "passed_object_name", None),
             getattr(self, "passed_object_position", None),
             getattr(self, "binding_attributes", ()),
+            getattr(self, "pure", None),
         ) == (
             other.name,
             other.native_name,
@@ -289,6 +343,7 @@ class SemanticFunction:
             getattr(other, "passed_object_name", None),
             getattr(other, "passed_object_position", None),
             getattr(other, "binding_attributes", ()),
+            getattr(other, "pure", None),
         )
 
 
@@ -299,7 +354,9 @@ class SemanticFunction:
 
 @dataclass(eq=False)
 class SemanticPrototype(SemanticFunction):
-    """Named native callback signature with no runtime Python export."""
+    """Reusable exact native procedure signature with no Python export."""
+
+    pure: bool = False
 
 
 # ============================================================

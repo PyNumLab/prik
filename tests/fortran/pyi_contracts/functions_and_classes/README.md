@@ -12,7 +12,7 @@ Evidence is split by the stage that establishes it:
   rejects contradictory constructor declarations;
 - `policy/` checks completed class invocation, visibility, overload dispatch,
   and constructor plans;
-- `wrapper_codegen/` checks the selected direct-constructor emission path; and
+- `codegen/` checks the selected direct-constructor emission path; and
 - `end_to_end/` calls edited methods, constructors, and overloads and checks
   removal and native-accessibility failures.
 

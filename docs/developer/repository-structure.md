@@ -24,7 +24,7 @@ artifacts used by tests. Navigate by ownership boundary first, then by file.
 | `prik/types/` | Cross-layer mappings from resolved semantic types to Python ecosystem types. |
 | `prik/parsers/` | Public namespace for language and semantic-contract frontends and parser models. |
 | `prik/semantics/` | Semantic IR, source-to-IR conversion, `.pyi` parsing, and policy completion. |
-| `prik/wrapper_codegen/` | Typed wrapper plans, direct native bridge/binding lowering, and source and semantic `.pyi` printers. |
+| `prik/codegen/` | Typed wrapper plans, direct native bridge/binding lowering, and source and semantic `.pyi` printers. |
 | `prik/compiling/` | Native compile objects, compiler command orchestration, native support installation, and linking. |
 | `prik/binding_support/` | Bundled header-only native support copied into generated wrapper builds. |
 | `prik/naming/` | Unified public-name and generated-symbol policy. |

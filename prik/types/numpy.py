@@ -8,8 +8,18 @@ if TYPE_CHECKING:
     from prik.semantics.models import SemanticType
 
 
+BOOLEAN_STORAGE_BITS: Final[dict[str, int]] = {
+    "Bool": 8,
+    "Bool8": 8,
+    "Bool16": 16,
+    "Bool32": 32,
+    "Bool64": 64,
+}
+BOOLEAN_SEMANTIC_TYPE_NAMES: Final[frozenset[str]] = frozenset(BOOLEAN_STORAGE_BITS)
+
+
 SEMANTIC_DTYPE_TO_NUMPY_DTYPE: Final[dict[str, str]] = {
-    "Bool": "numpy.bool_",
+    **dict.fromkeys(BOOLEAN_SEMANTIC_TYPE_NAMES, "numpy.bool_"),
     "Int8": "numpy.int8",
     "Int16": "numpy.int16",
     "Int32": "numpy.int32",
@@ -28,6 +38,25 @@ SEMANTIC_DTYPE_TO_NUMPY_DTYPE: Final[dict[str, str]] = {
     "String": "numpy.str_",
     "SizeT": "numpy.uintp",
 }
+
+
+def is_boolean_semantic_type_name(name: str | None) -> bool:
+    """Return whether ``name`` identifies a supported Boolean storage contract.
+
+    All supported names share NumPy's one-byte ``bool_`` boundary.  Their
+    numeric suffix records native storage bits for language-specific lowering.
+    """
+    return name in BOOLEAN_SEMANTIC_TYPE_NAMES
+
+
+def boolean_storage_bits(name: str) -> int:
+    """Return the native storage bits represented by one Boolean contract.
+
+    ``Bool`` and ``Bool8`` both return eight.  Unknown names raise ``KeyError``
+    so callers cannot silently invent a native Boolean representation.
+    """
+    return BOOLEAN_STORAGE_BITS[name]
+
 
 SEMANTIC_SCALAR_TYPE_NAMES: Final[frozenset[str]] = frozenset(
     {
@@ -75,8 +104,12 @@ def semantic_type_to_numpy_dtype(semantic_type: SemanticType) -> Any:
 
 
 __all__ = (
+    "BOOLEAN_SEMANTIC_TYPE_NAMES",
+    "BOOLEAN_STORAGE_BITS",
     "SEMANTIC_DTYPE_TO_NUMPY_DTYPE",
     "SEMANTIC_SCALAR_TYPE_NAMES",
+    "boolean_storage_bits",
+    "is_boolean_semantic_type_name",
     "numpy_dtype_expression",
     "semantic_dtype_to_numpy_dtype",
     "semantic_dtype_to_numpy_dtype_map",

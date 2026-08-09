@@ -6,12 +6,12 @@ import ast
 
 from tests.fortran._support.wrapper_build import REPO_ROOT
 
-WRAPPER_CODEGEN_ROOT = REPO_ROOT / "prik" / "wrapper_codegen"
+CODEGEN_ROOT = REPO_ROOT / "prik" / "codegen"
 BOUNDARY_MODULES = (
-    ("c", WRAPPER_CODEGEN_ROOT / "c" / "binding.py"),
-    ("fortran", WRAPPER_CODEGEN_ROOT / "fortran" / "bridge.py"),
-    ("printers", WRAPPER_CODEGEN_ROOT / "printers" / "pyi_printer.py"),
-    ("printers", WRAPPER_CODEGEN_ROOT / "printers" / "source_printers.py"),
+    ("c", CODEGEN_ROOT / "c" / "binding.py"),
+    ("fortran", CODEGEN_ROOT / "fortran" / "bridge.py"),
+    ("printers", CODEGEN_ROOT / "printers" / "pyi_printer.py"),
+    ("printers", CODEGEN_ROOT / "printers" / "source_printers.py"),
 )
 PUBLIC_MODULE_FUNCTIONS = {
     ("printers", "pyi_printer.py", "emit_module"),
@@ -20,7 +20,7 @@ PUBLIC_MODULE_FUNCTIONS = {
 }
 
 
-def test_wrapper_codegen_boundary_entrypoints_and_visitors_are_documented():
+def test_codegen_boundary_entrypoints_and_visitors_are_documented():
     """Require public entrypoints and dispatched model visitors to state their contract."""
     missing = []
     for _, path in BOUNDARY_MODULES:
@@ -39,7 +39,7 @@ def test_wrapper_codegen_boundary_entrypoints_and_visitors_are_documented():
     assert not missing, "Undocumented wrapper-codegen callables:\n" + "\n".join(missing)
 
 
-def test_wrapper_codegen_uses_one_model_visitor_protocol():
+def test_codegen_uses_one_model_visitor_protocol():
     """Prevent alternate printer and extractor dispatch protocols from appearing."""
     invalid = []
     lowercase_model_names = {"int", "str", "tuple"}

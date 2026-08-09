@@ -740,7 +740,7 @@ constant: Int32
 deep: Addr[3](Float64)
 rank_any: Float64[...]
 strided: Float64[0:n:]
-computed: Float64[size(xl)]
+computed: Float64[xl.size]
 bounded_answer: Final[Annotated[Int32, Bounded(1, 8)]]
 nested_answer: Final[Final[Int32]]
 """,
@@ -759,7 +759,7 @@ nested_answer: Final[Final[Int32]]
     assert rank_any.rank == 1
     assert strided.shape == ["0:n:Strided"]
     assert strided.storage.array.contiguous is False
-    assert computed.shape == ["size(xl)"]
+    assert computed.shape == ["xl.size"]
     assert bounded.constraints == [
         SemanticConstraint("Bounded", [1, 8]),
         SemanticConstraint("Constant"),

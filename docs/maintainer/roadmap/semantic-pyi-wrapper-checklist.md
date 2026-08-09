@@ -219,9 +219,9 @@ sit directly under `PATH`.
 
 ### Stage 4 — Shared Parity Harness And Standalone Procedures
 
-Standalone external procedure parity now lives in
+Standalone-procedure parity now lives in
 `tests/wrapper/fortran/external_routines/test_external_procedures.py`. Generated
-external-only contract bundles keep one compact entry `.pyi`; native sources,
+standalone-only contract bundles keep one compact entry `.pyi`; native sources,
 objects, archives, and libraries remain separate build-plan facts.
 
 - [x] Standalone parity tests use the shared `source` / `generated-pyi`
@@ -231,22 +231,22 @@ objects, archives, and libraries remain separate build-plan facts.
   properties such as exact generated contract text, bridge-source inspection,
   and validation-before-codegen failures.
 - [x] One fixed-form source containing one standalone procedure generates a
-  non-empty root fragment with `@external` and rebuilds equivalently.
+  non-empty root fragment with `@standalone` and rebuilds equivalently.
 - [x] One free-form source containing one standalone procedure has the same
-  `@external` generation and runtime parity.
+  `@standalone` generation and runtime parity.
 - [x] One source containing several standalone procedures generates external
   declarations for all of them and exposes each at the extension root.
 - [x] Several file-level BLAS/LAPACK-style standalone sources can generate one
   compact entry `.pyi` containing all external declarations while the native
   build plan links the separated objects in caller order.
-- [x] `@external` makes the bridge emit a completed implicit `external`
+- [x] `@standalone` makes the bridge emit a completed implicit `external`
   declaration or a required explicit interface and no module `use`; a module
   procedure makes the bridge emit the correct `use <module>`.
-- [x] `@external` composes with `@bind("native_name")`: the native external is
+- [x] `@standalone` composes with `@bind("native_name")`: the native external is
   called while the wrapper declaration and root export may use different names.
 - [x] A handwritten external `.pyi` plus native artifacts builds without source
   and follows the same placement, binding, validation, and export rules.
-- [x] Removing `@external` from a generated package-entry declaration or adding
+- [x] Removing `@standalone` from a generated package-entry declaration or adding
   it to a declaration inside a child-namespace module contract fails during
   validation before wrapper code generation.
 
@@ -380,7 +380,7 @@ evidence lives in
 - [x] Several contracts imported by one entry resolve from one static archive
   and one direct shared library while preserving child module namespaces.
 - [x] Module procedures build with separately supplied `.mod` directories, while
-  standalone `@external` procedures build without module search inputs.
+  standalone `@standalone` procedures build without module search inputs.
 - [x] A mixed bundle containing native modules and standalone external
   procedures exposes module members below child namespaces and standalone
   externals at the extension root.
@@ -419,7 +419,7 @@ PRIK_C_DOCS_END -->
   that entrypoint. Planning and lowering consume completed policy metadata
   instead of recomputing policy from raw datatypes. Evidence:
   `tests/semantics/policy/`,
-  `tests/wrapper_codegen/`,
+  `tests/codegen/`,
   `tests/semantics/policy/`,
   and `prik/semantics/README.md`.
 - [x] `.pyi` parsing and `.pyi` semantic conversion are separate stages:
@@ -527,7 +527,7 @@ PRIK_C_DOCS_END -->
   `tests/wrapper/fortran/edit_pyi_contracts/`,
   `tests/semantics/policy/`,
   `tests/fortran/error_handling/semantics/test_status_contract_semantics.py`,
-  `tests/fortran/error_handling/wrapper_codegen/test_status_error_lowering.py`,
+  `tests/fortran/error_handling/codegen/test_status_error_lowering.py`,
   `tests/fortran/error_handling/end_to_end/test_status_projection.py`,
   `tests/fortran/building_shared_library/pipeline/test_pyi_build_modes.py`,
   `tests/fortran/pyi_contracts/exports_and_modules/`, and
@@ -538,8 +538,8 @@ PRIK_C_DOCS_END -->
   copy-in/copy-out, native-array handles, field access, and cleanup from typed
   wrapper-plan actions completed before backend entry. The generators do not
   select semantic behavior from raw datatype, `intent`, alias, or local-memory
-  checks. Evidence: `prik/wrapper_codegen/fortran/bridge.py`,
-  `prik/wrapper_codegen/c/binding.py`, `tests/wrapper_codegen/`, and compiled
+  checks. Evidence: `prik/codegen/fortran/bridge.py`,
+  `prik/codegen/c/binding.py`, `tests/codegen/`, and compiled
   feature evidence under `tests/wrapper/fortran/`.
 - [x] The remaining Stage 8 bridge and binding policy dispatch audit is closed
   for the current supported surface. Bridge field getters and setters dispatch
@@ -551,10 +551,10 @@ PRIK_C_DOCS_END -->
   bridge and binding code are local emitted-code, ABI, documentation, or
   object-model mechanics rather than semantic policy selection. Evidence:
   `prik/semantics/ownership.py`,
-  `prik/wrapper_codegen/fortran/bridge.py`,
-  `prik/wrapper_codegen/c/binding.py`,
+  `prik/codegen/fortran/bridge.py`,
+  `prik/codegen/c/binding.py`,
   `tests/semantics/policy/`,
-  `tests/wrapper_codegen/`,
+  `tests/codegen/`,
   `tests/wrapper/fortran/derived_types/test_derived_layout.py`, and
   `tests/fortran/memory_management/end_to_end/test_explicit_borrowed_owner.py`.
 PRIK_C_DOCS_END -->
@@ -572,7 +572,7 @@ artifact-level evidence.
 - [x] A module leaf is named `<fortran-module>.pyi`; that filename is its native
   module identity. Procedure kind, native symbol, contained-versus-external
   status, argument order, ABI types and kinds, rank, intent, and required
-  native imports are inferred from ordinary declarations plus `@external`,
+  native imports are inferred from ordinary declarations plus `@standalone`,
   `@bind`, and `@native_call` only where those facts are not implicit.
 - [x] Generated `.pyi` retains every native binding fact needed for module
   procedures, standalone external procedures, type-bound procedures, operators,
@@ -629,7 +629,7 @@ Make generated contracts complete and reproducible before composing them.
   two module leaves plus one root contract instead of concatenating
   declarations. That root contract is the sole wrapper input.
 - [x] Standalone fixed-form and free-form procedures emit non-empty `.pyi`
-  contracts with explicit `@external` placement.
+  contracts with explicit `@standalone` placement.
 - [x] The semantic-format feature checks in representative source-owned
   contract packages under its `pipeline/fixtures/contracts/` tree; runtime
   parity fixtures live under the consuming feature's `contracts/` tree as they

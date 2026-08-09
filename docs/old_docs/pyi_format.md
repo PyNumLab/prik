@@ -69,7 +69,7 @@ reconciles imported external type references across the loaded set.
 
 ## Contract Bundles And Native Procedure Placement
 
-> **Roadmap:** `@external`, generated contract bundles, `__init__.pyi` export
+> **Roadmap:** `@standalone`, generated contract bundles, `__init__.pyi` export
 > lowering, `--root-contract`, and wrapper `--out` are the required contract
 > described here, but are not implemented by the current `.pyi` build subset.
 
@@ -82,7 +82,7 @@ facts.
 ### Contained Module Procedures
 
 One Fortran module maps to one `.pyi` file named for that module. A procedure
-declared without `@external` in that module contract is contained in the native
+declared without `@standalone` in that module contract is contained in the native
 Fortran module:
 
 ```python
@@ -104,15 +104,15 @@ procedure to another module or reinterpret it as standalone.
 ### Standalone External Procedures
 
 A procedure outside every Fortran module is marked explicitly with
-`@external`:
+`@standalone`:
 
 ```python
 # externals/dgesv.pyi
-@external
+@standalone
 def dgesv(a: Float64[:, :], b: Float64[:, :]) -> Int32: ...
 ```
 
-`@external` is immutable native-placement metadata. The bridge must generate a
+`@standalone` is immutable native-placement metadata. The bridge must generate a
 matching explicit Fortran interface and call the external procedure without a
 `use <module>` statement. The procedure therefore needs no Fortran `.mod` file,
 but its defining object, archive, or shared library must be supplied to the
@@ -122,17 +122,17 @@ Python-visible renaming is separate from placement. `@bind` retains the native
 Fortran procedure name while the declaration uses a wrapper name:
 
 ```python
-@external
+@standalone
 @bind("dgesv")
 def solve(a: Float64[:, :], b: Float64[:, :]) -> Int32: ...
 ```
 
 Here the bridge calls the external native procedure `dgesv`; the root export
 contract may expose the wrapper declaration as `solve`. `@bind` does not turn a
-module procedure into an external procedure and `@external` does not rename a
+module procedure into an external procedure and `@standalone` does not rename a
 symbol.
 
-Every generated standalone declaration must carry `@external`. Handwritten
+Every generated standalone declaration must carry `@standalone`. Handwritten
 contracts must do the same. Missing or contradictory placement metadata must
 fail during `.pyi` validation or wrapper planning, before bridge emission or native
 compilation.
@@ -147,13 +147,13 @@ suffix:
 | One source containing one module | One `<module>.pyi` |
 | One source containing several modules | One contract directory with `__init__.pyi` and one `.pyi` per module |
 | Several sources containing modules | One contract directory with `__init__.pyi` and one `.pyi` per module |
-| One fixed- or free-form source containing only standalone procedures | One root fragment with `@external` on every procedure |
+| One fixed- or free-form source containing only standalone procedures | One root fragment with `@standalone` on every procedure |
 | Several standalone-procedure sources, such as BLAS/LAPACK | One contract directory with `__init__.pyi` and organized external fragments |
 | Mixed modules and standalone procedures | One contract directory containing module contracts, external fragments, and `__init__.pyi` |
 
 A physical source file containing two modules generates two module `.pyi` files.
 Conversely, a source file containing several standalone procedures may generate
-one external fragment containing several `@external` declarations because those
+one external fragment containing several `@standalone` declarations because those
 procedures all contribute to the extension root rather than a native module
 namespace.
 
@@ -217,7 +217,7 @@ files while the generated bridge is compiled:
 ```
 
 Archives do not normally contain `.mod` files, so module directories remain
-separate inputs. Standalone `@external` procedures require no `.mod` file
+separate inputs. Standalone `@standalone` procedures require no `.mod` file
 because the bridge emits their implicit external declaration or required
 explicit interface from the semantic contract.
 
@@ -232,7 +232,7 @@ Required link cases are:
 | Vendor shared implementation | direct `.so` path or `--native-library NAME` plus search directory |
 | Mixed implementation | objects, archives, direct shared libraries, and named libraries in one ordered plan |
 | Module procedures | native artifacts plus every required `.mod` search directory |
-| Standalone procedures | native artifacts only; interfaces come from `@external` declarations |
+| Standalone procedures | native artifacts only; interfaces come from `@standalone` declarations |
 
 Static link order is semantically significant: dependent objects precede the
 archives or libraries that satisfy them, and dependent libraries precede their

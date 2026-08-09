@@ -8,12 +8,17 @@ below documents the same file order with a control-flow example.
 
 from __future__ import annotations
 
-import ast
 import re
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from prik.utilities.declaration_expressions import (
+    evaluate_integer_expression,
+    split_declaration_assignment,
+    split_dimension_bounds,
+    split_top_level_expression,
+)
 from prik.utilities.visitor import ClassVisitor
 
 from prik.parsers.fortran.lexer import preprocess_lines
@@ -315,8 +320,8 @@ class _CompileTimeResolver:
         if cache_key in self.cache:
             return self.cache[cache_key]
 
-        if ":" in text:
-            parts = text.split(":")
+        parts = split_top_level_expression(text, ":")
+        if len(parts) > 1:
             resolved = ":".join(self.resolve(p, prefer_symbolic=prefer_symbolic) if p.strip() else p for p in parts)
             self.cache[cache_key] = resolved
             return resolved
@@ -1011,6 +1016,12 @@ class FortranParser(ClassVisitor):
                 self._resolve_module_variable_kinds(unit, module_params)
         for procedure in self._helper_file_procedures(units):
             self._resolve_signature_kinds(procedure, module_params, resolve_shapes=False)
+        derived_types = [
+            *units.derived_types,
+            *(derived_type for module in (*units.modules, *units.submodules) for derived_type in module.derived_types),
+        ]
+        for derived_type in derived_types:
+            self._resolve_derived_type_field_kinds(derived_type, module_params)
 
     @staticmethod
     def _helper_file_procedures(units: _ParsedFileUnits):
@@ -1083,6 +1094,11 @@ class FortranParser(ClassVisitor):
                 *parsed_file.block_data_units,
             ):
                 self._resolve_module_variable_kinds(owner, module_params)
+            for derived_type in parsed_file.derived_types:
+                self._resolve_derived_type_field_kinds(derived_type, module_params)
+            for module in parsed_file.modules:
+                for derived_type in module.derived_types:
+                    self._resolve_derived_type_field_kinds(derived_type, module_params)
 
     def _helper_project_module_symbols(self, parsed_files: list[FortranFile]) -> dict[str, dict[str, str]]:
         """Resolve module symbols and submodule host associations."""
@@ -2546,12 +2562,22 @@ class FortranParser(ClassVisitor):
             else:
                 normalized_attrs.append(lowered)
 
-        return FortranDerivedType(
+        derived_type = FortranDerivedType(
             name=type_name,
             module=current_module,
             extends=extends,
             attributes=normalized_attrs,
         )
+        parameter_match = re.search(
+            rf"::\s*{re.escape(type_name)}\s*\((?P<parameters>[^)]*)\)\s*$",
+            line,
+            re.IGNORECASE,
+        )
+        derived_type._type_parameters = tuple(
+            parameter.strip().casefold()
+            for parameter in split_csv(parameter_match.group("parameters") if parameter_match else "")
+        )
+        return derived_type
 
     @staticmethod
     def _parse_interface_header(line: str) -> tuple[bool, str | None]:
@@ -3615,8 +3641,8 @@ class FortranParser(ClassVisitor):
             )
 
         for entity in split_csv(right):
-            initializer = entity.split("=", 1)[1].strip() if "=" in entity else None
-            raw_name, shape = self._var(entity)
+            declared_entity, initializer = split_declaration_assignment(entity)
+            raw_name, shape = self._var(declared_entity)
             if not raw_name:
                 continue
             entity_meta = self._entity_decl_meta(raw_name, meta)
@@ -3793,12 +3819,9 @@ class FortranParser(ClassVisitor):
     @staticmethod
     def _var(entry: str):
         """Split one declaration entity into its name and inline dimensions."""
-        e = entry.strip()
+        e, _initializer = split_declaration_assignment(entry)
         if not e:  # pragma: no cover - split_csv omits empty declaration entities for valid declarations.
             return "", []
-        if "=" in e:
-            # Keep only the declared entity name/shape; drop initializer text.
-            e = e.split("=", 1)[0].strip()
         if "(" in e and e.endswith(")"):
             name = e[: e.find("(")].strip()
             return name, split_csv(e[e.find("(") + 1 : -1])
@@ -3844,15 +3867,7 @@ class FortranParser(ClassVisitor):
     @staticmethod
     def _split_dim_bounds(dim: str) -> tuple[str | None, str | None]:
         """Normalize one dimension into lower and upper bound text."""
-        part = dim.strip()
-        if not part:  # pragma: no cover - empty dimensions are invalid Fortran and not emitted by split_csv.
-            return None, None
-        if ":" not in part:
-            return "1", part
-        lo, hi = part.split(":", 1)
-        lo = lo.strip() or None
-        hi = hi.strip() or None
-        return lo, hi
+        return split_dimension_bounds(dim)
 
     @staticmethod
     def _extract_bounds(shape: list[str]) -> tuple[list[str | None], list[str | None]]:
@@ -4530,6 +4545,32 @@ class FortranParser(ClassVisitor):
                 var.lbound, var.ubound = FortranParser._extract_bounds(var.shape)
 
     @staticmethod
+    def _resolve_derived_type_field_kinds(
+        derived_type: FortranDerivedType,
+        module_params: dict[str, dict[str, str]],
+    ) -> None:
+        """Resolve kind and shape parameters for fields in their module scope.
+
+        The helper consumes the same module parameter table as module-variable
+        resolution and mutates only the parsed field facts.  Field declaration
+        order is preserved, and unresolved native expressions remain symbolic.
+        """
+        resolved_params = FortranParser._resolve_module_parameter_values(module_params)
+        local_parameters = set(getattr(derived_type, "_type_parameters", ()))
+        symbols = {
+            name: value
+            for name, value in resolved_params.get(str(derived_type.module or "").casefold(), {}).items()
+            if name.casefold() not in local_parameters
+        }
+        resolver = _CompileTimeResolver(symbols)
+        for field in derived_type.fields:
+            if field.kind:
+                field.kind = FortranParser._resolve_kind_expression(field.kind, symbols, resolver=resolver)
+            if field.shape:
+                field.shape = [resolver.resolve(dimension) for dimension in field.shape]
+                field.lbound, field.ubound = FortranParser._extract_bounds(field.shape)
+
+    @staticmethod
     def _resolve_kind_expression(
         expr: str,
         symbols: dict[str, str],
@@ -4656,129 +4697,11 @@ class FortranParser(ClassVisitor):
     def _safe_eval_int_expr(expr: str) -> int | None:
         """Safely evaluate a restricted integer-only Python expression.
 
-        Used to fold simple arithmetic after symbol substitution. Only numeric
-        constants and basic arithmetic operators are allowed. Any other syntax
-        returns None rather than raising.
+        This parser compatibility method delegates to the shared declaration
+        expression layer. Unsupported or nonintegral expressions return
+        ``None`` without executing source-language code.
         """
-        normalized = expr.strip()
-        normalized = re.sub(r"(?<=\d)_[A-Za-z_][A-Za-z0-9_]*", "", normalized)
-        normalized = re.sub(r"\.and\.", " and ", normalized, flags=re.IGNORECASE)
-        normalized = re.sub(r"\.or\.", " or ", normalized, flags=re.IGNORECASE)
-        normalized = re.sub(r"\.not\.", " not ", normalized, flags=re.IGNORECASE)
-        normalized = re.sub(r"\.true\.", "True", normalized, flags=re.IGNORECASE)
-        normalized = re.sub(r"\.false\.", "False", normalized, flags=re.IGNORECASE)
-
-        try:
-            node = ast.parse(normalized, mode="eval")
-        except SyntaxError:
-            return None
-
-        allowed_binops = (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow)
-        allowed_unary = (ast.UAdd, ast.USub)
-
-        def _eval(n):
-            """Evaluate one allowed AST node, returning None when unsupported."""
-            if isinstance(n, ast.Expression):
-                return _eval(n.body)
-            if isinstance(n, ast.Constant) and isinstance(n.value, int | float | str | bool):
-                return n.value
-            if isinstance(n, ast.BinOp) and isinstance(n.op, allowed_binops):
-                left = _eval(n.left)
-                right = _eval(n.right)
-                if (
-                    left is None
-                    or right is None
-                    or not isinstance(left, int | float)
-                    or not isinstance(right, int | float)
-                ):
-                    return None
-                if isinstance(n.op, ast.Add):
-                    return left + right
-                if isinstance(n.op, ast.Sub):
-                    return left - right
-                if isinstance(n.op, ast.Mult):
-                    return left * right
-                if isinstance(n.op, ast.Div):
-                    return left / right
-                if isinstance(n.op, ast.FloorDiv):
-                    return left // right
-                if isinstance(n.op, ast.Mod):
-                    return left % right
-                if isinstance(n.op, ast.Pow):
-                    return left**right
-            if isinstance(n, ast.UnaryOp) and isinstance(n.op, allowed_unary):
-                v = _eval(n.operand)
-                if v is None or not isinstance(v, int | float):
-                    return None
-                return +v if isinstance(n.op, ast.UAdd) else -v
-            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name):
-                name = n.func.id.lower()
-                args = [_eval(arg) for arg in n.args]
-                if any(arg is None for arg in args):
-                    return None
-                try:
-                    if name == "abs" and len(args) == 1 and isinstance(args[0], int | float):
-                        return abs(args[0])
-                    if name == "max" and args and all(isinstance(arg, int | float) for arg in args):
-                        return max(args)
-                    if name == "min" and args and all(isinstance(arg, int | float) for arg in args):
-                        return min(args)
-                    if name == "mod" and len(args) == 2 and all(isinstance(arg, int | float) for arg in args):
-                        return args[0] % args[1]
-                    if name == "int" and args and isinstance(args[0], int | float):
-                        return int(args[0])
-                    if name == "len" and len(args) == 1 and isinstance(args[0], str):
-                        return len(args[0])
-                    if name == "len_trim" and len(args) == 1 and isinstance(args[0], str):
-                        return len(args[0].rstrip())
-                    if name == "iachar" and len(args) == 1 and isinstance(args[0], str) and args[0]:
-                        return ord(args[0][0])
-                except (OverflowError, ValueError, ZeroDivisionError):
-                    return None
-            if isinstance(n, ast.BoolOp):
-                values = [_eval(value) for value in n.values]
-                if any(value is None for value in values):
-                    return None
-                if isinstance(n.op, ast.And):
-                    return all(bool(value) for value in values)
-                if isinstance(n.op, ast.Or):
-                    return any(bool(value) for value in values)
-            if isinstance(n, ast.Compare):
-                left = _eval(n.left)
-                if left is None:
-                    return None
-                for op, comparator in zip(n.ops, n.comparators, strict=False):
-                    right = _eval(comparator)
-                    if right is None:
-                        return None
-                    if isinstance(op, ast.Gt):
-                        ok = left > right
-                    elif isinstance(op, ast.GtE):
-                        ok = left >= right
-                    elif isinstance(op, ast.Lt):
-                        ok = left < right
-                    elif isinstance(op, ast.LtE):
-                        ok = left <= right
-                    elif isinstance(op, ast.Eq):
-                        ok = left == right
-                    elif isinstance(op, ast.NotEq):
-                        ok = left != right
-                    else:
-                        return None
-                    if not ok:
-                        return False
-                    left = right
-                return True
-            return None
-
-        val = _eval(node)
-        if val is None:
-            return None
-        if isinstance(val, bool):
-            return int(val)
-        if isinstance(val, float) and val.is_integer():
-            return int(val)
-        return val if isinstance(val, int) else None
+        return evaluate_integer_expression(expr)
 
     # ------------------------------------------------------------------
     # Project diagnostics

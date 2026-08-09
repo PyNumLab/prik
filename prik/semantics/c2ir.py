@@ -13,6 +13,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from prik.types.numpy import BOOLEAN_STORAGE_BITS
+
 from prik.parsers.c.models import (
     CArray,
     CBool,
@@ -1442,7 +1444,14 @@ class CToIRConverter(ClassVisitor):
             if fact.get("signed") is True:
                 return _SIGNED_WIDTH_TYPES.get(bits)
         if fact.get("kind") == "bool":
-            return "Bool"
+            return next(
+                (
+                    name
+                    for name, storage_bits in BOOLEAN_STORAGE_BITS.items()
+                    if name != "Bool" and storage_bits == bits
+                ),
+                None,
+            )
         if fact.get("kind") == "real":
             return _REAL_WIDTH_TYPES.get(bits)
         if fact.get("kind") == "complex":

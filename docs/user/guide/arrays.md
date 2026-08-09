@@ -173,8 +173,13 @@ print(vec)  # [2. 4. 6. 8.]
 - Writeability for `intent(out)` or `intent(inout)` arrays
 - Declared stride pattern for stride-aware contracts
 
-**prik does not silently cast, copy, transpose, or convert layouts.**
-A mismatch raises `TypeError` before native code runs.
+**prik does not silently cast, copy, transpose, or convert rejected caller
+layouts.** A mismatch raises `TypeError` before native code runs. A generated
+Boolean contract still accepts only `np.bool_` storage; when its numbered
+`Bool8`-`Bool64` element type records a different native logical width, the
+completed wrapper plan performs the required Boolean representation copy in
+the Fortran bridge. That internal ABI adaptation is not a caller-side dtype or
+layout coercion.
 
 Contiguous elements have no gaps between them in the required layout.
 Two arrays can print the same values but use different memory orders.
@@ -455,6 +460,69 @@ Use this list when reading or editing a generated `.pyi` contract:
 - `Annotated[T[Flat, columns], ORDER_C]`: C-contiguous; checked suffix,
   leading axes flattened
 - `T[...]`: assumed-rank, currently rank 1-15
+
+Generated shape expressions use Python and NumPy vocabulary even when the
+source declaration used Fortran inquiry intrinsics:
+
+| Fortran declaration expression | Generated `.pyi` expression |
+|--------------------------------|-------------------------------|
+| `size(values)`                 | `values.size`                 |
+| `size(values, 2)`              | `values.shape[1]`             |
+| `rank(values)`                 | `values.ndim`                 |
+| `lbound(values, 2)`            | declared lower bound, or `1` when empty |
+| `ubound(values, 2)`            | lower bound plus `values.shape[1] - 1`, or `0` when empty |
+| first-axis extent              | `len(values)` or `values.shape[0]` |
+| `extent_for(n)`                | `extent_for(n)`                |
+
+Scalar integer arguments, arithmetic, comparisons, conditional expressions,
+and `abs`, `int`, `min`, `max`, `len`, and `sum` can be combined in a shape.
+Array attributes are limited to `.size`, `.ndim`, and `.shape[index]` on a
+visible array argument. A user specification-function call remains a native
+function call and is never evaluated as Python. A local function resolves to
+the current native module, while a function named by a `USE` import retains
+that import's source module and original native name. The bridge accesses both
+through `use` and their compiler-produced `.mod` interfaces.
+
+A standalone specification function has no `.mod` interface. Its semantic
+contract therefore supplies an exact prototype and calls that prototype name
+in the declaration expression:
+
+```python
+from prik.contracts import Addr, In, Int32, prototype, pure
+
+@pure
+@prototype
+def extent_for(n: In(Addr(Int32))) -> Int32: ...
+```
+
+The bridge emits the signature as an abstract Fortran interface with a
+generated `prik_` name, declares `extent_for` with `procedure(prik_...)`, and
+evaluates the call natively when result allocation or another bridge-owned
+shape needs the integer. For a caller-provided dummy array, the Python binding
+still validates dtype, rank, ordering, contiguity, and writability, but it does
+not duplicate the native procedure's explicit-extent check or call the
+specification function. It passes the actual extents to the bridge. For a
+returned array, the main bridge returns each natively evaluated extent through
+its existing call ABI so the binding can construct the NumPy result; no
+separate interoperability wrapper is generated for `extent_for`. The bridge
+evaluates each such axis once, allocates its local result storage from the
+recorded integer extent, and reuses that extent for NumPy construction.
+
+Do not also use this pure prototype as a Python callback annotation. A
+specification function must be pure, while PRIK's callback adapter necessarily
+calls the Python runtime and cannot satisfy a pure Fortran procedure contract.
+Policy completion reports that mixed use as a named blocker before planning.
+
+The linked implementation still comes from the user-supplied native objects or
+libraries. Impure or noninteger functions, incompatible arguments, inaccessible module
+procedures, unresolved origins, and expressions depending on private native
+state remain explicit policy blockers rather than guessed boundary values.
+
+The lower bound is the bound of the Fortran dummy declaration, not Python's
+zero-based index origin. For an assumed-shape dummy, an omitted lower bound is
+one; an explicit bound such as `0:` or `start:` is retained. The common
+`ubound(values, d) - lbound(values, d) + 1` expression is therefore emitted as
+the corresponding `values.shape[d - 1]` extent.
 
 ---
 

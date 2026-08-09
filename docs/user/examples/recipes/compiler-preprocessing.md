@@ -40,11 +40,14 @@ PRIK_C_DOCS_END -->
 
 ## Notes
 
-- For the pipeline model, adapters, diagnostics, and include-exposure policy,
-  see the [compiler preprocessing reference](../../../developer/compiler-preprocessing.md).
 - Pass the same important include paths, macros, and target flags used by the
   native project.
 - Compiler-backed semantic and `.pyi` stages can also probe target datatype
   facts.
 - These examples are environment-dependent, so they are not marked as automatic
   documentation tests.
+
+## Next
+
+- Read the [compiler preprocessing reference](../../../developer/compiler-preprocessing.md)
+  for the pipeline model, adapters, diagnostics, and include-exposure policy.

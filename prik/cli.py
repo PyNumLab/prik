@@ -598,7 +598,7 @@ _SOURCE_SEMANTIC_PIPELINES = {
 
 
 def _semantic_payload_for_converted_files(converted_files) -> dict[str, dict]:
-    from prik.wrapper_codegen.printers import emit_module_stubs
+    from prik.codegen.printers import emit_module_stubs
 
     out: dict[str, dict] = {}
     available_modules = [module for _p, modules in converted_files for module in modules]
@@ -625,7 +625,7 @@ def _is_fortran_semantic_file(modules) -> bool:
 
 
 def _fortran_contract_payload(path: Path, modules, available_modules) -> dict[str, object]:
-    from prik.wrapper_codegen.printers import emit_module_stubs
+    from prik.codegen.printers import emit_module_stubs
 
     native_modules = [module for module in modules if module.origin.source_kind == "module"]
     external_modules = [module for module in modules if module.origin.source_kind != "module"]

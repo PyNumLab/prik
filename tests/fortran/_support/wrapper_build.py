@@ -35,7 +35,7 @@ from prik.pipeline.build import build_fortran_extension
 from prik.runtime.handles import AllocatableArray
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.semantics.policy_completion import complete_semantic_policies
-from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.codegen import WrapperCodeGenerator, WrapperPlanner
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 WRAPPER_TEST_ROOT = Path(__file__).resolve().parent

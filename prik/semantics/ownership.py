@@ -22,6 +22,7 @@ from prik.semantics.metadata import (
     PROJECTED_OUTPUT_METADATA,
     SCALAR_STORAGE_CATEGORY,
 )
+from prik.types.numpy import BOOLEAN_SEMANTIC_TYPE_NAMES
 
 
 OWNERSHIP_POLICY_METADATA = "ownership_policy"
@@ -324,7 +325,7 @@ class DestructionPolicyDispatcher:
 
 _STANDARD_SCALAR_TYPES = frozenset(
     {
-        "Bool",
+        *BOOLEAN_SEMANTIC_TYPE_NAMES,
         "Byte",
         "CEnum",
         "Char",

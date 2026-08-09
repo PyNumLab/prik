@@ -137,6 +137,10 @@ def _decorator(*args: object, **kwargs: object):
 
 
 Bool = _contract_type("Bool", np.bool_)
+Bool8 = _contract_type("Bool8", np.bool_)
+Bool16 = _contract_type("Bool16", np.bool_)
+Bool32 = _contract_type("Bool32", np.bool_)
+Bool64 = _contract_type("Bool64", np.bool_)
 Byte = _contract_type("Byte", constructor_error="Byte has no portable NumPy scalar default")
 CEnum = _contract_type("CEnum", constructor_error="CEnum requires a resolved native underlying type")
 Char = _contract_type("Char", constructor_error="Char has no portable NumPy scalar default")
@@ -188,9 +192,12 @@ ArrayCategory = _expression
 Bounded = _expression
 Destruction = _expression
 Finite = _expression
+In = _expression
+InOut = _expression
 IsPresent = _expression
 Len = _expression
 Ownership = _expression
+Out = _expression
 Pass = _expression
 PointerAssociation = _expression
 PointerPolicy = _expression
@@ -202,13 +209,14 @@ Value = _expression
 Work = _expression
 
 bind = _decorator
-external = _decorator
 nogil = _decorator
 native_call = _decorator
 native_type = _decorator
 overload = _decorator
 prototype = _decorator
+pure = _decorator
 raises = _decorator
+standalone = _decorator
 
 CAnonymous = _contract_type("CAnonymous")
 CAnonymousMember = _contract_type("CAnonymousMember")
@@ -230,6 +238,10 @@ CONTRACT_SYMBOLS = frozenset(
         "ArrayCategory",
         "AssumedType",
         "Bool",
+        "Bool8",
+        "Bool16",
+        "Bool32",
+        "Bool64",
         "Bounded",
         "Byte",
         "CAnonymous",
@@ -253,6 +265,8 @@ CONTRACT_SYMBOLS = frozenset(
         "Float128",
         "FortranAllocatable",
         "Immutable",
+        "In",
+        "InOut",
         "Int",
         "Int8",
         "Int16",
@@ -268,6 +282,7 @@ CONTRACT_SYMBOLS = frozenset(
         "ORDER_C",
         "ORDER_F",
         "Ownership",
+        "Out",
         "Pass",
         "Pointer",
         "PointerAssociation",
@@ -292,14 +307,15 @@ CONTRACT_SYMBOLS = frozenset(
         "Work",
         "WrappedType",
         "bind",
-        "external",
         "nogil",
         "native_call",
         "native_type",
         "overload",
         "prototype",
+        "pure",
         "private",
         "raises",
+        "standalone",
     }
 )
 
@@ -310,6 +326,10 @@ CONTRACT_TYPE_NAMES = frozenset(
         "Annotated",
         "Any",
         "Bool",
+        "Bool8",
+        "Bool16",
+        "Bool32",
+        "Bool64",
         "Byte",
         "CAnonymous",
         "CAnonymousMember",

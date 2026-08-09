@@ -691,6 +691,53 @@ dim.upper.name
 # "ubound"
 ```
 
+### 4.4 Declaration-expression ownership
+
+The declaration parser preserves balanced Fortran 2008/2018 bound text for all
+declaration owners: module variables, derived-type fields, dummy arguments, and
+procedure results. Nested calls, array constructors, component references, and
+colons inside nested syntax do not split an outer dimension or bound.
+
+Semantic conversion sends every explicit extent through the shared
+`prik.utilities.declaration_expressions` layer. That layer retains the native
+spelling in `source_shape` and produces the language-neutral public spelling
+used by `.pyi`, including
+`size(a)` to `a.size`, `size(a, dim)` to `a.shape[dim - 1]`, and `rank(a)` to
+`a.ndim`. Post-IR policy then resolves public scalar and array-property
+references to wrapper roles. Binding and bridge generators only render the
+completed expression for their target language; they do not infer declaration
+semantics.
+
+`lbound(a, dim)` uses the lower bound declared for that dummy axis rather than
+Python's index origin. `ubound(a, dim)` combines that bound with the runtime
+extent, and the shared expression layer reduces the common
+`ubound-lbound+1` form to `a.shape[dim - 1]`. Direct inquiries preserve the
+standard zero-extent results: lower bound one and upper bound zero.
+
+Parsing and preservation are intentionally broader than wrapper execution.
+Valid specification expressions whose value exists only in private native
+state remain available as source metadata but produce an explicit policy
+blocker when no boundary role can supply them. Calls to user specification
+functions also remain in the language-neutral expression. Semantic conversion
+resolves each call to a local module procedure, through the declaration owner's
+`USE` mappings, or to a concrete procedure interface in the same declaration
+scope. It records the visible spelling, original native name, native placement,
+and resolved declaration.
+
+A wildcard import is resolved only when file/project parsing has indexed the
+named procedure in exactly one imported module; conversion does not guess from
+an unavailable module export list. The `.pyi` loader reconstructs the same
+identity from module functions, imports, and `@prototype` declarations. A
+prototype is one signature model: annotation use makes it a callback signature,
+while call use names a standalone procedure entity. Post-IR policy validates
+purity, scalar-integer result, argument association, and accessibility, then
+selects either a module `use` or a standalone procedure declaration backed by
+the generated abstract interface. A pure prototype cannot also be a Python
+callback because its generated adapter calls the Python runtime; that mixed use
+is blocked before planning. The binding and bridge consume only that
+completed action. Fortran 2023 vector bounds and `RANK` clauses are outside the
+parser's advertised Fortran 2008/2018 language modes.
+
 ## 5) Running tests
 
 Run all tests:

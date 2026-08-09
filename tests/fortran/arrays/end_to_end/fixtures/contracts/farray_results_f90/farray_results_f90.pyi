@@ -9,7 +9,7 @@ def automatic_vector(
 
 def size_intrinsic_vector(
     x: Float64[::]
-) -> Float64[size(x)]: ...
+) -> Float64[x.size]: ...
 
 @native_call([Addr(Arg(0)), Addr(Arg(1))])
 def automatic_matrix(

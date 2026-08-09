@@ -1,6 +1,6 @@
-from prik.contracts import Addr, Arg, Int32, Returns, external, native_call
+from prik.contracts import Addr, Arg, Int32, Returns, native_call, standalone
 
-@external
+@standalone
 @native_call([Addr(Arg(0))])
 def add_one(
     value: Int32

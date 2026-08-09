@@ -23,8 +23,8 @@ workflows produce.
 
 | Native declaration | Python placement | Contract marker |
 | --- | --- | --- |
-| Standalone external procedure | Generated extension root | `@external` |
-| Procedure contained in a Fortran module | Generated child module | no `@external` |
+| Standalone procedure | Generated extension root | `@standalone` |
+| Procedure contained in a Fortran module | Generated child module | no `@standalone` |
 | Type-bound procedure | Generated class method | `Pass()` in native projection when needed |
 | Public generic interface | One Python callable with generated overload dispatch | `@overload("specific_name")` |
 | Private or removed declaration | Not exported | `@private`, `private[...]`, or omitted |

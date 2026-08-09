@@ -109,10 +109,10 @@ def hidden_storage_result() -> Float64[()]: ...
 def test_external_declaration_mode_is_completed_from_native_abi_requirements():
     module = parse_pyi_text(
         """
-@external
+@standalone
 def classic(n: Int32, values: Float64[n]) -> Float64: ...
 
-@external
+@standalone
 def optional(value: Annotated[Float64, Immutable] | None = ...) -> None: ...
 """,
         module_name="external_modes",
@@ -137,7 +137,7 @@ def test_source_fmath_scalar_policy_projects_conservative_replacements():
     assert policy.blockers == ()
     assert [(export.namespace, export.name) for export in policy.python_exports] == [((), "add_r8")]
     assert policy.native_name == "ADD_R8"
-    assert policy.external is True
+    assert policy.standalone is True
     assert [argument.name for argument in policy.arguments] == ["X", "Y"]
     assert [argument.codegen_action for argument in policy.arguments] == [
         CodegenAction.COPY_IN_OUT,
@@ -206,7 +206,7 @@ def test_fmath_scalar_policy_records_address_projected_call_slots():
     assert policy.owner_path == "fmath.add_r8"
     assert [(export.namespace, export.name) for export in policy.python_exports] == [((), "add_r8")]
     assert policy.native_name == "ADD_R8"
-    assert policy.external is True
+    assert policy.standalone is True
 
     assert [argument.name for argument in policy.arguments] == ["X", "Y"]
     assert [argument.python_position for argument in policy.arguments] == [0, 1]
@@ -254,7 +254,7 @@ def test_wrapper_policy_records_runtime_and_native_order_metadata():
         """
 @nogil
 @bind("SWAP_ARGS")
-@external
+@standalone
 @native_call([Addr(Arg(1)), Addr(Arg(0))])
 def swap_args(x: Float64, y: Float64) -> Float64: ...
 """,
@@ -265,7 +265,7 @@ def swap_args(x: Float64, y: Float64) -> Float64: ...
     policy = completed_function_wrapper_policy(module.functions[0])
 
     assert policy.release_gil is True
-    assert policy.external is True
+    assert policy.standalone is True
     assert [argument.python_position for argument in policy.arguments] == [0, 1]
     assert [argument.native_position for argument in policy.arguments] == [1, 0]
     assert [(slot.native_position, slot.python_position, slot.value_kind) for slot in policy.native_call_slots] == [

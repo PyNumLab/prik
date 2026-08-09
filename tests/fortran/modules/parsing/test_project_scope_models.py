@@ -478,7 +478,7 @@ end block data init_data
         )
 
 
-def test_project_resolution_keeps_relevant_local_parameter_variables():
+def test_project_resolution_folds_fortran_real_literal_integer_parameters():
     project = parse_fortran_project(
         {
             "local_params.f90": """
@@ -493,8 +493,7 @@ end subroutine use_relevant_local_param
 
     proc = project.procedures["use_relevant_local_param"]
 
-    assert proc.arguments[0].shape == ["1:+(8)-one"]
-    assert proc.variables["one"].value == "1"
+    assert proc.arguments[0].shape == ["1:7"]
 
 
 def test_project_resolution_uses_file_level_use_only_and_local_parameters(tmp_path):

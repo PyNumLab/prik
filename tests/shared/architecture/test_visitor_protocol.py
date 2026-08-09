@@ -12,11 +12,11 @@ from prik.semantics.c2ir import CToIRConverter
 from prik.semantics.fortran2ir import FortranToIRConverter, _FortranVariableContextVisitor
 from prik.semantics.pyi2ir import _ClassBodyVisitor, _ModuleVisitor
 from prik.utilities.visitor import ClassVisitor as SemanticClassVisitor
-from prik.wrapper_codegen.c.binding import CBindingGenerator
-from prik.wrapper_codegen.fortran.bridge import FortranBridgeGenerator
-from prik.wrapper_codegen.planner import WrapperPlanner
-from prik.wrapper_codegen.printers import PyiPrinter
-from prik.wrapper_codegen.visitor import ClassVisitor as WrapperClassVisitor
+from prik.codegen.c.binding import CBindingGenerator
+from prik.codegen.fortran.bridge import FortranBridgeGenerator
+from prik.codegen.planner import WrapperPlanner
+from prik.codegen.printers import PyiPrinter
+from prik.codegen.visitor import ClassVisitor as WrapperClassVisitor
 
 
 SEMANTIC_VISITORS = (
@@ -38,10 +38,10 @@ VISITOR_IMPLEMENTATION_PATHS = (
     REPO_ROOT / "prik" / "semantics" / "c2ir.py",
     REPO_ROOT / "prik" / "semantics" / "fortran2ir.py",
     REPO_ROOT / "prik" / "semantics" / "pyi2ir.py",
-    REPO_ROOT / "prik" / "wrapper_codegen" / "planner.py",
-    REPO_ROOT / "prik" / "wrapper_codegen" / "c" / "binding.py",
-    REPO_ROOT / "prik" / "wrapper_codegen" / "fortran" / "bridge.py",
-    REPO_ROOT / "prik" / "wrapper_codegen" / "printers" / "pyi_printer.py",
+    REPO_ROOT / "prik" / "codegen" / "planner.py",
+    REPO_ROOT / "prik" / "codegen" / "c" / "binding.py",
+    REPO_ROOT / "prik" / "codegen" / "fortran" / "bridge.py",
+    REPO_ROOT / "prik" / "codegen" / "printers" / "pyi_printer.py",
 )
 
 

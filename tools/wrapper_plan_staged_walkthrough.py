@@ -16,7 +16,7 @@ from prik.pipeline import build as pipeline
 from prik.pipeline.preprocessing import PreprocessingConfig
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.semantics.policy_completion import complete_semantic_policies
-from prik.wrapper_codegen import (
+from prik.codegen import (
     CBindingGenerator,
     FortranBridgeGenerator,
     WrapperCodeGenerator,
@@ -42,10 +42,10 @@ DEMO_FORTRAN_SOURCE = """\
 """
 
 DEMO_PYI_CONTRACT = """\
-from prik.contracts import Addr, Arg, Float64, bind, external, native_call
+from prik.contracts import Addr, Arg, Float64, bind, native_call, standalone
 
 @bind("ADD_R8")
-@external
+@standalone
 @native_call([Addr(Arg(0)), Addr(Arg(1))])
 def calculate(x: Float64, y: Float64) -> Float64: ...
 """
@@ -104,13 +104,14 @@ for item in plan.namespaces:
                 f"binding action={argument.binding.optional_mode!r}, "
                 f"bridge action={argument.bridge.optional_mode!r}"
             )
-        if planned_function.result is None:
+        if not planned_function.results:
             print("    result: binding=<return None>, bridge=<no result>")
         else:
-            print(
-                f"    result: binding action={planned_function.result.binding.codegen_action!r}, "
-                f"bridge action={planned_function.result.bridge.codegen_action!r}"
-            )
+            for result in planned_function.results:
+                print(
+                    f"    result {result.result_position}: binding action={result.binding.codegen_action!r}, "
+                    f"bridge action={result.bridge.codegen_action!r}"
+                )
     for variable in item.variables:
         print(
             f"  variable {variable.binding.python_names}: "
@@ -119,7 +120,7 @@ for item in plan.namespaces:
             f"assignment={variable.bridge.native_assignment!r}"
         )
 print("native slots:", function.native_call_slots)
-print("result plan:", function.result)
+print("result plans:", function.results)
 
 
 # 3. Editable plan -> generated C binding and Fortran bridge sources.
@@ -137,10 +138,14 @@ for artifact in artifacts.sources:
 print("\n== BUILD AND RUN ==")
 build_dir = workdir / "build"
 build_dir.mkdir()
-compiler = pipeline._new_gnu_compiler()
+compiler = pipeline._new_compiler()
 native_object = pipeline._source_compile_object(source, build_dir, object_stem="native")
 compiler.compile_object(native_object, verbose=False)
-native_build_plan = pipeline._source_native_build_plan((source,), (native_object,), module_dir=build_dir)
+native_build_plan = pipeline.NativeBuildPlan(
+    produced_objects=(native_object.object_path,),
+    module_dirs=(build_dir,),
+    include_dirs=(build_dir,),
+)
 build = pipeline._build_rendered_wrapper_extension(
     artifacts,
     output_dir=build_dir,

@@ -282,13 +282,13 @@ SOURCE_NAVIGATION_HOTSPOTS = [
     "prik/semantics/pyi2ir.py",
     "prik/pipeline/pyi.py",
     "prik/semantics/policy_completion.py",
-    "prik/wrapper_codegen/plan.py",
-    "prik/wrapper_codegen/planner.py",
-    "prik/wrapper_codegen/generator.py",
-    "prik/wrapper_codegen/c/binding.py",
-    "prik/wrapper_codegen/fortran/bridge.py",
-    "prik/wrapper_codegen/printers/pyi_printer.py",
-    "prik/wrapper_codegen/printers/source_printers.py",
+    "prik/codegen/plan.py",
+    "prik/codegen/planner.py",
+    "prik/codegen/generator.py",
+    "prik/codegen/c/binding.py",
+    "prik/codegen/fortran/bridge.py",
+    "prik/codegen/printers/pyi_printer.py",
+    "prik/codegen/printers/source_printers.py",
     "prik/compiling/objects.py",
     "prik/compiling/compilers.py",
     "prik/compiling/native_support.py",
@@ -414,7 +414,7 @@ EXAMPLE_DOCUMENTATION_PAGES = [
 MAJOR_SOURCE_PACKAGES = [
     "prik/parsers/",
     "prik/semantics/",
-    "prik/wrapper_codegen/",
+    "prik/codegen/",
     "prik/compiling/",
 ]
 PACKAGE_READMES = [
@@ -1120,7 +1120,7 @@ def test_first_wrapped_function_shows_contract_and_mentions_later_support_bounda
     build_index = page.index("python3 -m prik scale.f90")
     command_index = page.index("python3 -m prik generate --pyi scale.f90")
     contract_index = page.index(
-        "@external\n@native_call([Addr(Arg(0)), Addr(Arg(1))])\ndef scale(\n"
+        "@standalone\n@native_call([Addr(Arg(0)), Addr(Arg(1))])\ndef scale(\n"
         "    value: Float64,\n    factor: Float64\n) -> Float64: ..."
     )
     docstring_index = page.index("## Inspect the Generated Docstring")

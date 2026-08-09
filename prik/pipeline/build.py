@@ -18,7 +18,11 @@ from prik.compiling.objects import ObjectFile
 from prik.compiling.compilers import Compiler, get_condaless_search_path
 from prik.compiling.native_support import install_native_support
 from prik.parsers.fortran.parser import parse_fortran_project
-from prik.probes.fortran_types import evaluate_fortran_type_facts, evaluate_fortran_type_requirements
+from prik.probes.fortran_types import (
+    evaluate_fortran_type_facts,
+    evaluate_fortran_type_requirements,
+    resolve_fortran_logical_storage_types,
+)
 from prik.pipeline.preprocessing import PreprocessingConfig, preprocess_source
 from prik.pipeline.wrapper_artifacts import GeneratedSourceFile, RenderedGeneratedWrapperArtifacts
 from prik.semantics.fortran2ir import (
@@ -36,6 +40,7 @@ from prik.semantics.models import (
     SemanticModule,
     SemanticPrototype,
     SemanticVariable,
+    _iter_module_semantic_types,
 )
 from prik.semantics.native_contract import NATIVE_CONTRACT_PREPARED_METADATA, validate_pyi_native_contract
 from prik.semantics.native_array_handles import (
@@ -45,7 +50,8 @@ from prik.semantics.native_array_handles import (
 from prik.semantics.policy_completion import complete_semantic_policies
 from prik.pipeline.pyi import _PyiSemanticModuleCache
 from prik.semantics.pyi_metadata import PYI_LOADED_METADATA
-from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.types.numpy import boolean_storage_bits, is_boolean_semantic_type_name
 
 
 _DEFAULT_BUILD_DIR_NAME = "__prik__"
@@ -1232,12 +1238,12 @@ def _validate_pyi_bundle_placement(entry: Path, modules_by_path: dict[Path, Sema
         invalid = [
             declaration.name
             for declaration in _module_declarations(entry_module)
-            if not _declaration_is_external(declaration)
+            if not _declaration_is_standalone(declaration)
         ]
         if invalid:
             raise ValueError(
                 "Package entry contracts cannot contain native module declarations; "
-                "import module leaves or mark standalone procedures with @external. "
+                "import module leaves or mark standalone procedures with @standalone. "
                 f"Invalid declaration: {invalid[0]}"
             )
 
@@ -1245,25 +1251,25 @@ def _validate_pyi_bundle_placement(entry: Path, modules_by_path: dict[Path, Sema
     for path in namespace_imports:
         module = modules_by_path[path]
         invalid = [
-            declaration.name for declaration in _module_declarations(module) if _declaration_is_external(declaration)
+            declaration.name for declaration in _module_declarations(module) if _declaration_is_standalone(declaration)
         ]
         if invalid:
             raise ValueError(
-                "A contract imported as a Python child namespace cannot contain @external declarations; "
-                "keep standalone procedures in the entry contract or import external fragments by name. "
+                "A contract imported as a Python child namespace cannot contain @standalone declarations; "
+                "keep standalone procedures in the entry contract or import standalone fragments by name. "
                 f"Invalid declaration: {invalid[0]} in {path}"
             )
 
 
-def _declaration_is_external(declaration: object) -> bool:
-    """Return whether a declaration represents an external Fortran procedure.
+def _declaration_is_standalone(declaration: object) -> bool:
+    """Return whether a declaration represents a standalone Fortran procedure.
 
-    Individual semantic functions are external when they have no native scope;
-    overload sets are external only when every candidate is external.  Other
+    Individual semantic functions are standalone when they have no native scope;
+    overload sets are standalone only when every candidate is standalone. Other
     declaration kinds return ``False`` and are not modified.
     """
     if isinstance(declaration, ProcedureOverloadSet):
-        return bool(declaration.procedures) and all(_declaration_is_external(item) for item in declaration.procedures)
+        return bool(declaration.procedures) and all(_declaration_is_standalone(item) for item in declaration.procedures)
     if isinstance(declaration, SemanticFunction):
         return declaration.origin.source_language == "fortran" and declaration.origin.native_scope is None
     return False
@@ -1274,7 +1280,7 @@ def _namespace_imported_pyi_paths(entry: Path, modules_by_path: dict[Path, Seman
 
     Traverses the semantic import graph rooted at ``entry``.  Named child
     module imports are collected separately from direct declaration imports so
-    placement validation can enforce their different external-procedure rule.
+    placement validation can enforce their different standalone-procedure rule.
     """
     namespace_imports: set[Path] = set()
     pending = [entry]
@@ -2619,6 +2625,41 @@ def _fortran_wrapper_module(
     return parsed, _merge_wrapper_modules(modules, name=module_name)
 
 
+def _complete_pyi_fortran_boolean_types(
+    modules: list[SemanticModule],
+    *,
+    compiler: str,
+    compiler_args: Iterable[str],
+) -> None:
+    """Attach exact compiler logical spellings to Boolean contract types.
+
+    The helper consumes loaded semantic modules plus the selected Fortran
+    compiler target.  It probes only when a Boolean type occurs, then mutates
+    each such type's source origin before policy completion.  All Boolean names
+    retain their one-byte NumPy dtype; the attached spelling is solely the
+    native bridge representation and ambiguous widths fail through the probe.
+    """
+    boolean_types = [
+        semantic_type
+        for module in modules
+        for semantic_type in _iter_module_semantic_types(module)
+        if is_boolean_semantic_type_name(semantic_type.name)
+    ]
+    if not boolean_types:
+        return
+    native_types = resolve_fortran_logical_storage_types(
+        PreprocessingConfig(
+            mode="compiler",
+            compiler=compiler,
+            compiler_args=list(compiler_args),
+        ),
+        (boolean_storage_bits(semantic_type.name) for semantic_type in boolean_types),
+    )
+    for semantic_type in boolean_types:
+        semantic_type.origin.source_language = "fortran"
+        semantic_type.origin.source_type = native_types[boolean_storage_bits(semantic_type.name)]
+
+
 # Public build entry points
 
 
@@ -2924,6 +2965,11 @@ def build_pyi_extension(
 
     # 2. Assemble semantic IR, complete policy, and render wrapper artifacts.
     modules = list(bundle.modules)
+    _complete_pyi_fortran_boolean_types(
+        modules,
+        compiler=input_compiler,
+        compiler_args=(*native_inputs.source_flags, *wrapper_fortran_flags),
+    )
     module_name = _validated_wrapper_module_name(output_name, _bundle_output_name(bundle))
     module = _merge_wrapper_modules(modules, name=module_name)
     rendered_wrapper_plan = _generated_wrapper_plan_artifacts(

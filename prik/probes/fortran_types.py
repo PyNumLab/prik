@@ -50,6 +50,7 @@ _ISO_FORTRAN_ENV_NAMES = {
     "int16",
     "int32",
     "int64",
+    "logical_kinds",
     "real32",
     "real64",
     "real128",
@@ -743,6 +744,87 @@ def evaluate_fortran_type_facts(
     return facts
 
 
+def resolve_fortran_logical_storage_types(
+    config: PreprocessingConfig,
+    storage_bits: Iterable[int],
+    *,
+    runner: Sequence[str] | None = None,
+    cache_dir: str | Path | None = None,
+    refresh: bool = False,
+) -> dict[int, str]:
+    """Resolve Boolean storage widths to exact Fortran logical declarations.
+
+    Use this when a language-neutral semantic ``.pyi`` contains ``Bool`` or a
+    numbered Boolean contract but no source-language kind spelling.  The
+    selected compiler is queried for ``logical_kinds`` and ``c_bool``.  The
+    result maps each requested bit width to ``logical(kind=...)``; eight-bit
+    ``c_bool`` storage is preferred when it matches.  Unsupported or ambiguous
+    widths raise :class:`FortranTypeProbeError` rather than guessing an ABI.
+
+    The probe uses the normal reusable cache and leaves ``config`` and the
+    caller's iterable unchanged.
+    """
+    requested = tuple(sorted({int(bits) for bits in storage_bits}))
+    if not requested:
+        return {}
+    if any(bits <= 0 for bits in requested):
+        raise FortranTypeProbeError("Fortran logical storage widths must be positive integers")
+
+    summary = probe_fortran_type_expressions_cached(
+        config,
+        [
+            "size(logical_kinds)",
+            "c_bool",
+            "storage_size(logical(.false., kind=c_bool))",
+        ],
+        runner=runner,
+        cache_dir=cache_dir,
+        refresh=refresh,
+    )
+    kind_count = summary.values["size(logical_kinds)"]
+    c_bool_kind = summary.values["c_bool"]
+    c_bool_bits = summary.values["storage_size(logical(.false., kind=c_bool))"]
+    if kind_count <= 0:
+        raise FortranTypeProbeError("Fortran compiler reported no supported logical kinds")
+
+    expressions = [
+        expression
+        for index in range(1, kind_count + 1)
+        for expression in (
+            f"logical_kinds({index})",
+            f"storage_size(logical(.false., kind=logical_kinds({index})))",
+        )
+    ]
+    details = probe_fortran_type_expressions_cached(
+        config,
+        expressions,
+        runner=runner,
+        cache_dir=cache_dir,
+        refresh=refresh,
+    )
+    kinds_by_bits: dict[int, list[int]] = {}
+    for index in range(1, kind_count + 1):
+        kind = details.values[f"logical_kinds({index})"]
+        bits = details.values[f"storage_size(logical(.false., kind=logical_kinds({index})))"]
+        kinds_by_bits.setdefault(bits, []).append(kind)
+
+    resolved: dict[int, str] = {}
+    for bits in requested:
+        candidates = list(dict.fromkeys(kinds_by_bits.get(bits, ())))
+        if bits == c_bool_bits and c_bool_kind in candidates:
+            resolved[bits] = "logical(kind=c_bool)"
+        elif len(candidates) == 1:
+            resolved[bits] = f"logical(kind={candidates[0]})"
+        elif not candidates:
+            raise FortranTypeProbeError(f"Fortran compiler has no logical kind with {bits}-bit storage")
+        else:
+            candidate_text = ", ".join(str(kind) for kind in candidates)
+            raise FortranTypeProbeError(
+                f"Fortran compiler has ambiguous logical kinds for {bits}-bit storage: {candidate_text}"
+            )
+    return resolved
+
+
 def _report_for_expressions(
     config: PreprocessingConfig,
     expressions: Sequence[str],
@@ -872,6 +954,7 @@ __all__ = (
     "load_fortran_type_probe_report",
     "probe_fortran_type_expressions",
     "probe_fortran_type_expressions_cached",
+    "resolve_fortran_logical_storage_types",
 )
 
 

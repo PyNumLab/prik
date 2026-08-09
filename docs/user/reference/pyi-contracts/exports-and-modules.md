@@ -102,12 +102,12 @@ from prik.contracts import Float64, Int32, bind
 def step(values: Float64[:]) -> Int32: ...
 ```
 
-For a standalone external symbol, also use `@external`:
+For a standalone native symbol, also use `@standalone`:
 
 ```python
-from prik.contracts import Float64, bind, external
+from prik.contracts import Float64, bind, standalone
 
-@external
+@standalone
 @bind("vendor_norm2")
 def norm2(values: Float64[:]) -> Float64: ...
 ```

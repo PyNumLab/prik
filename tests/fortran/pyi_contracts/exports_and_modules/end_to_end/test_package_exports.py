@@ -93,7 +93,6 @@ def test_entry_contract_selects_child_flattened_aliased_and_bound_exports(tmp_pa
     assert aliased.m2.branch.func2() == np.int32(2)
     assert not hasattr(aliased, "Int32")
     assert not hasattr(aliased, "bind")
-    assert not hasattr(aliased, "external")
     assert not hasattr(aliased, "facade")
     assert not hasattr(aliased, "func1")
     assert not hasattr(aliased, "standalone")

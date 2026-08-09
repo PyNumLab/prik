@@ -49,7 +49,7 @@ STAGES = {
     "preprocessing",
     "semantics",
     "policy",
-    "wrapper_codegen",
+    "codegen",
     "compiling",
     "pipeline",
     "runtime",
@@ -62,7 +62,7 @@ FORTRAN_TOP_LEVEL_DIRECTORIES = {
 }
 INFRASTRUCTURE_OWNERS = {
     "infrastructure/policy/",
-    "infrastructure/wrapper_codegen/",
+    "infrastructure/codegen/",
 }
 FEATURE_ROW = re.compile(
     r"^\| \[(?P<status>[ x])\] \| \[[^]]+\]\((?P<documentation>[^)]+)\) "

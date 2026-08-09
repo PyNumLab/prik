@@ -207,7 +207,7 @@ implementation files.
 | `.pyi` printing | `prik/codegen/printers/pyi_printer.py` | `tests/semantics/test_pyi_printer.py`, `tests/semantics/test_pyi_printer_modern_example.py` |
 | `.pyi` loading/editing | `prik/pyi_parser/parser.py` | `tests/pyi/test_pyi_to_ir.py`, `tests/pyi/test_pyi_fixture_suite.py` |
 | Fortran wrapper orchestration | `prik/wrapping.py` | `tests/wrapper/fortran/native_build/test_build_modes.py`, `tests/wrapper/fortran/multi_source/test_multi_source_builds.py` |
-| Wrapper planning and owner-local errors | `prik/wrapper_codegen/planner.py` | `tests/wrapper_codegen/` |
+| Wrapper planning and owner-local errors | `prik/codegen/planner.py` | `tests/codegen/` |
 | Semantic IR to codegen AST | `prik/semantics/ir2ast.py` | `tests/semantics/test_ir2ast.py`, `tests/wrapper/` |
 | Fortran-to-C bridge and CPython binding | `prik/codegen/bridges/fortran_to_c.py`, `prik/codegen/bindings/c_to_python.py` | `tests/wrapper/` subject suites |
 | Native compilation and binding support | `prik/compiling/`, `prik/binding_support/` | `tests/wrapper/fortran/native_build/test_runtime_abi.py`, `tests/wrapper/fortran/native_build/test_build_modes.py` |
@@ -805,7 +805,7 @@ The test ownership is:
 
 - loader syntax and error behavior: `tests/pyi/test_pyi_to_ir.py`;
 - printer round-trip shape: `tests/semantics/test_pyi_printer.py`;
-- wrapper-plan support diagnostics: `tests/wrapper_codegen/`.
+- wrapper-plan support diagnostics: `tests/codegen/`.
 
 When adding projection syntax, first add loader tests that prove the accepted
 syntax and rejected syntax. Then add policy or wrapper-plan tests only if the
@@ -824,7 +824,7 @@ coverage only when the public contract changes.
 | Parser fixture goldens | Serialized parser contract over curated files | `tests/parser/test_fortran_fixture_suite.py`, `tests/parser/c/test_c_fixture_suite.py` |
 | Semantic tests | Parser facts converted to wrapper-neutral IR | `tests/semantics/test_fortran2ir.py`, `tests/semantics/test_c2ir.py` |
 | `.pyi` tests | Editable contract loader/printer behavior | `tests/pyi/test_pyi_to_ir.py`, `tests/semantics/test_pyi_printer.py` |
-| Wrapper-plan tests | Completed-policy and unsupported-contract diagnostics | `tests/wrapper_codegen/` |
+| Wrapper-plan tests | Completed-policy and unsupported-contract diagnostics | `tests/codegen/` |
 | CLI tests | User commands, output routing, diagnostics | `tests/parser/test_cli.py`, `tests/parser/test_preprocessing_cli.py` |
 | Wrapper build tests | Artifact placement, direct/Makefile modes, multi-source ordering | `tests/wrapper/fortran/native_build/test_build_modes.py`, `tests/wrapper/fortran/multi_source/` |
 | Wrapper runtime tests | Imported extension behavior, ownership, lifetime, and failures | `tests/wrapper/` subject suites indexed by `tests/wrapper/fortran/README.md` |
@@ -1024,7 +1024,7 @@ Example target: report a new unsupported C/Fortran semantic contract clearly.
 Focused verification:
 
 ```bash
-PYTHONPATH=. pytest -q tests/wrapper_codegen/
+PYTHONPATH=. pytest -q tests/codegen/
 ```
 
 ### Add Or Change CLI Behavior
@@ -1222,7 +1222,7 @@ Focused tests by concern:
 - C parser-to-IR conversion:
   `PYTHONPATH=. pytest -q tests/semantics/test_c2ir.py`
 - Wrapper-plan support diagnostics:
-  `PYTHONPATH=. pytest -q tests/wrapper_codegen/`
+  `PYTHONPATH=. pytest -q tests/codegen/`
 - `.pyi` printer:
   `PYTHONPATH=. pytest -q tests/semantics/test_pyi_printer.py`
 - `.pyi` loader and edited stub behavior:

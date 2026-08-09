@@ -193,7 +193,7 @@ extension root. For example, `solver.f90` containing module `kernels` exposes
 one child per contained module and compile sources in caller-supplied order.
 When a folder contains only standalone BLAS/LAPACK-style procedures,
 `--pyi --out contracts` can generate one compact entry `.pyi` containing all
-`@external` declarations while the native sources still compile and link as
+`@standalone` declarations while the native sources still compile and link as
 separate artifacts.
 
 <!-- PRIK_C_DOCS_START
@@ -1753,18 +1753,22 @@ truth bit as `integer(c_int8_t)`. The C binding explicitly converts that `0` or
 patterns from being interpreted as C truth values while leaving native
 Fortran logical evaluation unchanged.
 
-Scalar Boolean arguments keep a C-interoperable `logical(c_bool)` at the
-binding boundary. When the native dummy uses default `logical` or another
-non-`c_bool` kind, the completed wrapper policy selects an exact-kind Fortran
-local: input values are assigned into that local before the native call and
-mutable/output values are assigned back afterward. This kind adaptation is
-required even when both declarations represent Boolean values, because an
-explicit Fortran interface rejects calls whose dummy and actual logical kinds
-differ.
+Boolean arguments keep the one-byte `np.bool_` / C `bool` /
+`logical(c_bool)` representation at the Python boundary. Compiler-measured
+storage widths appear in semantic contracts as `Bool8`, `Bool16`, `Bool32`, or
+`Bool64`; `Bool` is the equivalent portable one-byte boundary spelling. The
+numbered names describe native storage bits, not different NumPy dtypes.
 
-Mutable ordinary Boolean array buffers use the same low-bit rule on writeback.
-After the native call, the bridge normalizes every returned byte with
-`iand(value, 1_c_int8_t)` before Python observes the NumPy buffer.
+When a native scalar or ordinary-array dummy uses default `logical` or another
+non-`c_bool` kind, completed wrapper policy selects exact-kind Fortran storage.
+Inputs are converted into that storage before the call, outputs are converted
+back afterward, and inout values perform one traversal in each direction. The
+copy-out conversion also writes canonical zero/one bytes, so Python never sees
+processor-specific logical bit patterns. Exact `logical(c_bool)` arrays remain
+direct views and mutable views retain the low-bit normalization rule. Kind
+adaptation is required even when both declarations represent Boolean values,
+because an explicit Fortran interface rejects calls whose dummy and actual
+logical kinds differ.
 
 <!-- PRIK_C_DOCS_START
 `iso_fortran_env` names such as `int8`, `int16`, `int32`, `int64`, `real32`, and
@@ -1792,8 +1796,9 @@ print(result)  # (3+6j)
 
 Target mappings are validated before wrapper compilation. Real storage wider
 than 64 bits and complex storage wider than 128 bits are blocked rather than
-silently down-converted. Wider explicit logical kinds are blocked because they
-lack a portable Python/NumPy Boolean round-trip contract.
+silently down-converted. Logical storage is supported at 8, 16, 32, and 64
+bits through the explicit boundary conversion above; other measured widths are
+blocked instead of guessed.
 
 
 ## Derived-Type Layout And Interoperability
@@ -2065,10 +2070,14 @@ generation error before native compilation.
 
 prik supports dummy procedures invoked during the wrapped call. It resolves
 local explicit interfaces and named abstract interfaces into named
-`@prototype` declarations containing argument order, types, value/reference
-transport, array ranks and shapes, derived-type references, and result type.
-Source `intent` remains in the native interface when that interface must be
-imported, but it is not repeated in the semantic prototype.
+`@prototype` declarations containing exact argument order,
+`In`/`Out`/`InOut` direction, types, value/reference transport, array ranks and
+shapes, derived-type references, result type, and procedure characteristics.
+The same prototype-signature representation supplies callback annotations and
+direct standalone procedure entities; usage determines the entity role. A pure
+prototype cannot select the Python callback role because the adapter calls the
+Python runtime. Consequently, one specification-function prototype cannot be
+used both in a declaration expression and as a Python callback annotation.
 
 ```fortran
 abstract interface

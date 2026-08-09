@@ -1,6 +1,6 @@
-from prik.contracts import Addr, Annotated, Arg, Flat, Float64, Int32, ORDER_C, external, native_call
+from prik.contracts import Addr, Annotated, Arg, Flat, Float64, Int32, ORDER_C, native_call, standalone
 
-@external
+@standalone
 @native_call([Addr(Arg(0)), Arg(1), Arg(2)])
 def row_sums_c(
     n: Int32,

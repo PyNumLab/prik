@@ -46,7 +46,7 @@ LEGACY_TEST_ROOTS = {
     "types",
     "utilities",
     "wrapper",
-    "wrapper_codegen",
+    "codegen",
 }
 LANGUAGE_DIRECTORIES = {"c", "fortran", "shared"}
 PRIMARY_OWNER_DIRECTORIES = {"architecture", *LANGUAGE_DIRECTORIES}

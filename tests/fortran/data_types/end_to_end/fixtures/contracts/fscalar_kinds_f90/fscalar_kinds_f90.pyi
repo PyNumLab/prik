@@ -1,4 +1,4 @@
-from prik.contracts import Addr, Arg, Bool, Complex128, Complex64, Float32, Float64, Int16, Int32, Int64, Int8, native_call
+from prik.contracts import Addr, Arg, Bool8, Complex128, Complex64, Float32, Float64, Int16, Int32, Int64, Int8, native_call
 
 @native_call([Addr(Arg(0))])
 def id_i8(
@@ -33,14 +33,14 @@ def copy_i16(
 
 @native_call([Addr(Arg(0))])
 def not_flag(
-    value: Bool
-) -> Bool: ...
+    value: Bool8
+) -> Bool8: ...
 
 @native_call([Addr(Arg(0)), Arg(1), Arg(2)])
 def invert_flags(
     n: Int32,
-    values: Bool[n],
-    out: Bool[n]
+    values: Bool8[n],
+    out: Bool8[n]
 ) -> None: ...
 
 @native_call([Addr(Arg(0))])

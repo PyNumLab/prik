@@ -10,7 +10,7 @@ Evidence is split by the stage that establishes it:
 
 - `semantics/` checks accepted literal values and rejects expression defaults;
 - `policy/` completes export pruning and initializer/write-through decisions;
-- `wrapper_codegen/` checks literal spelling selected by the completed plan;
+- `codegen/` checks literal spelling selected by the completed plan;
   and
 - `end_to_end/` builds child, flattened, aliased/bound, hidden, removed, and
   initialized public surfaces and checks export-collision diagnostics.

@@ -21,7 +21,7 @@ from prik.pipeline.wrapper_artifacts import (
 )
 from prik.semantics.policy_completion import complete_semantic_policies
 from prik.stage_values import FrozenStageRecordError
-from prik.wrapper_codegen import (
+from prik.codegen import (
     ModulePlan,
     WrapperCodeGenerator,
     WrapperPlanner,

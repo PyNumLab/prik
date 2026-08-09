@@ -14,8 +14,8 @@ Callbacks let wrapped Fortran call a Python function while an prik call is
 running. They are useful for objective functions, progress hooks, custom
 transforms, and small pieces of user-defined numerical logic.
 
-Declare the callback shape once with `@prototype`, then use that prototype name
-as the type of the procedure argument that accepts the callback.
+Declare the callback shape once with `@prototype`, then use that
+prototype name as the type of the procedure argument that accepts the callback.
 
 ---
 
@@ -23,17 +23,18 @@ as the type of the procedure argument that accepts the callback.
 
 | Native callback argument | Prototype spelling | Python callable receives |
 | --- | --- | --- |
-| Primitive scalar dummy declared with Fortran `value` | `value: Float64` | Independent `np.float64` scalar |
-| Primitive scalar reference dummy | `value: Addr(Float64)` | Independent `np.float64` scalar |
-| Array reference dummy | `values: Float64[n]` | NumPy array view |
-| Fixed-length string reference dummy | `label: String[8]` | Writable rank-zero bytes storage |
-| Derived-type reference dummy | `point: point_t` | Generated wrapper object |
+| Primitive scalar `value`, `intent(in)` dummy | `value: In(Float64)` | Independent `np.float64` scalar |
+| Primitive scalar reference input | `value: In(Addr(Float64))` | Independent `np.float64` scalar |
+| Array input/output reference | `values: InOut(Float64[n])` | NumPy array view |
+| Fixed-length string output reference | `label: Out(String[8])` | Writable rank-zero bytes storage |
+| Derived-type input reference | `point: In(point_t)` | Generated wrapper object |
 
 !!! tip "Rule of thumb"
-    Bare primitive callback arguments are native values:
-    `value: Float64`, `count: Int32`, and so on.
+    Primitive callback arguments inside `In(...)`, `Out(...)`, or `InOut(...)`
+    are native values by default.
 
-    Use `Addr(T)` only when a primitive callback dummy is passed by reference.
+    Use `Addr(T)` inside the direction wrapper when a primitive dummy is passed
+    by reference.
 
 Arrays, strings, and derived-type callback arguments already use native storage
 or wrapper objects, so they do not need `Addr(...)` for ordinary reference
@@ -48,24 +49,24 @@ Two declarations can appear around callbacks, and they control different calls:
 
 | Declaration | Controls |
 | --- | --- |
-| `@prototype` | How Fortran calls the callback adapter. |
+| `@prototype` | The exact interface through which Fortran calls the callback adapter. |
 | `@native_call(...)` | How Python arguments are passed into the outer wrapped function. |
 
 For example, the wrapped function may need `@native_call([Addr(Arg(1))])`
 because its `value` argument is passed to Fortran by reference:
 
 ```python
-from prik.contracts import Addr, Arg, Float64, native_call, prototype
+from prik.contracts import Addr, Arg, Float64, In, native_call, prototype
 
 @prototype
-def scalar_callback(value: Addr(Float64)) -> Float64: ...
+def scalar_callback(value: In(Addr(Float64))) -> Float64: ...
 
 @native_call([Arg(0), Addr(Arg(1))])
 def apply(callback: scalar_callback, value: Float64) -> Float64: ...
 ```
 
-The two `Addr(...)` markers belong to different boundaries. The one inside
-`@prototype` describes how Fortran calls the callback. The one inside
+The two `Addr(...)` markers belong to different boundaries. The one inside the
+prototype describes how Fortran calls the callback. The one inside
 `@native_call(...)` describes how Python calls the wrapped function.
 
 At runtime, pass an ordinary Python callable:
@@ -132,32 +133,41 @@ print(result)  # 7.5
 
 ## Choosing The Prototype Spelling
 
-Prototype declarations describe the **native callback signature**. They are not
-Python runtime functions and they are not exported from the generated module.
+Prototype declarations describe the **exact native callback interface**. They
+are not Python runtime functions and they are not exported from the generated
+module. prik lowers each signature to an abstract Fortran interface under a
+generated `prik_` name, then declares the callback adapter with
+`procedure(prik_...)`.
 
 For ordinary scalar and array callback arguments, use the same contract spellings
 you use elsewhere:
 
 ```python
-from prik.contracts import Addr, Float64, Int32, prototype
+from prik.contracts import Addr, Float64, In, InOut, Int32, prototype
 
 @prototype
 def update_values(
-    count: Addr(Int32),
-    scale: Float64,
-    values: Float64[count]
+    count: In(Addr(Int32)),
+    scale: In(Float64),
+    values: InOut(Float64[count])
 ) -> None: ...
 ```
 
 Here `count` is a primitive reference dummy, while `scale` is a primitive value
 dummy. Python receives both as NumPy scalar values.
 
+Direction also controls the adapter copy. `In(...)` supplies a read-only array
+view or an immutable string value, `Out(...)` exposes writable storage without
+copying an undefined incoming value, and `InOut(...)` copies the incoming value
+and writes changes back after the callback. Omitting the wrapper preserves an
+omitted Fortran `intent` rather than inventing one.
+
 For scalar arguments, choose the spelling from the Fortran callback dummy:
 
 | Fortran callback dummy | Matching prototype |
 | --- | --- |
-| `real(8), intent(in) :: value` | `value: Addr(Float64)` |
-| `real(8), value :: value` | `value: Float64` |
+| `real(8), intent(in) :: value` | `value: In(Addr(Float64))` |
+| `real(8), value, intent(in) :: value` | `value: In(Float64)` |
 
 Both forms call Python with an independent `np.float64` scalar. The difference
 is the native calling convention prik must match.
@@ -196,6 +206,10 @@ The current callback contract does not support:
   for the no-callback path, or require the callback argument.
 - Optional arguments inside a `@prototype`. Pass an explicit value, sentinel, or
   presence flag instead.
+- Pure callback prototypes. A Python callback adapter calls the Python runtime,
+  so it cannot satisfy a pure Fortran procedure contract. In particular, one
+  pure prototype cannot be used both as a callback annotation and as a called
+  specification function in an array extent.
 - Allocatable, pointer, polymorphic, or assumed-type callback arguments and
   results. Use plain scalars, fixed-shape primitive arrays, fixed-length strings,
   or supported scalar derived types.

@@ -39,9 +39,9 @@ python3 -m prik generate --pyi scale.f90
 The generated semantic `.pyi` contains:
 
 ```python
-from prik.contracts import Addr, Arg, Float64, external, native_call
+from prik.contracts import Addr, Arg, Float64, native_call, standalone
 
-@external
+@standalone
 @native_call([Addr(Arg(0)), Addr(Arg(1))])
 def scale(
     value: Float64,
@@ -50,7 +50,7 @@ def scale(
 ```
 
 `Float64` means the function requires `numpy.float64` scalar arguments and
-returns the same scalar type. `@external` identifies a procedure outside a
+returns the same scalar type. `@standalone` identifies a procedure outside a
 Fortran module. `@native_call(...)` maps the two Python arguments to the native
 call and passes each scalar by address.
 

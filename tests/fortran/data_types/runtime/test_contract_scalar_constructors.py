@@ -9,6 +9,10 @@ import prik.contracts as contracts
 def test_concrete_primitive_default_constructors_return_zero_numpy_scalars():
     cases = (
         (contracts.Bool, np.bool_),
+        (contracts.Bool8, np.bool_),
+        (contracts.Bool16, np.bool_),
+        (contracts.Bool32, np.bool_),
+        (contracts.Bool64, np.bool_),
         (contracts.Int8, np.int8),
         (contracts.Int16, np.int16),
         (contracts.Int32, np.int32),

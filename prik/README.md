@@ -16,7 +16,7 @@ jumping directly into generated-code internals.
 | `types/` | Semantic-to-Python ecosystem type mappings. |
 | `parsers/` | Parser namespace containing the `c`, `fortran`, and semantic `.pyi` frontends. |
 | `semantics/` | Language-neutral semantic IR, policy completion, and `.pyi` conversion. |
-| `wrapper_codegen/` | Canonical wrapper plans, direct native bridge/binding generation, and source printers. |
+| `codegen/` | Canonical wrapper plans, direct native bridge/binding generation, and source printers. |
 | `compiling/` | Native compiler objects, wrapper compilation, native support installation, and linking. |
 | `utilities/` | Small domain-neutral helpers, including class visitor dispatch. |
 

@@ -36,7 +36,7 @@ TERMINAL_STAGES = {
     "preprocessing",
     "semantics",
     "policy",
-    "wrapper_codegen",
+    "codegen",
     "compiling",
     "pipeline",
     "import",

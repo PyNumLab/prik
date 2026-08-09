@@ -738,20 +738,20 @@ already covered by the new generator.
 | `tests/wrapper/fortran/edit_pyi_contracts/test_policy_dispatch_contracts.py::test_immutable_scalar_string_array_and_derived_policies_return_replacements` | direct wrapper/build route | semantic .pyi generation/parsing; native handles/descriptors; derived types/object lifetimes; optional/presence/writeback | `wrapper-plan` |
 | `tests/wrapper/fortran/edit_pyi_contracts/test_surface_edit_contracts.py::*` | direct wrapper/build route | semantic .pyi generation/parsing; classes/methods/properties/overloads; naming/visibility/dispatch | `wrapper-plan` |
 | `tests/wrapper/fortran/edit_pyi_contracts/test_visibility_contracts.py::*` | direct wrapper/build route | semantic .pyi generation/parsing; scalar module visibility and namespace projection | `wrapper-plan` |
-| `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_compact_blas_like_folder_generates_one_external_entry_and_preserves_separate_objects` | direct wrapper/build route | external symbols/native linkage; ordinary arrays | `wrapper-plan` |
+| `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_compact_blas_like_folder_generates_one_standalone_entry_and_preserves_separate_objects` | direct wrapper/build route | external symbols/native linkage; ordinary arrays | `wrapper-plan` |
 | `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_external_bind_renames_python_export_without_changing_native_call` | direct wrapper/build route | scalar external symbol; explicit bridge interface; renamed export | `wrapper-plan` |
 | `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_classic_external_bridge_uses_implicit_declaration_and_no_module_use` | direct wrapper/build route | scalar external symbol; implicit external declaration | `wrapper-plan` |
-| `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_fixed_form_standalone_external_runtime_parity[*]` | source/generated-.pyi parity or parametrized route | scalar external symbol; explicit bridge interface | `wrapper-plan` |
-| `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_free_form_standalone_external_runtime_parity[*]` | source/generated-.pyi parity or parametrized route | scalar external symbol; explicit bridge interface | `wrapper-plan` |
-| `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_generated_external_contracts_are_non_empty_root_fragments` | direct wrapper/build route | external symbols/native linkage | `wrapper-plan` |
+| `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_fixed_form_standalone_procedure_runtime_parity[*]` | source/generated-.pyi parity or parametrized route | scalar external symbol; explicit bridge interface | `wrapper-plan` |
+| `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_free_form_standalone_procedure_runtime_parity[*]` | source/generated-.pyi parity or parametrized route | scalar external symbol; explicit bridge interface | `wrapper-plan` |
+| `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_generated_standalone_contracts_are_non_empty_root_fragments` | direct wrapper/build route | external symbols/native linkage | `wrapper-plan` |
 | `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_handwritten_c_order_flat_contract_passes_rank_preserving_bridge_view` | direct wrapper/build route | external symbols/native linkage; ordinary arrays | `wrapper-plan` |
 | `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_handwritten_fortran_order_flat_contract_flattens_the_final_python_axes` | direct wrapper/build route | external symbols/native linkage; flat arrays; scalar storage | `wrapper-plan` |
-| `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_external_allocatable_argument_accepts_a_caller_created_handle` | direct wrapper/build route | external symbols/native linkage; native allocatable descriptors | `wrapper-plan` |
+| `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_standalone_allocatable_argument_accepts_a_caller_created_handle` | direct wrapper/build route | external symbols/native linkage; native allocatable descriptors | `wrapper-plan` |
 | `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_optional_flat_contracts_preserve_present_and_absent_calls` | direct wrapper/build route | optional/presence; F-order and C-order flat arrays | `wrapper-plan` |
 | `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_module_procedure_bridge_uses_native_module_scope` | direct wrapper/build route | external symbols/native linkage | `wrapper-plan` |
-| `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_namespace_imported_module_rejects_external_marker_before_codegen` | non-generating: validation/failure-path assertion | external symbols/native linkage | `not-applicable` |
-| `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_one_source_with_several_standalone_externals_exports_each_at_root[*]` | source/generated-.pyi parity or parametrized route | scalar external symbols; explicit bridge interfaces | `wrapper-plan` |
-| `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_package_entry_rejects_non_external_root_declaration_before_codegen` | non-generating: validation/failure-path assertion | external symbols/native linkage | `not-applicable` |
+| `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_namespace_imported_module_rejects_standalone_marker_before_codegen` | non-generating: validation/failure-path assertion | external symbols/native linkage | `not-applicable` |
+| `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_one_source_with_several_standalone_procedures_exports_each_at_root[*]` | source/generated-.pyi parity or parametrized route | scalar external symbols; explicit bridge interfaces | `wrapper-plan` |
+| `tests/wrapper/fortran/external_routines/test_external_procedures.py::test_package_entry_rejects_non_standalone_root_declaration_before_codegen` | non-generating: validation/failure-path assertion | external symbols/native linkage | `not-applicable` |
 | `tests/wrapper/fortran/function_calls/test_function_call_generated_pyi_contracts.py::*` | non-generating: generated semantic .pyi fixture parity | semantic .pyi generation/parsing | `not-applicable` |
 | `tests/wrapper/fortran/function_calls/test_native_call_examples.py::test_native_call_examples_build_from_generated_pyi_and_native_shared_library` | direct wrapper/build route | native-call projections; ordinary arrays; strings; derived types/object lifetimes | `wrapper-plan` |
 | `tests/wrapper/fortran/function_calls/test_native_call_examples.py::test_native_call_examples_cover_scalar_array_string_and_object_projection[*]` | source/generated-.pyi parity or parametrized route | native-call projections; ordinary arrays; strings; derived types/object lifetimes | `wrapper-plan` |
@@ -851,7 +851,7 @@ For each lane:
    ABI/handoff specs, generator-owned structural checks, directly named backend
    lowering methods, source-printer support, and support-report coverage.
 6. Implement the minimum dependency-closed backend slice in
-   `prik.wrapper_codegen`: copy small suitable pieces, rewrite oversized legacy
+   `prik.codegen`: copy small suitable pieces, rewrite oversized legacy
    classes as minimal equivalents, and add only the intermediate tests required
    by the contract above.
 7. Generate the plan from policy-completed semantic IR, invoke the directly
@@ -910,7 +910,7 @@ the product contract.
 
 ### Foundation and semantic authority
 
-- [x] Establish the isolated `prik.wrapper_codegen` package boundary and
+- [x] Establish the isolated `prik.codegen` package boundary and
   visitor infrastructure.
 - [x] Complete the first primitive lane in general wrapper policy before
   planning, including native-call order, result projection, ownership, and
@@ -950,7 +950,7 @@ the product contract.
 - [x] Run focused wrapper-codegen and pipeline tests; the walkthrough for both
   supported entry choices where practical; `tests/wrapper` excluding LAPACK;
   documentation checks; `git diff --check`; the required static-analysis suite;
-  and `tools/check_wrapper_codegen_complexity.py`.
+  and `tools/check_codegen_complexity.py`.
 
 ## Phase 3 — Scalar Inout, Optional, And Descriptor-Like Scalars
 
@@ -1786,6 +1786,16 @@ byte-order, contiguity, writeability, zero length, and native argument order.
   spec, validation, named C/Fortran lowering, reduced legacy/direct parity,
   support widening, and ledger evidence.
 
+Boolean arrays retain an exact one-byte NumPy boundary independently of native
+language spelling. Semantic IR records compiler-measured native storage as
+`Bool8`, `Bool16`, `Bool32`, or `Bool64`. Post-IR wrapper policy must distinguish
+an exact `c_bool` view from an exact-kind representation copy and must record
+copy-in and copy-out directions before planning. For copied arrays the bridge
+owns the exact-kind temporary; copy-out both converts truth values and writes
+canonical zero/one boundary bytes in one traversal. Binding code continues to
+validate and forward only `NPY_BOOL` storage and must not infer native logical
+kind from a semantic name.
+
 ### Phase 6B — Declared Extents, Flat Storage, And Dense Rank
 
 Included: fixed and visible-symbol extent expressions, lower-bound-derived
@@ -1795,6 +1805,11 @@ resolved against existing scalar handoff roles before backend emission; the
 bridge association order follows the completed layout. Any expression that
 cannot be represented by available roles remains blocked rather than being
 recomputed in a backend.
+
+Declaration-expression normalization is shared across module variables,
+derived fields, dummy arguments, and results. Generated `.pyi` uses Python
+array properties (`a.size`, `a.shape[i]`, and `a.ndim`), while the completed
+plan carries role-bound expressions that each backend only renders.
 
 Order is an exact-storage selector, not an implicit conversion selector.
 `ORDER_F` preserves logical axes over Fortran-contiguous storage. `ORDER_C`
@@ -2136,7 +2151,7 @@ generated shape without dereferencing an invalid address.
   wrapped forms.
 - [x] Add focused completed-policy tests for every authoritative action and
   blocker, plus `array-raw-address-inputs` support classification.
-- [x] Add `tests/fortran/raw_addresses/wrapper_codegen/test_raw_array_lowering.py` for plan
+- [x] Add `tests/fortran/raw_addresses/codegen/test_raw_array_lowering.py` for plan
   shape, edits, validation, C nodes, Fortran nodes, native order, and the
   absence of buffer/descriptor/lifecycle nodes.
 - [x] Extract `fill_vector_raw` from
@@ -2296,7 +2311,7 @@ sources of truth:
   them from generated source text.
 
 The legacy generators are behavioral oracles, not dependencies of
-`prik/wrapper_codegen`. Reuse the runtime helpers and completed semantic
+`prik/codegen`. Reuse the runtime helpers and completed semantic
 records directly. Rewrite the smallest equivalent node/lowering methods in the
 direct generators; do not import legacy binding/bridge generator methods or
 legacy codegen-model nodes into the wrapper-plan package.
@@ -2940,7 +2955,7 @@ new success signal after the Phase 7F correction.
 
 Post-correction closure evidence (2026-07-14): 214 focused runtime-handle,
 policy, planning, lowering, legacy-dispatch, and Phase 7 direct-plan tests;
-199 complete `tests/wrapper_codegen` tests; 1,123 documentation tests; 317
+199 complete `tests/codegen` tests; 1,123 documentation tests; 317
 wrapper tests outside the shared real-library parameter plus the BLAS-only
 parameter; and zero locally executed LAPACK tests all passed. The wrapper
 complexity checker, Ruff lint/format, Bandit, Vulture, whitespace, and the
@@ -3124,7 +3139,7 @@ architecture:
 
 Capture complete legacy artifacts before each direct slice. Preserve observable
 runtime behavior while replacing backend inference with completed typed plans.
-Do not copy the broad legacy generator control flow into `wrapper_codegen`.
+Do not copy the broad legacy generator control flow into `codegen`.
 
 The existing wrapper tests decompose as follows:
 
@@ -3354,7 +3369,7 @@ Complete the semantic contract before defining direct plan records.
   remove the blanket class-owner blocker until the minimal opaque type surface
   is direct and every remaining Phase 9 dependency is reported separately.
 - [x] Add normal-print plan tests and direct generator preflight tests under
-  `tests/wrapper_codegen/test_phase8_derived_types.py`.
+  `tests/codegen/test_phase8_derived_types.py`.
 
 ### Phase 8C — Minimal Opaque Wrapper Storage And Lifecycle
 
@@ -3839,7 +3854,7 @@ they do not expose the public callback semantics deferred to Phase 10.
   reduced source/generated contract under
   `tests/wrapper/fortran/derived_types/contracts/fscalar_derived_actual_dummy_matrix_phase8/`,
   focused policy/plan/artifact tests in
-  `tests/wrapper_codegen/test_phase8_scalar_derived_actual_dummy_matrix.py`, and
+  `tests/codegen/test_phase8_scalar_derived_actual_dummy_matrix.py`, and
   compiled tests in
   `tests/wrapper/fortran/derived_types/test_scalar_derived_actual_dummy_matrix.py`.
   Replace the earlier proposed separate module-allocatable and
@@ -3929,7 +3944,7 @@ they do not expose the public callback semantics deferred to Phase 10.
 
 - Post-IR origin, identity, handoff, ownership, field, lifecycle, and exact
   blocker evidence lives in
-  `tests/wrapper_codegen/test_phase8_derived_types.py`, with supporting parser,
+  `tests/codegen/test_phase8_derived_types.py`, with supporting parser,
   printer, source-conversion, ownership, and planning suites named in
   `tests/wrapper/CHECKLIST_COVERAGE.md`.
 - Public-field validation is split into named completed-policy, descriptor,
@@ -3942,7 +3957,7 @@ they do not expose the public callback semantics deferred to Phase 10.
   direct-address module object, constant value, field, owner-retention,
   allocation/cleanup artifact, and exactly-once finalization behavior.
 - The former isolated scalar-derived descriptor evidence in
-  `tests/wrapper_codegen/test_phase8_scalar_derived_descriptors.py`,
+  `tests/codegen/test_phase8_scalar_derived_descriptors.py`,
   `tests/wrapper/fortran/derived_types/test_scalar_derived_descriptor_plan.py`,
   and `tests/data/fortran/wrapper/fscalar_derived_descriptors_f90.f90` is
   superseded by the comprehensive policy/artifact and compiled matrix files
@@ -4373,21 +4388,33 @@ boundary.
 ### Phase 10 Boundary And Explicit Non-Scope
 
 Phase 10 composes ordinary call transfers completed in Phases 2-9 but does not
-reinterpret them. A callback signature is transport-facing: it describes the
-procedure ABI that native Fortran calls, including argument order,
-value/reference transport, rank, shape, character length, and result
-representation. It deliberately does not repeat native callback `intent`.
-Normal wrapper projection and callback adapter projection remain distinct
-completed records.
+reinterpret them. A prototype is interface-facing: it describes the exact
+procedure declaration that native Fortran uses, including argument order,
+`In`/`Out`/`InOut` direction, value/reference transport, rank, shape, character
+length, result representation, and procedure characteristics. Normal wrapper
+projection and callback adapter projection remain distinct completed records.
 
-Named `@prototype` declarations are the single callback-signature authority.
-Callback arguments reference a prototype by name; bare prototype arguments use
-reference transport and permissive writable Python storage, while `Value(T)`
-is the only transport override. Prototypes are semantic-only declarations and
-never become Python runtime exports. Post-IR policy selects either an implicit
-external adapter declaration or a named explicit declaration from completed
-prototype characteristics. Lowering does not reconstruct that decision or
-duplicate native `intent`.
+Named `@prototype` declarations are the single exact native-signature
+authority. Annotation use selects a callback signature; call use selects a
+directly callable standalone procedure entity.
+`In(T)`, `Out(T)`, and `InOut(T)` preserve exact dummy direction, while
+`Addr(T)` and `Value(T)` preserve transport independently. `@pure` preserves
+the corresponding procedure characteristic. Prototypes are semantic-only
+declarations and never become Python runtime exports.
+
+A pure prototype is not a supported Python callback signature. The callback
+adapter calls the Python runtime and therefore cannot satisfy Fortran purity;
+post-IR policy must block a prototype used both as a specification function and
+as a callback before planning.
+
+Post-IR policy classifies each use as a callback, a standalone procedure entity,
+or a module-procedure call. One shared prototype-signature plan owns the
+generated `prik_` abstract-interface symbol and exact characteristics. Lowering
+only declares callback adapters or concrete entities with
+`procedure(prik_...)`; it does not reconstruct placement, purity, direction,
+transport, or declaration mode. Direct prototype calls never fall back to an
+implicit external declaration, and `@standalone` is rejected on a prototype as
+redundant placement metadata.
 
 The supported callback contract is deliberately call-scoped:
 
@@ -4751,9 +4778,9 @@ backend or legacy lowering runs.
   in one cutover without compatibility flags or per-function fallback.
 - [x] Do not move modified isolated nodes or printers back into the legacy
   package during migration. After final cutover, remove the legacy package
-  pieces proven unused and keep `prik.wrapper_codegen` as the canonical
+  pieces proven unused and keep `prik.codegen` as the canonical
   generator rather than performing a second package rename.
-- [x] Keep semantic `.pyi` emission under `prik.wrapper_codegen.printers` and
+- [x] Keep semantic `.pyi` emission under `prik.codegen.printers` and
   retire focused tests of the old semantic AST, bridge, binding, and printer
   implementation before deleting the legacy package.
 - [x] Remove the temporary legacy route and its route diagnostics after every
@@ -4788,13 +4815,13 @@ maintainability reports, and `git diff --check` all passed.
   the minimal intermediate contract tests required above, and the required
   static-analysis suite from `AGENTS.md`.
 - [x] Wrapper-codegen implementation changes pass
-  `python3 tools/check_wrapper_codegen_complexity.py` with no handler waiver.
+  `python3 tools/check_codegen_complexity.py` with no handler waiver.
 - [x] Runtime wrapper tests cover every changed generated behavior.
 - [x] Every migrated lane completed legacy-oracle comparison before cutover;
   final tests now exercise only the canonical wrapper-plan route and retain the
   existing behavior and ABI-relevant call assertions.
 - [x] Structural dependency tests prove complete generator isolation: no
-  imports from `prik.wrapper_codegen` to `prik.codegen` or in the reverse
+  imports from `prik.codegen` to `prik.codegen` or in the reverse
   direction.
 - [x] BLAS and LAPACK full-library wrapper tests remained excluded locally and in
   GitHub Actions throughout Phases 0-11. At the explicit Phase 12 gate, enable
@@ -4822,7 +4849,7 @@ The legacy `prik.codegen` package, `prik/semantics/ir2ast.py`, and the obsolete
 fallback, compatibility import, or rejection-only test preserves that route.
 
 Required behavior remains with its current owner: completed semantic policy
-tests for semantic decisions, `tests/wrapper_codegen/` for plans and direct
+tests for semantic decisions, `tests/codegen/` for plans and direct
 source generation, and compiled `tests/wrapper/` cases for public Python
 behavior and native ABI outcomes. Static-analysis baselines cover only source
 that remains in the repository.

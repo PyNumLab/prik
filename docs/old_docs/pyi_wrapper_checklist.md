@@ -212,15 +212,15 @@ different public API or runtime contract.
 ### 6.2 Standalone native placement
 
 - [ ] One fixed-form source containing one standalone procedure generates a
-  non-empty root fragment with `@external` and rebuilds equivalently.
+  non-empty root fragment with `@standalone` and rebuilds equivalently.
 - [ ] One free-form source containing one standalone procedure has the same
-  `@external` generation and runtime parity.
+  `@standalone` generation and runtime parity.
 - [ ] One source containing several standalone procedures generates external
   declarations for all of them and exposes each at the extension root.
-- [ ] `@external` makes the bridge emit an implicit external declaration or a
+- [ ] `@standalone` makes the bridge emit an implicit external declaration or a
   required explicit interface and no module `use`; a module procedure makes
   the bridge emit the correct `use <module>`.
-- [ ] `@external` composes with `@bind("native_name")`: the native external is
+- [ ] `@standalone` composes with `@bind("native_name")`: the native external is
   called while the wrapper declaration and root export may use different names.
 - [ ] A handwritten external `.pyi` plus native artifacts builds without source
   and follows the same placement, binding, validation, and export rules.
@@ -260,7 +260,7 @@ different public API or runtime contract.
 - [ ] Mixed object, archive, direct shared-library, and named-library inputs
   preserve dependency-safe link order and resolve every native symbol.
 - [ ] Module procedures are tested with separately supplied `.mod` directories;
-  standalone `@external` procedures are tested without `.mod` inputs.
+  standalone `@standalone` procedures are tested without `.mod` inputs.
 - [ ] Static archive dependency order, repeated archives or linker groups for
   cyclic dependencies, and required transitive libraries have runtime tests.
 - [ ] Missing symbols, duplicate definitions, incompatible artifacts, missing
@@ -272,7 +272,7 @@ different public API or runtime contract.
 
 ### 6.6 Invalid structural edits
 
-- [ ] Removing `@external` from a generated external declaration, adding it to a
+- [ ] Removing `@standalone` from a generated external declaration, adding it to a
   module procedure, changing native scope, or moving a declaration between
   module contracts fails during validation or wrapper planning before codegen.
 

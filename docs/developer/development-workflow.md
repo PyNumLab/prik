@@ -210,11 +210,11 @@ implementation files.
 | Fortran target type probing and cache | `prik/probes/fortran_types.py` | `tests/fortran/data_types/probes/test_fortran_type_probes.py` |
 | Generated target datatype mapping examples | `prik/probes/report.py` | `tests/shared/types/test_mapping_report.py`, `tests/shared/docs/test_examples.py` |
 | Fortran to semantic IR | `prik/semantics/fortran2ir.py`, `prik/semantics/models.py` | `tests/fortran/semantic_ir/semantics/` |
-| `.pyi` printing | `prik/wrapper_codegen/printers/pyi_printer.py` | `tests/fortran/semantic_pyi_format/pipeline/`, `tests/fortran/semantic_pyi_format/pipeline/test_modern_example.py` |
+| `.pyi` printing | `prik/codegen/printers/pyi_printer.py` | `tests/fortran/semantic_pyi_format/pipeline/`, `tests/fortran/semantic_pyi_format/pipeline/test_modern_example.py` |
 | `.pyi` parsing/loading/editing | `prik/parsers/pyi/parser.py`, `prik/pipeline/pyi.py`, `prik/semantics/pyi2ir.py` | `tests/fortran/semantic_pyi_format/` |
 | Semantic policy completion | `prik/semantics/policy_completion.py`, `prik/semantics/ownership.py` | `tests/fortran/infrastructure/policy/` and feature-local `policy/` directories |
 | Fortran wrapper orchestration | `prik/pipeline/build.py` | `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py`, `tests/fortran/building_shared_library/end_to_end/test_multi_source_builds.py` |
-| Wrapper planning, owner-local errors, and direct lowering | `prik/wrapper_codegen/plan.py`, `prik/wrapper_codegen/planner.py`, `prik/wrapper_codegen/generator.py` | `tests/fortran/infrastructure/wrapper_codegen/`, feature-local `wrapper_codegen/` stages |
+| Wrapper planning, owner-local errors, and direct lowering | `prik/codegen/plan.py`, `prik/codegen/planner.py`, `prik/codegen/generator.py` | `tests/fortran/infrastructure/codegen/`, feature-local `codegen/` stages |
 | Native compilation and binding support | `prik/compiling/`, `prik/binding_support/` | `tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py`, `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py` |
 | Executable Markdown examples | `README.md`, `docs/*.md` | `tests/shared/docs/test_examples.py` |
 
@@ -223,7 +223,7 @@ implementation files.
 | Compiler preprocessing | `prik/pipeline/preprocessing.py` | `tests/fortran/source_preprocessing/preprocessing/`, `tests/fortran/source_preprocessing/preprocessing/test_parser_boundaries.py`, `tests/c/parsing/test_c_lexer_preprocessor.py` |
 | C target ABI probing and cache | `prik/probes/c_types.py` | `tests/c/probes/test_c_types.py` |
 | C to semantic IR | `prik/semantics/c2ir.py`, `prik/semantics/models.py` | `tests/c/semantics/conversion/` |
-| Fortran-to-C bridge and CPython binding | `prik/wrapper_codegen/fortran/bridge.py`, `prik/wrapper_codegen/c/binding.py` | `tests/fortran/infrastructure/wrapper_codegen/`, feature-local `wrapper_codegen/` stages |
+| Fortran-to-C bridge and CPython binding | `prik/codegen/fortran/bridge.py`, `prik/codegen/c/binding.py` | `tests/fortran/infrastructure/codegen/`, feature-local `codegen/` stages |
 | Public API exports | `prik/__init__.py` | `tests/fortran/source_parsing/parsing/test_public_entrypoints.py`, `tests/c/parsing/test_c_public_api_skeleton.py` |
 PRIK_C_DOCS_END -->
 
@@ -282,7 +282,7 @@ User-visible `.pyi` syntax is first parsed to Python AST by
 `prik/parsers/pyi/parser.py`, loaded from text/files by
 `prik/pipeline/pyi.py`, converted to semantic IR by
 `prik/semantics/pyi2ir.py`, and printed by
-`prik/wrapper_codegen/printers/pyi_printer.py`. The converter and printer operate on
+`prik/codegen/printers/pyi_printer.py`. The converter and printer operate on
 `prik/semantics/models.py`.
 
 Important implementation rules:
@@ -849,18 +849,18 @@ The main ownership boundaries are:
 - `prik/pipeline/build.py`: source order, preprocessing/probing, semantic merge,
   `.pyi` entry-contract loading, native build plan assembly, output placement,
   direct-versus-Makefile mode, and artifact reporting;
-- `prik/wrapper_codegen/planner.py`: projection from completed semantic policy
+- `prik/codegen/planner.py`: projection from completed semantic policy
   into validated typed plans;
-- `prik/wrapper_codegen/generator.py`: direct bridge, binding, and source
+- `prik/codegen/generator.py`: direct bridge, binding, and source
   artifact generation;
 - `prik/compiling/`: compiler commands and shared-library linking; and
 - `prik/binding_support/`: native binding support copied into each build.
 
 <!-- PRIK_C_DOCS_START
-- `prik/wrapper_codegen/fortran/bridge.py`: Fortran-to-C ABI adaptation;
-- `prik/wrapper_codegen/c/binding.py`: Python argument/result conversion,
+- `prik/codegen/fortran/bridge.py`: Fortran-to-C ABI adaptation;
+- `prik/codegen/c/binding.py`: Python argument/result conversion,
   reference handling, and CPython wrapper construction;
-- `prik/wrapper_codegen/printers/source_printers.py`: source rendering only;
+- `prik/codegen/printers/source_printers.py`: source rendering only;
 PRIK_C_DOCS_END -->
 
 Do not move semantic ownership or projection policy into printers. Do not infer
@@ -942,7 +942,7 @@ PRIK_C_DOCS_END -->
 - `prik/semantics/fortran2ir.py` maps Fortran procedures, derived types, module
   variables, kinds, shapes, storage contracts, visibility, imported references,
   and compile-time values.
-- `prik/wrapper_codegen/printers/pyi_printer.py` emits editable user contracts.
+- `prik/codegen/printers/pyi_printer.py` emits editable user contracts.
 - `prik/parsers/pyi/parser.py` parses edited contracts to Python AST.
 - `prik/pipeline/pyi.py` converts edited contract text, files, and path sets.
 - `prik/semantics/pyi2ir.py` converts parsed `.pyi` AST back into semantic IR.
@@ -995,7 +995,7 @@ The test ownership is:
 - loader syntax and error behavior: `tests/fortran/semantic_pyi_format/parsing/`;
 - printer round-trip shape: `tests/fortran/semantic_pyi_format/pipeline/`;
 - policy-completion decisions: `tests/fortran/infrastructure/policy/` and feature-local `policy/` directories;
-- wrapper-plan diagnostics: `tests/fortran/infrastructure/wrapper_codegen/`.
+- wrapper-plan diagnostics: `tests/fortran/infrastructure/codegen/`.
 
 <!-- PRIK_C_DOCS_START
 - C semantic conversion: `tests/c/semantics/conversion/`.
@@ -1018,7 +1018,7 @@ coverage only when the public contract changes.
 | Parser fixture goldens | Serialized Fortran parser contracts | `tests/fortran/source_parsing/parsing/test_fortran_fixture_suite.py` |
 | Semantic tests | Fortran parser facts converted to wrapper-neutral IR | `tests/fortran/semantic_ir/semantics/` |
 | Policy tests | Completed policy decisions | `tests/fortran/infrastructure/policy/` and feature-local `policy/` directories |
-| Wrapper-plan tests | Unsupported plan diagnostics and generated plan shape | `tests/fortran/infrastructure/wrapper_codegen/` |
+| Wrapper-plan tests | Unsupported plan diagnostics and generated plan shape | `tests/fortran/infrastructure/codegen/` |
 | `.pyi` tests | Editable contract loader/printer behavior | `tests/fortran/semantic_pyi_format/`, `tests/fortran/semantic_pyi_format/pipeline/` |
 | CLI tests | User commands, output routing, diagnostics | `tests/fortran/command_line_interface/pipeline/`, `tests/fortran/source_preprocessing/preprocessing/` |
 | Wrapper build tests | Artifact placement, direct/Makefile modes, multi-source ordering | `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py`, `tests/fortran/building_shared_library/end_to_end/test_multi_source_builds.py` |
@@ -1049,7 +1049,7 @@ PRIK_C_DOCS_END -->
 - Preprocessing behavior: preprocessing CLI tests and at least one parser path
   that consumes the recipe.
 - Wrapper orchestration or codegen behavior: the focused feature-local
-  `end_to_end/` or `wrapper_codegen/` owner, including an imported runtime
+  `end_to_end/` or `codegen/` owner, including an imported runtime
   assertion rather than build success alone.
 
 ### Golden Fixture Rules
@@ -1238,7 +1238,7 @@ Example target: add a new `Annotated[...]` metadata item or projection helper.
    `prik/parsers/pyi/parser.py` only when the raw Python AST parsing boundary
    changes.
 3. Add printer tests in `tests/fortran/semantic_pyi_format/pipeline/`.
-4. Update `prik/wrapper_codegen/printers/pyi_printer.py`.
+4. Update `prik/codegen/printers/pyi_printer.py`.
 5. Update semantic models in `prik/semantics/models.py` only if the IR needs a new
    field or constraint.
 6. Update policy completion or wrapper planning if the syntax changes a
@@ -1253,7 +1253,7 @@ Focused verification:
 ```bash
 PYTHONPATH=. pytest -q tests/fortran/semantic_pyi_format/parsing/
 PYTHONPATH=. pytest -q tests/fortran/semantic_pyi_format/pipeline/
-PYTHONPATH=. pytest -q tests/fortran/semantic_ir/semantics/ tests/fortran/infrastructure/wrapper_codegen/
+PYTHONPATH=. pytest -q tests/fortran/semantic_ir/semantics/ tests/fortran/infrastructure/codegen/
 ```
 
 ### Add A Stage-Owned Error
@@ -1280,13 +1280,13 @@ Focused verification:
 ```bash
 PYTHONPATH=. pytest -q tests/fortran/semantic_ir/semantics/
 PYTHONPATH=. pytest -q tests/fortran/semantic_ir/semantics/
-PYTHONPATH=. pytest -q tests/fortran/infrastructure/wrapper_codegen/
+PYTHONPATH=. pytest -q tests/fortran/infrastructure/codegen/
 ```
 
 <!-- PRIK_C_DOCS_START
 ```bash
 PYTHONPATH=. pytest -q tests/c/semantics/conversion/
-PYTHONPATH=. pytest -q tests/fortran/infrastructure/wrapper_codegen/
+PYTHONPATH=. pytest -q tests/fortran/infrastructure/codegen/
 ```
 PRIK_C_DOCS_END -->
 
@@ -1517,7 +1517,7 @@ Focused tests by concern:
 - Fortran parser-to-IR conversion:
   `PYTHONPATH=. pytest -q tests/fortran/semantic_ir/semantics/`
 - Wrapper-plan support diagnostics:
-  `PYTHONPATH=. pytest -q tests/fortran/infrastructure/wrapper_codegen/`
+  `PYTHONPATH=. pytest -q tests/fortran/infrastructure/codegen/`
 - `.pyi` printer:
   `PYTHONPATH=. pytest -q tests/fortran/semantic_pyi_format/pipeline/`
 - `.pyi` loader and edited stub behavior:

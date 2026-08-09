@@ -29,6 +29,7 @@ from prik.probes.fortran_types import (
     load_fortran_type_probe_report,
     probe_fortran_type_expressions,
     probe_fortran_type_expressions_cached,
+    resolve_fortran_logical_storage_types,
 )
 from prik.pipeline.preprocessing import PreprocessingConfig
 
@@ -350,6 +351,20 @@ def test_fortran_type_probe_reports_values_from_native_compiler():
     assert report.recipe.compiler == compiler
     assert "-cpp" in report.recipe.compile_argv
     assert "selected_real_kind(12)" in report.source_text
+
+
+def test_fortran_type_probe_resolves_supported_logical_storage_widths(tmp_path):
+    compiler = _required_fortran_compiler()
+
+    resolved = resolve_fortran_logical_storage_types(
+        PreprocessingConfig(mode="compiler", compiler=compiler),
+        [8, 16, 32, 64],
+        cache_dir=tmp_path,
+    )
+
+    assert resolved[8] == "logical(kind=c_bool)"
+    assert set(resolved) == {8, 16, 32, 64}
+    assert all(spelling.startswith("logical(kind=") for spelling in resolved.values())
 
 
 def test_fortran_type_probe_carries_target_relevant_user_flags(tmp_path):

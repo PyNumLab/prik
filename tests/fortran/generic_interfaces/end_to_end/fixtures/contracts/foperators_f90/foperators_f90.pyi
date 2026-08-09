@@ -1,4 +1,4 @@
-from prik.contracts import Addr, Annotated, Arg, Bool, Float64, Int32, Pass, Polymorphic, Returns, bind, native_call, overload, private
+from prik.contracts import Addr, Annotated, Arg, Bool32, Float64, Int32, Pass, Polymorphic, Returns, bind, native_call, overload, private
 
 class vector:
     def __init__(
@@ -85,76 +85,76 @@ class vector:
     def __eq__(
         self,
         right: vector
-    ) -> Bool: ...
+    ) -> Bool32: ...
 
     @overload("equivalent_vector_offset", generic="operator(.eqv.)")
     def __eq__(
         self,
         right: offset
-    ) -> Bool: ...
+    ) -> Bool32: ...
 
     @overload("not_equal_vectors")
     def __ne__(
         self,
         right: vector
-    ) -> Bool: ...
+    ) -> Bool32: ...
 
     @overload("not_equivalent_vector_integer", generic="operator(.neqv.)")
     def __ne__(
         self,
         right: Int32
-    ) -> Bool: ...
+    ) -> Bool32: ...
 
     @overload("less_vectors")
     def __lt__(
         self,
         right: vector
-    ) -> Bool: ...
+    ) -> Bool32: ...
 
     @overload("less_vector_real")
     def __lt__(
         self,
         right: Float64
-    ) -> Bool: ...
+    ) -> Bool32: ...
 
     @overload("less_real_vector")
     def __gt__(
         self,
         left: Float64
-    ) -> Bool: ...
+    ) -> Bool32: ...
 
     @overload("greater_vectors")
     def __gt__(
         self,
         right: vector
-    ) -> Bool: ...
+    ) -> Bool32: ...
 
     @overload("less_equal_vectors")
     def __le__(
         self,
         right: vector
-    ) -> Bool: ...
+    ) -> Bool32: ...
 
     @overload("greater_equal_vectors")
     def __ge__(
         self,
         right: vector
-    ) -> Bool: ...
+    ) -> Bool32: ...
 
     @overload("and_vectors")
     def __and__(
         self,
         right: vector
-    ) -> Bool: ...
+    ) -> Bool32: ...
 
     @overload("or_vectors")
     def __or__(
         self,
         right: vector
-    ) -> Bool: ...
+    ) -> Bool32: ...
 
     @overload("not_vector")
-    def __invert__(self) -> Bool: ...
+    def __invert__(self) -> Bool32: ...
 
     @overload("dot_vectors")
     def operator_dot(
@@ -199,7 +199,7 @@ class offset:
     def __eq__(
         self,
         left: vector
-    ) -> Bool: ...
+    ) -> Bool32: ...
 
 class counter:
     def __init__(
@@ -324,81 +324,81 @@ def power_vector_integer(
 def equal_vectors(
     left: vector,
     right: vector
-) -> Bool: ...
+) -> Bool32: ...
 
 @private
 def not_equal_vectors(
     left: vector,
     right: vector
-) -> Bool: ...
+) -> Bool32: ...
 
 @private
 def less_vectors(
     left: vector,
     right: vector
-) -> Bool: ...
+) -> Bool32: ...
 
 @private
 @native_call([Arg(0), Addr(Arg(1))])
 def less_vector_real(
     left: vector,
     right: Float64
-) -> Bool: ...
+) -> Bool32: ...
 
 @private
 @native_call([Addr(Arg(0)), Arg(1)])
 def less_real_vector(
     left: Float64,
     right: vector
-) -> Bool: ...
+) -> Bool32: ...
 
 @private
 def less_equal_vectors(
     left: vector,
     right: vector
-) -> Bool: ...
+) -> Bool32: ...
 
 @private
 def greater_vectors(
     left: vector,
     right: vector
-) -> Bool: ...
+) -> Bool32: ...
 
 @private
 def greater_equal_vectors(
     left: vector,
     right: vector
-) -> Bool: ...
+) -> Bool32: ...
 
 @private
 def and_vectors(
     left: vector,
     right: vector
-) -> Bool: ...
+) -> Bool32: ...
 
 @private
 def or_vectors(
     left: vector,
     right: vector
-) -> Bool: ...
+) -> Bool32: ...
 
 @private
 def not_vector(
     value: vector
-) -> Bool: ...
+) -> Bool32: ...
 
 @private
 def equivalent_vector_offset(
     left: vector,
     right: offset
-) -> Bool: ...
+) -> Bool32: ...
 
 @private
 @native_call([Arg(0), Addr(Arg(1))])
 def not_equivalent_vector_integer(
     left: vector,
     right: Int32
-) -> Bool: ...
+) -> Bool32: ...
 
 @private
 def dot_vectors(

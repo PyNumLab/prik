@@ -1,6 +1,7 @@
 """Tests split by stable CLI output-contract ownership."""
 
 from importlib import metadata
+import shutil
 
 import prik
 
@@ -29,9 +30,11 @@ from tests.fortran.command_line_interface.pipeline._support import (
 
 def test_cli_and_python_api_report_installed_distribution_version():
     expected = metadata.version("prik")
+    installed_script = shutil.which("prik")
+    assert installed_script is not None
     commands = (
         [sys.executable, "-m", "prik", "--version"],
-        [str(Path(sys.executable).with_name("prik")), "--version"],
+        [installed_script, "--version"],
     )
 
     assert prik.__version__ == expected

@@ -105,9 +105,46 @@ def apply_transform(
     assert callback_type.metadata["prototype_ref"]["name"] == "transform_callback"
 
 
+def test_prototype_is_one_exact_nonexported_signature_declaration():
+    module = parse_pyi_text(
+        """
+@pure
+@prototype
+def extent_for(n: In(Addr(Int32))) -> Int32: ...
+
+def values(n: Int32) -> Float64[extent_for(n)]: ...
+""",
+        module_name="prototype_signature",
+    )
+
+    prototype = module.prototypes[0]
+    assert prototype.pure is True
+    assert prototype.origin.native_scope == "prototype_signature"
+    assert prototype.arguments[0].origin.metadata == {"value": False, "prototype_intent": "in"}
+    assert [function.name for function in module.functions] == ["values"]
+
+
+@pytest.mark.parametrize(
+    ("decorators", "message"),
+    [
+        ("@pure", "pure requires prototype"),
+        ("@standalone\n@prototype", "prototype cannot be combined with standalone"),
+    ],
+)
+def test_exact_interface_decorators_reject_ambiguous_combinations(decorators: str, message: str):
+    with pytest.raises(ValueError, match=message):
+        parse_pyi_text(
+            f"""
+{decorators}
+def declared(value: Int32) -> Int32: ...
+""",
+            module_name="invalid_prototype_decorators",
+        )
+
+
 def test_imported_prototype_resolves_as_module_interface_definition(tmp_path):
     from prik.pipeline.pyi import pyi_paths_to_semantic_modules
-    from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+    from prik.codegen import WrapperCodeGenerator, WrapperPlanner
 
     (tmp_path / "callback_shapes.pyi").write_text(
         """from prik.contracts import Float64, Int32, prototype
@@ -138,9 +175,10 @@ def apply(callback: transform, count: Int32, values: Float64[count]) -> None: ..
     complete_semantic_policies(api)
     artifacts = WrapperCodeGenerator().generate(WrapperPlanner().build(api))
     bridge = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
-    assert "use callback_shapes, only:" in bridge
-    assert "_prototype => transform" in bridge
-    assert "procedure(prik_callback_adapter_callback_" in bridge
+    assert "abstract interface" in bridge
+    assert "function prik_transform_" in bridge
+    assert "procedure(prik_transform_" in bridge
+    assert "use callback_shapes, only:" not in bridge
 
 
 @pytest.mark.parametrize(

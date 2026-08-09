@@ -127,3 +127,29 @@ end subroutine s
 
     evaluated = evaluate_signature_shapes(sig, {"nx": 6, "ny": 4})
     assert evaluated.arguments[0].shape == ["0:6-1", "1:4*2"]
+
+
+def test_balanced_extent_expressions_are_preserved_for_every_declaration_owner():
+    code = """
+module declaration_owners
+  integer, parameter :: n = 3
+  real, target :: module_values(max(2, n))
+  type :: record
+    real :: values(product([n, 1]))
+  end type record
+contains
+  function transform(source, output) result(values)
+    real, intent(in) :: source(0:, 2:)
+    real, intent(out) :: output(size(source, dim=2, kind=8))
+    real :: values(lbound(source, 1):ubound(source, 1))
+  end function transform
+end module declaration_owners
+"""
+    module = parse_fortran_file(code).modules[0]
+    procedure = module.procedures[0]
+
+    assert module.variables[-1].shape == ["3"]
+    assert module.derived_types[0].fields[0].shape == ["3"]
+    assert procedure.arguments[0].shape == ["0:", "2:"]
+    assert procedure.arguments[1].shape == ["size(source, dim=2, kind=8)"]
+    assert procedure.result.shape == ["lbound(source, 1):ubound(source, 1)"]

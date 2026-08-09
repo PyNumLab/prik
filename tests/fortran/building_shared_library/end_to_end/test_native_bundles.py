@@ -21,7 +21,7 @@ from tests.fortran.building_shared_library.end_to_end.test_multi_source_builds i
 )
 
 
-CONTRACT_IMPORT = "from prik.contracts import Addr, Arg, Int32, external, native_call\n\n"
+CONTRACT_IMPORT = "from prik.contracts import Addr, Arg, Int32, native_call, standalone\n\n"
 NATIVE_CALL_IMPORT = "from prik.contracts import Addr, Arg, Int32, native_call\n\n"
 pytestmark = pytest.mark.fortran_end_to_end
 
@@ -114,7 +114,7 @@ def _simple_external_contract(name: str) -> str:
 
 
 def _simple_external_declaration(name: str) -> str:
-    return f"@external\n@native_call([Addr(Arg(0))])\ndef {name}(value: Int32) -> Int32: ...\n"
+    return f"@standalone\n@native_call([Addr(Arg(0))])\ndef {name}(value: Int32) -> Int32: ...\n"
 
 
 def _simple_external_source(name: str, expression: str) -> str:
@@ -195,7 +195,7 @@ end module artifact_mod
     entry = _write_contract_package(
         tmp_path / "contracts" / "mixed_native_bundle",
         entry=(
-            "from prik.contracts import Addr, Arg, Int32, external, native_call\n"
+            "from prik.contracts import Addr, Arg, Int32, native_call, standalone\n"
             "from . import artifact_mod\n\n"
             f"{_simple_external_declaration('ext_object')}\n"
             f"{_simple_external_declaration('ext_archive')}\n"

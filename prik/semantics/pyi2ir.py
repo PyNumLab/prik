@@ -15,6 +15,11 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 
 from prik.contracts import CONTRACT_SYMBOLS, CONTRACT_TYPE_NAMES
+from prik.utilities.declaration_expressions import (
+    declaration_expression_calls,
+    is_declaration_expression_helper,
+    is_public_declaration_expression,
+)
 from prik.types.numpy import SEMANTIC_SCALAR_TYPE_NAMES
 from prik.semantics.ownership import OWNERSHIP_POLICY_METADATA, set_ownership_metadata, set_pointer_policy_metadata
 from prik.semantics.metadata import (
@@ -44,6 +49,7 @@ from prik.semantics.models import (
     PYTHON_STATIC_METADATA,
     PYTHON_VALUE_IMMUTABLE,
     PYTHON_VALUE_MUTABILITY_METADATA,
+    PROTOTYPE_INTENT_METADATA,
     PROTOTYPE_REF_METADATA,
     RUNTIME_RELEASE_GIL_METADATA,
     RUNTIME_STATUS_ERROR_METADATA,
@@ -53,6 +59,7 @@ from prik.semantics.models import (
     SemanticArrayContract,
     SemanticClass,
     SemanticConstraint,
+    SemanticExpressionCallable,
     SemanticField,
     SemanticFunction,
     SemanticImport,
@@ -80,11 +87,12 @@ _STRIDED_DIMENSION_SENTINEL = "@prik.Strided"
 
 
 @dataclass(frozen=True)
-class _CallbackArgumentSpec:
-    """Store one callback parameter's semantic type and native value mode."""
+class _PrototypeArgumentSpec:
+    """Store one exact interface dummy's type, transport, and direction."""
 
     semantic_type: SemanticType
     passes_by_value: bool
+    intent: str | None = None
 
 
 def convert_pyi_to_ir(
@@ -139,11 +147,12 @@ class _Decorators:
     overload_generic: str | None = None
     bind_target: str | None = None
     native_type: dict[str, object] | None = None
-    external: bool = False
+    standalone: bool = False
     is_static: bool = False
     release_gil: bool = False
     error_status_policy: dict[str, object] | None = None
     prototype: bool = False
+    pure: bool = False
 
 
 @dataclass
@@ -194,6 +203,7 @@ class _PyiAstParser:
         # Resolve references whose targets can appear later in the module.
         self._resolve_overloads()
         self._resolve_local_prototype_references()
+        self._resolve_declaration_expression_callables()
         return self.module
 
     # Module declarations and imports
@@ -218,6 +228,137 @@ class _PyiAstParser:
                     origin_module=self.module.name,
                     source_name=prototype.name,
                 )
+
+    def _resolve_declaration_expression_callables(self) -> None:
+        """Reconstruct native call provenance from local declarations and imports.
+
+        This finalization pass consumes every array shape after the whole
+        contract is known and mutates only each array's parallel callable
+        provenance. Calls remain declarative annotation text and are never
+        imported or executed by the loader.
+        """
+        local_functions = {function.name.casefold(): function for function in self.module.functions}
+        local_prototypes = {prototype.name.casefold(): prototype for prototype in self.module.prototypes}
+        explicit_imports, namespace_imports = self._declaration_callable_imports()
+        for semantic_type in _iter_module_semantic_types(self.module):
+            storage = semantic_type.storage
+            array = storage.array if storage is not None else None
+            if array is None:
+                continue
+            array.expression_callables = [
+                self._expression_callable_references(
+                    expression,
+                    local_functions,
+                    local_prototypes,
+                    explicit_imports,
+                    namespace_imports,
+                )
+                for expression in array.shape
+            ]
+
+    def _declaration_callable_imports(
+        self,
+    ) -> tuple[dict[str, tuple[str, str]], dict[str, str]]:
+        """Index explicit imported names and visible module namespaces."""
+        explicit: dict[str, tuple[str, str]] = {}
+        namespaces: dict[str, str] = {}
+        for imported in self.module.imports:
+            if isinstance(imported, SemanticImport):
+                if imported.items:
+                    for item in imported.items:
+                        explicit[(item.target or item.source).casefold()] = (imported.module, item.source)
+                else:
+                    namespaces[imported.module.split(".", 1)[0].casefold()] = imported.module
+                continue
+            for item in str(imported).split(","):
+                module_name, _, alias = item.strip().partition(" as ")
+                namespaces[(alias or module_name.split(".", 1)[0]).casefold()] = module_name
+        return explicit, namespaces
+
+    def _expression_callable_references(
+        self,
+        expression: str,
+        local_functions: dict[str, SemanticFunction],
+        local_prototypes: dict[str, SemanticPrototype],
+        explicit_imports: dict[str, tuple[str, str]],
+        namespace_imports: dict[str, str],
+    ) -> list[SemanticExpressionCallable]:
+        """Resolve one axis's calls to semantic native identities when possible."""
+        references = []
+        for name in declaration_expression_calls(expression):
+            reference = self._resolve_expression_callable(
+                name,
+                local_functions,
+                local_prototypes,
+                explicit_imports,
+                namespace_imports,
+            )
+            if reference is not None:
+                references.append(reference)
+            elif name != "<invalid>" and not is_declaration_expression_helper(name):
+                references.append(
+                    SemanticExpressionCallable(
+                        name=name,
+                        native_name=name.rsplit(".", 1)[-1],
+                        source_language=self.native_language,
+                    )
+                )
+        return references
+
+    def _resolve_expression_callable(
+        self,
+        name: str,
+        local_functions: dict[str, SemanticFunction],
+        local_prototypes: dict[str, SemanticPrototype],
+        explicit_imports: dict[str, tuple[str, str]],
+        namespace_imports: dict[str, str],
+    ) -> SemanticExpressionCallable | None:
+        """Resolve one contract call against local, flattened, or qualified names."""
+        if "." in name:
+            namespace, native_name = name.rsplit(".", 1)
+            native_scope = namespace_imports.get(namespace.casefold())
+            if native_scope is None:
+                return None
+            return SemanticExpressionCallable(
+                name=name,
+                native_name=native_name,
+                native_scope=native_scope,
+                source_language=self.native_language,
+                placement="module",
+            )
+
+        prototype = local_prototypes.get(name.casefold())
+        if prototype is not None:
+            return SemanticExpressionCallable(
+                name=name,
+                native_name=prototype.native_name or prototype.name,
+                native_scope=None,
+                source_language=self.native_language,
+                placement="standalone",
+                declaration=prototype,
+            )
+
+        function = local_functions.get(name.casefold())
+        if function is not None:
+            standalone = function.origin.source_language == "fortran" and function.origin.native_scope is None
+            return SemanticExpressionCallable(
+                name=name,
+                native_name=function.native_name or function.name,
+                native_scope=None if standalone else (function.origin.native_scope or self.module.name),
+                source_language=function.origin.source_language or self.native_language,
+                placement="standalone" if standalone else "module",
+                declaration=function,
+            )
+        imported = explicit_imports.get(name.casefold())
+        if imported is not None:
+            return SemanticExpressionCallable(
+                name=name,
+                native_name=imported[1],
+                native_scope=imported[0],
+                source_language=self.native_language,
+                placement="module",
+            )
+        return None
 
     def import_from(self, node: ast.ImportFrom) -> SemanticImport:
         """Convert one non-contract ``from`` import AST node into semantic metadata.
@@ -365,7 +506,7 @@ class _PyiAstParser:
         projection: list[ProjectionMapping] | None = None,
         native_result: ProjectionMapping | None = None,
         native_name: str | None = None,
-        external: bool = False,
+        standalone: bool = False,
         has_native_call: bool = False,
         release_gil: bool = False,
         error_status_policy: dict[str, object] | None = None,
@@ -391,10 +532,10 @@ class _PyiAstParser:
         if error_status_policy is not None:
             metadata[RUNTIME_STATUS_ERROR_METADATA] = dict(error_status_policy)
         origin = self._origin(
-            source_language="fortran" if external else None,
+            source_language="fortran" if standalone else None,
             user_private=visibility == "private",
         )
-        if external:
+        if standalone:
             origin.source_kind = "function" if return_type is not None else "subroutine"
             origin.native_name = native_name or node.name
         return SemanticFunction(
@@ -408,21 +549,30 @@ class _PyiAstParser:
             origin=origin,
         )
 
-    def prototype_def(self, node: ast.FunctionDef, *, visibility: str) -> SemanticPrototype:
-        """Convert one named callback prototype without creating a runtime function."""
+    def prototype_def(
+        self,
+        node: ast.FunctionDef,
+        *,
+        visibility: str,
+        pure: bool,
+    ) -> SemanticPrototype:
+        """Convert one exact native interface without creating a runtime function."""
         self._validate_callable_header(node)
         arguments = []
         for argument, default in zip(node.args.args, self._argument_defaults(node), strict=False):
             if argument.annotation is None:
                 raise ValueError(f"Expected typed prototype argument: {argument.arg!r}")
             spec = self._prototype_argument_spec(argument.annotation)
+            origin_metadata: dict[str, object] = {"value": spec.passes_by_value}
+            if spec.intent is not None:
+                origin_metadata[PROTOTYPE_INTENT_METADATA] = spec.intent
             arguments.append(
                 SemanticArgument(
                     argument.arg,
                     spec.semantic_type,
                     optional=self.default_marks_optional(default),
                     visibility=visibility,
-                    origin=SemanticOrigin(metadata={"value": spec.passes_by_value}),
+                    origin=SemanticOrigin(metadata=origin_metadata),
                 )
             )
         return_type = (
@@ -430,17 +580,20 @@ class _PyiAstParser:
             if isinstance(node.returns, ast.Constant) and node.returns.value is None
             else self.semantic_type(node.returns)
         )
+        metadata = {"fortran_attributes": ["pure"]} if pure else {}
         return SemanticPrototype(
             name=node.name,
             native_name=node.name,
             arguments=arguments,
             return_type=return_type,
+            metadata=metadata,
             visibility=visibility,
             origin=SemanticOrigin(
                 native_name=node.name,
                 native_scope=self.module.name,
                 source_kind="prototype",
             ),
+            pure=pure,
         )
 
     def method_def(
@@ -586,8 +739,20 @@ class _PyiAstParser:
             self._apply_decorator(parsed, node, context=context)
         if parsed.overload_target is not None and parsed.has_native_call:
             raise ValueError("overload cannot be combined with native_call; put native_call on the specific procedure")
-        if parsed.prototype and len(nodes) != 1:
-            raise ValueError("prototype cannot be combined with other decorators")
+        if parsed.pure and not parsed.prototype:
+            raise ValueError("pure requires prototype")
+        if parsed.prototype:
+            if parsed.standalone:
+                raise ValueError(
+                    "prototype cannot be combined with standalone; "
+                    "prototype use already determines its native procedure role"
+                )
+            if parsed.has_native_call or parsed.overload_target is not None or parsed.bind_target is not None:
+                raise ValueError("prototype cannot be combined with native_call, overload, or bind")
+            if parsed.release_gil or parsed.error_status_policy is not None or parsed.native_type is not None:
+                raise ValueError("prototype cannot carry wrapper or native-type decorators")
+            if parsed.visibility != "public" or parsed.is_static:
+                raise ValueError("prototype cannot be private or static")
         return parsed
 
     def _apply_decorator(self, parsed: _Decorators, node: ast.expr, *, context: str) -> None:
@@ -607,11 +772,12 @@ class _PyiAstParser:
         handlers = {
             "overload": self._apply_overload_decorator,
             "bind": self._apply_bind_decorator,
-            "external": self._apply_external_decorator,
+            "standalone": self._apply_standalone_decorator,
             "nogil": self._apply_nogil_decorator,
             "native_call": self._apply_native_call_decorator,
             "native_type": self._apply_native_type_decorator,
             "prototype": self._apply_prototype_decorator,
+            "pure": self._apply_pure_decorator,
             "raises": self._apply_raises_decorator,
         }
         handler = next((value for name, value in handlers.items() if self.matches_name(target, name)), None)
@@ -621,7 +787,7 @@ class _PyiAstParser:
 
     @staticmethod
     def _apply_prototype_decorator(parsed: _Decorators, node: ast.expr, context: str) -> None:
-        """Mark a module-level declaration as a standalone callback prototype."""
+        """Mark a module-level declaration as an exact native interface."""
         if isinstance(node, ast.Call):
             raise ValueError("prototype does not accept arguments")
         if context != ".pyi":
@@ -629,6 +795,17 @@ class _PyiAstParser:
         if parsed.prototype:
             raise ValueError("Duplicate prototype decorator")
         parsed.prototype = True
+
+    @staticmethod
+    def _apply_pure_decorator(parsed: _Decorators, node: ast.expr, context: str) -> None:
+        """Mark an exact interface with the native pure characteristic."""
+        if isinstance(node, ast.Call):
+            raise ValueError("pure does not accept arguments")
+        if context != ".pyi":
+            raise ValueError("pure is only valid for module-level prototype declarations")
+        if parsed.pure:
+            raise ValueError("Duplicate pure decorator")
+        parsed.pure = True
 
     def _apply_overload_decorator(self, parsed: _Decorators, node: ast.expr, context: str) -> None:
         """Record one specific-procedure target for deferred overload resolution."""
@@ -676,13 +853,13 @@ class _PyiAstParser:
         parsed.release_gil = True
 
     @staticmethod
-    def _apply_external_decorator(parsed: _Decorators, node: ast.expr, context: str) -> None:
-        """Record an external native declaration marker in decorator state."""
+    def _apply_standalone_decorator(parsed: _Decorators, node: ast.expr, context: str) -> None:
+        """Record a standalone native declaration marker in decorator state."""
         if isinstance(node, ast.Call):
-            raise ValueError("external does not accept arguments")
-        if parsed.external:
-            raise ValueError(f"Duplicate {context} external decorator")
-        parsed.external = True
+            raise ValueError("standalone does not accept arguments")
+        if parsed.standalone:
+            raise ValueError(f"Duplicate {context} standalone decorator")
+        parsed.standalone = True
 
     @staticmethod
     def _apply_native_type_decorator(parsed: _Decorators, node: ast.expr, context: str) -> None:
@@ -2093,7 +2270,11 @@ class _PyiAstParser:
             return False
         if any(isinstance(item, ast.Call) for item in items):
             return True
-        return any(isinstance(item, ast.BinOp | ast.UnaryOp) for item in items)
+        return any(
+            isinstance(item, ast.BinOp | ast.UnaryOp | ast.BoolOp | ast.Compare | ast.IfExp)
+            or (isinstance(item, ast.Attribute | ast.Subscript) and is_public_declaration_expression(ast.unparse(item)))
+            for item in items
+        )
 
     @staticmethod
     def _non_dimension_subscription_names() -> set[str]:
@@ -2127,9 +2308,10 @@ class _PyiAstParser:
             return str(node.value)
         if self.matches_name(node, "Flat"):
             return _FLAT_DIMENSION_SENTINEL
-        if isinstance(node, ast.Attribute | ast.Subscript):
-            raise ValueError(f"Unsupported array dimension expression: {ast.unparse(node)!r}")
-        return ast.unparse(node)
+        expression = ast.unparse(node)
+        if not is_public_declaration_expression(expression):
+            raise ValueError(f"Unsupported array dimension expression: {expression!r}")
+        return expression
 
     def slice_text(self, node: ast.Slice) -> str:
         """Render one dimension slice, preserving the contract's strided marker."""
@@ -2144,8 +2326,22 @@ class _PyiAstParser:
 
     # Callback and result conversion
 
-    def _prototype_argument_spec(self, node: ast.expr) -> _CallbackArgumentSpec:
-        """Convert one prototype argument annotation into type and pass-by-value facts."""
+    def _prototype_argument_spec(self, node: ast.expr) -> _PrototypeArgumentSpec:
+        """Convert one prototype annotation into exact direction and transport facts."""
+        if isinstance(node, ast.Call):
+            wrapper = self.contract_name(node.func)
+            if wrapper in {"In", "Out", "InOut"}:
+                if len(node.args) != 1 or node.keywords:
+                    raise ValueError(f"{wrapper} expects one prototype argument type")
+                nested = self._prototype_argument_spec(node.args[0])
+                if nested.intent is not None:
+                    raise ValueError("prototype intent wrappers cannot be nested")
+                intent = {"In": "in", "Out": "out", "InOut": "inout"}[wrapper]
+                return _PrototypeArgumentSpec(nested.semantic_type, nested.passes_by_value, intent)
+        return self._prototype_transport_spec(node)
+
+    def _prototype_transport_spec(self, node: ast.expr) -> _PrototypeArgumentSpec:
+        """Convert the transport-bearing inner type of one prototype dummy."""
         if isinstance(node, ast.Call):
             wrapper = self.contract_name(node.func)
             if wrapper == "Value":
@@ -2165,18 +2361,18 @@ class _PyiAstParser:
                     or self._has_callback_descriptor_metadata(semantic_type)
                 ):
                     raise ValueError("Value(...) callback arguments are only valid for rank-zero wrapped types")
-                return _CallbackArgumentSpec(semantic_type, True)
+                return _PrototypeArgumentSpec(semantic_type, True)
             if self._is_addr_call(node):
                 return self._prototype_address_argument_spec(node)
 
         semantic_type = self.semantic_type(node)
         if self._is_primitive_scalar_value_type(semantic_type):
-            return _CallbackArgumentSpec(semantic_type, True)
+            return _PrototypeArgumentSpec(semantic_type, True)
         self._mark_callback_reference_type(semantic_type)
-        return _CallbackArgumentSpec(semantic_type, False)
+        return _PrototypeArgumentSpec(semantic_type, False)
 
-    def _prototype_address_argument_spec(self, node: ast.Call) -> _CallbackArgumentSpec:
-        """Parse the callback-only primitive reference marker."""
+    def _prototype_address_argument_spec(self, node: ast.Call) -> _PrototypeArgumentSpec:
+        """Parse the prototype-only primitive reference marker."""
         if len(node.args) != 1 or node.keywords:
             raise ValueError(f"Addr type expects one callback argument type: {ast.unparse(node)!r}")
         if self._addr_depth(node.func) != 1:
@@ -2188,7 +2384,7 @@ class _PyiAstParser:
                 "arrays, strings, and wrapped objects already use reference storage"
             )
         self._mark_callback_reference_type(semantic_type)
-        return _CallbackArgumentSpec(semantic_type, False)
+        return _PrototypeArgumentSpec(semantic_type, False)
 
     @staticmethod
     def _is_primitive_scalar_value_type(semantic_type: SemanticType) -> bool:
@@ -2957,8 +3153,8 @@ class _ClassBodyVisitor(ClassVisitor):
     def _visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         """Convert a method, constructor, or overload declaration."""
         decorators = self.parser.decorators(node.decorator_list, context="class body")
-        if decorators.external:
-            raise ValueError("external is not valid for a class method")
+        if decorators.standalone:
+            raise ValueError("standalone is not valid for a class method")
         if decorators.native_type is not None:
             raise ValueError("native_type is only valid for classes")
         if not node.decorator_list and self._is_generated_constructor(node):
@@ -3031,7 +3227,7 @@ class _ClassBodyVisitor(ClassVisitor):
             or decorators.bind_target is not None
             or decorators.release_gil
             or decorators.error_status_policy is not None
-            or decorators.external
+            or decorators.standalone
         ):
             raise ValueError(f"Unsupported class body decorator: {ast.unparse(node.decorator_list[-1])!r}")
         if (
@@ -3094,7 +3290,7 @@ class _ModuleVisitor(ClassVisitor):
             or decorators.bind_target is not None
             or decorators.release_gil
             or decorators.error_status_policy is not None
-            or decorators.external
+            or decorators.standalone
         ):
             raise ValueError(f"Unsupported class decorator: {ast.unparse(node.decorator_list[-1])!r}")
         if (
@@ -3119,7 +3315,13 @@ class _ModuleVisitor(ClassVisitor):
         if decorators.native_type is not None:
             raise ValueError("native_type is only valid for classes")
         if decorators.prototype:
-            self.parser.module.prototypes.append(self.parser.prototype_def(node, visibility=decorators.visibility))
+            self.parser.module.prototypes.append(
+                self.parser.prototype_def(
+                    node,
+                    visibility=decorators.visibility,
+                    pure=decorators.pure,
+                )
+            )
             return
         function = self.parser.function_def(
             node,
@@ -3127,7 +3329,7 @@ class _ModuleVisitor(ClassVisitor):
             projection=decorators.projection,
             native_result=decorators.native_result,
             native_name=decorators.bind_target,
-            external=decorators.external,
+            standalone=decorators.standalone,
             has_native_call=decorators.has_native_call,
             release_gil=decorators.release_gil,
             error_status_policy=decorators.error_status_policy,
@@ -3271,6 +3473,7 @@ def reconcile_external_type_refs(modules: list[SemanticModule]) -> list[Semantic
     """
     definitions = {(module.name, declaration.name): declaration for module in modules for declaration in module.classes}
     prototypes = {(module.name, prototype.name): prototype for module in modules for prototype in module.prototypes}
+    functions = {(module.name, function.name): function for module in modules for function in module.functions}
     for module in modules:
         for semantic_type in _iter_module_semantic_types(module):
             ref = semantic_type.metadata.get(EXTERNAL_TYPE_REF_METADATA)
@@ -3306,7 +3509,60 @@ def reconcile_external_type_refs(modules: list[SemanticModule]) -> list[Semantic
             )
             ref["wrapped"] = wrapped
             ref["representation"] = "wrapped" if wrapped else "opaque"
+        _reconcile_declaration_expression_callables(module, prototypes, functions)
     return modules
+
+
+def _reconcile_declaration_expression_callables(
+    module: SemanticModule,
+    prototypes: dict[tuple[str, str], SemanticPrototype],
+    functions: dict[tuple[str, str], SemanticFunction],
+) -> None:
+    """Link imported declaration calls to exact batch declarations when present."""
+    for semantic_type in _iter_module_semantic_types(module):
+        storage = semantic_type.storage
+        array = storage.array if storage is not None else None
+        if array is None:
+            continue
+        for references in array.expression_callables:
+            for reference in references:
+                if reference.declaration is not None or reference.native_scope is None:
+                    continue
+                scopes = (
+                    reference.native_scope,
+                    reference.native_scope.lstrip("."),
+                    reference.native_scope.lstrip(".").rsplit(".", 1)[-1],
+                )
+                native_name = reference.native_name or reference.name.rsplit(".", 1)[-1]
+                prototype = next(
+                    (
+                        candidate
+                        for scope in scopes
+                        if scope and (candidate := prototypes.get((scope, native_name))) is not None
+                    ),
+                    None,
+                )
+                if prototype is not None:
+                    reference.declaration = prototype
+                    reference.native_name = prototype.native_name or prototype.name
+                    reference.native_scope = None
+                    reference.placement = "standalone"
+                    continue
+                function = next(
+                    (
+                        candidate
+                        for scope in scopes
+                        if scope and (candidate := functions.get((scope, native_name))) is not None
+                    ),
+                    None,
+                )
+                if function is not None:
+                    reference.declaration = function
+                    reference.native_name = function.native_name or function.name
+                    reference.native_scope = next(
+                        (scope for scope in scopes if (scope, native_name) in functions), None
+                    )
+                    reference.placement = "module"
 
 
 if __name__ == "__main__":

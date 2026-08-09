@@ -1,6 +1,6 @@
-from prik.contracts import Addr, Arg, Int32, external, native_call
+from prik.contracts import Addr, Arg, Int32, native_call, standalone
 
-@external
+@standalone
 @native_call([Addr(Arg(0)), Addr(Arg(1))])
 def optional_scale(
     base: Int32,

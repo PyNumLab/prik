@@ -46,7 +46,7 @@ Within one Fortran feature, use only the stages that own real evidence:
 | `preprocessing/` | Source processing, dependencies, and mappings are correct |
 | `semantics/` | Parser or `.pyi` facts become the intended semantic IR |
 | `policy/` | Ownership, lifetime, projection, mutation, nullability, storage, and accessor decisions are complete |
-| `wrapper_codegen/` | Completed policy selects a typed plan and named bridge/binding mechanisms |
+| `codegen/` | Completed policy selects a typed plan and named bridge/binding mechanisms |
 | `compiling/` | Commands, objects, libraries, and link inputs are correct |
 | `pipeline/` | Build stages and generated artifacts transition correctly |
 | `runtime/` | Runtime support mechanisms behave correctly without owning a complete feature journey |

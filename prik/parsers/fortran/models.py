@@ -7,6 +7,8 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any
 
+from prik.utilities.declaration_expressions import split_dimension_bounds, split_top_level_expression
+
 
 _ANSI = {
     "bold": "\033[1m",
@@ -22,30 +24,13 @@ def _parse_shape_dim(dim: str) -> dict[str, str | None]:
     token = (dim or "").strip()
     if not token:
         return {"raw": "", "lower": None, "upper": None}
-    if ":" not in token:
-        return {"raw": token, "lower": "1", "upper": token}
-    lo, hi = token.split(":", 1)
-    lo = lo.strip() or None
-    hi = hi.strip() or None
+    lo, hi = split_dimension_bounds(token)
     return {"raw": token, "lower": lo, "upper": hi}
 
 
 def _split_top_level(text: str, delimiter: str) -> list[str]:
-    parts: list[str] = []
-    current: list[str] = []
-    depth = 0
-    for char in text:
-        if char == "(":
-            depth += 1
-        elif char == ")" and depth > 0:
-            depth -= 1
-        if char == delimiter and depth == 0:
-            parts.append("".join(current).strip())
-            current = []
-            continue
-        current.append(char)
-    parts.append("".join(current).strip())
-    return parts
+    """Split lightweight model syntax using the shared balanced-expression scanner."""
+    return split_top_level_expression(text, delimiter)
 
 
 def _split_top_level_csv(text: str) -> list[str]:
