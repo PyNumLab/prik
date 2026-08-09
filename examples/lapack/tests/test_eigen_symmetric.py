@@ -216,14 +216,17 @@ def test_dstebz_bisects_tridiagonal_eigenvalues(prik_lapack, scipy_lapack, f2py_
 
     assert f2py_result is None
     assert prik_scalars[-1] == scipy_info == 0
-    assert prik_scalars[7] == scipy_m == 2
+    prik_m = int(prik_scalars[6])
+    prik_nsplit = int(prik_scalars[7])
+    assert prik_m == scipy_m == 2
+    assert prik_nsplit == 1
     assert_allclose_float64(prik_w[:2], [2.0, 3.0])
     assert_allclose_float64(f2py_w[:2], [2.0, 3.0])
     assert_allclose_float64(scipy_w[:2], [2.0, 3.0])
     np.testing.assert_array_equal(prik_iblock, scipy_iblock)
     np.testing.assert_array_equal(f2py_iblock, scipy_iblock)
-    np.testing.assert_array_equal(prik_isplit, scipy_isplit)
-    np.testing.assert_array_equal(f2py_isplit, scipy_isplit)
+    np.testing.assert_array_equal(prik_isplit[:prik_nsplit], scipy_isplit[:prik_nsplit])
+    np.testing.assert_array_equal(f2py_isplit[:prik_nsplit], scipy_isplit[:prik_nsplit])
 
 
 def test_dstein_computes_tridiagonal_eigenvectors(prik_lapack, scipy_lapack, f2py_lapack):
@@ -327,7 +330,16 @@ def test_dstemr_computes_robust_tridiagonal_eigenpairs(prik_lapack, scipy_lapack
         0,
     )
     scipy_m, scipy_w, scipy_z, scipy_info = scipy_lapack.dstemr(
-        diagonal, np.array([0.0, 0.0]), 0, 0.0, 0.0, 1, 2, compute_v=1, lwork=128, liwork=64
+        diagonal,
+        np.array([offdiag[0], 0.0]),
+        0,
+        0.0,
+        0.0,
+        1,
+        2,
+        compute_v=1,
+        lwork=128,
+        liwork=64,
     )
 
     assert f2py_result is None
