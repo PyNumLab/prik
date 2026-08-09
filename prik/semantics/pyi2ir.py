@@ -3519,6 +3519,26 @@ def _reconcile_declaration_expression_callables(
     functions: dict[tuple[str, str], SemanticFunction],
 ) -> None:
     """Link imported declaration calls to exact batch declarations when present."""
+    for reference in _unresolved_declaration_expression_callables(module):
+        scopes = _declaration_callable_scope_candidates(reference.native_scope)
+        native_name = reference.native_name or reference.name.rsplit(".", 1)[-1]
+        prototype = _declaration_callable_prototype(prototypes, scopes, native_name)
+        if prototype is not None:
+            _bind_declaration_expression_callable(reference, prototype, native_scope=None, placement="standalone")
+            continue
+        function_match = _declaration_callable_function(functions, scopes, native_name)
+        if function_match is not None:
+            function, native_scope = function_match
+            _bind_declaration_expression_callable(reference, function, native_scope=native_scope, placement="module")
+
+
+def _unresolved_declaration_expression_callables(module: SemanticModule):
+    """Yield imported array-expression callables that still need batch binding.
+
+    The semantic module remains unmodified while traversing. References that
+    already have a declaration or lack a native scope are intentionally omitted
+    because their provenance is complete or explicitly unresolved.
+    """
     for semantic_type in _iter_module_semantic_types(module):
         storage = semantic_type.storage
         array = storage.array if storage is not None else None
@@ -3526,43 +3546,57 @@ def _reconcile_declaration_expression_callables(
             continue
         for references in array.expression_callables:
             for reference in references:
-                if reference.declaration is not None or reference.native_scope is None:
-                    continue
-                scopes = (
-                    reference.native_scope,
-                    reference.native_scope.lstrip("."),
-                    reference.native_scope.lstrip(".").rsplit(".", 1)[-1],
-                )
-                native_name = reference.native_name or reference.name.rsplit(".", 1)[-1]
-                prototype = next(
-                    (
-                        candidate
-                        for scope in scopes
-                        if scope and (candidate := prototypes.get((scope, native_name))) is not None
-                    ),
-                    None,
-                )
-                if prototype is not None:
-                    reference.declaration = prototype
-                    reference.native_name = prototype.native_name or prototype.name
-                    reference.native_scope = None
-                    reference.placement = "standalone"
-                    continue
-                function = next(
-                    (
-                        candidate
-                        for scope in scopes
-                        if scope and (candidate := functions.get((scope, native_name))) is not None
-                    ),
-                    None,
-                )
-                if function is not None:
-                    reference.declaration = function
-                    reference.native_name = function.native_name or function.name
-                    reference.native_scope = next(
-                        (scope for scope in scopes if (scope, native_name) in functions), None
-                    )
-                    reference.placement = "module"
+                if reference.declaration is None and reference.native_scope is not None:
+                    yield reference
+
+
+def _declaration_callable_scope_candidates(native_scope: str) -> tuple[str, str, str]:
+    """Return the exact, relative-stripped, and leaf module spellings to match."""
+    return (
+        native_scope,
+        native_scope.lstrip("."),
+        native_scope.lstrip(".").rsplit(".", 1)[-1],
+    )
+
+
+def _declaration_callable_prototype(
+    prototypes: dict[tuple[str, str], SemanticPrototype],
+    scopes: tuple[str, str, str],
+    native_name: str,
+) -> SemanticPrototype | None:
+    """Return the first prototype matching the established scope-candidate order."""
+    for scope in scopes:
+        prototype = prototypes.get((scope, native_name))
+        if scope and prototype is not None:
+            return prototype
+    return None
+
+
+def _declaration_callable_function(
+    functions: dict[tuple[str, str], SemanticFunction],
+    scopes: tuple[str, str, str],
+    native_name: str,
+) -> tuple[SemanticFunction, str] | None:
+    """Return the first matching function together with its resolved module scope."""
+    for scope in scopes:
+        function = functions.get((scope, native_name))
+        if scope and function is not None:
+            return function, scope
+    return None
+
+
+def _bind_declaration_expression_callable(
+    reference: SemanticExpressionCallable,
+    declaration: SemanticPrototype | SemanticFunction,
+    *,
+    native_scope: str | None,
+    placement: str,
+) -> None:
+    """Mutate one expression reference with its resolved declaration provenance."""
+    reference.declaration = declaration
+    reference.native_name = declaration.native_name or declaration.name
+    reference.native_scope = native_scope
+    reference.placement = placement
 
 
 if __name__ == "__main__":

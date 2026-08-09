@@ -486,35 +486,58 @@ def is_public_declaration_expression(expression: str) -> bool:
     tree = _parse_expression(expression)
     if tree is None:
         return False
-    # Attribute calls such as ``helpers.extent_for(n)`` are call targets, not
-    # public array-property references.
-    call_targets = {
-        id(target)
+    call_targets = _declaration_expression_call_target_attributes(tree)
+    return all(_is_public_declaration_expression_node(node, call_targets) for node in ast.walk(tree))
+
+
+def _declaration_expression_call_target_attributes(tree: ast.AST) -> set[int]:
+    """Return attribute identities used as callable targets within one tree.
+
+    Attribute calls are not array-property references. Identity tracking keeps
+    the public grammar check from applying array-property rules to attributes
+    inside a callable expression.
+    """
+    return {
+        id(attribute)
         for call in ast.walk(tree)
         if isinstance(call, ast.Call)
-        for target in ast.walk(call.func)
-        if isinstance(target, ast.Attribute)
+        for attribute in ast.walk(call.func)
+        if isinstance(attribute, ast.Attribute)
     }
-    for node in ast.walk(tree):
-        if not isinstance(node, _PUBLIC_EXPRESSION_NODES) or not _is_integer_constant(node):
-            return False
-        if isinstance(node, ast.Call) and (_qualified_call_name(node.func) is None or node.keywords):
-            return False
-        if (
-            isinstance(node, ast.Attribute)
-            and id(node) not in call_targets
-            and (not isinstance(node.value, ast.Name) or node.attr not in _PUBLIC_ARRAY_ATTRIBUTES)
-        ):
-            return False
-        if isinstance(node, ast.Subscript) and not (
-            isinstance(node.value, ast.Attribute)
-            and node.value.attr == "shape"
-            and isinstance(node.value.value, ast.Name)
-            and isinstance(node.slice, ast.Constant)
-            and _is_integer_constant(node.slice)
-        ):
-            return False
+
+
+def _is_public_declaration_expression_node(node: ast.AST, call_targets: set[int]) -> bool:
+    """Return whether one parsed node is valid in the public expression grammar.
+
+    The call-target set identifies attributes belonging to a callable name rather
+    than an array inquiry. This helper validates syntax only; producer roles and
+    callable provenance remain policy-stage responsibilities.
+    """
+    if not isinstance(node, _PUBLIC_EXPRESSION_NODES) or not _is_integer_constant(node):
+        return False
+    if isinstance(node, ast.Call):
+        return _qualified_call_name(node.func) is not None and not node.keywords
+    if isinstance(node, ast.Attribute):
+        return id(node) in call_targets or _is_public_array_attribute(node)
+    if isinstance(node, ast.Subscript):
+        return _is_public_shape_index(node)
     return True
+
+
+def _is_public_array_attribute(node: ast.Attribute) -> bool:
+    """Return whether an attribute is one documented bare array property."""
+    return isinstance(node.value, ast.Name) and node.attr in _PUBLIC_ARRAY_ATTRIBUTES
+
+
+def _is_public_shape_index(node: ast.Subscript) -> bool:
+    """Return whether a subscript is one literal array.shape[index] inquiry."""
+    return (
+        isinstance(node.value, ast.Attribute)
+        and node.value.attr == "shape"
+        and isinstance(node.value.value, ast.Name)
+        and isinstance(node.slice, ast.Constant)
+        and _is_integer_constant(node.slice)
+    )
 
 
 # ============================================================================
@@ -727,30 +750,64 @@ class _FortranExtentTranslator(ast.NodeTransformer):
         """
         name = node.func.id.casefold() if isinstance(node.func, ast.Name) else ""
 
-        # Stage 1: array inquiries need rank and lower-bound provenance.
-        if name in {"size", "shape", "rank", "lbound", "ubound"}:
-            replacement = self._array_inquiry(name, node)
-            if replacement is not None:
-                return ast.copy_location(replacement, node)
-        # Stage 2: translate intrinsic forms with direct Python equivalents.
-        if name in {"mod", "modulo"} and len(node.args) == 2 and not node.keywords:
-            return ast.copy_location(ast.BinOp(self.visit(node.args[0]), ast.Mod(), self.visit(node.args[1])), node)
-        if name == "merge" and len(node.args) == 3 and not node.keywords:
-            return ast.copy_location(
-                ast.IfExp(self.visit(node.args[2]), self.visit(node.args[0]), self.visit(node.args[1])),
-                node,
-            )
-        # Stage 3: reduce known constructors while retaining dynamic reductions.
-        if name in {"product", "sum", "maxval", "minval"} and len(node.args) == 1:
-            argument = self.visit(node.args[0])
-            if name == "product":
-                if isinstance(argument, ast.Attribute) and argument.attr == "shape":
-                    return ast.copy_location(ast.Attribute(argument.value, "size", ast.Load()), node)
-                if isinstance(argument, ast.List | ast.Tuple) and argument.elts:
-                    return ast.copy_location(self._fold_binary(list(argument.elts), ast.Mult()), node)
-            public_name = {"product": "product", "sum": "sum", "maxval": "max", "minval": "min"}[name]
-            return ast.copy_location(ast.Call(ast.Name(public_name, ast.Load()), [argument], []), node)
-        # Stage 4: preserve arbitrary static call names for semantic provenance.
+        array_inquiry = self._translated_array_inquiry(name, node)
+        if array_inquiry is not None:
+            return ast.copy_location(array_inquiry, node)
+        intrinsic = self._translated_intrinsic_call(name, node)
+        if intrinsic is not None:
+            return ast.copy_location(intrinsic, node)
+        reduction = self._translated_reduction_call(name, node)
+        if reduction is not None:
+            return ast.copy_location(reduction, node)
+        return self._normalize_untranslated_call(node)
+
+    def _translated_array_inquiry(self, name: str, node: ast.Call) -> ast.AST | None:
+        """Return a translated inquiry when the call uses a known array source.
+
+        Unknown calls and malformed inquiry forms return None so the unchanged
+        node retains semantic provenance for later diagnostics.
+        """
+        if name not in {"size", "shape", "rank", "lbound", "ubound"}:
+            return None
+        return self._array_inquiry(name, node)
+
+    def _translated_intrinsic_call(self, name: str, node: ast.Call) -> ast.AST | None:
+        """Return a direct Python equivalent for supported scalar intrinsics.
+
+        The helper consumes only fully positional modulo and merge calls. Other
+        spellings return None so generic traversal preserves their call identity.
+        """
+        if node.keywords:
+            return None
+        if name in {"mod", "modulo"} and len(node.args) == 2:
+            return ast.BinOp(self.visit(node.args[0]), ast.Mod(), self.visit(node.args[1]))
+        if name == "merge" and len(node.args) == 3:
+            return ast.IfExp(self.visit(node.args[2]), self.visit(node.args[0]), self.visit(node.args[1]))
+        return None
+
+    def _translated_reduction_call(self, name: str, node: ast.Call) -> ast.AST | None:
+        """Return a normalized reduction call for one supported unary reduction.
+
+        Product receives additional shape and literal-constructor folding. Other
+        reductions retain their argument after recursive inquiry translation.
+        """
+        if name not in {"product", "sum", "maxval", "minval"} or len(node.args) != 1:
+            return None
+        argument = self.visit(node.args[0])
+        if name == "product":
+            if isinstance(argument, ast.Attribute) and argument.attr == "shape":
+                return ast.Attribute(argument.value, "size", ast.Load())
+            if isinstance(argument, ast.List | ast.Tuple) and argument.elts:
+                return self._fold_binary(list(argument.elts), ast.Mult())
+        public_name = {"product": "product", "sum": "sum", "maxval": "max", "minval": "min"}[name]
+        return ast.Call(ast.Name(public_name, ast.Load()), [argument], [])
+
+    def _normalize_untranslated_call(self, node: ast.Call) -> ast.AST:
+        """Normalize spelling and kind keywords while retaining an unresolved call.
+
+        Arbitrary static call names must survive translation so semantic
+        conversion can establish their native provenance instead of guessing.
+        """
         if isinstance(node.func, ast.Name):
             node.func.id = node.func.id.casefold()
         node.keywords = [
@@ -1010,26 +1067,48 @@ class _IntegerEvaluator:
         performs only local deterministic arithmetic and lets its caller turn
         arithmetic errors into the evaluator's ``None`` sentinel.
         """
-        numeric = all(isinstance(argument, int | float) for argument in arguments)
-        if name == "abs" and len(arguments) == 1 and numeric:
-            return abs(arguments[0])
-        if name in {"max", "min"} and arguments and numeric:
-            return max(arguments) if name == "max" else min(arguments)
+        if name in {"abs", "max", "min", "mod", "modulo"}:
+            return _IntegerEvaluator._numeric_intrinsic_value(name, arguments)
         if name in {"product", "sum", "maxval", "minval"} and len(arguments) == 1:
             return _IntegerEvaluator._reduction_value(name, arguments[0])
-        if name in {"mod", "modulo"} and len(arguments) == 2 and numeric:
-            return arguments[0] % arguments[1]
         if name == "merge" and len(arguments) == 3:
             return arguments[0] if bool(arguments[2]) else arguments[1]
         if name == "int" and arguments and isinstance(arguments[0], int | float):
             return int(arguments[0])
-        if name in {"len", "len_trim", "iachar"} and len(arguments) == 1 and isinstance(arguments[0], str):
-            if name == "len":
-                return len(arguments[0])
-            if name == "len_trim":
-                return len(arguments[0].rstrip())
-            return ord(arguments[0][0]) if arguments[0] else None
+        if name in {"len", "len_trim", "iachar"}:
+            return _IntegerEvaluator._string_intrinsic_value(name, arguments)
         return None
+
+    @staticmethod
+    def _numeric_intrinsic_value(name: str, arguments: list[object]):
+        """Evaluate one numeric scalar intrinsic or return None for invalid inputs.
+
+        Arguments remain generic because callers recursively evaluate expression
+        nodes first. The supported names and arities match _intrinsic_value.
+        """
+        if not all(isinstance(argument, int | float) for argument in arguments):
+            return None
+        if name == "abs":
+            return abs(arguments[0]) if len(arguments) == 1 else None
+        if name in {"max", "min"}:
+            if not arguments:
+                return None
+            return max(arguments) if name == "max" else min(arguments)
+        if name in {"mod", "modulo"} and len(arguments) == 2:
+            return arguments[0] % arguments[1]
+        return None
+
+    @staticmethod
+    def _string_intrinsic_value(name: str, arguments: list[object]):
+        """Evaluate one string inquiry intrinsic or return None for invalid inputs."""
+        if len(arguments) != 1 or not isinstance(arguments[0], str):
+            return None
+        value = arguments[0]
+        if name == "len":
+            return len(value)
+        if name == "len_trim":
+            return len(value.rstrip())
+        return ord(value[0]) if value else None
 
     @staticmethod
     def _reduction_value(name: str, values: object):
@@ -1177,40 +1256,61 @@ class _ExtentRoleResolver(ast.NodeTransformer):
         if call_name is None or node.keywords:
             self.blockers.append("<invalid>" if call_name is None else f"{call_name}()")
             return node
-        # Stage 2: a resolved native specification function has its own token.
-        callable_source = self.callable_roles.get(call_name.casefold())
-        if callable_source is not None:
-            token, role = callable_source
-            self.callables.setdefault(token, role)
-            self.changed = True
-            return ast.copy_location(
-                ast.Call(
-                    func=ast.Name(id=token, ctx=ast.Load()),
-                    args=[self.visit(argument) for argument in node.args],
-                    keywords=[],
-                ),
-                node,
-            )
-        # Stage 3: only bare names can be public built-in helpers.
+        resolved_callable = self._resolved_native_callable(call_name, node)
+        if resolved_callable is not None:
+            return resolved_callable
         if not isinstance(node.func, ast.Name):
             self.blockers.append(f"{call_name}()")
             return node
         name = node.func.id.casefold()
-        # Stage 4: expand array-specific public helpers before generic helpers.
         if name == "len":
-            if len(node.args) != 1 or not isinstance(node.args[0], ast.Name):
-                self.blockers.append("<invalid>")
-                return node
-            source = self.array_roles.get(node.args[0].id.casefold())
-            if source is None or not source[1]:
-                self.blockers.append(node.args[0].id)
-                return node
-            return self._extent_token(source[0], source[1], 0, node)
+            return self._resolved_length_call(node)
         if name in {"sum", "max", "min"} and len(node.args) == 1:
             expanded = self._expanded_sequence_call(name, node.args[0], node)
             if expanded is not None:
                 return expanded
-        # Stage 5: retain validated scalar helpers and visit their arguments.
+        return self._resolved_scalar_helper_call(name, node)
+
+    def _resolved_native_callable(self, call_name: str, node: ast.Call) -> ast.AST | None:
+        """Return a tokenized call for one declaration callable, when registered.
+
+        The callable-role mapping is the completed provenance input. A matching
+        call records the referenced callable and recursively resolves arguments;
+        no match returns None so built-in helper handling can continue.
+        """
+        callable_source = self.callable_roles.get(call_name.casefold())
+        if callable_source is None:
+            return None
+        token, role = callable_source
+        self.callables.setdefault(token, role)
+        self.changed = True
+        return ast.copy_location(
+            ast.Call(
+                func=ast.Name(id=token, ctx=ast.Load()),
+                args=[self.visit(argument) for argument in node.args],
+                keywords=[],
+            ),
+            node,
+        )
+
+    def _resolved_length_call(self, node: ast.Call) -> ast.AST:
+        """Resolve one len call to its first declared extent or record a blocker."""
+        if len(node.args) != 1 or not isinstance(node.args[0], ast.Name):
+            self.blockers.append("<invalid>")
+            return node
+        source = self.array_roles.get(node.args[0].id.casefold())
+        if source is None or not source[1]:
+            self.blockers.append(node.args[0].id)
+            return node
+        return self._extent_token(source[0], source[1], 0, node)
+
+    def _resolved_scalar_helper_call(self, name: str, node: ast.Call) -> ast.AST:
+        """Validate a scalar helper, resolve its arguments, or record its blocker.
+
+        This helper receives only bare names after array-specific reductions have
+        been considered. It preserves existing invalid-call wording and performs
+        no semantic interpretation beyond the public helper grammar.
+        """
         if name not in _SUPPORTED_CALLS or (name in {"abs", "int"} and len(node.args) != 1):
             self.blockers.append(f"{node.func.id}()")
             return node
