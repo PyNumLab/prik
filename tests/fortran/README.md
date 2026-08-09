@@ -57,7 +57,7 @@ Array declaration-expression coverage is intentionally split by evidence:
 `arrays/policy/` proves completed dependency roles and named blockers, and
 `arrays/end_to_end/` compiles supported dimensions and logical array kinds.
 Cross-module editable-contract reconciliation remains under
-`semantic_pyi_format/`, not under a code-generation test.
+the semantic `.pyi` format stage, not under a code-generation test.
 
 ## Infrastructure owners
 
