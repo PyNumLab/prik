@@ -1,4 +1,4 @@
-name: Native Libraries
+name: Real Libraries
 
 on:
   push:
@@ -12,7 +12,7 @@ env:
 
 jobs:
   real-library-wrappers:
-    name: BLAS + LAPACK · Ubuntu 24.04 · Python 3.12
+    name: BLAS + LAPACK + FFTPACK + MINPACK · Ubuntu 24.04 · Python 3.12
     if: >-
       ${{
         github.event_name != 'pull_request' ||
@@ -97,3 +97,17 @@ jobs:
         run: |
           source examples/lapack/build_all.sh
           python -m pytest -q examples/lapack/tests examples/lapack/ci/full_surface.py
+      - name: Run FFTPACK 31-procedure full-surface audit
+        env:
+          PYTHONPATH: .
+          HYPOTHESIS_PROFILE: ci
+        run: |
+          source examples/fftpack/build_all.sh
+          python -m pytest -q examples/fftpack/tests
+      - name: Run MINPACK 22-procedure and parameter-array full-surface audit
+        env:
+          PYTHONPATH: .
+          HYPOTHESIS_PROFILE: ci
+        run: |
+          source examples/minpack/build_all.sh
+          python -m pytest -q examples/minpack/tests

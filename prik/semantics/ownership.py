@@ -1574,12 +1574,11 @@ class OwnershipPolicyResolver:
         if facts.rank > 0 or facts.is_ndarray:
             return OwnershipDecision(
                 ObjectKind.NUMPY_ARRAY,
-                OwnershipOwner.UNKNOWN,
-                TransferMode.BLOCKED,
-                DestructionPolicy.BLOCKED,
-                storage_mode=StorageMode.STACK,
-                blocker="array constants need explicit immutable value-copy policy",
-                reason="module constants are values rather than mutable native array storage",
+                OwnershipOwner.PYTHON,
+                TransferMode.BY_VALUE,
+                DestructionPolicy.PYTHON_REFCOUNT,
+                storage_mode=StorageMode.HEAP,
+                reason="module array constants are materialized once as immutable Python-owned snapshots",
             )
         if facts.is_custom:
             return OwnershipDecision(

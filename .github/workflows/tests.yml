@@ -135,7 +135,7 @@ jobs:
           python tools/run_fortran_toolchain_lane.py \
             --compiler gfortran \
             --junit-dir "$RUNNER_TEMP"
-      - name: Run full suite without BLAS or LAPACK
+      - name: Run full suite without real-library examples
         env:
           PYTHONPATH: .
           HYPOTHESIS_PROFILE: ci

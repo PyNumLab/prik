@@ -12,7 +12,7 @@ TEST_ROOT = REPO_ROOT / "tests"
 EXAMPLES_ROOT = REPO_ROOT / "examples"
 TEST_INDEX = TEST_ROOT / "README.md"
 WORKFLOW_ROOT = REPO_ROOT / ".github/workflows"
-BLAS_LAPACK_WORKFLOW = REPO_ROOT / ".github/workflows/blas-lapack.yml"
+REAL_LIBRARIES_WORKFLOW = REPO_ROOT / ".github/workflows/real-libraries.yml"
 CLAUDE_WORKFLOW = REPO_ROOT / ".github/workflows/claude.yml"
 COVERAGE_WORKFLOW = REPO_ROOT / ".github/workflows/coverage.yml"
 CODECOV_CONFIG = REPO_ROOT / "codecov.yml"
@@ -282,7 +282,7 @@ def test_maintained_docs_do_not_name_deprecated_pytest_locations() -> None:
 
 def test_real_library_examples_have_one_dedicated_workflow() -> None:
     ordinary_jobs = TESTS_WORKFLOW.read_text(encoding="utf-8")
-    dedicated_job = BLAS_LAPACK_WORKFLOW.read_text(encoding="utf-8")
+    dedicated_job = REAL_LIBRARIES_WORKFLOW.read_text(encoding="utf-8")
 
     assert '-m "not real_library and not toolchain_smoke"' in ordinary_jobs
     assert ordinary_jobs.count('-m "not real_library and not toolchain_smoke"') == 2
@@ -290,8 +290,12 @@ def test_real_library_examples_have_one_dedicated_workflow() -> None:
     assert "examples/lapack" not in ordinary_jobs
     assert "source examples/blas/build_all.sh" in dedicated_job
     assert "source examples/lapack/build_all.sh" in dedicated_job
+    assert "source examples/fftpack/build_all.sh" in dedicated_job
+    assert "source examples/minpack/build_all.sh" in dedicated_job
     assert f"python -m pytest -q examples/blas/tests {BLAS_CI_FULL_SURFACE}" in dedicated_job
     assert f"python -m pytest -q examples/lapack/tests {LAPACK_CI_FULL_SURFACE}" in dedicated_job
+    assert "python -m pytest -q examples/fftpack/tests" in dedicated_job
+    assert "python -m pytest -q examples/minpack/tests" in dedicated_job
     assert BLAS_CI_FULL_SURFACE in dedicated_job
     assert LAPACK_CI_FULL_SURFACE in dedicated_job
     assert '"meson==1.11.2"' in dedicated_job
@@ -340,7 +344,7 @@ def test_codecov_keeps_project_coverage_blocking_and_patch_coverage_informationa
 
 def test_active_github_action_checks_use_distinct_workflow_scopes_and_job_names() -> None:
     workflow_names = {
-        BLAS_LAPACK_WORKFLOW: "Native Libraries",
+        REAL_LIBRARIES_WORKFLOW: "Real Libraries",
         CLAUDE_WORKFLOW: "Repository Automation",
         COVERAGE_WORKFLOW: "Quality Metrics",
         DOCS_WORKFLOW: "Documentation",
@@ -351,7 +355,9 @@ def test_active_github_action_checks_use_distinct_workflow_scopes_and_job_names(
         TESTS_WORKFLOW: "Test Matrix",
     }
     expected = {
-        BLAS_LAPACK_WORKFLOW: {"real-library-wrappers": "BLAS + LAPACK · Ubuntu 24.04 · Python 3.12"},
+        REAL_LIBRARIES_WORKFLOW: {
+            "real-library-wrappers": "BLAS + LAPACK + FFTPACK + MINPACK · Ubuntu 24.04 · Python 3.12"
+        },
         CLAUDE_WORKFLOW: {"claude": "Claude Code response to mention"},
         COVERAGE_WORKFLOW: {"coverage": "Project coverage · Ubuntu 24.04 · Python 3.12"},
         DOCS_WORKFLOW: {
@@ -369,7 +375,7 @@ def test_active_github_action_checks_use_distinct_workflow_scopes_and_job_names(
             "compiler-smoke-macos": "Compiler smoke · macOS 15 ARM64 · LLVM Flang · Python 3.12",
             "unit-tests": "${{ matrix.display_name }}",
             "unit-tests-macos": "Unit tests · macOS 15 ARM64 · Python 3.12",
-            "native-libraries": "BLAS + LAPACK · Ubuntu 24.04 · Python 3.12",
+            "native-libraries": "BLAS + LAPACK + FFTPACK + MINPACK · Ubuntu 24.04 · Python 3.12",
             "documentation-benchmark": "Documentation performance benchmark · Ubuntu 24.04 ARM64 · Python 3.12",
             "documentation-build": "Documentation site build · Ubuntu 24.04 · Python 3.12",
             "merge-gate": "Validation · all required checks",
@@ -482,7 +488,7 @@ def test_purpose_specific_workflows_do_not_create_duplicate_pull_request_runs() 
     for workflow in (
         TESTS_WORKFLOW,
         STATIC_ANALYSIS_WORKFLOW,
-        BLAS_LAPACK_WORKFLOW,
+        REAL_LIBRARIES_WORKFLOW,
         FORTRAN_SMOKE_WORKFLOW,
         COVERAGE_WORKFLOW,
         DOCS_WORKFLOW,
@@ -500,7 +506,7 @@ def test_pull_request_jobs_share_the_reviewed_component_workflow_steps() -> None
         ("compiler-smoke", FORTRAN_SMOKE_WORKFLOW, "toolchain-smoke"),
         ("compiler-smoke-macos", FORTRAN_SMOKE_WORKFLOW, "macos-flang-smoke"),
         ("unit-tests-macos", TESTS_WORKFLOW, "macos"),
-        ("native-libraries", BLAS_LAPACK_WORKFLOW, "real-library-wrappers"),
+        ("native-libraries", REAL_LIBRARIES_WORKFLOW, "real-library-wrappers"),
         ("documentation-benchmark", DOCS_WORKFLOW, "benchmark"),
     ):
         assert _github_action_job_steps(MERGE_VALIDATION_WORKFLOW, pull_request_job) == _github_action_job_steps(

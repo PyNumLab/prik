@@ -996,6 +996,10 @@ class FortranToIRConverter(ClassVisitor):
             **(callback_interfaces or {}),
             **self._callback_interface_lookup(module),
         }
+        source_procedures = [
+            *module.procedures,
+            *self._module_explicit_interface_procedures(module),
+        ]
         semantic_functions = [
             self.visit(
                 proc,
@@ -1003,7 +1007,7 @@ class FortranToIRConverter(ClassVisitor):
                 derived_type_context=context,
                 callback_interfaces=callback_interfaces,
             )
-            for proc in module.procedures
+            for proc in source_procedures
         ]
         callback_prototypes = {
             argument.semantic_type.name.casefold()
@@ -1018,7 +1022,7 @@ class FortranToIRConverter(ClassVisitor):
             self._module_declaration_call_names(module),
         )
         procedure_lookup = {func.name.casefold(): func for func in semantic_functions}
-        for procedure, function in zip(module.procedures, semantic_functions, strict=True):
+        for procedure, function in zip(source_procedures, semantic_functions, strict=True):
             callable_context = self._declaration_callable_context(
                 module,
                 functions=semantic_functions,
@@ -1060,9 +1064,7 @@ class FortranToIRConverter(ClassVisitor):
             for enumerator in enum.enumerators
         ]
         representable_variables = [
-            var
-            for var in getattr(module, "variables", [])
-            if var.name.casefold() not in common_variables and self._is_representable_module_variable(var)
+            var for var in getattr(module, "variables", []) if var.name.casefold() not in common_variables
         ]
         declaration_arrays = self._array_expression_sources(getattr(module, "variables", []))
         module_variables = [
@@ -1126,11 +1128,6 @@ class FortranToIRConverter(ClassVisitor):
             self._record_function_declaration_callables(method, context)
         for nested in semantic_class.classes:
             self._record_class_declaration_callables(nested, context)
-
-    @staticmethod
-    def _is_representable_module_variable(variable: FortranVariable) -> bool:
-        """Omit parameter arrays that have no addressable native module storage."""
-        return not (variable.is_parameter and variable.rank > 0)
 
     @staticmethod
     def _array_expression_sources(
@@ -1382,6 +1379,32 @@ class FortranToIRConverter(ClassVisitor):
     def _known_procedures_from_project(project: FortranProject) -> set[tuple[str, str]]:
         """Collect module-qualified procedures known to one parsed project."""
         return {(module.name, procedure.name) for module in project.modules.values() for procedure in module.procedures}
+
+    @staticmethod
+    def _module_explicit_interface_procedures(
+        module: FortranModule,
+    ) -> list[FortranProcedureSignature]:
+        """Return explicitly public procedures declared by unnamed interfaces.
+
+        An explicit public list makes the module declaration the authoritative
+        wrapper contract. Other unnamed interface declarations remain
+        interface-only facts even when a matching implementation is parsed.
+        """
+        public_names = {name.casefold() for name in module.public_symbols}
+        declared_names = {procedure.name.casefold() for procedure in module.procedures}
+        procedures: list[FortranProcedureSignature] = []
+        for interface in module.interfaces:
+            if interface.name is not None or interface.abstract:
+                continue
+            for procedure in interface.procedures:
+                name = procedure.name.casefold()
+                if name in declared_names:
+                    continue
+                if name not in public_names:
+                    continue
+                declared_names.add(name)
+                procedures.append(procedure)
+        return procedures
 
     @staticmethod
     def _wrapped_types_from_project(project: FortranProject) -> set[tuple[str, str]]:

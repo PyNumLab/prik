@@ -97,16 +97,14 @@ python -m coverage report
 
 For subprocess coverage investigations, mirror that command shape before
 deciding a fix. A plain local coverage run can miss subprocess data.
-Every Python version excludes the full BLAS/LAPACK real-library wrapper test
-while retaining general native-bundle coverage. The `Native Libraries`
-component runs the complete BLAS and LAPACK examples on Python 3.12. Each job
-step sources `build_all.sh`, which sources the exact `build_prik.sh` and
-`build_f2py.sh` sequences displayed in the user documentation, before starting
-pytest. Each f2py script reuses the native library from its PRIK script, and
-each explicitly selected `ci/full_surface.py` audit reuses the PRIK extension.
-The job therefore verifies the copyable commands without repeating native
-compilation or wrapper construction in a second process. A
-pull request may use the
+Every Python version excludes the full real-library wrapper examples while
+retaining general native-bundle coverage. The `Real Libraries` component runs
+the complete BLAS, LAPACK, FFTPACK, and MINPACK examples on Python 3.12. Each
+job step sources the documented `build_all.sh` entrypoint before starting
+pytest. BLAS and LAPACK additionally run their CI-only full-surface audits;
+FFTPACK and MINPACK run their fail-closed public-inventory tests as part of the
+maintained example suites. The job therefore verifies the copyable build and
+test commands for all four libraries. A pull request may use the
 `ignore-real-library-wrappers` label to skip that expensive component without
 disabling the ordinary Python-version matrix.
 

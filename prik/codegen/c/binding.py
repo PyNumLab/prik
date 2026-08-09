@@ -635,6 +635,11 @@ class CBindingGenerator(ClassVisitor):
         return (
             self._module_uses_string_values(plan)
             or self._module_uses_array_result_copy(plan)
+            or any(
+                variable.binding.getter_action is ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE
+                for namespace in plan.namespaces
+                for variable in namespace.variables
+            )
             or self._module_uses_derived_string_copy(plan)
             or self._module_uses_non_direct_derived_calls(plan)
         )
@@ -5706,6 +5711,8 @@ class CBindingGenerator(ClassVisitor):
                 return self._lower_module_getter_constant_value(plan)
             case ModuleGetterAction.NATIVE_CONSTANT_VALUE:
                 return self._lower_module_getter_native_constant_value(plan)
+            case ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE:
+                return self._lower_module_getter_constant_value(plan)
             case ModuleGetterAction.DIRECT_VALUE:
                 return self._lower_module_getter_direct_value(plan)
             case ModuleGetterAction.NULLABLE_SNAPSHOT:
@@ -10632,6 +10639,7 @@ class CBindingGenerator(ClassVisitor):
         handler = {
             ModuleGetterAction.NATIVE_ARRAY_HANDLE: self._module_native_array_bridge_prototypes,
             ModuleGetterAction.BORROWED_ARRAY_VIEW: self._module_borrowed_array_bridge_prototypes,
+            ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE: self._module_borrowed_array_bridge_prototypes,
             ModuleGetterAction.DERIVED_OBJECT: self._module_derived_bridge_prototypes,
         }.get(plan.binding.getter_action)
         if handler is not None:
@@ -10808,6 +10816,7 @@ class CBindingGenerator(ClassVisitor):
         if plan.binding.getter_action in {
             ModuleGetterAction.CONSTANT_VALUE,
             ModuleGetterAction.NATIVE_CONSTANT_VALUE,
+            ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE,
         }:
             return ()
         prototypes = [CFunctionPrototype(self._module_getter_name(plan), "PyObject *", storage="static")]
@@ -10841,7 +10850,11 @@ class CBindingGenerator(ClassVisitor):
             )
             for variable in namespace.variables
             if variable.binding.getter_action
-            not in {ModuleGetterAction.CONSTANT_VALUE, ModuleGetterAction.NATIVE_CONSTANT_VALUE}
+            not in {
+                ModuleGetterAction.CONSTANT_VALUE,
+                ModuleGetterAction.NATIVE_CONSTANT_VALUE,
+                ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE,
+            }
             for python_name in variable.binding.python_names
         )
         if not entries:
@@ -12164,6 +12177,7 @@ class CBindingGenerator(ClassVisitor):
             if variable.binding.getter_action not in {
                 ModuleGetterAction.CONSTANT_VALUE,
                 ModuleGetterAction.NATIVE_CONSTANT_VALUE,
+                ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE,
             }:
                 continue
             for python_name in variable.binding.python_names:
@@ -12191,8 +12205,10 @@ class CBindingGenerator(ClassVisitor):
         variable: ModuleVariablePlan,
         value_name: str,
         object_name: str,
-    ) -> tuple[CDeclaration, ...]:
+    ) -> tuple[CDeclaration | CExpressionStatement, ...]:
         """Materialize one planned binding or native constant value."""
+        if variable.binding.getter_action is ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE:
+            return self._module_constant_array_declarations(variable, value_name, object_name)
         if variable.datatype_family is DatatypeFamily.STRING:
             literal = self._c_string_literal(str(variable.binding.constant_value))
             return (
@@ -12214,6 +12230,55 @@ class CBindingGenerator(ClassVisitor):
                 object_name,
                 "PyObject *",
                 CodeExpression(self._scalar_result_expression(scalar_type, f"&{value_name}", module=True)),
+            ),
+        )
+
+    def _module_constant_array_declarations(
+        self,
+        variable: ModuleVariablePlan,
+        value_name: str,
+        object_name: str,
+    ) -> tuple[CDeclaration | CExpressionStatement]:
+        """Materialize one compiler-evaluated parameter array as a read-only NumPy snapshot."""
+        array = variable.array
+        if array is None or array.rank is None or array.rank <= 0:
+            raise ValueError(f"Module parameter array {variable.owner_path!r} has no fixed array plan")
+        scalar_type = PrimitiveScalarTypeRegistry.type_for(variable.semantic_type_name)
+        extent_names = tuple(f"{value_name}_extent_{axis}" for axis in range(array.rank))
+        dimensions = f"{value_name}_dimensions"
+        return (
+            *(CDeclaration(extent, "int64_t", CodeExpression("0")) for extent in extent_names),
+            CDeclaration(
+                value_name,
+                "void *",
+                CodeExpression(
+                    f"{self._module_bridge_getter_name(variable)}({', '.join(f'&{extent}' for extent in extent_names)})"
+                ),
+            ),
+            CExpressionStatement(
+                CodeExpression(f"if ({value_name} == NULL) {{ PyErr_NoMemory(); Py_DECREF(mod); return NULL; }}")
+            ),
+            CDeclaration(
+                f"{dimensions}[{array.rank}]",
+                "npy_intp",
+                CodeExpression("{" + ", ".join(f"(npy_intp){extent}" for extent in extent_names) + "}"),
+            ),
+            CDeclaration(
+                object_name,
+                "PyObject *",
+                CodeExpression(
+                    f"(PyObject *)PyArray_EMPTY({array.rank}, {dimensions}, {scalar_type.numpy_type_macro}, 1)"
+                ),
+            ),
+            CExpressionStatement(CodeExpression(f"if ({object_name} == NULL) {{ Py_DECREF(mod); return NULL; }}")),
+            CExpressionStatement(
+                CodeExpression(
+                    f"memcpy(PyArray_DATA((PyArrayObject *){object_name}), {value_name}, "
+                    f"PyArray_NBYTES((PyArrayObject *){object_name}))"
+                )
+            ),
+            CExpressionStatement(
+                CodeExpression(f"PyArray_CLEARFLAGS((PyArrayObject *){object_name}, NPY_ARRAY_WRITEABLE)")
             ),
         )
 

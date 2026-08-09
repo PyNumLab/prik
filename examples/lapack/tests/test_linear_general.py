@@ -199,6 +199,8 @@ def test_dgesvx_solves_and_reports_error_bounds(prik_lapack, scipy_lapack, f2py_
     assert_allclose_float64(prik_scalars[-2], scipy_rcond)
     assert_allclose_float64(prik_ferr, scipy_ferr)
     assert_allclose_float64(prik_berr, scipy_berr)
+    assert_allclose_float64(f2py_ferr, scipy_ferr)
+    assert_allclose_float64(f2py_berr, scipy_berr)
 
 
 def test_dgetc2_factorizes_with_complete_pivoting(prik_lapack, scipy_lapack, f2py_lapack):
@@ -218,6 +220,8 @@ def test_dgetc2_factorizes_with_complete_pivoting(prik_lapack, scipy_lapack, f2p
     assert_allclose_float64(scipy_lu, [[4.0]])
     np.testing.assert_array_equal(prik_ipiv, native_pivots(scipy_ipiv))
     np.testing.assert_array_equal(prik_jpiv, native_pivots(scipy_jpiv))
+    np.testing.assert_array_equal(f2py_ipiv, native_pivots(scipy_ipiv))
+    np.testing.assert_array_equal(f2py_jpiv, native_pivots(scipy_jpiv))
 
 
 def test_dgetri_inverts_lu_factorization(prik_lapack, scipy_lapack, f2py_lapack):

@@ -9,10 +9,10 @@ publication: draft
 
 # Examples Gallery
 
-The maintained part of this section includes the checked recipes and the
-complete BLAS and LAPACK correctness projects. Use them when you need a
-copy-paste command, a real-library project, or the current boundary between
-inspection and runtime wrapper support.
+The maintained part of this section includes checked recipes and four complete
+real-library correctness projects: BLAS, LAPACK, FFTPACK, and MINPACK. Each
+project pairs copyable build commands with reviewed numerical evidence and a
+fail-closed API inventory.
 
 The larger project examples below are placeholders for future complete runnable
 projects. Each one must include source, build command, import command, runtime
@@ -36,6 +36,8 @@ PRIK_C_DOCS_END -->
 | Pass compiler and preprocessing options | [Use compiler preprocessing options](recipes/compiler-preprocessing.md) |
 | Build and validate the complete Reference BLAS | [BLAS wrapper](blas-wrapper.md) |
 | Build complete Reference LAPACK and validate the SciPy-backed float64 surface | [LAPACK wrapper](lapack-wrapper.md) |
+| Wrap and validate all 31 FFTPACK procedures with NumPy and SciPy | [FFTPACK wrapper](fftpack-wrapper.md) |
+| Wrap all 22 MINPACK procedures, callbacks, and immutable constants | [MINPACK wrapper](minpack-wrapper.md) |
 
 ## Planned Project Examples
 

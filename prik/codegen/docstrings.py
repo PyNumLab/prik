@@ -357,6 +357,7 @@ class WrapperDocstringBuilder:
         if variable.binding.getter_action in {
             ModuleGetterAction.CONSTANT_VALUE,
             ModuleGetterAction.NATIVE_CONSTANT_VALUE,
+            ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE,
         }:
             lines.append("    Read-only constant.")
         elif variable.binding.getter_action is ModuleGetterAction.BORROWED_ARRAY_VIEW:

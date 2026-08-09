@@ -14,6 +14,8 @@ from tests.fortran._support.semantic_conversion import (
     has_constraint,
     parse_fortran_source,
 )
+from prik import parse_fortran_project
+from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 
 
 def test_converter_normalizes_wrapped_types_and_resolves_wildcard_imports():
@@ -79,7 +81,7 @@ end module constants_mod
     assert variables["origin"].shape == ["3"]
 
 
-def test_parameter_array_without_addressable_storage_is_omitted_but_remains_usable_by_routines():
+def test_parameter_array_is_retained_as_a_public_semantic_constant():
     source = """
 module constants_mod
   real, parameter :: machine_values(3) = [1.0, 2.0, 3.0]
@@ -93,8 +95,70 @@ end module constants_mod
 
     module = fortran_module_to_semantic_module(parse_fortran_source(source))
 
-    assert [variable.name for variable in module.variables] == ["count"]
+    variables = {variable.name: variable.semantic_type for variable in module.variables}
+
+    assert list(variables) == ["machine_values", "count"]
+    assert variables["machine_values"].name == "Float32"
+    assert variables["machine_values"].shape == ["3"]
+    assert has_constraint(variables["machine_values"], "Constant")
     assert [function.name for function in module.functions] == ["second_value"]
+
+
+def test_explicit_public_unnamed_interface_procedure_uses_the_declared_signature():
+    source = """
+module api
+  private
+  public :: scale
+  interface
+    subroutine scale(values)
+      real(8), intent(inout) :: values(*)
+    end subroutine scale
+  end interface
+end module api
+"""
+
+    module = fortran_module_to_semantic_module(parse_fortran_source(source))
+
+    assert [function.name for function in module.functions] == ["scale"]
+    assert module.prototypes == []
+    argument = module.functions[0].arguments[0]
+    assert argument.semantic_type.name == "Float64"
+    assert argument.semantic_type.rank == 1
+
+
+def test_explicit_public_submodule_interface_is_callable_from_parent_contract():
+    project = parse_fortran_project(
+        {
+            "api.f90": """
+module api
+  private
+  public :: values
+  interface
+    module function values(n) result(output)
+      integer, intent(in) :: n
+      integer :: output(n)
+    end function values
+  end interface
+end module api
+""",
+            "implementation.f90": """
+submodule(api) implementation
+contains
+  module procedure values
+    do n = 1, n
+      output(n) = n
+    end do
+  end procedure values
+end submodule implementation
+""",
+        }
+    )
+
+    module = next(item for item in fortran_project_to_semantic_modules(project) if item.name == "api")
+
+    assert [function.name for function in module.functions] == ["values"]
+    assert module.prototypes == []
+    assert module.functions[0].return_type.shape == ["n"]
 
 
 def test_complex_module():

@@ -54,6 +54,24 @@ end module computed_constants
     return WrapperPlanner().build(module)
 
 
+def _parameter_array_plan():
+    parsed = parse_fortran_project(
+        {
+            "parameter_array.f90": """
+module parameter_array
+  use iso_fortran_env, only: real64
+  real(real64), parameter :: dpmpar(3) = [epsilon(1.0_real64), tiny(1.0_real64), huge(1.0_real64)]
+end module parameter_array
+"""
+        }
+    )
+    modules = fortran_project_to_semantic_modules(parsed)
+    _apply_source_python_exports(modules)
+    module = _merge_wrapper_modules(modules, name="parameter_array_wrapper")
+    complete_semantic_policies(module)
+    return WrapperPlanner().build(module)
+
+
 def _source(artifacts, suffix: str) -> str:
     return next(item.text for item in artifacts.sources if item.path.name.endswith(suffix))
 
@@ -107,6 +125,33 @@ def test_symbolic_source_parameter_reuses_scalar_bridge_getter_for_module_initia
     assert "result = native_computed" in fortran_source
     assert "bind_c_set_computed" not in c_source
     assert "bind_c_set_computed" not in fortran_source
+
+
+def test_parameter_array_uses_one_immutable_python_owned_import_snapshot():
+    plan = _parameter_array_plan()
+    variable = next(
+        variable
+        for namespace in plan.namespaces
+        for variable in namespace.variables
+        if variable.binding.python_names == ("dpmpar",)
+    )
+    assert variable.binding.getter_action is ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE
+    assert variable.binding.setter_action is SetterAction.OMIT
+    assert variable.binding.constant_value is None
+    assert variable.array is not None
+    assert variable.array.shape == ("3",)
+
+    artifacts = WrapperCodeGenerator().generate(plan)
+    c_source = _source(artifacts, ".c")
+    fortran_source = _source(artifacts, ".f90")
+    assert "void * bind_c_get_dpmpar(int64_t * extent_0);" in c_source
+    assert "PyArray_EMPTY(1, constant_dpmpar_value_0_dimensions, NPY_FLOAT64, 1)" in c_source
+    assert "memcpy(PyArray_DATA((PyArrayObject *)constant_dpmpar_object_0)" in c_source
+    assert "PyArray_CLEARFLAGS((PyArrayObject *)constant_dpmpar_object_0, NPY_ARRAY_WRITEABLE)" in c_source
+    assert 'PyModule_AddObject(namespace_parameter_array, "dpmpar", constant_dpmpar_object_0)' in c_source
+    assert "real(c_double), allocatable, target, save, dimension(:) :: parameter_snapshot" in fortran_source
+    assert "parameter_snapshot = native_dpmpar" in fortran_source
+    assert "result = c_loc(parameter_snapshot)" in fortran_source
 
 
 def test_module_variable_visitors_consume_their_backend_owned_actions():

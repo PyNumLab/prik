@@ -29,6 +29,8 @@ def build_real_fortran_library(
     library: str,
     sources: list[Path],
     build_dir: Path,
+    *,
+    native_fortran_sources: list[Path] | None = None,
 ):
     """Build and import one actual third-party source set through the public API."""
     if shutil.which("gfortran") is None:
@@ -37,6 +39,7 @@ def build_real_fortran_library(
         pytest.skip(f"{library} checkout does not contain the expected source files")
     result = build_fortran_extension(
         sources,
+        native_fortran_sources=native_fortran_sources,
         output_dir=build_dir,
         output_name=f"prik_{library}_showcase",
     )

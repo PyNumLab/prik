@@ -70,6 +70,8 @@ nav:
           - Overview: user/examples/index.md
           - BLAS Wrapper: user/examples/blas-wrapper.md
           - LAPACK Wrapper: user/examples/lapack-wrapper.md
+          - FFTPACK Wrapper: user/examples/fftpack-wrapper.md
+          - MINPACK Wrapper: user/examples/minpack-wrapper.md
           - CFD Mini Example: user/examples/cfd-mini-example.md
           - MPI Example: user/examples/mpi-example.md
           - Object-Oriented Fortran: user/examples/object-oriented-fortran.md

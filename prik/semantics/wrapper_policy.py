@@ -275,6 +275,7 @@ class ModuleGetterAction(str, Enum):
 
     CONSTANT_VALUE = "constant_value"
     NATIVE_CONSTANT_VALUE = "native_constant_value"
+    NATIVE_CONSTANT_ARRAY_VALUE = "native_constant_array_value"
     DIRECT_VALUE = "direct_value"
     NULLABLE_SNAPSHOT = "nullable_snapshot"
     BORROWED_ARRAY_VIEW = "borrowed_array_view"
@@ -1929,7 +1930,16 @@ def build_module_variable_policy(
     )
     array = _array_handoff_policy(variable.semantic_type)
     # Select the one completed access family without backend-specific inference.
-    if native_array_handle is not None:
+    if _is_parameter_array(variable):
+        policy = _constant_array_module_variable_policy(
+            variable,
+            module_name,
+            owner_path,
+            getter,
+            setter,
+            array,
+        )
+    elif native_array_handle is not None:
         policy = _native_array_module_variable_policy(
             variable,
             module_name,
@@ -1986,7 +1996,7 @@ def _complete_module_variable_policy(
             supported=False,
             blockers=(*policy.blockers, *validation_blockers),
         )
-    if variable.default_value is None or _is_scalar_module_constant(variable):
+    if variable.default_value is None or _is_scalar_module_constant(variable) or _is_parameter_array(variable):
         return policy
     if policy.initializer is not None:
         return policy
@@ -2104,6 +2114,67 @@ def _ordinary_array_module_variable_policy(
         blockers=tuple(blockers),
         array=array,
     )
+
+
+def _constant_array_module_variable_policy(
+    variable: models.SemanticVariable,
+    module_name: str,
+    owner_path: str,
+    getter: OwnershipDecision | None,
+    setter: OwnershipDecision | None,
+    array: ArrayHandoffPolicy | None,
+) -> ModuleVariablePolicy:
+    """Build one immutable Python-owned snapshot policy for a parameter array.
+
+    Fortran ``parameter`` arrays have no addressable module storage.  The
+    selected bridge therefore copies the compiler-evaluated values into a
+    module-owned NumPy allocation once during import; it never exposes or
+    aliases a native address.
+    """
+    blockers = _constant_array_module_variable_blockers(variable, getter, setter, array)
+    return ModuleVariablePolicy(
+        **_module_variable_policy_base(variable, module_name, owner_path),
+        getter_action=ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE,
+        getter=getter,
+        setter_action=SetterAction.OMIT,
+        native_assignment=AssignmentMode.NONE,
+        setter=setter,
+        descriptor_kind=None,
+        initializer=None,
+        constant_value=None,
+        supported=not blockers,
+        blockers=tuple(blockers),
+        array=array,
+    )
+
+
+def _constant_array_module_variable_blockers(
+    variable: models.SemanticVariable,
+    getter: OwnershipDecision | None,
+    setter: OwnershipDecision | None,
+    array: ArrayHandoffPolicy | None,
+) -> tuple[str, ...]:
+    """Validate the post-IR immutable-copy contract for one parameter array."""
+    blockers = []
+    if variable.visibility != "public":
+        blockers.append("module parameter array is not public")
+    if array is None or array.rank is None or array.rank <= 0 or len(array.shape) != array.rank:
+        blockers.append("module parameter array requires one concrete fixed rank")
+    if variable.semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES:
+        blockers.append("module parameter array requires a primitive numeric element type")
+    expected_getter = (
+        getter is not None
+        and getter.kind is ObjectKind.NUMPY_ARRAY
+        and getter.owner is OwnershipOwner.PYTHON
+        and getter.transfer is TransferMode.BY_VALUE
+        and getter.destruction is DestructionPolicy.PYTHON_REFCOUNT
+        and getter.storage_mode is StorageMode.HEAP
+    )
+    if not expected_getter:
+        blockers.append("module parameter array is not a completed Python-owned immutable snapshot")
+    if setter is None or setter.setter_action is not SetterAction.OMIT:
+        blockers.append("module parameter array must omit native replacement assignment")
+    return tuple(blockers)
 
 
 def _scalar_module_variable_policy(
@@ -6156,6 +6227,16 @@ def _scalar_module_descriptor_kind(variable: models.SemanticVariable) -> str | N
 def _is_scalar_module_constant(variable: models.SemanticVariable) -> bool:
     """Report whether a module variable is constrained as a semantic constant."""
     return any(constraint.name == "Constant" for constraint in variable.semantic_type.constraints)
+
+
+def _is_parameter_array(variable: models.SemanticVariable) -> bool:
+    """Report whether a fixed Fortran parameter needs immutable-array lowering."""
+    return bool(
+        variable.origin.source_language == "fortran"
+        and variable.origin.source_kind == "variable"
+        and int(variable.semantic_type.rank or 0) > 0
+        and _is_scalar_module_constant(variable)
+    )
 
 
 def _is_scalar_module_literal(value: object, semantic_type_name: str) -> bool:

@@ -10,6 +10,7 @@ from .helpers import (
     general_band_storage,
     native_pivots,
     symmetric_band_storage,
+    tridiagonal_matrix,
 )
 
 
@@ -32,6 +33,11 @@ def _general_tridiagonal_factorization():
     rhs = np.array([[6.0], [10.0], [8.0]], dtype=np.float64, order="F")
     expected = np.array([[1.0], [2.0], [3.0]], dtype=np.float64)
     return lower, diagonal, upper, rhs, expected
+
+
+def _upper_cholesky_from_band(factor: np.ndarray) -> np.ndarray:
+    """Unpack a one-superdiagonal upper Cholesky factor."""
+    return np.array([[factor[1, 0], factor[0, 1]], [0.0, factor[1, 1]]], dtype=np.float64)
 
 
 def test_dgbcon_estimates_general_band_condition(prik_lapack, scipy_lapack, f2py_lapack):
@@ -106,6 +112,7 @@ def test_dgbsv_solves_general_band_system(prik_lapack, scipy_lapack, f2py_lapack
     assert_allclose_float64(prik_ab, scipy_lu)
     assert_allclose_float64(f2py_ab, scipy_lu)
     np.testing.assert_array_equal(prik_piv, native_pivots(scipy_piv))
+    np.testing.assert_array_equal(f2py_piv, native_pivots(scipy_piv))
 
 
 def test_dgbtrf_factorizes_general_band_matrix(prik_lapack, scipy_lapack, f2py_lapack):
@@ -282,8 +289,8 @@ def test_dgtsvx_solves_and_bounds_tridiagonal_error(prik_lapack, scipy_lapack, f
         np.empty(2, dtype=np.int32),
         0,
     )
-    _dlf, _df, _duf, _du2, _piv, scipy_x, scipy_rcond, scipy_ferr, scipy_berr, scipy_info = scipy_lapack.dgtsvx(
-        lower, diagonal, upper, rhs.copy(order="F")
+    scipy_dlf, scipy_df, scipy_duf, scipy_du2, scipy_piv, scipy_x, scipy_rcond, scipy_ferr, scipy_berr, scipy_info = (
+        scipy_lapack.dgtsvx(lower, diagonal, upper, rhs.copy(order="F"))
     )
 
     assert f2py_result is None
@@ -294,6 +301,21 @@ def test_dgtsvx_solves_and_bounds_tridiagonal_error(prik_lapack, scipy_lapack, f
     assert_allclose_float64(prik_scalars[-2], scipy_rcond, operation_size=2)
     assert_allclose_float64(prik_ferr, scipy_ferr)
     assert_allclose_float64(prik_berr, scipy_berr)
+    assert_allclose_float64(f2py_ferr, scipy_ferr)
+    assert_allclose_float64(f2py_berr, scipy_berr)
+    for actual, expected_factor in (
+        (prik_dlf, scipy_dlf),
+        (f2py_dlf, scipy_dlf),
+        (prik_df, scipy_df),
+        (f2py_df, scipy_df),
+        (prik_duf, scipy_duf),
+        (f2py_duf, scipy_duf),
+        (prik_du2, scipy_du2),
+        (f2py_du2, scipy_du2),
+    ):
+        assert_allclose_float64(actual, expected_factor)
+    np.testing.assert_array_equal(prik_piv, scipy_piv)
+    np.testing.assert_array_equal(f2py_piv, scipy_piv)
 
 
 def test_dgttrf_factorizes_general_tridiagonal_matrix(prik_lapack, scipy_lapack, f2py_lapack):
@@ -358,6 +380,9 @@ def test_dpbsv_solves_positive_definite_band_system(prik_lapack, scipy_lapack, f
     assert prik_scalars[-1] == scipy_info == 0
     assert_allclose_float64(prik_ab, scipy_factor, operation_size=2)
     assert_allclose_float64(f2py_ab, scipy_factor, operation_size=2)
+    for factor in (prik_ab, f2py_ab, scipy_factor):
+        upper = _upper_cholesky_from_band(factor)
+        assert_allclose_float64(upper.T @ upper, matrix, operation_size=2)
     assert_allclose_float64(prik_b, [[1.0], [2.0]], operation_size=2)
     assert_allclose_float64(f2py_b, [[1.0], [2.0]], operation_size=2)
     assert_allclose_float64(scipy_x, [[1.0], [2.0]], operation_size=2)
@@ -376,6 +401,9 @@ def test_dpbtrf_factorizes_positive_definite_band_matrix(prik_lapack, scipy_lapa
     assert prik_scalars[-1] == scipy_info == 0
     assert_allclose_float64(prik_ab, scipy_factor, operation_size=2)
     assert_allclose_float64(f2py_ab, scipy_factor, operation_size=2)
+    for factor in (prik_ab, f2py_ab, scipy_factor):
+        upper = _upper_cholesky_from_band(factor)
+        assert_allclose_float64(upper.T @ upper, matrix, operation_size=2)
 
 
 def test_dpbtrs_solves_from_positive_definite_band_factor(prik_lapack, scipy_lapack, f2py_lapack):
@@ -471,10 +499,17 @@ def test_dptsvx_solves_and_bounds_spd_tridiagonal_error(prik_lapack, scipy_lapac
     assert_allclose_float64(prik_scalars[-2], scipy_rcond, operation_size=2)
     assert_allclose_float64(prik_ferr, scipy_ferr)
     assert_allclose_float64(prik_berr, scipy_berr)
+    assert_allclose_float64(f2py_ferr, scipy_ferr)
+    assert_allclose_float64(f2py_berr, scipy_berr)
+    assert_allclose_float64(prik_df, _df)
+    assert_allclose_float64(f2py_df, _df)
+    assert_allclose_float64(prik_ef, _ef)
+    assert_allclose_float64(f2py_ef, _ef)
 
 
 def test_dpttrf_factorizes_spd_tridiagonal_matrix(prik_lapack, scipy_lapack, f2py_lapack):
     _lower, diagonal, offdiag, _rhs, _expected = _general_tridiagonal()
+    matrix = tridiagonal_matrix(offdiag, diagonal, offdiag)
     prik_d, f2py_d = diagonal.copy(), diagonal.copy()
     prik_e, f2py_e = offdiag.copy(), offdiag.copy()
 
@@ -488,6 +523,10 @@ def test_dpttrf_factorizes_spd_tridiagonal_matrix(prik_lapack, scipy_lapack, f2p
     assert_allclose_float64(prik_e, scipy_e)
     assert_allclose_float64(f2py_d, scipy_d)
     assert_allclose_float64(f2py_e, scipy_e)
+    for factor_d, factor_e in ((prik_d, prik_e), (f2py_d, f2py_e), (scipy_d, scipy_e)):
+        lower = np.eye(2, dtype=np.float64)
+        lower[1, 0] = factor_e[0]
+        assert_allclose_float64(lower @ np.diag(factor_d) @ lower.T, matrix, operation_size=2)
 
 
 def test_dpttrs_solves_from_spd_tridiagonal_factor(prik_lapack, scipy_lapack, f2py_lapack):

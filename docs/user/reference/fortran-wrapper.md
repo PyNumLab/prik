@@ -231,6 +231,13 @@ inputs and link an already-built object, archive, shared library, or named
 library instead. Explicit `--native-fortran-sources` remain hidden
 implementation sources and are still compiled.
 
+When a module explicitly lists a procedure from an unnamed, non-abstract
+interface as `public`, that interface declaration is the wrapper contract. Its
+declared argument types and intents remain authoritative even when the
+implementation is compiled through `--native-fortran-sources` and uses a
+different internal storage spelling. Unlisted interface declarations remain
+interface-only dependencies rather than becoming Python entry points.
+
 `--native-compile-flags` applies to native compilation when it is enabled and
 always describes the compile model used for preprocessing and datatype
 measurement. Objects, libraries, include directories, library directories,

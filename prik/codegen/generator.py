@@ -913,6 +913,8 @@ class WrapperCodeGenerator:
             return self._binding_constant_getter_diagnostics(plan)
         if action is ModuleGetterAction.NATIVE_CONSTANT_VALUE:
             return self._native_constant_getter_diagnostics(plan)
+        if action is ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE:
+            return self._native_constant_array_getter_diagnostics(plan)
         if action is ModuleGetterAction.DERIVED_OBJECT:
             return self._derived_module_getter_role_diagnostics(plan)
         if plan.bridge.getter_role is None:
@@ -942,6 +944,26 @@ class WrapperCodeGenerator:
     ) -> tuple[WrapperPlanDiagnostic, ...]:
         """Validate one compiler-evaluated module constant."""
         diagnostics = []
+        if plan.bridge.getter_role is None:
+            diagnostics.append(
+                self._diagnostic(
+                    plan.owner_path,
+                    "missing-module-getter-role",
+                    plan.binding.getter_action.value,
+                )
+            )
+        if plan.binding.constant_value is not None:
+            diagnostics.append(self._diagnostic(plan.owner_path, "native-constant-has-binding-value", plan.owner_path))
+        return tuple(diagnostics)
+
+    def _native_constant_array_getter_diagnostics(
+        self,
+        plan: ModuleVariablePlan,
+    ) -> tuple[WrapperPlanDiagnostic, ...]:
+        """Validate one compiler-evaluated immutable parameter-array snapshot."""
+        diagnostics = []
+        if plan.array is None or plan.array.rank is None or plan.array.rank <= 0:
+            diagnostics.append(self._diagnostic(plan.owner_path, "missing-module-constant-array", plan.array))
         if plan.bridge.getter_role is None:
             diagnostics.append(
                 self._diagnostic(
@@ -1113,6 +1135,7 @@ class WrapperCodeGenerator:
         if action is SetterAction.OMIT and plan.binding.getter_action not in {
             ModuleGetterAction.CONSTANT_VALUE,
             ModuleGetterAction.NATIVE_CONSTANT_VALUE,
+            ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE,
         }:
             return (self._diagnostic(plan.owner_path, "omitted-nonconstant-module-setter", action.value),)
         return ()

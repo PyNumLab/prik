@@ -12,7 +12,8 @@ pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
 
 
 def test_dgejsv_reconstructs_matrix_with_jacobi_svd(prik_lapack, scipy_lapack, f2py_lapack):
-    matrix = np.diag([3.0, 2.0]).astype(np.float64, order="F")
+    matrix = np.array([[3.0, 1.0], [0.0, 2.0]], dtype=np.float64, order="F")
+    expected_values = np.linalg.svd(matrix, compute_uv=False)
     prik_a, f2py_a = matrix.copy(order="F"), matrix.copy(order="F")
     prik_s, f2py_s = np.empty(2), np.empty(2)
     prik_u, f2py_u = np.empty((2, 2), order="F"), np.empty((2, 2), order="F")
@@ -62,7 +63,7 @@ def test_dgejsv_reconstructs_matrix_with_jacobi_svd(prik_lapack, scipy_lapack, f
     assert f2py_result is None
     assert prik_scalars[-1] == scipy_info == 0
     for values, u, v in ((prik_s, prik_u, prik_v), (f2py_s, f2py_u, f2py_v), (scipy_s, scipy_u, scipy_v)):
-        assert_allclose_float64(values, [3.0, 2.0], operation_size=2)
+        assert_allclose_float64(values, expected_values, operation_size=2)
         assert_orthogonal(u)
         assert_orthogonal(v)
         assert_allclose_float64(u @ np.diag(values) @ v.T, matrix, operation_size=2)
@@ -153,10 +154,13 @@ def test_dgesvd_reconstructs_matrix(prik_lapack, scipy_lapack, f2py_lapack):
 
 
 def test_dorcsd_decomposes_partitioned_orthogonal_matrix(prik_lapack, scipy_lapack, f2py_lapack):
-    x11 = np.array([[1.0]], dtype=np.float64, order="F")
-    x12 = np.array([[0.0]], dtype=np.float64, order="F")
-    x21 = np.array([[0.0]], dtype=np.float64, order="F")
-    x22 = np.array([[1.0]], dtype=np.float64, order="F")
+    angle = 0.4
+    cosine_value = np.cos(angle)
+    sine_value = np.sin(angle)
+    x11 = np.array([[cosine_value]], dtype=np.float64, order="F")
+    x12 = np.array([[-sine_value]], dtype=np.float64, order="F")
+    x21 = np.array([[sine_value]], dtype=np.float64, order="F")
+    x22 = np.array([[cosine_value]], dtype=np.float64, order="F")
     prik_blocks = [block.copy(order="F") for block in (x11, x12, x21, x22)]
     f2py_blocks = [block.copy(order="F") for block in (x11, x12, x21, x22)]
     prik_theta, f2py_theta = np.empty(1), np.empty(1)
@@ -231,9 +235,14 @@ def test_dorcsd_decomposes_partitioned_orthogonal_matrix(prik_lapack, scipy_lapa
         (scipy_theta, scipy_u1, scipy_u2, scipy_v1t, scipy_v2t),
     ):
         cosine = np.array([[np.cos(theta[0])]])
-        assert_allclose_float64(theta, [0.0])
-        assert_allclose_float64(u1 @ cosine @ v1t, x11)
-        assert_allclose_float64(u2 @ cosine @ v2t, x22)
+        sine = np.array([[np.sin(theta[0])]])
+        assert_allclose_float64(theta, [angle])
+        for factor in (u1, u2, v1t, v2t):
+            assert_allclose_float64(factor.T @ factor, np.eye(1))
+        assert_allclose_float64(np.abs(u1 @ cosine @ v1t), np.abs(x11))
+        assert_allclose_float64(np.abs(u1 @ sine @ v2t), np.abs(x12))
+        assert_allclose_float64(np.abs(u2 @ sine @ v1t), np.abs(x21))
+        assert_allclose_float64(np.abs(u2 @ cosine @ v2t), np.abs(x22))
 
 
 def test_dlasd4_solves_rank_one_secular_equation(prik_lapack, scipy_lapack, f2py_lapack):

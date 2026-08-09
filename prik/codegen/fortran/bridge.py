@@ -1742,6 +1742,8 @@ class FortranBridgeGenerator(ClassVisitor):
                 return self._lower_module_getter_constant_value(plan)
             case ModuleGetterAction.NATIVE_CONSTANT_VALUE:
                 return self._lower_module_getter_direct_value(plan)
+            case ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE:
+                return self._lower_module_getter_constant_array_value(plan)
             case ModuleGetterAction.DIRECT_VALUE:
                 return self._lower_module_getter_direct_value(plan)
             case ModuleGetterAction.NULLABLE_SNAPSHOT:
@@ -2475,6 +2477,70 @@ class FortranBridgeGenerator(ClassVisitor):
                 result_type=scalar_type.fortran_spelling,
                 bind_name=name,
                 body=(FortranAssignment("result", CodeExpression(self._native_variable_name(plan))),),
+            ),
+        )
+
+    def _lower_module_getter_constant_array_value(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
+        """Copy one compiler-owned parameter array into persistent bridge storage.
+
+        The binding copies this temporary native buffer into its one
+        Python-owned read-only NumPy allocation during module initialization.
+        A Fortran parameter itself has no addressable storage to expose.
+        """
+        array = plan.array
+        if array is None or array.rank is None or array.rank <= 0:
+            raise ValueError(f"Module parameter array {plan.owner_path!r} has no fixed array plan")
+        scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
+        name = self._module_bridge_getter_name(plan)
+        native = self._native_variable_name(plan)
+        snapshot = "parameter_snapshot"
+        extents = tuple(f"extent_{axis}" for axis in range(array.rank))
+        return (
+            FortranFunction(
+                name=name,
+                parameters=tuple(
+                    FortranParameter(extent, "integer(c_int64_t)", ("intent(out)",)) for extent in extents
+                ),
+                result_name="result",
+                result_type="type(c_ptr)",
+                bind_name=name,
+                uses=(FortranUse("iso_c_binding", ("c_int", "c_int64_t", "c_loc", "c_null_ptr", "c_ptr")),),
+                declarations=(
+                    FortranDeclaration(
+                        snapshot,
+                        scalar_type.fortran_spelling,
+                        ("allocatable", "target", "save", self._array_dimension_attribute(array.rank)),
+                    ),
+                    FortranDeclaration("allocation_status", "integer(c_int)"),
+                ),
+                body=(
+                    FortranAssignment("result", CodeExpression("c_null_ptr")),
+                    FortranAssignment("allocation_status", CodeExpression("0_c_int")),
+                    FortranIf(
+                        CodeExpression(f".not. allocated({snapshot})"),
+                        body=(
+                            FortranAllocate(
+                                snapshot,
+                                tuple(CodeExpression(f"size({native}, {axis + 1})") for axis in range(array.rank)),
+                                status="allocation_status",
+                            ),
+                        ),
+                    ),
+                    FortranIf(
+                        CodeExpression("allocation_status == 0_c_int"),
+                        body=(
+                            FortranAssignment(snapshot, CodeExpression(native)),
+                            *(
+                                FortranAssignment(
+                                    extent,
+                                    CodeExpression(f"int(size({native}, {axis + 1}), c_int64_t)"),
+                                )
+                                for axis, extent in enumerate(extents)
+                            ),
+                            FortranAssignment("result", CodeExpression(f"c_loc({snapshot})")),
+                        ),
+                    ),
+                ),
             ),
         )
 

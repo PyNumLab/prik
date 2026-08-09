@@ -115,6 +115,17 @@ def _explicit_test_functions() -> dict[str, tuple[Path, ast.FunctionDef]]:
     return functions
 
 
+def _visible_wrapper_calls(node: ast.FunctionDef, routine: str) -> set[str]:
+    return {
+        call.func.value.id
+        for call in ast.walk(node)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Attribute)
+        and call.func.attr == routine
+        and isinstance(call.func.value, ast.Name)
+    }
+
+
 def test_source_routines_match_the_classified_inventory():
     source_routines = _source_routines()
     assert len(BLAS_SOURCES) == 155
@@ -146,9 +157,13 @@ def test_every_routine_has_one_visible_explicit_test():
         path, node = functions[test_name]
         segment = ast.get_source_segment(path.read_text(encoding="utf-8"), node)
         assert segment is not None
-        assert routine in segment, f"{test_name} does not visibly exercise {routine}"
-        assert "prik" in segment, f"{test_name} does not visibly invoke or validate PRIK"
-        assert "f2py" in segment, f"{test_name} does not visibly invoke or document f2py"
+        if routine in {"xerbla", "xerbla_array"}:
+            assert segment.count(f"blas.{routine}(") == 2, f"{test_name} must invoke both subprocess wrappers"
+            assert "prik_reference_blas" in segment
+            assert "f2py_reference_blas" in segment
+        else:
+            visible = _visible_wrapper_calls(node, routine)
+            assert visible == {"prik_blas", "f2py_blas"}, f"{test_name} exposes {routine} through {sorted(visible)}"
         assert "pytest.skip" not in segment, f"{test_name} silently skips {routine}"
         decorator_names = {ast.unparse(decorator) for decorator in node.decorator_list}
         assert not any("skip" in decorator for decorator in decorator_names), f"{test_name} skips {routine}"
