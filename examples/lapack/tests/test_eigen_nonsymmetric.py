@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from .helpers import assert_allclose_float64, assert_orthogonal, gfortran_logical_mask
+from .helpers import assert_allclose_float64, assert_orthogonal
 
 
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
@@ -179,7 +179,7 @@ def test_dtrsen_reorders_selected_schur_eigenvalue(prik_lapack, scipy_lapack, f2
     prik_wr, prik_wi = np.empty(2), np.empty(2)
     f2py_wr, f2py_wi = np.empty(2), np.empty(2)
     selection = np.array([False, True], dtype=np.bool_)
-    prik_selection = gfortran_logical_mask(selection)
+    prik_selection = selection.copy()
 
     prik_scalars = prik_lapack.dtrsen(
         "N",
