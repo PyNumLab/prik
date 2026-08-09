@@ -52,6 +52,16 @@ Within one Fortran feature, use only the stages that own real evidence:
 | `runtime/` | Runtime support mechanisms behave correctly without owning a complete feature journey |
 | `end_to_end/` | Source or intentional `.pyi` input produces an imported extension whose public behavior is called and verified |
 
+## Declaration-expression evidence
+
+Array declaration expressions have deliberate vertical coverage. The arrays
+semantic tests preserve names, imports, and native callable provenance; the
+arrays policy tests classify dependency roles and unsupported native calls; and
+the arrays end-to-end tests compile representative dimensions, inquiry forms,
+reductions, conditionals, powers, and logical-kind arrays. Contract-batch
+reconciliation belongs with `tests/fortran/semantic_pyi_format/`, where
+editable `.pyi` imports and prototypes are exercised.
+
 Public cross-feature capabilities have explicit owners:
 `source_parsing/`, `source_preprocessing/`, `command_line_interface/`, and
 `semantic_ir/`. Only internal frameworks with no honest public-capability owner

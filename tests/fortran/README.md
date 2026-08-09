@@ -52,6 +52,13 @@ Each feature uses only the stages it needs: `parsing`, `probes`,
 `preprocessing`, `semantics`, `policy`, `codegen`, `compiling`,
 `pipeline`, `runtime`, and `end_to_end`.
 
+Array declaration-expression coverage is intentionally split by evidence:
+`arrays/semantics/` preserves expression and native-call provenance,
+`arrays/policy/` proves completed dependency roles and named blockers, and
+`arrays/end_to_end/` compiles supported dimensions and logical array kinds.
+Cross-module editable-contract reconciliation remains under
+`semantic_pyi_format/`, not under a code-generation test.
+
 ## Infrastructure owners
 
 Infrastructure contains only internal cross-feature frameworks with no honest
