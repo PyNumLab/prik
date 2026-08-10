@@ -16,7 +16,7 @@ and Pythonic APIs.**
 PRIK generates native Python bindings from Fortran projects, producing
 importable extensions and editable `.pyi` contracts for Pythonic APIs.
 
-**Project status: Alpha (`0.1.x`).** Core Fortran wrapper workflows are
+**Project status: Alpha.** Core Fortran wrapper workflows are
 implemented and tested across supported compilers, but public APIs may still
 change before `1.0`.
 

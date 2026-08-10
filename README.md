@@ -13,7 +13,7 @@ importable extensions and editable `.pyi` contracts for Pythonic APIs.
 It preserves modules, derived types, arrays, callbacks, and native behavior so
 you can shape the resulting API without writing low-level binding code.
 
-**Project status: Alpha (`0.1.x`).** Core Fortran wrapper workflows are
+**Project status: Alpha.** Core Fortran wrapper workflows are
 implemented and tested across supported compilers, but public APIs may still
 change before `1.0`.
 
