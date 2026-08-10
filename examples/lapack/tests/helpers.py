@@ -145,21 +145,6 @@ def tridiagonal_matrix(lower: np.ndarray, diagonal: np.ndarray, upper: np.ndarra
     return np.diag(diagonal) + np.diag(upper, 1) + np.diag(lower, -1)
 
 
-def column_major(matrix: np.ndarray, *, rows: int | None = None) -> np.ndarray:
-    """Return a Fortran-contiguous float64 matrix with optional leading padding."""
-    array = np.asarray(matrix, dtype=np.float64)
-    if rows is None or rows == array.shape[0]:
-        return np.array(array, dtype=np.float64, order="F", copy=True)
-    padded = np.full((rows, array.shape[1]), np.nan, dtype=np.float64, order="F")
-    padded[: array.shape[0], :] = array
-    return padded
-
-
-def active(matrix: np.ndarray, rows: int, columns: int) -> np.ndarray:
-    """Extract the logical matrix while preserving its column-major convention."""
-    return np.asarray(matrix[:rows, :columns], dtype=np.float64)
-
-
 def assert_runtime_smoke(module) -> None:
     """Exercise a representative complete-library LAPACK export."""
     index = np.zeros(5, dtype=np.int32)

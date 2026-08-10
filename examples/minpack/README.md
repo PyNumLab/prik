@@ -2,8 +2,8 @@
 
 Build the bundled modern
 [fortran-lang/minpack](https://github.com/fortran-lang/minpack) source with
-PRIK and validate all 22 public procedures against SciPy, direct
-linear-algebra identities, and deterministic nonlinear problems.
+PRIK and validate all 22 public procedures against direct linear-algebra
+identities and deterministic nonlinear problems.
 
 No f2py comparison wrapper is required, and the inventory has no unsupported
 or skipped procedures.
@@ -20,7 +20,7 @@ sudo apt-get install --yes gfortran
 Install the pinned numerical tools:
 
 ```console
-python3 -m pip install "numpy==2.5.1" "scipy==1.18.0" pytest
+python3 -m pip install "numpy==2.5.1" pytest
 ```
 
 Run the remaining commands from the PRIK repository root.
@@ -76,9 +76,9 @@ python3 -m pytest -q \
 
 The suite covers all 22 public diagnostics, finite-difference helpers, hybrid
 solvers, Levenberg-Marquardt solvers, factorizations, and rank-one updates.
-Solver tests check residuals and statuses against known systems and SciPy;
-helper tests use nontrivial algebraic invariants. Tests also verify callback
-counts, caller-array writebacks, and Fortran-order matrices.
+Solver tests check residuals and statuses against known systems; helper tests
+use nontrivial algebraic invariants. Tests also verify callback counts,
+caller-array writebacks, and Fortran-order matrices.
 
 The public routine list stays in sync with the generated exports, and every
 public procedure is exercised.

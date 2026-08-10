@@ -213,6 +213,15 @@ reference.
 The two examples below come directly from the runnable suite and use its small
 NumPy comparison helpers.
 
+#### Test helper conventions
+
+- `assert_allclose_for_dtype` compares floating-point results with a tolerance
+  matched to their NumPy dtype. Its optional `operation_size` is a
+  rounding-error scale: use the number of terms in the calculation, such as
+  `3` for the three products in the displayed dot product.
+- `assert_storage_unchanged` requires an input array to remain exactly equal
+  to its saved value, including its dtype and any `NaN` sentinels.
+
 ### DAXPY – in-place vector update
 
 <!-- prik-doc-source: examples/blas/tests/test_level1_real.py::test_daxpy -->

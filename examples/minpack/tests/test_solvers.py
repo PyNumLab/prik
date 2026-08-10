@@ -1,39 +1,32 @@
-"""Callback-driven MINPACK solvers checked against SciPy's solution."""
+"""Callback-driven MINPACK solvers checked against known solutions."""
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
 
-from .helpers import (
-    FLOAT,
-    INT,
-    assert_solution,
-    jacobian_callback,
-    least_squares_callback,
-    least_squares_jacobian_callback,
-    least_squares_row_callback,
-    matrix,
-    residual_callback,
-    scipy_least_squares,
-    scipy_root,
-    vector,
-)
-
 
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
-ROOT_TOLERANCE = FLOAT(1.0e-12)
-MAX_EVALUATIONS = INT(100)
-FACTOR = FLOAT(100.0)
-ZERO = FLOAT(0.0)
-ONE = INT(1)
-TWO = INT(2)
+ROOT_TOLERANCE = np.float64(1.0e-12)
+MAX_EVALUATIONS = np.int32(100)
+FACTOR = np.float64(100.0)
+ZERO = np.float64(0.0)
+ONE = np.int32(1)
+TWO = np.int32(2)
+TARGET = np.array([1.0, -2.0], dtype=np.float64)
 
 
 def test_hybrd(minpack):
-    x, fvec, fjac, r, qtf = vector(), vector((0.0, 0.0)), matrix(), np.empty(3), np.empty(2)
+    def residual(_count, x, fvec, _iflag):
+        fvec[:] = x - TARGET
+
+    x = np.array([4.0, 4.0], dtype=np.float64)
+    fvec = np.zeros(2, dtype=np.float64)
+    fjac = np.empty((2, 2), dtype=np.float64, order="F")
+    r = np.empty(3, dtype=np.float64)
+    qtf = np.empty(2, dtype=np.float64)
     info, calls = minpack.hybrd(
-        residual_callback,
+        residual,
         TWO,
         x,
         fvec,
@@ -45,37 +38,65 @@ def test_hybrd(minpack):
         np.ones(2),
         TWO,
         FACTOR,
-        INT(0),
+        np.int32(0),
         fjac,
         TWO,
         r,
-        INT(3),
+        np.int32(3),
         qtf,
-        vector((0.0, 0.0)),
-        vector((0.0, 0.0)),
-        vector((0.0, 0.0)),
-        vector((0.0, 0.0)),
+        np.zeros(2, dtype=np.float64),
+        np.zeros(2, dtype=np.float64),
+        np.zeros(2, dtype=np.float64),
+        np.zeros(2, dtype=np.float64),
     )
 
-    assert info == INT(1)
+    assert info == np.int32(1)
     assert calls > 0
-    assert_solution(x, scipy_root())
+    np.testing.assert_allclose(x, TARGET, atol=1.0e-10)
     np.testing.assert_allclose(fvec, 0.0, atol=1.0e-10)
 
 
 def test_hybrd1(minpack):
-    x, fvec = vector(), vector((0.0, 0.0))
-    info = minpack.hybrd1(residual_callback, TWO, x, fvec, ROOT_TOLERANCE, np.empty(19), INT(19))
+    target = np.array([1.0, -2.0], dtype=np.float64)
+    callback_calls = 0
 
-    assert info == INT(1)
-    assert_solution(x, scipy_root())
+    def residual(_count, x, fvec, _iflag):
+        nonlocal callback_calls
+        callback_calls += 1
+        fvec[:] = x - target
+
+    x = np.array([4.0, 4.0], dtype=np.float64)
+    fvec = np.empty(2, dtype=np.float64)
+    info = minpack.hybrd1(
+        residual,
+        np.int32(2),
+        x,
+        fvec,
+        np.float64(1.0e-12),
+        np.empty(19, dtype=np.float64),
+        np.int32(19),
+    )
+
+    assert info == np.int32(1)
+    assert callback_calls > 0
+    np.testing.assert_allclose(x, target, atol=1.0e-10)
     np.testing.assert_allclose(fvec, 0.0, atol=1.0e-10)
 
 
 def test_hybrj(minpack):
-    x, fvec, fjac, r, qtf = vector(), vector((0.0, 0.0)), matrix(), np.empty(3), np.empty(2)
+    def residual_and_jacobian(_count, x, fvec, fjac, _ldfjac, iflag):
+        if iflag == 1:
+            fvec[:] = x - TARGET
+        elif iflag == 2:
+            fjac[:, :] = np.eye(2, dtype=np.float64)
+
+    x = np.array([4.0, 4.0], dtype=np.float64)
+    fvec = np.zeros(2, dtype=np.float64)
+    fjac = np.empty((2, 2), dtype=np.float64, order="F")
+    r = np.empty(3, dtype=np.float64)
+    qtf = np.empty(2, dtype=np.float64)
     info, function_calls, jacobian_calls = minpack.hybrj(
-        jacobian_callback,
+        residual_and_jacobian,
         TWO,
         x,
         fvec,
@@ -86,34 +107,62 @@ def test_hybrj(minpack):
         np.ones(2),
         TWO,
         FACTOR,
-        INT(0),
+        np.int32(0),
         r,
-        INT(3),
+        np.int32(3),
         qtf,
-        vector((0.0, 0.0)),
-        vector((0.0, 0.0)),
-        vector((0.0, 0.0)),
-        vector((0.0, 0.0)),
+        np.zeros(2, dtype=np.float64),
+        np.zeros(2, dtype=np.float64),
+        np.zeros(2, dtype=np.float64),
+        np.zeros(2, dtype=np.float64),
     )
 
-    assert (info, function_calls, jacobian_calls) == (INT(1), INT(2), INT(1))
-    assert_solution(x, scipy_root())
+    assert (info, function_calls, jacobian_calls) == (np.int32(1), np.int32(2), np.int32(1))
+    np.testing.assert_allclose(x, TARGET, atol=1.0e-10)
     np.testing.assert_allclose(fvec, 0.0, atol=1.0e-10)
 
 
 def test_hybrj1(minpack):
-    x, fvec, fjac = vector(), vector((0.0, 0.0)), matrix()
-    info = minpack.hybrj1(jacobian_callback, TWO, x, fvec, fjac, TWO, ROOT_TOLERANCE, np.empty(15), INT(15))
+    def residual_and_jacobian(_count, x, fvec, fjac, _ldfjac, iflag):
+        if iflag == 1:
+            fvec[:] = x - TARGET
+        elif iflag == 2:
+            fjac[:, :] = np.eye(2, dtype=np.float64)
 
-    assert info == INT(1)
-    assert_solution(x, scipy_root())
+    x = np.array([4.0, 4.0], dtype=np.float64)
+    fvec = np.zeros(2, dtype=np.float64)
+    fjac = np.empty((2, 2), dtype=np.float64, order="F")
+    info = minpack.hybrj1(
+        residual_and_jacobian,
+        TWO,
+        x,
+        fvec,
+        fjac,
+        TWO,
+        ROOT_TOLERANCE,
+        np.empty(15, dtype=np.float64),
+        np.int32(15),
+    )
+
+    assert info == np.int32(1)
+    np.testing.assert_allclose(x, TARGET, atol=1.0e-10)
     np.testing.assert_allclose(fvec, 0.0, atol=1.0e-10)
 
 
 def test_lmder(minpack):
-    x, fvec, fjac, ipvt, qtf = vector(), vector((0.0, 0.0)), matrix(), np.empty(2, dtype=np.int32), np.empty(2)
+    def residual_and_jacobian(_m, _n, x, fvec, fjac, _ldfjac, iflag):
+        if iflag == 1:
+            fvec[:] = x - TARGET
+        elif iflag == 2:
+            fjac[:, :] = np.eye(2, dtype=np.float64)
+
+    x = np.array([4.0, 4.0], dtype=np.float64)
+    fvec = np.zeros(2, dtype=np.float64)
+    fjac = np.empty((2, 2), dtype=np.float64, order="F")
+    ipvt = np.empty(2, dtype=np.int32)
+    qtf = np.empty(2, dtype=np.float64)
     info, function_calls, jacobian_calls = minpack.lmder(
-        least_squares_jacobian_callback,
+        residual_and_jacobian,
         TWO,
         TWO,
         x,
@@ -127,24 +176,33 @@ def test_lmder(minpack):
         np.ones(2),
         TWO,
         FACTOR,
-        INT(0),
+        np.int32(0),
         ipvt,
         qtf,
-        vector((0.0, 0.0)),
-        vector((0.0, 0.0)),
-        vector((0.0, 0.0)),
-        vector((0.0, 0.0)),
+        np.zeros(2, dtype=np.float64),
+        np.zeros(2, dtype=np.float64),
+        np.zeros(2, dtype=np.float64),
+        np.zeros(2, dtype=np.float64),
     )
 
-    assert (info, function_calls, jacobian_calls) == (INT(4), INT(2), INT(2))
-    assert_solution(x, scipy_least_squares())
+    assert (info, function_calls, jacobian_calls) == (np.int32(4), np.int32(2), np.int32(2))
+    np.testing.assert_allclose(x, TARGET, atol=1.0e-10)
     np.testing.assert_allclose(fvec, 0.0, atol=1.0e-10)
 
 
 def test_lmder1(minpack):
-    x, fvec, fjac, ipvt = vector(), vector((0.0, 0.0)), matrix(), np.empty(2, dtype=np.int32)
+    def residual_and_jacobian(_m, _n, x, fvec, fjac, _ldfjac, iflag):
+        if iflag == 1:
+            fvec[:] = x - TARGET
+        elif iflag == 2:
+            fjac[:, :] = np.eye(2, dtype=np.float64)
+
+    x = np.array([4.0, 4.0], dtype=np.float64)
+    fvec = np.zeros(2, dtype=np.float64)
+    fjac = np.empty((2, 2), dtype=np.float64, order="F")
+    ipvt = np.empty(2, dtype=np.int32)
     info = minpack.lmder1(
-        least_squares_jacobian_callback,
+        residual_and_jacobian,
         TWO,
         TWO,
         x,
@@ -153,19 +211,26 @@ def test_lmder1(minpack):
         TWO,
         ROOT_TOLERANCE,
         ipvt,
-        np.empty(12),
-        INT(12),
+        np.empty(12, dtype=np.float64),
+        np.int32(12),
     )
 
-    assert info == INT(4)
-    assert_solution(x, scipy_least_squares())
+    assert info == np.int32(4)
+    np.testing.assert_allclose(x, TARGET, atol=1.0e-10)
     np.testing.assert_allclose(fvec, 0.0, atol=1.0e-10)
 
 
 def test_lmdif(minpack):
-    x, fvec, fjac, ipvt, qtf = vector(), vector((0.0, 0.0)), matrix(), np.empty(2, dtype=np.int32), np.empty(2)
+    def residual(_m, _n, x, fvec, _iflag):
+        fvec[:] = x - TARGET
+
+    x = np.array([4.0, 4.0], dtype=np.float64)
+    fvec = np.zeros(2, dtype=np.float64)
+    fjac = np.empty((2, 2), dtype=np.float64, order="F")
+    ipvt = np.empty(2, dtype=np.int32)
+    qtf = np.empty(2, dtype=np.float64)
     info, function_calls = minpack.lmdif(
-        least_squares_callback,
+        residual,
         TWO,
         TWO,
         x,
@@ -178,45 +243,61 @@ def test_lmdif(minpack):
         np.ones(2),
         TWO,
         FACTOR,
-        INT(0),
+        np.int32(0),
         fjac,
         TWO,
         ipvt,
         qtf,
-        vector((0.0, 0.0)),
-        vector((0.0, 0.0)),
-        vector((0.0, 0.0)),
-        vector((0.0, 0.0)),
+        np.zeros(2, dtype=np.float64),
+        np.zeros(2, dtype=np.float64),
+        np.zeros(2, dtype=np.float64),
+        np.zeros(2, dtype=np.float64),
     )
 
-    assert (info, function_calls) == (INT(4), INT(6))
-    assert_solution(x, scipy_least_squares())
+    assert (info, function_calls) == (np.int32(4), np.int32(6))
+    np.testing.assert_allclose(x, TARGET, atol=1.0e-10)
     np.testing.assert_allclose(fvec, 0.0, atol=1.0e-10)
 
 
 def test_lmdif1(minpack):
-    x, fvec, iwa = vector(), vector((0.0, 0.0)), np.empty(2, dtype=np.int32)
+    def residual(_m, _n, x, fvec, _iflag):
+        fvec[:] = x - TARGET
+
+    x = np.array([4.0, 4.0], dtype=np.float64)
+    fvec = np.zeros(2, dtype=np.float64)
+    iwa = np.empty(2, dtype=np.int32)
     info = minpack.lmdif1(
-        least_squares_callback,
+        residual,
         TWO,
         TWO,
         x,
         fvec,
         ROOT_TOLERANCE,
         iwa,
-        np.empty(16),
-        INT(16),
+        np.empty(16, dtype=np.float64),
+        np.int32(16),
     )
 
-    assert info == INT(4)
-    assert_solution(x, scipy_least_squares())
+    assert info == np.int32(4)
+    np.testing.assert_allclose(x, TARGET, atol=1.0e-10)
     np.testing.assert_allclose(fvec, 0.0, atol=1.0e-10)
 
 
 def test_lmstr(minpack):
-    x, fvec, fjac, ipvt, qtf = vector(), vector((0.0, 0.0)), matrix(), np.empty(2, dtype=np.int32), np.empty(2)
+    def residual_and_row(_m, _n, x, fvec, fjrow, iflag):
+        if iflag == 1:
+            fvec[:] = x - TARGET
+        else:
+            fjrow[:] = 0.0
+            fjrow[int(iflag) - 2] = 1.0
+
+    x = np.array([4.0, 4.0], dtype=np.float64)
+    fvec = np.zeros(2, dtype=np.float64)
+    fjac = np.empty((2, 2), dtype=np.float64, order="F")
+    ipvt = np.empty(2, dtype=np.int32)
+    qtf = np.empty(2, dtype=np.float64)
     info, function_calls, jacobian_calls = minpack.lmstr(
-        least_squares_row_callback,
+        residual_and_row,
         TWO,
         TWO,
         x,
@@ -230,24 +311,34 @@ def test_lmstr(minpack):
         np.ones(2),
         TWO,
         FACTOR,
-        INT(0),
+        np.int32(0),
         ipvt,
         qtf,
-        vector((0.0, 0.0)),
-        vector((0.0, 0.0)),
-        vector((0.0, 0.0)),
-        vector((0.0, 0.0)),
+        np.zeros(2, dtype=np.float64),
+        np.zeros(2, dtype=np.float64),
+        np.zeros(2, dtype=np.float64),
+        np.zeros(2, dtype=np.float64),
     )
 
-    assert (info, function_calls, jacobian_calls) == (INT(4), INT(2), INT(2))
-    assert_solution(x, scipy_least_squares())
+    assert (info, function_calls, jacobian_calls) == (np.int32(4), np.int32(2), np.int32(2))
+    np.testing.assert_allclose(x, TARGET, atol=1.0e-10)
     np.testing.assert_allclose(fvec, 0.0, atol=1.0e-10)
 
 
 def test_lmstr1(minpack):
-    x, fvec, fjac, ipvt = vector(), vector((0.0, 0.0)), matrix(), np.empty(2, dtype=np.int32)
+    def residual_and_row(_m, _n, x, fvec, fjrow, iflag):
+        if iflag == 1:
+            fvec[:] = x - TARGET
+        else:
+            fjrow[:] = 0.0
+            fjrow[int(iflag) - 2] = 1.0
+
+    x = np.array([4.0, 4.0], dtype=np.float64)
+    fvec = np.zeros(2, dtype=np.float64)
+    fjac = np.empty((2, 2), dtype=np.float64, order="F")
+    ipvt = np.empty(2, dtype=np.int32)
     info = minpack.lmstr1(
-        least_squares_row_callback,
+        residual_and_row,
         TWO,
         TWO,
         x,
@@ -256,10 +347,10 @@ def test_lmstr1(minpack):
         TWO,
         ROOT_TOLERANCE,
         ipvt,
-        np.empty(12),
-        INT(12),
+        np.empty(12, dtype=np.float64),
+        np.int32(12),
     )
 
-    assert info == INT(4)
-    assert_solution(x, scipy_least_squares())
+    assert info == np.int32(4)
+    np.testing.assert_allclose(x, TARGET, atol=1.0e-10)
     np.testing.assert_allclose(fvec, 0.0, atol=1.0e-10)

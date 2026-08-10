@@ -14,8 +14,8 @@ This example takes the checked-in
 builds an importable Python extension containing all 22 public MINPACK
 procedures.
 
-The example solves known nonlinear and least-squares problems and compares the
-results with SciPy and direct linear-algebra checks.
+The example solves known nonlinear and least-squares problems and checks their
+results with exact solutions and direct linear-algebra identities.
 
 ### What this example shows
 
@@ -36,7 +36,6 @@ building a local Fortran extension.
 | MINPACK | [fortran-lang/minpack commit `c0b5aea`](https://github.com/fortran-lang/minpack/tree/c0b5aea9fcd2b83865af921a7a7e881904f8d3c2) |
 | Python | 3.12 in the dedicated CI job |
 | NumPy | 2.5.1 |
-| SciPy | 1.18.0 |
 | Fortran compiler | GNU Fortran 13 in CI; a compatible `gfortran` works locally |
 
 The repository owns the checked-in source snapshot under
@@ -56,7 +55,7 @@ cd prik
 python3 -m venv .venv
 . .venv/bin/activate
 python3 -m pip install --upgrade pip
-python3 -m pip install -e ".[qa]" "numpy==2.5.1" "scipy==1.18.0"
+python3 -m pip install -e ".[qa]" "numpy==2.5.1"
 ```
 
 Install GNU Fortran separately. On Ubuntu:
@@ -145,38 +144,41 @@ known solution, or a direct linear-algebra result.
 
 For example, `hybrd1` can solve the two-variable equation
 `x - [1, -2] = 0`. MINPACK calls the Python function whenever it needs the
-current residual:
+current residual. The example below is the runnable `hybrd1` test; its
+`minpack` fixture supplies the generated module:
 
+<!-- prik-doc-source: examples/minpack/tests/test_solvers.py::test_hybrd1 -->
 ```python
-import numpy as np
-from prik_reference_minpack import minpack_module as minpack
+def test_hybrd1(minpack):
+    target = np.array([1.0, -2.0], dtype=np.float64)
+    callback_calls = 0
 
-target = np.array([1.0, -2.0], dtype=np.float64)
+    def residual(_count, x, fvec, _iflag):
+        nonlocal callback_calls
+        callback_calls += 1
+        fvec[:] = x - target
 
+    x = np.array([4.0, 4.0], dtype=np.float64)
+    fvec = np.empty(2, dtype=np.float64)
+    info = minpack.hybrd1(
+        residual,
+        np.int32(2),
+        x,
+        fvec,
+        np.float64(1.0e-12),
+        np.empty(19, dtype=np.float64),
+        np.int32(19),
+    )
 
-def residual(_count, x, fvec, _iflag):
-    fvec[:] = x - target
-
-
-x = np.array([4.0, 4.0], dtype=np.float64)
-fvec = np.empty(2, dtype=np.float64)
-info = minpack.hybrd1(
-    residual,
-    np.int32(2),
-    x,
-    fvec,
-    np.float64(1.0e-12),
-    np.empty(19, dtype=np.float64),
-    np.int32(19),
-)
-
-assert info == np.int32(1)
-np.testing.assert_allclose(x, target, atol=1.0e-10)
-np.testing.assert_allclose(fvec, 0.0, atol=1.0e-10)
+    assert info == np.int32(1)
+    assert callback_calls > 0
+    np.testing.assert_allclose(x, target, atol=1.0e-10)
+    np.testing.assert_allclose(fvec, 0.0, atol=1.0e-10)
 ```
 
 The complete suite applies the same pattern to root-finding and least-squares
-solvers, then compares their solutions with SciPy.
+solvers, then checks their solutions and final residuals against the declared
+problem.
 
 ---
 

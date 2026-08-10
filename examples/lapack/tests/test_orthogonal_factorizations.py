@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from .helpers import assert_allclose_float64, assert_orthogonal, column_major, qr_q_from_reflectors
+from .helpers import assert_allclose_float64, assert_orthogonal, qr_q_from_reflectors
 
 
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
@@ -74,7 +74,7 @@ def test_dgeqp3_reconstructs_column_pivoted_qr(prik_lapack, scipy_lapack, f2py_l
 
 def test_dgeqrf_reconstructs_qr_factorization(prik_lapack, scipy_lapack, f2py_lapack):
     matrix = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 7.0]], dtype=np.float64)
-    prik_a, f2py_a = column_major(matrix), column_major(matrix)
+    prik_a, f2py_a = matrix.copy(order="F"), matrix.copy(order="F")
     prik_tau = np.empty(2, dtype=np.float64)
     f2py_tau = np.empty(2, dtype=np.float64)
 
@@ -162,7 +162,7 @@ def test_dorgqr_forms_explicit_orthogonal_q(prik_lapack, scipy_lapack, f2py_lapa
     factor, tau, _work, factor_info = scipy_lapack.dgeqrf(matrix.copy(order="F"), lwork=16)
     assert factor_info == 0
     r = np.triu(factor[:2, :])
-    prik_q, f2py_q = column_major(factor), column_major(factor)
+    prik_q, f2py_q = factor.copy(order="F"), factor.copy(order="F")
 
     prik_scalars = prik_lapack.dorgqr(
         np.int32(3), np.int32(2), np.int32(2), prik_q, np.int32(3), tau.copy(), np.empty(16), np.int32(16), np.int32(0)

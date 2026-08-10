@@ -6,11 +6,8 @@ import numpy as np
 import pytest
 
 from .helpers import (
-    active,
     assert_allclose_float64,
-    assert_small_residual,
     assert_storage_unchanged,
-    column_major,
     native_pivots,
     pivot_matrix,
     unpack_lu,
@@ -247,8 +244,8 @@ def test_dgesv_solves_general_system(prik_lapack, scipy_lapack, f2py_lapack):
     original_a = np.array([[3.0, 1.0], [1.0, 2.0]], dtype=np.float64)
     original_b = np.array([[5.0], [5.0]], dtype=np.float64)
     expected_x = np.array([[1.0], [2.0]], dtype=np.float64)
-    prik_a, f2py_a = column_major(original_a), column_major(original_a)
-    prik_b, f2py_b = column_major(original_b), column_major(original_b)
+    prik_a, f2py_a = original_a.copy(order="F"), original_a.copy(order="F")
+    prik_b, f2py_b = original_b.copy(order="F"), original_b.copy(order="F")
     prik_piv = np.empty(2, dtype=np.int32)
     f2py_piv = np.empty(2, dtype=np.int32)
 
@@ -263,24 +260,20 @@ def test_dgesv_solves_general_system(prik_lapack, scipy_lapack, f2py_lapack):
     assert prik_scalars == (2, 1, 2, 2, 0)
     assert f2py_result is None
     assert scipy_info == 0
-    assert_allclose_float64(active(prik_b, 2, 1), expected_x, operation_size=2)
-    assert_allclose_float64(active(f2py_b, 2, 1), expected_x, operation_size=2)
-    assert_allclose_float64(scipy_x, expected_x, operation_size=2)
-    assert_allclose_float64(prik_a, scipy_lu, operation_size=2)
-    assert_allclose_float64(f2py_a, scipy_lu, operation_size=2)
-    np.testing.assert_array_equal(prik_piv, native_pivots(scipy_piv))
-    np.testing.assert_array_equal(f2py_piv, native_pivots(scipy_piv))
-    assert_small_residual(
-        original_a @ prik_b - original_b,
-        matrix_norm=np.linalg.norm(original_a, ord=np.inf),
-        solution_norm=np.linalg.norm(prik_b, ord=np.inf),
-        operation_size=2,
-    )
+    np.testing.assert_allclose(prik_b, expected_x)
+    np.testing.assert_allclose(f2py_b, expected_x)
+    np.testing.assert_allclose(scipy_x, expected_x)
+    np.testing.assert_allclose(prik_a, scipy_lu)
+    np.testing.assert_allclose(f2py_a, scipy_lu)
+    lapack_pivots = np.asarray(scipy_piv, dtype=np.int32) + 1
+    np.testing.assert_array_equal(prik_piv, lapack_pivots)
+    np.testing.assert_array_equal(f2py_piv, lapack_pivots)
+    np.testing.assert_allclose(original_a @ prik_b, original_b)
 
 
 def test_dgetrf_reconstructs_pivoted_lu(prik_lapack, scipy_lapack, f2py_lapack):
     original = np.array([[0.0, 2.0], [3.0, 4.0]], dtype=np.float64)
-    prik_a, f2py_a = column_major(original), column_major(original)
+    prik_a, f2py_a = original.copy(order="F"), original.copy(order="F")
     prik_piv = np.empty(2, dtype=np.int32)
     f2py_piv = np.empty(2, dtype=np.int32)
 
@@ -308,8 +301,8 @@ def test_dgetrs_solves_from_native_lu(prik_lapack, scipy_lapack, f2py_lapack):
     scipy_lu, scipy_piv, factor_info = scipy_lapack.dgetrf(matrix.copy(order="F"))
     assert factor_info == 0
     native_ipiv = native_pivots(scipy_piv)
-    prik_lu, f2py_lu = column_major(scipy_lu), column_major(scipy_lu)
-    prik_b, f2py_b = column_major(original_b), column_major(original_b)
+    prik_lu, f2py_lu = scipy_lu.copy(order="F"), scipy_lu.copy(order="F")
+    prik_b, f2py_b = original_b.copy(order="F"), original_b.copy(order="F")
 
     prik_scalars = prik_lapack.dgetrs(
         "N", np.int32(2), np.int32(1), prik_lu, np.int32(2), native_ipiv.copy(), prik_b, np.int32(2), np.int32(0)

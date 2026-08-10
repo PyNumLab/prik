@@ -197,9 +197,20 @@ pivot ties may choose another valid permutation.
 Therefore byte-for-byte agreement is not the only oracle.
 
 Tests use explicit solutions, residuals, factor reconstructions, orthogonality,
-eigen equations, and storage checks. Small NumPy helpers for matrix layout,
-tolerances, and pivot conventions live in
-[`tests/helpers.py`](../../../examples/lapack/tests/helpers.py).
+eigen equations, and storage checks. The two reusable checks shown below live
+in [`tests/helpers.py`](../../../examples/lapack/tests/helpers.py).
+
+#### Test helper conventions
+
+The snippets use standard NumPy operations whenever the check is local. The
+two helpers in the displayed DPOTRF test keep its repeated checks consistent:
+
+- `assert_allclose_float64` compares values using a tolerance appropriate for
+  float64 arithmetic. Its `operation_size` argument is a rounding-error scale:
+  use the relevant matrix dimension, such as `2` for these 2-by-2 examples,
+  so the tolerance allows for accumulated arithmetic.
+- `assert_storage_unchanged` compares storage exactly, including `NaN`
+  sentinels in parts of an array LAPACK must not read or overwrite.
 
 The examples below show the PRIK, f2py, and SciPy calls together with a direct
 mathematical check. They come from the runnable suite.
@@ -212,8 +223,8 @@ def test_dgesv_solves_general_system(prik_lapack, scipy_lapack, f2py_lapack):
     original_a = np.array([[3.0, 1.0], [1.0, 2.0]], dtype=np.float64)
     original_b = np.array([[5.0], [5.0]], dtype=np.float64)
     expected_x = np.array([[1.0], [2.0]], dtype=np.float64)
-    prik_a, f2py_a = column_major(original_a), column_major(original_a)
-    prik_b, f2py_b = column_major(original_b), column_major(original_b)
+    prik_a, f2py_a = original_a.copy(order="F"), original_a.copy(order="F")
+    prik_b, f2py_b = original_b.copy(order="F"), original_b.copy(order="F")
     prik_piv = np.empty(2, dtype=np.int32)
     f2py_piv = np.empty(2, dtype=np.int32)
 
@@ -228,24 +239,23 @@ def test_dgesv_solves_general_system(prik_lapack, scipy_lapack, f2py_lapack):
     assert prik_scalars == (2, 1, 2, 2, 0)
     assert f2py_result is None
     assert scipy_info == 0
-    assert_allclose_float64(active(prik_b, 2, 1), expected_x, operation_size=2)
-    assert_allclose_float64(active(f2py_b, 2, 1), expected_x, operation_size=2)
-    assert_allclose_float64(scipy_x, expected_x, operation_size=2)
-    assert_allclose_float64(prik_a, scipy_lu, operation_size=2)
-    assert_allclose_float64(f2py_a, scipy_lu, operation_size=2)
-    np.testing.assert_array_equal(prik_piv, native_pivots(scipy_piv))
-    np.testing.assert_array_equal(f2py_piv, native_pivots(scipy_piv))
-    assert_small_residual(
-        original_a @ prik_b - original_b,
-        matrix_norm=np.linalg.norm(original_a, ord=np.inf),
-        solution_norm=np.linalg.norm(prik_b, ord=np.inf),
-        operation_size=2,
-    )
+    np.testing.assert_allclose(prik_b, expected_x)
+    np.testing.assert_allclose(f2py_b, expected_x)
+    np.testing.assert_allclose(scipy_x, expected_x)
+    np.testing.assert_allclose(prik_a, scipy_lu)
+    np.testing.assert_allclose(f2py_a, scipy_lu)
+    lapack_pivots = np.asarray(scipy_piv, dtype=np.int32) + 1
+    np.testing.assert_array_equal(prik_piv, lapack_pivots)
+    np.testing.assert_array_equal(f2py_piv, lapack_pivots)
+    np.testing.assert_allclose(original_a @ prik_b, original_b)
 ```
 
-This test checks the known solution, the scaled residual `A @ X - B`, the LU
-output, native one-based pivots versus SciPy's convention, and `INFO == 0`.
-Both PRIK and the f2py comparison module update the output arrays in place.
+`copy(order="F")` creates separate Fortran-contiguous inputs because DGESV
+overwrites `A` with its LU factors and `B` with the solution. The test checks
+the known solution, `A @ X == B`, the LU output, and `INFO == 0`. SciPy reports
+zero-based pivots, so adding one gives the one-based pivot values returned by
+LAPACK. Both PRIK and the f2py comparison module update the output arrays in
+place.
 
 ### DPOTRF – reconstruct a Cholesky factorization
 
@@ -254,7 +264,7 @@ Both PRIK and the f2py comparison module update the output arrays in place.
 def test_dpotrf_reconstructs_spd_matrix(prik_lapack, scipy_lapack, f2py_lapack):
     logical = np.array([[4.0, 1.0], [1.0, 3.0]], dtype=np.float64)
     stored = np.array([[4.0, np.nan], [1.0, 3.0]], dtype=np.float64, order="F")
-    prik_a, f2py_a = column_major(stored), column_major(stored)
+    prik_a, f2py_a = stored.copy(order="F"), stored.copy(order="F")
 
     prik_scalars = prik_lapack.dpotrf("L", np.int32(2), prik_a, np.int32(2), np.int32(0))
     f2py_result = f2py_lapack.dpotrf(b"L", 2, f2py_a, 0)

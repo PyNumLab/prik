@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from .helpers import assert_allclose_float64, assert_storage_unchanged, column_major
+from .helpers import assert_allclose_float64, assert_storage_unchanged
 
 
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
@@ -188,7 +188,7 @@ def test_dposvx_solves_and_bounds_spd_error(prik_lapack, scipy_lapack, f2py_lapa
 def test_dpotrf_reconstructs_spd_matrix(prik_lapack, scipy_lapack, f2py_lapack):
     logical = np.array([[4.0, 1.0], [1.0, 3.0]], dtype=np.float64)
     stored = np.array([[4.0, np.nan], [1.0, 3.0]], dtype=np.float64, order="F")
-    prik_a, f2py_a = column_major(stored), column_major(stored)
+    prik_a, f2py_a = stored.copy(order="F"), stored.copy(order="F")
 
     prik_scalars = prik_lapack.dpotrf("L", np.int32(2), prik_a, np.int32(2), np.int32(0))
     f2py_result = f2py_lapack.dpotrf(b"L", 2, f2py_a, 0)

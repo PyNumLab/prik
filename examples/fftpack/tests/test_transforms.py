@@ -13,12 +13,15 @@ pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
 
 
 def test_zffti(fftpack):
-    n = np.int32(5)
+    values = np.array([1.0 + 2.0j, -2.0 + 1.0j, 4.0 - 3.0j, 3.0 + 0.5j, -1.0j], dtype=np.complex128)
+    expected = np.fft.fft(values)
+    n = np.int32(values.size)
     wsave = np.full(4 * n + 15, np.nan, dtype=np.float64)
 
     fftpack.zffti(n, wsave)
+    fftpack.zfftf(n, values, wsave)
 
-    assert np.any(np.isfinite(wsave))
+    np.testing.assert_allclose(values, expected, rtol=0.0, atol=1.0e-12)
 
 
 def test_zfftf(fftpack):
@@ -45,12 +48,15 @@ def test_zfftb(fftpack):
 
 
 def test_dffti(fftpack):
-    n = np.int32(5)
+    values = np.array([1.0, -2.0, 4.0, 3.0, -1.0], dtype=np.float64)
+    expected = numpy_rfft_packing(values)
+    n = np.int32(values.size)
     wsave = np.full(2 * n + 15, np.nan, dtype=np.float64)
 
     fftpack.dffti(n, wsave)
+    fftpack.dfftf(n, values, wsave)
 
-    assert np.any(np.isfinite(wsave))
+    np.testing.assert_allclose(values, expected, rtol=0.0, atol=1.0e-12)
 
 
 def test_dfftf(fftpack):
@@ -77,12 +83,19 @@ def test_dfftb(fftpack):
 
 
 def test_dzffti(fftpack):
-    n = np.int32(5)
+    values = np.array([1.0, -2.0, 4.0, 3.0, -1.0], dtype=np.float64)
+    spectrum = np.fft.rfft(values)
+    coefficients_a = np.empty((values.size + 1) // 2, dtype=np.float64)
+    coefficients_b = np.empty_like(coefficients_a)
+    n = np.int32(values.size)
     wsave = np.full(3 * n + 15, np.nan, dtype=np.float64)
 
     fftpack.dzffti(n, wsave)
+    azero = fftpack.dzfftf(n, values, coefficients_a, coefficients_b, wsave)
 
-    assert np.any(np.isfinite(wsave))
+    np.testing.assert_allclose(azero, spectrum[0].real / values.size, rtol=0.0, atol=1.0e-12)
+    np.testing.assert_allclose(coefficients_a[:-1], 2.0 * spectrum[1:].real / values.size, rtol=0.0, atol=1.0e-12)
+    np.testing.assert_allclose(coefficients_b[:-1], -2.0 * spectrum[1:].imag / values.size, rtol=0.0, atol=1.0e-12)
 
 
 def test_dzfftf(fftpack):
@@ -115,12 +128,15 @@ def test_dzfftb(fftpack):
 
 
 def test_dcosqi(fftpack):
-    n = np.int32(5)
+    values = np.array([1.0, -2.0, 4.0, 3.0, -1.0], dtype=np.float64)
+    expected = scipy_fft.dct(values, type=3, norm=None)
+    n = np.int32(values.size)
     wsave = np.full(3 * n + 15, np.nan, dtype=np.float64)
 
     fftpack.dcosqi(n, wsave)
+    fftpack.dcosqf(n, values, wsave)
 
-    assert np.any(np.isfinite(wsave))
+    np.testing.assert_allclose(values, expected, rtol=0.0, atol=1.0e-12)
 
 
 def test_dcosqf(fftpack):
@@ -146,12 +162,15 @@ def test_dcosqb(fftpack):
 
 
 def test_dcosti(fftpack):
-    n = np.int32(5)
+    values = np.array([1.0, -2.0, 4.0, 3.0, -1.0], dtype=np.float64)
+    expected = scipy_fft.dct(values, type=1, norm=None)
+    n = np.int32(values.size)
     wsave = np.full(3 * n + 15, np.nan, dtype=np.float64)
 
     fftpack.dcosti(n, wsave)
+    fftpack.dcost(n, values, wsave)
 
-    assert np.any(np.isfinite(wsave))
+    np.testing.assert_allclose(values, expected, rtol=0.0, atol=1.0e-12)
 
 
 def test_dcost(fftpack):
@@ -166,12 +185,15 @@ def test_dcost(fftpack):
 
 
 def test_dsinti(fftpack):
-    n = np.int32(5)
+    values = np.array([1.0, -2.0, 4.0, 3.0, -1.0], dtype=np.float64)
+    expected = scipy_fft.dst(values, type=1, norm=None)
+    n = np.int32(values.size)
     wsave = np.full(2 * n + 15, np.nan, dtype=np.float64)
 
     fftpack.dsinti(n, wsave)
+    fftpack.dsint(n, values, wsave)
 
-    assert np.any(np.isfinite(wsave))
+    np.testing.assert_allclose(values, expected, rtol=0.0, atol=1.0e-12)
 
 
 def test_dsint(fftpack):
@@ -243,12 +265,15 @@ def test_idct(fftpack):
 
 
 def test_dct_t1i(fftpack):
-    n = np.int32(5)
+    values = np.array([1.0, -2.0, 4.0, 3.0, -1.0], dtype=np.float64)
+    expected = scipy_fft.dct(values, type=1, norm=None)
+    n = np.int32(values.size)
     wsave = np.full(3 * n + 15, np.nan, dtype=np.float64)
 
     fftpack.dct_t1i(n, wsave)
+    fftpack.dct_t1(n, values, wsave)
 
-    assert np.any(np.isfinite(wsave))
+    np.testing.assert_allclose(values, expected, rtol=0.0, atol=1.0e-12)
 
 
 def test_dct_t1(fftpack):
@@ -263,12 +288,15 @@ def test_dct_t1(fftpack):
 
 
 def test_dct_t23i(fftpack):
-    n = np.int32(5)
+    values = np.array([1.0, -2.0, 4.0, 3.0, -1.0], dtype=np.float64)
+    expected = 2.0 * scipy_fft.dct(values, type=2, norm=None)
+    n = np.int32(values.size)
     wsave = np.full(3 * n + 15, np.nan, dtype=np.float64)
 
     fftpack.dct_t23i(n, wsave)
+    fftpack.dct_t2(n, values, wsave)
 
-    assert np.any(np.isfinite(wsave))
+    np.testing.assert_allclose(values, expected, rtol=0.0, atol=1.0e-12)
 
 
 def test_dct_t2(fftpack):

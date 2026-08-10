@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from .helpers import assert_allclose_float64, assert_orthogonal, column_major, symmetric_band_storage
+from .helpers import assert_allclose_float64, assert_orthogonal, symmetric_band_storage
 
 
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
@@ -417,7 +417,7 @@ def test_dstevd_computes_divide_and_conquer_tridiagonal_eigenpairs(prik_lapack, 
 def test_dsyev_returns_orthonormal_eigenvectors(prik_lapack, scipy_lapack, f2py_lapack):
     matrix = np.array([[2.0, 1.0], [1.0, 2.0]], dtype=np.float64)
     expected_w = np.array([1.0, 3.0], dtype=np.float64)
-    prik_vectors, f2py_vectors = column_major(matrix), column_major(matrix)
+    prik_vectors, f2py_vectors = matrix.copy(order="F"), matrix.copy(order="F")
     prik_w = np.empty(2, dtype=np.float64)
     f2py_w = np.empty(2, dtype=np.float64)
 

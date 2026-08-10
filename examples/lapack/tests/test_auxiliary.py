@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from .helpers import assert_allclose_float64, column_major, general_band_storage, native_pivots
+from .helpers import assert_allclose_float64, general_band_storage, native_pivots
 
 
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
@@ -80,7 +80,7 @@ def test_dlarf_applies_householder_reflector_from_left(prik_lapack, scipy_lapack
     original = np.array([[1.0, 3.0], [2.0, -1.0]], dtype=np.float64)
     reflector = np.eye(2, dtype=np.float64) - tau * np.outer(vector, vector)
     expected = reflector @ original
-    prik_c, f2py_c = column_major(original), column_major(original)
+    prik_c, f2py_c = original.copy(order="F"), original.copy(order="F")
 
     prik_scalars = prik_lapack.dlarf(
         "L", np.int32(2), np.int32(2), vector, np.int32(1), np.float64(tau), prik_c, np.int32(2), np.empty(2)
@@ -150,7 +150,7 @@ def test_dlaswp_applies_native_one_based_row_pivots(prik_lapack, scipy_lapack, f
     scipy_pivots = np.array([2, 2], dtype=np.int32)
     native_ipiv = native_pivots(scipy_pivots)
     expected = original[[2, 0, 1], :]
-    prik_a, f2py_a = column_major(original), column_major(original)
+    prik_a, f2py_a = original.copy(order="F"), original.copy(order="F")
 
     prik_scalars = prik_lapack.dlaswp(
         np.int32(2), prik_a, np.int32(3), np.int32(1), np.int32(2), native_ipiv, np.int32(1)

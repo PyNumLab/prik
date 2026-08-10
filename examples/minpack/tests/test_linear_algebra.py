@@ -5,10 +5,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from .helpers import FLOAT, INT
-
 
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
+INT = np.int32
+FLOAT = np.float64
 TWO = INT(2)
 
 

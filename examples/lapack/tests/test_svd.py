@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from .helpers import assert_allclose_float64, assert_orthogonal, column_major
+from .helpers import assert_allclose_float64, assert_orthogonal
 
 
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
@@ -71,7 +71,7 @@ def test_dgejsv_reconstructs_matrix_with_jacobi_svd(prik_lapack, scipy_lapack, f
 
 def test_dgesdd_reconstructs_matrix_with_divide_and_conquer_svd(prik_lapack, scipy_lapack, f2py_lapack):
     matrix = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 7.0]], dtype=np.float64)
-    prik_a, f2py_a = column_major(matrix), column_major(matrix)
+    prik_a, f2py_a = matrix.copy(order="F"), matrix.copy(order="F")
     prik_s, f2py_s = np.empty(2), np.empty(2)
     prik_u, f2py_u = np.empty((3, 3), order="F"), np.empty((3, 3), order="F")
     prik_vt, f2py_vt = np.empty((2, 2), order="F"), np.empty((2, 2), order="F")
@@ -111,10 +111,10 @@ def test_dgesdd_reconstructs_matrix_with_divide_and_conquer_svd(prik_lapack, sci
 
 def test_dgesvd_reconstructs_matrix(prik_lapack, scipy_lapack, f2py_lapack):
     matrix = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 7.0]], dtype=np.float64)
-    prik_a, f2py_a = column_major(matrix), column_major(matrix)
+    prik_a, f2py_a = matrix.copy(order="F"), matrix.copy(order="F")
     prik_s, f2py_s = np.empty(2, dtype=np.float64), np.empty(2, dtype=np.float64)
-    prik_u, f2py_u = column_major(np.zeros((3, 3))), column_major(np.zeros((3, 3)))
-    prik_vt, f2py_vt = column_major(np.zeros((2, 2))), column_major(np.zeros((2, 2)))
+    prik_u, f2py_u = np.zeros((3, 3), dtype=np.float64, order="F"), np.zeros((3, 3), dtype=np.float64, order="F")
+    prik_vt, f2py_vt = np.zeros((2, 2), dtype=np.float64, order="F"), np.zeros((2, 2), dtype=np.float64, order="F")
 
     prik_scalars = prik_lapack.dgesvd(
         "A",

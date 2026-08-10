@@ -5,10 +5,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from .helpers import FLOAT, INT, matrix, squared_least_squares_callback, squared_residual_callback, vector
-
 
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
+INT = np.int32
+FLOAT = np.float64
 
 
 def test_dpmpar_is_an_immutable_float64_snapshot(minpack):
@@ -45,12 +45,15 @@ def test_chkder(minpack):
 
 
 def test_fdjac1(minpack):
-    x = vector((1.0, 2.0))
+    def squared_residual(_count, x, fvec, _iflag):
+        fvec[:] = x**2 - 1.0
+
+    x = np.array([1.0, 2.0], dtype=np.float64)
     fvec = x**2 - 1.0
-    fjac = matrix()
+    fjac = np.empty((2, 2), dtype=np.float64, order="F")
 
     result = minpack.fdjac1(
-        squared_residual_callback,
+        squared_residual,
         INT(2),
         x,
         fvec,
@@ -69,12 +72,15 @@ def test_fdjac1(minpack):
 
 
 def test_fdjac2(minpack):
-    x = vector((1.0, 2.0))
+    def squared_residual(_m, _n, x, fvec, _iflag):
+        fvec[:] = x**2 - 1.0
+
+    x = np.array([1.0, 2.0], dtype=np.float64)
     fvec = x**2 - 1.0
-    fjac = matrix()
+    fjac = np.empty((2, 2), dtype=np.float64, order="F")
 
     result = minpack.fdjac2(
-        squared_least_squares_callback,
+        squared_residual,
         INT(2),
         INT(2),
         x,

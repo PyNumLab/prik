@@ -24,6 +24,13 @@ release tags add a leading `v` to the package version.
 
 ### Changed
 
+- Simplified the documented DGESV validation and the LAPACK test suite to use
+  explicit NumPy Fortran-order copies, with documented numerical-test helper
+  conventions.
+- Aligned the documented MINPACK `hybrd1` callback example with its runnable
+  test, made it verify callback invocation, and made its test problems
+  self-contained; FFTPACK workspace initializer tests now validate a paired
+  transform against NumPy or SciPy.
 - Renamed the developer-facing wrapper generation package from
   `prik.wrapper_codegen` to `prik.codegen`; the old import path was removed.
 - Expanded public interface resolution so implemented unnamed interfaces and
