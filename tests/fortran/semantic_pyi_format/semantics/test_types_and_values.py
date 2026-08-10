@@ -1,30 +1,34 @@
 """Tests split by stable ownership concept from `test_python_ast_contracts.py`."""
 
-from tests.fortran._support.pyi_conversion import (
+import ast
+import pytest
+from prik import parse_fortran_file
+from prik.codegen.printers import emit_module
+from prik.pipeline.pyi import pyi_text_to_semantic_module
+from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
+from prik.semantics.metadata import (
     ADDRESS_ROLE_METADATA,
     ADDRESS_ROLE_RAW,
     NATIVE_ARRAY_DESCRIPTOR_METADATA,
     OPTIONAL_ABSENT_HANDLE_METADATA,
+    USER_PRIVATE_METADATA,
+)
+from prik.semantics.models import (
     PYTHON_VALUE_IMMUTABLE,
     PYTHON_VALUE_MUTABILITY_METADATA,
     SemanticConstraint,
     SemanticField,
     SemanticVariable,
-    USER_PRIVATE_METADATA,
-    _node_text,
-    ast,
-    emit_module,
-    fortran_file_to_semantic_modules,
+)
+from prik.semantics.native_array_handles import (
     is_native_array_handle,
     native_array_data_type,
     native_array_descriptor_kind,
     native_array_handle_facts,
-    native_contract_issues,
-    parse_fortran_file,
-    parse_pyi_text,
-    pyi_text_to_semantic_module,
-    pytest,
 )
+from prik.semantics.native_contract import native_contract_issues
+from prik.semantics.pyi2ir import _node_text
+from tests.fortran._support.pyi_conversion import parse_pyi_text
 
 
 def test_convert_pyi_to_ir_dispatches_nested_and_qualified_semantic_types():

@@ -1,18 +1,20 @@
 """Tests split by stable ownership concept from `test_properties.py`."""
 
-from tests.fortran._support.parser_properties import (
+import pytest
+from contextlib import suppress
+from hypothesis import given
+from prik import (
     FortranParseError,
+    parse_fortran_file,
+)
+from prik.codegen.printers import emit_module_stubs
+from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
+from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
+from tests.fortran._support.parser_properties import (
     _FORTRAN_IDENTIFIER_STEMS,
     _FORTRAN_SCALAR_TYPES,
     _FUZZ_TEXT,
-    emit_module_stubs,
-    fortran_file_to_semantic_modules,
     fortran_subroutines,
-    given,
-    parse_fortran_file,
-    parse_pyi_text,
-    pytest,
-    suppress,
 )
 
 

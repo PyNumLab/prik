@@ -1,12 +1,14 @@
 """Tests split by stable ownership concept from `test_procedures_and_interfaces.py`."""
 
-from tests.fortran._support.parser_procedures import (
+from prik import parse_fortran_file
+from prik.parsers.fortran.models import (
     FortranUseMapping,
     FortranVariable,
+)
+from tests.fortran._support.parser_procedures import (
     collect_project_procedure_signatures,
     collect_signature_shape_symbols,
     evaluate_signature_shapes,
-    parse_fortran_file,
 )
 
 

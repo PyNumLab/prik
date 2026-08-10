@@ -1,14 +1,14 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
-from tests.fortran._support.semantic_conversion import (
-    FortranToIRConverter,
-    emit_module,
-    get_function,
-    native_contract_issues,
+from prik import (
     parse_fortran_project,
-    parse_fortran_source,
-    parse_pyi_text,
 )
+from prik.codegen.printers import emit_module
+from prik.semantics.fortran2ir import FortranToIRConverter
+from prik.semantics.native_contract import native_contract_issues
+from tests.fortran._support.semantic_conversion import get_function
+from prik import parse_fortran_file as parse_fortran_source
+from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
 
 
 def test_dummy_procedure_interfaces_become_complete_callable_contracts():

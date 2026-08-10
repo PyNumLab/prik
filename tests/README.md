@@ -7,19 +7,22 @@ organized by documented feature and pipeline stage:
 tests/fortran/<documented-feature>/<owning-stage>/
 ```
 
-Meta-tests that validate the test suite itself live under
-`tests/architecture/`; they are outside the tree whose structure they enforce.
-Only genuinely language-neutral product behavior belongs under `tests/shared/`.
+Documentation is the top-level `tests/docs/` feature. Only other genuinely
+internal product behavior mirrors its production package below
+`tests/fortran/infrastructure/`. Maintainer tooling has the independent
+`tests/tools/` owner, while exceptional automation-safety checks live under
+`tests/workflows/`.
 Generated C and CPython binding code used by a Fortran wrapper remains evidence
 for the Fortran input contract; `tests/c/` means C is the user-owned input
 language.
 
 | Owner | Contract | Focused command |
 | --- | --- | --- |
-| [`tests/architecture/`](architecture/README.md) | Test-suite ownership, evidence-ledger, selection, and collection invariants | `python3 -m pytest -q tests/architecture` |
+| [`tests/docs/`](docs/README.md) | Documentation metadata, navigation, executable examples, publication, content journeys, and source-map synchronization | `python3 -m pytest -q tests/docs` |
 | [`tests/fortran/`](fortran/README.md) | Fortran input, semantic `.pyi` wrapper contracts, generated bridge/binding behavior, and Fortran runtime features | `python3 -m pytest -q tests/fortran` |
 | [`tests/c/`](c/README.md) | C input-language inspection behavior | `python3 -m pytest -q tests/c` |
-| [`tests/shared/`](shared/README.md) | Behavior that neither imports nor selects a native input language | `python3 -m pytest -q tests/shared` |
+| [`tests/tools/`](tools/README.md) | Maintainer commands and CI support scripts | `python3 -m pytest -q tests/tools` |
+| [`tests/workflows/`](workflows/README.md) | Exceptional safety properties for repository automation | `python3 -m pytest -q tests/workflows` |
 
 The Fortran feature index maps each maintained User Guide and semantic `.pyi`
 page to its final directory and focused command. The cleanup contract and
@@ -28,12 +31,11 @@ progress gates live in
 
 ## Ownership contract
 
-Every pytest module and checked fixture has one owner below
-`tests/{architecture,fortran,c,shared}/`. `tests/architecture/` contains only
-meta-tests of this ownership and evidence system; it is not a compatibility
-root for old stage-first tests. No legacy stage-first root, shared fixture
-corpus, forwarding fixture, collection shim, import alias, or path fallback is
-part of the maintained suite.
+Every pytest module and checked fixture has a behavioral owner below
+`tests/{docs,tools,workflows,fortran,c}/`. Test organization is a maintainer convention,
+not behavior frozen by recursive layout tests. No legacy stage-first root,
+shared fixture corpus, forwarding fixture, collection shim, import alias, or
+path fallback is part of the maintained suite.
 
 ## Final Fortran stage ownership
 
@@ -77,8 +79,9 @@ The final roots must collect and execute independently:
 ```bash
 python3 -m pytest -q tests/fortran -m "not real_library"
 python3 -m pytest -q tests/c
-python3 -m pytest -q tests/shared
-python3 -m pytest -q tests/architecture
+python3 -m pytest -q tests/docs
+python3 -m pytest -q tests/tools
+python3 -m pytest -q tests/workflows
 ```
 
 The full-library BLAS/LAPACK integration nodes and the complete correctness
@@ -99,7 +102,7 @@ selection:
 - `property`, `regression`, `benchmark`, and `slow` retain their ordinary
   meanings; and
 - `toolchain_smoke` selects only the bounded portable compiler-profile subset
-  documented in `tests/architecture/fortran/`.
+  declared by `tests/fortran/conftest.py`.
 
 The smoke suite is eight exact nodes reused from ordinary feature end-to-end
 tests. Strict mode requires a resolved compiler, rejects skips and xfails, and
@@ -139,7 +142,24 @@ distinct claim.
 Unsupported behavior belongs at the first decisive stage. Preserve a later
 CLI/API diagnostic test only when propagation is itself public behavior.
 Feature-local fixtures live below their feature; cross-feature helpers require
-an explicit infrastructure or shared owner.
+an explicit infrastructure owner.
+
+After choosing feature ownership, mirror genuinely internal mechanisms by
+production package and module:
+
+```text
+tests/fortran/infrastructure/<production-package>/test_<production-module>.py
+```
+
+Thus `prik/semantics/ownership.py` uses
+`infrastructure/semantics/test_ownership.py`, while
+`prik/codegen/planner.py` uses `infrastructure/codegen/test_planner.py`.
+User-visible behavior does not move to infrastructure merely because it reaches
+those modules. Retained production `if __name__ == "__main__"` demonstrations
+are smoke-tested by the same dedicated module owner.
+
+Shared support modules provide builders and assertions only. They do not
+re-export `pytest`, standard-library modules, or production symbols.
 
 After moving or splitting tests, run collection before execution and compare
 node IDs, parametrized suffixes, markers, skips, and xfails. Then run every

@@ -1,17 +1,28 @@
 """Completed pointer ownership and native-array handle policy."""
 
-from tests.fortran._support.ownership_policy import (
-    CodegenAction,
-    DestructionPolicy,
+import pytest
+from prik.codegen.printers import PyiPrinter
+from prik.semantics.models import (
+    RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA,
+    RESOLVED_OWNERSHIP_POLICY_METADATA,
+)
+from prik.semantics.native_array_handles import (
     NativeArrayBuildRequirement,
     NativeArrayHandlePolicyDispatcher,
+    native_array_handle_build_requirements,
+)
+from prik.semantics.ownership import (
+    CodegenAction,
+    DestructionPolicy,
     NativeBarrierAction,
     OwnershipContext,
     OwnershipOwner,
-    PyiPrinter,
-    RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA,
-    RESOLVED_OWNERSHIP_POLICY_METADATA,
     TransferMode,
+    default_ownership_policy,
+    set_ownership_metadata,
+)
+from prik.semantics.policy_completion import complete_semantic_policies
+from tests.fortran._support.ownership_policy import (
     _array_type,
     _derived_type,
     _hidden_output_context,
@@ -20,12 +31,7 @@ from tests.fortran._support.ownership_policy import (
     _scalar_type,
     _string_type,
     _writable_argument_context,
-    complete_semantic_policies,
-    default_ownership_policy,
-    native_array_handle_build_requirements,
     parse_pyi_text,
-    pytest,
-    set_ownership_metadata,
 )
 
 

@@ -160,7 +160,7 @@ from the appropriate area index and `mkdocs.yml` navigation.
 Documentation-only changes normally run:
 
 ```bash
-python3 -m pytest -q tests/shared/docs
+python3 -m pytest -q tests/docs
 python3 -m mkdocs build --strict
 git diff --check
 ```
@@ -177,9 +177,9 @@ source-build Makefile behavior by
 [`test_build_modes.py`](../../../tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py).
 
 Tooling configuration is covered by
-[`test_documentation_structure.py`](../../../tests/shared/docs/test_structure.py),
-[`test_documentation_examples.py`](../../../tests/shared/docs/test_examples.py), and
-[`test_check_static_analysis_versions.py`](../../../tests/shared/tools/test_check_static_analysis_versions.py).
+[`test_reference_and_source_map.py`](../../../tests/docs/test_reference_and_source_map.py),
+[`test_examples.py`](../../../tests/docs/test_examples.py), and
+[`test_check_static_analysis_versions.py`](../../../tests/tools/test_check_static_analysis_versions.py).
 
 When a generated file contract changes, update this page with the CLI reference,
 Python API reference, shared-library build guide, and wrapper tests that prove

@@ -1,11 +1,13 @@
 """Tests split by stable ownership concept from `test_cli.py`."""
 
-from tests.fortran.source_preprocessing.preprocessing._support import (
-    Path,
+from pathlib import Path
+
+import pytest
+
+import prik.pipeline.preprocessing as preprocessing
+from prik.pipeline.preprocessing import (
     PreprocessingConfig,
     PreprocessingError,
-    preprocessing,
-    pytest,
 )
 
 

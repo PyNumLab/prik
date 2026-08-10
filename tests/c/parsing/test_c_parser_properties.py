@@ -1,19 +1,18 @@
 """Tests split by stable ownership concept from `test_properties.py`."""
 
+from contextlib import suppress
+import json
+
+import pytest
+
+from hypothesis import given, strategies as st
+from prik.parsers.c import CParseError, parse_c_file
+from prik.parsers.c.lexer import split_top_level_c_source, top_level_split
 from tests.c._support.parser_properties import (
-    CParseError,
     _C_IDENTIFIERS,
     _FUZZ_TEXT,
     c_nested_variable_declarations,
     c_prototypes,
-    given,
-    json,
-    parse_c_file,
-    pytest,
-    split_top_level_c_source,
-    st,
-    suppress,
-    top_level_split,
 )
 
 

@@ -1,10 +1,9 @@
 """Tests split by stable ownership concept from `test_cli.py`."""
 
-from tests.c._support.preprocessing import (
-    Path,
-    PreprocessingConfig,
-    preprocessing,
-)
+from pathlib import Path
+
+import prik.pipeline.preprocessing as preprocessing
+from prik.pipeline.preprocessing import PreprocessingConfig
 
 
 def test_preprocess_source_preserves_plain_c_source_mapping(monkeypatch, tmp_path: Path):

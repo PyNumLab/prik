@@ -1,24 +1,28 @@
 """Tests split by stable ownership concept from `test_imports_and_packages.py`."""
 
-from tests.fortran._support.printer_models import (
-    OPERATOR_F90_SOURCE,
-    ProjectionMapping,
+import pytest
+from prik import parse_fortran_file as parse_fortran_source
+from prik.codegen.printers import (
     PyiPrinter,
+    emit_module,
+    emit_module_stubs,
+)
+from prik.semantics.fortran2ir import fortran_module_to_semantic_module
+from prik.semantics.models import (
+    ProjectionMapping,
     SemanticArgument,
     SemanticClass,
     SemanticFunction,
     SemanticMethod,
     SemanticModule,
     SemanticType,
-    emit_module,
-    emit_module_stubs,
-    fortran_module_to_semantic_module,
+)
+from tests.fortran._support.printer_models import (
+    OPERATOR_F90_SOURCE,
     generate_pyi,
     generate_wrapper_artifacts,
     normalize,
-    parse_fortran_source,
     parse_pyi_text,
-    pytest,
     rendered_source,
 )
 

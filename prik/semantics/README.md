@@ -8,19 +8,19 @@ editable `.pyi` files, policy completion, and wrapper code generation.
 | File | Owns |
 | --- | --- |
 | `models.py` | Semantic IR dataclasses and core model metadata. |
-| `../semantic_metadata.py` | Cross-stage semantic metadata keys consumed after `.pyi`, C, or Fortran conversion. |
+| `metadata.py` | Cross-stage semantic metadata keys consumed after `.pyi`, C, or Fortran conversion. |
 | `fortran2ir.py` | Fortran parser facts to semantic modules. |
 | `c2ir.py` | C parser facts to semantic modules. |
 | `pyi2ir.py` | User-editable semantic `.pyi` AST conversion and validation. |
-| `../pyi_pipeline.py` | Combined `.pyi` text/file/path-set conversion and external-type reconciliation. |
+| `../pipeline/pyi.py` | Combined `.pyi` text/file/path-set conversion and external-type reconciliation. |
 | `pyi_metadata.py` | Semantic `.pyi` loader workflow metadata. |
 | `native_contract.py` | Source-free native ABI and placement validation. |
 | `policy_completion.py` | Complete ownership, transfer, destruction, mutability/writeback, projection, nullability, release, storage, Python-barrier, native-barrier, and accessor decisions after full signatures are known. |
-| `ir2ast.py` | Semantic IR to codegen AST lowering for wrapper generation; consumes completed policies. |
+| `../codegen/planner.py` | Converts completed semantic policy into the typed wrapper plan consumed by code generation. |
 
 ## Declaration Expressions
 
-`utilities/declaration_expressions.py` owns the shared declaration-expression
+`../utilities/declaration_expressions.py` owns the shared declaration-expression
 grammar, normalization, callable/reference discovery, native-style rendering,
 and deterministic integer evaluation. Semantic conversion does not evaluate an
 arbitrary native specification function. Instead, it records the function's
@@ -46,11 +46,11 @@ C parser facts, Fortran parser facts, or parsed .pyi AST
   -> semantic modules
   -> semantic policy completion
        -> complete storage, Python-barrier, and native-barrier policy
-  -> wrapper planning or codegen AST
+  -> typed wrapper planning
 ```
 
-`ir2ast.py` is the boundary where semantic contracts become generated-wrapper
-implementation details. Object kind, ownership, transfer, destruction,
+`../codegen/planner.py` is the boundary where semantic contracts become typed
+wrapper implementation plans. Object kind, ownership, transfer, destruction,
 mutability/writeback, result projection, nullability, release responsibility,
 contract/boundary storage modes, Python-barrier action, and native-barrier
 action must be completed before this boundary by `policy_completion.py` using
@@ -80,7 +80,7 @@ Completed module-variable policy selects direct binding materialization for a
 literal constant and a read-only native getter for a symbolic numeric source
 parameter.
 
-`ir2ast.py`, bridges, and bindings consume those decisions
+The planner, bridges, and bindings consume those decisions
 instead of making local policy guesses. Bridge and binding dispatch is strict:
 an unregistered barrier action or object-kind/action pair is an error rather
 than a fallback. Model-node dispatch uses `prik.utilities.visitor.ClassVisitor` and the
@@ -103,4 +103,4 @@ completion remains the next shared stage after those converters produce
 - Pipeline map: `docs/maintainer/internal-architecture/pipeline-map.md`
 - Semantic tests: `tests/fortran/semantic_ir/semantics/`
 - `.pyi` tests: `tests/fortran/semantic_pyi_format/`
-- Wrapper behavior that reaches `ir2ast.py`: `tests/fortran/`
+- Wrapper behavior that reaches the typed plan: `tests/fortran/`

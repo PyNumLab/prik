@@ -1,15 +1,17 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
-from tests.fortran._support.semantic_conversion import (
-    array_contract,
+from prik.semantics.fortran2ir import (
     fortran_file_to_semantic_modules,
     fortran_module_to_semantic_module,
+)
+from tests.fortran._support.semantic_conversion import (
+    array_contract,
     get_function,
-    parse_pyi_text,
-    parse_fortran_source,
 )
 from prik.semantics.models import SemanticExpressionCallable
 from prik.codegen.printers import PyiPrinter
+from prik import parse_fortran_file as parse_fortran_source
+from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
 
 
 def test_array_constraints():

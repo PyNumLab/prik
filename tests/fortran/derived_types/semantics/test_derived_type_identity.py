@@ -1,10 +1,8 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
-from tests.fortran._support.semantic_conversion import (
-    fortran_module_to_semantic_module,
-    get_function,
-    parse_fortran_source,
-)
+from prik.semantics.fortran2ir import fortran_module_to_semantic_module
+from tests.fortran._support.semantic_conversion import get_function
+from prik import parse_fortran_file as parse_fortran_source
 
 
 def test_procedure_local_derived_type_rename_uses_origin_type_identity():

@@ -5,14 +5,14 @@ import re
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
+from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 from tests.fortran._support.semantic_conversion import (
     array_contract,
-    fortran_module_to_semantic_module,
     get_function,
-    parse_fortran_source,
 )
 from prik.semantics.metadata import NATIVE_ARRAY_DESCRIPTOR_METADATA, OPTIONAL_ABSENT_HANDLE_METADATA
 from prik.semantics.native_array_handles import native_array_descriptor_kind
+from prik import parse_fortran_file as parse_fortran_source
 
 
 def test_fortran_pointer_arrays_and_scalars_preserve_descriptor_semantics():

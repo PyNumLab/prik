@@ -2,17 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
-
 import pytest
 
 
 pytest.importorskip("hypothesis")
 
-from hypothesis import given, strategies as st
-
-from prik.parsers.c import parse_c_file
-from prik.semantics.c2ir import c_file_to_semantic_modules
+from hypothesis import strategies as st
 
 
 _C_SCALAR_TYPES = st.sampled_from(
@@ -48,14 +43,3 @@ def c_scalar_prototypes(draw):
         for parameter_id, (_source_type, semantic_type) in zip(parameter_ids, parameter_types, strict=True)
     ]
     return source, semantic_result, expected_parameters
-
-
-__all__ = (
-    "_C_VALUE_TYPES",
-    "asdict",
-    "c_file_to_semantic_modules",
-    "c_scalar_prototypes",
-    "given",
-    "parse_c_file",
-    "pytest",
-)

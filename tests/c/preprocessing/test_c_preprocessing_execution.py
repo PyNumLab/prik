@@ -1,16 +1,18 @@
 """Tests split by stable ownership concept from `test_cli.py`."""
 
-from tests.c._support.preprocessing import (
-    Path,
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+import pytest
+
+import prik.pipeline.preprocessing as preprocessing
+from prik.pipeline.preprocessing import (
     PreprocessingConfig,
     PreprocessingError,
-    json,
-    preprocessing,
-    pytest,
     run_compiler_preprocessor,
     run_compiler_preprocessor_with_recipe,
-    subprocess,
-    sys,
 )
 
 

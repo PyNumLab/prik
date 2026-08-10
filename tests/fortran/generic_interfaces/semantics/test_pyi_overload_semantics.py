@@ -1,6 +1,7 @@
 """Tests split by stable ownership concept from `test_python_ast_contracts.py`."""
 
-from tests.fortran._support.pyi_conversion import parse_pyi_text, pytest
+import pytest
+from tests.fortran._support.pyi_conversion import parse_pyi_text
 
 
 def test_convert_pyi_to_ir_resolves_prik_overload_by_explicit_specific_name():

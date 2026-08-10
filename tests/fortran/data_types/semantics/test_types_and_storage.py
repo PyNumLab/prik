@@ -1,23 +1,27 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
-from tests.fortran._support.semantic_conversion import (
+import json
+from dataclasses import asdict
+from prik.parsers.fortran.models import (
     FortranArgument,
     FortranDerivedType,
     FortranFile,
     FortranModule,
     FortranProcedureSignature,
     FortranProject,
-    FortranToIRConverter,
     FortranUseMapping,
     FortranVariable,
-    array_contract,
-    asdict,
+)
+from prik.semantics.fortran2ir import (
+    FortranToIRConverter,
     fortran_module_to_semantic_module,
+)
+from tests.fortran._support.semantic_conversion import (
+    array_contract,
     get_function,
     has_constraint,
-    json,
-    parse_fortran_source,
 )
+from prik import parse_fortran_file as parse_fortran_source
 
 
 def test_converter_visitor_and_compatibility_methods_cover_public_paths():

@@ -1,11 +1,9 @@
 """Tests split by stable ownership concept from `test_source_form_and_diagnostics_regressions.py`."""
 
-from tests.fortran._support.parser_regressions import (
-    FortranDerivedType,
-    FortranParseError,
-    FortranParser,
-    pytest,
-)
+import pytest
+from prik import FortranParseError
+from prik.parsers.fortran.models import FortranDerivedType
+from prik.parsers.fortran.parser import FortranParser
 
 
 def test_malformed_type_bound_declaration_diagnostic_preserves_public_metadata():

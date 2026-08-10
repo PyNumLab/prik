@@ -107,7 +107,7 @@ tests/
       functions_and_classes/
       calls_and_results/
     infrastructure/
-      policy/
+      semantics/
       codegen/
   c/
     README.md
@@ -118,15 +118,8 @@ tests/
       conversion/
     pipeline/
     fixtures/
-  shared/
-    architecture/
-    cli/
-    contracts/
-    docs/
-    naming/
-    tools/
-    types/
-    utilities/
+  docs/
+  tools/
 ```
 
 Each documentation feature may contain only the stages it actually needs:
@@ -153,9 +146,9 @@ behavior and public cross-feature capabilities do not.
   Fortran contract.
 - [x] `tests/c/` means C is the input language. It does not own generated C
   used to implement a Fortran wrapper.
-- [x] `tests/shared/` contains only language-neutral behavior. A shared test or
-  fixture must not select C versus Fortran through a parameter, conditional,
-  suffix, compiler name, or fallback path.
+- [x] Documentation and maintainer-tool tests have named top-level owners;
+  internal language-neutral mechanics mirror their `prik/` package under
+  `tests/fortran/infrastructure/`.
 - [x] C receives a mechanical quarantine only. Its behavior is not redesigned
   in this project.
 - [x] Fortran receives the documentation-led behavioral cleanup.
@@ -233,8 +226,8 @@ Rules:
 
 ### CLI ownership
 
-- [x] Generic argument parsing and output formatting belong in
-  `tests/shared/cli/`.
+- [x] Public argument parsing and output formatting belong in the owning input
+  language's command-line feature.
 - [x] Cross-feature Fortran command contracts belong in
   `tests/fortran/command_line_interface/pipeline/`.
 - [x] A CLI test that builds, imports, calls, and verifies a Fortran extension
@@ -307,8 +300,8 @@ Each testable documentation claim gets one row with this minimum schema:
 - [x] Record source build, generated-`.pyi` replay, edited-`.pyi`, and
   source-free native-artifact evidence separately when the documentation claims
   each route.
-- [x] Make architecture tests resolve documentation links and collected node
-  IDs.
+- [x] Resolve documentation links and collected node IDs during the migration
+  review.
 - [x] Reject deletion of the last evidence for a contract row.
 
 ### Temporary pytest migration ledger
@@ -388,7 +381,7 @@ directory. Audit and place every artifact beside its final behavioral owner.
 | `tests/data/fortran/blas/` and `lapack/` | `examples/blas/native/` and `examples/lapack/native/` |
 | Parser regressions extracted from SciFortran | `tests/fortran/source_parsing/parsing/test_real_world_interaction_regressions.py` |
 | Parser source/JSON pairs | Beside their parser owner |
-| Language-neutral `.pyi` syntax | `tests/shared/contracts/` |
+| Language-neutral `.pyi` syntax | `tests/fortran/semantic_pyi_format/` |
 | Fortran `.pyi` build fixtures | `tests/fortran/semantic_pyi_format/{pipeline,end_to_end}/fixtures/` |
 | Generated contract goldens | Beside their generation/package-shape owner |
 | Edited contracts | `tests/fortran/pyi_contracts/<edit-family>/end_to_end/fixtures/` |
@@ -1261,7 +1254,7 @@ before changing compiler product behavior.
 - [x] BLAS, LAPACK, parser-regression, and contract content exists only beneath
   its final owner; no SciFortran snapshot remains.
 - [x] Every permanent contract row resolves to final collected nodes.
-- [x] Collect `tests/fortran/`, `tests/c/`, and `tests/shared/` independently;
+- [x] Collect `tests/fortran/`, `tests/c/`, `tests/docs/`, and `tests/tools/` independently;
   run the local Fortran verification with `-m "not real_library"`.
 - [x] Run the new suites alone under the same CI-equivalent line-and-branch
   coverage procedure used for the baseline.
@@ -1295,14 +1288,13 @@ legacy golden at its final owner made its two focused printer nodes pass; the
 fixture-only correction does not change executable coverage. The coverage run
 otherwise recorded 3,916 passes, 12 documented skips, and 10 deselections.
 
-The clean final ordinary gate collects 3,941 repository nodes. After moving
-suite-structure meta-tests outside the language trees, the independent roots
-collect 22 architecture nodes, 498 C nodes, 1,275 shared nodes, and 2,146
-Fortran nodes: 2,144 are ordinary/smoke nodes and exactly two are the
-BLAS/LAPACK `real_library` rows. The unchanged ordinary selection records 3,919
-passes, 12 documented skips, and 10 deselections in 643.60 seconds. Strict
-smoke separately records exactly eight passes in 18.49 seconds, for 662.09
-seconds across the two executed selections. LAPACK was collected but not run.
+The historical migration gate collected 3,941 repository nodes: 498 C nodes,
+1,275 shared nodes, 2,146 Fortran nodes, and 22 temporary layout-validation
+nodes. The unchanged ordinary selection recorded 3,919 passes, 12 documented
+skips, and 10 deselections in 643.60 seconds. Strict smoke separately recorded
+exactly eight passes in 18.49 seconds, for 662.09 seconds across the two
+executed selections. LAPACK was collected but not run. The temporary layout
+checks were later removed rather than freezing the completed organization.
 
 An uncached compiler-proxy audit across those same two selections records
 1,266 real compiler executions: 562 compilations (382 Fortran and 180 C), 186
@@ -1375,7 +1367,7 @@ Rules:
   or any setup/call/teardown report skips or xfails; and
 - [x] emits a deterministic collection report.
 
-`tests/architecture/fortran/test_smoke_selection.py`:
+The smoke selection was reviewed to:
 
 - [x] validates marker registration and exact collected nodes;
 - [x] validates contract-ledger membership;
@@ -1455,7 +1447,7 @@ python -m pytest -q tests/fortran -m toolchain_smoke \
   --prik-fortran-compiler=<executable> --require-toolchain-smoke
 ```
 
-`tests/architecture/fortran/test_ci_toolchain_lanes.py` verifies:
+The runner and live CI lanes provide the following checks:
 
 - [x] every compiler lane includes its profile tests;
 - [ ] every macOS lane includes macOS platform tests;
@@ -1479,7 +1471,7 @@ CI. Use explicit `matrix.include` records only.
 
 - [ ] Canonical Linux x86-64, middle Python, GFortran: all non-corpus Fortran
   stage tests, ordinary non-real-library Fortran end-to-end, the mechanically
-  preserved C suite, shared tests, and canonical coverage.
+  preserved C suite, documentation and tool tests, and canonical coverage.
 - [ ] Oldest Python, Linux x86-64, GFortran: install/import, selected
   Python-facing stage tests, and toolchain smoke.
 - [ ] Newest Python, Linux x86-64, GFortran: the same compatibility selection.
@@ -1495,7 +1487,7 @@ CI. Use explicit `matrix.include` records only.
   smoke.
 - [ ] Linux x86-64, middle Python, NVIDIA nvfortran: profile tests, focused CLI,
   and smoke.
-- [ ] Linux ARM64, middle Python, GFortran: architecture tests, focused CLI, and
+- [ ] Linux ARM64, middle Python, GFortran: tool-runner tests, focused CLI, and
   smoke.
 - [ ] Linux x86-64, middle Python, GFortran with ASan/UBSan: compatible runtime
   selection and memory-safety checks.

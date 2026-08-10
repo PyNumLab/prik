@@ -1,25 +1,29 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
-from tests.fortran._support.semantic_conversion import (
+import pytest
+from prik.codegen.printers import emit_module
+from prik.parsers.fortran.models import (
     FortranArgument,
     FortranDerivedType,
     FortranFile,
     FortranProcedureSignature,
-    FortranToIRConverter,
     FortranVariable,
+)
+from prik.semantics.fortran2ir import (
+    FortranToIRConverter,
+    fortran_module_to_semantic_module,
+)
+from prik.semantics.models import (
     SemanticArgument,
     SemanticConstraint,
     SemanticFunction,
     SemanticMethod,
     SemanticType,
-    emit_module,
-    fortran_module_to_semantic_module,
-    get_class,
-    native_contract_issues,
-    parse_fortran_source,
-    parse_pyi_text,
-    pytest,
 )
+from prik.semantics.native_contract import native_contract_issues
+from tests.fortran._support.semantic_conversion import get_class
+from prik import parse_fortran_file as parse_fortran_source
+from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
 
 
 def test_converter_rejects_unsupported_inputs_and_missing_derived_type_names():

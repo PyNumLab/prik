@@ -1,18 +1,20 @@
 """Tests split by stable CLI argument-contract ownership."""
 
+import json
+from pathlib import Path
+import subprocess
+import sys
+import types
+
+import pytest
+
+from prik import cli as prik_cli
+from prik.pipeline.preprocessing import PreprocessingError
 from tests.fortran.command_line_interface.pipeline._support import (
-    Path,
-    PreprocessingError,
     TEST_FILE,
     _MainParserError,
     _install_main_parser,
     _main_args,
-    json,
-    pytest,
-    subprocess,
-    sys,
-    types,
-    prik_cli,
 )
 
 

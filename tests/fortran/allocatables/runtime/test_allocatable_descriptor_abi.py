@@ -1,11 +1,9 @@
 """Allocatable descriptor handoff through the runtime ABI."""
 
-from tests.fortran._support.native_array_handles import (
-    AllocatableArray,
-    _handoff,
-    np,
-    pytest,
-)
+import numpy as np
+import pytest
+from prik.runtime.handles import AllocatableArray
+from tests.fortran._support.native_array_handles import _handoff
 
 
 def test_allocatable_descriptor_hook_accepts_unallocated_descriptor_without_numpy_conversion():

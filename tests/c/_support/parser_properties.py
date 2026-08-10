@@ -2,18 +2,12 @@
 
 from __future__ import annotations
 
-import json
-from contextlib import suppress
-
 import pytest
 
 
 pytest.importorskip("hypothesis")
 
-from hypothesis import given, strategies as st
-
-from prik.parsers.c import CParseError, parse_c_file
-from prik.parsers.c.lexer import split_top_level_c_source, top_level_split
+from hypothesis import strategies as st
 
 
 _C_SCALAR_TYPES = st.sampled_from(["int", "double", "float", "char"])
@@ -75,20 +69,3 @@ def c_nested_variable_declarations(draw):
         components = ["CPointer", "CFunctionType"]
 
     return source, components
-
-
-__all__ = (
-    "_C_IDENTIFIERS",
-    "_FUZZ_TEXT",
-    "CParseError",
-    "c_nested_variable_declarations",
-    "c_prototypes",
-    "given",
-    "json",
-    "parse_c_file",
-    "pytest",
-    "split_top_level_c_source",
-    "st",
-    "suppress",
-    "top_level_split",
-)

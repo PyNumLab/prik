@@ -4,13 +4,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+from prik import (
+    parse_fortran_file,
+    parse_fortran_project,
+)
 from tests.fortran._support.parser_procedures import (
     COMPILE_TIME_EXPRESSION_SOURCE,
     collect_project_procedure_signatures,
-    parse_fortran_file,
     parse_fortran_modules,
-    parse_fortran_project,
-    pytest,
 )
 from prik.parsers.fortran.parser import FortranParser
 

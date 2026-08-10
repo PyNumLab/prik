@@ -1,13 +1,15 @@
 """Tests split by stable ownership concept from `test_c_conversion_properties.py`."""
 
+from dataclasses import asdict
+
+import pytest
+
+from hypothesis import given
+from prik.parsers.c import parse_c_file
+from prik.semantics.c2ir import c_file_to_semantic_modules
 from tests.c._support.semantic_properties import (
-    asdict,
     _C_VALUE_TYPES,
-    c_file_to_semantic_modules,
     c_scalar_prototypes,
-    given,
-    parse_c_file,
-    pytest,
 )
 
 

@@ -4,7 +4,8 @@ from pathlib import Path
 import subprocess
 import sys
 
-from tests.fortran._support.semantic_conversion import (
+import pytest
+from prik.parsers.fortran.models import (
     FortranArgument,
     FortranBlockData,
     FortranDerivedType,
@@ -15,6 +16,17 @@ from tests.fortran._support.semantic_conversion import (
     FortranProject,
     FortranSubmodule,
     FortranVariable,
+)
+from prik.semantics.fortran2ir import (
+    _compile_time_requirement_message,
+    _iter_fortran_variable_contexts,
+    collect_semantic_compile_time_requirements,
+    fortran_file_to_semantic_modules,
+    fortran_module_to_semantic_module,
+    fortran_project_to_semantic_modules,
+    resolve_semantic_compile_time_values,
+)
+from prik.semantics.models import (
     ProjectionMapping,
     SemanticArgument,
     SemanticClass,
@@ -22,18 +34,10 @@ from tests.fortran._support.semantic_conversion import (
     SemanticMethod,
     SemanticModule,
     SemanticType,
-    _compile_time_requirement_message,
-    _iter_fortran_variable_contexts,
-    collect_semantic_compile_time_requirements,
-    fortran_file_to_semantic_modules,
-    fortran_module_to_semantic_module,
-    fortran_project_to_semantic_modules,
-    get_function,
-    parse_fortran_source,
-    pytest,
-    resolve_semantic_compile_time_values,
-    semantic_models,
 )
+from tests.fortran._support.semantic_conversion import get_function
+from prik import parse_fortran_file as parse_fortran_source
+from prik.semantics import models as semantic_models
 
 
 def test_fortran_to_ir_direct_script_runs_its_no_argument_example():

@@ -134,7 +134,7 @@ jobs:
           path: .
 
       - name: Run documentation tests
-        run: python -m pytest -q tests/shared/docs
+        run: python -m pytest -q tests/docs
 
       - name: Build reviewed documentation
         run: python -m mkdocs build --strict

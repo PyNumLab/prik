@@ -1,21 +1,25 @@
 """Tests split by stable ownership concept from `test_python_ast_contracts.py`."""
 
-from tests.fortran._support.pyi_conversion import (
-    CONTRACT_IMPORT,
-    Path,
-    SemanticImport,
-    SemanticImportItem,
-    emit_module,
-    fortran_file_to_semantic_modules,
-    native_contract_issues,
-    parse_fortran_file,
-    parse_pyi_text,
+import pytest
+from pathlib import Path
+from prik import parse_fortran_file
+from prik.codegen.printers import emit_module
+from prik.pipeline.pyi import (
     pyi_file_to_semantic_module,
     pyi_paths_to_semantic_modules,
-    pyi_pipeline,
     pyi_text_to_semantic_module,
-    pytest,
 )
+from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
+from prik.semantics.models import (
+    SemanticImport,
+    SemanticImportItem,
+)
+from prik.semantics.native_contract import native_contract_issues
+from tests.fortran._support.pyi_conversion import (
+    CONTRACT_IMPORT,
+    parse_pyi_text,
+)
+import prik.pipeline.pyi as pyi_pipeline
 
 
 def test_convert_pyi_to_ir_requires_imported_contract_types():

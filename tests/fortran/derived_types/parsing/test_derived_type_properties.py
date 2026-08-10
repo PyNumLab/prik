@@ -1,12 +1,14 @@
 """Tests split by stable ownership concept from `test_properties.py`."""
 
+import pytest
+from hypothesis import (
+    given,
+    strategies as st,
+)
+from prik import parse_fortran_file
 from tests.fortran._support.parser_properties import (
     _FORTRAN_IDENTIFIER_STEMS,
     _FORTRAN_SCALAR_TYPES,
-    given,
-    parse_fortran_file,
-    pytest,
-    st,
 )
 
 

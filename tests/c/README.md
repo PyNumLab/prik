@@ -4,9 +4,6 @@
 CPython binding code used to implement a Fortran wrapper remains under the
 owning Fortran feature.
 
-The meta-test that validates this directory's quarantine and isolation lives
-outside it under `tests/architecture/c/`.
-
 C receives a mechanical quarantine during the language-first migration. Move
 existing C parsing, probes, preprocessing, semantic conversion, pipeline, CLI
 dispatch, property tests, fixtures, and helpers without redesigning their

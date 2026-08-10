@@ -1,14 +1,14 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
+from prik.semantics.fortran2ir import fortran_module_to_semantic_module
+from prik.semantics.metadata import SCALAR_STORAGE_CATEGORY
+from prik.semantics.models import ProjectionMapping
 from tests.fortran._support.semantic_conversion import (
-    ProjectionMapping,
-    SCALAR_STORAGE_CATEGORY,
     array_contract,
-    fortran_module_to_semantic_module,
     get_function,
-    parse_fortran_source,
 )
 from prik.semantics.metadata import PROJECTED_OUTPUT_METADATA
+from prik import parse_fortran_file as parse_fortran_source
 
 
 def test_optional_argument():

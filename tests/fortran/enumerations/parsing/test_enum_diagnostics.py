@@ -3,7 +3,8 @@
 import pytest
 
 from prik import FortranParseError, parse_fortran_file
-from tests.fortran._support.parser_regressions import FortranParser, _unit
+from prik.parsers.fortran.parser import FortranParser
+from tests.fortran._support.parser_regressions import _unit
 
 
 def test_enum_diagnostic_reports_first_invalid_line_after_valid_enumerator():

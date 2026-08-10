@@ -4,9 +4,9 @@ import re
 
 import pytest
 
-from tests.fortran._support.semantic_conversion import parse_pyi_text
 from prik.semantics.metadata import PROJECTED_OUTPUT_METADATA
 from prik.semantics.native_array_handles import native_array_descriptor_kind
+from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
 
 
 def test_persistent_allocatable_descriptors_preserve_scalar_and_array_kinds():

@@ -1,13 +1,11 @@
 """Tests split by stable ownership concept from `test_c_conversion_properties.py`."""
 
-from tests.fortran._support.semantic_properties import (
-    asdict,
-    fortran_file_to_semantic_modules,
-    fortran_scalar_subroutines,
-    given,
-    parse_fortran_file,
-    pytest,
-)
+import pytest
+from dataclasses import asdict
+from hypothesis import given
+from prik import parse_fortran_file
+from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
+from tests.fortran._support.semantic_properties import fortran_scalar_subroutines
 
 
 @pytest.mark.property

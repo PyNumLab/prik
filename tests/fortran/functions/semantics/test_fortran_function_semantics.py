@@ -1,13 +1,13 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
-from tests.fortran._support.semantic_conversion import (
-    ProjectionMapping,
+from prik.semantics.fortran2ir import (
     fortran_file_to_semantic_modules,
     fortran_module_to_semantic_module,
-    get_function,
-    parse_fortran_source,
 )
+from prik.semantics.models import ProjectionMapping
+from tests.fortran._support.semantic_conversion import get_function
 from prik.semantics.metadata import PROJECTED_OUTPUT_METADATA
+from prik import parse_fortran_file as parse_fortran_source
 
 
 def test_missing_intent_scalar_uses_conservative_replacement_projection():

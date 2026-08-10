@@ -1,10 +1,8 @@
 """Tests split by stable ownership concept from `test_python_ast_contracts.py`."""
 
-from tests.fortran._support.pyi_conversion import (
-    complete_semantic_policies,
-    parse_pyi_text,
-    pytest,
-)
+import pytest
+from prik.semantics.policy_completion import complete_semantic_policies
+from tests.fortran._support.pyi_conversion import parse_pyi_text
 
 
 def test_convert_pyi_to_ir_uses_value_default_and_explicit_reference_callbacks():

@@ -1,20 +1,26 @@
 """Tests split by stable ownership concept from `test_source_form_and_diagnostics_regressions.py`."""
 
-from tests.fortran._support.parser_regressions import (
+import pytest
+from pathlib import Path
+from prik import (
+    FortranParseError,
+    parse_fortran_file,
+)
+from prik.parsers.fortran.models import (
     FortranArgument,
     FortranDerivedType,
     FortranModule,
-    FortranParseError,
-    FortranParser,
     FortranProcedureSignature,
-    Path,
+)
+from prik.parsers.fortran.parser import (
+    FortranParser,
     _ParserScope,
     _UnitParts,
+)
+from tests.fortran._support.parser_regressions import (
     _empty_unit,
     _lines,
     _unit,
-    parse_fortran_file,
-    pytest,
 )
 
 

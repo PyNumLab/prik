@@ -1,15 +1,17 @@
 """Fortran scalar kinds, target storage facts, and semantic type mapping."""
 
-from tests.fortran._support.semantic_conversion import (
+import pytest
+import re
+from prik.parsers.fortran.models import (
     FortranFile,
-    FortranToIRConverter,
     FortranVariable,
+)
+from prik.semantics.fortran2ir import (
+    FortranToIRConverter,
     collect_fortran_type_storage_requirements,
     fortran_type_storage_expression,
-    parse_fortran_source,
-    pytest,
-    re,
 )
+from prik import parse_fortran_file as parse_fortran_source
 
 
 def test_intrinsic_builtin_kinds_map_to_semantic_types():

@@ -1,6 +1,9 @@
 """Tests split by stable ownership concept from `test_functions_and_callbacks.py`."""
 
-from tests.c.semantics.conversion._support import (
+from dataclasses import asdict
+
+from prik.parsers.c import parse_c_file
+from prik.parsers.c.models import (
     CAtomic,
     CChar,
     CComposedType,
@@ -12,18 +15,16 @@ from tests.c.semantics.conversion._support import (
     CPointer,
     CSourceLocation,
     CStruct,
-    CToIRConverter,
     CTypedef,
     CUnknownType,
     CVariable,
-    CVoid,
     CVolatile,
+    CVoid,
+)
+from prik.semantics.c2ir import CToIRConverter, c_file_to_semantic_modules, c_function_to_semantic_function
+from tests.c.semantics.conversion._support import (
     _c_origin,
     _function,
-    asdict,
-    c_file_to_semantic_modules,
-    c_function_to_semantic_function,
-    parse_c_file,
 )
 
 

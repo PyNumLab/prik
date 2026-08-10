@@ -1,8 +1,12 @@
 """Tests split by stable ownership concept from `test_functions_and_callbacks.py`."""
 
+from dataclasses import asdict
 from typing import ClassVar
 
-from tests.c.semantics.conversion._support import (
+import pytest
+
+from prik.parsers.c import parse_c_file
+from prik.parsers.c.models import (
     CArray,
     CBool,
     CChar,
@@ -27,7 +31,6 @@ from tests.c.semantics.conversion._support import (
     CSignedChar,
     CSourceLocation,
     CStruct,
-    CToIRConverter,
     CTypedef,
     CUnknownType,
     CUnsignedChar,
@@ -36,10 +39,9 @@ from tests.c.semantics.conversion._support import (
     CUnsignedLongLong,
     CUnsignedShort,
     CVariable,
-    _assert_unsupported_type,
-    _c_origin,
-    _function,
-    asdict,
+)
+from prik.semantics.c2ir import (
+    CToIRConverter,
     c_file_to_semantic_module,
     c_file_to_semantic_modules,
     c_function_to_semantic_function,
@@ -48,8 +50,11 @@ from tests.c.semantics.conversion._support import (
     c_project_to_semantic_modules,
     c_struct_to_semantic_class,
     c_type_to_semantic_type,
-    parse_c_file,
-    pytest,
+)
+from tests.c.semantics.conversion._support import (
+    _assert_unsupported_type,
+    _c_origin,
+    _function,
 )
 
 

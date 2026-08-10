@@ -1,30 +1,32 @@
 """Tests split by stable CLI output-contract ownership."""
 
+import builtins
+from dataclasses import dataclass
 from importlib import metadata
+import json
+import os
+from pathlib import Path
 import shutil
+import subprocess
+import sys
+import types
 
 import prik
+import pytest
 
-from tests.fortran.command_line_interface.pipeline._support import (
-    Path,
+from prik import cli as prik_cli
+from prik.parsers.fortran import cli as fortran_parser_cli
+from prik.pipeline.preprocessing import (
     PreprocessingConfig,
     PreprocessingDiagnostic,
     PreprocessingError,
+)
+from tests.fortran.command_line_interface.pipeline._support import (
     TEST_FILE,
     _MainParserError,
     _install_main_parser,
     _main_args,
     _patch_main_report_payloads,
-    builtins,
-    dataclass,
-    fortran_parser_cli,
-    json,
-    os,
-    pytest,
-    subprocess,
-    sys,
-    types,
-    prik_cli,
 )
 
 

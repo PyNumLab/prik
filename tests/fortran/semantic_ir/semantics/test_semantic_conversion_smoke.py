@@ -3,7 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from tests.fortran._support.fixture_conversion import FORTRAN_FIXTURES, TESTS_DIR, parse_fixture
+from tests.fortran._support.fixture_outputs import (
+    PARSER_FIXTURE_ROOT as TESTS_DIR,
+    parse_fixture,
+)
+from tests.fortran._support.fixture_conversion import FORTRAN_FIXTURES
 from tests.fortran._support.fixture_outputs import (
     SEMANTICS_FIXTURE_DIR,
     semantic_payload_for_fixture,

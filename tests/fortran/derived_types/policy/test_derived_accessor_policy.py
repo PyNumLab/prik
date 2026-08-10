@@ -1,11 +1,6 @@
 """Tests split by stable ownership concept from `test_handle_policy_dispatch.py`."""
 
-from tests.fortran._support.ownership_policy import (
-    AssignmentMode,
-    CodegenAction,
-    DestructionPolicy,
-    ObjectKind,
-    OwnershipOwner,
+from prik.semantics.models import (
     RESOLVED_GETTER_OWNERSHIP_POLICY_METADATA,
     RESOLVED_OWNERSHIP_POLICY_METADATA,
     RESOLVED_SETTER_OWNERSHIP_POLICY_METADATA,
@@ -14,15 +9,24 @@ from tests.fortran._support.ownership_policy import (
     SemanticField,
     SemanticModule,
     SemanticVariable,
+)
+from prik.semantics.ownership import (
+    AssignmentMode,
+    CodegenAction,
+    DestructionPolicy,
+    ObjectKind,
+    OwnershipOwner,
     SetterAction,
     StorageMode,
     TransferMode,
+    set_ownership_metadata,
+)
+from prik.semantics.policy_completion import complete_semantic_policies
+from tests.fortran._support.ownership_policy import (
     _array_type,
     _derived_type,
     _scalar_type,
-    complete_semantic_policies,
     parse_pyi_text,
-    set_ownership_metadata,
 )
 
 from prik.semantics.models import (

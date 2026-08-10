@@ -1,18 +1,20 @@
 """Tests split by stable ownership concept from `test_cli.py`."""
 
-from tests.c._support.preprocessing import (
-    Path,
+import json
+from pathlib import Path
+
+import pytest
+
+import prik.pipeline.preprocessing as preprocessing
+from prik.pipeline.preprocessing import (
     PreprocessingConfig,
     PreprocessingError,
-    _assert_preprocessing_error,
     build_compile_commands_invocation,
     build_direct_preprocess_invocation,
     build_preprocess_invocation,
     build_template_preprocess_invocation,
-    json,
-    preprocessing,
-    pytest,
 )
+from tests.c._support.preprocessing import _assert_preprocessing_error
 
 
 def test_direct_c_preprocess_invocation_uses_exact_compiler_and_flags(tmp_path: Path):

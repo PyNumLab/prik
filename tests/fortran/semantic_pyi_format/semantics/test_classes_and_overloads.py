@@ -1,9 +1,7 @@
 """Tests split by stable ownership concept from `test_python_ast_contracts.py`."""
 
-from tests.fortran._support.pyi_conversion import (
-    emit_module,
-    parse_pyi_text,
-)
+from prik.codegen.printers import emit_module
+from tests.fortran._support.pyi_conversion import parse_pyi_text
 
 
 def test_convert_pyi_to_ir_applies_decorators_after_native_call():

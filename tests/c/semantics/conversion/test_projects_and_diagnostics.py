@@ -1,10 +1,15 @@
 """Tests split by stable ownership concept from `test_functions_and_callbacks.py`."""
 
+from dataclasses import asdict
 from pathlib import Path
 import subprocess
 import sys
 
-from tests.c.semantics.conversion._support import (
+import pytest
+
+from prik.codegen.printers import emit_module_stubs
+from prik.parsers.c import parse_c_file, parse_c_project
+from prik.parsers.c.models import (
     CEnum,
     CFile,
     CFunction,
@@ -13,27 +18,23 @@ from tests.c.semantics.conversion._support import (
     CProject,
     CSourceLocation,
     CStruct,
-    CToIRConverter,
     CTypedef,
     CUnion,
     CVariable,
-    SemanticArgument,
-    SemanticModule,
-    SemanticOrigin,
-    SemanticType,
-    _c_origin,
-    _function,
-    asdict,
+)
+from prik.semantics.c2ir import (
+    CToIRConverter,
     c_file_to_semantic_module,
     c_parameter_to_semantic_argument,
     c_project_to_semantic_module,
     c_project_to_semantic_modules,
     c_struct_to_semantic_class,
     c_type_to_semantic_type,
-    emit_module_stubs,
-    parse_c_file,
-    parse_c_project,
-    pytest,
+)
+from prik.semantics.models import SemanticArgument, SemanticModule, SemanticOrigin, SemanticType
+from tests.c.semantics.conversion._support import (
+    _c_origin,
+    _function,
 )
 
 

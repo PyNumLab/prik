@@ -1,13 +1,15 @@
 """Allocatable handle state, live-view, and operation protocol."""
 
-from tests.fortran._support.native_array_handles import (
+import numpy as np
+import pytest
+from prik.runtime.handles import (
     AllocatableArray,
     NativeArrayHandleBase,
+)
+from tests.fortran._support.native_array_handles import (
     _ArrayState,
     _common_ops,
     _required_handoff_ops,
-    np,
-    pytest,
 )
 
 

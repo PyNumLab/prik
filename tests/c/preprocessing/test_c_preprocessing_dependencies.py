@@ -1,12 +1,10 @@
 """Tests split by stable ownership concept from `test_cli.py`."""
 
-from tests.c._support.preprocessing import (
-    Path,
-    PreprocessingConfig,
-    build_compile_commands_invocation,
-    json,
-    preprocessing,
-)
+import json
+from pathlib import Path
+
+import prik.pipeline.preprocessing as preprocessing
+from prik.pipeline.preprocessing import PreprocessingConfig, build_compile_commands_invocation
 
 
 def test_compile_commands_filters_dependency_and_windows_compile_flags(tmp_path: Path):

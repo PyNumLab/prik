@@ -100,7 +100,7 @@ argument handoff from the native barrier action.
   `prik.utilities.visitor.ClassVisitor` and configured `<prefix>_<ClassName>` handlers
   instead of parallel visitor implementations or local `isinstance` dispatch
   ladders.
-- [x] Structural evidence lives in `tests/architecture/test_visitor_protocol.py`
+- [x] Structural evidence lives in `tests/fortran/infrastructure/utilities/test_class_visitor.py`
   and `tests/semantics/policy/`; runtime evidence covers scalar
   value/address projection, rank-0 scalar storage, arrays, strings, raw
   addresses, and wrapper instances through focused `tests/wrapper/fortran/`
@@ -463,7 +463,7 @@ PRIK_C_DOCS_END -->
   edited contracts. Evidence:
   `docs/user/reference/pyi-contracts/`,
   `docs/user/reference/fortran-wrapper.md`, and
-  `tests/docs/test_structure.py`.
+  `tests/docs/test_user_content.py`.
 - [x] Edited contracts can remove a class, method, generated constructor, class
   member, and individual overload candidate from the Python API. They can also
   add renamed `@bind(...)` declarations and a renamed module overload group
