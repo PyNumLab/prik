@@ -55,7 +55,9 @@ release tags add a leading `v` to the package version.
 - Refreshed the README and website around the canonical
   **PRIK — Python Runtime Interop Kit** identity, with a concise FAQ, a fair
   PRIK-versus-f2py guide, clearer array guidance, and searchable real-library
-  examples, including a four-library capability and validation summary.
+  examples, including a four-library capability and validation summary, a
+  concise statement of current limitations, and a derived-type inheritance
+  walkthrough.
 - Hardened preprocessing, compiler-derived type probes, semantic policy
   completion, and multi-source build reporting so unsupported contracts fail
   earlier with clearer diagnostics.

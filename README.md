@@ -37,6 +37,7 @@ the user guide, examples, and reference material.
 - [See it in action](#see-it-in-action)
 - [Key Features](#key-features)
 - [Performance](#performance)
+- [Current limitations](#current-limitations)
 - [Installation & Quick Start](#installation--quick-start)
 - [How it works](#how-it-works)
 - [Native Project Inputs](#native-project-inputs)
@@ -155,6 +156,16 @@ charts below come from the latest successfully deployed benchmark snapshot.
 [![Clean end-to-end build time for PRIK and f2py under development and optimized compiler profiles. Lower times are better.](https://pynumlab.github.io/prik/user/assets/build-time-comparison.svg)](https://pynumlab.github.io/prik/user/performance/#clean-build-time)
 
 [See the complete results, test environment, and one-command reproduction instructions.](https://pynumlab.github.io/prik/user/performance/)
+
+## Current limitations
+
+PRIK does not yet support:
+
+- arrays of derived types;
+- procedure pointers, including procedure-pointer module variables and callbacks
+  retained after the wrapped call; or
+- polymorphic outputs, mutable polymorphic arguments, polymorphic arrays,
+  unlimited polymorphism (`class(*)`), abstract types, and deferred bindings.
 
 ## Installation & Quick Start
 

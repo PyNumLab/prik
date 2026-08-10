@@ -44,8 +44,9 @@ def test_fortran_extension_types_generate_python_inheritance(
     circle.set_size(np.float64(5.0))
     circle.radius = np.float64(2.0)
     assert circle.size == np.float64(5.0)
-    assert circle.area() == np.float64(9.0)
-    assert module.describe_shape(circle) == np.float64(9.0)
+    expected_circle_area = np.float64(np.pi * circle.radius**2)
+    np.testing.assert_allclose(circle.area(), expected_circle_area)
+    np.testing.assert_allclose(module.describe_shape(circle), expected_circle_area)
 
     module.base_shape.set_size(circle, np.float64(7.0))
     assert circle.size == np.float64(7.0)

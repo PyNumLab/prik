@@ -37,7 +37,7 @@ contains
   real(8) function circle_area(self) result(value)
     class(circle), intent(in) :: self
 
-    value = self%size + self%radius * self%radius
+    value = acos(-1.0_8) * self%radius * self%radius
   end function circle_area
 
   real(8) function box_area(self) result(value)

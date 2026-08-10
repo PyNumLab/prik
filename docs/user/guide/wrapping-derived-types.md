@@ -250,6 +250,78 @@ For the complete mapping rules, see
 
 ---
 
+## Inheritance And Polymorphic Input Dispatch
+
+Fortran extension types generate a matching Python inheritance hierarchy.
+Inherited fields and methods remain available on the derived class, and an
+overridden type-bound method uses the derived implementation.
+
+```fortran
+type :: base_shape
+  real(8) :: size
+contains
+  procedure :: area => base_area
+  procedure :: set_size => base_set_size
+end type base_shape
+
+type, extends(base_shape) :: circle
+  real(8) :: radius
+contains
+  procedure :: area => circle_area
+end type circle
+
+contains
+
+real(8) function base_area(self) result(value)
+  class(base_shape), intent(in) :: self
+  value = self%size
+end function base_area
+
+subroutine base_set_size(self, value)
+  class(base_shape), intent(inout) :: self
+  real(8), intent(in) :: value
+  self%size = value
+end subroutine base_set_size
+
+real(8) function circle_area(self) result(value)
+  class(circle), intent(in) :: self
+  value = acos(-1.0_8) * self%radius * self%radius
+end function circle_area
+```
+
+For a wrapped module imported as `shapes`, the generated classes preserve that
+relationship:
+
+```python
+shape = shapes.circle()
+assert isinstance(shape, shapes.base_shape)
+
+shape.set_size(np.float64(5.0))
+shape.radius = np.float64(2.0)
+print(shape.size)    # inherited field: 5.0
+print(shape.area())  # overridden method: about 12.5664
+```
+
+A required scalar `class(base), intent(in)` argument accepts wrapped instances
+from the known base and descendant classes:
+
+```fortran
+real(8) function describe_shape(item) result(value)
+  class(base_shape), intent(in) :: item
+  value = item%area()
+end function describe_shape
+```
+
+```python
+print(shapes.describe_shape(shape))  # about 12.5664
+```
+
+This polymorphic boundary is intentionally limited to required scalar inputs.
+Polymorphic outputs, mutable arguments, arrays, allocatable or pointer scalars,
+and unlimited polymorphism (`class(*)`) are not supported.
+
+---
+
 ## Type-Bound Generics
 
 A type-bound generic groups several concrete methods under one Python method.
