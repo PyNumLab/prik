@@ -33,6 +33,7 @@ exclude_docs: |
   old_docs/**
 nav:
   - Home: index.md
+  - About: user/about.md
   - User Documentation:
       - Overview: user/index.md
       - Getting Started:

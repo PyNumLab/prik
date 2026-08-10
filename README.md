@@ -554,6 +554,16 @@ compiler-preprocessed CLI path or an equivalent preprocessing configuration.
 
 ## Development
 
+PRIK is created and maintained by Said Hadjout, with extensive use of
+AI-assisted software-development tools, particularly OpenAI Codex, for
+implementation, refactoring, testing, debugging, documentation, investigation,
+and review assistance.
+
+Architecture, interoperability semantics, feature design, acceptance criteria,
+and final integration remain maintainer-directed. AI-assisted changes are
+subject to the same tests, compiler validation, real-library checks, and quality
+requirements as other changes.
+
 Run the full suite from the repository root:
 
 ```bash
