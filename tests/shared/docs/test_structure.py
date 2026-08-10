@@ -1132,6 +1132,9 @@ def test_performance_page_bounds_the_prik_f2py_decision() -> None:
     assert "design the Python API, not just generate a wrapper" in comparison
     assert "simpler, more Pythonic place to rename or hide exports, flatten modules" in comparison
     assert "reorder or hide native arguments, and return native outputs as Python results" in comparison
+    assert "[NumPy arrays](guide/arrays.md) as complete API contracts" in comparison
+    assert "dtype, rank, shape, memory layout, contiguity, strides, mutation, and copy behavior" in comparison
+    assert "[supported positive-stride views](guide/arrays.md#strided-views) without copying" in comparison
     assert "[derived types](guide/wrapping-derived-types.md) as Python classes" in comparison
     assert "[allocatables](guide/allocatables.md)" in comparison
     assert "[pointer forms](guide/pointers.md)" in comparison
@@ -1274,6 +1277,21 @@ def test_user_guide_teaches_small_contract_edits_in_context() -> None:
     assert '@raises(status="status", message="message", success=0)' in errors
 
 
+def test_array_guide_routes_advanced_shape_expressions_to_reference() -> None:
+    guide = _visible_documentation_source(DOCS_ROOT / "user/guide/arrays.md")
+    reference = _visible_documentation_source(DOCS_ROOT / "user/reference/pyi-contracts/calls-and-results.md")
+
+    assert "Generated contracts may describe a shape with visible arguments" in guide
+    assert "../reference/pyi-contracts/calls-and-results.md#advanced-array-shape-expressions" in guide
+    assert "## Advanced Array Shape Expressions" in reference
+    assert "Native relationship" in reference
+    assert "extent_for(n)" in reference
+
+    assert "The bridge emits the signature as an abstract Fortran interface" not in guide
+    assert "A specification function must be pure" not in guide
+    assert "compiler-produced `.mod` interfaces" not in guide
+
+
 def test_user_guide_keeps_generated_docstrings_with_new_overload_and_class_features() -> None:
     modules = _visible_documentation_source(DOCS_ROOT / "user/guide/wrapping-modules.md")
     generics = _visible_documentation_source(DOCS_ROOT / "user/guide/generic-interfaces.md")
@@ -1381,6 +1399,19 @@ def test_array_handle_docs_keep_views_copies_and_handles_distinct() -> None:
     assert "Do Not Return A Pointer To Expired Local Storage" in pointers
     assert "Derived module variables remain live objects" in memory
     assert "Fortran module owns their storage" in memory
+
+
+def test_parameter_array_references_document_read_only_snapshots() -> None:
+    references = [
+        _visible_documentation_source(DOCS_ROOT / "user/reference/fortran-wrapper.md"),
+        _visible_documentation_source(DOCS_ROOT / "user/reference/generated-modules.md"),
+    ]
+
+    for reference in references:
+        normalized_reference = " ".join(reference.split())
+        assert "Python-owned" in normalized_reference
+        assert "read-only NumPy snapshots" in normalized_reference
+        assert "no native setter" in normalized_reference
 
 
 @pytest.mark.parametrize("heading", CLI_HELP_GROUP_HEADINGS)

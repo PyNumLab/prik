@@ -299,8 +299,9 @@ primary placeholder queue.
 - [x] `docs/user/guide/data-types.md`: maintained Fortran storage, semantic
   `.pyi`, Python value, and NumPy dtype mapping with compiler-probed limits.
 - [x] `docs/user/guide/arrays.md`: maintained dtype, rank, shape, layout,
-  C-order zero-copy and `COPY_F`, stride-aware view, lower-bound, assumed-rank,
-  zero-size, result, and validation guide.
+  C-order zero-copy and `COPY_F`, stride-aware view, assumed-rank, zero-size,
+  result, and validation guide; advanced declaration expressions route to the
+  contract reference.
 - [x] `docs/user/guide/strings.md`: maintained immutable value, replacement,
   mutable storage, fixed-width array, length, and encoding guide.
 - [x] `docs/user/guide/wrapping-functions.md`: maintained scalar, array-result,

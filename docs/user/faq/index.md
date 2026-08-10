@@ -60,6 +60,12 @@ Its editable [semantic `.pyi` contract](../reference/pyi-contracts/index.md) is
 a simpler, more Pythonic place to rename or hide exports, flatten modules,
 reorder or hide native arguments, and return native outputs as Python results.
 
+PRIK treats [NumPy arrays](../guide/arrays.md) as complete API contracts: dtype,
+rank, shape, memory layout, contiguity, strides, mutation, and copy behavior are
+all explicit. This includes
+[supported positive-stride views](../guide/arrays.md#strided-views) without
+copying.
+
 PRIK also covers important Fortran features: supported
 [derived types](../guide/wrapping-derived-types.md) as Python classes,
 [allocatables](../guide/allocatables.md), documented

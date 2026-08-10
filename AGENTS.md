@@ -3,6 +3,12 @@
 The active codebase is entirely Python.
 Before starting implementation work, update or read the relevant docs first so the intended public behavior, ownership rules, and limitations are explicit; then implement code and tests to match that documented contract.
 
+Update `CHANGELOG.md` under **Unreleased** whenever a change adds or changes
+user- or maintainer-visible behavior, public APIs, supported features,
+examples, build or CI workflows, benchmark methodology, or documented
+limitations. Keep entries concise and outcome-focused; do not add release
+notes for internal cleanup that has no visible effect.
+
 Ignore:
 - *.f90
 - *.f95

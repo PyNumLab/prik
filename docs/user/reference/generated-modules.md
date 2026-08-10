@@ -82,10 +82,10 @@ implementation details and are not exported as Python callables.
 Representable native parameters are `Final[...]` constants in the generated
 contract. Assigning to the Python module attribute may shadow the object in
 Python, but it does not mutate the native parameter.
-Rank-positive Fortran `parameter` arrays are not emitted into the generated
-Python surface: they are compile-time values without addressable module
-storage, and the ordinary live-array getter cannot borrow them. Native
-procedures may continue to use those arrays internally.
+Supported fixed-shape numeric Fortran `parameter` arrays are materialized once
+as Python-owned, read-only NumPy snapshots. They have no native setter and do
+not borrow live native storage; unsupported parameter-array forms remain
+outside the generated Python surface.
 
 Supported module arrays, allocatables, pointers, and derived objects follow the
 ownership rules in [Memory Management](../guide/memory-management.md) and

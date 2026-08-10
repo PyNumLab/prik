@@ -1095,6 +1095,8 @@ argv: Addr[3](Int8)
 
 `Addr[1](T)` is invalid; use `Addr(T)`.
 
+### Array Storage and Declaration Expressions
+
 Array storage uses NumPy-style subscriptions:
 
 <!-- PRIK_C_DOCS_START

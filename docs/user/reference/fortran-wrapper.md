@@ -1586,10 +1586,11 @@ Representable rank-zero parameters become `Final[...]` constants and have no
 native setter. A literal value is materialized directly by the binding. When a
 numeric initializer remains a Fortran expression, a generated bridge getter
 reads the compiler-evaluated parameter while the Python module is initialized.
-Rank-positive parameter arrays are omitted because they have no addressable
-module storage for the live-array getter; wrapped procedures may still use
-them internally. Rebinding `module.max_count` only shadows the Python attribute
-and does not change native Fortran state. Private variables are omitted.
+Supported public fixed-shape numeric parameter arrays are copied once at module
+initialization into Python-owned, read-only NumPy snapshots. They are not live
+views of native storage and have no native setter. Rebinding a parameter only
+shadows the Python attribute and does not change native Fortran state. Private
+variables are omitted.
 
 Allocatable module arrays are attributes returning persistent
 `Allocatable[T[...]]` handles:
