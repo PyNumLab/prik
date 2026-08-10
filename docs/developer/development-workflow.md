@@ -1337,17 +1337,23 @@ PYTHONPATH=. pytest -q tests/tools
 PYTHONPATH=. pytest -q tests/workflows
 ```
 
-Maintainer-tool and workflow-safety tests run locally before every push. Enable
-the tracked hook once in each clone:
+Maintainer-tool tests, workflow-safety tests, focused documentation smoke, one
+compiled scalar-wrapper smoke test, and blocking static analysis run locally
+before every push. Enable the tracked hook once in each clone:
 
 ```bash
 git config core.hooksPath .githooks
 ```
 
-The hook runs `tests/tools/` and `tests/workflows/` and rejects the push if
-either suite fails. GitHub Actions runs them again as the shared enforcement
-boundary alongside the required product, documentation, compiler, coverage,
-and real-library checks.
+The hook runs static-analysis version validation, Ruff lint and formatting,
+the codegen-complexity policy, Bandit, Vulture, the changed-code Radon policy,
+the publication and user-content documentation smoke tests, one small public
+CLI-to-native-call wrapper test, `tests/tools/`, and `tests/workflows/`. It
+rejects the push on the first failure. GitHub Actions runs these checks again
+as the shared enforcement boundary alongside the required product, complete
+documentation, compiler, coverage, and real-library checks. The slower
+documentation validators, verbose advisory Radon reports, and broader compiled
+smoke matrix remain outside the quick local hook.
 
 As a project policy, do not merge pull requests unless all checks are green.
 

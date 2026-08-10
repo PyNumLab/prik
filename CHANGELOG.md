@@ -29,8 +29,10 @@ release tags add a leading `v` to the package version.
   internal tests by production package with narrower support helpers; removed
   recursive layout-policing tests that froze maintainer organization, retaining
   exceptional release safety under `tests/workflows/`. The maintainer-tool and
-  workflow-safety suites now also run through the repository's tracked pre-push
-  hook for earlier local feedback while remaining enforced by GitHub Actions.
+  workflow-safety suites, blocking static analysis, and focused documentation
+  smoke checks now also run through the repository's tracked pre-push hook,
+  together with one compiled scalar-wrapper smoke test, for earlier local
+  feedback while remaining enforced by GitHub Actions.
 - Simplified the documented DGESV validation and the LAPACK test suite to use
   explicit NumPy Fortran-order copies, with documented numerical-test helper
   conventions.

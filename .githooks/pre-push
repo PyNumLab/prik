@@ -1,27 +1,119 @@
 #!/usr/bin/env python3
-"""Run repository-maintainer checks before Git sends a push."""
+"""Run quick blocking checks before Git sends a push."""
 
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+DOCUMENTATION_SMOKE_TESTS = (
+    "tests/docs/test_publication.py",
+    "tests/docs/test_user_content.py",
+)
+WRAPPER_SMOKE_TEST = (
+    "tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py::"
+    "test_fortran_wrapper_default_module_name_does_not_collide_with_root_function"
+)
 REQUIRED_TESTS = ("tests/tools", "tests/workflows")
 
 
+def _available_main_ref(remote_name: str) -> str:
+    """Return the best local ref for the remote's pre-push main branch."""
+    candidates = (f"{remote_name}/main", "origin/main", "main")
+    for candidate in dict.fromkeys(candidates):
+        result = subprocess.run(  # noqa: S603
+            ["git", "rev-parse", "--verify", "--quiet", candidate],
+            cwd=REPOSITORY_ROOT,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if result.returncode == 0:
+            return candidate
+    return "main"
+
+
+def _required_commands(base_ref: str) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    """Return the ordered, fail-fast pre-push command set."""
+    return (
+        (
+            "Static-analysis tool versions",
+            (sys.executable, "tools/check_static_analysis_versions.py"),
+        ),
+        ("Ruff lint", (sys.executable, "-m", "ruff", "check", ".")),
+        (
+            "Ruff format",
+            (sys.executable, "-m", "ruff", "format", "--check", "."),
+        ),
+        (
+            "Codegen complexity",
+            (sys.executable, "tools/check_codegen_complexity.py"),
+        ),
+        (
+            "Bandit",
+            (
+                sys.executable,
+                "-m",
+                "bandit",
+                "-q",
+                "-c",
+                "pyproject.toml",
+                "-r",
+                "prik",
+                "--severity-level",
+                "medium",
+                "--confidence-level",
+                "medium",
+            ),
+        ),
+        ("Vulture", (sys.executable, "-m", "vulture")),
+        (
+            f"Radon policy against {base_ref}",
+            (
+                sys.executable,
+                "tools/check_radon_policy.py",
+                "--base-ref",
+                base_ref,
+            ),
+        ),
+        (
+            "Documentation smoke",
+            (
+                sys.executable,
+                "-m",
+                "pytest",
+                "-q",
+                *DOCUMENTATION_SMOKE_TESTS,
+            ),
+        ),
+        (
+            "Compiled scalar-wrapper smoke",
+            (sys.executable, "-m", "pytest", "-q", WRAPPER_SMOKE_TEST),
+        ),
+        (
+            "Maintainer and workflow tests",
+            (sys.executable, "-m", "pytest", "-q", *REQUIRED_TESTS),
+        ),
+    )
+
+
 def main() -> int:
-    """Return pytest's status for the required local pre-push suites."""
-    print(
-        "Running required pre-push tests: tests/tools tests/workflows",
-        flush=True,
-    )
-    completed = subprocess.run(  # noqa: S603
-        [sys.executable, "-m", "pytest", "-q", *REQUIRED_TESTS],
-        cwd=REPOSITORY_ROOT,
-        check=False,
-    )
-    return completed.returncode
+    """Run each required check and return the first failing status."""
+    remote_name = sys.argv[1] if len(sys.argv) > 1 else "origin"
+    base_ref = _available_main_ref(remote_name)
+    for label, command in _required_commands(base_ref):
+        print(f"\n==> {label}", flush=True)
+        completed = subprocess.run(  # noqa: S603
+            command,
+            cwd=REPOSITORY_ROOT,
+            check=False,
+        )
+        if completed.returncode != 0:
+            print(f"Pre-push checks stopped at: {label}", file=sys.stderr)
+            return completed.returncode
+    print("\nAll pre-push checks passed.", flush=True)
+    return 0
 
 
 if __name__ == "__main__":

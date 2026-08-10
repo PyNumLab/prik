@@ -24,9 +24,11 @@ language.
 | [`tests/tools/`](tools/README.md) | Maintainer commands and CI support scripts | `python3 -m pytest -q tests/tools` |
 | [`tests/workflows/`](workflows/README.md) | Exceptional safety properties for repository automation | `python3 -m pytest -q tests/workflows` |
 
-The tracked pre-push hook runs `tests/tools/` and `tests/workflows/` locally;
-activate it once per clone with `git config core.hooksPath .githooks`. GitHub
-Actions runs both suites again as the shared enforcement boundary.
+The tracked pre-push hook runs the blocking static-analysis gate, the focused
+publication and user-content documentation smoke tests, one compiled scalar
+source-to-native-call wrapper test, `tests/tools/`, and `tests/workflows/`
+locally; activate it once per clone with `git config core.hooksPath .githooks`.
+GitHub Actions runs the checks again as the shared enforcement boundary.
 
 The Fortran feature index maps each maintained User Guide and semantic `.pyi`
 page to its final directory and focused command. The cleanup contract and
