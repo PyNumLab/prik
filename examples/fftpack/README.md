@@ -27,7 +27,7 @@ Run the remaining commands from the PRIK repository root.
 
 ## Quick start
 
-Build the extension and run the complete maintained suite:
+Build the extension and run the complete test suite:
 
 ```bash
 source examples/fftpack/build_all.sh
@@ -100,10 +100,8 @@ ordering; SciPy is the oracle for cosine and sine families. The tests verify
 normalization, in-place mutation, high-level input preservation, dtype, shape,
 and allocatable-result cleanup.
 
-The public `zfftf` contract takes an ordinary `complex128` array even though
-its legacy implementation uses a real array as an internal storage view. The
-runtime inventory test rejects missing and unexpected public entry points, and
-each expected procedure has one explicit invocation test.
+The public routine list stays in sync with the generated exports, and every
+public procedure is exercised.
 
 ## Sources and license
 

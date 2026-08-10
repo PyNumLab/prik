@@ -411,6 +411,12 @@ EXAMPLE_DOCUMENTATION_PAGES = [
     for path in sorted((DOCS_ROOT / "user/examples").rglob("*.md"))
     if path.name != "index.md"
 ]
+REAL_LIBRARY_EXAMPLE_PAGES = [
+    "user/examples/blas-wrapper.md",
+    "user/examples/lapack-wrapper.md",
+    "user/examples/fftpack-wrapper.md",
+    "user/examples/minpack-wrapper.md",
+]
 MAJOR_SOURCE_PACKAGES = [
     "prik/parsers/",
     "prik/semantics/",
@@ -1015,6 +1021,32 @@ def test_reviewed_user_pages_do_not_contain_editorial_notes(relative_path: str) 
         assert phrase not in page
 
 
+@pytest.mark.parametrize("relative_path", REAL_LIBRARY_EXAMPLE_PAGES)
+def test_real_library_examples_share_a_user_facing_structure(relative_path: str) -> None:
+    page = _visible_documentation_source(DOCS_ROOT / relative_path)
+    common_sections = [
+        "### What this example shows",
+        "## Versions used",
+        "## 1. Prepare the repository and toolchain",
+        "## 4. Run the complete test suite",
+        "## 5. See how results are validated",
+        "## 6. Run focused examples",
+        "## Troubleshooting",
+        "## Source provenance",
+    ]
+
+    positions = [page.index(section) for section in common_sections]
+    assert positions == sorted(positions)
+    for internal_phrase in (
+        "stopping after a successful import",
+        "fail-closed",
+        "authoritative public classification",
+        "complete maintained suite",
+        "machine constants",
+    ):
+        assert internal_phrase not in page
+
+
 def test_getting_started_overview_uses_standalone_example() -> None:
     overview = (DOCS_ROOT / "user/getting-started/index.md").read_text(encoding="utf-8")
     introduction_index = overview.index("you will create\n`scale.f90`")
@@ -1083,31 +1115,50 @@ def test_public_entrypoints_use_the_canonical_identity_and_description() -> None
 def test_faq_routes_search_questions_to_authoritative_pages() -> None:
     metadata, page = _front_matter(DOCS_ROOT / "user/faq/index.md")
     question_targets = [
-        ("## How do I call Fortran from Python?", "../getting-started/first-wrapped-function.md"),
         (
-            "## How do I generate Python bindings for a Fortran module?",
+            "How do I call Fortran from Python?",
+            "how-do-i-call-fortran-from-python",
+            "../getting-started/first-wrapped-function.md",
+        ),
+        (
+            "How do I generate Python bindings for a Fortran module?",
+            "how-do-i-generate-python-bindings-for-a-fortran-module",
             "../getting-started/first-wrapped-module.md",
         ),
-        ("## How do I wrap an existing Fortran library for Python?", "../guide/building-shared-library.md"),
         (
-            "## How do I expose Fortran derived types as Python classes?",
+            "How do I wrap an existing Fortran library for Python?",
+            "how-do-i-wrap-an-existing-fortran-library-for-python",
+            "../guide/building-shared-library.md",
+        ),
+        (
+            "How do I expose Fortran derived types as Python classes?",
+            "how-do-i-expose-fortran-derived-types-as-python-classes",
             "../guide/wrapping-derived-types.md",
         ),
-        ("## How do I pass NumPy arrays to Fortran without unnecessary copies?", "../guide/arrays.md"),
-        ("## Should I use PRIK or f2py?", "../performance.md"),
+        (
+            "How do I pass NumPy arrays to Fortran without unnecessary copies?",
+            "how-do-i-pass-numpy-arrays-to-fortran-without-unnecessary-copies",
+            "../guide/arrays.md",
+        ),
+        ("Should I use PRIK or f2py?", "should-i-use-prik-or-f2py", "../performance.md"),
     ]
 
     assert metadata["status"] == "maintained"
     assert metadata["publication"] == "reviewed"
     previous_start = -1
-    for question, target in question_targets:
-        start = page.index(question)
-        end = page.find("\n## ", start + len(question))
-        answer = page[start : end if end != -1 else len(page)]
+    for question, anchor_id, target in question_targets:
+        start_marker = f'<details class="prik-faq-item" id="{anchor_id}" markdown="1">'
+        start = page.index(start_marker)
+        end = page.index("</details>", start)
+        answer = page[start:end]
         assert previous_start < start
+        assert f"<summary>{question}</summary>" in answer
         assert target in answer
         previous_start = start
 
+    assert page.count('<details class="prik-faq-item"') == len(question_targets)
+    assert "## Questions" not in page
+    assert "## How do I" not in page
     assert "../examples/blas-wrapper.md" in page
     assert "../examples/fftpack-wrapper.md" in page
     assert "../examples/minpack-wrapper.md" in page
@@ -1117,6 +1168,20 @@ def test_faq_routes_search_questions_to_authoritative_pages() -> None:
     assert "../guide/error-handling.md" in page
     assert "../guide/generic-interfaces.md" in page
     assert "PRIK is currently alpha" in " ".join(page.split())
+
+
+def test_faq_accordion_is_styled_and_opens_direct_links() -> None:
+    configuration = (ROOT / "mkdocs.yml").read_text(encoding="utf-8")
+    stylesheet = (DOCS_ROOT / "stylesheets/site.css").read_text(encoding="utf-8")
+    script = (DOCS_ROOT / "javascripts/faq.js").read_text(encoding="utf-8")
+
+    assert "- md_in_html" in configuration
+    assert "- javascripts/faq.js" in configuration
+    assert ".prik-faq-item summary" in stylesheet
+    assert ".prik-faq-item:target" in stylesheet
+    assert 'target.matches("details.prik-faq-item")' in script
+    assert "target.open = true" in script
+    assert 'window.addEventListener("hashchange", openLinkedQuestion)' in script
 
 
 def test_performance_page_bounds_the_prik_f2py_decision() -> None:

@@ -11,30 +11,24 @@ publication: reviewed
 
 This example takes the checked-in
 [fortran-lang/minpack](https://github.com/fortran-lang/minpack) source and
-produces an importable Python extension containing all 22 public MINPACK
-procedures. The maintained suite exercises every routine and exposes MINPACK's
-three machine constants as one safe, read-only NumPy array.
+builds an importable Python extension containing all 22 public MINPACK
+procedures.
 
-The result is one module, `prik_reference_minpack`. Numerical evidence comes
-from SciPy's MINPACK-backed solvers, direct linear-algebra identities, known
-nonlinear systems, and explicit callback checks. No f2py comparison wrapper is
-required.
+The example solves known nonlinear and least-squares problems and compares the
+results with SciPy and direct linear-algebra checks.
 
-### Why this example exists
+### What this example shows
 
-- It demonstrates a real solver library with Python callbacks, caller-owned
-  work arrays, scalar statuses, and in-place writebacks.
-- It verifies residuals, Jacobians, factorizations, solver termination, and
-  callback execution rather than stopping after a successful import.
-- It gives immutable Fortran parameter arrays an explicit Python ownership and
-  lifetime contract.
+- Wrap a complete numerical solver library as one Python extension.
+- Pass NumPy arrays and ordinary Python functions to MINPACK routines.
+- Check root-finding, least-squares, Jacobian, and factorization results.
 
 You should already be comfortable with NumPy arrays, Python callables, and
 building a local Fortran extension.
 
 ---
 
-## Versions used by the maintained example
+## Versions used
 
 | Component | Version / source |
 | --- | --- |
@@ -81,8 +75,8 @@ environment active. The complete runnable project lives under
 
 ## 2. Build the PRIK wrapper
 
-MINPACK's reviewed public declarations and implementations live in one source
-file, so the copyable build is direct:
+MINPACK keeps its public declarations and implementations in one source file,
+so one command can generate the wrapper and compile the library:
 
 <!-- prik-doc-source: examples/minpack/build_prik.sh -->
 ```bash
@@ -101,9 +95,8 @@ python3 -m prik "$EXAMPLE_WORKSPACE/examples/minpack/native/minpack.f90" \
   --wrapper-c-flags="-O0 -g0"
 ```
 
-`-O0` keeps this a correctness example and avoids optimization-dependent
-claims. PRIK compiles the native source and generated bridge once into the
-extension.
+The example uses `-O0` so the tests focus on correct results. PRIK compiles the
+native source and generated bridge into one extension.
 
 For normal use, source the convenience entrypoint:
 
@@ -116,34 +109,16 @@ current shell.
 
 ---
 
-## 3. Understand the Python contract
+## 3. Use the generated Python API
 
-MINPACK preserves its native argument order and explicit work arrays. Pass
-ordinary NumPy arrays with the generated dtype, shape, and layout. Callback
-solvers accept normal Python callables with the generated callback signature;
-PRIK keeps those callbacks alive for the native call and reports callback
-counts and solver statuses through the documented result projection.
-
-### Immutable machine constants
-
-`dpmpar` is a Fortran parameter array, not writable native storage. At module
-initialization, PRIK creates a Python-owned NumPy snapshot with the compiled
-dtype, shape, and values, then marks it read-only:
-
-```python
-import prik_reference_minpack
-
-constants = prik_reference_minpack.minpack_module.dpmpar
-assert constants.shape == (3,)
-assert constants.flags.writeable is False
-```
-
-The array does not borrow a Fortran address. Rebinding the Python attribute
-changes only that Python name and never modifies the compiled parameter.
+MINPACK routines keep their documented argument order, including work arrays
+and status values. Pass NumPy arrays with the generated dtype, shape, and
+layout. Solver callbacks are ordinary Python functions with the generated
+callback signature.
 
 ---
 
-## 4. Run the complete correctness suite
+## 4. Run the complete test suite
 
 After the build finishes, run:
 
@@ -151,7 +126,7 @@ After the build finishes, run:
 python3 -m pytest -q examples/minpack/tests
 ```
 
-The reviewed inventory covers the complete public procedure surface:
+The tests cover all 22 public procedures:
 
 | Family | Procedures |
 | --- | ---: |
@@ -161,78 +136,69 @@ The reviewed inventory covers the complete public procedure surface:
 | Factorization and update helpers | 8 |
 | **Total** | **22** |
 
-Every procedure has a named invocation test. The suite additionally checks
-the dtype, values, and immutability of `dpmpar`; the inventory guard fails if a
-reviewed routine loses its explicit test.
+Each procedure is called with representative data and checked against SciPy, a
+known solution, or a direct linear-algebra result.
 
 ---
 
-## 5. Validate behaviour, not just compilation
+## 5. See how results are validated
 
-For callback-driven solvers, the primary evidence is:
+For example, `hybrd1` can solve the two-variable equation
+`x - [1, -2] = 0`. MINPACK calls the Python function whenever it needs the
+current residual:
 
-```text
-PRIK solution == SciPy MINPACK solution
-native residual == expected residual
-callback and status outputs == documented contract
-```
-
-This compact `hybrd1` test is taken verbatim from the runnable suite. Its
-`vector`, callback, tolerance, and SciPy reference helpers are small fixtures
-defined beside the solver tests:
-
-<!-- prik-doc-source: examples/minpack/tests/test_solvers.py::test_hybrd1 -->
 ```python
-def test_hybrd1(minpack):
-    x, fvec = vector(), vector((0.0, 0.0))
-    info = minpack.hybrd1(residual_callback, TWO, x, fvec, ROOT_TOLERANCE, np.empty(19), INT(19))
+import numpy as np
+from prik_reference_minpack import minpack_module as minpack
 
-    assert info == INT(1)
-    assert_solution(x, scipy_root())
-    np.testing.assert_allclose(fvec, 0.0, atol=1.0e-10)
+target = np.array([1.0, -2.0], dtype=np.float64)
+
+
+def residual(_count, x, fvec, _iflag):
+    fvec[:] = x - target
+
+
+x = np.array([4.0, 4.0], dtype=np.float64)
+fvec = np.empty(2, dtype=np.float64)
+info = minpack.hybrd1(
+    residual,
+    np.int32(2),
+    x,
+    fvec,
+    np.float64(1.0e-12),
+    np.empty(19, dtype=np.float64),
+    np.int32(19),
+)
+
+assert info == np.int32(1)
+np.testing.assert_allclose(x, target, atol=1.0e-10)
+np.testing.assert_allclose(fvec, 0.0, atol=1.0e-10)
 ```
 
-The immutable constant contract is also executable evidence:
-
-<!-- prik-doc-source: examples/minpack/tests/test_diagnostics.py::test_dpmpar_is_an_immutable_float64_snapshot -->
-```python
-def test_dpmpar_is_an_immutable_float64_snapshot(minpack):
-    values = minpack.dpmpar
-
-    np.testing.assert_array_equal(
-        values,
-        np.array([np.finfo(np.float64).eps, np.finfo(np.float64).tiny, np.finfo(np.float64).max]),
-    )
-    assert values.flags.writeable is False
-    with pytest.raises(ValueError, match="read-only"):
-        values[0] = 1.0
-```
-
-Together these checks cover numerical correctness, callback execution,
-in-place outputs, termination status, and ownership of module constants.
+The complete suite applies the same pattern to root-finding and least-squares
+solvers, then compares their solutions with SciPy.
 
 ---
 
-## 6. Explore the maintained example
+## 6. Run focused examples
 
-Run one family or routine while developing:
+After building the extension, run a family or one routine:
 
 ```bash
 python3 -m pytest -q examples/minpack/tests/test_solvers.py
 python3 -m pytest -q \
   examples/minpack/tests/test_solvers.py::test_hybrd1
-python3 -m pytest -q examples/minpack/tests -k dpmpar
 ```
 
 - Callback-driven nonlinear solvers →
   [`test_solvers.py`](../../../examples/minpack/tests/test_solvers.py)
-- Diagnostics and immutable constants →
+- Diagnostics and finite-difference helpers →
   [`test_diagnostics.py`](../../../examples/minpack/tests/test_diagnostics.py)
 - Factorization and update helpers →
   [`test_linear_algebra.py`](../../../examples/minpack/tests/test_linear_algebra.py)
-- Authoritative public classification →
+- Public routine list →
   [`routine_inventory.py`](../../../examples/minpack/routine_inventory.py)
-- Fail-closed coverage guard →
+- Routine coverage check →
   [`test_routine_coverage.py`](../../../examples/minpack/tests/test_routine_coverage.py)
 - Copyable project instructions →
   [`examples/minpack/README.md`](../../../examples/minpack/README.md)
@@ -246,9 +212,6 @@ python3 -m pytest -q examples/minpack/tests -k dpmpar
   does not preserve the exported `PYTHONPATH`.
 - Start with one helper or solver test and add `-vv -s` when diagnosing a
   callback or generated-wrapper failure.
-- Keep performance experiments separate from this correctness project. The
-  maintained suite uses small deterministic systems and makes no benchmark
-  claims.
 
 ---
 

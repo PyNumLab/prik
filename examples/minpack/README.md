@@ -5,9 +5,8 @@ Build the bundled modern
 PRIK and validate all 22 public procedures against SciPy, direct
 linear-algebra identities, and deterministic nonlinear problems.
 
-The example also exposes the `dpmpar` machine constants as a Python-owned,
-read-only NumPy array. No f2py comparison wrapper is used, and the inventory
-has no unsupported or skipped procedures.
+No f2py comparison wrapper is required, and the inventory has no unsupported
+or skipped procedures.
 
 ## Requirements
 
@@ -28,7 +27,7 @@ Run the remaining commands from the PRIK repository root.
 
 ## Quick start
 
-Build the extension and run the complete maintained suite:
+Build the extension and run the complete test suite:
 
 ```bash
 source examples/minpack/build_all.sh
@@ -43,10 +42,6 @@ Use `source` so the build directory exported by `build_all.sh` remains on
 PRIK reads and compiles the checked-in `minpack.f90` public module together
 with its generated bridge. Each source is compiled once and no alternative
 wrapper is created.
-
-The immutable `dpmpar` parameter array has no writable native storage. PRIK
-copies its compiled values once during module initialization into a
-Python-owned NumPy array and marks that snapshot read-only.
 
 ### Build the PRIK wrapper
 
@@ -75,7 +70,6 @@ After the quick-start build, run one family or routine:
 python3 -m pytest -q examples/minpack/tests/test_solvers.py
 python3 -m pytest -q \
   examples/minpack/tests/test_solvers.py::test_hybrd1
-python3 -m pytest -q examples/minpack/tests -k dpmpar
 ```
 
 ## What is validated
@@ -84,11 +78,10 @@ The suite covers all 22 public diagnostics, finite-difference helpers, hybrid
 solvers, Levenberg-Marquardt solvers, factorizations, and rank-one updates.
 Solver tests check residuals and statuses against known systems and SciPy;
 helper tests use nontrivial algebraic invariants. Tests also verify callback
-counts, caller-array writebacks, Fortran-order matrices, and `dpmpar` values,
-dtype, ownership, and immutability.
+counts, caller-array writebacks, and Fortran-order matrices.
 
-The runtime inventory test rejects missing or unexpected generated exports,
-and each expected procedure has one explicit invocation test.
+The public routine list stays in sync with the generated exports, and every
+public procedure is exercised.
 
 ## Sources and license
 

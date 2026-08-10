@@ -11,29 +11,24 @@ publication: reviewed
 
 This example takes the checked-in
 [fortran-lang/fftpack](https://github.com/fortran-lang/fftpack) sources and
-produces an importable Python extension with all 31 public procedures from the
-`fftpack` module. The maintained suite gives every procedure an explicit
-numerical test against NumPy, SciPy, or the transform's documented invariant.
+builds an importable Python extension containing all 31 public procedures from
+the `fftpack` module.
 
-The result is one module, `prik_reference_fftpack`, with a reviewed public
-boundary and no f2py comparison wrapper. For this library, independent
-mathematical references provide clearer evidence than comparing two wrappers.
+The example compares Fourier, cosine, sine, frequency, and spectrum operations
+with NumPy, SciPy, or known transform properties.
 
-### Why this example exists
+### What this example shows
 
-- It demonstrates PRIK on a modern multi-source library built from a parent
-  module, submodules, and legacy computational kernels.
-- It keeps `fftpack.f90` authoritative when an implementation file uses a
-  different internal storage spelling, as happens for `zfftf`.
-- It verifies transform values, normalization, frequency ordering, mutation,
-  dtype, and shape instead of stopping after a successful import.
+- Wrap a complete multi-file Fortran library as one Python extension.
+- Call both low-level and high-level transforms with NumPy arrays.
+- Check transform values, normalization, frequency ordering, dtype, and shape.
 
 You should already be comfortable with NumPy arrays and building a local
 Fortran extension.
 
 ---
 
-## Versions used by the maintained example
+## Versions used
 
 | Component | Version / source |
 | --- | --- |
@@ -80,8 +75,9 @@ environment active. The complete runnable project lives under
 
 ## 2. Build the PRIK wrapper
 
-The copyable script separates wrapper-facing sources from link-only
-implementations:
+FFTPACK uses public module declarations, submodule implementations, and
+link-only computational kernels. The build command gives each source the role
+it needs:
 
 <!-- prik-doc-source: examples/fftpack/build_prik.sh -->
 ```bash
@@ -115,10 +111,10 @@ python3 -m prik "${FFTPACK_PUBLIC_SOURCES[@]}" \
   --wrapper-c-flags="-O0 -g0"
 ```
 
-`-O0` keeps this a correctness example and avoids optimization-dependent
-claims. Every source is compiled once: the positional files contribute
-semantic declarations and native objects, while `--native-fortran-sources`
-contribute native objects without becoming Python API inputs.
+The example uses `-O0` so the tests focus on correct results. Every source is
+compiled once: positional files define the Python-facing API, while
+`--native-fortran-sources` adds implementation code without exposing it to
+Python.
 
 For normal use, source the convenience entrypoint:
 
@@ -131,21 +127,19 @@ current shell.
 
 ---
 
-## 3. Understand the public source boundary
+## 3. Understand how sources define the API
 
-The source groups have deliberately different responsibilities:
+The source groups have different roles:
 
 | Source group | Responsibility |
 | --- | --- |
-| `rk.f90` | Supplies the shared real kind used by the public declarations. |
-| `fftpack.f90` | Declares the authoritative public module API. |
-| `fftpack_*.f90` | Implements parent-module procedures in Fortran submodules. |
-| Remaining `.f90` files | Provide legacy kernels as hidden compile-and-link inputs. |
+| `rk.f90` | Defines the real kind used by the public API. |
+| `fftpack.f90` | Declares the public FFTPACK module. |
+| `fftpack_*.f90` | Implements its procedures in Fortran submodules. |
+| Remaining `.f90` files | Supply linked computational kernels. |
 
-The distinction matters for `zfftf`. Its public declaration accepts a normal
-`complex128` array, while the legacy implementation uses a real array as an
-internal storage view. Only the declaration in `fftpack.f90` defines the
-Python contract; callers never reinterpret a complex array as a float buffer.
+The public declarations define the Python types. For example, `zfftf` accepts
+an ordinary NumPy `complex128` array.
 
 High-level transform results that are allocatable in Fortran use PRIK's
 `AllocatableArray` handle. Read the NumPy view with `to_numpy()` and release
@@ -167,7 +161,7 @@ Fixed-shape frequency and shift results are returned directly as NumPy arrays.
 
 ---
 
-## 4. Run the complete correctness suite
+## 4. Run the complete test suite
 
 After the build finishes, run:
 
@@ -175,7 +169,7 @@ After the build finishes, run:
 python3 -m pytest -q examples/fftpack/tests
 ```
 
-The reviewed inventory covers the complete generated module surface:
+The tests cover all 31 public procedures:
 
 | Family | Procedures |
 | --- | ---: |
@@ -187,22 +181,16 @@ The reviewed inventory covers the complete generated module surface:
 | Frequency and spectrum ordering | 4 |
 | **Total** | **31** |
 
-Each procedure has a named invocation test. The inventory guard also compares
-the expected names with `dir(fftpack)`, so a missing or unexpected generated
-entry point fails the suite.
+Each procedure is called with representative data and checked against NumPy,
+SciPy, or a known transform property.
 
 ---
 
-## 5. Validate behaviour, not just compilation
+## 5. See how results are validated
 
-The primary evidence is:
-
-```text
-PRIK result == independent NumPy, SciPy, or mathematical result
-```
-
-Tests also verify in-place mutation, dtype, shape, transform normalization,
-and frequency ordering. This `zfftf` test is taken verbatim from the runnable
+The suite compares transform results with independent NumPy or SciPy results
+and also checks in-place mutation, dtype, shape, normalization, and frequency
+ordering. For example, this `zfftf` test comes directly from the runnable
 suite:
 
 <!-- prik-doc-source: examples/fftpack/tests/test_transforms.py::test_zfftf -->
@@ -223,9 +211,9 @@ in place, and compares the result with NumPy's independently implemented FFT.
 
 ---
 
-## 6. Explore the maintained example
+## 6. Run focused examples
 
-Run a focused family or one procedure while developing:
+After building the extension, run a family or one procedure:
 
 ```bash
 python3 -m pytest -q examples/fftpack/tests/test_transforms.py
@@ -236,9 +224,9 @@ python3 -m pytest -q examples/fftpack/tests -k fftshift
 
 - Complete numerical examples →
   [`test_transforms.py`](../../../examples/fftpack/tests/test_transforms.py)
-- Authoritative public classification →
+- Public routine list →
   [`routine_inventory.py`](../../../examples/fftpack/routine_inventory.py)
-- Fail-closed coverage guard →
+- Routine coverage check →
   [`test_routine_coverage.py`](../../../examples/fftpack/tests/test_routine_coverage.py)
 - Copyable project instructions →
   [`examples/fftpack/README.md`](../../../examples/fftpack/README.md)
@@ -252,9 +240,6 @@ python3 -m pytest -q examples/fftpack/tests -k fftshift
   does not preserve the exported `PYTHONPATH`.
 - Run one failing procedure with `-vv -s` to retain its compiler and wrapper
   diagnostics.
-- Keep performance experiments separate from this correctness project. The
-  maintained suite uses small deterministic inputs and makes no benchmark
-  claims.
 
 ---
 

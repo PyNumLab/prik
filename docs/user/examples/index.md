@@ -9,16 +9,15 @@ publication: draft
 
 # Examples Gallery
 
-The maintained part of this section includes checked recipes and four complete
-real-library correctness projects: BLAS, LAPACK, FFTPACK, and MINPACK. Each
-project pairs copyable build commands with reviewed numerical evidence and a
-fail-closed API inventory.
+This section includes checked recipes and four complete real-library examples:
+BLAS, LAPACK, FFTPACK, and MINPACK. Each one provides build commands, Python
+usage, and numerical checks for its public routines.
 
 The larger project examples below are placeholders for future complete runnable
 projects. Each one must include source, build command, import command, runtime
 check, limitations, and test evidence before it is marked maintained.
 
-## Choose A Page
+## Choose a page
 
 | Goal | Page |
 | --- | --- |
@@ -35,9 +34,9 @@ PRIK_C_DOCS_END -->
 | Use inspection APIs from Python | [Use Python inspection APIs](recipes/use-python-inspection-apis.md) |
 | Pass compiler and preprocessing options | [Use compiler preprocessing options](recipes/compiler-preprocessing.md) |
 | Build and validate the complete Reference BLAS | [BLAS wrapper](blas-wrapper.md) |
-| Build complete Reference LAPACK and validate the SciPy-backed float64 surface | [LAPACK wrapper](lapack-wrapper.md) |
+| Build complete Reference LAPACK and validate 127 float64 routines | [LAPACK wrapper](lapack-wrapper.md) |
 | Wrap and validate all 31 FFTPACK procedures with NumPy and SciPy | [FFTPACK wrapper](fftpack-wrapper.md) |
-| Wrap all 22 MINPACK procedures, callbacks, and immutable constants | [MINPACK wrapper](minpack-wrapper.md) |
+| Wrap all 22 MINPACK procedures and use Python callbacks | [MINPACK wrapper](minpack-wrapper.md) |
 
 ## Planned Project Examples
 
