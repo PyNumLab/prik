@@ -41,7 +41,7 @@ these are true:
   reserve the full static-analysis suite for code, tests, build/tooling changes,
   or explicit pre-merge verification.
 - [ ] User, Developer, and Maintainer lane entry points, `mkdocs.yml`, related
-  front matter, and `tests/docs/test_structure.py` stay
+  front matter, and `tests/docs/test_navigation.py` stay
   synchronized.
 
 ## Open Documentation Queue

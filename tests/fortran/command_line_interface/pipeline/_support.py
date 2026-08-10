@@ -1,30 +1,7 @@
-import builtins
-
-from dataclasses import dataclass
-
-import json
-
-import os
-
-import runpy
-
-import subprocess
-
-import sys
-
 import types
-
 from pathlib import Path
 
-import pytest
-
-from prik.parsers.fortran import cli as fortran_parser_cli
-
-from prik import FortranParseError
-
 from prik import cli as prik_cli
-
-from prik.pipeline.preprocessing import PreprocessingConfig, PreprocessingDiagnostic, PreprocessingError
 
 TEST_FILE = Path(__file__).parents[2] / "source_parsing" / "parsing" / "fixtures" / "general" / "basic_subroutine.f90"
 
@@ -131,28 +108,3 @@ def _patch_main_report_payloads(
         ),
     )
     return preprocessing, calls
-
-
-__all__ = (
-    "TEST_FILE",
-    "FortranParseError",
-    "Path",
-    "PreprocessingConfig",
-    "PreprocessingDiagnostic",
-    "PreprocessingError",
-    "_MainParserError",
-    "_install_main_parser",
-    "_main_args",
-    "_patch_main_report_payloads",
-    "builtins",
-    "dataclass",
-    "fortran_parser_cli",
-    "json",
-    "os",
-    "prik_cli",
-    "pytest",
-    "runpy",
-    "subprocess",
-    "sys",
-    "types",
-)

@@ -1,10 +1,11 @@
 """C input-language CLI output contracts."""
 
+import types
+
+from prik import cli as prik_cli
 from tests.c._support.cli import (
     _install_main_parser,
     _main_args,
-    types,
-    prik_cli,
 )
 
 

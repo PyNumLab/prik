@@ -1,12 +1,12 @@
 """Generated Fortran intrinsic-kind parsing contracts."""
 
-from tests.fortran._support.parser_properties import (
-    _FORTRAN_SCALAR_TYPES,
+import pytest
+from hypothesis import (
     given,
-    parse_fortran_file,
-    pytest,
-    st,
+    strategies as st,
 )
+from prik import parse_fortran_file
+from tests.fortran._support.parser_properties import _FORTRAN_SCALAR_TYPES
 
 
 @pytest.mark.property

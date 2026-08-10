@@ -1,26 +1,30 @@
 """Tests split by stable CLI stage-dispatch ownership."""
 
-from tests.fortran.command_line_interface.pipeline._support import (
-    FortranParseError,
-    Path,
+import json
+import os
+from pathlib import Path
+import runpy
+import subprocess
+import sys
+import types
+
+import pytest
+
+from prik import FortranParseError
+from prik import cli as prik_cli
+from prik.parsers.fortran import cli as fortran_parser_cli
+from prik.pipeline.preprocessing import (
     PreprocessingConfig,
     PreprocessingDiagnostic,
     PreprocessingError,
+)
+from prik.semantics.fortran2ir import collect_semantic_compile_time_requirements
+from tests.fortran.command_line_interface.pipeline._support import (
     TEST_FILE,
     _install_main_parser,
     _main_args,
     _patch_main_report_payloads,
-    fortran_parser_cli,
-    json,
-    os,
-    pytest,
-    runpy,
-    subprocess,
-    sys,
-    types,
-    prik_cli,
 )
-from prik.semantics.fortran2ir import collect_semantic_compile_time_requirements
 
 
 def test_cli_keeps_free_procedure_when_module_has_same_name(tmp_path: Path):

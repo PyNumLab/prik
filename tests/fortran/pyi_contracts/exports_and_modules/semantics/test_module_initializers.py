@@ -3,8 +3,7 @@
 import ast
 
 import pytest
-
-from tests.fortran._support.semantic_conversion import parse_pyi_text
+from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
 
 
 def test_mutable_module_literal_defaults_are_preserved():

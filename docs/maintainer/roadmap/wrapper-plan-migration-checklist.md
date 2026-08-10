@@ -4809,7 +4809,7 @@ maintainability reports, and `git diff --check` all passed.
 ## Verification
 
 - [x] Documentation changes run
-  `python3 -m pytest -q tests/docs/test_examples.py tests/docs/test_structure.py`
+  `python3 -m pytest -q tests/docs`
   and `git diff --check`.
 - [x] Wrapper-plan code changes run the affected existing `tests/wrapper` nodes,
   the minimal intermediate contract tests required above, and the required

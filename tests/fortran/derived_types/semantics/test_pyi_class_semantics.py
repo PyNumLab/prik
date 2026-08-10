@@ -1,11 +1,11 @@
 """Core `.pyi` class semantics retained by Derived Types."""
 
-from tests.fortran._support.pyi_conversion import (
+from prik.codegen.printers import emit_module
+from prik.semantics.metadata import (
     PROJECTED_OUTPUT_METADATA,
     SUPPRESS_DEFAULT_CONSTRUCTOR_METADATA,
-    emit_module,
-    parse_pyi_text,
 )
+from tests.fortran._support.pyi_conversion import parse_pyi_text
 
 
 def test_convert_pyi_to_ir_self_only_generated_constructor_keeps_default_initializer():

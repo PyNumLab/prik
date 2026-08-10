@@ -2,11 +2,8 @@
 
 import pytest
 
-from tests.fortran._support.semantic_conversion import (
-    fortran_module_to_semantic_module,
-    get_function,
-    parse_fortran_source,
-)
+from prik.semantics.fortran2ir import fortran_module_to_semantic_module
+from tests.fortran._support.semantic_conversion import get_function
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.semantics.models import (
     RESOLVED_DERIVED_TYPE_POLICY_METADATA,
@@ -15,6 +12,7 @@ from prik.semantics.models import (
 )
 from prik.semantics.policy_completion import complete_semantic_policies
 from prik.semantics.wrapper_policy import DeclarationCallableAction
+from prik import parse_fortran_file as parse_fortran_source
 
 
 def test_array_extent_reference_requires_a_visible_scalar_argument():

@@ -1,11 +1,9 @@
 """Tests split by stable ownership concept from `test_python_ast_contracts.py`."""
 
-from tests.fortran._support.pyi_conversion import (
-    native_array_descriptor_kind,
-    parse_pyi_text,
-    pytest,
-    re,
-)
+import pytest
+import re
+from prik.semantics.native_array_handles import native_array_descriptor_kind
+from tests.fortran._support.pyi_conversion import parse_pyi_text
 
 
 def test_convert_pyi_to_ir_accepts_defaulted_scalar_descriptor_optional_dummies():

@@ -1,21 +1,25 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
-from tests.fortran._support.semantic_conversion import (
+from prik.parsers.fortran.models import (
     FortranArgument,
     FortranModule,
+)
+from prik.semantics.fortran2ir import (
     FortranToIRConverter,
     _requirement_unit_name,
     _resolve_compile_time_text,
-    array_contract,
     fortran_file_to_semantic_modules,
     fortran_module_to_semantic_module,
+)
+from tests.fortran._support.semantic_conversion import (
+    array_contract,
     get_class,
     get_function,
     has_constraint,
-    parse_fortran_source,
 )
 from prik import parse_fortran_project
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
+from prik import parse_fortran_file as parse_fortran_source
 
 
 def test_converter_normalizes_wrapped_types_and_resolves_wildcard_imports():

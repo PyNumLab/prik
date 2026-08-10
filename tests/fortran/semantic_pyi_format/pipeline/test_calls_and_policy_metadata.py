@@ -1,8 +1,14 @@
 """Tests split by stable ownership concept from `test_imports_and_packages.py`."""
 
-from tests.fortran._support.printer_models import (
-    ProjectionMapping,
+import pytest
+from prik import parse_fortran_file as parse_fortran_source
+from prik.codegen.printers import (
     PyiPrinter,
+    emit_module,
+)
+from prik.semantics.fortran2ir import fortran_module_to_semantic_module
+from prik.semantics.models import (
+    ProjectionMapping,
     SemanticArgument,
     SemanticArrayContract,
     SemanticConstraint,
@@ -11,14 +17,12 @@ from tests.fortran._support.printer_models import (
     SemanticStorageContract,
     SemanticType,
     SemanticVariable,
-    emit_module,
-    fortran_module_to_semantic_module,
+)
+from tests.fortran._support.printer_models import (
     generate_pyi,
     generate_wrapper_artifacts,
     normalize,
-    parse_fortran_source,
     parse_pyi_text,
-    pytest,
     rendered_source,
 )
 from prik.semantics.metadata import MAYBE_UNALLOCATED_METADATA

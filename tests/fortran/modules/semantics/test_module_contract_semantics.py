@@ -1,9 +1,7 @@
 """Semantic contracts for module state and common blocks."""
 
-from tests.fortran._support.semantic_conversion import (
-    fortran_module_to_semantic_module,
-    parse_fortran_source,
-)
+from prik.semantics.fortran2ir import fortran_module_to_semantic_module
+from prik import parse_fortran_file as parse_fortran_source
 
 
 def test_module_common_block_storage_stays_internal():

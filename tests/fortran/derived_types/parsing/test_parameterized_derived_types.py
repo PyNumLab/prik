@@ -1,9 +1,7 @@
 """Tests split by stable ownership concept from `test_procedures_and_interfaces.py`."""
 
-from tests.fortran._support.parser_procedures import (
-    COMPILE_TIME_EXPRESSION_SOURCE,
-    parse_fortran_file,
-)
+from prik import parse_fortran_file
+from tests.fortran._support.parser_procedures import COMPILE_TIME_EXPRESSION_SOURCE
 
 
 def test_parameterized_derived_type_declarations_preserve_and_resolve_arguments():

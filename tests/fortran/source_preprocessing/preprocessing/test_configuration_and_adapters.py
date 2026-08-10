@@ -1,19 +1,21 @@
 """Tests split by stable ownership concept from `test_cli.py`."""
 
-from tests.fortran.source_preprocessing.preprocessing._support import (
-    Path,
+import json
+from pathlib import Path
+
+import pytest
+
+import prik.pipeline.preprocessing as preprocessing
+from prik.pipeline.preprocessing import (
     PreprocessingConfig,
     PreprocessingError,
-    _assert_preprocessing_error,
     build_direct_preprocess_invocation,
     build_preprocess_invocation,
     expand_native_fortran_includes,
-    json,
-    preprocessing,
-    pytest,
     run_compiler_preprocessor_with_recipe,
     validate_macro_name,
 )
+from tests.fortran.source_preprocessing.preprocessing._support import _assert_preprocessing_error
 
 
 def test_direct_fortran_preprocess_invocation_uses_exact_compiler_and_cpp(tmp_path: Path):

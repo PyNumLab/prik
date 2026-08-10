@@ -1,6 +1,7 @@
 """Semantic callback prototype contract printing."""
 
-from tests.fortran._support.printer_models import (
+from prik.codegen.printers import emit_module
+from prik.semantics.models import (
     SemanticArgument,
     SemanticArrayContract,
     SemanticClass,
@@ -9,7 +10,6 @@ from tests.fortran._support.printer_models import (
     SemanticPrototype,
     SemanticStorageContract,
     SemanticType,
-    emit_module,
 )
 
 

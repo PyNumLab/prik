@@ -5,7 +5,11 @@ import pytest
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 from prik.codegen.printers import emit_module
 
-from tests.fortran._support.fixture_conversion import FORTRAN_FIXTURES, TESTS_DIR, parse_fixture
+from tests.fortran._support.fixture_outputs import (
+    PARSER_FIXTURE_ROOT as TESTS_DIR,
+    parse_fixture,
+)
+from tests.fortran._support.fixture_conversion import FORTRAN_FIXTURES
 
 
 def test_pyi_printer_fixture_suite_has_fixtures():

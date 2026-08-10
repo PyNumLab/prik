@@ -1,15 +1,15 @@
 """Semantic meaning of edited methods, overloads, and constructors."""
 
-from tests.fortran._support.pyi_conversion import (
+import pytest
+import re
+from dataclasses import asdict
+from prik.codegen.printers import emit_module
+from prik.semantics.metadata import (
     BIND_TARGET_METADATA,
     SUPPRESS_DEFAULT_CONSTRUCTOR_METADATA,
     USER_PRIVATE_METADATA,
-    asdict,
-    emit_module,
-    parse_pyi_text,
-    pytest,
-    re,
 )
+from tests.fortran._support.pyi_conversion import parse_pyi_text
 
 
 def test_private_method_preserves_pass_projection_and_native_target():

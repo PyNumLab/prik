@@ -82,6 +82,3 @@ def _install_main_parser(monkeypatch, args):
     parser = FakeParser()
     monkeypatch.setattr(prik_cli, "_parser_for_argv", lambda argv: (parser, argv))
     return parser
-
-
-__all__ = ("_install_main_parser", "_main_args", "prik_cli", "types")

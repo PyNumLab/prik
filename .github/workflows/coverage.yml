@@ -60,10 +60,11 @@ jobs:
             -o junit_family=legacy \
             --junitxml="$RUNNER_TEMP/pytest-suite-results.xml" \
             -m "not real_library and not toolchain_smoke" \
-            tests/architecture \
             tests/c \
+            tests/docs \
             tests/fortran \
-            tests/shared
+            tests/tools \
+            tests/workflows
       - name: Summarize failed pytest nodes
         if: failure()
         shell: bash

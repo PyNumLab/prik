@@ -50,13 +50,14 @@ through `prik/__init__.py`.
 
 | Path | Purpose |
 | --- | --- |
-| `tests/architecture/` | Meta-tests for test-suite ownership, evidence-ledger integrity, collection, and bounded selections; language-specific meta-tests use a language subdirectory. |
 | `tests/fortran/<feature>/` | User-visible Fortran and semantic `.pyi` behavior, with documented features directly below the language root and stages below each feature. |
 | `tests/fortran/{source_parsing,source_preprocessing,command_line_interface,semantic_ir}/` | Public cross-feature capabilities that begin from source or expose an inspection/reporting surface. |
 | `tests/fortran/infrastructure/` | Internal cross-feature policy, wrapper-generation, compiler, and runtime frameworks with no honest public-capability owner. |
 | `tests/fortran/building_shared_library/end_to_end/real_libraries/` | Opt-in numerical showcase tests that build actual FFTPACK and MINPACK checkouts, call their generated Python routines, and verify known results. |
 | `tests/c/` | C input-language parsing, preprocessing, probe, semantic, CLI, and fixture evidence. |
-| `tests/shared/` | Language-neutral product architecture, documentation, naming, tools, type mapping, and utility checks. |
+| `tests/docs/` | Documentation metadata, navigation, executable examples, publication, and source-map synchronization. |
+| `tests/tools/` | Maintainer commands and CI support scripts. |
+| `tests/workflows/` | Exceptional checks for concrete repository-automation safety risks. |
 | `examples/blas/tests/test_*.py` | User-facing real-library correctness documentation: explicit independent and PRIK/f2py differential validation for every Reference BLAS routine. |
 | `examples/blas/ci/full_surface.py` | Maintainer-only complete BLAS export and smoke audit, selected explicitly by CI. |
 | `examples/lapack/tests/test_*.py` | User-facing real-library correctness documentation: explicit independent and PRIK/SciPy/f2py validation for the reviewed double-precision routine inventory. |
@@ -85,9 +86,9 @@ Source navigation is considered maintained when these files agree:
   docs, implementation files, tests, and support evidence.
 - `prik/README.md` and package README files: local entry points for developers
   already browsing the source tree.
-- `tests/shared/docs/test_structure.py`: mechanical coverage for the
-  navigation pages and README links.
-- `tests/shared/docs/test_publication.py`: fail-closed website publication, lane
+- `tests/docs/test_reference_and_source_map.py`: mechanical coverage for
+  the navigation pages and README links.
+- `tests/docs/test_publication.py`: fail-closed website publication, lane
   gating, navigation filtering, and repository-evidence link coverage.
 
 ## Generated And Fixture Areas

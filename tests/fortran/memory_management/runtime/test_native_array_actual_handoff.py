@@ -1,15 +1,15 @@
 """Runtime handoff validation for arrays and native storage handles."""
 
-from tests.fortran._support.native_array_handles import (
+import numpy as np
+import pytest
+from prik.runtime.handles import (
     AllocatableArray,
     PointerArray,
     _NativeArrayHandoff,
-    _handoff,
     _native_array_actual_argument_for_binding_positional,
     _native_array_actual_for_binding,
-    np,
-    pytest,
 )
+from tests.fortran._support.native_array_handles import _handoff
 
 
 def test_array_actual_hook_rejects_generated_none_handoff():

@@ -1,19 +1,21 @@
 """Pointer handle state, association, extraction, and operation protocols."""
 
-from tests.fortran._support.native_array_handles import (
+import numpy as np
+import pytest
+from prik.runtime.handles import (
     AllocatableArray,
     NativeArrayHandleBase,
     PointerArray,
-    _ArrayState,
-    _common_ops,
-    _handoff,
     _native_array_actual_for_binding,
     _native_array_descriptor_for_binding,
     _native_array_handle_from_generated_ops,
+)
+from tests.fortran._support.native_array_handles import (
+    _ArrayState,
+    _common_ops,
+    _handoff,
     _pointer_descriptor_for_array,
     _required_handoff_ops,
-    np,
-    pytest,
 )
 
 

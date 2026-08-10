@@ -1,12 +1,14 @@
 """Allocatable handle handoff to ordinary native array arguments."""
 
-from tests.fortran._support.native_array_handles import (
+import numpy as np
+import pytest
+from prik.runtime.handles import (
     AllocatableArray,
+    _native_array_actual_argument_for_binding_positional,
+)
+from tests.fortran._support.native_array_handles import (
     _ArrayState,
     _handoff,
-    _native_array_actual_argument_for_binding_positional,
-    np,
-    pytest,
 )
 
 

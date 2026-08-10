@@ -2,13 +2,13 @@
 
 from pathlib import Path
 
-from tests.fortran._support.semantic_conversion import (
+import pytest
+from prik.semantics.fortran2ir import (
     FortranToIRConverter,
     fortran_module_to_semantic_module,
-    parse_fortran_source,
-    pytest,
 )
 from prik.semantics.metadata import BIND_TARGET_METADATA
+from prik import parse_fortran_file as parse_fortran_source
 
 OPERATOR_F90_SOURCE = Path(__file__).parents[1] / "end_to_end" / "fixtures" / "foperators_f90.f90"
 

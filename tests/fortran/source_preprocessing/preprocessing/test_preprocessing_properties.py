@@ -1,20 +1,24 @@
 """Tests split by stable ownership concept from `test_properties.py`."""
 
-from tests.fortran._support.parser_properties import (
-    FortranParseError,
-    Path,
-    PreprocessingConfig,
-    TemporaryDirectory,
-    _FORTRAN_IDENTIFIER_STEMS,
+import prik.pipeline.preprocessing as preprocessing
+import pytest
+import sys
+from hypothesis import (
     given,
-    parse_fortran_file,
-    patch,
-    preprocess_source,
-    preprocessing,
-    pytest,
-    st,
-    sys,
+    strategies as st,
 )
+from pathlib import Path
+from prik import (
+    FortranParseError,
+    parse_fortran_file,
+)
+from prik.pipeline.preprocessing import (
+    PreprocessingConfig,
+    preprocess_source,
+)
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
+from tests.fortran._support.parser_properties import _FORTRAN_IDENTIFIER_STEMS
 
 
 @pytest.mark.property

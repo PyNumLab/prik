@@ -1,13 +1,15 @@
 """Tests split by stable ownership concept from `test_source_form_and_diagnostics_regressions.py`."""
 
-from tests.fortran._support.parser_regressions import (
+from prik import parse_fortran_file
+from prik.parsers.fortran.models import (
     FortranArgument,
-    FortranParser,
     FortranProcedureSignature,
-    _ParserScope,
-    _unit,
-    parse_fortran_file,
 )
+from prik.parsers.fortran.parser import (
+    FortranParser,
+    _ParserScope,
+)
+from tests.fortran._support.parser_regressions import _unit
 
 
 def test_function_result_assignment_name_with_intrinsic_prefix_starts_execution_part():

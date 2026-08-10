@@ -1,11 +1,9 @@
 """Generated and reparsed allocatable module and field declarations."""
 
-from tests.fortran._support.semantic_conversion import (
-    emit_module,
-    fortran_module_to_semantic_module,
-    parse_fortran_source,
-    parse_pyi_text,
-)
+from prik.codegen.printers import emit_module
+from prik.semantics.fortran2ir import fortran_module_to_semantic_module
+from prik import parse_fortran_file as parse_fortran_source
+from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
 
 
 def _generate_pyi(source: str) -> str:

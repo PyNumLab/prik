@@ -1,20 +1,24 @@
 """Tests split by stable ownership concept from `test_c_conversion_properties.py`."""
 
-from tests.fortran._support.semantic_properties import (
+import pytest
+from hypothesis import (
+    given,
+    strategies as st,
+)
+from prik.codegen.printers import emit_module
+from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
+from prik.semantics.models import (
     EXTERNAL_TYPE_REF_METADATA,
     ProjectionMapping,
     SemanticArgument,
     SemanticFunction,
     SemanticModule,
     SemanticType,
+)
+from tests.fortran._support.semantic_properties import (
     _NATIVE_NAMES,
     _PYI_IDENTIFIER_STEMS,
     canonical_semantic_types,
-    emit_module,
-    given,
-    parse_pyi_text,
-    pytest,
-    st,
 )
 
 

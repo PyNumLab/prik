@@ -1,19 +1,21 @@
 """Runtime ownership, factory, close, and finalizer behavior for native handles."""
 
-from tests.fortran._support.native_array_handles import (
+import ctypes
+import gc
+import numpy as np
+import prik
+import pytest
+from prik.runtime.handles import (
     AllocatableArray,
     NativeArrayHandleBase,
     PointerArray,
-    _ArrayState,
-    _common_ops,
     _native_array_descriptor_handoff_for_binding,
     _native_array_handle_from_generated_ops,
+)
+from tests.fortran._support.native_array_handles import (
+    _ArrayState,
+    _common_ops,
     _required_handoff_ops,
-    ctypes,
-    gc,
-    np,
-    pytest,
-    prik,
 )
 
 

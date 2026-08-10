@@ -1,15 +1,17 @@
 """Tests split by stable ownership concept from `test_procedures_and_interfaces.py`."""
 
-from tests.fortran._support.parser_procedures import (
+import pytest
+from prik import (
     FortranParseError,
-    parse_fortran_block_data_unit,
     parse_fortran_file,
+    parse_fortran_project,
+)
+from tests.fortran._support.parser_procedures import (
+    parse_fortran_block_data_unit,
     parse_fortran_module,
     parse_fortran_modules,
     parse_fortran_program,
-    parse_fortran_project,
     parse_fortran_submodule,
-    pytest,
 )
 
 

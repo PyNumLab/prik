@@ -1,12 +1,11 @@
 """Property-based preprocessing invariants for generated C sources."""
 
+import pytest
+
+from hypothesis import given, strategies as st
+from prik.parsers.c import CParseError, parse_c_file
 from tests.c._support.parser_properties import (
-    CParseError,
     _C_IDENTIFIERS,
-    given,
-    parse_c_file,
-    pytest,
-    st,
 )
 
 

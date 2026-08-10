@@ -1,11 +1,9 @@
 """Tests split by stable ownership concept from `test_cli.py`."""
 
-from tests.fortran.source_preprocessing.preprocessing._support import (
-    Path,
-    PreprocessingConfig,
-    expand_native_fortran_includes,
-    preprocessing,
-)
+from pathlib import Path
+
+import prik.pipeline.preprocessing as preprocessing
+from prik.pipeline.preprocessing import PreprocessingConfig, expand_native_fortran_includes
 
 
 def test_linemarker_included_files_fortran_metadata_and_duplicate_entries(tmp_path: Path):

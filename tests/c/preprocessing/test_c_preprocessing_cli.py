@@ -1,12 +1,13 @@
 """Tests split by stable ownership concept from `test_cli.py`."""
 
+import json
+from pathlib import Path
+import subprocess
+import sys
+
 from tests.c._support.preprocessing import (
-    Path,
     _failing_compiler,
     _fake_compiler,
-    json,
-    subprocess,
-    sys,
 )
 
 

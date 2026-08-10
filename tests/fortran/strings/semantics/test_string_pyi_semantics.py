@@ -1,10 +1,8 @@
 """Tests split by stable ownership concept from `test_python_ast_contracts.py`."""
 
-from tests.fortran._support.pyi_conversion import (
-    emit_module,
-    parse_pyi_text,
-    pytest,
-)
+import pytest
+from prik.codegen.printers import emit_module
+from tests.fortran._support.pyi_conversion import parse_pyi_text
 
 
 def test_rank_zero_string_storage_round_trips_as_empty_tuple_array():

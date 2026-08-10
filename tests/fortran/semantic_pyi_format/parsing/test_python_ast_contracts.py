@@ -4,22 +4,26 @@ from pathlib import Path
 import subprocess
 import sys
 
-from tests.fortran._support.pyi_conversion import (
-    CONTRACT_IMPORT,
-    CONTRACT_SYMBOLS,
+import ast
+import pytest
+from prik.codegen.printers import emit_module
+from prik.contracts import CONTRACT_SYMBOLS
+from prik.semantics.models import (
     ProjectionMapping,
     SemanticArgument,
     SemanticConstraint,
     SemanticModule,
     SemanticType,
-    _PyiAstParser,
-    ast,
-    convert_pyi_to_ir,
-    emit_module,
-    parse_pyi_ast_text,
-    parse_pyi_text,
-    pytest,
 )
+from prik.semantics.pyi2ir import (
+    _PyiAstParser,
+    convert_pyi_to_ir,
+)
+from tests.fortran._support.pyi_conversion import (
+    CONTRACT_IMPORT,
+    parse_pyi_text,
+)
+from prik.parsers.pyi import parse_pyi_text as parse_pyi_ast_text
 
 
 def test_pyi_parser_returns_python_ast_only():

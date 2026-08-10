@@ -1,10 +1,8 @@
 """Completed policy for editable module-variable initialization."""
 
-from tests.fortran._support.ownership_policy import (
-    SetterAction,
-    complete_semantic_policies,
-    parse_pyi_text,
-)
+from prik.semantics.ownership import SetterAction
+from prik.semantics.policy_completion import complete_semantic_policies
+from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.parsers.fortran.parser import parse_fortran_project
 from prik.pipeline.build import _apply_source_python_exports, _merge_wrapper_modules
 from prik.codegen.printers.pyi_printer import PyiPrinter

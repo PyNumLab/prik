@@ -1,7 +1,17 @@
 """Tests split by stable ownership concept from `test_imports_and_packages.py`."""
 
-from tests.fortran._support.printer_models import (
+import prik
+import pytest
+from prik import parse_fortran_file as parse_fortran_source
+from prik.codegen.printers import (
     PyiPrinter,
+    emit_module,
+    emit_module_stubs,
+    opaque_dependency_modules,
+)
+from prik.pipeline.pyi import pyi_text_to_semantic_module as _parse_pyi_text
+from prik.semantics.fortran2ir import fortran_module_to_semantic_module
+from prik.semantics.models import (
     SemanticArgument,
     SemanticArrayContract,
     SemanticClass,
@@ -14,16 +24,8 @@ from tests.fortran._support.printer_models import (
     SemanticStorageContract,
     SemanticType,
     SemanticVariable,
-    _parse_pyi_text,
-    emit_module,
-    emit_module_stubs,
-    fortran_module_to_semantic_module,
-    generate_pyi,
-    opaque_dependency_modules,
-    parse_fortran_source,
-    pytest,
-    prik,
 )
+from tests.fortran._support.printer_models import generate_pyi
 
 
 def test_prik_public_api_exports_module_stub_emitter():

@@ -1,23 +1,25 @@
 """Pointer descriptor handoff and strided-view ABI behavior."""
 
-from tests.fortran._support.native_array_handles import (
+import numpy as np
+import pytest
+from prik.runtime.handles import (
     AllocatableArray,
     PointerArray,
-    _ArrayState,
     _NativeArrayDescriptorHandoff,
-    _common_ops,
-    _handoff,
     _native_array_descriptor_argument_for_binding,
     _native_array_descriptor_argument_for_binding_positional,
     _native_array_descriptor_for_binding,
     _native_array_descriptor_handoff_for_binding,
     _native_array_descriptor_handoff_for_binding_positional,
     _numpy_view_from_pointer_c_descriptor,
+)
+from tests.fortran._support.native_array_handles import (
+    _ArrayState,
+    _common_ops,
+    _handoff,
     _pointer_descriptor_for_array,
     _pointer_descriptor_record_for_array,
     _required_handoff_ops,
-    np,
-    pytest,
 )
 
 

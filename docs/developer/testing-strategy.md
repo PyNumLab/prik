@@ -19,16 +19,11 @@ record the active migration gates in
 
 Tests first answer which native input contract they exercise:
 
-- `tests/architecture/` owns meta-tests of the test suite's structure,
-  evidence indexes, and selections;
+- `tests/docs/` owns documentation metadata, navigation, examples, and content;
+- `tests/tools/` owns maintainer commands and CI support scripts;
+- `tests/workflows/` owns exceptional automation-safety checks;
 - `tests/fortran/` owns Fortran input and semantic `.pyi` wrapper behavior;
-- `tests/c/` owns C input-language inspection behavior; and
-- `tests/shared/` owns behavior that neither imports nor selects a native
-  language.
-
-The architecture root is deliberately outside the language trees it validates.
-Use a language subdirectory such as `tests/architecture/fortran/` when a
-meta-invariant is language-specific.
+- `tests/c/` owns C input-language inspection behavior.
 
 Within Fortran, user-visible behavior is feature first and pipeline stage
 second:
@@ -173,12 +168,52 @@ construction.
 
 ## Ownership discipline
 
-Every maintained test and checked fixture has one final language-first owner.
-The only non-language owner is `tests/architecture/`, for tests of the suite's
-own structure and evidence system. Do not use it for product behavior or as a
-stage-first compatibility root. Do not add forwarding fixtures, import
-aliases, or fixture path fallbacks. Cross-feature mechanics require an explicit
-infrastructure owner; language-neutral product checks require a shared owner.
+Every maintained test and checked fixture has one behavioral owner. Directory
+layout, exact file inventories, and the current organization of the tests are
+maintainer conventions rather than executable product contracts. Do not add
+tests whose only purpose is to make an intentional reorganization fail. Add a
+structural check only for a concrete, unusually costly risk that cannot be
+protected by a behavior test. Cross-feature product mechanics require an
+explicit infrastructure owner; documentation and maintainer tools use their
+named top-level feature owners.
+
+A test has one of two navigation shapes after language ownership is known:
+
+- user-visible behavior lives under
+  `tests/fortran/<documented-feature>/<owning-stage>/`; or
+- a genuinely internal mechanism lives under
+  `tests/fortran/infrastructure/<production-package>/test_<production-module>.py`.
+
+For example, semantic-policy internals use
+`infrastructure/semantics/test_ownership.py` and
+`test_policy_completion.py`; wrapper internals use
+`infrastructure/codegen/test_plan.py`, `test_planner.py`, and
+`test_generator.py`. Other internal owners mirror `prik/compiling/`,
+`prik/contracts/`, `prik/pipeline/`, `prik/runtime/`, and the remaining source
+packages when they have real internal tests. Do not create empty mirror
+directories or combine multiple production owners in generic backend or policy
+collection modules. A retained direct-execution example
+under `if __name__ == "__main__"` is maintained by the same dedicated test
+module.
+
+Documentation tests are grouped by invariant rather than by Markdown page.
+Generic metadata, navigation, source-marker, link, and executable-example
+validators stay parameterized over applicable pages. Page-specific content
+contracts live in a module named for the documentation area they protect.
+Workflow checks belong under `tests/workflows/` only when they
+protect concrete behavior or release safety; they should not duplicate or
+freeze the current CI organization. Tests for maintainer tools and workflow
+safety and all blocking static-analysis checks run through the tracked pre-push
+hook for early feedback, together with the fast publication and user-content
+documentation checks and one compiled scalar-wrapper test that exercises the
+public source-build path through a native call. They remain in GitHub Actions
+for shared enforcement. Enable the hook once per clone with
+`git config core.hooksPath .githooks`.
+
+Test support contains reusable construction or assertion behavior, not an
+alternate import surface for production code. Tests import `pytest`, Python
+standard-library names, and production symbols from their real owners; support
+modules do not re-export them merely to shorten imports.
 
 ## Required verification
 

@@ -1,20 +1,26 @@
 """Tests split by stable ownership concept from `test_handle_policy_dispatch.py`."""
 
-from tests.fortran._support.ownership_policy import (
+from prik.semantics.models import (
+    RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA,
+    RESOLVED_OWNERSHIP_POLICY_METADATA,
+)
+from prik.semantics.native_array_handles import (
+    NativeArrayBuildRequirement,
+    native_array_handle_build_requirements,
+)
+from prik.semantics.ownership import (
     CodegenAction,
     DestructionPolicy,
-    NativeArrayBuildRequirement,
     NativeBarrierAction,
     OwnershipContext,
     OwnershipOwner,
-    RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA,
-    RESOLVED_OWNERSHIP_POLICY_METADATA,
     StorageMode,
     TransferMode,
-    _array_type,
-    complete_semantic_policies,
     default_ownership_policy,
-    native_array_handle_build_requirements,
+)
+from prik.semantics.policy_completion import complete_semantic_policies
+from tests.fortran._support.ownership_policy import (
+    _array_type,
     parse_pyi_text,
 )
 

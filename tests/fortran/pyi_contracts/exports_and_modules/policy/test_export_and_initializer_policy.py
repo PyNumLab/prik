@@ -1,6 +1,6 @@
 """Completed policy for editable exports and module initialization."""
 
-from tests.fortran._support.ownership_policy import (
+from prik.semantics.models import (
     POLICY_COMPLETION_PREPARED_METADATA,
     PYTHON_EXPORTS_METADATA,
     PYTHON_EXPORTS_PREPARED_METADATA,
@@ -10,10 +10,10 @@ from tests.fortran._support.ownership_policy import (
     SemanticModule,
     SemanticType,
     SemanticVariable,
-    SetterAction,
-    _scalar_type,
-    complete_semantic_policies,
 )
+from prik.semantics.ownership import SetterAction
+from prik.semantics.policy_completion import complete_semantic_policies
+from tests.fortran._support.ownership_policy import _scalar_type
 from prik.semantics.models import RESOLVED_MODULE_VARIABLE_POLICY_METADATA
 
 

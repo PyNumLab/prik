@@ -101,7 +101,7 @@ PRIK_C_DOCS_END -->
 
 ### Automatically Verify Markdown Examples
 
-`tests/shared/docs/test_examples.py` executes explicitly marked
+`tests/docs/test_examples.py` executes explicitly marked
 `bash` CLI examples and `python` API snippets from `README.md` and Markdown
 files under `docs/`. Bash examples must be `python3 -m prik` commands; the test replaces `python3`
 with the active test interpreter and runs them without a shell. It rejects
@@ -169,7 +169,7 @@ and compare its complete output.
 Run the documentation checks directly:
 
 ```bash
-PYTHONPATH=. python3 -m pytest -q tests/shared/docs/test_examples.py
+PYTHONPATH=. python3 -m pytest -q tests/docs/test_examples.py
 ```
 
 ## References
@@ -208,15 +208,15 @@ implementation files.
 | Fortran parse output | `prik/parsers/fortran/parser.py`, `prik/parsers/fortran/models.py`, `prik/parsers/fortran/lexer.py` | `tests/fortran/source_parsing/parsing/`, `tests/fortran/source_parsing/parsing/test_fortran_fixture_suite.py`, `tests/fortran/source_parsing/parsing/test_error_handling.py` |
 | CLI stage selection and output | `prik/cli.py`, `prik/parsers/fortran/cli.py` | `tests/fortran/command_line_interface/pipeline/` |
 | Fortran target type probing and cache | `prik/probes/fortran_types.py` | `tests/fortran/data_types/probes/test_fortran_type_probes.py` |
-| Generated target datatype mapping examples | `prik/probes/report.py` | `tests/shared/types/test_mapping_report.py`, `tests/shared/docs/test_examples.py` |
+| Generated target datatype mapping examples | `prik/probes/report.py` | `tests/fortran/infrastructure/types/test_mapping_report.py`, `tests/docs/test_examples.py` |
 | Fortran to semantic IR | `prik/semantics/fortran2ir.py`, `prik/semantics/models.py` | `tests/fortran/semantic_ir/semantics/` |
 | `.pyi` printing | `prik/codegen/printers/pyi_printer.py` | `tests/fortran/semantic_pyi_format/pipeline/`, `tests/fortran/semantic_pyi_format/pipeline/test_modern_example.py` |
 | `.pyi` parsing/loading/editing | `prik/parsers/pyi/parser.py`, `prik/pipeline/pyi.py`, `prik/semantics/pyi2ir.py` | `tests/fortran/semantic_pyi_format/` |
-| Semantic policy completion | `prik/semantics/policy_completion.py`, `prik/semantics/ownership.py` | `tests/fortran/infrastructure/policy/` and feature-local `policy/` directories |
+| Semantic policy completion | `prik/semantics/policy_completion.py`, `prik/semantics/ownership.py` | `tests/fortran/infrastructure/semantics/` and feature-local `policy/` directories |
 | Fortran wrapper orchestration | `prik/pipeline/build.py` | `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py`, `tests/fortran/building_shared_library/end_to_end/test_multi_source_builds.py` |
 | Wrapper planning, owner-local errors, and direct lowering | `prik/codegen/plan.py`, `prik/codegen/planner.py`, `prik/codegen/generator.py` | `tests/fortran/infrastructure/codegen/`, feature-local `codegen/` stages |
 | Native compilation and binding support | `prik/compiling/`, `prik/binding_support/` | `tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py`, `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py` |
-| Executable Markdown examples | `README.md`, `docs/*.md` | `tests/shared/docs/test_examples.py` |
+| Executable Markdown examples | `README.md`, `docs/*.md` | `tests/docs/test_examples.py` |
 
 <!-- PRIK_C_DOCS_START
 | C parse output | `prik/parsers/c/parser.py`, `prik/parsers/c/models.py`, `prik/parsers/c/lexer.py` | `tests/c/parsing/test_c_declarations_and_declarators.py`, `tests/c/parsing/test_c_fixture_suite.py`, `tests/c/parsing/test_c_error_fixture_suite.py` |
@@ -994,7 +994,7 @@ The test ownership is:
 
 - loader syntax and error behavior: `tests/fortran/semantic_pyi_format/parsing/`;
 - printer round-trip shape: `tests/fortran/semantic_pyi_format/pipeline/`;
-- policy-completion decisions: `tests/fortran/infrastructure/policy/` and feature-local `policy/` directories;
+- policy-completion decisions: `tests/fortran/infrastructure/semantics/` and feature-local `policy/` directories;
 - wrapper-plan diagnostics: `tests/fortran/infrastructure/codegen/`.
 
 <!-- PRIK_C_DOCS_START
@@ -1017,7 +1017,7 @@ coverage only when the public contract changes.
 | Focused parser tests | One construct, diagnostic, or model field | `tests/fortran/source_parsing/parsing/test_*.py` |
 | Parser fixture goldens | Serialized Fortran parser contracts | `tests/fortran/source_parsing/parsing/test_fortran_fixture_suite.py` |
 | Semantic tests | Fortran parser facts converted to wrapper-neutral IR | `tests/fortran/semantic_ir/semantics/` |
-| Policy tests | Completed policy decisions | `tests/fortran/infrastructure/policy/` and feature-local `policy/` directories |
+| Policy tests | Completed policy decisions | `tests/fortran/infrastructure/semantics/` and feature-local `policy/` directories |
 | Wrapper-plan tests | Unsupported plan diagnostics and generated plan shape | `tests/fortran/infrastructure/codegen/` |
 | `.pyi` tests | Editable contract loader/printer behavior | `tests/fortran/semantic_pyi_format/`, `tests/fortran/semantic_pyi_format/pipeline/` |
 | CLI tests | User commands, output routing, diagnostics | `tests/fortran/command_line_interface/pipeline/`, `tests/fortran/source_preprocessing/preprocessing/` |
@@ -1324,7 +1324,7 @@ BLAS/LAPACK cases belong to their designated real-library lane:
 
 ```bash
 PYTHONPATH=. pytest -q -m "not real_library" \
-  tests/architecture tests/c tests/fortran tests/shared
+  tests/c tests/docs tests/fortran tests/tools tests/workflows
 ```
 
 Run the major suites individually while iterating:
@@ -1332,8 +1332,28 @@ Run the major suites individually while iterating:
 ```bash
 PYTHONPATH=. pytest -q tests/c
 PYTHONPATH=. pytest -q -m "not real_library" tests/fortran
-PYTHONPATH=. pytest -q tests/shared
+PYTHONPATH=. pytest -q tests/docs
+PYTHONPATH=. pytest -q tests/tools
+PYTHONPATH=. pytest -q tests/workflows
 ```
+
+Maintainer-tool tests, workflow-safety tests, focused documentation smoke, one
+compiled scalar-wrapper smoke test, and blocking static analysis run locally
+before every push. Enable the tracked hook once in each clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The hook runs static-analysis version validation, Ruff lint and formatting,
+the codegen-complexity policy, Bandit, Vulture, the changed-code Radon policy,
+the publication and user-content documentation smoke tests, one small public
+CLI-to-native-call wrapper test, `tests/tools/`, and `tests/workflows/`. It
+rejects the push on the first failure. GitHub Actions runs these checks again
+as the shared enforcement boundary alongside the required product, complete
+documentation, compiler, coverage, and real-library checks. The slower
+documentation validators, verbose advisory Radon reports, and broader compiled
+smoke matrix remain outside the quick local hook.
 
 As a project policy, do not merge pull requests unless all checks are green.
 

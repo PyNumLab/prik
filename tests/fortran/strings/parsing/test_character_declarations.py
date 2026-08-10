@@ -1,8 +1,6 @@
 """Tests split by stable ownership concept from `test_procedures_and_interfaces.py`."""
 
-from tests.fortran._support.parser_procedures import (
-    parse_fortran_file,
-)
+from prik import parse_fortran_file
 
 
 def test_legacy_character_and_star_kind_declarations_from_inline_fortran():

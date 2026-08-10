@@ -1,12 +1,12 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
-from tests.fortran._support.semantic_conversion import (
+from prik.semantics.fortran2ir import (
     FortranToIRConverter,
-    ProjectionMapping,
-    array_contract,
     fortran_module_to_semantic_module,
-    parse_fortran_source,
 )
+from prik.semantics.models import ProjectionMapping
+from tests.fortran._support.semantic_conversion import array_contract
+from prik import parse_fortran_file as parse_fortran_source
 
 
 def test_converter_preserves_allocatable_target_metadata():

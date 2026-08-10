@@ -1,10 +1,10 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
-from tests.fortran._support.semantic_conversion import (
+from prik.semantics.fortran2ir import resolve_semantic_compile_time_values
+from prik.semantics.models import (
     SemanticModule,
     SemanticType,
     SemanticVariable,
-    resolve_semantic_compile_time_values,
 )
 
 

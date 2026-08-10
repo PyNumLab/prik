@@ -4,9 +4,6 @@
 Fortran, including semantic `.pyi` wrapper builds and the generated
 Fortran/C/CPython implementation of that contract.
 
-Meta-tests that inspect this directory's ownership, permanent evidence ledger,
-or smoke selection live outside it under `tests/architecture/fortran/`.
-
 The final organization is feature first and stage second:
 
 ```text
@@ -71,8 +68,17 @@ evidence, not the ownership rule.
 
 | Final directory | Owner |
 | --- | --- |
-| `infrastructure/policy/` | Internal completed-policy dispatch and validation framework |
-| `infrastructure/codegen/` | Shared typed-plan and generator mechanics |
+| `infrastructure/binding_support/` | Native binding-support package contracts that have no public feature owner |
+| `infrastructure/semantics/` | Internal semantic ownership, policy completion, and completed wrapper-policy mechanics, with one test module per production module |
+| `infrastructure/codegen/` | Internal plan, planner, generator, binding, bridge, printer, docstring, check, and visitor mechanics, with one test module per production module |
+| `infrastructure/naming/` | Internal generated-name and public-name policy owned by `prik/naming/` |
+| `infrastructure/pipeline/` | Internal wrapper-artifact transport owned by `prik/pipeline/` |
+| `infrastructure/types/` | Internal NumPy type mapping and target mapping-report mechanics |
+| `infrastructure/utilities/` | Internal string and class-visitor helpers owned by `prik/utilities/` |
+
+Each infrastructure test module has an explicit production owner. New internal
+coverage goes in the matching `prik/` package directory; it must not recreate a
+generic policy, stage, or internals catch-all.
 
 Minimized real-source parser regressions live in
 `source_parsing/parsing/test_real_world_interaction_regressions.py`. A

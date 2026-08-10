@@ -1,12 +1,11 @@
 """Tests split by stable ownership concept from `test_cli.py`."""
 
-from tests.fortran.source_preprocessing.preprocessing._support import (
-    Path,
-    _fake_compiler,
-    json,
-    subprocess,
-    sys,
-)
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+from tests.fortran.source_preprocessing.preprocessing._support import _fake_compiler
 
 
 def test_cli_help_documents_exact_compiler_and_preprocessing_examples():

@@ -1,8 +1,6 @@
 """Tests split by stable ownership concept from `test_procedures_and_interfaces.py`."""
 
-from tests.fortran._support.parser_procedures import (
-    parse_fortran_module,
-)
+from tests.fortran._support.parser_procedures import parse_fortran_module
 
 
 def test_module_allocatable_target_attribute_is_preserved():

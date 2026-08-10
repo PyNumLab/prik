@@ -1,13 +1,13 @@
 """Tests split by stable ownership concept from `test_python_ast_contracts.py`."""
 
-from tests.fortran._support.pyi_conversion import (
+import pytest
+from prik.codegen.printers import emit_module
+from prik.semantics.metadata import (
     ADDRESS_ROLE_METADATA,
     ADDRESS_ROLE_RAW,
-    complete_semantic_policies,
-    emit_module,
-    parse_pyi_text,
-    pytest,
 )
+from prik.semantics.policy_completion import complete_semantic_policies
+from tests.fortran._support.pyi_conversion import parse_pyi_text
 
 
 def test_public_raw_address_contract_round_trips():

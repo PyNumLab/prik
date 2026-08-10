@@ -6,6 +6,10 @@ and Pythonic APIs.**
 PRIK generates native Python bindings from Fortran projects, producing
 importable extensions and editable `.pyi` contracts for Pythonic APIs.
 
+[![Tests](https://github.com/PyNumLab/prik/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/PyNumLab/prik/actions/workflows/tests.yml)
+[![Static Analysis](https://github.com/PyNumLab/prik/actions/workflows/static-analysis.yml/badge.svg?branch=main)](https://github.com/PyNumLab/prik/actions/workflows/static-analysis.yml)
+[![codecov](https://codecov.io/gh/PyNumLab/prik/graph/badge.svg?token=QZRRCS5YO6)](https://codecov.io/gh/PyNumLab/prik)
+
 It preserves modules, derived types, arrays, callbacks, and native behavior so
 you can shape the resulting API without writing low-level binding code.
 
@@ -24,23 +28,12 @@ semantic IR, emits editable `.pyi` interfaces, and reports unsupported or
 incomplete contracts before code generation.
 PRIK_C_DOCS_END -->
 
-[![Tests](https://github.com/PyNumLab/prik/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/PyNumLab/prik/actions/workflows/tests.yml)
-[![Static Analysis](https://github.com/PyNumLab/prik/actions/workflows/static-analysis.yml/badge.svg?branch=main)](https://github.com/PyNumLab/prik/actions/workflows/static-analysis.yml)
-[![codecov](https://codecov.io/gh/PyNumLab/prik/graph/badge.svg?token=QZRRCS5YO6)](https://codecov.io/gh/PyNumLab/prik)
-
 [Read the documentation](https://pynumlab.github.io/prik/) for installation,
 the user guide, examples, and reference material.
 
-For a complete real-library example, see the
-[155-routine BLAS correctness project](examples/blas/README.md), which builds
-the same Reference BLAS sources with PRIK and f2py and checks both against
-independent numerical expectations. The
-[LAPACK correctness project](examples/lapack/README.md) wraps the complete
-Reference LAPACK implementation corpus once and validates the reviewed 127
-SciPy-backed double-precision routines in the dedicated CI lane.
-
 ## Contents
 
+- [Proven on real libraries](#proven-on-real-libraries)
 - [See it in action](#see-it-in-action)
 - [Key Features](#key-features)
 - [Performance](#performance)
@@ -51,6 +44,22 @@ SciPy-backed double-precision routines in the dedicated CI lane.
 - [Development](#development)
 - [License](#license)
 - [Documentation](#documentation)
+
+## Proven on real libraries
+
+The maintained projects build real numerical libraries with PRIK and validate
+their Python behavior, not just whether the generated wrapper compiles.
+
+| Project | Validated surface | Capabilities demonstrated |
+| --- | --- | --- |
+| [BLAS](examples/blas/README.md) | All 155 discovered routines | Scalar, vector, and matrix operations; increments and leading dimensions; in-place updates; independent expectations and f2py comparisons |
+| [LAPACK](examples/lapack/README.md) | Complete implementation corpus with 127 reviewed double-precision routines | Linear solves, factorizations, eigenproblems, singular values, work arrays, and large multi-source linking |
+| [FFTPACK](examples/fftpack/README.md) | All 31 public procedures | Fourier, cosine, and sine transforms; low-level workspaces; in-place arrays; allocatable results; NumPy and SciPy oracles |
+| [MINPACK](examples/minpack/README.md) | All 22 public procedures | Python callbacks; nonlinear and least-squares solvers; Jacobian and workspace writeback; immutable module constants |
+
+Together they exercise arrays, callbacks, workspaces, in-place mutation,
+allocatable results, module constants, and multi-file linking. The dedicated
+Real Libraries CI lane builds and tests all four projects.
 
 The complete example below builds with one command:
 
@@ -114,12 +123,20 @@ shows the available edits.
 
 ## Key Features
 
-- Fortran modules exposed as Python namespaces and derived types as classes
-- NumPy arrays with explicit dtype, shape, and layout checks
-- Allocatable and pointer arrays with explicit lifetime operations
-- Immediate Python callbacks and overloaded interfaces
-- Editable `.pyi` contracts and readable generated docstrings
-- Early, clear errors when a boundary cannot be wrapped
+- **Native APIs that feel like Python.** Fortran modules become Python
+  namespaces, while derived types become classes with fields and methods.
+- **First-class NumPy array interop.** Pass ordinary NumPy arrays to native
+  procedures, including multidimensional and in-place data, with generated
+  dtype, shape, layout, and mutability handling at the language boundary.
+- **Managed access to native memory.** Expose allocatable and pointer arrays
+  without hiding their ownership, lifetime, allocation, or release operations.
+- **Python callbacks and native overloads.** Pass Python callables into Fortran
+  and expose generic interfaces as familiar Python overloads.
+- **Generated APIs you can reshape.** Edit the generated `.pyi` contract to
+  rename, hide, reorganize, or overload the public interface, backed by readable
+  generated docstrings.
+- **Unsupported contracts fail before the build.** PRIK identifies the exact
+  boundary and reason before attempting code generation or compilation.
 
 ## Performance
 

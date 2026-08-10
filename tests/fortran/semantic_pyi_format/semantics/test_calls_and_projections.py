@@ -1,26 +1,28 @@
 """Tests split by stable ownership concept from `test_python_ast_contracts.py`."""
 
-from tests.fortran._support.pyi_conversion import (
+import ast
+import pytest
+from dataclasses import asdict
+from prik import parse_fortran_file
+from prik.codegen.printers import emit_module
+from prik.contracts import CONTRACT_SYMBOLS
+from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
+from prik.semantics.metadata import (
     ADDRESS_ROLE_METADATA,
     ADDRESS_ROLE_PROJECTION,
-    CONTRACT_SYMBOLS,
     PROJECTED_OUTPUT_METADATA,
+)
+from prik.semantics.models import (
     ProjectionMapping,
     SemanticArgument,
     SemanticConstraint,
     SemanticFunction,
     SemanticModule,
     SemanticType,
-    _PyiAstParser,
-    asdict,
-    ast,
-    complete_semantic_policies,
-    emit_module,
-    fortran_file_to_semantic_modules,
-    parse_fortran_file,
-    parse_pyi_text,
-    pytest,
 )
+from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.pyi2ir import _PyiAstParser
+from tests.fortran._support.pyi_conversion import parse_pyi_text
 
 
 def test_convert_pyi_to_ir_accepts_ast_only_projection_value_refs():
