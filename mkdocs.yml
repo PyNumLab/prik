@@ -1,4 +1,5 @@
-site_name: PRIK
+site_name: PRIK — Python Runtime Interop Kit
+site_description: PRIK generates native Python bindings from Fortran projects, producing importable extensions and editable .pyi contracts for Pythonic APIs.
 site_url: https://pynumlab.github.io/prik/
 repo_url: https://github.com/PyNumLab/prik
 repo_name: GitHub

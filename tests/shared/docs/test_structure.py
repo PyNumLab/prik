@@ -1027,53 +1027,118 @@ def test_getting_started_overview_uses_standalone_example() -> None:
 
 def test_documentation_homepage_demonstrates_prik_before_getting_started() -> None:
     page = (DOCS_ROOT / "index.md").read_text(encoding="utf-8")
-    introduction_index = page.index("Turn Fortran into natural Python APIs")
-    build_index = page.index("python3 -m prik points.f90 --out geometry")
-    example_heading_index = page.index("## See it in action")
+    introduction_index = page.index("Generate native Python bindings for Fortran")
+    example_heading_index = page.index("## From Fortran to Python in one command")
     source_index = page.index("```fortran", example_heading_index)
-    generated_api_index = page.index("**Generated Python API:**", source_index)
-    constructor_index = page.index("item = points.point(", generated_api_index)
-    mutation_index = page.index("points.move(item", constructor_index)
-    result_index = page.index("# 4.0 2.0", mutation_index)
-    contract_index = page.index("Edit the generated `.pyi` contract", result_index)
-    features_index = page.index("## Key Features", contract_index)
-    getting_started_index = page.index("Getting Started Guide →", features_index)
+    build_index = page.index("python3 -m prik scale.f90", source_index)
+    import_index = page.index("import scale", build_index)
+    call_index = page.index("scale.scale(np.float64(3.0), np.float64(2.5))", import_index)
+    result_index = page.index("# 7.5", call_index)
+    advantages_index = page.index("## Why PRIK", result_index)
+    evidence_index = page.index("## Proven on real Fortran libraries", advantages_index)
+    install_index = page.index("[Install PRIK →]", evidence_index)
+    getting_started_index = page.index("[Read Getting Started →]", install_index)
 
-    assert introduction_index < build_index < example_heading_index < source_index
-    assert source_index < generated_api_index < constructor_index < mutation_index
-    assert mutation_index < result_index < contract_index < features_index < getting_started_index
-    assert "print(points.norm_squared(item))" in page
-    assert "# 20.0" in page
-    assert "[contract guide](user/reference/pyi-contracts/index.md)" in page
-    assert "{ .prik-primary-cta }" in page
+    assert introduction_index < example_heading_index < source_index < build_index
+    assert build_index < import_index < call_index < result_index
+    assert result_index < advantages_index < evidence_index < install_index < getting_started_index
+    assert "python3 -m pip install prik" in page
+    assert "No manual binding code is required." in page
+    assert "[BLAS](user/examples/blas-wrapper.md)" in page
+    assert "[LAPACK](user/examples/lapack-wrapper.md)" in page
+    assert "[FFTPACK](user/examples/fftpack-wrapper.md)" in page
+    assert "[MINPACK](user/examples/minpack-wrapper.md)" in page
+    assert page.count("{ .prik-primary-cta }") == 2
     assert "developer/index.md" not in page
     assert "maintainer/README.md" not in page
     assert "user/guide/" not in page
 
 
-def test_readme_opening_uses_the_homepage_message_and_showcase() -> None:
+def test_public_entrypoints_use_the_canonical_identity_and_description() -> None:
     homepage = _visible_documentation_source(DOCS_ROOT / "index.md")
     readme = _visible_documentation_source(ROOT / "README.md")
-    readme_opening = readme.split("## Installation & Quick Start", maxsplit=1)[0]
-    shared_content = (
-        "python3 -m prik points.f90 --out geometry",
-        "<!-- prik-doc-source: tests/fortran/building_shared_library/end_to_end/fixtures/native/home_points.f90 -->",
-        "import geometry.points as points",
-        "item = points.point(x=np.float64(3.0), y=np.float64(4.0))",
-        "points.move(item, np.float64(1.0), np.float64(-2.0))",
-        "print(points.norm_squared(item))  # 20.0",
-        "No manual bindings are required.",
-        "## Key Features",
-        "- Editable `.pyi` contracts and readable generated docstrings",
+    mkdocs = (ROOT / "mkdocs.yml").read_text(encoding="utf-8")
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    title = "PRIK — Python Runtime Interop Kit"
+    subtitle = "Generate native Python bindings for Fortran, with editable `.pyi` contracts\nand Pythonic APIs."
+    description = (
+        "PRIK generates native Python bindings from Fortran projects, producing\n"
+        "importable extensions and editable `.pyi` contracts for Pythonic APIs."
     )
+    language_direction = (
+        "**PRIK starts with Fortran-to-Python.** Its semantic contract model is designed\n"
+        "to support more native languages over time."
+    )
+    metadata_description = description.replace("\n", " ").replace("`", "")
 
-    for content in shared_content:
-        assert content in homepage
-        assert content in readme_opening
+    assert readme.startswith(f"# {title}\n\n**{subtitle}**\n\n{description}\n")
+    assert f"# {title}\n\n**{subtitle}**\n\n{description}\n" in homepage
+    assert language_direction in readme
+    assert language_direction in homepage
+    assert f"site_name: {title}" in mkdocs
+    assert f"site_description: {metadata_description}" in mkdocs
+    assert f'description = "{metadata_description}"' in pyproject
 
-    assert readme.count("\nmodule points\n") == 1
-    assert readme_opening.count("python3 -m prik points.f90 --out geometry") == 1
-    assert readme_opening.count("import geometry.points as points") == 1
+
+def test_faq_routes_search_questions_to_authoritative_pages() -> None:
+    metadata, page = _front_matter(DOCS_ROOT / "user/faq/index.md")
+    question_targets = [
+        ("## How do I call Fortran from Python?", "../getting-started/first-wrapped-function.md"),
+        (
+            "## How do I generate Python bindings for a Fortran module?",
+            "../getting-started/first-wrapped-module.md",
+        ),
+        ("## How do I wrap an existing Fortran library for Python?", "../guide/building-shared-library.md"),
+        (
+            "## How do I expose Fortran derived types as Python classes?",
+            "../guide/wrapping-derived-types.md",
+        ),
+        ("## How do I pass NumPy arrays to Fortran without unnecessary copies?", "../guide/arrays.md"),
+        ("## Should I use PRIK or f2py?", "../performance.md"),
+    ]
+
+    assert metadata["status"] == "maintained"
+    assert metadata["publication"] == "reviewed"
+    previous_start = -1
+    for question, target in question_targets:
+        start = page.index(question)
+        end = page.find("\n## ", start + len(question))
+        answer = page[start : end if end != -1 else len(page)]
+        assert previous_start < start
+        assert target in answer
+        previous_start = start
+
+    assert "../examples/blas-wrapper.md" in page
+    assert "../examples/fftpack-wrapper.md" in page
+    assert "../examples/minpack-wrapper.md" in page
+    assert "../reference/pyi-contracts/index.md" in page
+    assert "../guide/allocatables.md" in page
+    assert "../guide/pointers.md" in page
+    assert "../guide/error-handling.md" in page
+    assert "../guide/generic-interfaces.md" in page
+    assert "PRIK is currently alpha" in " ".join(page.split())
+
+
+def test_performance_page_bounds_the_prik_f2py_decision() -> None:
+    page = _visible_documentation_source(DOCS_ROOT / "user/performance.md")
+    start = page.index("## Should I use PRIK or f2py?")
+    end = page.index("## Fair, Like-for-Like Setup", start)
+    comparison = " ".join(page[start:end].split())
+
+    assert "runtime-call overhead and clean build time" in comparison
+    assert "They do not rank feature coverage" in comparison
+    assert "https://numpy.org/doc/stable/f2py/" in comparison
+    assert "https://numpy.org/doc/stable/f2py/signature-file.html" in comparison
+    assert "design the Python API, not just generate a wrapper" in comparison
+    assert "simpler, more Pythonic place to rename or hide exports, flatten modules" in comparison
+    assert "reorder or hide native arguments, and return native outputs as Python results" in comparison
+    assert "[derived types](guide/wrapping-derived-types.md) as Python classes" in comparison
+    assert "[allocatables](guide/allocatables.md)" in comparison
+    assert "[pointer forms](guide/pointers.md)" in comparison
+    assert "native errors as [Python exceptions](guide/error-handling.md)" in comparison
+    assert "[overloaded procedures](guide/generic-interfaces.md)" in comparison
+    assert "reference/pyi-contracts/index.md" in comparison
+    assert "PRIK is currently alpha" in comparison
 
 
 def test_documentation_links_to_documentation_stay_on_the_website() -> None:
@@ -1271,11 +1336,11 @@ def test_user_compiler_docs_distinguish_runtime_evidence_from_configured_profile
     assert "keeps both compilers in the same family" in shared_library
 
 
-def test_cli_reference_reuses_the_homepage_points_example() -> None:
+def test_cli_reference_reuses_the_derived_type_points_example() -> None:
     content = _visible_documentation_source(CLI_REFERENCE_PATH)
 
-    assert "`points.f90` source and naming" in content
-    assert "../../index.md#see-it-in-action" in content
+    assert "`points.f90` and `geometry` naming" in content
+    assert "../guide/wrapping-derived-types.md#complete-example" in content
     assert "python3 -m prik parse points.f90" in content
     assert "python3 -m prik generate --pyi points.f90 --out contracts" in content
     assert "scale.f90" not in content

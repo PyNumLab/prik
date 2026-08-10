@@ -273,7 +273,7 @@ def test_fortran_wrapper_out_names_importable_shared_library(tmp_path: Path):
     assert module.scale(np.float64(3.0), np.float64(2.5)) == np.float64(7.5)
 
 
-def test_documented_homepage_points_example_builds_and_imports(tmp_path: Path):
+def test_documented_readme_points_example_builds_and_imports(tmp_path: Path):
     source = tmp_path / "points.f90"
     build_dir = tmp_path / "build" / "geometry"
     shutil.copyfile(HOME_POINTS_SOURCE, source)

@@ -271,6 +271,9 @@ primary placeholder queue.
   namespace, public state, saved state, visibility, and limitation guide.
 - [x] `docs/user/getting-started/beginner-workflow.md`: maintained edit, inspect,
   planning, build, smoke-test, artifact-review, and rebuild loop.
+- [x] `docs/user/faq/index.md`: maintained task-oriented answers that route
+  search questions to checked guides, real-library examples, and the bounded
+  PRIK/f2py comparison.
 - [x] `docs/user/reference/semantic-ir.md`: maintained Semantic IR contract.
 - [x] `docs/user/reference/semantic-pyi-format.md`: maintained semantic `.pyi`
   contract.

@@ -45,11 +45,14 @@ contains only pages explicitly marked as reviewed.
     They reserve dedicated right-side space for the copy control, and long lines
     scroll inside the block instead of widening the page.
 
-`docs/index.md` is the user-first project entrance. Its body introduces prik,
-shows the shortest checked source-to-import workflow and its generated function
-docstring, and sends the reader into Getting Started. Developer, Maintainer,
-and deeper User Guide destinations stay available through site navigation
-instead of competing with that first task.
+`docs/index.md` is the user-first project entrance. It uses the canonical
+`PRIK — Python Runtime Interop Kit` identity and public description, shows the
+shortest checked source-to-import workflow, summarizes the product's concrete
+advantages, and links to real-library evidence before sending the reader into
+Getting Started. Developer, Maintainer, and deeper User Guide destinations stay
+available through site navigation instead of competing with that first task.
+The FAQ uses natural task questions as concise routes to authoritative guides;
+it does not duplicate those guides.
 
 ## Audience Lanes
 

@@ -87,9 +87,9 @@ not mislabel them as preprocessing-only options. It also keeps short examples
 for a basic source build, an explicitly named extension, and semantic contract
 generation; `--help-build` labels its basic build, semantic-contract build,
 and manifest-replay examples separately. Both help levels reuse the canonical
-`points.f90` source and naming from the
-[homepage example](../../index.md#see-it-in-action), which contains the
-complete source, basic build, import flow, and expected result.
+`points.f90` and `geometry` naming from the
+[derived-type guide](../guide/wrapping-derived-types.md#complete-example),
+which contains a complete source, build, import flow, and expected result.
 
 The full build help uses the following two forms:
 
@@ -191,7 +191,7 @@ python3 -m prik generate --makefile points.f90 --out-dir build
 ```
 
 These examples reuse `points.f90` from the
-[homepage example](../../index.md#see-it-in-action).
+[derived-type guide](../guide/wrapping-derived-types.md#complete-example).
 
 These modes are mutually exclusive. Source and Makefile generation still run
 the preprocessing and semantic-policy stages needed to produce a valid wrapper
