@@ -82,22 +82,6 @@ def pyi_parity_build_mode(request: pytest.FixtureRequest) -> str:
     return request.param
 
 
-def pytest_addoption(parser: pytest.Parser) -> None:
-    group = parser.getgroup("prik Fortran")
-    group.addoption(
-        COMPILER_OPTION,
-        action="store",
-        default=os.environ.get(COMPILER_ENV, "gfortran"),
-        metavar="EXECUTABLE",
-        help="Fortran compiler executable used by compiled Fortran tests.",
-    )
-    group.addoption(
-        "--require-toolchain-smoke",
-        action="store_true",
-        help="Require a nonempty, skip-free selection containing only toolchain smoke nodes.",
-    )
-
-
 def _compiler_was_requested_explicitly(config: pytest.Config) -> bool:
     if COMPILER_ENV in os.environ:
         return True

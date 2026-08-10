@@ -181,6 +181,8 @@ def test_dposvx_solves_and_bounds_spd_error(prik_lapack, scipy_lapack, f2py_lapa
     assert_allclose_float64(prik_scalars[-2], scipy_rcond)
     assert_allclose_float64(prik_ferr, scipy_ferr)
     assert_allclose_float64(prik_berr, scipy_berr)
+    assert_allclose_float64(f2py_ferr, scipy_ferr)
+    assert_allclose_float64(f2py_berr, scipy_berr)
 
 
 def test_dpotrf_reconstructs_spd_matrix(prik_lapack, scipy_lapack, f2py_lapack):

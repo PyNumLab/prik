@@ -108,7 +108,7 @@ tests/
       calls_and_results/
     infrastructure/
       policy/
-      wrapper_codegen/
+      codegen/
   c/
     README.md
     parsing/
@@ -136,7 +136,7 @@ tests/fortran/arrays/
   parsing/
   semantics/
   policy/
-  wrapper_codegen/
+  codegen/
   pipeline/
   end_to_end/
     fixtures/
@@ -177,7 +177,7 @@ behavior and public cross-feature capabilities do not.
   and end-to-end behavior.
 - [x] Use the same stage names inside every feature:
   `parsing`, `probes`, `preprocessing`, `semantics`, `policy`,
-  `wrapper_codegen`, `compiling`, `pipeline`, `runtime`, and `end_to_end`.
+  `codegen`, `compiling`, `pipeline`, `runtime`, and `end_to_end`.
   Create only the stages that own real evidence.
 - [x] Put pytest modules below a stage directory rather than directly at the
   feature root, so path shape always answers both “which feature?” and “which

@@ -43,10 +43,10 @@ For example, rename the generated declaration to `multiply` and add
 `scale`:
 
 ```python
-from prik.contracts import Addr, Arg, Float64, bind, external, native_call
+from prik.contracts import Addr, Arg, Float64, bind, native_call, standalone
 
 @bind("scale")
-@external
+@standalone
 @native_call([Addr(Arg(0)), Addr(Arg(1))])
 def multiply(
     value: Float64,

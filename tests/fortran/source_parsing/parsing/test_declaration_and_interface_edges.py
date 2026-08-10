@@ -264,10 +264,9 @@ end subroutine arithmetic_shapes
         "1:24",
         "1:(8)/(3)",
         "1:9",
-        "1:+(8)-one",
+        "1:7",
         "1:8",
     ]
-    assert sig.variables["one"].value == "1"
 
 
 def test_type_contains_accepts_bindings_and_rejects_other_lines():

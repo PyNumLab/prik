@@ -1,12 +1,12 @@
-from prik.contracts import Addr, Arg, Int32, external, native_call
+from prik.contracts import Addr, Arg, Int32, native_call, standalone
 
-@external
+@standalone
 @native_call([Addr(Arg(0))])
 def triple_value(
     value: Int32
 ) -> Int32: ...
 
-@external
+@standalone
 @native_call([Addr(Arg(0))])
 def offset_value(
     value: Int32

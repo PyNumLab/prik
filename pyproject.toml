@@ -1,11 +1,11 @@
 [build-system]
-requires = ["setuptools>=77.0.3", "wheel"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "prik"
 version = "0.1.1"
-description = "Fortran-to-Python native extensions with editable .pyi contracts"
+description = "PRIK generates native Python bindings from Fortran projects, producing importable extensions and editable .pyi contracts for Pythonic APIs."
 readme = "README.md"
 authors = [
     { name = "Said Hadjout" , email = "saidaissa.hadjout@gmail.com"},
@@ -19,6 +19,10 @@ keywords = [
     "cpython-extension",
     "numpy",
     "wrapper-generator",
+    "fortran-python",
+    "python-bindings",
+    "wrapper",
+    "f2py-alternative",
     "scientific-computing",
 ]
 classifiers = [
@@ -95,7 +99,7 @@ markers = [
     "fortran_end_to_end: compiled, imported, and called Fortran feature tests",
     "fuzz: randomized parser robustness tests",
     "property: Hypothesis property-based tests",
-    "real_library: dedicated BLAS/LAPACK native-source end-to-end tests",
+    "real_library: opt-in full-library native-source numerical end-to-end tests",
     "regression: tests that pin previously fixed bugs",
     "slow: tests that are useful but too expensive for the default inner loop",
     "toolchain_smoke: portable compiled Fortran end-to-end cases reused across compiler, OS, and architecture lanes",

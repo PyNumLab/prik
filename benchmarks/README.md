@@ -19,7 +19,7 @@ concurrency. The workloads are:
   `examples/blas/native/`, with all 155 routines
   required in each generated extension.
 
-One untimed warm-up precedes six measured clean builds of each workload by
+One untimed warm-up precedes four measured clean builds of each workload by
 default. Tool order alternates between rounds. Set
 `PRIK_BUILD_BENCHMARK_RUNS` or `PRIK_BUILD_BENCHMARK_WARMUPS` to change those
 counts for local investigation.
@@ -31,9 +31,16 @@ Every workload is measured with two compiler profiles:
 
 Runtime-call measurements continue to use only the optimized profile.
 
-`PRIK_BENCHMARK_FIRST=prik` is the default measurement order. Set it to
-`f2py` to reverse the order. The publication workflow alternates this setting
-between runs so one tool is not systematically measured first.
+`PRIK_BENCHMARK_FIRST=prik` selects the first clean-build tool. Set it to
+`f2py` to reverse the first round; later build rounds alternate automatically.
+
+For each runtime group, measurements use an A/B/B/A sequence in the same job:
+PRIK then f2py, immediately followed by f2py then PRIK. Each order receives half
+of the reduced worker budget, and the final per-tool suites merge both passes
+before comparison. The four order-specific JSON files remain in `results/` so
+the balance is auditable. This keeps the same 13 workloads while targeting
+about 20 minutes on the pinned CI benchmark runner instead of doubling the
+previous 30-minute job.
 
 Run the complete correctness check and rigorous benchmark with:
 
@@ -46,10 +53,10 @@ and applies each profile consistently to the native Fortran source, generated
 Fortran wrapper, and generated C binding. Runtime extensions use the optimized
 profile. Runtime cases use latency, medium, and bulk sampling budgets: the
 short and noisier cases use more pyperf worker processes and values, while
-expensive matrix cases use fewer. Contiguous case groups preserve the table's
-call, vector, matrix-sum, and matrix-update order as their results are appended to the same per-tool
-JSON suite, so comparison and publication commands remain unchanged. The
-script retains f2py's generated sources under `build/f2py` for local
+expensive matrix cases use fewer. Each case group runs adjacent PRIK/f2py
+measurements in both orders. The order passes are merged into the same final
+per-tool JSON suites, so comparison and publication commands remain unchanged.
+The script retains f2py's generated sources under `build/f2py` for local
 inspection.
 
 To compare existing results without rebuilding:

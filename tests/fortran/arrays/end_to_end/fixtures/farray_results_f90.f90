@@ -17,6 +17,13 @@ contains
     end do
   end function automatic_vector
 
+  function size_intrinsic_vector(x) result(values)
+    real(8), intent(in) :: x(:)
+    real(8), dimension(size(x)) :: values
+
+    values = 3.0_8 * x
+  end function size_intrinsic_vector
+
   function automatic_matrix(rows, cols) result(values)
     integer, intent(in) :: rows
     integer, intent(in) :: cols

@@ -180,7 +180,7 @@ def _function_issues(
         issues.append(
             NativeContractIssue(
                 "pyi_native_procedure_scope_mismatch",
-                "Native procedure scope contradicts its leaf or @external placement.",
+                "Native procedure scope contradicts its leaf or @standalone placement.",
                 owner,
             )
         )

@@ -5,7 +5,7 @@ import pytest
 from prik.pipeline.pyi import pyi_text_to_semantic_module
 from prik.semantics.models import RUNTIME_RELEASE_GIL_METADATA, RUNTIME_STATUS_ERROR_METADATA
 from prik.semantics.policy_completion import complete_semantic_policies
-from prik.wrapper_codegen.printers import emit_module
+from prik.codegen.printers import emit_module
 
 
 _CONTRACT_IMPORTS = """from prik.contracts import (

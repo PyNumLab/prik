@@ -24,7 +24,7 @@ artifacts used by tests. Navigate by ownership boundary first, then by file.
 | `prik/types/` | Cross-layer mappings from resolved semantic types to Python ecosystem types. |
 | `prik/parsers/` | Public namespace for language and semantic-contract frontends and parser models. |
 | `prik/semantics/` | Semantic IR, source-to-IR conversion, `.pyi` parsing, and policy completion. |
-| `prik/wrapper_codegen/` | Typed wrapper plans, direct native bridge/binding lowering, and source and semantic `.pyi` printers. |
+| `prik/codegen/` | Typed wrapper plans, direct native bridge/binding lowering, and source and semantic `.pyi` printers. |
 | `prik/compiling/` | Native compile objects, compiler command orchestration, native support installation, and linking. |
 | `prik/binding_support/` | Bundled header-only native support copied into generated wrapper builds. |
 | `prik/naming/` | Unified public-name and generated-symbol policy. |
@@ -54,6 +54,7 @@ through `prik/__init__.py`.
 | `tests/fortran/<feature>/` | User-visible Fortran and semantic `.pyi` behavior, with documented features directly below the language root and stages below each feature. |
 | `tests/fortran/{source_parsing,source_preprocessing,command_line_interface,semantic_ir}/` | Public cross-feature capabilities that begin from source or expose an inspection/reporting surface. |
 | `tests/fortran/infrastructure/` | Internal cross-feature policy, wrapper-generation, compiler, and runtime frameworks with no honest public-capability owner. |
+| `tests/fortran/building_shared_library/end_to_end/real_libraries/` | Opt-in numerical showcase tests that build actual FFTPACK and MINPACK checkouts, call their generated Python routines, and verify known results. |
 | `tests/c/` | C input-language parsing, preprocessing, probe, semantic, CLI, and fixture evidence. |
 | `tests/shared/` | Language-neutral product architecture, documentation, naming, tools, type mapping, and utility checks. |
 | `examples/blas/tests/test_*.py` | User-facing real-library correctness documentation: explicit independent and PRIK/f2py differential validation for every Reference BLAS routine. |

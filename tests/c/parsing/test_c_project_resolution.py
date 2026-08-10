@@ -1,6 +1,24 @@
 """Active coverage for current C project include/index behavior."""
 
+import subprocess
+import sys
 from pathlib import Path
+
+
+def test_c_type_resolver_module_direct_execution_example():
+    repository_root = Path(__file__).parents[3]
+
+    result = subprocess.run(
+        [sys.executable, "prik/parsers/c/type_resolver.py"],
+        cwd=repository_root,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout == (
+        "Tag reference:\nstate_handle -> struct state\nTypedef chain:\nstate_alias -> raw_state -> struct state\n"
+    )
 
 
 def test_project_include_graph_tracks_local_system_missing_and_cycles(tmp_path: Path):

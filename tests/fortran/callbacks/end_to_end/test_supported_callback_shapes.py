@@ -41,7 +41,7 @@ def test_immediate_callbacks_cover_all_supported_argument_shapes(
     def array_callback(count, input_values, output_values):
         assert isinstance(count, np.int32)
         assert input_values.flags.f_contiguous
-        assert input_values.flags.writeable
+        assert not input_values.flags.writeable
         assert output_values.flags.writeable
         output_values[:count] = input_values[:count] + 1.5
 
@@ -50,13 +50,11 @@ def test_immediate_callbacks_cover_all_supported_argument_shapes(
     np.testing.assert_allclose(output, np.array([2.5, 3.5, 4.5], dtype=np.float64))
 
     def string_callback(read_label, write_label, update_label):
-        assert read_label.shape == ()
+        assert read_label == "READONLY"
         assert write_label.shape == ()
         assert update_label.shape == ()
-        assert read_label.dtype.itemsize == 8
         assert write_label.dtype.itemsize == 8
         assert update_label.dtype.itemsize == 8
-        assert read_label[()] == b"READONLY"
         assert update_label[()] == b"OLD     "
         write_label[...] = b"WRITTEN!"
         update_label[...] = b"UPDATED!"

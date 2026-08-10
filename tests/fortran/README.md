@@ -49,8 +49,15 @@ owns a real test or fixture.
 | [Calls and Results](../../docs/user/reference/pyi-contracts/calls-and-results.md) | `pyi_contracts/calls_and_results/` | `python3 -m pytest -q tests/fortran/pyi_contracts/calls_and_results` |
 
 Each feature uses only the stages it needs: `parsing`, `probes`,
-`preprocessing`, `semantics`, `policy`, `wrapper_codegen`, `compiling`,
+`preprocessing`, `semantics`, `policy`, `codegen`, `compiling`,
 `pipeline`, `runtime`, and `end_to_end`.
+
+Array declaration-expression coverage is intentionally split by evidence:
+`arrays/semantics/` preserves expression and native-call provenance,
+`arrays/policy/` proves completed dependency roles and named blockers, and
+`arrays/end_to_end/` compiles supported dimensions and logical array kinds.
+Cross-module editable-contract reconciliation remains under
+the semantic `.pyi` format stage, not under a code-generation test.
 
 ## Infrastructure owners
 
@@ -65,7 +72,7 @@ evidence, not the ownership rule.
 | Final directory | Owner |
 | --- | --- |
 | `infrastructure/policy/` | Internal completed-policy dispatch and validation framework |
-| `infrastructure/wrapper_codegen/` | Shared typed-plan and generator mechanics |
+| `infrastructure/codegen/` | Shared typed-plan and generator mechanics |
 
 Minimized real-source parser regressions live in
 `source_parsing/parsing/test_real_world_interaction_regressions.py`. A

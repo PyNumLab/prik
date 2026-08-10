@@ -1,20 +1,95 @@
 ---
-title: FAQ
+title: Frequently Asked Questions
+description: Concise answers about calling Fortran from Python, wrapping libraries, NumPy arrays, derived types, and choosing PRIK or f2py
 audience: users
-prerequisites: getting started
-related: ../troubleshooting/index.md, ../guide/index.md
-status: planned-documentation
-publication: draft
+prerequisites: none
+related: ../getting-started/index.md, ../guide/index.md, ../performance.md
+status: maintained
+publication: reviewed
 ---
 
-# FAQ
+# Frequently Asked Questions
 
-Reserved page for common user questions, migration questions, and short answers
-that link to full guides.
+Start with the question closest to your task. Each answer links to the complete,
+tested workflow.
 
-## TODO
+<details class="prik-faq-item" id="how-do-i-call-fortran-from-python" markdown="1">
+<summary>How do I call Fortran from Python?</summary>
 
-- TODO: Add questions only when they reflect real user workflows or repeated
-  support issues.
-- TODO: Link each answer to the owning guide, reference, or troubleshooting
-  page.
+Use PRIK to build your Fortran source into an importable Python extension, then
+call it with NumPy values that match the generated contract. Follow
+[Call Your First Fortran Function from Python](../getting-started/first-wrapped-function.md)
+for a complete source-to-result example.
+
+</details>
+
+<details class="prik-faq-item" id="how-do-i-generate-python-bindings-for-a-fortran-module" markdown="1">
+<summary>How do I generate Python bindings for a Fortran module?</summary>
+
+Pass the module source to PRIK. It generates the extension and exposes supported
+public procedures and module state through Python. Start with
+[Generate Python Bindings for a Fortran Module](../getting-started/first-wrapped-module.md).
+
+</details>
+
+<details class="prik-faq-item" id="how-do-i-wrap-an-existing-fortran-library-for-python" markdown="1">
+<summary>How do I wrap an existing Fortran library for Python?</summary>
+
+Build the public Fortran sources with PRIK and link their native dependencies
+into the same extension. The
+[shared-library guide](../guide/building-shared-library.md) explains the build
+options, while the tested [BLAS](../examples/blas-wrapper.md),
+[FFTPACK](../examples/fftpack-wrapper.md), and
+[MINPACK](../examples/minpack-wrapper.md) examples show complete libraries.
+
+</details>
+
+<details class="prik-faq-item" id="how-do-i-expose-fortran-derived-types-as-python-classes" markdown="1">
+<summary>How do I expose Fortran derived types as Python classes?</summary>
+
+PRIK maps supported derived types to Python classes with constructors, methods,
+fields, and explicit ownership rules. See
+[Wrap Fortran Derived Types as Python Classes](../guide/wrapping-derived-types.md).
+
+</details>
+
+<details class="prik-faq-item" id="how-do-i-pass-numpy-arrays-to-fortran-without-unnecessary-copies" markdown="1">
+<summary>How do I pass NumPy arrays to Fortran without unnecessary copies?</summary>
+
+Pass arrays with the dtype, rank, shape, layout, strides, and writeability
+required by the generated contract. Compatible arrays can cross the wrapper
+without a layout conversion; incompatible inputs are rejected instead of being
+silently copied. See [Pass NumPy Arrays to Fortran](../guide/arrays.md).
+
+</details>
+
+<details class="prik-faq-item" id="should-i-use-prik-or-f2py" markdown="1">
+<summary>Should I use PRIK or f2py?</summary>
+
+Use [NumPy's f2py](https://numpy.org/doc/stable/f2py/) when its established
+generated API—or an editable
+[`.pyf` signature](https://numpy.org/doc/stable/f2py/signature-file.html)—is
+enough for your project.
+
+Choose PRIK when you want to design the Python API, not just generate a wrapper.
+Its editable [semantic `.pyi` contract](../reference/pyi-contracts/index.md) is
+a simpler, more Pythonic place to rename or hide exports, flatten modules,
+reorder or hide native arguments, and return native outputs as Python results.
+
+PRIK treats [NumPy arrays](../guide/arrays.md) as complete API contracts: dtype,
+rank, shape, memory layout, contiguity, strides, mutation, and copy behavior are
+all explicit. This includes
+[supported positive-stride views](../guide/arrays.md#strided-views) without
+copying.
+
+PRIK also covers important Fortran features: supported
+[derived types](../guide/wrapping-derived-types.md) as Python classes,
+[allocatables](../guide/allocatables.md), documented
+[pointer forms](../guide/pointers.md), native errors as
+[Python exceptions](../guide/error-handling.md), and
+[overloaded procedures](../guide/generic-interfaces.md). PRIK is currently
+alpha, so check the linked guides for exact limitations. The
+[performance results](../performance.md) cover only their measured runtime and
+clean-build workloads.
+
+</details>

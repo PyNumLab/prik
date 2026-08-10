@@ -118,6 +118,28 @@ alignment, and zero-sized-array rules. Plain multidimensional arrays in a
 Fortran contract use Fortran order by default. The
 [array guide](../../guide/arrays.md#what-prik-validates) explains these checks.
 
+## Advanced Array Shape Expressions
+
+Generated contracts may translate native array extents into Python and NumPy
+expressions:
+
+| Native relationship | Semantic `.pyi` contract |
+| --- | --- |
+| total element count | `values.size` |
+| second-axis extent | `values.shape[1]` |
+| runtime rank | `values.ndim` |
+| extent from an integer argument | `rows` or `rows + 1` |
+| extent calculated by native code | `extent_for(n)` |
+
+These expressions describe the existing native interface; they do not change
+what the implementation accepts. Most users should leave generated shape
+relationships unchanged. When editing one, use visible integer arguments and
+the documented array properties shown above.
+
+A native extent function remains a declarative native call—it is not executed
+as Python. PRIK rejects unresolved, incompatible, or unsafe relationships
+instead of guessing an array size.
+
 ## Translate Status Results into Exceptions
 
 Use `@raises(...)` when a projected native status should become a Python

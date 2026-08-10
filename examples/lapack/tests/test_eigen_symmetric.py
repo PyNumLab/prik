@@ -11,10 +11,10 @@ from .helpers import assert_allclose_float64, assert_orthogonal, column_major, s
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
 
 
-def _diagonal_problem():
-    matrix = np.diag([2.0, 3.0]).astype(np.float64, order="F")
-    diagonal = np.array([2.0, 3.0], dtype=np.float64)
-    offdiag = np.array([0.0], dtype=np.float64)
+def _symmetric_problem():
+    matrix = np.array([[2.5, 0.5], [0.5, 2.5]], dtype=np.float64, order="F")
+    diagonal = np.array([2.5, 2.5], dtype=np.float64)
+    offdiag = np.array([0.5], dtype=np.float64)
     return matrix, diagonal, offdiag
 
 
@@ -25,7 +25,7 @@ def _assert_eigensystem(matrix, values, vectors):
 
 
 def test_dpteqr_diagonalizes_positive_definite_tridiagonal(prik_lapack, scipy_lapack, f2py_lapack):
-    matrix, diagonal, offdiag = _diagonal_problem()
+    matrix, diagonal, offdiag = _symmetric_problem()
     prik_d, f2py_d = diagonal.copy(), diagonal.copy()
     prik_e, f2py_e = offdiag.copy(), offdiag.copy()
     prik_z, f2py_z = np.eye(2, dtype=np.float64, order="F"), np.eye(2, dtype=np.float64, order="F")
@@ -43,7 +43,7 @@ def test_dpteqr_diagonalizes_positive_definite_tridiagonal(prik_lapack, scipy_la
 
 
 def test_dsbev_diagonalizes_symmetric_band_matrix(prik_lapack, scipy_lapack, f2py_lapack):
-    matrix, _diagonal, _offdiag = _diagonal_problem()
+    matrix, _diagonal, _offdiag = _symmetric_problem()
     band = symmetric_band_storage(matrix, 1, lower=False)
     prik_ab, f2py_ab = band.copy(order="F"), band.copy(order="F")
     prik_w, f2py_w = np.empty(2), np.empty(2)
@@ -63,7 +63,7 @@ def test_dsbev_diagonalizes_symmetric_band_matrix(prik_lapack, scipy_lapack, f2p
 
 
 def test_dsbevd_diagonalizes_band_matrix_by_divide_and_conquer(prik_lapack, scipy_lapack, f2py_lapack):
-    matrix, _diagonal, _offdiag = _diagonal_problem()
+    matrix, _diagonal, _offdiag = _symmetric_problem()
     band = symmetric_band_storage(matrix, 1, lower=False)
     prik_ab, f2py_ab = band.copy(order="F"), band.copy(order="F")
     prik_w, f2py_w = np.empty(2), np.empty(2)
@@ -98,7 +98,7 @@ def test_dsbevd_diagonalizes_band_matrix_by_divide_and_conquer(prik_lapack, scip
 
 
 def test_dsbevx_selects_all_symmetric_band_eigenpairs(prik_lapack, scipy_lapack, f2py_lapack):
-    matrix, _diagonal, _offdiag = _diagonal_problem()
+    matrix, _diagonal, _offdiag = _symmetric_problem()
     band = symmetric_band_storage(matrix, 1, lower=False)
     prik_ab, f2py_ab = band.copy(order="F"), band.copy(order="F")
     prik_w, f2py_w = np.empty(2), np.empty(2)
@@ -165,7 +165,7 @@ def test_dsbevx_selects_all_symmetric_band_eigenpairs(prik_lapack, scipy_lapack,
 
 
 def test_dstebz_bisects_tridiagonal_eigenvalues(prik_lapack, scipy_lapack, f2py_lapack):
-    _matrix, diagonal, offdiag = _diagonal_problem()
+    _matrix, diagonal, offdiag = _symmetric_problem()
     prik_w, f2py_w = np.empty(2), np.empty(2)
     prik_iblock, f2py_iblock = np.empty(2, dtype=np.int32), np.empty(2, dtype=np.int32)
     prik_isplit, f2py_isplit = np.empty(2, dtype=np.int32), np.empty(2, dtype=np.int32)
@@ -216,18 +216,21 @@ def test_dstebz_bisects_tridiagonal_eigenvalues(prik_lapack, scipy_lapack, f2py_
 
     assert f2py_result is None
     assert prik_scalars[-1] == scipy_info == 0
-    assert prik_scalars[7] == scipy_m == 2
+    prik_m = int(prik_scalars[6])
+    prik_nsplit = int(prik_scalars[7])
+    assert prik_m == scipy_m == 2
+    assert prik_nsplit == 1
     assert_allclose_float64(prik_w[:2], [2.0, 3.0])
     assert_allclose_float64(f2py_w[:2], [2.0, 3.0])
     assert_allclose_float64(scipy_w[:2], [2.0, 3.0])
     np.testing.assert_array_equal(prik_iblock, scipy_iblock)
     np.testing.assert_array_equal(f2py_iblock, scipy_iblock)
-    np.testing.assert_array_equal(prik_isplit, scipy_isplit)
-    np.testing.assert_array_equal(f2py_isplit, scipy_isplit)
+    np.testing.assert_array_equal(prik_isplit[:prik_nsplit], scipy_isplit[:prik_nsplit])
+    np.testing.assert_array_equal(f2py_isplit[:prik_nsplit], scipy_isplit[:prik_nsplit])
 
 
 def test_dstein_computes_tridiagonal_eigenvectors(prik_lapack, scipy_lapack, f2py_lapack):
-    matrix, diagonal, offdiag = _diagonal_problem()
+    matrix, diagonal, offdiag = _symmetric_problem()
     m, values, iblock, isplit, split_info = scipy_lapack.dstebz(diagonal, offdiag, 0, 0.0, 0.0, 1, 2, 0.0, b"E")
     assert split_info == 0 and m == 2
     prik_z, f2py_z = np.empty((2, 2), order="F"), np.empty((2, 2), order="F")
@@ -274,7 +277,7 @@ def test_dstein_computes_tridiagonal_eigenvectors(prik_lapack, scipy_lapack, f2p
 
 
 def test_dstemr_computes_robust_tridiagonal_eigenpairs(prik_lapack, scipy_lapack, f2py_lapack):
-    matrix, diagonal, offdiag = _diagonal_problem()
+    matrix, diagonal, offdiag = _symmetric_problem()
     prik_d, f2py_d = diagonal.copy(), diagonal.copy()
     prik_e, f2py_e = np.array([offdiag[0], 0.0]), np.array([offdiag[0], 0.0])
     prik_w, f2py_w = np.empty(2), np.empty(2)
@@ -327,7 +330,16 @@ def test_dstemr_computes_robust_tridiagonal_eigenpairs(prik_lapack, scipy_lapack
         0,
     )
     scipy_m, scipy_w, scipy_z, scipy_info = scipy_lapack.dstemr(
-        diagonal, np.array([0.0, 0.0]), 0, 0.0, 0.0, 1, 2, compute_v=1, lwork=128, liwork=64
+        diagonal,
+        np.array([offdiag[0], 0.0]),
+        0,
+        0.0,
+        0.0,
+        1,
+        2,
+        compute_v=1,
+        lwork=128,
+        liwork=64,
     )
 
     assert f2py_result is None
@@ -339,7 +351,7 @@ def test_dstemr_computes_robust_tridiagonal_eigenpairs(prik_lapack, scipy_lapack
 
 
 def test_dsterf_computes_tridiagonal_eigenvalues(prik_lapack, scipy_lapack, f2py_lapack):
-    _matrix, diagonal, offdiag = _diagonal_problem()
+    _matrix, diagonal, offdiag = _symmetric_problem()
     prik_d, f2py_d = diagonal.copy(), diagonal.copy()
     prik_e, f2py_e = offdiag.copy(), offdiag.copy()
 
@@ -355,7 +367,7 @@ def test_dsterf_computes_tridiagonal_eigenvalues(prik_lapack, scipy_lapack, f2py
 
 
 def test_dstev_computes_tridiagonal_eigenpairs(prik_lapack, scipy_lapack, f2py_lapack):
-    matrix, diagonal, offdiag = _diagonal_problem()
+    matrix, diagonal, offdiag = _symmetric_problem()
     prik_d, f2py_d = diagonal.copy(), diagonal.copy()
     prik_e, f2py_e = offdiag.copy(), offdiag.copy()
     prik_z, f2py_z = np.empty((2, 2), order="F"), np.empty((2, 2), order="F")
@@ -372,7 +384,7 @@ def test_dstev_computes_tridiagonal_eigenpairs(prik_lapack, scipy_lapack, f2py_l
 
 
 def test_dstevd_computes_divide_and_conquer_tridiagonal_eigenpairs(prik_lapack, scipy_lapack, f2py_lapack):
-    matrix, diagonal, offdiag = _diagonal_problem()
+    matrix, diagonal, offdiag = _symmetric_problem()
     prik_d, f2py_d = diagonal.copy(), diagonal.copy()
     prik_e, f2py_e = offdiag.copy(), offdiag.copy()
     prik_z, f2py_z = np.empty((2, 2), order="F"), np.empty((2, 2), order="F")
@@ -429,7 +441,7 @@ def test_dsyev_returns_orthonormal_eigenvectors(prik_lapack, scipy_lapack, f2py_
 
 
 def test_dsyevd_computes_divide_and_conquer_symmetric_eigenpairs(prik_lapack, scipy_lapack, f2py_lapack):
-    matrix, _diagonal, _offdiag = _diagonal_problem()
+    matrix, _diagonal, _offdiag = _symmetric_problem()
     prik_a, f2py_a = matrix.copy(order="F"), matrix.copy(order="F")
     prik_w, f2py_w = np.empty(2), np.empty(2)
 
@@ -461,7 +473,7 @@ def test_dsyevd_computes_divide_and_conquer_symmetric_eigenpairs(prik_lapack, sc
 
 
 def test_dsyevr_selects_symmetric_eigenpairs_by_index(prik_lapack, scipy_lapack, f2py_lapack):
-    matrix, _diagonal, _offdiag = _diagonal_problem()
+    matrix, _diagonal, _offdiag = _symmetric_problem()
     prik_a, f2py_a = matrix.copy(order="F"), matrix.copy(order="F")
     prik_w, f2py_w = np.empty(2), np.empty(2)
     prik_z, f2py_z = np.empty((2, 2), order="F"), np.empty((2, 2), order="F")
@@ -524,7 +536,7 @@ def test_dsyevr_selects_symmetric_eigenpairs_by_index(prik_lapack, scipy_lapack,
 
 
 def test_dsyevx_selects_symmetric_eigenpairs_by_value(prik_lapack, scipy_lapack, f2py_lapack):
-    matrix, _diagonal, _offdiag = _diagonal_problem()
+    matrix, _diagonal, _offdiag = _symmetric_problem()
     prik_a, f2py_a = matrix.copy(order="F"), matrix.copy(order="F")
     prik_w, f2py_w = np.empty(2), np.empty(2)
     prik_z, f2py_z = np.empty((2, 2), order="F"), np.empty((2, 2), order="F")
@@ -587,26 +599,29 @@ def test_dsyevx_selects_symmetric_eigenpairs_by_value(prik_lapack, scipy_lapack,
 
 
 def test_dsytrd_reduces_symmetric_matrix_to_tridiagonal(prik_lapack, scipy_lapack, f2py_lapack):
-    matrix, diagonal, offdiag = _diagonal_problem()
+    matrix = np.array(
+        [[4.0, 1.0, 2.0], [1.0, 3.0, -1.0], [2.0, -1.0, 5.0]],
+        dtype=np.float64,
+        order="F",
+    )
     prik_a, f2py_a = matrix.copy(order="F"), matrix.copy(order="F")
-    prik_d, f2py_d = np.empty(2), np.empty(2)
-    prik_e, f2py_e = np.empty(1), np.empty(1)
-    prik_tau, f2py_tau = np.empty(1), np.empty(1)
+    prik_d, f2py_d = np.empty(3), np.empty(3)
+    prik_e, f2py_e = np.empty(2), np.empty(2)
+    prik_tau, f2py_tau = np.empty(2), np.empty(2)
 
     prik_scalars = prik_lapack.dsytrd(
-        "U", np.int32(2), prik_a, np.int32(2), prik_d, prik_e, prik_tau, np.empty(64), np.int32(64), np.int32(0)
+        "U", np.int32(3), prik_a, np.int32(3), prik_d, prik_e, prik_tau, np.empty(64), np.int32(64), np.int32(0)
     )
-    f2py_result = f2py_lapack.dsytrd(b"U", 2, f2py_a, f2py_d, f2py_e, f2py_tau, np.empty(64), 64, 0)
+    f2py_result = f2py_lapack.dsytrd(b"U", 3, f2py_a, f2py_d, f2py_e, f2py_tau, np.empty(64), 64, 0)
     scipy_a, scipy_d, scipy_e, scipy_tau, scipy_info = scipy_lapack.dsytrd(matrix.copy(order="F"), lower=0, lwork=64)
 
     assert f2py_result is None
     assert prik_scalars[-1] == scipy_info == 0
-    assert_allclose_float64(prik_d, diagonal)
-    assert_allclose_float64(f2py_d, diagonal)
-    assert_allclose_float64(scipy_d, diagonal)
-    assert_allclose_float64(prik_e, offdiag)
-    assert_allclose_float64(f2py_e, offdiag)
-    assert_allclose_float64(scipy_e, offdiag)
+    expected_eigenvalues = np.linalg.eigvalsh(matrix)
+    for diagonal, offdiagonal in ((prik_d, prik_e), (f2py_d, f2py_e), (scipy_d, scipy_e)):
+        tridiagonal = np.diag(diagonal) + np.diag(offdiagonal, 1) + np.diag(offdiagonal, -1)
+        assert_allclose_float64(np.linalg.eigvalsh(tridiagonal), expected_eigenvalues, operation_size=3)
+        assert np.any(np.abs(offdiagonal) > np.finfo(np.float64).eps)
     assert_allclose_float64(prik_a, scipy_a)
     assert_allclose_float64(f2py_a, scipy_a)
     assert_allclose_float64(prik_tau, scipy_tau)

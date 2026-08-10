@@ -23,8 +23,8 @@ workflows produce.
 
 | Native declaration | Python placement | Contract marker |
 | --- | --- | --- |
-| Standalone external procedure | Generated extension root | `@external` |
-| Procedure contained in a Fortran module | Generated child module | no `@external` |
+| Standalone procedure | Generated extension root | `@standalone` |
+| Procedure contained in a Fortran module | Generated child module | no `@standalone` |
 | Type-bound procedure | Generated class method | `Pass()` in native projection when needed |
 | Public generic interface | One Python callable with generated overload dispatch | `@overload("specific_name")` |
 | Private or removed declaration | Not exported | `@private`, `private[...]`, or omitted |
@@ -34,6 +34,12 @@ dummy list. Ordinary scalar inputs are value-shaped, such as `Int32` or
 `Float64`, even when `@native_call` passes the address of a converted
 native scalar slot. Arrays, strings, derived objects, optional values, and
 callbacks keep their explicit semantic annotations.
+
+For a public Fortran generic whose specific module procedures are private,
+each generated overload keeps the private specific as its contract link but
+calls the public generic name. The bridge never imports an inaccessible
+specific procedure merely because that procedure supplied the candidate
+signature.
 
 ## Return Projection
 

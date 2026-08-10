@@ -10,7 +10,7 @@ Evidence is split by the stage that establishes it:
 
 - `policy/` checks that projection, mutation, storage, and GIL decisions are
   complete before wrapper planning;
-- `wrapper_codegen/` checks that reordered slots, hidden results, and
+- `codegen/` checks that reordered slots, hidden results, and
   replacement writeback dispatch through their selected plan paths; and
 - `end_to_end/` builds source-free edited contracts against explicit native
   objects and verifies native-order calls, projections, immutable

@@ -1,4 +1,4 @@
-from prik.contracts import Addr, Arg, Bool, Complex128, Complex64, Float32, Float64, Int32, Returns, bind, native_call
+from prik.contracts import Addr, Arg, Bool32, Complex128, Complex64, Float32, Float64, Int32, Returns, bind, native_call
 
 @bind("SQUARE_R4")
 @native_call([Addr(Arg(0))])
@@ -544,16 +544,16 @@ def abs_c8(
 @native_call([Addr(Arg(0))])
 def is_positive_r4(
     X: Float32
-) -> tuple[Bool, Returns["X", Float32]]: ...
+) -> tuple[Bool32, Returns["X", Float32]]: ...
 
 @bind("IS_POSITIVE_R8")
 @native_call([Addr(Arg(0))])
 def is_positive_r8(
     X: Float64
-) -> tuple[Bool, Returns["X", Float64]]: ...
+) -> tuple[Bool32, Returns["X", Float64]]: ...
 
 @bind("IS_EVEN_I4")
 @native_call([Addr(Arg(0))])
 def is_even_i4(
     X: Int32
-) -> tuple[Bool, Returns["X", Int32]]: ...
+) -> tuple[Bool32, Returns["X", Int32]]: ...

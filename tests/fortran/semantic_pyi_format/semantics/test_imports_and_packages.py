@@ -352,7 +352,7 @@ end module solver_mod
     assert loaded.functions[0].origin.native_scope == "renamed_contract"
 
 
-def test_generated_standalone_contract_retains_external_native_placement():
+def test_generated_standalone_contract_retains_standalone_native_placement():
     parsed = parse_fortran_file(
         """
 subroutine solve(value)
@@ -364,7 +364,7 @@ end subroutine solve
     generated = emit_module(module)
     loaded = parse_pyi_text(generated, module_name="renamed_root_contract")
 
-    assert "@external" in generated
+    assert "@standalone" in generated
     assert loaded.functions[0].origin.native_scope is None
     assert native_contract_issues(loaded) == []
     assert loaded.origin.native_name == "renamed_root_contract"

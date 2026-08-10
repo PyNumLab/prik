@@ -92,6 +92,15 @@ directory and carry `fortran_end_to_end`. Full-library integration nodes carry
 `examples/lapack/` use both markers and run only in the dedicated BLAS/LAPACK
 lane.
 
+The opt-in numerical showcases under
+`tests/fortran/building_shared_library/end_to_end/real_libraries/` locate a
+sibling checkout or an explicitly configured source directory, build the real
+library sources, call representative generated routines, and compare against
+independently known numerical answers. `PRIK_FFTPACK_SOURCE_DIR` and
+`PRIK_MINPACK_SOURCE_DIR` override the default sibling `fftpack/src` and
+`minpack/src` locations. The tests skip when the corresponding checkout is
+absent.
+
 ## Diagnostics and unsupported behavior
 
 Put an unsupported case at its first decisive stage and assert a stable prik

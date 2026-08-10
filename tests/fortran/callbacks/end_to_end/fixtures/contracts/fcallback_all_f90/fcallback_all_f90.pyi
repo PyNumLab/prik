@@ -1,4 +1,4 @@
-from prik.contracts import Addr, Arg, Float64, Int32, Return, Returns, String, native_call, prototype
+from prik.contracts import Addr, Arg, Float64, In, InOut, Int32, Out, Return, Returns, String, native_call, prototype
 
 class point_t:
     def __init__(
@@ -13,33 +13,33 @@ class point_t:
 
 @prototype
 def value_callback(
-    value: Int32
+    value: In(Int32)
 ) -> Int32: ...
 
 @prototype
 def scalar_storage_callback(
-    value: Addr(Float64),
-    output: Addr(Float64),
+    value: InOut(Addr(Float64)),
+    output: Out(Addr(Float64)),
     missing: Addr(Float64)
 ) -> None: ...
 
 @prototype
 def array_storage_callback(
-    count: Addr(Int32),
-    values: Float64[count],
-    output: Float64[count]
+    count: In(Addr(Int32)),
+    values: In(Float64[count]),
+    output: Out(Float64[count])
 ) -> None: ...
 
 @prototype
 def string_storage_callback(
-    read_label: String[8],
-    write_label: String[8],
-    update_label: String[8]
+    read_label: In(String[8]),
+    write_label: Out(String[8]),
+    update_label: InOut(String[8])
 ) -> None: ...
 
 @prototype
 def point_callback(
-    value: point_t
+    value: In(point_t)
 ) -> point_t: ...
 
 @native_call([Arg(0), Addr(Arg(1))])

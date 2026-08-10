@@ -180,20 +180,20 @@ def bundled_external_module(pyi_parity_build_mode: str, tmp_path: Path):
     return module
 
 
-def test_fixed_form_standalone_external_runtime_parity(fixed_external_module):
+def test_fixed_form_standalone_procedure_runtime_parity(fixed_external_module):
     assert fixed_external_module.fixed_add(np.int32(4)) == (np.int32(5), np.int32(4))
 
 
-def test_free_form_standalone_external_runtime_parity(free_external_module):
+def test_free_form_standalone_procedure_runtime_parity(free_external_module):
     assert free_external_module.free_square(np.int32(5)) == np.int32(25)
 
 
-def test_one_source_with_several_standalone_externals_exports_each_at_root(bundled_external_module):
+def test_one_source_with_several_standalone_procedures_exports_each_at_root(bundled_external_module):
     assert bundled_external_module.triple_value(np.int32(4)) == np.int32(12)
     assert bundled_external_module.offset_value(np.int32(4)) == np.int32(14)
 
 
-def test_generated_external_contracts_are_non_empty_root_fragments(tmp_path: Path):
+def test_generated_standalone_contracts_are_non_empty_root_fragments(tmp_path: Path):
     for source in (FIXED_EXTERNAL, FREE_EXTERNAL, EXTERNAL_BUNDLE):
         copied = _copy_sources((source,), tmp_path / source.stem)
         entry = _generate_contract(
@@ -205,7 +205,7 @@ def test_generated_external_contracts_are_non_empty_root_fragments(tmp_path: Pat
 
         assert entry.name == "__init__.pyi"
         assert text.strip()
-        assert text.count("@external") == len([line for line in text.splitlines() if line.startswith("def ")])
+        assert text.count("@standalone") == len([line for line in text.splitlines() if line.startswith("def ")])
         assert sorted(path.name for path in entry.parent.glob("*.pyi")) == ["__init__.pyi"]
 
 
@@ -221,7 +221,7 @@ def test_classic_external_bridge_uses_implicit_declaration_and_no_module_use(tmp
     bridge = (result.output_dir / f"bind_c_{result.module_name}_wrapper.f90").read_text(encoding="utf-8").lower()
     assert module.free_square(np.int32(3)) == np.int32(9)
     assert entry.read_text(encoding="utf-8").startswith(
-        "from prik.contracts import Addr, Arg, Int32, external, native_call\n\n@external\n"
+        "from prik.contracts import Addr, Arg, Int32, native_call, standalone\n\n@standalone\n"
     )
     assert "integer(c_int32_t), external :: free_square" in bridge
     assert "function free_square(" not in bridge
@@ -314,9 +314,9 @@ end function storage_value
     )
     contract = tmp_path / "column_sums_f.pyi"
     contract.write_text(
-        """from prik.contracts import Addr, Arg, Flat, Float64, Int32, Return, external, native_call
+        """from prik.contracts import Addr, Arg, Flat, Float64, Int32, Return, native_call, standalone
 
-@external
+@standalone
 @native_call([Addr(Arg(0)), Addr(Arg(1)), Arg(2), Arg(3)])
 def column_sums_f(
     rows: Int32,
@@ -325,14 +325,14 @@ def column_sums_f(
     result: Float64[Flat],
 ) -> None: ...
 
-@external
+@standalone
 def bump_storage(value: Int32[()]) -> None: ...
 
-@external
+@standalone
 @native_call([Return("value", 0)])
 def make_storage() -> Int32[()]: ...
 
-@external
+@standalone
 def storage_value() -> Int32[()]: ...
 """,
         encoding="utf-8",
@@ -433,7 +433,7 @@ def maybe_scale_c(
     assert module.maybe_scale_c(np.int32(6), np.int32(4)) is None
 
 
-def test_compact_blas_like_folder_generates_one_external_entry_and_preserves_separate_objects(tmp_path: Path):
+def test_compact_blas_like_folder_generates_one_standalone_entry_and_preserves_separate_objects(tmp_path: Path):
     copied_sources = _copy_sources(BLAS_LIKE_SOURCES, tmp_path / "sources")
     source_module, source_result = _build_source(copied_sources, tmp_path / "source_build")
 
@@ -453,8 +453,8 @@ def test_compact_blas_like_folder_generates_one_external_entry_and_preserves_sep
 
     assert sorted(path.relative_to(entry.parent).as_posix() for path in entry.parent.rglob("*.pyi")) == ["__init__.pyi"]
     text = entry.read_text(encoding="utf-8")
-    assert "@external\n@native_call([Addr(Arg(0)), Addr(Arg(1)), Arg(2), Arg(3)])\ndef daxpy_like(" in text
-    assert "@external\n@native_call([Addr(Arg(0)), Arg(1), Arg(2)])\ndef ddot_like(" in text
+    assert "@standalone\n@native_call([Addr(Arg(0)), Addr(Arg(1)), Arg(2), Arg(3)])\ndef daxpy_like(" in text
+    assert "@standalone\n@native_call([Addr(Arg(0)), Arg(1), Arg(2)])\ndef ddot_like(" in text
     assert generated_result.native_build_plan.to_dict()["link_items"] == [
         {"kind": "object", "path": str(tmp_path / "native" / "daxpy_like.o")},
         {"kind": "object", "path": str(tmp_path / "native" / "ddot_like.o")},
@@ -466,10 +466,10 @@ def test_compact_blas_like_folder_generates_one_external_entry_and_preserves_sep
     assert source_dot == generated_module.ddot_like(np.int32(x.size), x, y_generated)
 
 
-def test_package_entry_rejects_non_external_root_declaration_before_codegen(tmp_path: Path):
+def test_package_entry_rejects_non_standalone_root_declaration_before_codegen(tmp_path: Path):
     source = _copy_sources((FREE_EXTERNAL,), tmp_path / "sources")
     entry = _generate_contract(source, tmp_path / "contracts", _generated_contract_fixture(FREE_EXTERNAL.stem))
-    entry.write_text(entry.read_text(encoding="utf-8").replace("@external\n", ""), encoding="utf-8")
+    entry.write_text(entry.read_text(encoding="utf-8").replace("@standalone\n", ""), encoding="utf-8")
     native_objects = _compile_native_objects(source, tmp_path / "native")
     build_dir = tmp_path / "pyi_build"
 
@@ -479,20 +479,20 @@ def test_package_entry_rejects_non_external_root_declaration_before_codegen(tmp_
     assert not build_dir.exists()
 
 
-def test_namespace_imported_module_rejects_external_marker_before_codegen(tmp_path: Path):
+def test_namespace_imported_module_rejects_standalone_marker_before_codegen(tmp_path: Path):
     source = _copy_sources((BASIC_SOURCE,), tmp_path / "sources")
     entry = _generate_contract(source, tmp_path / "contracts", _generated_contract_fixture(BASIC_SOURCE.stem))
     leaf = entry.parent / "m1.pyi"
     leaf_text = leaf.read_text(encoding="utf-8").replace(
         "from prik.contracts import ",
-        "from prik.contracts import external, ",
+        "from prik.contracts import standalone, ",
         1,
     )
-    leaf.write_text(leaf_text.replace("def add1", "@external\ndef add1"), encoding="utf-8")
+    leaf.write_text(leaf_text.replace("def add1", "@standalone\ndef add1"), encoding="utf-8")
     native_objects = _compile_native_objects(source, tmp_path / "native")
     build_dir = tmp_path / "pyi_build"
 
-    with pytest.raises(ValueError, match="cannot contain @external declarations"):
+    with pytest.raises(ValueError, match="cannot contain @standalone declarations"):
         build_pyi_extension(
             entry,
             native_objects=native_objects,

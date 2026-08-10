@@ -1,5 +1,9 @@
 """Tests split by stable ownership concept from `test_handle_policy_dispatch.py`."""
 
+from pathlib import Path
+import subprocess
+import sys
+
 from tests.fortran._support.ownership_policy import (
     ADDRESS_ROLE_PROJECTION,
     ArrayInteropPolicy,
@@ -437,3 +441,35 @@ def test_policy_completion_attaches_decisions_before_ir_lowering():
         module.functions[0].arguments[0].metadata[RESOLVED_OWNERSHIP_POLICY_METADATA].transfer is TransferMode.IN_PLACE
     )
     assert RESOLVED_RETURN_OWNERSHIP_POLICY_METADATA not in module.functions[0].metadata
+
+
+def test_policy_completion_direct_example_is_runnable():
+    repository_root = Path(__file__).resolve().parents[4]
+
+    result = subprocess.run(
+        [sys.executable, "prik/semantics/policy_completion.py"],
+        cwd=repository_root,
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+
+    assert result.stdout == (
+        "before: math.scale(value): Float64 semantic IR\nafter: math.scale(value): scalar_value -> pass_value\n"
+    )
+
+
+def test_ownership_policy_direct_example_is_runnable():
+    repository_root = Path(__file__).resolve().parents[4]
+
+    result = subprocess.run(
+        [sys.executable, "prik/semantics/ownership.py"],
+        cwd=repository_root,
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+
+    assert result.stdout == (
+        "before: math.scale(value): Float64 semantic IR\nafter: scalar/caller/call_local; scalar_value -> pass_value\n"
+    )

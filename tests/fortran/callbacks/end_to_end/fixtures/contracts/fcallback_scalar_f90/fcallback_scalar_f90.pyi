@@ -1,18 +1,18 @@
-from prik.contracts import Addr, Arg, Float64, native_call, prototype
+from prik.contracts import Addr, Arg, Float64, In, native_call, prototype
 
 @prototype
 def scalar_callback(
-    value: Addr(Float64)
+    value: In(Addr(Float64))
 ) -> Float64: ...
 
 @prototype
 def notify_callback(
-    value: Addr(Float64)
+    value: In(Addr(Float64))
 ) -> None: ...
 
 @prototype
 def callback(
-    value: Addr(Float64)
+    value: In(Addr(Float64))
 ) -> Float64: ...
 
 @native_call([Arg(0), Addr(Arg(1))])

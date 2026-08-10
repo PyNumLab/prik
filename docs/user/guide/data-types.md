@@ -93,9 +93,23 @@ print(bool(invert(True)))                          # False
 | `real(8)` / `real64`          | `Float64`       | `np.float64`                       |
 | `complex(4)`                  | `Complex64`     | `np.complex64`                     |
 | `complex(8)`                  | `Complex128`    | `np.complex128`                    |
-| `logical`                     | `Bool`          | `bool` or `np.bool_`               |
+| `logical`                     | `Bool8`-`Bool64` | `bool` or `np.bool_`              |
 | `character`                   | `String` / `String[n]` | `str` or fixed `np.bytes_`     |
 | Derived Type                  | Generated Class | Instance of that class             |
+
+Boolean contract names describe native storage, not different Python dtypes:
+
+| Semantic Contract | Native Logical Storage Represented | Scalar Input / Result | Array Input / Output Storage |
+|-------------------|------------------------------------|-----------------------|------------------------------|
+| `Bool`            | 8 bits; portable default, equivalent to `Bool8` | `bool` or `np.bool_` | NumPy array with `dtype=np.bool_` |
+| `Bool8`           | 8 bits                             | `bool` or `np.bool_` | NumPy array with `dtype=np.bool_` |
+| `Bool16`          | 16 bits                            | `bool` or `np.bool_` | NumPy array with `dtype=np.bool_` |
+| `Bool32`          | 32 bits                            | `bool` or `np.bool_` | NumPy array with `dtype=np.bool_` |
+| `Bool64`          | 64 bits                            | `bool` or `np.bool_` | NumPy array with `dtype=np.bool_` |
+
+Generated contracts select a numbered name after probing the chosen compiler.
+Callers never pass integer arrays for wider logical storage: the wrapper adapts
+the one-byte NumPy Boolean representation at the native boundary.
 
 ---
 

@@ -18,6 +18,7 @@ tests, then provides focused contribution workflows.
 - [Repository structure](repository-structure.md)
 - [Source map](source-map.md)
 - [Feature-to-code map](feature-to-code-map.md)
+- [Compiler preprocessing reference](compiler-preprocessing.md)
 - [Fortran parser reference](fortran-parser-reference.md)
 - [Quality assurance](quality-assurance.md)
 - [Build system](build-system.md)

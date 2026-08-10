@@ -45,11 +45,14 @@ contains only pages explicitly marked as reviewed.
     They reserve dedicated right-side space for the copy control, and long lines
     scroll inside the block instead of widening the page.
 
-`docs/index.md` is the user-first project entrance. Its body introduces prik,
-shows the shortest checked source-to-import workflow and its generated function
-docstring, and sends the reader into Getting Started. Developer, Maintainer,
-and deeper User Guide destinations stay available through site navigation
-instead of competing with that first task.
+`docs/index.md` is the user-first project entrance. It uses the canonical
+`PRIK — Python Runtime Interop Kit` identity and public description, shows the
+shortest checked source-to-import workflow, summarizes the product's concrete
+advantages, and links to real-library evidence before sending the reader into
+Getting Started. Developer, Maintainer, and deeper User Guide destinations stay
+available through site navigation instead of competing with that first task.
+The FAQ uses natural task questions as concise routes to authoritative guides;
+it does not duplicate those guides.
 
 ## Audience Lanes
 
@@ -209,6 +212,9 @@ add an architecture-neutral CPU identity to every runtime and build result
 because pyperf's Linux metadata collector does not report `cpu_model_name` on
 every ARM64 `/proc/cpuinfo` format. Documentation generation continues to
 require matching CPU metadata across each prik/f2py result pair.
+Runtime results combine equal reduced worker budgets from PRIK-first and
+f2py-first passes in the same job. The merged suites drive publication, while
+the order-specific suites remain in the uploaded artifact for auditability.
 
 ## Continuous Documentation Quality
 

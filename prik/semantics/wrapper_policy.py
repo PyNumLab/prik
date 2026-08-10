@@ -1,4 +1,12 @@
-"""Completed wrapper policies for the currently supported generation lanes."""
+"""Project completed semantic decisions into backend-neutral wrapper policies.
+
+This module consumes semantic signatures and ownership decisions completed by
+``policy_completion``.  It produces immutable records for wrapper planning:
+Python/native boundaries, ordered call slots, result projections, lifecycle,
+module and derived-object access, and fail-closed support blockers.  Planners
+and backend generators consume these records without inferring replacement
+policy from a datatype or native declaration.
+"""
 
 from __future__ import annotations
 
@@ -35,11 +43,17 @@ from prik.semantics.ownership import (
     StorageMode,
     TransferMode,
 )
+from prik.utilities.declaration_expressions import (
+    declaration_expression_call_sites,
+    declaration_extent_references,
+    resolve_declaration_extent,
+)
+from prik.types.numpy import BOOLEAN_SEMANTIC_TYPE_NAMES, is_boolean_semantic_type_name
 
 
 _PLAN_PRIMITIVE_SCALAR_TYPES = frozenset(
     {
-        "Bool",
+        *BOOLEAN_SEMANTIC_TYPE_NAMES,
         "Int8",
         "Int16",
         "Int32",
@@ -52,7 +66,7 @@ _PLAN_PRIMITIVE_SCALAR_TYPES = frozenset(
 )
 
 _NUMPY_DTYPE_NAMES = {
-    "Bool": "bool",
+    **dict.fromkeys(BOOLEAN_SEMANTIC_TYPE_NAMES, "bool"),
     "Int8": "int8",
     "Int16": "int16",
     "Int32": "int32",
@@ -80,6 +94,8 @@ RAW_STRING_ADDRESS_COPY_REASON = (
     "materialize fixed-length Fortran character storage from a caller-supplied raw address and copy mutation back"
 )
 DERIVED_VALUE_COPY_REASON = "pass an exact derived pointee through a typed native value dummy"
+LOGICAL_SCALAR_KIND_COPY_REASON = "adapt a C-interoperable Boolean through storage with the native Fortran logical kind"
+LOGICAL_ARRAY_KIND_COPY_REASON = "adapt a one-byte Boolean array through storage with the native Fortran logical kind"
 
 
 class OptionalMode(str, Enum):
@@ -132,6 +148,22 @@ class ArrayWritebackABI(str, Enum):
     NOT_APPLICABLE = "not_applicable"
     NATIVE_ARRAY = "native_array"
     LOGICAL_LOW_BIT_INT8 = "logical_low_bit_int8"
+
+
+class ScalarLogicalABI(str, Enum):
+    """Completed scalar logical adaptation between the C and native dummies."""
+
+    NOT_APPLICABLE = "not_applicable"
+    C_BOOL = "c_bool"
+    NATIVE_KIND_COPY = "native_kind_copy"
+
+
+class ArrayLogicalABI(str, Enum):
+    """Completed Boolean-array adaptation between NumPy and native storage."""
+
+    NOT_APPLICABLE = "not_applicable"
+    C_BOOL_VIEW = "c_bool_view"
+    NATIVE_KIND_COPY = "native_kind_copy"
 
 
 _ARRAY_VALUE_OPTIONAL_MODES = frozenset({OptionalMode.REQUIRED, OptionalMode.NULLABLE_VALUE})
@@ -243,6 +275,7 @@ class ModuleGetterAction(str, Enum):
 
     CONSTANT_VALUE = "constant_value"
     NATIVE_CONSTANT_VALUE = "native_constant_value"
+    NATIVE_CONSTANT_ARRAY_VALUE = "native_constant_array_value"
     DIRECT_VALUE = "direct_value"
     NULLABLE_SNAPSHOT = "nullable_snapshot"
     BORROWED_ARRAY_VIEW = "borrowed_array_view"
@@ -413,9 +446,16 @@ class ExternalDeclarationMode(str, Enum):
     EXPLICIT_INTERFACE = "explicit_interface"
 
 
+class DeclarationCallableAction(str, Enum):
+    """Completed bridge mechanism for one declaration-expression function."""
+
+    MODULE_IMPORT = "module_import"
+    STANDALONE_PROCEDURE = "standalone_procedure"
+
+
 def overload_builtin_scalar_family(semantic_type_name: str) -> str:
     """Return the Python scalar family admitted by reflected dispatch."""
-    if semantic_type_name == "Bool":
+    if is_boolean_semantic_type_name(semantic_type_name):
         return "bool"
     if semantic_type_name.startswith("Int"):
         return "int"
@@ -890,6 +930,66 @@ class ArrayHandoffPolicy:
     itemsize: int | None = None
     category: str | None = None
     extent_references: tuple[tuple[str, ...], ...] = ()
+    extent_reference_roles: tuple[tuple[str, ...], ...] = ()
+    extent_callable_references: tuple[tuple[str, ...], ...] = ()
+    extent_callable_roles: tuple[tuple[str, ...], ...] = ()
+    extent_evaluation: tuple[str, ...] = ()
+    extent_blockers: tuple[tuple[str, ...], ...] = ()
+    display_shape: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ProcedurePrototypeArgumentPolicy:
+    """Exact native dummy characteristics shared by every prototype use."""
+
+    owner_path: str
+    name: str
+    semantic_type_name: str
+    rank: int
+    passed_by_value: bool
+    intent: str | None
+    character_length: int | None
+    array: ArrayHandoffPolicy | None
+    derived_type_identity: tuple[str, str] | None
+
+
+@dataclass(frozen=True)
+class ProcedurePrototypeResultPolicy:
+    """Exact native function-result characteristics for one prototype."""
+
+    owner_path: str
+    semantic_type_name: str
+    rank: int
+    character_length: int | None
+    array: ArrayHandoffPolicy | None
+    derived_type_identity: tuple[str, str] | None
+
+
+@dataclass(frozen=True)
+class ProcedurePrototypePolicy:
+    """One reusable exact signature, independent of its eventual entity role."""
+
+    owner_path: str
+    name: str
+    identity: str
+    pure: bool
+    arguments: tuple[ProcedurePrototypeArgumentPolicy, ...]
+    result: ProcedurePrototypeResultPolicy | None
+
+
+@dataclass(frozen=True)
+class DeclarationCallablePolicy:
+    """One native entity used while evaluating declared extents."""
+
+    owner_path: str
+    source_name: str
+    native_name: str
+    native_scope: str | None
+    symbolic_role: str
+    expression_token: str
+    action: DeclarationCallableAction
+    prototype: ProcedurePrototypePolicy | None = None
+    blockers: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1001,6 +1101,7 @@ class CallbackTransferPolicy:
     object_kind: ObjectKind
     rank: int
     passed_by_value: bool
+    intent: str | None
     abi: CallbackABIKind
     adapter_action: CallbackTransferAction
     python_action: PythonBarrierAction
@@ -1022,9 +1123,7 @@ class CallbackHandoffPolicy:
     """Complete immediate-callback contract consumed by wrapper planning."""
 
     owner_path: str
-    prototype_name: str
-    prototype_module: str | None
-    declaration_mode: ExternalDeclarationMode
+    prototype: ProcedurePrototypePolicy
     arguments: tuple[CallbackTransferPolicy, ...]
     result: CallbackResultPolicy
     lifecycle: tuple[CallbackLifecycleAction, ...]
@@ -1047,6 +1146,12 @@ class ArgumentPolicy:
     native_position: int
     semantic_type_name: str
     rank: int
+    scalar_logical_abi: ScalarLogicalABI
+    scalar_native_type: str | None
+    array_logical_abi: ArrayLogicalABI
+    array_native_type: str | None
+    array_copy_in: bool
+    array_copy_out: bool
     array_writeback_abi: ArrayWritebackABI
     optional: bool
     optional_mode: OptionalMode
@@ -1144,6 +1249,12 @@ class NativeCallSlotPolicy:
     bridge_data_action: BridgeDataAction
     bridge_copy_reason: str | None
     object_kind: ObjectKind | None
+    scalar_logical_abi: ScalarLogicalABI = ScalarLogicalABI.NOT_APPLICABLE
+    scalar_native_type: str | None = None
+    array_logical_abi: ArrayLogicalABI = ArrayLogicalABI.NOT_APPLICABLE
+    array_native_type: str | None = None
+    array_copy_in: bool = False
+    array_copy_out: bool = False
     literal_type: str | None = None
     literal_value: Any = None
     result_position: int | None = None
@@ -1158,14 +1269,20 @@ class NativeCallSlotPolicy:
 
 @dataclass(frozen=True)
 class FunctionWrapperPolicy:
-    """Completed wrapper policy for one semantic function."""
+    """Completed wrapper-facing contract for one semantic function.
+
+    ``build_function_wrapper_policy`` constructs this record after ownership
+    policy completion.  Wrapper planning consumes the ordered arguments,
+    results, native-call slots, and lifecycle actions; a policy with
+    ``supported=False`` must be rejected using its ``blockers``.
+    """
 
     owner_path: str
     python_exports: tuple[PythonExportPolicy, ...]
     native_name: str
     native_invocation: NativeInvocationKind
     native_operator: str | None
-    external: bool
+    standalone: bool
     external_declaration: ExternalDeclarationMode
     native_module: str | None
     native_is_subroutine: bool
@@ -1177,6 +1294,7 @@ class FunctionWrapperPolicy:
     arguments: tuple[ArgumentPolicy, ...] = ()
     results: tuple[ResultPolicy, ...] = ()
     native_call_slots: tuple[NativeCallSlotPolicy, ...] = ()
+    declaration_callables: tuple[DeclarationCallablePolicy, ...] = ()
     blockers: tuple[str, ...] = ()
     writeback_actions: tuple[LifecyclePolicy, ...] = ()
     cleanup_actions: tuple[LifecyclePolicy, ...] = ()
@@ -1216,9 +1334,10 @@ def build_derived_field_policy(
         owner_path=field_path,
         origin=DerivedObjectOrigin.BORROWED_FIELD,
     )
+    array = _array_handoff_policy(field.semantic_type)
     blockers = (
         *_runtime_semantic_validation_blockers(field.semantic_type, f"field {field.name!r}"),
-        *_derived_field_blockers(field, getter, setter, handle),
+        *_derived_field_blockers(field, getter, setter, handle, array),
     )
     return DerivedFieldPolicy(
         owner_path=field_path,
@@ -1236,7 +1355,7 @@ def build_derived_field_policy(
         native_assignment=setter.assignment_mode,
         owner_retention=_derived_field_owner_retention(getter.kind, handle),
         character_length=_character_length(field.semantic_type),
-        array=_array_handoff_policy(field.semantic_type),
+        array=array,
         native_array_handle=handle,
         derived=derived,
         supported=not blockers,
@@ -1684,6 +1803,7 @@ def _derived_field_blockers(
     getter: OwnershipDecision,
     setter: OwnershipDecision,
     handle: NativeArrayHandleWrapperPolicy | None,
+    array: ArrayHandoffPolicy | None,
 ) -> list[str]:
     """Return exact unsupported public-field forms before lowering."""
     return [
@@ -1691,6 +1811,7 @@ def _derived_field_blockers(
         *_derived_field_descriptor_blockers(field, handle),
         *_derived_field_object_kind_blockers(field, getter),
         *_derived_field_setter_blockers(field, setter),
+        *_persistent_array_extent_blockers(f"field {field.name!r}", array),
     ]
 
 
@@ -1768,7 +1889,12 @@ def _derived_field_setter_blockers(
 def completed_module_variable_policy(
     variable: models.SemanticVariable,
 ) -> ModuleVariablePolicy:
-    """Return the completed module-variable policy or fail closed."""
+    """Return a lowering-ready module-variable policy or fail before planning.
+
+    Use this after post-IR policy completion.  Missing or unsupported records
+    raise ``ValueError`` so getter/setter lowering cannot infer an alternate
+    storage or replacement policy.
+    """
     policy = variable.metadata.get(models.RESOLVED_MODULE_VARIABLE_POLICY_METADATA)
     if not isinstance(policy, ModuleVariablePolicy):
         raise ValueError(f"Semantic variable {variable.name!r} has no completed module-variable policy")
@@ -1784,8 +1910,15 @@ def build_module_variable_policy(
     module_name: str,
     derived_types: dict[tuple[str, str], DerivedTypePolicy] | None = None,
 ) -> ModuleVariablePolicy:
-    """Build one module-variable policy from completed decisions."""
+    """Build one module-variable access policy from completed semantic decisions.
+
+    The function selects an already-defined family for descriptor handles,
+    derived objects, ordinary arrays, or scalar values, then validates runtime
+    and initialization requirements.  It returns a new record and does not
+    mutate ``variable``.
+    """
     owner_path = f"{module_name}.{variable.name}"
+    # Gather semantic decisions shared by all module-variable policy families.
     getter = _ownership_decision(variable, models.RESOLVED_GETTER_OWNERSHIP_POLICY_METADATA)
     setter = _ownership_decision(variable, models.RESOLVED_SETTER_OWNERSHIP_POLICY_METADATA)
     descriptor_kind = _scalar_module_descriptor_kind(variable)
@@ -1796,7 +1929,17 @@ def build_module_variable_policy(
         owner_path,
     )
     array = _array_handoff_policy(variable.semantic_type)
-    if native_array_handle is not None:
+    # Select the one completed access family without backend-specific inference.
+    if _is_parameter_array(variable):
+        policy = _constant_array_module_variable_policy(
+            variable,
+            module_name,
+            owner_path,
+            getter,
+            setter,
+            array,
+        )
+    elif native_array_handle is not None:
         policy = _native_array_module_variable_policy(
             variable,
             module_name,
@@ -1834,6 +1977,7 @@ def build_module_variable_policy(
             descriptor_kind,
             constant,
         )
+    # Add runtime and import-time initialization blockers to the selected family.
     return _complete_module_variable_policy(variable, policy)
 
 
@@ -1852,7 +1996,7 @@ def _complete_module_variable_policy(
             supported=False,
             blockers=(*policy.blockers, *validation_blockers),
         )
-    if variable.default_value is None or _is_scalar_module_constant(variable):
+    if variable.default_value is None or _is_scalar_module_constant(variable) or _is_parameter_array(variable):
         return policy
     if policy.initializer is not None:
         return policy
@@ -1972,6 +2116,67 @@ def _ordinary_array_module_variable_policy(
     )
 
 
+def _constant_array_module_variable_policy(
+    variable: models.SemanticVariable,
+    module_name: str,
+    owner_path: str,
+    getter: OwnershipDecision | None,
+    setter: OwnershipDecision | None,
+    array: ArrayHandoffPolicy | None,
+) -> ModuleVariablePolicy:
+    """Build one immutable Python-owned snapshot policy for a parameter array.
+
+    Fortran ``parameter`` arrays have no addressable module storage.  The
+    selected bridge therefore copies the compiler-evaluated values into a
+    module-owned NumPy allocation once during import; it never exposes or
+    aliases a native address.
+    """
+    blockers = _constant_array_module_variable_blockers(variable, getter, setter, array)
+    return ModuleVariablePolicy(
+        **_module_variable_policy_base(variable, module_name, owner_path),
+        getter_action=ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE,
+        getter=getter,
+        setter_action=SetterAction.OMIT,
+        native_assignment=AssignmentMode.NONE,
+        setter=setter,
+        descriptor_kind=None,
+        initializer=None,
+        constant_value=None,
+        supported=not blockers,
+        blockers=tuple(blockers),
+        array=array,
+    )
+
+
+def _constant_array_module_variable_blockers(
+    variable: models.SemanticVariable,
+    getter: OwnershipDecision | None,
+    setter: OwnershipDecision | None,
+    array: ArrayHandoffPolicy | None,
+) -> tuple[str, ...]:
+    """Validate the post-IR immutable-copy contract for one parameter array."""
+    blockers = []
+    if variable.visibility != "public":
+        blockers.append("module parameter array is not public")
+    if array is None or array.rank is None or array.rank <= 0 or len(array.shape) != array.rank:
+        blockers.append("module parameter array requires one concrete fixed rank")
+    if variable.semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES:
+        blockers.append("module parameter array requires a primitive numeric element type")
+    expected_getter = (
+        getter is not None
+        and getter.kind is ObjectKind.NUMPY_ARRAY
+        and getter.owner is OwnershipOwner.PYTHON
+        and getter.transfer is TransferMode.BY_VALUE
+        and getter.destruction is DestructionPolicy.PYTHON_REFCOUNT
+        and getter.storage_mode is StorageMode.HEAP
+    )
+    if not expected_getter:
+        blockers.append("module parameter array is not a completed Python-owned immutable snapshot")
+    if setter is None or setter.setter_action is not SetterAction.OMIT:
+        blockers.append("module parameter array must omit native replacement assignment")
+    return tuple(blockers)
+
+
 def _scalar_module_variable_policy(
     variable: models.SemanticVariable,
     module_name: str,
@@ -2040,11 +2245,36 @@ def _ordinary_array_module_variable_blockers(
     )
     if setter is None or setter.setter_action is not SetterAction.REJECT_REPLACEMENT:
         blockers.append("ordinary module array must reject whole-array replacement")
+    blockers.extend(_persistent_array_extent_blockers(f"module variable {variable.name!r}", array))
     return tuple(blockers)
 
 
+def _persistent_array_extent_blockers(
+    owner: str,
+    array: ArrayHandoffPolicy | None,
+) -> tuple[str, ...]:
+    """Reject persistent extents that still require unavailable runtime values.
+
+    Module arrays and fields have no call-local scalar or input-array roles.
+    This consumes their role-free extent references and returns one diagnostic
+    per dependent axis; it does not mutate the array policy.
+    """
+    if array is None:
+        return ()
+    return tuple(
+        f"{owner} extent axis {axis} depends on unavailable declaration values {references}"
+        for axis, references in enumerate(array.extent_references)
+        if references
+    )
+
+
 def completed_function_wrapper_policy(function: models.SemanticFunction) -> FunctionWrapperPolicy:
-    """Return a completed function wrapper policy or fail before planning."""
+    """Return a lowering-ready function policy stored by post-IR completion.
+
+    Use this at the planning boundary.  Missing policy or an unsupported policy
+    raises ``ValueError`` with the completed-policy diagnostic, preventing
+    lower stages from substituting a fallback behavior.
+    """
 
     policy = function.metadata.get(models.RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA)
     if not isinstance(policy, FunctionWrapperPolicy):
@@ -2063,7 +2293,13 @@ def build_callback_handoff_policy(
     *,
     owner_path: str,
 ) -> CallbackHandoffPolicy:
-    """Complete one immediate callback without consulting lowering details."""
+    """Complete one immediate callback's ABI, transfers, lifecycle, and blockers.
+
+    The semantic type must carry a resolved callback prototype and nested
+    ownership decisions.  The returned record is consumed by wrapper policy
+    and planning; unsupported signatures remain represented with blockers.
+    """
+    # Validate the call-scoped callback envelope before inspecting its signature.
     raw_arguments = semantic_type.metadata.get("callback_arguments")
     return_type = semantic_type.metadata.get("return")
     blockers = list(_callback_envelope_blockers(semantic_type))
@@ -2073,6 +2309,7 @@ def build_callback_handoff_policy(
         blockers.append("callback signature is missing ordered argument records")
         arguments: tuple[CallbackTransferPolicy, ...] = ()
     else:
+        # Complete each callback transfer and collect signature-level failures.
         arguments = tuple(
             _callback_transfer_policy(argument, owner_path=f"{owner_path}.callback_arg_{index}")
             for index, argument in enumerate(raw_arguments)
@@ -2084,22 +2321,31 @@ def build_callback_handoff_policy(
         )
     result = _callback_result_policy(return_type, owner_path=f"{owner_path}.callback_result")
     blockers.extend(_callback_result_blockers(return_type, result))
+    # Complete the shared exact signature after argument and result ABI facts exist.
     prototype_ref = semantic_type.metadata.get(models.PROTOTYPE_REF_METADATA)
-    prototype_name = prototype_ref.get("name") if isinstance(prototype_ref, dict) else None
-    prototype_module = prototype_ref.get("origin_module") if isinstance(prototype_ref, dict) else None
-    if not isinstance(prototype_name, str) or not prototype_name:
+    source_name = prototype_ref.get("name") if isinstance(prototype_ref, dict) else None
+    local_name = prototype_ref.get("local_name") if isinstance(prototype_ref, dict) else None
+    origin_module = prototype_ref.get("origin_module") if isinstance(prototype_ref, dict) else None
+    if not isinstance(source_name, str) or not source_name:
         blockers.append("callback argument requires a resolved named prototype")
-        prototype_name = semantic_type.name
-    declaration_mode = _callback_declaration_mode(raw_arguments, return_type, semantic_type)
-    if declaration_mode is ExternalDeclarationMode.EXPLICIT_INTERFACE and not (
-        isinstance(prototype_module, str) and prototype_module
-    ):
-        blockers.append(f"prototype {prototype_name!r} requires an importable native module")
+        source_name = semantic_type.name
+    if not isinstance(local_name, str) or not local_name:
+        local_name = semantic_type.name
+    prototype = _procedure_prototype_policy(
+        owner_path=owner_path,
+        name=local_name,
+        identity=f"{origin_module or owner_path}.{source_name}",
+        pure=_prototype_metadata_is_pure(semantic_type.metadata.get("prototype_metadata")),
+        arguments=tuple(raw_arguments) if isinstance(raw_arguments, list) else (),
+        result=return_type if isinstance(return_type, models.SemanticType) else None,
+    )
+    if prototype.pure:
+        blockers.append(
+            "pure @prototype cannot be used as a Python callback because its adapter calls the Python runtime"
+        )
     return CallbackHandoffPolicy(
         owner_path=owner_path,
-        prototype_name=prototype_name,
-        prototype_module=(prototype_module if isinstance(prototype_module, str) and prototype_module else None),
-        declaration_mode=declaration_mode,
+        prototype=prototype,
         arguments=arguments,
         result=result,
         lifecycle=(
@@ -2118,58 +2364,34 @@ def build_callback_handoff_policy(
     )
 
 
-def _callback_declaration_mode(
-    arguments: object,
-    return_type: object,
-    semantic_type: models.SemanticType,
-) -> ExternalDeclarationMode:
-    """Select the weakest correct adapter declaration from prototype facts."""
-    if isinstance(arguments, list) and any(
-        isinstance(argument, models.SemanticArgument) and _prototype_argument_requires_explicit_interface(argument)
-        for argument in arguments
-    ):
-        return ExternalDeclarationMode.EXPLICIT_INTERFACE
-    if isinstance(return_type, models.SemanticType) and _prototype_result_requires_explicit_interface(return_type):
-        return ExternalDeclarationMode.EXPLICIT_INTERFACE
-    prototype_metadata = semantic_type.metadata.get("prototype_metadata")
-    attributes = prototype_metadata.get("fortran_attributes", ()) if isinstance(prototype_metadata, dict) else ()
-    normalized = {str(attribute).casefold().replace(" ", "") for attribute in attributes}
-    if normalized & {"bind(c)", "elemental", "pure"}:
-        return ExternalDeclarationMode.EXPLICIT_INTERFACE
-    return ExternalDeclarationMode.IMPLICIT_EXTERNAL
+def _procedure_prototype_policy(
+    *,
+    owner_path: str,
+    name: str,
+    identity: str,
+    pure: bool,
+    arguments: tuple[models.SemanticArgument, ...],
+    result: models.SemanticType | None,
+) -> ProcedurePrototypePolicy:
+    """Project one semantic signature for callback and direct-procedure uses."""
+    return ProcedurePrototypePolicy(
+        owner_path=f"{owner_path}.prototype",
+        name=name,
+        identity=identity,
+        pure=pure,
+        arguments=tuple(_semantic_prototype_argument_policy(argument, owner_path=owner_path) for argument in arguments),
+        result=(
+            _semantic_prototype_result_policy(result, owner_path=owner_path)
+            if result is not None and result.name != "None"
+            else None
+        ),
+    )
 
 
-def _prototype_argument_requires_explicit_interface(argument: models.SemanticArgument) -> bool:
-    semantic_type = argument.semantic_type
-    storage = semantic_type.storage
-    array = storage.array if storage is not None else None
-    if argument.optional:
-        return True
-    if any(
-        semantic_type.metadata.get(name)
-        for name in (
-            "fortran_allocatable",
-            "fortran_pointer",
-            "fortran_polymorphic",
-            "fortran_assumed_type",
-            "fortran_target",
-        )
-    ):
-        return True
-    return array is not None and array.category in {"assumed_shape", "deferred_shape", "assumed_rank"}
-
-
-def _prototype_result_requires_explicit_interface(return_type: models.SemanticType) -> bool:
-    if return_type.name == "None":
-        return False
-    if return_type.rank > 0:
-        return True
-    if return_type.metadata.get("fortran_allocatable") or return_type.metadata.get("fortran_pointer"):
-        return True
-    if return_type.name != "String":
-        return False
-    length = return_type.metadata.get("fortran_character_length")
-    return length is None or str(length).strip() in {"", ":", "*"}
+def _prototype_metadata_is_pure(metadata: object) -> bool:
+    """Return the one purity fact retained by a semantic prototype reference."""
+    attributes = metadata.get("fortran_attributes", ()) if isinstance(metadata, dict) else ()
+    return any(str(attribute).casefold() == "pure" for attribute in attributes)
 
 
 def _callback_envelope_blockers(semantic_type: models.SemanticType) -> tuple[str, ...]:
@@ -2208,6 +2430,11 @@ def _callback_transfer_policy(
         object_kind=decision.kind,
         rank=int(semantic_type.rank or 0),
         passed_by_value=passed_by_value,
+        intent=(
+            str(intent)
+            if (intent := argument.origin.metadata.get(models.PROTOTYPE_INTENT_METADATA)) is not None
+            else None
+        ),
         abi=_callback_abi_kind(argument, derived=derived),
         adapter_action=_callback_adapter_action(argument),
         python_action=decision.python_barrier_action,
@@ -2238,10 +2465,17 @@ def _callback_abi_kind(
 def _callback_adapter_action(
     argument: models.SemanticArgument,
 ) -> CallbackTransferAction:
-    """Select isolated primitive values or permissive non-scalar writeback."""
+    """Select callback copy direction from the prototype's exact dummy intent."""
     semantic_type = argument.semantic_type
-    if bool(argument.origin.metadata.get("value")) or (
-        semantic_type.name in _PLAN_PRIMITIVE_SCALAR_TYPES and int(semantic_type.rank or 0) == 0
+    intent = argument.origin.metadata.get(models.PROTOTYPE_INTENT_METADATA)
+    if intent == "out":
+        return CallbackTransferAction.COPY_OUT
+    if intent == "inout":
+        return CallbackTransferAction.COPY_IN_OUT
+    if (
+        intent == "in"
+        or bool(argument.origin.metadata.get("value"))
+        or (semantic_type.name in _PLAN_PRIMITIVE_SCALAR_TYPES and int(semantic_type.rank or 0) == 0)
     ):
         return CallbackTransferAction.COPY_IN
     return CallbackTransferAction.COPY_IN_OUT
@@ -2295,6 +2529,7 @@ def _callback_result_policy(
         object_kind=decision.kind,
         rank=int(return_type.rank or 0),
         passed_by_value=False,
+        intent=None,
         abi=(
             CallbackABIKind.DERIVED_ADDRESS
             if derived
@@ -2365,9 +2600,17 @@ def build_function_wrapper_policy(
     polymorphic_variants: dict[tuple[str, str], tuple[tuple[str, str], ...]] | None = None,
     native_dispatch_name: str | None = None,
 ) -> FunctionWrapperPolicy:
-    """Build typed function policy from completed post-IR decisions."""
+    """Build a complete wrapper-facing function policy from post-IR decisions.
+
+    Use this only after ownership, callback, status, and export policy are
+    complete.  It preserves signature and projection order while producing
+    arguments, results, native call slots, lifecycle actions, and all support
+    blockers.  The input function is read without mutation; callers normally
+    store the returned record in its resolved-policy metadata.
+    """
 
     completed_derived_types = derived_types or {}
+    # Establish native ABI order before projecting Python-visible arguments.
     argument_native_positions, native_call_slots, slot_blockers = _native_call_slot_policies(
         function,
         owner_path,
@@ -2382,11 +2625,24 @@ def build_function_wrapper_policy(
         polymorphic_variants or {},
         class_call,
     )
+    # Complete result representation and declaration call targets, then bind
+    # every array-extent producer to its immutable role.
     results, result_blockers = _result_policies(function, owner_path, completed_derived_types)
+    declaration_callables = _function_declaration_callable_policies(function, owner_path)
+    arguments, results, native_call_slots = _complete_function_array_extent_policies(
+        function,
+        owner_path,
+        arguments,
+        results,
+        native_call_slots,
+        declaration_callables,
+    )
+    # Record ordered writeback, cleanup, and ownership-transfer lifecycle work.
     writeback_actions, lifecycle_blockers = _lifecycle_policies(arguments)
     cleanup_actions, release_actions = _derived_result_lifecycle_policies(results)
     status_error = _completed_native_status_error_policy(function)
     native_module = _native_module(function, owner_path)
+    # Aggregate all support validation before exposing the immutable plan input.
     blockers = (
         _function_shape_blockers(function, class_call)
         + argument_blockers
@@ -2394,23 +2650,24 @@ def build_function_wrapper_policy(
         + slot_blockers
         + lifecycle_blockers
         + _result_position_blockers(results, arguments)
-        + _array_extent_reference_blockers(function, arguments, results)
+        + _array_extent_reference_blockers(arguments, results)
+        + tuple(blocker for callable_policy in declaration_callables for blocker in callable_policy.blockers)
         + _runtime_status_plan_blockers(status_error)
         + _string_result_status_blockers(results, status_error)
         + _string_writeback_status_blockers(arguments, status_error)
     )
     native_name = native_dispatch_name or _native_name(function)
     native_invocation, native_operator = _native_invocation_policy(native_name)
-    external = _is_external(function)
+    standalone = _is_standalone(function)
     return FunctionWrapperPolicy(
         owner_path=owner_path,
         python_exports=completed_python_exports(function, function.name),
         native_name=native_name,
         native_invocation=native_invocation,
         native_operator=native_operator,
-        external=external,
+        standalone=standalone,
         external_declaration=_external_declaration_mode(
-            external=external,
+            standalone=standalone,
             native_invocation=native_invocation,
             arguments=tuple(arguments),
             results=results,
@@ -2428,6 +2685,7 @@ def build_function_wrapper_policy(
         arguments=tuple(arguments),
         results=results,
         native_call_slots=tuple(native_call_slots),
+        declaration_callables=declaration_callables,
         blockers=tuple(blockers),
         writeback_actions=writeback_actions,
         cleanup_actions=cleanup_actions,
@@ -2447,14 +2705,14 @@ def _native_invocation_policy(native_name: str) -> tuple[NativeInvocationKind, s
 
 def _external_declaration_mode(
     *,
-    external: bool,
+    standalone: bool,
     native_invocation: NativeInvocationKind,
     arguments: tuple[ArgumentPolicy, ...],
     results: tuple[ResultPolicy, ...],
     native_call_slots: tuple[NativeCallSlotPolicy, ...],
 ) -> ExternalDeclarationMode:
     """Choose the weakest correct native declaration from completed ABI facts."""
-    if not external:
+    if not standalone:
         return ExternalDeclarationMode.NONE
     if native_invocation is not NativeInvocationKind.PROCEDURE:
         return ExternalDeclarationMode.EXPLICIT_INTERFACE
@@ -2568,6 +2826,11 @@ def _argument_policy(
 ) -> tuple[ArgumentPolicy, tuple[str, ...]]:
     """Complete one visible argument without mixing it with list traversal."""
     argument_path = f"{owner_path}.{argument.name}"
+    scalar_logical_abi, scalar_native_type = _scalar_logical_argument_abi(argument)
+    array_logical_abi, array_native_type, array_copy_in, array_copy_out = _array_logical_argument_abi(
+        argument,
+        decision,
+    )
     optional_mode = _optional_mode(argument, decision)
     callback = _callback_handoff_policy(argument)
     array_policy = _array_handoff_policy(argument.semantic_type)
@@ -2588,6 +2851,7 @@ def _argument_policy(
         or _is_exported_passed_object_argument(function, native_position),
     )
     bridge_data_action, bridge_copy_reason = _completed_argument_bridge_action(
+        argument,
         decision,
         optional_mode,
         native_slot,
@@ -2617,11 +2881,18 @@ def _argument_policy(
             native_position=native_position,
             semantic_type_name=argument.semantic_type.name,
             rank=int(argument.semantic_type.rank or 0),
+            scalar_logical_abi=scalar_logical_abi,
+            scalar_native_type=scalar_native_type,
+            array_logical_abi=array_logical_abi,
+            array_native_type=array_native_type,
+            array_copy_in=array_copy_in,
+            array_copy_out=array_copy_out,
             array_writeback_abi=_array_writeback_abi(
                 argument.semantic_type,
                 decision,
                 boundary.handoff_mode,
                 array_policy,
+                array_logical_abi,
             ),
             optional=argument.optional,
             optional_mode=boundary.optional_mode,
@@ -2715,6 +2986,7 @@ def _is_exported_passed_object_argument(function: models.SemanticFunction, nativ
 
 
 def _completed_argument_bridge_action(
+    argument: models.SemanticArgument,
     decision: OwnershipDecision,
     optional_mode: OptionalMode,
     native_slot: NativeCallSlotPolicy | None,
@@ -2729,7 +3001,8 @@ def _completed_argument_bridge_action(
         optional_mode,
         native_slot.value_kind if native_slot is not None else None,
     )
-    return _derived_argument_bridge_data_action(derived, action, reason)
+    action, reason = _derived_argument_bridge_data_action(derived, action, reason)
+    return _logical_argument_bridge_action(argument, decision, action, reason)
 
 
 def _argument_boundary_policy(
@@ -2972,6 +3245,12 @@ def _hidden_result_policies(
             argument.semantic_type,
             descriptor_kind=mapping.value_kind,
         )
+        bridge_data_action, bridge_copy_reason = _logical_argument_bridge_action(
+            argument,
+            decision,
+            bridge_data_action,
+            bridge_copy_reason,
+        )
         if bridge_data_action is BridgeDataAction.BLOCKED and decision.kind is not ObjectKind.SCALAR:
             blockers = (*blockers, f"hidden result {argument.name!r} has no completed bridge data action")
         derived = _derived_handoff_policy(
@@ -3031,6 +3310,12 @@ def _native_call_slot_policies(
     owner_path: str,
     derived_types: dict[tuple[str, str], DerivedTypePolicy],
 ) -> tuple[dict[int, int], tuple[NativeCallSlotPolicy, ...], tuple[str, ...]]:
+    """Complete ordered native call slots from explicit projections or declaration order.
+
+    The returned mapping connects visible Python argument positions to native
+    positions; slot records preserve native ABI order and blockers diagnose
+    missing completed decisions without mutating ``function``.
+    """
     if function.projection:
         return _projected_native_call_slot_policies(function, owner_path, derived_types)
     return _implicit_native_call_slot_policies(function, owner_path, derived_types)
@@ -3157,6 +3442,11 @@ def _projected_argument_slot(
     argument_path = f"{owner_path}.{argument.name}"
     value_kind = _native_argument_value_kind(argument, mapping.value_kind or "arg")
     callback = _callback_handoff_policy(argument)
+    scalar_logical_abi, scalar_native_type = _scalar_logical_argument_abi(argument)
+    array_logical_abi, array_native_type, array_copy_in, array_copy_out = _array_logical_argument_abi(
+        argument,
+        decision,
+    )
     derived = _argument_derived_handoff(argument, decision, callback, argument_path, derived_types)
     bridge_data_action, bridge_copy_reason = _completed_projected_bridge_action(
         argument,
@@ -3185,6 +3475,12 @@ def _projected_argument_slot(
             bridge_data_action=bridge_data_action,
             bridge_copy_reason=bridge_copy_reason,
             object_kind=decision.kind,
+            scalar_logical_abi=scalar_logical_abi,
+            scalar_native_type=scalar_native_type,
+            array_logical_abi=array_logical_abi,
+            array_native_type=array_native_type,
+            array_copy_in=array_copy_in,
+            array_copy_out=array_copy_out,
             result_position=mapping.result_position,
             semantic_type_name=argument.semantic_type.name,
             character_length=_character_length(argument.semantic_type),
@@ -3216,7 +3512,8 @@ def _completed_projected_bridge_action(
         _optional_mode(argument, decision),
         value_kind,
     )
-    return _derived_argument_bridge_data_action(derived, action, reason)
+    action, reason = _derived_argument_bridge_data_action(derived, action, reason)
+    return _logical_argument_bridge_action(argument, decision, action, reason)
 
 
 def _native_slot_barrier_actions(
@@ -3301,6 +3598,17 @@ def _hidden_result_native_call_slot_policy(
         argument.semantic_type,
         descriptor_kind=mapping.value_kind,
     )
+    bridge_data_action, bridge_copy_reason = _logical_argument_bridge_action(
+        argument,
+        decision,
+        bridge_data_action,
+        bridge_copy_reason,
+    )
+    scalar_logical_abi, scalar_native_type = _scalar_logical_argument_abi(argument)
+    array_logical_abi, array_native_type, array_copy_in, array_copy_out = _array_logical_argument_abi(
+        argument,
+        decision,
+    )
     blockers = (
         (f"native-call result slot {native_position} has no completed bridge data action",)
         if bridge_data_action is BridgeDataAction.BLOCKED
@@ -3320,6 +3628,12 @@ def _hidden_result_native_call_slot_policy(
             bridge_data_action=bridge_data_action,
             bridge_copy_reason=bridge_copy_reason,
             object_kind=decision.kind,
+            scalar_logical_abi=scalar_logical_abi,
+            scalar_native_type=scalar_native_type,
+            array_logical_abi=array_logical_abi,
+            array_native_type=array_native_type,
+            array_copy_in=array_copy_in,
+            array_copy_out=array_copy_out,
             result_position=mapping.result_position,
             semantic_type_name=argument.semantic_type.name,
             character_length=_character_length(argument.semantic_type),
@@ -3400,6 +3714,12 @@ def _implicit_native_call_slot_policies(
     owner_path: str,
     derived_types: dict[tuple[str, str], DerivedTypePolicy],
 ) -> tuple[dict[int, int], tuple[NativeCallSlotPolicy, ...], tuple[str, ...]]:
+    """Build declaration-ordered slots when no explicit native projection exists.
+
+    Every argument consumes its completed ownership/callback/derived policy.
+    Missing or unsupported bridge decisions are accumulated as blockers while
+    the returned slots preserve source argument order.
+    """
     slots: list[NativeCallSlotPolicy] = []
     positions: dict[int, int] = {}
     blockers: list[str] = []
@@ -3409,6 +3729,11 @@ def _implicit_native_call_slot_policies(
             blockers.append(f"implicit native-call slot {position} references argument without completed policy")
             continue
         value_kind = _native_argument_value_kind(argument, "arg")
+        scalar_logical_abi, scalar_native_type = _scalar_logical_argument_abi(argument)
+        array_logical_abi, array_native_type, array_copy_in, array_copy_out = _array_logical_argument_abi(
+            argument,
+            decision,
+        )
         callback = argument.semantic_type.metadata.get(models.RESOLVED_CALLBACK_POLICY_METADATA)
         callback = callback if isinstance(callback, CallbackHandoffPolicy) else None
         derived = (
@@ -3436,6 +3761,12 @@ def _implicit_native_call_slot_policies(
                 bridge_data_action,
                 bridge_copy_reason,
             )
+            bridge_data_action, bridge_copy_reason = _logical_argument_bridge_action(
+                argument,
+                decision,
+                bridge_data_action,
+                bridge_copy_reason,
+            )
         if bridge_data_action is BridgeDataAction.BLOCKED:
             blockers.append(f"implicit native-call slot {position} has no completed bridge data action")
         positions[position] = position
@@ -3455,6 +3786,12 @@ def _implicit_native_call_slot_policies(
                 bridge_data_action=bridge_data_action,
                 bridge_copy_reason=bridge_copy_reason,
                 object_kind=decision.kind,
+                scalar_logical_abi=scalar_logical_abi,
+                scalar_native_type=scalar_native_type,
+                array_logical_abi=array_logical_abi,
+                array_native_type=array_native_type,
+                array_copy_in=array_copy_in,
+                array_copy_out=array_copy_out,
                 semantic_type_name=argument.semantic_type.name,
                 character_length=_character_length(argument.semantic_type),
                 array=_array_handoff_policy(argument.semantic_type),
@@ -3697,6 +4034,12 @@ def _derived_payload_dummy_case(
     category: DerivedDummyCategory,
     storage: DerivedObjectStorage,
 ) -> DerivedCallCasePolicy:
+    """Return the compatibility matrix cell for a non-descriptor derived dummy.
+
+    ``category`` distinguishes value from ordinary object dummies; ``storage``
+    selects address access, required presence, and target lifetime without
+    changing the established matrix.
+    """
     action = DerivedCallAction.TYPED_VALUE_COPY if category is DerivedDummyCategory.VALUE else None
     table = {
         DerivedObjectStorage.DIRECT: (
@@ -3760,6 +4103,7 @@ def _derived_payload_dummy_case(
 
 
 def _derived_allocatable_dummy_case(storage: DerivedObjectStorage) -> DerivedCallCasePolicy:
+    """Return the supported allocatable-dummy cell or an explicit incompatible result."""
     if storage is DerivedObjectStorage.ALLOCATABLE_HOLDER:
         return DerivedCallCasePolicy(
             storage,
@@ -3795,6 +4139,11 @@ def _derived_pointer_dummy_case(
     *,
     projects_result: bool,
 ) -> DerivedCallCasePolicy:
+    """Return the supported pointer-dummy cell, including projected-writeback rejection.
+
+    Pointer holders and module pointers retain their distinct transaction
+    mechanisms.  Other non-projected storage reuses payload input adaptation.
+    """
     if storage is DerivedObjectStorage.POINTER_HOLDER:
         access = DerivedActualAccess.POINTER_HOLDER
         return DerivedCallCasePolicy(
@@ -3837,6 +4186,7 @@ def _derived_incompatible_case(
     kind: str,
     message: str,
 ) -> DerivedCallCasePolicy:
+    """Create one explicit unsupported derived-actual matrix cell with its diagnostic."""
     return DerivedCallCasePolicy(
         storage,
         DerivedCallAction.INCOMPATIBLE,
@@ -4569,7 +4919,7 @@ def _direct_result_abi(
     """Complete the direct scalar return ABI before wrapper planning."""
     if scalar_descriptor is not None or decision.kind is not ObjectKind.SCALAR or int(semantic_type.rank or 0) != 0:
         return DirectResultABI.NOT_APPLICABLE
-    if semantic_type.name == "Bool":
+    if is_boolean_semantic_type_name(semantic_type.name):
         return DirectResultABI.LOGICAL_LOW_BIT_INT8
     if semantic_type.name in _PLAN_PRIMITIVE_SCALAR_TYPES:
         return DirectResultABI.NATIVE_SCALAR
@@ -4950,11 +5300,13 @@ def _function_shape_blockers(
 def _completed_native_status_error_policy(
     function: models.SemanticFunction,
 ) -> NativeStatusErrorPolicy | None:
+    """Return the status-error record completed upstream, without reconstructing it."""
     policy = function.metadata.get(models.RESOLVED_RUNTIME_STATUS_ERROR_POLICY_METADATA)
     return policy if isinstance(policy, NativeStatusErrorPolicy) else None
 
 
 def _runtime_status_output_owner_paths(function: models.SemanticFunction) -> frozenset[str]:
+    """Return stable owner paths for the status and optional message native outputs."""
     policy = _completed_native_status_error_policy(function)
     if policy is None:
         return frozenset()
@@ -4977,6 +5329,7 @@ def _runtime_status_plan_blockers(policy: NativeStatusErrorPolicy | None) -> tup
 
 
 def _character_length(semantic_type: models.SemanticType) -> int | None:
+    """Return a positive fixed Fortran character length, normalizing accepted metadata spellings."""
     value = semantic_type.metadata.get("fortran_character_length")
     if isinstance(value, int) and not isinstance(value, bool) and value > 0:
         return value
@@ -5044,6 +5397,7 @@ def _derived_result_lifecycle_policies(
 
 
 def _native_position_blockers(native_positions: object) -> tuple[str, ...]:
+    """Reject slot positions that do not cover the contiguous native ABI order exactly once."""
     positions = tuple(native_positions)
     if sorted(positions) != list(range(len(positions))):
         return ("native-call slots must cover each native position exactly once in order",)
@@ -5051,11 +5405,13 @@ def _native_position_blockers(native_positions: object) -> tuple[str, ...]:
 
 
 def _ownership_decision(owner: object, metadata_key: str) -> OwnershipDecision | None:
+    """Read one typed completed ownership record from metadata, returning ``None`` when absent."""
     decision = getattr(owner, "metadata", {}).get(metadata_key)
     return decision if isinstance(decision, OwnershipDecision) else None
 
 
 def _is_first_lane_scalar_type(semantic_type: models.SemanticType) -> bool:
+    """Report whether a rank-zero primitive uses the supported ordinary scalar lane."""
     scalar_name = semantic_type.dtype or semantic_type.name
     return bool(
         int(semantic_type.rank or 0) == 0
@@ -5066,6 +5422,7 @@ def _is_first_lane_scalar_type(semantic_type: models.SemanticType) -> bool:
 
 
 def _is_scalar_storage_type(semantic_type: models.SemanticType) -> bool:
+    """Report whether a type carries rank-zero array-backed scalar storage metadata."""
     storage = semantic_type.storage
     array = storage.array if storage is not None else None
     return bool(array is not None and array.category == SCALAR_STORAGE_CATEGORY)
@@ -5084,7 +5441,13 @@ def _is_fixed_plan_string_result_type(semantic_type: models.SemanticType) -> boo
 
 def _is_first_lane_literal_type(literal_type: str) -> bool:
     """Return whether a hidden literal type belongs to the scalar input lane."""
-    return literal_type in {"Bool", "Int32", "Float32", "Float64", "Complex64", "Complex128"}
+    return is_boolean_semantic_type_name(literal_type) or literal_type in {
+        "Int32",
+        "Float32",
+        "Float64",
+        "Complex64",
+        "Complex128",
+    }
 
 
 # Native-array-handle policy projection.
@@ -5820,6 +6183,7 @@ def _scalar_module_getter_action(
     getter: OwnershipDecision | None,
     constant: bool,
 ) -> ModuleGetterAction:
+    """Select scalar module getter behavior from constant and completed getter policy."""
     if constant:
         if _source_parameter_needs_native_getter(variable):
             return ModuleGetterAction.NATIVE_CONSTANT_VALUE
@@ -5851,6 +6215,7 @@ def _scalar_module_native_assignment(
 
 
 def _scalar_module_descriptor_kind(variable: models.SemanticVariable) -> str | None:
+    """Return the scalar descriptor family recorded on a module variable, if any."""
     metadata = variable.semantic_type.metadata
     if metadata.get("fortran_allocatable"):
         return "allocatable"
@@ -5860,10 +6225,22 @@ def _scalar_module_descriptor_kind(variable: models.SemanticVariable) -> str | N
 
 
 def _is_scalar_module_constant(variable: models.SemanticVariable) -> bool:
+    """Report whether a module variable is constrained as a semantic constant."""
     return any(constraint.name == "Constant" for constraint in variable.semantic_type.constraints)
 
 
+def _is_parameter_array(variable: models.SemanticVariable) -> bool:
+    """Report whether a fixed Fortran parameter needs immutable-array lowering."""
+    return bool(
+        variable.origin.source_language == "fortran"
+        and variable.origin.source_kind == "variable"
+        and int(variable.semantic_type.rank or 0) > 0
+        and _is_scalar_module_constant(variable)
+    )
+
+
 def _is_scalar_module_literal(value: object, semantic_type_name: str) -> bool:
+    """Report whether a module initializer parses as a supported scalar literal."""
     try:
         _scalar_module_literal_value(value, semantic_type_name)
     except (TypeError, ValueError, SyntaxError):
@@ -5876,7 +6253,7 @@ def _scalar_module_literal_value(value: object, semantic_type_name: str) -> obje
     if not isinstance(value, str):
         return value
     text = value.strip()
-    if semantic_type_name == "Bool":
+    if is_boolean_semantic_type_name(semantic_type_name):
         lowered = text.casefold()
         if lowered in {".true.", "true"}:
             return True
@@ -5948,6 +6325,7 @@ def _array_argument_bridge_data_action(
 
 
 def _scalar_storage_array_bridge_uses_view(decision: OwnershipDecision, optional_mode: OptionalMode) -> bool:
+    """Report whether rank-zero scalar storage uses the ordinary array-view bridge path."""
     return (
         optional_mode in _ARRAY_VALUE_OPTIONAL_MODES
         and decision.python_barrier_action is PythonBarrierAction.SCALAR_STORAGE
@@ -5957,6 +6335,7 @@ def _scalar_storage_array_bridge_uses_view(decision: OwnershipDecision, optional
 
 
 def _copy_in_out_array_bridge_uses_view(decision: OwnershipDecision, optional_mode: OptionalMode) -> bool:
+    """Report whether a projected copy-in/out array retains its supported view handoff."""
     return (
         optional_mode is OptionalMode.REQUIRED
         and decision.python_barrier_action is PythonBarrierAction.ARRAY_STORAGE
@@ -5970,6 +6349,7 @@ def _native_descriptor_array_bridge_data_action(
     decision: OwnershipDecision,
     optional_mode: OptionalMode,
 ) -> BridgeDataAction | None:
+    """Return descriptor-handle bridge movement for a completed descriptor action, else ``None``."""
     if optional_mode not in _ARRAY_DESCRIPTOR_OPTIONAL_MODES:
         return None
     if decision.python_barrier_action is not PythonBarrierAction.WRAPPER_INSTANCE:
@@ -5984,6 +6364,7 @@ def _native_descriptor_array_bridge_data_action(
 
 
 def _raw_array_address_bridge_uses_view(decision: OwnershipDecision, optional_mode: OptionalMode) -> bool:
+    """Report whether a required raw array address can use the existing view bridge path."""
     return (
         optional_mode is OptionalMode.REQUIRED
         and decision.python_barrier_action is PythonBarrierAction.RAW_ADDRESS
@@ -5993,6 +6374,7 @@ def _raw_array_address_bridge_uses_view(decision: OwnershipDecision, optional_mo
 
 
 def _array_storage_bridge_uses_view(decision: OwnershipDecision, optional_mode: OptionalMode) -> bool:
+    """Report whether ordinary array storage uses the established contiguous view handoff."""
     return (
         optional_mode in _ARRAY_VALUE_OPTIONAL_MODES
         and decision.python_barrier_action is PythonBarrierAction.ARRAY_STORAGE
@@ -6033,7 +6415,101 @@ def _string_argument_bridge_data_action(
     return BridgeDataAction.BLOCKED, None
 
 
-# Scalar bridge data policy.
+# Logical bridge data policy.
+def _fortran_logical_native_type(argument: models.SemanticArgument) -> str | None:
+    """Return one exact Fortran logical spelling retained by semantic IR.
+
+    Native-source conversion stores the spelling on the argument origin;
+    semantic ``.pyi`` builds attach their probe-resolved spelling to the type
+    origin.  The helper consumes either representation without changing it and
+    returns ``None`` for non-Fortran or non-logical declarations.
+    """
+    semantic_type = argument.semantic_type
+    origins = (argument.origin, semantic_type.origin)
+    source_type = next(
+        (
+            str(origin.source_type).strip()
+            for origin in origins
+            if origin.source_language == "fortran" and origin.source_type
+        ),
+        "",
+    )
+    if not source_type.casefold().startswith("logical"):
+        return None
+    declared_bits = next(
+        (
+            origin.metadata.get("declared_storage_bits")
+            for origin in origins
+            if isinstance(origin.metadata.get("declared_storage_bits"), int)
+        ),
+        None,
+    )
+    if source_type.casefold() == "logical" and isinstance(declared_bits, int) and declared_bits > 0:
+        return f"logical(kind={declared_bits // 8})"
+    return source_type
+
+
+def _scalar_logical_argument_abi(
+    argument: models.SemanticArgument,
+) -> tuple[ScalarLogicalABI, str | None]:
+    """Complete exact native-kind storage for one Fortran logical scalar."""
+    semantic_type = argument.semantic_type
+    if not is_boolean_semantic_type_name(semantic_type.name) or int(semantic_type.rank or 0) != 0:
+        return ScalarLogicalABI.NOT_APPLICABLE, None
+    source_type = _fortran_logical_native_type(argument)
+    if source_type is None:
+        if semantic_type.name in {"Bool", "Bool8"}:
+            return ScalarLogicalABI.C_BOOL, "logical(c_bool)"
+        return ScalarLogicalABI.NATIVE_KIND_COPY, None
+    compact = "".join(source_type.casefold().split())
+    if compact == "logical(kind=c_bool)":
+        return ScalarLogicalABI.C_BOOL, "logical(c_bool)"
+    return ScalarLogicalABI.NATIVE_KIND_COPY, source_type
+
+
+def _array_logical_argument_abi(
+    argument: models.SemanticArgument,
+    decision: OwnershipDecision,
+) -> tuple[ArrayLogicalABI, str | None, bool, bool]:
+    """Complete native storage and directional copies for a Boolean array.
+
+    The helper consumes semantic type/origin facts and completed ownership.  It
+    returns the ABI selector, exact native spelling, and independent copy-in
+    and copy-out flags.  Exact ``c_bool`` arrays borrow the NumPy buffer; other
+    Fortran logical kinds require a bridge-local representation.
+    """
+    semantic_type = argument.semantic_type
+    if not is_boolean_semantic_type_name(semantic_type.name) or int(semantic_type.rank or 0) <= 0:
+        return ArrayLogicalABI.NOT_APPLICABLE, None, False, False
+    source_type = _fortran_logical_native_type(argument)
+    if source_type is None:
+        if semantic_type.name in {"Bool", "Bool8"}:
+            return ArrayLogicalABI.C_BOOL_VIEW, "logical(c_bool)", False, False
+        copy_in = bool(getattr(argument, "_source_reads_argument", True))
+        return ArrayLogicalABI.NATIVE_KIND_COPY, None, copy_in, decision.mutates_native
+    if "".join(source_type.casefold().split()) == "logical(kind=c_bool)":
+        return ArrayLogicalABI.C_BOOL_VIEW, "logical(c_bool)", False, False
+    copy_in = bool(getattr(argument, "_source_reads_argument", True))
+    copy_out = decision.mutates_native
+    return ArrayLogicalABI.NATIVE_KIND_COPY, source_type, copy_in, copy_out
+
+
+def _logical_argument_bridge_action(
+    argument: models.SemanticArgument,
+    decision: OwnershipDecision,
+    action: BridgeDataAction,
+    reason: str | None,
+) -> tuple[BridgeDataAction, str | None]:
+    """Select explicit representation copying for a non-C logical argument."""
+    abi, _native_type = _scalar_logical_argument_abi(argument)
+    if abi is ScalarLogicalABI.NATIVE_KIND_COPY:
+        return BridgeDataAction.COPY_REPRESENTATION, LOGICAL_SCALAR_KIND_COPY_REASON
+    array_abi, _native_type, _copy_in, _copy_out = _array_logical_argument_abi(argument, decision)
+    if array_abi is ArrayLogicalABI.NATIVE_KIND_COPY:
+        return BridgeDataAction.COPY_REPRESENTATION, LOGICAL_ARRAY_KIND_COPY_REASON
+    return action, reason
+
+
 def _scalar_argument_bridge_data_action(
     decision: OwnershipDecision,
     optional_mode: OptionalMode,
@@ -6178,12 +6654,21 @@ def _array_writeback_abi(
     decision: OwnershipDecision,
     handoff_mode: ArgumentHandoffMode,
     array: ArrayHandoffPolicy | None,
+    logical_abi: ArrayLogicalABI,
 ) -> ArrayWritebackABI:
-    """Complete mutable ordinary-array byte normalization before planning."""
+    """Complete mutable ordinary-array byte normalization before planning.
+
+    Exact-kind logical copies canonicalize bytes while copying out, so only a
+    direct ``c_bool`` view needs the separate low-bit normalization pass.
+    """
     if array is None or handoff_mode is not ArgumentHandoffMode.ARRAY_BUFFER or not decision.mutates_native:
         return ArrayWritebackABI.NOT_APPLICABLE
-    if semantic_type.name == "Bool":
-        return ArrayWritebackABI.LOGICAL_LOW_BIT_INT8
+    if is_boolean_semantic_type_name(semantic_type.name):
+        return (
+            ArrayWritebackABI.LOGICAL_LOW_BIT_INT8
+            if logical_abi is ArrayLogicalABI.C_BOOL_VIEW
+            else ArrayWritebackABI.NOT_APPLICABLE
+        )
     return ArrayWritebackABI.NATIVE_ARRAY
 
 
@@ -6214,7 +6699,7 @@ def _array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandoffPol
         flat_axis=_array_handoff_flat_axis(array),
         itemsize=_array_handoff_itemsize(semantic_type),
         category=array.category,
-        extent_references=tuple(_array_extent_references(item) for item in shape),
+        extent_references=tuple(declaration_extent_references(item) for item in shape),
     )
 
 
@@ -6304,6 +6789,7 @@ def _is_phase6_ordinary_array_type(semantic_type: models.SemanticType) -> bool:
 
 
 def _is_scalar_storage_array_policy(array_policy: ArrayHandoffPolicy | None) -> bool:
+    """Report whether a handoff policy represents rank-zero scalar array storage."""
     return bool(
         array_policy is not None and array_policy.rank == 0 and array_policy.category == SCALAR_STORAGE_CATEGORY
     )
@@ -6351,67 +6837,336 @@ def _raw_array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandof
         contiguous=True,
         itemsize=_character_length(semantic_type) if semantic_type.name == "String" else None,
         category="raw_address",
-        extent_references=tuple(_array_extent_references(item) for item in shape),
+        extent_references=tuple(declaration_extent_references(item) for item in shape),
     )
 
 
-def _array_extent_references(expression: str) -> tuple[str, ...]:
-    """Return stable scalar names used by one declared extent expression."""
-    if expression in {":", "::Strided", "...", "Flat"}:
-        return ()
-    try:
-        tree = ast.parse(expression, mode="eval")
-    except SyntaxError:
-        return ("<invalid>",)
-    if not _valid_array_extent_expression(tree):
-        return ("<invalid>",)
-    return tuple(dict.fromkeys(node.id for node in ast.walk(tree) if isinstance(node, ast.Name)))
+def _complete_function_array_extent_policies(
+    function: models.SemanticFunction,
+    owner_path: str,
+    arguments: list[ArgumentPolicy],
+    results: tuple[ResultPolicy, ...],
+    native_call_slots: tuple[NativeCallSlotPolicy, ...],
+    declaration_callables: tuple[DeclarationCallablePolicy, ...],
+) -> tuple[list[ArgumentPolicy], tuple[ResultPolicy, ...], tuple[NativeCallSlotPolicy, ...]]:
+    """Resolve callable shape expressions to completed scalar or array-extent roles."""
+    scalar_roles, array_roles = _function_array_extent_sources(function, owner_path)
+    callable_roles = {
+        item.source_name.casefold(): (item.expression_token, item.symbolic_role) for item in declaration_callables
+    }
 
+    def complete(array: ArrayHandoffPolicy | None) -> ArrayHandoffPolicy | None:
+        if array is None:
+            return None
+        display_shape = array.display_shape or array.shape
+        resolutions = tuple(
+            resolve_declaration_extent(expression, scalar_roles, array_roles, callable_roles)
+            for expression in array.shape
+        )
+        return replace(
+            array,
+            shape=tuple(item.expression for item in resolutions),
+            extent_references=tuple(item.references for item in resolutions),
+            extent_reference_roles=tuple(item.roles for item in resolutions),
+            extent_callable_references=tuple(item.callable_references for item in resolutions),
+            extent_callable_roles=tuple(item.callable_roles for item in resolutions),
+            extent_evaluation=tuple("bridge" if item.callable_roles else "binding" for item in resolutions),
+            extent_blockers=tuple(item.blockers for item in resolutions),
+            display_shape=display_shape,
+        )
 
-def _valid_array_extent_expression(tree: ast.AST) -> bool:
-    """Return whether an extent uses only integer arithmetic and scalar names."""
-    allowed = (
-        ast.Expression,
-        ast.BinOp,
-        ast.UnaryOp,
-        ast.Name,
-        ast.Load,
-        ast.Constant,
-        ast.Add,
-        ast.Sub,
-        ast.Mult,
-        ast.FloorDiv,
-        ast.Div,
-        ast.Mod,
-        ast.USub,
-        ast.UAdd,
+    def complete_argument(argument: ArgumentPolicy) -> ArgumentPolicy:
+        """Keep an argument's accepted-actual shape identical to its resolved handoff."""
+        array = complete(argument.array)
+        native_actual = argument.native_array_actual
+        if native_actual is not None and array is not None:
+            native_actual = replace(native_actual, shape=array.shape)
+        return replace(argument, array=array, native_array_actual=native_actual)
+
+    return (
+        [complete_argument(argument) for argument in arguments],
+        tuple(replace(result, array=complete(result.array)) for result in results),
+        tuple(replace(slot, array=complete(slot.array)) for slot in native_call_slots),
     )
-    return all(isinstance(node, allowed) and _is_integer_constant(node) for node in ast.walk(tree))
 
 
-def _is_integer_constant(node: ast.AST) -> bool:
-    return not isinstance(node, ast.Constant) or (isinstance(node.value, int) and not isinstance(node.value, bool))
+def _function_declaration_callable_policies(
+    function: models.SemanticFunction,
+    owner_path: str,
+) -> tuple[DeclarationCallablePolicy, ...]:
+    """Validate and classify every native call appearing in one function's extents."""
+    entries: dict[str, tuple[models.SemanticExpressionCallable, list[int], bool]] = {}
+    for semantic_type in _function_declaration_types(function):
+        storage = semantic_type.storage
+        array = storage.array if storage is not None else None
+        if array is None:
+            continue
+        for axis, expression in enumerate(array.shape):
+            references = array.expression_callables[axis] if axis < len(array.expression_callables) else ()
+            sites = declaration_expression_call_sites(expression)
+            for reference in references:
+                arities = [
+                    site.argument_count
+                    for site in sites
+                    if site.name.casefold() == reference.name.casefold() and not site.has_keywords
+                ]
+                keyword_use = any(
+                    site.name.casefold() == reference.name.casefold() and site.has_keywords for site in sites
+                )
+                key = reference.name.casefold()
+                if key not in entries:
+                    entries[key] = (reference, arities, keyword_use)
+                else:
+                    entries[key][1].extend(arities)
+                    entries[key] = (entries[key][0], entries[key][1], entries[key][2] or keyword_use)
+    return tuple(
+        _declaration_callable_policy(reference, arities, has_keywords, owner_path, index)
+        for index, (reference, arities, has_keywords) in enumerate(entries.values())
+    )
+
+
+def _function_declaration_types(function: models.SemanticFunction) -> tuple[models.SemanticType, ...]:
+    """Return function-owned semantic types that may carry declared extents."""
+    return tuple(
+        semantic_type
+        for semantic_type in (
+            *(argument.semantic_type for argument in function.arguments),
+            function.return_type,
+            *(variable.semantic_type for variable in function.locals),
+        )
+        if isinstance(semantic_type, models.SemanticType)
+    )
+
+
+def _declaration_callable_policy(
+    reference: models.SemanticExpressionCallable,
+    arities: list[int],
+    has_keywords: bool,
+    owner_path: str,
+    index: int,
+) -> DeclarationCallablePolicy:
+    """Complete one declaration call as a module import or explicit interface."""
+    callable_path = f"{owner_path}.declaration_callable.{reference.name}"
+    blockers: list[str] = []
+    declaration = reference.declaration
+    if has_keywords:
+        blockers.append(f"declaration callable {reference.name!r} does not accept keyword syntax")
+    if reference.placement == "module" or reference.native_scope is not None:
+        action = DeclarationCallableAction.MODULE_IMPORT
+        if declaration is not None and declaration.visibility != "public":
+            blockers.append(f"module declaration callable {reference.name!r} is not public")
+        prototype = None
+        if declaration is not None:
+            blockers.extend(
+                _specification_function_blockers(
+                    declaration,
+                    arities,
+                    label=f"module declaration callable {reference.name!r}",
+                    require_exact_reference_intent=False,
+                    require_pure_diagnostic=True,
+                )
+            )
+    elif reference.placement == "standalone":
+        action = DeclarationCallableAction.STANDALONE_PROCEDURE
+        if not isinstance(declaration, models.SemanticPrototype):
+            blockers.append(
+                f"standalone declaration callable {reference.name!r} requires an exact @prototype signature"
+            )
+            prototype = None
+        else:
+            prototype = _direct_prototype_policy(
+                declaration,
+                owner_path=callable_path,
+                local_name=reference.name,
+            )
+            blockers.extend(_direct_prototype_blockers(declaration, arities))
+    else:
+        action = DeclarationCallableAction.STANDALONE_PROCEDURE
+        prototype = None
+        kind = "abstract" if reference.placement == "abstract" else "unresolved"
+        blockers.append(f"declaration callable {reference.name!r} has {kind} native placement")
+    return DeclarationCallablePolicy(
+        owner_path=callable_path,
+        source_name=reference.name,
+        native_name=reference.native_name or reference.name.rsplit(".", 1)[-1],
+        native_scope=reference.native_scope,
+        symbolic_role=f"{callable_path}:function",
+        expression_token=f"__prik_callable_{index}",
+        action=action,
+        prototype=prototype,
+        blockers=tuple(blockers),
+    )
+
+
+def _direct_prototype_policy(
+    prototype: models.SemanticPrototype,
+    *,
+    owner_path: str,
+    local_name: str,
+) -> ProcedurePrototypePolicy:
+    """Project one directly called signature into the shared prototype model."""
+    return _procedure_prototype_policy(
+        owner_path=owner_path,
+        name=local_name,
+        identity=f"{prototype.origin.native_scope or owner_path}.{prototype.name}",
+        pure=prototype.pure,
+        arguments=tuple(prototype.arguments),
+        result=prototype.return_type,
+    )
+
+
+def _semantic_prototype_argument_policy(
+    argument: models.SemanticArgument,
+    *,
+    owner_path: str,
+) -> ProcedurePrototypeArgumentPolicy:
+    """Copy one semantic prototype dummy into the shared signature model."""
+    semantic_type = argument.semantic_type
+    return ProcedurePrototypeArgumentPolicy(
+        owner_path=f"{owner_path}.prototype_argument.{argument.name}",
+        name=argument.name,
+        semantic_type_name=semantic_type.name,
+        rank=int(semantic_type.rank or 0),
+        passed_by_value=bool(argument.origin.metadata.get("value")),
+        intent=(
+            str(intent)
+            if (intent := argument.origin.metadata.get(models.PROTOTYPE_INTENT_METADATA)) is not None
+            else None
+        ),
+        character_length=_character_length(semantic_type),
+        array=_array_handoff_policy(semantic_type) if int(semantic_type.rank or 0) > 0 else None,
+        derived_type_identity=(
+            _derived_type_identity(semantic_type, owner_path) if _is_scalar_derived_type(semantic_type) else None
+        ),
+    )
+
+
+def _semantic_prototype_result_policy(
+    semantic_type: models.SemanticType,
+    *,
+    owner_path: str,
+) -> ProcedurePrototypeResultPolicy:
+    """Copy one semantic prototype result into the shared signature model."""
+    return ProcedurePrototypeResultPolicy(
+        owner_path=f"{owner_path}.prototype_result",
+        semantic_type_name=semantic_type.name,
+        rank=int(semantic_type.rank or 0),
+        character_length=_character_length(semantic_type),
+        array=_array_handoff_policy(semantic_type) if int(semantic_type.rank or 0) > 0 else None,
+        derived_type_identity=(
+            _derived_type_identity(semantic_type, owner_path) if _is_scalar_derived_type(semantic_type) else None
+        ),
+    )
+
+
+def _direct_prototype_blockers(
+    prototype: models.SemanticPrototype,
+    arities: list[int],
+) -> tuple[str, ...]:
+    """Require the exact prototype subset supported by direct bridge calls."""
+    blockers = list(
+        _specification_function_blockers(
+            prototype,
+            arities,
+            label=f"direct prototype {prototype.name!r}",
+            require_exact_reference_intent=True,
+            require_pure_diagnostic=False,
+        )
+    )
+    if not prototype.pure:
+        blockers.insert(
+            0,
+            f"direct prototype {prototype.name!r} used in a declaration expression must be @pure",
+        )
+    return tuple(blockers)
+
+
+def _specification_function_blockers(
+    declaration: models.SemanticFunction,
+    arities: list[int],
+    *,
+    label: str,
+    require_exact_reference_intent: bool,
+    require_pure_diagnostic: bool,
+) -> tuple[str, ...]:
+    """Validate the scalar-integer specification-function subset used by extents."""
+    blockers = []
+    if require_pure_diagnostic and not _semantic_function_is_pure(declaration):
+        blockers.append(f"{label} must be pure")
+    result = declaration.return_type
+    if result is None or int(result.rank or 0) != 0 or not _is_integer_extent_scalar(result):
+        blockers.append(f"{label} must return one scalar integer")
+    if arities and any(arity != len(declaration.arguments) for arity in arities):
+        blockers.append(
+            f"{label} expects {len(declaration.arguments)} arguments, "
+            f"but declaration calls use {tuple(dict.fromkeys(arities))}"
+        )
+    for argument in declaration.arguments:
+        intent = argument.origin.metadata.get(models.PROTOTYPE_INTENT_METADATA)
+        passed_by_value = bool(argument.origin.metadata.get("value"))
+        if argument.optional:
+            blockers.append(f"{label} argument {argument.name!r} cannot be optional")
+        if int(argument.semantic_type.rank or 0) != 0 or not _is_integer_extent_scalar(argument.semantic_type):
+            blockers.append(f"{label} argument {argument.name!r} must be a scalar integer")
+        if intent in {"out", "inout"}:
+            blockers.append(f"{label} argument {argument.name!r} cannot be {intent}")
+        if require_exact_reference_intent and not passed_by_value and intent != "in":
+            blockers.append(f"reference prototype argument {argument.name!r} requires exact In(...) direction")
+    return tuple(blockers)
+
+
+def _semantic_function_is_pure(declaration: models.SemanticFunction | None) -> bool:
+    """Return source purity when a module declaration retained that characteristic."""
+    if declaration is None:
+        return True
+    attributes = declaration.metadata.get("fortran_attributes", ())
+    return any(str(attribute).casefold() == "pure" for attribute in attributes)
+
+
+def _function_array_extent_sources(
+    function: models.SemanticFunction,
+    owner_path: str,
+) -> tuple[dict[str, tuple[str, str]], dict[str, tuple[str, tuple[str, ...]]]]:
+    """Return visible scalar values and concrete input-array extents by source name."""
+    scalar_roles: dict[str, tuple[str, str]] = {}
+    array_roles: dict[str, tuple[str, tuple[str, ...]]] = {}
+    for argument in function.arguments:
+        decision = _ownership_decision(argument, models.RESOLVED_OWNERSHIP_POLICY_METADATA)
+        if decision is None or not decision.python_visible:
+            continue
+        argument_path = f"{owner_path}.{argument.name}"
+        if int(argument.semantic_type.rank or 0) == 0 and _is_integer_extent_scalar(argument.semantic_type):
+            scalar_roles[argument.name.casefold()] = (argument.name, f"{argument_path}:value")
+            continue
+        array = _array_handoff_policy(argument.semantic_type)
+        if array is None or array.rank is None:
+            continue
+        roles = tuple(f"{argument_path}:extent:{axis}" for axis in range(array.rank))
+        array_roles[argument.name.casefold()] = (argument.name, roles)
+    return scalar_roles, array_roles
+
+
+def _is_integer_extent_scalar(semantic_type: models.SemanticType) -> bool:
+    """Return whether a visible scalar can safely supply a native array extent.
+
+    Declaration extents consume integer values.  Excluding Boolean, real,
+    character, derived, and callback arguments prevents their data pointers or
+    payloads from being substituted into generated integer expressions.
+    """
+    name = semantic_type.name
+    return name == "SizeT" or name.startswith("Int") or name.startswith("UInt")
 
 
 def _array_extent_reference_blockers(
-    function: models.SemanticFunction,
     arguments: list[ArgumentPolicy],
     results: tuple[ResultPolicy, ...],
 ) -> tuple[str, ...]:
-    """Require every declared extent name to come from a visible scalar argument."""
-    scalar_names = {
-        argument.name
-        for argument in function.arguments
-        if int(argument.semantic_type.rank or 0) == 0
-        and (decision := _ownership_decision(argument, models.RESOLVED_OWNERSHIP_POLICY_METADATA)) is not None
-        and decision.python_visible
-    }
+    """Require every declared extent dependency to have a completed visible role."""
     blockers = []
     for owner in (*arguments, *results):
         if owner.array is None:
             continue
-        for axis, references in enumerate(owner.array.extent_references):
-            missing = tuple(name for name in references if name not in scalar_names)
+        for axis, missing in enumerate(owner.array.extent_blockers):
             if missing:
                 blockers.append(
                     f"array owner {owner.owner_path!r} extent axis {axis} has unavailable scalar references {missing}"
@@ -6441,12 +7196,13 @@ def _visible_projected_arguments(function: models.SemanticFunction) -> tuple[mod
 
 
 def _native_name(function: models.SemanticFunction) -> str:
+    """Return the callable's resolved native spelling, preferring explicit semantic identity."""
     return str(function.native_name or function.origin.native_name or function.name)
 
 
 def _native_module(function: models.SemanticFunction, owner_path: str) -> str | None:
-    """Return the completed native module scope for non-external procedures."""
-    if _is_external(function):
+    """Return the completed native module scope for non-standalone procedures."""
+    if _is_standalone(function):
         return None
     return str(function.origin.native_scope or owner_path.split(".", maxsplit=1)[0])
 
@@ -6456,7 +7212,8 @@ def _native_is_subroutine(function: models.SemanticFunction) -> bool:
     return function.origin.source_kind == "subroutine" or function.return_type is None
 
 
-def _is_external(function: models.SemanticFunction) -> bool:
+def _is_standalone(function: models.SemanticFunction) -> bool:
+    """Report whether a Fortran callable has standalone native placement."""
     return bool(function.origin.source_language == "fortran" and function.origin.native_scope is None)
 
 
@@ -6465,7 +7222,45 @@ def _argument_native_name(
     python_position: int,
     argument: models.SemanticArgument,
 ) -> str:
+    """Return an argument's projected native spelling, falling back to its semantic name."""
     for mapping in function.projection:
         if mapping.python_position == python_position:
             return mapping.native_name or argument.name
     return argument.name
+
+
+# Direct wrapper-policy example.
+
+
+if __name__ == "__main__":
+    semantic_function = models.SemanticFunction(
+        name="scale",
+        arguments=[models.SemanticArgument("value", models.SemanticType("Float64", dtype="Float64"))],
+        return_type=models.SemanticType("Float64", dtype="Float64"),
+    )
+    semantic_argument = semantic_function.arguments[0]
+    semantic_argument.metadata[models.RESOLVED_OWNERSHIP_POLICY_METADATA] = OwnershipDecision(
+        kind=ObjectKind.SCALAR,
+        owner=OwnershipOwner.CALLER,
+        transfer=TransferMode.CALL_LOCAL,
+        destruction=DestructionPolicy.NONE,
+        codegen_action=CodegenAction.CALL_LOCAL_INPUT,
+        python_barrier_action=PythonBarrierAction.SCALAR_VALUE,
+        native_barrier_action=NativeBarrierAction.PASS_VALUE,
+    )
+    semantic_function.metadata[models.RESOLVED_RETURN_OWNERSHIP_POLICY_METADATA] = OwnershipDecision(
+        kind=ObjectKind.SCALAR,
+        owner=OwnershipOwner.PYTHON,
+        transfer=TransferMode.BY_VALUE,
+        destruction=DestructionPolicy.PYTHON_REFCOUNT,
+        codegen_action=CodegenAction.DIRECT_VALUE,
+        python_barrier_action=PythonBarrierAction.NONE,
+        native_barrier_action=NativeBarrierAction.NONE,
+    )
+    print(f"before: math.scale({semantic_argument.name}): {semantic_argument.semantic_type.name} semantic IR")
+    policy = build_function_wrapper_policy(semantic_function, owner_path="math.scale")
+    print(
+        f"after: {policy.arguments[0].bridge_data_action.value}; "
+        f"result={policy.results[0].direct_result_abi.value}; "
+        f"native={policy.native_call_slots[0].native_barrier_action.value}"
+    )

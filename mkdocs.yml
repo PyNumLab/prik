@@ -1,4 +1,5 @@
-site_name: PRIK
+site_name: PRIK — Python Runtime Interop Kit
+site_description: PRIK generates native Python bindings from Fortran projects, producing importable extensions and editable .pyi contracts for Pythonic APIs.
 site_url: https://pynumlab.github.io/prik/
 repo_url: https://github.com/PyNumLab/prik
 repo_name: GitHub
@@ -17,6 +18,7 @@ extra_css:
   - stylesheets/code-copy.css
 extra_javascript:
   - javascripts/code-copy.js
+  - javascripts/faq.js
 plugins:
   - search
 hooks:
@@ -24,6 +26,7 @@ hooks:
 markdown_extensions:
   - admonition
   - attr_list
+  - md_in_html
   - toc:
       permalink: true
 exclude_docs: |
@@ -70,6 +73,8 @@ nav:
           - Overview: user/examples/index.md
           - BLAS Wrapper: user/examples/blas-wrapper.md
           - LAPACK Wrapper: user/examples/lapack-wrapper.md
+          - FFTPACK Wrapper: user/examples/fftpack-wrapper.md
+          - MINPACK Wrapper: user/examples/minpack-wrapper.md
           - CFD Mini Example: user/examples/cfd-mini-example.md
           - MPI Example: user/examples/mpi-example.md
           - Object-Oriented Fortran: user/examples/object-oriented-fortran.md
@@ -117,6 +122,7 @@ nav:
       - Source Map: developer/source-map.md
       - Feature To Code Map: developer/feature-to-code-map.md
       - Repository Structure: developer/repository-structure.md
+      - Compiler Preprocessing Reference: developer/compiler-preprocessing.md
       # PRIK_C_DOCS: - C Parser Reference: developer/c-parser-reference.md
       - Fortran Parser Reference: developer/fortran-parser-reference.md
       - Quality Assurance: developer/quality-assurance.md

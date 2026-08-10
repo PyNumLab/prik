@@ -44,9 +44,9 @@ PRIK_C_DOCS_END -->
 | Target probes | `prik/probes/fortran_types.py` | semantic type requirements and compiler flags | resolved kind/storage facts | Fortran type probe tests |
 | Semantic IR | `prik/semantics/fortran2ir.py` | parser project and target facts | `SemanticModule` objects | semantic Fortran tests |
 | Semantic policy completion | `prik/semantics/policy_completion.py`, `prik/semantics/ownership.py` | full semantic modules with signatures and `.pyi` overrides | semantic modules annotated with every ownership, transfer, destruction, mutability, storage, accessor, and projection decision needed by wrapper generation | ownership-policy tests |
-| Wrapper planning | `prik/wrapper_codegen/planner.py`, `prik/wrapper_codegen/plan.py` | policy-completed semantic modules | typed wrapper plans consuming completed decisions without a separate support-analysis traversal | `tests/fortran/infrastructure/wrapper_codegen/`, wrapper tests |
-| Direct bridge and binding lowering | `prik/wrapper_codegen/fortran/bridge.py`, `prik/wrapper_codegen/c/binding.py`, `prik/wrapper_codegen/generator.py` | validated typed wrapper plans | Fortran, C, and header syntax nodes | `tests/fortran/infrastructure/wrapper_codegen/`, wrapper tests |
-| Wrapper and semantic-contract printing | `prik/wrapper_codegen/printers/` | wrapper syntax nodes or semantic IR | wrapper source files or semantic `.pyi` text | printer, generated-contract, and wrapper artifact tests |
+| Wrapper planning | `prik/codegen/planner.py`, `prik/codegen/plan.py` | policy-completed semantic modules | typed wrapper plans consuming completed decisions without a separate support-analysis traversal | `tests/fortran/infrastructure/codegen/`, wrapper tests |
+| Direct bridge and binding lowering | `prik/codegen/fortran/bridge.py`, `prik/codegen/c/binding.py`, `prik/codegen/generator.py` | validated typed wrapper plans | Fortran, C, and header syntax nodes | `tests/fortran/infrastructure/codegen/`, wrapper tests |
+| Wrapper and semantic-contract printing | `prik/codegen/printers/` | wrapper syntax nodes or semantic IR | wrapper source files or semantic `.pyi` text | printer, generated-contract, and wrapper artifact tests |
 | Compile and link | `prik/compiling/`, `prik/pipeline/build.py` | dependency-batched native objects, generated bridge and binding objects, compiler-process limit, and ordered link inputs | shared library | wrapper runtime and build-mode tests |
 
 <!-- PRIK_C_DOCS_START
@@ -77,12 +77,12 @@ cross-cutting infrastructure.
 | --- | --- | --- | --- |
 | Parser facts | parser packages | Source syntax, native declaration structure, source locations, and parser diagnostics | Wrapper policy, Python API projection, generated names, and compile/link decisions |
 | Semantic policy completion and ownership | `prik/semantics/policy_completion.py` and `prik/semantics/ownership.py` | Completed policy choices for ownership, lifetime, output projection, replacement, and ABI safety | Raw parser syntax, backend-specific statement trees, and hidden lowering-time policy decisions |
-| Typed wrapper plan | `prik/wrapper_codegen/plan.py` and `prik/wrapper_codegen/planner.py` | A validated, backend-neutral implementation plan projected from completed semantic decisions | Source-contract authority, policy inference, and target-language statement details |
-| Printers and compilation | `prik/wrapper_codegen/printers/`, `prik/compiling/`, and wrapper orchestration | Text emission, generated artifact layout, compiler commands, native objects, libraries, include directories, and link inputs | Semantic support decisions and plan rewriting policy |
+| Typed wrapper plan | `prik/codegen/plan.py` and `prik/codegen/planner.py` | A validated, backend-neutral implementation plan projected from completed semantic decisions | Source-contract authority, policy inference, and target-language statement details |
+| Printers and compilation | `prik/codegen/printers/`, `prik/compiling/`, and wrapper orchestration | Text emission, generated artifact layout, compiler commands, native objects, libraries, include directories, and link inputs | Semantic support decisions and plan rewriting policy |
 
 <!-- PRIK_C_DOCS_START
 | Semantic IR | `prik/semantics/models.py`, `prik/semantics/metadata.py`, and source-to-IR converters | Language-neutral contract facts: public names, native identities, source origins, visibility, type/storage/access facts, module/class/function/variable structure, and metadata that must survive parser, policy, printer, and lowering boundaries | Generated bodies, temporaries, target-language scopes, include/import mechanics, CPython calls, and printer-only syntax |
-| Backend syntax nodes | `prik/wrapper_codegen/nodes.py`, `prik/wrapper_codegen/fortran/bridge.py`, and `prik/wrapper_codegen/c/binding.py` | Fortran bridge nodes, C/CPython binding nodes, target ABI/API calls, and backend-specific adapter structure | Language-neutral semantic meaning and policy decisions |
+| Backend syntax nodes | `prik/codegen/nodes.py`, `prik/codegen/fortran/bridge.py`, and `prik/codegen/c/binding.py` | Fortran bridge nodes, C/CPython binding nodes, target ABI/API calls, and backend-specific adapter structure | Language-neutral semantic meaning and policy decisions |
 | Naming policy | `prik/naming/` | Shared public-name and generated-symbol decisions for Python, C, and Fortran targets | Semantic IR ownership or codegen tree ownership |
 PRIK_C_DOCS_END -->
 
@@ -156,15 +156,15 @@ PRIK_C_DOCS_END -->
 | --- | --- | --- |
 | CLI and output routing | `prik/cli.py`, parser CLI helpers | `docs/developer/source-map.md`, `docs/developer/feature-to-code-map.md` |
 | Source loading and preprocessing | `prik/pipeline/preprocessing.py` | `docs/developer/source-map.md`, parser references |
-| Editable semantic contracts | `prik/parsers/pyi/parser.py`, `prik/pipeline/pyi.py`, `prik/semantics/pyi2ir.py`, `prik/wrapper_codegen/printers/pyi_printer.py` | `docs/user/reference/semantic-pyi-format.md` |
-| Semantic and wrapper-planning errors | `prik/semantics/fortran2ir.py`, `prik/semantics/policy_completion.py`, `prik/semantics/wrapper_policy.py`, `prik/wrapper_codegen/planner.py` | `docs/user/guide/error-handling.md` |
-| Wrapper policy and lowering | `prik/semantics/policy_completion.py`, `prik/semantics/ownership.py`, `prik/wrapper_codegen/planner.py`, `prik/wrapper_codegen/generator.py` | `docs/user/reference/fortran-wrapper.md`, ownership docs |
+| Editable semantic contracts | `prik/parsers/pyi/parser.py`, `prik/pipeline/pyi.py`, `prik/semantics/pyi2ir.py`, `prik/codegen/printers/pyi_printer.py` | `docs/user/reference/semantic-pyi-format.md` |
+| Semantic and wrapper-planning errors | `prik/semantics/fortran2ir.py`, `prik/semantics/policy_completion.py`, `prik/semantics/wrapper_policy.py`, `prik/codegen/planner.py` | `docs/user/guide/error-handling.md` |
+| Wrapper policy and lowering | `prik/semantics/policy_completion.py`, `prik/semantics/ownership.py`, `prik/codegen/planner.py`, `prik/codegen/generator.py` | `docs/user/reference/fortran-wrapper.md`, ownership docs |
 | Native build | `prik/pipeline/build.py`, `prik/compiling/compilers.py`, `prik/compiling/native_support.py` | compiling package README and build-system docs |
 
 <!-- PRIK_C_DOCS_START
 | Parser facts | `prik/parsers/c/parser.py`, `prik/parsers/fortran/parser.py` | parser package README files and parser references |
 | Semantic conversion | `prik/semantics/fortran2ir.py`, `prik/semantics/c2ir.py`, `prik/semantics/pyi2ir.py`, `prik/semantics/models.py` | `docs/user/reference/semantic-ir.md` |
-| Bridge and binding generation | `prik/wrapper_codegen/fortran/bridge.py`, `prik/wrapper_codegen/c/binding.py` | wrapper generation docs |
+| Bridge and binding generation | `prik/codegen/fortran/bridge.py`, `prik/codegen/c/binding.py` | wrapper generation docs |
 PRIK_C_DOCS_END -->
 
 ## Semantic `.pyi` Wrapper Pipeline
@@ -180,8 +180,8 @@ the Python API.
   -> prik/semantics/pyi2ir.py
   -> prik/semantics/native_contract.py
   -> prik/semantics/policy_completion.py
-  -> prik/wrapper_codegen/planner.py
-  -> prik/wrapper_codegen/generator.py
+  -> prik/codegen/planner.py
+  -> prik/codegen/generator.py
   -> compile and link pipeline
 ```
 

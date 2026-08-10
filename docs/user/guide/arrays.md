@@ -173,8 +173,13 @@ print(vec)  # [2. 4. 6. 8.]
 - Writeability for `intent(out)` or `intent(inout)` arrays
 - Declared stride pattern for stride-aware contracts
 
-**prik does not silently cast, copy, transpose, or convert layouts.**
-A mismatch raises `TypeError` before native code runs.
+**prik does not silently cast, copy, transpose, or convert rejected caller
+layouts.** A mismatch raises `TypeError` before native code runs. A generated
+Boolean contract still accepts only `np.bool_` storage; when its numbered
+`Bool8`-`Bool64` element type records a different native logical width, the
+completed wrapper plan performs the required Boolean representation copy in
+the Fortran bridge. That internal ABI adaptation is not a caller-side dtype or
+layout coercion.
 
 Contiguous elements have no gaps between them in the required layout.
 Two arrays can print the same values but use different memory orders.
@@ -455,6 +460,12 @@ Use this list when reading or editing a generated `.pyi` contract:
 - `Annotated[T[Flat, columns], ORDER_C]`: C-contiguous; checked suffix,
   leading axes flattened
 - `T[...]`: assumed-rank, currently rank 1-15
+
+Generated contracts may describe a shape with visible arguments, such as
+`T[rows, columns]`. Most users should keep those generated relationships
+unchanged. If you need to edit a complex shape or use a native function to
+calculate an extent, see
+[Advanced Array Shape Expressions](../reference/pyi-contracts/calls-and-results.md#advanced-array-shape-expressions).
 
 ---
 

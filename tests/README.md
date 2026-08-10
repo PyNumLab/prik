@@ -46,11 +46,21 @@ Within one Fortran feature, use only the stages that own real evidence:
 | `preprocessing/` | Source processing, dependencies, and mappings are correct |
 | `semantics/` | Parser or `.pyi` facts become the intended semantic IR |
 | `policy/` | Ownership, lifetime, projection, mutation, nullability, storage, and accessor decisions are complete |
-| `wrapper_codegen/` | Completed policy selects a typed plan and named bridge/binding mechanisms |
+| `codegen/` | Completed policy selects a typed plan and named bridge/binding mechanisms |
 | `compiling/` | Commands, objects, libraries, and link inputs are correct |
 | `pipeline/` | Build stages and generated artifacts transition correctly |
 | `runtime/` | Runtime support mechanisms behave correctly without owning a complete feature journey |
 | `end_to_end/` | Source or intentional `.pyi` input produces an imported extension whose public behavior is called and verified |
+
+## Declaration-expression evidence
+
+Array declaration expressions have deliberate vertical coverage. The arrays
+semantic tests preserve names, imports, and native callable provenance; the
+arrays policy tests classify dependency roles and unsupported native calls; and
+the arrays end-to-end tests compile representative dimensions, inquiry forms,
+reductions, conditionals, powers, and logical-kind arrays. Contract-batch
+reconciliation belongs with `tests/fortran/semantic_pyi_format/`, where
+editable `.pyi` imports and prototypes are exercised.
 
 Public cross-feature capabilities have explicit owners:
 `source_parsing/`, `source_preprocessing/`, `command_line_interface/`, and

@@ -96,11 +96,47 @@ Each value is the mean of 6 clean builds after 1 untimed warm-up.
 | Optimized (`-O3 -march=native -mtune=native`) · full reference BLAS (155 sources) | **22.3 sec** | 33.1 sec | f2py 1.48× faster |
 <!-- prik-performance-build:end -->
 
+## Should I use PRIK or f2py?
+
+These benchmarks answer two narrow questions: runtime-call overhead and clean
+build time for the same Fortran sources on the same machine. They do not rank
+feature coverage, API design, ecosystem maturity, or suitability for every
+project.
+
+Use [NumPy's f2py](https://numpy.org/doc/stable/f2py/) when its established
+generated API—or an editable
+[`.pyf` signature](https://numpy.org/doc/stable/f2py/signature-file.html)—is
+enough for your project.
+
+Choose PRIK when you want to design the Python API, not just generate a wrapper.
+Its editable [semantic `.pyi` contract](reference/pyi-contracts/index.md) is a
+simpler, more Pythonic place to rename or hide exports, flatten modules, reorder
+or hide native arguments, and return native outputs as Python results.
+
+PRIK treats [NumPy arrays](guide/arrays.md) as complete API contracts: dtype,
+rank, shape, memory layout, contiguity, strides, mutation, and copy behavior are
+all explicit. This includes
+[supported positive-stride views](guide/arrays.md#strided-views) without copying.
+
+PRIK also covers important Fortran features: supported
+[derived types](guide/wrapping-derived-types.md) as Python classes,
+[allocatables](guide/allocatables.md), documented
+[pointer forms](guide/pointers.md), native errors as
+[Python exceptions](guide/error-handling.md), and
+[overloaded procedures](guide/generic-interfaces.md). PRIK is currently alpha,
+so check the linked guides for exact limitations.
+
 ## Fair, Like-for-Like Setup
 
 The suite wraps one set of Fortran kernels with the default PRIK and f2py
 interfaces. It checks both extensions for the same results before measuring
 them. No benchmark-only wrapper mode is used.
+
+Each runtime group uses an A/B/B/A sequence with equal PRIK-first and f2py-first
+process budgets. The two passes are merged before significance, winner counts
+and geometric means are calculated, preventing either tool from consistently
+benefiting from being measured second. Clean-build rounds alternate tool order
+independently.
 
 <!-- prik-performance-environment:start -->
 - Runtime native and generated sources use `-O3 -march=native -mtune=native`.

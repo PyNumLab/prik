@@ -1,15 +1,15 @@
-from prik.contracts import Addr, Arg, Float64, Int32, native_call, prototype
+from prik.contracts import Addr, Arg, Float64, In, Int32, native_call, prototype
 
 @prototype
 def reduce_callback(
-    count: Addr(Int32),
-    values: Float64[count]
+    count: In(Addr(Int32)),
+    values: In(Float64[count])
 ) -> Float64: ...
 
 @prototype
 def transform_callback(
-    count: Addr(Int32),
-    values: Float64[count]
+    count: In(Addr(Int32)),
+    values: In(Float64[count])
 ) -> Float64[count]: ...
 
 @native_call([Arg(0), Addr(Arg(1)), Arg(2)])

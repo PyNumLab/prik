@@ -15,10 +15,10 @@ jumping directly into generated-code internals.
 | `runtime/` | Python runtime objects used by generated extensions. |
 | `types/` | Semantic-to-Python ecosystem type mappings. |
 | `parsers/` | Parser namespace containing the `c`, `fortran`, and semantic `.pyi` frontends. |
-| `semantics/` | Language-neutral semantic IR, policy completion, and `.pyi` conversion. |
-| `wrapper_codegen/` | Canonical wrapper plans, direct native bridge/binding generation, and source printers. |
+| `semantics/` | Language-neutral semantic IR, declaration-expression provenance, policy completion, and `.pyi` conversion. |
+| `codegen/` | Canonical wrapper plans, direct native bridge/binding generation, and source printers. |
 | `compiling/` | Native compiler objects, wrapper compilation, native support installation, and linking. |
-| `utilities/` | Small domain-neutral helpers, including class visitor dispatch. |
+| `utilities/` | Shared parsing, normalization, rendering, evaluation, and visitor helpers. |
 
 The package root contains the public entrypoint modules plus the shared
 `stage_values.py` record support. Supported library symbols are flattened
@@ -26,6 +26,13 @@ through `prik.__init__`; internal modules import their canonical owner.
 `prik.contracts` remains a deliberate public submodule because its import path
 is part of semantic `.pyi` syntax. Parser-specific imports use the public
 `prik.parsers.c`, `prik.parsers.fortran`, and `prik.parsers.pyi` namespaces.
+
+Array declaration expressions cross three source packages in a fixed order:
+`utilities/declaration_expressions.py` parses and normalizes expression text,
+`semantics/` records native callable provenance and completes support policy,
+and `codegen/` consumes only the completed result while rendering generated
+artifacts. Follow that order when changing an expression feature; source
+printers, bridges, and bindings must not infer missing expression semantics.
 
 ## Source Navigation Docs
 

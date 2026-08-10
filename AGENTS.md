@@ -3,6 +3,12 @@
 The active codebase is entirely Python.
 Before starting implementation work, update or read the relevant docs first so the intended public behavior, ownership rules, and limitations are explicit; then implement code and tests to match that documented contract.
 
+Update `CHANGELOG.md` under **Unreleased** whenever a change adds or changes
+user- or maintainer-visible behavior, public APIs, supported features,
+examples, build or CI workflows, benchmark methodology, or documented
+limitations. Keep entries concise and outcome-focused; do not add release
+notes for internal cleanup that has no visible effect.
+
 Ignore:
 - *.f90
 - *.f95
@@ -15,7 +21,7 @@ Do not spend context window or analysis on those files unless explicitly request
 When asked to change or move an API, import path, command, feature, or behavior, do not add or keep compatibility layers, aliases, shims, fallback paths, or legacy entrypoints unless explicitly requested. A requested change means the old behavior should be removed.
 When updating tests, remove obsolete tests that only assert removed/old implementation behavior does not exist. Do not preserve rejection or absence checks for API/features that were intentionally removed unless explicitly requested.
 
-Before wrapper planning begins in `prik/wrapper_codegen/planner.py`, the
+Before wrapper planning begins in `prik/codegen/planner.py`, the
 post-IR policy stage must have completed every semantic decision needed by
 wrapper generation, including object kind, ownership, transfer, destruction,
 mutability/writeback, nullability, output projection, release responsibility,
@@ -52,8 +58,8 @@ the stage breakdown when they help explain the implementation.
 
 Changes limited to wrapper planning, direct bridge/binding lowering, or native
 compilation should use the focused owners under
-`tests/fortran/infrastructure/wrapper_codegen/`, feature-local
-`tests/fortran/*/wrapper_codegen/` directories, and
+`tests/fortran/infrastructure/codegen/`, feature-local
+`tests/fortran/*/codegen/` directories, and
 `tests/fortran/building_shared_library/compiling/` as applicable. Include the
 relevant end-to-end feature tests whenever a generated or compiled mechanism
 changes; run a broader suite when behavior spans multiple stages.
@@ -72,7 +78,7 @@ pull-request verification:
 - `python3 -m ruff check .`
 - `python3 -m ruff format --check .`
 - `python3 tools/check_static_analysis_versions.py`
-- `python3 tools/check_wrapper_codegen_complexity.py`
+- `python3 tools/check_codegen_complexity.py`
 - `python3 -m bandit -c pyproject.toml -r prik --severity-level medium --confidence-level medium`
 - `python3 -m vulture`
 - `python3 tools/check_radon_policy.py --base-ref auto`

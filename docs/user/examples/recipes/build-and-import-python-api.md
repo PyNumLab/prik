@@ -13,11 +13,11 @@ Use this recipe when a Python script needs to build a wrapper and load the
 generated extension directly.
 
 `build_fortran_extension` returns a result object with the module name, shared
-library path, generated source paths, and other build artifacts.
+library path, generated source paths, and other build artifacts. Call its
+`import_module()` method when the script should load the built extension.
 
 <!-- prik-doc-test: exact -->
 ```python
-from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -28,9 +28,7 @@ from prik import build_fortran_extension
 source = Path("tests/fortran/building_shared_library/end_to_end/fixtures/native/fruntime_abi_f90.f90")
 with TemporaryDirectory() as output_dir:
     build = build_fortran_extension(source, output_dir=output_dir)
-    spec = spec_from_file_location(build.module_name, build.shared_library)
-    module = module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = build.import_module()
     native_module = module.fruntime_abi_f90
 
     print(build.module_name)
@@ -47,7 +45,11 @@ fruntime_abi_f90
 
 ## Notes
 
-- This pattern avoids editing `sys.path`.
+- `import_module()` avoids editing `sys.path` and registers the extension under
+  `build.module_name` in the normal Python module cache.
+- The shared-library file must exist. Direct builds can import immediately;
+  Makefile and source-only results can import after their extension has been
+  built.
 - `TemporaryDirectory` keeps documentation and tests from leaving build
   artifacts in the checkout.
 - Use the returned artifact paths when debugging generated code.

@@ -18,6 +18,27 @@ editable `.pyi` files, policy completion, and wrapper code generation.
 | `policy_completion.py` | Complete ownership, transfer, destruction, mutability/writeback, projection, nullability, release, storage, Python-barrier, native-barrier, and accessor decisions after full signatures are known. |
 | `ir2ast.py` | Semantic IR to codegen AST lowering for wrapper generation; consumes completed policies. |
 
+## Declaration Expressions
+
+`utilities/declaration_expressions.py` owns the shared declaration-expression
+grammar, normalization, callable/reference discovery, native-style rendering,
+and deterministic integer evaluation. Semantic conversion does not evaluate an
+arbitrary native specification function. Instead, it records the function's
+native name, known module origin when available, and any exact contract
+declaration.
+
+For an imported contract batch, `pyi2ir.py` reconciles those references with
+the matching prototype or module function. Policy completion then classifies
+whether the declaration has a usable boundary role or remains a named blocker.
+Wrapper planning and code generation consume that completed decision; they do
+not rediscover callable provenance or synthesize an interface.
+
+Use a `@prototype` declaration when a standalone native procedure needs an
+exact interface. Its argument transport and result contract supply the
+information needed to emit the interface body. A module procedure already
+visible through a native `use` association does not need a duplicate
+interface declaration.
+
 ## Pipeline Position
 
 ```text

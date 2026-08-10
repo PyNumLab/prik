@@ -1,6 +1,6 @@
-from prik.contracts import Addr, Arg, Float64, Int32, external, native_call
+from prik.contracts import Addr, Arg, Float64, Int32, native_call, standalone
 
-@external
+@standalone
 @native_call([Addr(Arg(0)), Addr(Arg(1)), Arg(2), Arg(3)])
 def daxpy_like(
     n: Int32,
@@ -9,7 +9,7 @@ def daxpy_like(
     y: Float64[n]
 ) -> None: ...
 
-@external
+@standalone
 @native_call([Addr(Arg(0)), Arg(1), Arg(2)])
 def ddot_like(
     n: Int32,

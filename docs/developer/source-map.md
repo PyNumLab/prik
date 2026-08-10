@@ -40,29 +40,31 @@ change crosses ownership boundaries.
 | Change area | Open first | Public docs to update | Focused evidence |
 | --- | --- | --- | --- |
 | CLI flags, stage selection, output formatting, diagnostics | `prik/cli.py` | `docs/user/reference/cli-commands.md`, `docs/user/getting-started/beginner-workflow.md` | `tests/fortran/command_line_interface/pipeline/`, `tests/shared/docs/test_examples.py` |
-| Compiler preprocessing, include paths, macros, and target flags | `prik/pipeline/preprocessing.py` | `docs/user/examples/recipes/compiler-preprocessing.md`, `docs/developer/fortran-parser-reference.md` | `tests/fortran/source_preprocessing/preprocessing/`, `tests/fortran/source_preprocessing/preprocessing/test_parser_boundaries.py` |
+| Compiler preprocessing, include paths, macros, and target flags | `prik/pipeline/preprocessing.py` | `docs/user/examples/recipes/compiler-preprocessing.md`, `docs/developer/compiler-preprocessing.md`, `docs/developer/fortran-parser-reference.md` | `tests/fortran/source_preprocessing/preprocessing/`, `tests/fortran/source_preprocessing/preprocessing/test_parser_boundaries.py` |
 | Fortran parser facts and diagnostics | `prik/parsers/fortran/parser.py` | `docs/developer/fortran-parser-reference.md`, `docs/user/examples/recipes/inspect-fortran-api.md` | `tests/fortran/source_parsing/parsing/` |
-| Semantic `.pyi` parsing, conversion, printing, package generation, and round-trip behavior | `prik/parsers/pyi/parser.py`, `prik/pipeline/pyi.py`, `prik/semantics/pyi2ir.py`, `prik/wrapper_codegen/printers/pyi_printer.py` | `docs/user/reference/semantic-pyi-format.md`, `docs/user/reference/pyi-contracts/index.md`, `docs/user/examples/recipes/semantic-pyi-contracts.md` | `tests/fortran/semantic_pyi_format/`, `tests/fortran/semantic_pyi_format/pipeline/test_contract_package_generation.py`, `tests/fortran/semantic_pyi_format/pipeline/test_contract_loading.py`, `tests/fortran/semantic_pyi_format/end_to_end/test_authoritative_contract_runtime.py`, `tests/fortran/semantic_pyi_format/pipeline/` |
-| Wrapper-planning errors and support claims | `prik/semantics/policy_completion.py`, `prik/wrapper_codegen/planner.py` | `docs/user/reference/diagnostic-codes.md`, `docs/user/language-support/feature-matrix.md` | `tests/fortran/infrastructure/policy/`, feature-local `policy/`, and `tests/fortran/infrastructure/wrapper_codegen/` |
+| Semantic `.pyi` parsing, conversion, printing, package generation, and round-trip behavior | `prik/parsers/pyi/parser.py`, `prik/pipeline/pyi.py`, `prik/semantics/pyi2ir.py`, `prik/codegen/printers/pyi_printer.py` | `docs/user/reference/semantic-pyi-format.md`, `docs/user/reference/pyi-contracts/index.md`, `docs/user/examples/recipes/semantic-pyi-contracts.md` | `tests/fortran/semantic_pyi_format/`, `tests/fortran/semantic_pyi_format/pipeline/test_contract_package_generation.py`, `tests/fortran/semantic_pyi_format/pipeline/test_contract_loading.py`, `tests/fortran/semantic_pyi_format/end_to_end/test_authoritative_contract_runtime.py`, `tests/fortran/semantic_pyi_format/pipeline/` |
+| Wrapper-planning errors and support claims | `prik/semantics/policy_completion.py`, `prik/codegen/planner.py` | `docs/user/reference/diagnostic-codes.md`, `docs/user/language-support/feature-matrix.md` | `tests/fortran/infrastructure/policy/`, feature-local `policy/`, and `tests/fortran/infrastructure/codegen/` |
 | Source-driven Fortran wrapper orchestration | `prik/pipeline/build.py` | `docs/user/reference/fortran-wrapper.md`, `docs/user/guide/building-shared-library.md` | `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py`, `tests/fortran/building_shared_library/end_to_end/test_multi_source_builds.py` |
 | Semantic `.pyi` wrapper orchestration from native artifacts | `prik/pipeline/build.py`, `prik/pipeline/pyi.py`, `prik/semantics/pyi2ir.py` | `docs/user/reference/fortran-wrapper.md`, `docs/user/reference/semantic-pyi-format.md` | `tests/fortran/building_shared_library/pipeline/test_pyi_build_modes.py`, `tests/fortran/semantic_pyi_format/end_to_end/test_authoritative_contract_runtime.py`, `tests/fortran/pyi_contracts/exports_and_modules/`, `tests/fortran/pyi_contracts/functions_and_classes/` |
-| Ownership, lifetime, output projection, and unsupported wrapper policy | `prik/semantics/policy_completion.py`, `prik/semantics/ownership.py`, `prik/wrapper_codegen/planner.py` | `docs/user/guide/memory-management.md`, `docs/user/reference/semantic-pyi-format.md`, `docs/user/reference/fortran-wrapper.md` | `tests/fortran/infrastructure/policy/`, feature-local `policy/`, and `tests/fortran/infrastructure/wrapper_codegen/` |
-| Immediate callback policy, typed adapters, and trampolines | `prik/semantics/wrapper_policy.py`, `prik/semantics/policy_completion.py`, `prik/wrapper_codegen/plan.py`, `prik/wrapper_codegen/planner.py`, `prik/wrapper_codegen/c/binding.py`, `prik/wrapper_codegen/fortran/bridge.py` | `docs/user/guide/callbacks.md`, `docs/user/reference/semantic-pyi-format.md` | `tests/fortran/callbacks/` |
+| Ownership, lifetime, output projection, and unsupported wrapper policy | `prik/semantics/policy_completion.py`, `prik/semantics/ownership.py`, `prik/codegen/planner.py` | `docs/user/guide/memory-management.md`, `docs/user/reference/semantic-pyi-format.md`, `docs/user/reference/fortran-wrapper.md` | `tests/fortran/infrastructure/policy/`, feature-local `policy/`, and `tests/fortran/infrastructure/codegen/` |
+| Immediate callback policy, typed adapters, and trampolines | `prik/semantics/wrapper_policy.py`, `prik/semantics/policy_completion.py`, `prik/codegen/plan.py`, `prik/codegen/planner.py`, `prik/codegen/c/binding.py`, `prik/codegen/fortran/bridge.py` | `docs/user/guide/callbacks.md`, `docs/user/reference/semantic-pyi-format.md` | `tests/fortran/callbacks/` |
 | Native compilation, binding support, and shared-library linking | `prik/pipeline/build.py`, `prik/compiling/compilers.py`, `prik/compiling/native_support.py` | `docs/user/reference/fortran-wrapper.md`, `docs/developer/build-system.md` | `tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py`, `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py` |
 | Public Python exports | `prik/__init__.py` | `README.md`, `docs/user/reference/python-api.md` | `tests/fortran/source_parsing/parsing/test_public_entrypoints.py` |
-| Reference BLAS source ownership, inventory, and numerical validation | `examples/blas/routine_inventory.py`, `examples/blas/tests/test_routine_coverage.py` | `examples/blas/README.md`, `docs/user/examples/blas-wrapper.md` | `examples/blas/tests/test_*.py`, `examples/blas/ci/full_surface.py`, dedicated BLAS/LAPACK workflow |
-| Reference LAPACK source ownership, inventory, and numerical validation | `examples/lapack/routine_inventory.py`, `examples/lapack/tests/test_routine_coverage.py` | `examples/lapack/README.md`, `docs/user/examples/lapack-wrapper.md` | `examples/lapack/tests/test_*.py`, `examples/lapack/ci/full_surface.py`, dedicated BLAS/LAPACK workflow |
+| Reference BLAS source ownership, inventory, and numerical validation | `examples/blas/routine_inventory.py`, `examples/blas/tests/test_routine_coverage.py` | `examples/blas/README.md`, `docs/user/examples/blas-wrapper.md` | `examples/blas/tests/test_*.py`, `examples/blas/ci/full_surface.py`, dedicated real-libraries workflow |
+| Reference LAPACK source ownership, inventory, and numerical validation | `examples/lapack/routine_inventory.py`, `examples/lapack/tests/test_routine_coverage.py` | `examples/lapack/README.md`, `docs/user/examples/lapack-wrapper.md` | `examples/lapack/tests/test_*.py`, `examples/lapack/ci/full_surface.py`, dedicated real-libraries workflow |
+| FFTPACK public-module boundary, source ownership, and numerical validation | `examples/fftpack/routine_inventory.py`, `examples/fftpack/tests/test_routine_coverage.py` | `examples/fftpack/README.md`, `docs/user/examples/fftpack-wrapper.md` | `examples/fftpack/tests/test_*.py`, `tests/fortran/building_shared_library/end_to_end/real_libraries/test_fftpack_routines.py`, dedicated real-libraries workflow |
+| MINPACK source ownership, parameter constants, and numerical validation | `examples/minpack/routine_inventory.py`, `examples/minpack/tests/test_routine_coverage.py` | `examples/minpack/README.md`, `docs/user/examples/minpack-wrapper.md` | `examples/minpack/tests/test_*.py`, `tests/fortran/building_shared_library/end_to_end/real_libraries/test_minpack_routines.py`, dedicated real-libraries workflow |
 | Source navigation documentation | `docs/developer/source-map.md`, `docs/developer/feature-to-code-map.md`, package README files | `docs/developer/source-map.md` | `tests/shared/docs/test_structure.py` |
 
 <!-- PRIK_C_DOCS_START
-| Compiler preprocessing, include paths, macros, target flags | `prik/pipeline/preprocessing.py` | `docs/user/examples/recipes/compiler-preprocessing.md`, `docs/developer/c-parser-reference.md`, `docs/developer/fortran-parser-reference.md` | `tests/fortran/source_preprocessing/preprocessing/`, `tests/fortran/source_preprocessing/preprocessing/test_parser_boundaries.py` |
+| Compiler preprocessing, include paths, macros, target flags | `prik/pipeline/preprocessing.py` | `docs/user/examples/recipes/compiler-preprocessing.md`, `docs/developer/compiler-preprocessing.md`, `docs/developer/c-parser-reference.md`, `docs/developer/fortran-parser-reference.md` | `tests/fortran/source_preprocessing/preprocessing/`, `tests/fortran/source_preprocessing/preprocessing/test_parser_boundaries.py` |
 PRIK_C_DOCS_END -->
 
 <!-- PRIK_C_DOCS_START
 | C parser facts and diagnostics | `prik/parsers/c/parser.py` | `docs/developer/c-parser-reference.md`, `docs/user/examples/recipes/inspect-c-api.md` | `tests/c/fixtures/parser/`, `tests/c/semantics/conversion/` |
 | Semantic IR shape and cross-stage metadata | `prik/semantics/models.py`, `prik/semantics/metadata.py`, `prik/semantics/fortran2ir.py`, `prik/semantics/c2ir.py` | `docs/user/reference/semantic-ir.md` | `tests/fortran/semantic_ir/semantics/`, `tests/c/semantics/conversion/` |
-| Generated Fortran bridge | `prik/wrapper_codegen/fortran/bridge.py`, `prik/wrapper_codegen/printers/source_printers.py` | `docs/user/reference/fortran-wrapper.md` | `tests/fortran/infrastructure/wrapper_codegen/`, `tests/fortran/` generated artifact assertions |
-| Generated CPython binding and Python-visible runtime behavior | `prik/wrapper_codegen/c/binding.py`, `prik/wrapper_codegen/printers/source_printers.py` | `docs/user/reference/fortran-wrapper.md`, `docs/user/reference/python-api.md` | `tests/fortran/infrastructure/wrapper_codegen/`, `tests/fortran/` |
+| Generated Fortran bridge | `prik/codegen/fortran/bridge.py`, `prik/codegen/printers/source_printers.py` | `docs/user/reference/fortran-wrapper.md` | `tests/fortran/infrastructure/codegen/`, `tests/fortran/` generated artifact assertions |
+| Generated CPython binding and Python-visible runtime behavior | `prik/codegen/c/binding.py`, `prik/codegen/printers/source_printers.py` | `docs/user/reference/fortran-wrapper.md`, `docs/user/reference/python-api.md` | `tests/fortran/infrastructure/codegen/`, `tests/fortran/` |
 PRIK_C_DOCS_END -->
 
 ## Package Map
@@ -85,7 +87,7 @@ PRIK_C_DOCS_END -->
 | `prik/parsers/c/` | C lexer, parser, models, preprocessing metadata, and C parser CLI helpers | `parser.py`, `lexer.py`, `models.py`, `preprocessor.py`, `type_resolver.py`, `cli.py` | `tests/c/fixtures/parser/`, `docs/developer/c-parser-reference.md` |
 | `prik/parsers/pyi/` | Semantic `.pyi` text/file parsing to Python AST. | `parser.py` | `tests/fortran/semantic_pyi_format/parsing/`, `docs/user/reference/semantic-pyi-format.md` |
 | `prik/semantics/` | Language-neutral semantic IR, source-to-IR conversion, `.pyi` AST conversion, and policy completion | `models.py`, `fortran2ir.py`, `c2ir.py`, `pyi2ir.py`, `policy_completion.py` | `tests/fortran/semantic_ir/semantics/`, `tests/fortran/semantic_pyi_format/semantics/`, `docs/user/reference/semantic-ir.md`, `docs/user/reference/semantic-pyi-format.md` |
-| `prik/wrapper_codegen/` | Canonical wrapper planning, C/Fortran generation, source printing, and semantic `.pyi` printing | `plan.py`, `planner.py`, `generator.py`, `printers/` | `tests/fortran/infrastructure/wrapper_codegen/`, feature-local `wrapper_codegen/` and `end_to_end/` tests, `docs/user/reference/fortran-wrapper.md` |
+| `prik/codegen/` | Canonical wrapper planning, C/Fortran generation, source printing, and semantic `.pyi` printing | `plan.py`, `planner.py`, `generator.py`, `printers/` | `tests/fortran/infrastructure/codegen/`, feature-local `codegen/` and `end_to_end/` tests, `docs/user/reference/fortran-wrapper.md` |
 | `prik/naming/` | Unified public-name and generated-symbol policy for Python, C, and Fortran targets | `policy.py` | naming, visibility, and wrapper runtime tests |
 PRIK_C_DOCS_END -->
 
@@ -112,13 +114,13 @@ update this table, the package README files, and the mechanical checks in
 | `prik/pipeline/pyi.py` | Semantic `.pyi` text/file/path-set conversion and external-type reconciliation. |
 | `prik/semantics/pyi2ir.py` | Semantic `.pyi` AST conversion and validation. |
 | `prik/semantics/policy_completion.py` | Post-IR semantic policy completion before wrapper planning. |
-| `prik/wrapper_codegen/plan.py` | Typed, policy-complete wrapper plan records. |
-| `prik/wrapper_codegen/planner.py` | Semantic policy to wrapper-plan conversion. |
-| `prik/wrapper_codegen/generator.py` | Ordered direct bridge, binding, header, and source generation. |
-| `prik/wrapper_codegen/fortran/bridge.py` | Direct Fortran bridge lowering from typed plans. |
-| `prik/wrapper_codegen/c/binding.py` | Direct Python-extension binding lowering from typed plans. |
-| `prik/wrapper_codegen/printers/source_printers.py` | Native binding, header, and Fortran source printing. |
-| `prik/wrapper_codegen/printers/pyi_printer.py` | Semantic `.pyi` printing. |
+| `prik/codegen/plan.py` | Typed, policy-complete wrapper plan records. |
+| `prik/codegen/planner.py` | Semantic policy to wrapper-plan conversion. |
+| `prik/codegen/generator.py` | Ordered direct bridge, binding, header, and source generation. |
+| `prik/codegen/fortran/bridge.py` | Direct Fortran bridge lowering from typed plans. |
+| `prik/codegen/c/binding.py` | Direct Python-extension binding lowering from typed plans. |
+| `prik/codegen/printers/source_printers.py` | Native binding, header, and Fortran source printing. |
+| `prik/codegen/printers/pyi_printer.py` | Semantic `.pyi` printing. |
 | `prik/compiling/objects.py` | Native compile object model. |
 | `prik/compiling/compilers.py` | Compiler command execution and tool lookup. |
 | `prik/compiling/native_support.py` | Native binding support installation for generated wrappers. |
@@ -145,10 +147,10 @@ prik/cli.py
   -> prik/probes/fortran_types.py
   -> prik/semantics/fortran2ir.py
   -> prik/semantics/policy_completion.py
-  -> prik/wrapper_codegen/planner.py
-  -> prik/wrapper_codegen/generator.py
-  -> prik/wrapper_codegen/fortran/bridge.py
-  -> prik/wrapper_codegen/c/binding.py
+  -> prik/codegen/planner.py
+  -> prik/codegen/generator.py
+  -> prik/codegen/fortran/bridge.py
+  -> prik/codegen/c/binding.py
   -> prik/compiling/compilers.py
   -> tests/fortran/
 ```
@@ -161,8 +163,8 @@ prik/parsers/pyi/parser.py
   -> prik/pipeline/pyi.py
   -> prik/semantics/pyi2ir.py
   -> prik/semantics/policy_completion.py
-  -> prik/wrapper_codegen/planner.py
-  -> prik/wrapper_codegen/generator.py
+  -> prik/codegen/planner.py
+  -> prik/codegen/generator.py
 ```
 
 <!-- PRIK_C_DOCS_START
@@ -176,7 +178,7 @@ prik/cli.py
   -> prik/parsers/c/parser.py
   -> prik/probes/c_types.py
   -> prik/semantics/c2ir.py
-  -> prik/wrapper_codegen/printers/pyi_printer.py
+  -> prik/codegen/printers/pyi_printer.py
   -> prik/semantics/policy_completion.py
 ```
 PRIK_C_DOCS_END -->

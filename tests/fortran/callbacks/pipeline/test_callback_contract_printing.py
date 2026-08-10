@@ -60,6 +60,7 @@ def test_callback_contract_prints_descriptor_and_derived_value_transports():
 
     contract = emit_module(module)
 
+    assert "@prototype\ndef callback(" in contract
     assert "values: Annotated[Addr(Float64[:]), FortranAllocatable]" in contract
     assert "poly: Annotated[item, Polymorphic]" in contract
     assert "value: Value(item)" in contract

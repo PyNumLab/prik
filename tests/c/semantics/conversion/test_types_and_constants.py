@@ -342,7 +342,7 @@ def test_c2ir_preserves_c_int_identity_and_stores_compiler_probed_precision():
         (CUnsignedLong(), "unsigned long", {"kind": "integer", "signed": False, "bits": 32}, "UInt32"),
         (CLongDouble(), "long double", {"kind": "real", "bits": 64}, "Float64"),
         (CLongDoubleComplex(), "long double _Complex", {"kind": "complex", "bits": 128}, "Complex128"),
-        (CBool(), "_Bool", {"kind": "bool", "bits": 8}, "Bool"),
+        (CBool(), "_Bool", {"kind": "bool", "bits": 8}, "Bool8"),
     ],
 )
 def test_c2ir_uses_compiler_probed_primitive_abi_facts(ctype, primitive, fact, expected):

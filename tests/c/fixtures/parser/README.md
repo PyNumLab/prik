@@ -6,7 +6,7 @@ Guidelines:
 
 - keep these tests separate from the Fortran parser tests
 - keep wrapper-plan support diagnostics under the owning Fortran feature's
-  `wrapper_codegen/` stage, not under C parser tests
+  `codegen/` stage, not under C parser tests
 - add parser snapshots only when the corresponding schema and preprocessing
   recipe are stable
 - keep the checked-in cJSON regression inputs active while a separately pinned

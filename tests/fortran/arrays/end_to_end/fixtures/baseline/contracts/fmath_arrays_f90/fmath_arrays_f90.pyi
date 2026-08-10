@@ -1,4 +1,4 @@
-from prik.contracts import Addr, Arg, Bool, Complex128, Complex64, Float32, Float64, Int32, Returns, bind, native_call
+from prik.contracts import Addr, Arg, Bool8, Complex128, Complex64, Float32, Float64, Int32, Returns, bind, native_call
 
 @bind("SQUARE_R4_CONTIGUOUS")
 @native_call([Addr(Arg(0)), Arg(1), Arg(2)])
@@ -709,7 +709,7 @@ def abs_c8_contiguous(
 def is_positive_r4_contiguous(
     N: Int32,
     X: Float32[:],
-    R: Bool[:]
+    R: Bool8[:]
 ) -> Returns["N", Int32]: ...
 
 @bind("IS_POSITIVE_R8_CONTIGUOUS")
@@ -717,7 +717,7 @@ def is_positive_r4_contiguous(
 def is_positive_r8_contiguous(
     N: Int32,
     X: Float64[:],
-    R: Bool[:]
+    R: Bool8[:]
 ) -> Returns["N", Int32]: ...
 
 @bind("IS_EVEN_I4_CONTIGUOUS")
@@ -725,7 +725,7 @@ def is_positive_r8_contiguous(
 def is_even_i4_contiguous(
     N: Int32,
     X: Int32[:],
-    R: Bool[:]
+    R: Bool8[:]
 ) -> Returns["N", Int32]: ...
 
 @bind("SQUARE_R4_STRIDED")
@@ -1437,7 +1437,7 @@ def abs_c8_strided(
 def is_positive_r4_strided(
     N: Int32,
     X: Float32[::],
-    R: Bool[::]
+    R: Bool8[::]
 ) -> Returns["N", Int32]: ...
 
 @bind("IS_POSITIVE_R8_STRIDED")
@@ -1445,7 +1445,7 @@ def is_positive_r4_strided(
 def is_positive_r8_strided(
     N: Int32,
     X: Float64[::],
-    R: Bool[::]
+    R: Bool8[::]
 ) -> Returns["N", Int32]: ...
 
 @bind("IS_EVEN_I4_STRIDED")
@@ -1453,5 +1453,5 @@ def is_positive_r8_strided(
 def is_even_i4_strided(
     N: Int32,
     X: Int32[::],
-    R: Bool[::]
+    R: Bool8[::]
 ) -> Returns["N", Int32]: ...

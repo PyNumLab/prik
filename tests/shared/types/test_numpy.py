@@ -5,6 +5,8 @@ import pytest
 from prik.semantics.models import SemanticType
 from prik.types.numpy import (
     SEMANTIC_DTYPE_TO_NUMPY_DTYPE,
+    boolean_storage_bits,
+    is_boolean_semantic_type_name,
     numpy_dtype_expression,
     semantic_dtype_to_numpy_dtype,
     semantic_dtype_to_numpy_dtype_map,
@@ -15,6 +17,10 @@ from prik.types.numpy import (
 def test_semantic_dtype_to_numpy_dtype_dictionary_uses_resolved_widths():
     assert SEMANTIC_DTYPE_TO_NUMPY_DTYPE == {
         "Bool": "numpy.bool_",
+        "Bool8": "numpy.bool_",
+        "Bool16": "numpy.bool_",
+        "Bool32": "numpy.bool_",
+        "Bool64": "numpy.bool_",
         "Int8": "numpy.int8",
         "Int16": "numpy.int16",
         "Int32": "numpy.int32",
@@ -34,6 +40,14 @@ def test_semantic_dtype_to_numpy_dtype_dictionary_uses_resolved_widths():
         "SizeT": "numpy.uintp",
     }
     assert "Int" not in SEMANTIC_DTYPE_TO_NUMPY_DTYPE
+    assert all(is_boolean_semantic_type_name(name) for name in ("Bool", "Bool8", "Bool16", "Bool32", "Bool64"))
+    assert [boolean_storage_bits(name) for name in ("Bool", "Bool8", "Bool16", "Bool32", "Bool64")] == [
+        8,
+        8,
+        16,
+        32,
+        64,
+    ]
 
 
 def test_numpy_dtype_expression_rejects_unresolved_or_unknown_semantic_dtypes():

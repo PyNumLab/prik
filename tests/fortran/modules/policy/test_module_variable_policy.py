@@ -7,6 +7,7 @@ from tests.fortran._support.ownership_policy import (
 )
 from prik.parsers.fortran.parser import parse_fortran_project
 from prik.pipeline.build import _apply_source_python_exports, _merge_wrapper_modules
+from prik.codegen.printers.pyi_printer import PyiPrinter
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.semantics.models import RESOLVED_MODULE_VARIABLE_POLICY_METADATA
 from prik.semantics.ownership import AssignmentMode
@@ -85,6 +86,40 @@ end module computed_constants
     assert policies["prefix"].getter_action is ModuleGetterAction.CONSTANT_VALUE
     assert policies["prefix"].constant_value == "D"
     assert all(policy.supported for policy in policies.values())
+
+
+def test_parameter_arrays_complete_as_immutable_native_snapshots():
+    parsed = parse_fortran_project(
+        {
+            "parameter_array.f90": """
+module parameter_array
+  use iso_fortran_env, only: real64
+  real(real64), parameter :: dpmpar(3) = [epsilon(1.0_real64), tiny(1.0_real64), huge(1.0_real64)]
+end module parameter_array
+"""
+        }
+    )
+    modules = fortran_project_to_semantic_modules(parsed)
+    _apply_source_python_exports(modules)
+    module = _merge_wrapper_modules(modules, name="parameter_array_wrapper")
+
+    complete_semantic_policies(module)
+
+    policy = next(
+        variable.metadata[RESOLVED_MODULE_VARIABLE_POLICY_METADATA]
+        for variable in module.variables
+        if variable.name == "dpmpar"
+    )
+    assert policy.supported is True
+    assert policy.getter_action is ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE
+    assert policy.getter is not None
+    assert policy.getter.owner.value == "python"
+    assert policy.setter_action is SetterAction.OMIT
+    assert policy.native_assignment is AssignmentMode.NONE
+    assert policy.constant_value is None
+    assert policy.array is not None
+    assert policy.array.shape == ("3",)
+    assert "dpmpar: Final[Float64[3]]" in PyiPrinter().emit(module)
 
 
 def test_fixed_module_array_requires_explicit_addressable_alias_storage():

@@ -15,7 +15,7 @@ from prik import build_pyi_extension
 pytestmark = pytest.mark.fortran_end_to_end
 
 
-def test_external_allocatable_argument_accepts_a_caller_created_handle(tmp_path: Path):
+def test_standalone_allocatable_argument_accepts_a_caller_created_handle(tmp_path: Path):
     source = tmp_path / "external_allocatable.f90"
     source.write_text(
         """
@@ -30,9 +30,9 @@ end subroutine replace_external
     )
     contract = tmp_path / "external_allocatable.pyi"
     contract.write_text(
-        """from prik.contracts import Allocatable, Float64, Returns, external
+        """from prik.contracts import Allocatable, Float64, Returns, standalone
 
-@external
+@standalone
 def replace_external(
     values: Allocatable[Float64[:]],
 ) -> Returns["values", Allocatable[Float64[:]]]: ...

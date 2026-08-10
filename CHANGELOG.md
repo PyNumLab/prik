@@ -5,6 +5,52 @@ This file is the canonical record of user-visible PRIK changes. Add changes to
 release preparation. Versions use [Semantic Versioning](https://semver.org/);
 release tags add a leading `v` to the package version.
 
+## Unreleased
+
+### Added
+
+- Added maintained FFTPACK and MINPACK examples built from the upstream
+  fortran-lang projects. Their build scripts, user guides, and numerical tests
+  cover all 31 FFTPACK and 22 MINPACK public procedures.
+- Added Python-owned, read-only NumPy snapshots for supported public Fortran
+  parameter arrays, including MINPACK's `dpmpar` constants.
+- Added declaration-expression support for richer arithmetic, comparisons,
+  conditionals, array inquiries, and local, imported, or standalone
+  specification functions, including native-dependent result extents.
+- Added exact NumPy Boolean-array conversion for compiler-measured 8-, 16-,
+  32-, and 64-bit Fortran logical kinds, with canonical writeback.
+- Added `WrapperBuildResult.import_module()` to load a generated extension
+  explicitly without changing `sys.path`.
+
+### Changed
+
+- Renamed the developer-facing wrapper generation package from
+  `prik.wrapper_codegen` to `prik.codegen`; the old import path was removed.
+- Expanded public interface resolution so implemented unnamed interfaces and
+  public generics can be wrapped without exposing private implementation
+  procedures.
+- Expanded the Real Libraries CI lane to build and test BLAS, LAPACK, FFTPACK,
+  and MINPACK, with cached native BLAS and LAPACK builds where available.
+- Made performance comparisons faster and less order-sensitive with balanced
+  A/B/B/A runtime measurements, merged samples, smaller worker budgets, and
+  four measured clean builds after warm-up.
+- Refreshed the README and website around the canonical
+  **PRIK — Python Runtime Interop Kit** identity, with a concise FAQ, a fair
+  PRIK-versus-f2py guide, clearer array guidance, and searchable real-library
+  examples.
+- Hardened preprocessing, compiler-derived type probes, semantic policy
+  completion, and multi-source build reporting so unsupported contracts fail
+  earlier with clearer diagnostics.
+
+### Fixed
+
+- Preserved authoritative public interface signatures when linked legacy
+  implementations use different internal storage declarations, including
+  FFTPACK's `zfftf` complex-array interface.
+- Corrected SciPy reference inputs for the LAPACK `dstemr` and `dstebz` tests
+  and strengthened BLAS and LAPACK routine validation with independent
+  mathematical expectations.
+
 ## 0.1.1 — 2026-08-03
 
 - Update README and CONTRIBUTING

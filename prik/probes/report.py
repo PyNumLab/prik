@@ -1,4 +1,10 @@
-"""Generate target-specific native-to-semantic-to-NumPy mapping examples."""
+"""Generate target-specific native-to-semantic-to-NumPy mapping reports.
+
+The public functions measure compiler-dependent target facts through the probe
+stage, convert the supported native spellings through existing semantic
+converters, and render Markdown for documentation or inspection. They report
+the selected target; they do not define parser facts or semantic policy.
+"""
 
 from __future__ import annotations
 
@@ -37,6 +43,7 @@ from prik.probes.fortran_types import evaluate_fortran_type_facts, probe_fortran
 from prik.types.numpy import numpy_dtype_expression
 
 
+# C report inventory.
 _C_TYPES = (
     ("_Bool", CBool()),
     ("char", CChar()),
@@ -60,6 +67,7 @@ _C_TYPES = (
 )
 
 
+# Fortran report inventory.
 def _fortran_type(
     spelling: str,
     base_type: str,
@@ -69,6 +77,13 @@ def _fortran_type(
     character_length_syntax: bool = False,
     declared_storage_bits: int | None = None,
 ) -> tuple[str, FortranVariable]:
+    """Build one report-only Fortran variable and its displayed spelling.
+
+    The helper records metadata that the existing Fortran converter consumes
+    when deriving a target type key. It returns the spelling and configured
+    variable without mutating any caller-owned object; the private attributes
+    intentionally distinguish legacy storage and character-length forms.
+    """
     variable = FortranVariable(name="value", base_type=base_type, kind=kind or "")
     if target_kind_expression:
         variable._target_kind_expression = target_kind_expression
@@ -151,7 +166,13 @@ _FORTRAN_TYPES = (*_FORTRAN_MODERN_TYPES, *_FORTRAN_LEGACY_TYPES)
 
 
 def target_profile() -> str:
-    """Return a stable platform label used by architecture-specific docs."""
+    """Return the normalized platform label shown at the top of each report.
+
+    Use this value to identify the local Python host named in a rendered table.
+    Common AMD64 and ARM64 machine aliases normalize to their conventional
+    architecture names; the result is not a compiler target triple and does
+    not alter probing.
+    """
     machine = platform.machine().lower()
     machine = {"amd64": "x86_64", "arm64": "aarch64"}.get(machine, machine)
     return f"{platform.system().lower()}-{machine}"
@@ -165,19 +186,32 @@ def c_type_mapping_markdown(
     cache_dir: str | None = None,
     refresh: bool = False,
 ) -> str:
-    """Generate the modeled C arithmetic mapping table for one compiler target."""
+    """Render the modeled C native-to-semantic-to-NumPy mapping for one target.
+
+    Use this inspection report when documenting or checking how the selected
+    compiler represents the supported C primitive and standard-library types.
+    Compiler arguments and an optional runner select a native or cross target;
+    cache options are forwarded to the existing C ABI probe. The returned
+    Markdown contains the target profile and one row per supported C spelling.
+    Probe and semantic-conversion failures propagate to the caller.
+    """
+    # Measure target ABI facts once for every C spelling in this fixed report.
     report = probe_c_standard_types_cached(
         PreprocessingConfig(mode="compiler", compiler=compiler, compiler_args=list(compiler_args)),
         runner=runner,
         cache_dir=cache_dir,
         refresh=refresh,
     )
+
+    # Reuse the C semantic converter to project each measured native type.
     converter = CToIRConverter(standard_type_report=report)
     rows = []
     for spelling, ctype in _C_TYPES:
         semantic_type = converter.visit(ctype, as_type=True)
         fact = report.types[spelling]
         rows.append((spelling, _c_fact_text(fact), _semantic_text(semantic_type), _numpy_dtype(semantic_type.dtype)))
+
+    # Render the stable documentation table after all target conversion is complete.
     return _markdown_table("C type", rows)
 
 
@@ -189,7 +223,16 @@ def fortran_type_mapping_markdown(
     cache_dir: str | None = None,
     refresh: bool = False,
 ) -> str:
-    """Generate the supported Fortran intrinsic mapping table for one target."""
+    """Render the supported Fortran native-to-semantic-to-NumPy mapping for one target.
+
+    Use this inspection report to show how the selected compiler and flags map
+    the maintained modern and legacy intrinsic spellings. It probes only
+    compiler-dependent storage expressions, models fixed legacy storage and
+    character code units directly, then returns a Markdown table. Compiler,
+    runner, and cache options use the existing Fortran probe path; its failures
+    and semantic-conversion failures propagate to the caller.
+    """
+    # Associate every maintained spelling with its converter key and probe expression.
     key_converter = FortranToIRConverter()
     entries = [
         (
@@ -205,6 +248,8 @@ def fortran_type_mapping_markdown(
         for spelling, variable in _FORTRAN_TYPES
         for key in [key_converter._target_type_key(variable)]
     ]
+
+    # Measure all compiler-dependent storage expressions in one cached probe.
     expressions = [expression for _spelling, _variable, _key, expression in entries if expression is not None]
     config = PreprocessingConfig(mode="compiler", compiler=compiler, compiler_args=list(compiler_args))
     report = probe_fortran_type_expressions_cached(
@@ -214,6 +259,8 @@ def fortran_type_mapping_markdown(
         cache_dir=cache_dir,
         refresh=refresh,
     )
+
+    # Convert probe entries into the storage-fact records accepted by semantic IR.
     requirements = [
         {
             "base_type": key[0],
@@ -224,6 +271,8 @@ def fortran_type_mapping_markdown(
         if expression is not None
     ]
     converter = FortranToIRConverter(type_facts=evaluate_fortran_type_facts(config, requirements, report=report))
+
+    # Convert every displayed spelling with the shared target facts, then render it.
     rows = []
     for spelling, variable, key, _expression in entries:
         semantic_type = converter.visit(variable)
@@ -239,7 +288,12 @@ def fortran_type_mapping_markdown(
 
 
 def _fortran_fact_text(semantic_type, key: tuple[str, str | None]) -> str:
-    """Describe probed storage or the modeled character code unit."""
+    """Format one Fortran row's target-storage description.
+
+    Character entries intentionally bypass compiler metadata because the report
+    models their eight-bit code unit directly. Every other entry consumes the
+    converter metadata populated from the shared Fortran probe facts.
+    """
     if key[0] == "character":
         return "8-bit storage"
     fact = semantic_type.metadata["fortran_type_fact"]
@@ -247,6 +301,12 @@ def _fortran_fact_text(semantic_type, key: tuple[str, str | None]) -> str:
 
 
 def _c_fact_text(fact: dict[str, object]) -> str:
+    """Format one classified C probe fact for a Markdown table cell.
+
+    The helper reads the existing measured and semantic-category fields without
+    changing them. Unknown or non-arithmetic fact kinds remain visible instead
+    of receiving a report-only fallback classification.
+    """
     bits = int(fact.get("bits") or 0)
     if fact.get("kind") == "integer":
         signedness = "signed" if fact.get("signed") else "unsigned"
@@ -261,12 +321,24 @@ def _c_fact_text(fact: dict[str, object]) -> str:
 
 
 def _semantic_text(semantic_type) -> str:
+    """Format semantic identity and concrete storage for a report cell.
+
+    Stable semantic names that differ from their target dtype retain both
+    pieces of information; matching names render only once. The semantic value
+    is read-only and may originate from either language converter.
+    """
     if semantic_type.name != semantic_type.dtype:
         return f"{semantic_type.name} ({semantic_type.dtype} storage)"
     return str(semantic_type.dtype)
 
 
 def _numpy_dtype(semantic_dtype: str | None) -> str:
+    """Return the NumPy expression displayed for one semantic dtype.
+
+    Unsupported semantic dtypes render as a stable marker rather than raising
+    during documentation generation. String rows retain the distinct ABI-byte
+    note because the NumPy string type is not the native character layout.
+    """
     try:
         expression = numpy_dtype_expression(semantic_dtype)
     except KeyError:
@@ -277,6 +349,12 @@ def _numpy_dtype(semantic_dtype: str | None) -> str:
 
 
 def _markdown_table(native_header: str, rows: list[tuple[str, str, str, str]]) -> str:
+    """Render ordered native, target, semantic, and NumPy rows as Markdown.
+
+    Native rows must already be in their supported-display order. The helper
+    adds the local target-profile heading and does not escape or reorder row
+    content, preserving the generated documentation snapshot format.
+    """
     lines = [
         f"Target profile: `{target_profile()}`",
         "",
@@ -287,8 +365,16 @@ def _markdown_table(native_header: str, rows: list[tuple[str, str, str, str]]) -
     return "\n".join(lines)
 
 
+# Standalone CLI.
 def main(argv: list[str] | None = None) -> int:
-    """Print one compiler-generated datatype mapping table."""
+    """Print one compiler-generated C or Fortran datatype mapping table.
+
+    Use this entrypoint from python -m prik.probes.report with a required
+    language and optional compiler, target, runner, and cache settings. Argv is
+    accepted for embedding and tests; on success the chosen report is written
+    to standard output and zero is returned. Compiler probe and conversion
+    failures are intentionally allowed to reach the caller.
+    """
     parser = argparse.ArgumentParser(description="Generate a target-specific prik datatype mapping table.")
     parser.add_argument("--language", choices=("c", "fortran"), required=True)
     parser.add_argument("--compiler", help="Exact compiler executable; defaults to cc or gfortran.")
@@ -310,12 +396,24 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-if __name__ == "__main__":  # pragma: no cover - exercised through executable documentation.
-    raise SystemExit(main())
-
-
 __all__ = (
     "c_type_mapping_markdown",
     "fortran_type_mapping_markdown",
     "target_profile",
 )
+
+
+if __name__ == "__main__":  # pragma: no cover - exercised through executable documentation.
+    import shutil
+    import sys
+    import tempfile
+
+    if __spec__ is None and len(sys.argv) == 1:
+        compiler = shutil.which("cc")
+        if compiler is None:
+            raise SystemExit("The direct type-mapping example requires cc on PATH.")
+        with tempfile.TemporaryDirectory(prefix="prik-type-mapping-example-") as cache_dir:
+            markdown = c_type_mapping_markdown(compiler=compiler, cache_dir=cache_dir, refresh=True)
+        print(next(line for line in markdown.splitlines() if line.startswith("| `int` |")))
+    else:
+        raise SystemExit(main())

@@ -1,5 +1,9 @@
 """Tests split by stable ownership concept from `test_python_ast_contracts.py`."""
 
+from pathlib import Path
+import subprocess
+import sys
+
 from tests.fortran._support.pyi_conversion import (
     CONTRACT_IMPORT,
     CONTRACT_SYMBOLS,
@@ -36,6 +40,20 @@ def test_convert_pyi_to_ir_accepts_parsed_pyi_ast_only():
     assert module.variables[0].name == "value"
     with pytest.raises(TypeError, match=r"expects a Python ast\.Module"):
         convert_pyi_to_ir(source)
+
+
+def test_pyi2ir_direct_example_is_runnable():
+    repository_root = Path(__file__).resolve().parents[4]
+
+    result = subprocess.run(
+        [sys.executable, "prik/semantics/pyi2ir.py"],
+        cwd=repository_root,
+        capture_output=True,
+        check=True,
+        text=True,
+    )
+
+    assert result.stdout == "math.scale(value): Float64 -> Float64\n"
 
 
 def test_pyi_parser_reports_unsupported_lines_and_invalid_helpers():

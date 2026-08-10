@@ -117,7 +117,7 @@ def test_dsysv_solves_symmetric_indefinite_system(prik_lapack, scipy_lapack, f2p
         np.int32(0),
     )
     f2py_result = f2py_lapack.dsysv(b"U", 1, 1, f2py_a, f2py_piv, f2py_b, np.empty(8), 8, 0)
-    scipy_factor, _scipy_piv, scipy_x, scipy_info = scipy_lapack.dsysv(
+    scipy_factor, scipy_piv, scipy_x, scipy_info = scipy_lapack.dsysv(
         matrix.copy(order="F"), rhs.copy(order="F"), lwork=8
     )
 
@@ -129,6 +129,8 @@ def test_dsysv_solves_symmetric_indefinite_system(prik_lapack, scipy_lapack, f2p
     assert_allclose_float64(prik_a, scipy_factor)
     assert_allclose_float64(f2py_a, scipy_factor)
     assert_allclose_float64(matrix @ prik_b, rhs)
+    np.testing.assert_array_equal(prik_piv, scipy_piv)
+    np.testing.assert_array_equal(f2py_piv, scipy_piv)
 
 
 def test_dsysvx_solves_and_bounds_symmetric_error(prik_lapack, scipy_lapack, f2py_lapack):
@@ -180,7 +182,7 @@ def test_dsysvx_solves_and_bounds_symmetric_error(prik_lapack, scipy_lapack, f2p
         np.empty(1, dtype=np.int32),
         0,
     )
-    _a, scipy_factor, _piv, _b, scipy_x, scipy_rcond, scipy_ferr, scipy_berr, scipy_info = scipy_lapack.dsysvx(
+    _a, scipy_factor, scipy_piv, _b, scipy_x, scipy_rcond, scipy_ferr, scipy_berr, scipy_info = scipy_lapack.dsysvx(
         matrix.copy(order="F"), rhs.copy(order="F"), lwork=3
     )
 
@@ -194,6 +196,10 @@ def test_dsysvx_solves_and_bounds_symmetric_error(prik_lapack, scipy_lapack, f2p
     assert_allclose_float64(prik_scalars[-3], scipy_rcond)
     assert_allclose_float64(prik_ferr, scipy_ferr)
     assert_allclose_float64(prik_berr, scipy_berr)
+    assert_allclose_float64(f2py_ferr, scipy_ferr)
+    assert_allclose_float64(f2py_berr, scipy_berr)
+    np.testing.assert_array_equal(prik_piv, scipy_piv)
+    np.testing.assert_array_equal(f2py_piv, scipy_piv)
 
 
 def test_dsytf2_factorizes_symmetric_indefinite_matrix(prik_lapack, scipy_lapack, f2py_lapack):

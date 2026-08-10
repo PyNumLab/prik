@@ -1,9 +1,9 @@
-from prik.contracts import Addr, Arg, Int32, external, native_call
+from prik.contracts import Addr, Arg, Int32, native_call, standalone
 
-@external
+@standalone
 def standalone_ping() -> None: ...
 
-@external
+@standalone
 @native_call([Addr(Arg(0))])
 def standalone_double(
     value: Int32

@@ -427,7 +427,45 @@ def test_emit_module_aliases_contract_import_when_user_name_collides():
 
     code = emit_module(module)
 
-    assert "Flat as " in code.splitlines()[0]
+    assert "Flat as prik_Flat" in code.splitlines()[0]
     reparsed = _parse_pyi_text(code, module_name="alias_mod")
     assert reparsed.variables[0].name == "Flat"
     assert reparsed.functions[0].arguments[0].semantic_type.storage.array.category == "assumed_size"
+
+
+def test_emit_module_aliases_standalone_only_for_actual_name_collisions():
+    int32_type = SemanticType("Int32")
+    standalone_origin = SemanticOrigin(source_language="fortran", native_scope=None)
+
+    ordinary = emit_module(
+        SemanticModule(
+            name="ordinary",
+            functions=[SemanticFunction("calculate", return_type=int32_type, origin=standalone_origin)],
+        )
+    )
+    colliding = emit_module(
+        SemanticModule(
+            name="colliding",
+            functions=[SemanticFunction("standalone", return_type=int32_type, origin=standalone_origin)],
+        )
+    )
+    twice_colliding = emit_module(
+        SemanticModule(
+            name="twice_colliding",
+            variables=[
+                SemanticVariable(
+                    "prik_standalone",
+                    SemanticType("Int32", constraints=[SemanticConstraint("Constant")]),
+                    default_value="1",
+                )
+            ],
+            functions=[SemanticFunction("standalone", return_type=int32_type, origin=standalone_origin)],
+        )
+    )
+
+    assert "from prik.contracts import Int32, standalone\n" in ordinary
+    assert "@standalone\ndef calculate() -> Int32: ..." in ordinary
+    assert "from prik.contracts import Int32, standalone as prik_standalone\n" in colliding
+    assert "@prik_standalone\ndef standalone() -> Int32: ..." in colliding
+    assert "standalone as prik_standalone_2" in twice_colliding.splitlines()[0]
+    assert "@prik_standalone_2\ndef standalone() -> Int32: ..." in twice_colliding

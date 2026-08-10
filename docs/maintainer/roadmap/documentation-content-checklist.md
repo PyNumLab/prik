@@ -271,6 +271,9 @@ primary placeholder queue.
   namespace, public state, saved state, visibility, and limitation guide.
 - [x] `docs/user/getting-started/beginner-workflow.md`: maintained edit, inspect,
   planning, build, smoke-test, artifact-review, and rebuild loop.
+- [x] `docs/user/faq/index.md`: maintained task-oriented answers that route
+  search questions to checked guides, real-library examples, and the bounded
+  PRIK/f2py comparison.
 - [x] `docs/user/reference/semantic-ir.md`: maintained Semantic IR contract.
 - [x] `docs/user/reference/semantic-pyi-format.md`: maintained semantic `.pyi`
   contract.
@@ -296,8 +299,9 @@ primary placeholder queue.
 - [x] `docs/user/guide/data-types.md`: maintained Fortran storage, semantic
   `.pyi`, Python value, and NumPy dtype mapping with compiler-probed limits.
 - [x] `docs/user/guide/arrays.md`: maintained dtype, rank, shape, layout,
-  C-order zero-copy and `COPY_F`, stride-aware view, lower-bound, assumed-rank,
-  zero-size, result, and validation guide.
+  C-order zero-copy and `COPY_F`, stride-aware view, assumed-rank, zero-size,
+  result, and validation guide; advanced declaration expressions route to the
+  contract reference.
 - [x] `docs/user/guide/strings.md`: maintained immutable value, replacement,
   mutable storage, fixed-width array, length, and encoding guide.
 - [x] `docs/user/guide/wrapping-functions.md`: maintained scalar, array-result,

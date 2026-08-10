@@ -50,7 +50,7 @@ def test_standalone_generation_writes_explicit_package_entry(tmp_path: Path):
     assert entry == tmp_path / "contracts" / "contract_standalone_only" / "__init__.pyi"
     assert {path.name for path in entry.parent.iterdir()} == {"__init__.pyi"}
     text = entry.read_text(encoding="utf-8")
-    assert text.count("@external") == 2
+    assert text.count("@standalone") == 2
     assert "def standalone_ping() -> None: ..." in text
     assert "def standalone_double(" in text
 
@@ -67,9 +67,9 @@ def test_module_generation_writes_explicit_package_entry_and_native_leaf(tmp_pat
         "contract_math_mod.pyi",
     }
     assert entry.read_text(encoding="utf-8").startswith(
-        "from prik.contracts import Addr, Arg, Int32, external, native_call\n"
+        "from prik.contracts import Addr, Arg, Int32, native_call, standalone\n"
         "from . import contract_math_mod\n\n"
-        "@external\n"
+        "@standalone\n"
     )
 
 
@@ -82,9 +82,9 @@ def test_same_named_module_uses_init_entry_and_keeps_externals_at_root(tmp_path:
     assert entry == tmp_path / "contracts" / "contract_same_name" / "__init__.pyi"
     assert {path.name for path in entry.parent.iterdir()} == {"__init__.pyi", "contract_same_name.pyi"}
     assert entry.read_text(encoding="utf-8") == (
-        "from prik.contracts import external\n"
+        "from prik.contracts import standalone\n"
         "from . import contract_same_name\n\n"
-        "@external\n"
+        "@standalone\n"
         "def external_ping() -> None: ...\n"
     )
     assert "def module_ping() -> None: ..." in (entry.parent / "contract_same_name.pyi").read_text(encoding="utf-8")

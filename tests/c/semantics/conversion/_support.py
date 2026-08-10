@@ -79,7 +79,7 @@ from prik.semantics.models import (
 from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
 
 
-from prik.wrapper_codegen.printers import emit_module, emit_module_stubs
+from prik.codegen.printers import emit_module, emit_module_stubs
 
 
 def _function(module, name):

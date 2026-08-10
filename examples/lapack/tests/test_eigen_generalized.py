@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from .helpers import assert_allclose_float64, assert_orthogonal, gfortran_logical_mask
+from .helpers import assert_allclose_float64, assert_orthogonal
 
 
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
@@ -339,7 +339,7 @@ def test_dtgsen_reorders_selected_generalized_eigenvalue(prik_lapack, scipy_lapa
     a, b = _generalized_problem()
     identity = np.eye(2, dtype=np.float64, order="F")
     selection = np.array([False, True], dtype=np.bool_)
-    prik_selection = gfortran_logical_mask(selection)
+    prik_selection = selection.copy()
     prik_a, f2py_a = a.copy(order="F"), a.copy(order="F")
     prik_b, f2py_b = b.copy(order="F"), b.copy(order="F")
     prik_q, f2py_q = identity.copy(order="F"), identity.copy(order="F")

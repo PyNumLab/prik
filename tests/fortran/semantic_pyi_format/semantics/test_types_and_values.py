@@ -50,6 +50,33 @@ raw_pointer: Addr(Float64)
     assert raw_pointer.semantic_type.storage.read_only is False
 
 
+def test_boolean_storage_widths_round_trip_as_one_semantic_type_family():
+    module = pyi_text_to_semantic_module(
+        """
+from prik.contracts import Bool, Bool8, Bool16, Bool32, Bool64
+
+def inspect(
+    default: Bool,
+    byte: Bool8[:],
+    short: Bool16[:],
+    word: Bool32[:],
+    wide: Bool64[:],
+) -> None: ...
+""",
+        module_name="boolean_widths",
+    )
+
+    assert [argument.semantic_type.name for argument in module.functions[0].arguments] == [
+        "Bool",
+        "Bool8",
+        "Bool16",
+        "Bool32",
+        "Bool64",
+    ]
+    emitted = emit_module(module)
+    assert "from prik.contracts import Bool, Bool16, Bool32, Bool64, Bool8" in emitted
+
+
 def test_value_projection_round_trips_as_argument_specific_native_transport():
     module = parse_pyi_text(
         """

@@ -1,4 +1,4 @@
-from prik.contracts import Addr, Arg, Bool, Complex128, Float64, Int32, String, native_call
+from prik.contracts import Addr, Arg, Bool8, Complex128, Float64, Int32, String, native_call
 
 def plus_value(
     n: Int32
@@ -22,8 +22,8 @@ def conjugate_value(
 ) -> Complex128: ...
 
 def invert_flag(
-    flag: Bool
-) -> Bool: ...
+    flag: Bool8
+) -> Bool8: ...
 
 def char_code(
     ch: String[1]

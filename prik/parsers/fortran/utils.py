@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from prik.utilities.declaration_expressions import split_top_level_expression
+
 
 def detect_source_form(code: str, filename: str | None = None) -> str:
     """Detect whether a source looks like fixed-form or free-form Fortran.
@@ -28,7 +30,7 @@ def detect_source_form(code: str, filename: str | None = None) -> str:
 
 
 def split_csv(text: str | None) -> list[str]:
-    """Split a comma-separated list while respecting parenthesis nesting.
+    """Split a comma-separated list while respecting nested expression syntax.
 
     This is used for things that *look* like CSV in Fortran but may contain
     parenthesized expressions, e.g.:
@@ -37,24 +39,8 @@ def split_csv(text: str | None) -> list[str]:
     - attribute lists: ``dimension(n, m), contiguous``
     - shape lists: ``a(1:n, 0:m)``
 
-    Only commas at parenthesis depth 0 are treated as separators.
+    Only commas outside brackets and quoted literals are separators.
     """
     if not text:
         return []
-    out, cur, depth = [], [], 0
-    for ch in text:
-        if ch in "([":
-            depth += 1
-        elif ch in ")]" and depth > 0:
-            depth -= 1
-        if ch == "," and depth == 0:
-            piece = "".join(cur).strip()
-            if piece:
-                out.append(piece)
-            cur = []
-            continue
-        cur.append(ch)
-    piece = "".join(cur).strip()
-    if piece:
-        out.append(piece)
-    return out
+    return [piece for piece in split_top_level_expression(text, ",") if piece]

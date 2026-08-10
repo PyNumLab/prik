@@ -82,6 +82,10 @@ implementation details and are not exported as Python callables.
 Representable native parameters are `Final[...]` constants in the generated
 contract. Assigning to the Python module attribute may shadow the object in
 Python, but it does not mutate the native parameter.
+Supported fixed-shape numeric Fortran `parameter` arrays are materialized once
+as Python-owned, read-only NumPy snapshots. They have no native setter and do
+not borrow live native storage; unsupported parameter-array forms remain
+outside the generated Python surface.
 
 Supported module arrays, allocatables, pointers, and derived objects follow the
 ownership rules in [Memory Management](../guide/memory-management.md) and
@@ -101,8 +105,10 @@ Payload-only calls use direct or synchronous scoped addresses. See the
 
 ## Visibility, Binding Names, And Imports
 
-Private source declarations are omitted from generated contracts. Edited
-contracts can also remove declarations or mark them with `@private` or
+Private source declarations are omitted from generated contracts, whether
+privacy comes from the module default, a `private :: name` statement, or a
+declaration attribute such as `real, parameter, private :: epsilon = ...`.
+Edited contracts can also remove declarations or mark them with `@private` or
 `private[...]`.
 
 `@bind("native_name")` records a native symbol name that differs from the

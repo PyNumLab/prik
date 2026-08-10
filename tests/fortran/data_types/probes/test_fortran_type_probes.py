@@ -4,6 +4,7 @@ import json
 import shutil
 import subprocess
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -14,6 +15,7 @@ from prik.semantics.fortran2ir import (
     fortran_module_to_semantic_module,
 )
 from prik import parse_fortran_file as parse_fortran_source
+from prik import parse_fortran_project
 from prik.probes.fortran_types import (
     FortranTypeProbeRecipe,
     FortranTypeProbeReport,
@@ -27,6 +29,7 @@ from prik.probes.fortran_types import (
     load_fortran_type_probe_report,
     probe_fortran_type_expressions,
     probe_fortran_type_expressions_cached,
+    resolve_fortran_logical_storage_types,
 )
 from prik.pipeline.preprocessing import PreprocessingConfig
 
@@ -350,6 +353,20 @@ def test_fortran_type_probe_reports_values_from_native_compiler():
     assert "selected_real_kind(12)" in report.source_text
 
 
+def test_fortran_type_probe_resolves_supported_logical_storage_widths(tmp_path):
+    compiler = _required_fortran_compiler()
+
+    resolved = resolve_fortran_logical_storage_types(
+        PreprocessingConfig(mode="compiler", compiler=compiler),
+        [8, 16, 32, 64],
+        cache_dir=tmp_path,
+    )
+
+    assert resolved[8] == "logical(kind=c_bool)"
+    assert set(resolved) == {8, 16, 32, 64}
+    assert all(spelling.startswith("logical(kind=") for spelling in resolved.values())
+
+
 def test_fortran_type_probe_carries_target_relevant_user_flags(tmp_path):
     compiler = _required_fortran_compiler()
     include_dir = tmp_path / "include"
@@ -435,6 +452,34 @@ end module solver_mod
     assert module.functions[0].arguments[0].semantic_type.name == "Float64"
 
 
+def test_collected_probe_requirements_resolve_submodule_host_kind():
+    project = parse_fortran_project(
+        {
+            "implementation.f90": """
+submodule(transform_api) transform_impl
+contains
+  module function twice(value) result(output)
+    real(rk), intent(in) :: value
+    real(rk) :: output
+  end function twice
+end submodule transform_impl
+""",
+            "parent.f90": """
+module transform_api
+  use precision
+end module transform_api
+""",
+            "kind.f90": """
+module precision
+  use, intrinsic :: iso_fortran_env, only: rk => real64
+end module precision
+""",
+        }
+    )
+
+    assert collect_semantic_compile_time_requirements(project) == []
+
+
 def test_fortran_type_probe_module_cli_emits_json_for_semantic_input(tmp_path):
     compiler = _required_fortran_compiler()
     completed = subprocess.run(
@@ -462,6 +507,21 @@ def test_fortran_type_probe_module_cli_emits_json_for_semantic_input(tmp_path):
     assert payload["values"]["selected_real_kind(12)"] > 0
     assert payload["recipe"]["compiler"] == compiler
     assert payload["source_text"].startswith("program prik_fortran_type_probe")
+
+
+def test_fortran_type_probe_direct_script_runs_its_no_argument_example():
+    completed = subprocess.run(
+        [sys.executable, "prik/probes/fortran_types.py"],
+        cwd=Path(__file__).resolve().parents[4],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    label, separator, raw_value = completed.stdout.strip().partition(" = ")
+    assert label == "selected_int_kind(9)"
+    assert separator == " = "
+    assert int(raw_value) > 0
 
 
 def test_prik_semantics_cli_evaluates_collected_fortran_type_requirements(tmp_path):

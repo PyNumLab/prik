@@ -9,7 +9,49 @@ from tests.c._support.preprocessing import (
     pytest,
     run_compiler_preprocessor,
     run_compiler_preprocessor_with_recipe,
+    subprocess,
+    sys,
 )
+
+
+def test_preprocessing_module_direct_execution_example():
+    repository_root = Path(__file__).parents[3]
+
+    result = subprocess.run(
+        [sys.executable, "prik/pipeline/preprocessing.py"],
+        cwd=repository_root,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout == (
+        "Before Fortran include expansion:\n"
+        "module greeting\n"
+        "include 'constants.inc'\n"
+        "contains\n"
+        "subroutine show_answer()\n"
+        "print *, answer\n"
+        "end subroutine show_answer\n"
+        "end module greeting\n"
+        "\n"
+        "After Fortran include expansion:\n"
+        "module greeting\n"
+        "integer, parameter :: answer = 42\n"
+        "contains\n"
+        "subroutine show_answer()\n"
+        "print *, answer\n"
+        "end subroutine show_answer\n"
+        "end module greeting\n"
+        "Native includes: 1; diagnostics: 0\n"
+        "\n"
+        "Before C compiler preprocessing:\n"
+        '#include "state.h"\n'
+        "int state_id = STATE_ID;\n"
+        "\n"
+        "After C compiler preprocessing:\n"
+        "int state_id = 42;\n"
+    )
 
 
 def test_run_compiler_preprocessor_success_and_failures(monkeypatch, tmp_path: Path):

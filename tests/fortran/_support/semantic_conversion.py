@@ -48,7 +48,7 @@ from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
 from prik.semantics.metadata import SCALAR_STORAGE_CATEGORY
 
 
-from prik.wrapper_codegen.printers import emit_module
+from prik.codegen.printers import emit_module
 
 from prik.semantics.models import (
     ProjectionMapping,

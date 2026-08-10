@@ -15,13 +15,13 @@ from prik.semantics.fortran2ir import (
 
 from prik.pipeline.pyi import pyi_text_to_semantic_module as _parse_pyi_text
 
-from prik.wrapper_codegen.printers import (
+from prik.codegen.printers import (
     emit_module,
     emit_module_stubs,
     opaque_dependency_modules,
     PyiPrinter,
 )
-from prik.wrapper_codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.codegen import WrapperCodeGenerator, WrapperPlanner
 
 from prik.semantics.models import (
     PROTOTYPE_REF_METADATA,

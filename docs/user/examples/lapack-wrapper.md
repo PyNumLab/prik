@@ -9,38 +9,35 @@ publication: reviewed
 
 # Build and Validate LAPACK with PRIK
 
-This example wraps the complete Reference LAPACK implementation corpus once with PRIK, then validates a reviewed, reproducible correctness surface.
-The surface contains the 127 double-precision real routines exposed by `scipy.linalg.lapack` in SciPy 1.18.0 for `dtype=np.float64`.
+This example builds the complete Reference LAPACK library and wraps it with
+PRIK. It validates the 127 double-precision real routines also available
+through `scipy.linalg.lapack` in SciPy 1.18.0.
 
-### Why this example exists
+### What this example shows
 
-- PRIK wraps the **complete** LAPACK library (including its BLAS dependencies).
-  All source-level wrapper and compilation coverage stays intact.
-- Raw f2py generates wrappers for the 125 selected routines it can expose
-  safely and links them to the same complete native artifact as PRIK.
-- SciPy supplies the 127 reviewed low-level comparison functions.
-- Independent residuals, reconstructions and invariants remain the primary correctness oracle.
-
-This separation keeps a large real library manageable without weakening the claim:
-every LAPACK source compiles once for the complete PRIK wrapper, while every selected float64 routine has one visible, named correctness test.
+- Build PRIK and f2py wrappers against the same compiled LAPACK library.
+- Call linear-system, factorization, eigenvalue, and singular-value routines
+  with NumPy arrays.
+- Compare results with SciPy and check solutions, residuals, reconstructions,
+  and other mathematical properties.
 
 You should already be comfortable with the BLAS wrapper example, NumPy arrays, and basic packaging.
 
 ---
 
-## Versions and source boundary
+## Versions used
 
-| Component          | Version / source                                      |
-|--------------------|-------------------------------------------------------|
-| PRIK               | current repository checkout (`0.1.0`)                 |
-| Reference LAPACK   | Netlib LAPACK 3.12.1                                  |
-| Reference BLAS     | BLAS snapshot shipped in LAPACK 3.12.1                |
-| Python             | 3.12 or newer                                          |
-| NumPy / f2py       | NumPy 2.5.1                                           |
-| SciPy              | exactly 1.18.0 (reviewed inventory)                   |
-| Meson              | 1.11.2                                                |
-| Ninja              | 1.13.0                                                |
-| Fortran compiler   | compatible `gfortran`                                  |
+| Component | Version / source |
+| --- | --- |
+| PRIK | current repository checkout |
+| Reference LAPACK | Netlib LAPACK 3.12.1 |
+| Reference BLAS | BLAS snapshot shipped in LAPACK 3.12.1 |
+| Python | 3.12 or newer |
+| NumPy / f2py | NumPy 2.5.1 |
+| SciPy | exactly 1.18.0 |
+| Meson | 1.11.2 |
+| Ninja | 1.13.0 |
+| Fortran compiler | compatible `gfortran` |
 
 ---
 
@@ -54,8 +51,8 @@ git clone https://github.com/PyNumLab/prik.git
 cd prik
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e ".[qa]" \
+python3 -m pip install --upgrade pip
+python3 -m pip install -e ".[qa]" \
   "numpy==2.5.1" "scipy==1.18.0" \
   "meson==1.11.2" "ninja==1.13.0"
 ```
@@ -114,16 +111,11 @@ metadata needed by the generated wrapper.
 
 ---
 
-## 3. Build the reviewed f2py comparison surface
+## 3. Build the f2py comparison wrapper
 
 The committed [`lapack.pyf`](../../../examples/lapack/lapack.pyf) contains the
-reviewed selected routines and `la_constants` module signature. f2py compiles
-only its wrapper and links `LAPACK_SHARED_LIBRARY`.
-
-Nine routines document scalar writebacks without declaring Fortran `intent`.
-Their reviewed `intent(inout)` declarations live directly in `lapack.pyf`, and
-the tests pass typed 0-D arrays. PRIK needs neither: it returns unannotated
-scalar writebacks directly, with ordinary scalar arguments.
+125 selected routines and the `la_constants` module signature. f2py compiles
+only this wrapper and links `LAPACK_SHARED_LIBRARY`.
 
 Run the same direct f2py command exercised by the test suite:
 
@@ -156,12 +148,11 @@ python -m numpy.f2py -c \
 compile each wrapper. Both wrappers link the existing shared library instead of
 recompiling LAPACK.
 
-The committed `lapack.pyf` excludes `dgees` and `dgges` because f2py 2.5.1
-generates incomplete declarations for their selection callbacks. Their tests
-exercise PRIK and SciPy, then independently verify the resulting Schur
-decompositions.
+The comparison excludes `dgees` and `dgges` because f2py 2.5.1 cannot generate
+their callback declarations correctly. Those two routines are still checked
+through PRIK, SciPy, and their Schur decompositions.
 
-Import the two built modules and SciPy's comparison surface from the repository
+Import the two built modules and SciPy's LAPACK module from the repository
 root:
 
 ```python
@@ -176,111 +167,42 @@ import prik_reference_lapack_example
 from scipy.linalg import lapack as scipy_lapack
 ```
 
----
+### SciPy comparison
 
-## 4. Resolve the SciPy float64 comparison API
-
-SciPy determines eligibility, not the organisation of the test files.
-The reviewed inventory was discovered with representative `np.float64` arrays and then frozen for SciPy 1.18.0.
-
-A typical low-level lookup looks like this:
-
-```python
-import numpy as np
-import scipy
-from scipy.linalg import lapack
-
-assert scipy.__version__ == "1.18.0"
-matrix = np.array([[3.0, 1.0], [1.0, 2.0]], dtype=np.float64, order="F")
-dgesv = lapack.get_lapack_funcs("gesv", (matrix,))
-assert dgesv.typecode == "d"
-```
-
-The runtime suite does **not** silently select “whatever SciPy exports today”.
-It fails clearly if the SciPy version or the expected routine inventory drifts.
+The tests use the 127 double-precision real LAPACK routines available in SciPy
+1.18.0 for `np.float64` arrays. Pinning that version keeps the comparison API
+and expected results reproducible.
 
 ---
 
-## 5. Run the correctness tests
+## 4. Run the complete test suite
 
-The arguments `prik_lapack`, `f2py_lapack`, and `scipy_lapack` are
-session-scoped pytest fixtures from
-[`conftest.py`](../../../examples/lapack/conftest.py). After the build scripts
-finish, they provide the complete PRIK module, selected f2py comparison module,
-and SciPy's pinned low-level LAPACK module to the tests under
-[`examples/lapack/tests/`](../../../examples/lapack/tests/).
+Build both wrappers and run all 127 routine tests:
 
-The displayed tests use small helpers from
-[`tests/helpers.py`](../../../examples/lapack/tests/helpers.py):
-
-| Helper | Exact responsibility |
-| --- | --- |
-| `column_major(a)` | Copies a matrix as `np.float64` in Fortran-contiguous column-major order. |
-| `active(a, rows, columns)` | Selects the logical matrix and excludes leading-dimension padding. |
-| `native_pivots(p)` | Converts SciPy's zero-based general-LU pivots to LAPACK's native one-based values. |
-| `assert_allclose_float64(a, b)` | Uses a float64-epsilon tolerance scaled by operation length and expected magnitude. |
-| `assert_small_residual(r, ...)` | Checks an infinity-norm backward residual scaled by matrix and solution norms. |
-| `assert_storage_unchanged(a, b)` | Requires exact preservation, including NaN sentinels. |
-
-The numerical and preservation checks are intentionally small and visible:
-
-```python
-import numpy as np
+```bash
+source examples/lapack/build_all.sh
+python3 -m pytest -q examples/lapack/tests
 ```
 
-<!-- prik-doc-source: examples/lapack/tests/helpers.py::assert_allclose_float64 -->
-```python
-def assert_allclose_float64(actual, expected, *, operation_size: int = 1) -> None:
-    """Compare float64 LAPACK results with an accumulation-aware tolerance."""
-    scale = max(1, operation_size)
-    expected_array = np.asarray(expected)
-    magnitude = max(1.0, float(np.max(np.abs(expected_array), initial=0.0)))
-    np.testing.assert_allclose(
-        actual,
-        expected,
-        rtol=np.finfo(np.float64).eps * 32 * scale,
-        atol=np.finfo(np.float64).eps * 32 * scale * magnitude,
-    )
-```
-
-<!-- prik-doc-source: examples/lapack/tests/helpers.py::assert_small_residual -->
-```python
-def assert_small_residual(
-    residual,
-    *,
-    matrix_norm: float,
-    solution_norm: float,
-    operation_size: int,
-) -> None:
-    """Check a backward residual scaled by the represented operation."""
-    denominator = max(1.0, matrix_norm * solution_norm)
-    scaled = np.linalg.norm(np.asarray(residual, dtype=np.float64), ord=np.inf) / denominator
-    tolerance = np.finfo(np.float64).eps * 128 * max(1, operation_size)
-    assert scaled <= tolerance, f"scaled residual {scaled} exceeded {tolerance}"
-```
-
-<!-- prik-doc-source: examples/lapack/tests/helpers.py::assert_storage_unchanged -->
-```python
-def assert_storage_unchanged(actual: np.ndarray, expected: np.ndarray) -> None:
-    """Compare storage exactly, including NaN sentinels."""
-    np.testing.assert_array_equal(actual, expected)
-```
-
-These helpers do not call LAPACK and do not hide any wrapper invocation. The
-routine call and the essential residual or reconstruction remain in each test.
+The suite covers linear systems, least squares, factorizations, eigenvalue
+problems, singular values, and related matrix operations.
 
 ---
 
-## 6. Validate mathematical behaviour
+## 5. See how results are validated
 
-LAPACK outputs are not always unique.
-Eigenvectors and singular vectors may change sign, repeated eigenspaces may use a different orthonormal basis, and pivot ties may choose another valid permutation.
+LAPACK outputs are not always unique. Eigenvectors and singular vectors may
+change sign, repeated eigenspaces may use a different orthonormal basis, and
+pivot ties may choose another valid permutation.
 Therefore byte-for-byte agreement is not the only oracle.
 
-Tests use explicit solutions, residuals, factor reconstructions, orthogonality, eigen equations and storage invariants.
+Tests use explicit solutions, residuals, factor reconstructions, orthogonality,
+eigen equations, and storage checks. Small NumPy helpers for matrix layout,
+tolerances, and pivot conventions live in
+[`tests/helpers.py`](../../../examples/lapack/tests/helpers.py).
 
-The two real tests below keep all three wrapper calls and the independent oracle visible.
-The displayed blocks are copied directly from their source functions.
+The examples below show the PRIK, f2py, and SciPy calls together with a direct
+mathematical check. They come from the runnable suite.
 
 ### DGESV – solve a general linear system
 
@@ -321,8 +243,9 @@ def test_dgesv_solves_general_system(prik_lapack, scipy_lapack, f2py_lapack):
     )
 ```
 
-This test checks the known solution, the independently scaled residual `A @ X - B`, the LU output, native one-based pivots versus SciPy’s convention, and `INFO == 0`.
-PRIK preserves the native argument order and returns visible scalar arguments; both PRIK and the f2py comparison module mutate the native output arrays.
+This test checks the known solution, the scaled residual `A @ X - B`, the LU
+output, native one-based pivots versus SciPy's convention, and `INFO == 0`.
+Both PRIK and the f2py comparison module update the output arrays in place.
 
 ### DPOTRF – reconstruct a Cholesky factorization
 
@@ -353,36 +276,26 @@ def test_dpotrf_reconstructs_spd_matrix(prik_lapack, scipy_lapack, f2py_lapack):
 ```
 
 The NaN in the unused upper triangle detects accidental access.
-Correctness is established by reconstructing `A = L @ L.T`, not merely by comparing the factor’s bytes.
+The reconstruction `A = L @ L.T` confirms that the factor is correct.
 
 ---
 
-## 7. Run the maintained example
+## 6. Run focused examples
 
-Build both wrappers once, then run all 127 named tests:
-
-```bash
-cd "$REPOSITORY_ROOT"
-source examples/lapack/build_all.sh
-python -m pytest -q examples/lapack/tests
-```
-
-Use a family or a single routine while diagnosing a failure:
+After building the wrappers, run a family or one routine:
 
 ```bash
-python -m pytest -q examples/lapack/tests/test_linear_general.py
-python -m pytest -q \
+python3 -m pytest -q examples/lapack/tests/test_linear_general.py
+python3 -m pytest -q \
   examples/lapack/tests/test_linear_general.py::test_dgesv_solves_general_system
-python -m pytest -q examples/lapack/tests -k dgesvd
+python3 -m pytest -q examples/lapack/tests -k dgesvd
 ```
 
 - Full DGESV and related general-system tests → [`test_linear_general.py`](../../../examples/lapack/tests/test_linear_general.py)
 - Cholesky and other positive-definite examples → [`test_linear_positive_definite.py`](../../../examples/lapack/tests/test_linear_positive_definite.py)
 - Other families live under [`examples/lapack/tests/`](../../../examples/lapack/tests/)
-- Authoritative mapping of all 127 routines → [`routine_inventory.py`](../../../examples/lapack/routine_inventory.py)
-- Coverage audit → [`test_routine_coverage.py`](../../../examples/lapack/tests/test_routine_coverage.py)
-
-The command is complete and reproducible with the listed native toolchain.
+- Public routine list → [`routine_inventory.py`](../../../examples/lapack/routine_inventory.py)
+- Routine coverage check → [`test_routine_coverage.py`](../../../examples/lapack/tests/test_routine_coverage.py)
 
 For the copyable build scripts, test commands, and source provenance, see the
 [`examples/lapack` project README](../../../examples/lapack/README.md).
@@ -392,17 +305,19 @@ For the copyable build scripts, test commands, and source provenance, see the
 ## Troubleshooting
 
 - Confirm that `gfortran`, `ar`, `meson` and `ninja` are on `PATH`.
-- Keep SciPy at **exactly 1.18.0** for this reviewed inventory. A different version is treated as inventory drift, not silently accepted.
-- On Python 3.12 or newer, let f2py use Meson; do not force the removed distutils backend.
+- Keep SciPy at **exactly 1.18.0** so its low-level comparison API matches this
+  example.
+- On Python 3.12 or newer, let f2py use Meson; do not force the removed
+  distutils backend.
 - Rerun one named test with more detail and keep the build directory:
 
   ```bash
-  python -m pytest -vv -s --basetemp=/tmp/prik-lapack-debug \
+  python3 -m pytest -vv -s --basetemp=/tmp/prik-lapack-debug \
     examples/lapack/tests/test_linear_general.py::test_dgesv_solves_general_system
   ```
 
-- Compare residuals and reconstructions **before** comparing raw factor bytes; several valid LAPACK decompositions are not unique.
-- This is a deterministic correctness suite. It collects no timings and makes no performance claims.
+- Compare residuals and reconstructions before comparing raw factor bytes;
+  several valid LAPACK decompositions are not unique.
 
 ---
 

@@ -12,7 +12,7 @@ from prik.semantics.metadata import (
     SCALAR_STORAGE_CATEGORY,
 )
 
-from prik.wrapper_codegen.printers import PyiPrinter
+from prik.codegen.printers import PyiPrinter
 
 from prik.semantics.ownership import (
     AssignmentMode,

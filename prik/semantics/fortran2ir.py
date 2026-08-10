@@ -1,6 +1,14 @@
+"""Convert parsed Fortran facts into language-neutral semantic IR.
+
+The public helpers at the end of this module accept parsed Fortran module,
+file, or project models and return :class:`~prik.semantics.models.SemanticModule`
+objects.  They normalize types, storage, visibility, imported derived types,
+and procedure projections.  Ownership and wrapper-generation policy are
+deliberately completed by later semantic stages.
+"""
+
 from __future__ import annotations
 
-import ast
 from collections.abc import Iterable
 from copy import deepcopy
 from dataclasses import dataclass
@@ -22,12 +30,21 @@ from prik.parsers.fortran.models import (
     FortranUseMapping,
     FortranVariable,
 )
+from prik.utilities.declaration_expressions import (
+    ArrayExpressionSource,
+    canonicalize_declaration_extent,
+    declaration_expression_calls,
+    fortran_extent_to_python,
+    is_declaration_expression_helper,
+    split_dimension_bounds,
+    split_top_level_expression,
+)
 from prik.semantics.ownership import set_ownership_metadata
 from prik.semantics.metadata import BIND_TARGET_METADATA, PROJECTED_OUTPUT_METADATA, SCALAR_STORAGE_CATEGORY
-from prik.types.numpy import SEMANTIC_SCALAR_TYPE_NAMES
+from prik.types.numpy import BOOLEAN_STORAGE_BITS, SEMANTIC_SCALAR_TYPE_NAMES, is_boolean_semantic_type_name
 from prik.utilities.visitor import ClassVisitor
 
-from .models import (
+from prik.semantics.models import (
     EXTERNAL_TYPE_REF_METADATA,
     FORTRAN_GENERIC_NAME_METADATA,
     OVERLOAD_KIND_METADATA,
@@ -36,11 +53,13 @@ from .models import (
     PYTHON_BOUND_POSITION_METADATA,
     PYTHON_METHOD_NAME_METADATA,
     PYTHON_STATIC_METADATA,
+    PROTOTYPE_INTENT_METADATA,
     PROTOTYPE_REF_METADATA,
     SemanticArgument,
     SemanticArrayContract,
     SemanticClass,
     SemanticConstraint,
+    SemanticExpressionCallable,
     SemanticField,
     SemanticFunction,
     SemanticImport,
@@ -125,14 +144,25 @@ FORTRAN_TYPE_MAP = {
 _FORTRAN_INTRINSIC_TYPES = frozenset({"integer", "real", "complex", "logical", "character"})
 _FORTRAN_STORAGE_PROBE_TYPES = frozenset({"integer", "real", "complex", "logical"})
 _FORTRAN_STORAGE_TYPE_MAP = {
+    "logical": {bits: name for name, bits in BOOLEAN_STORAGE_BITS.items() if name != "Bool"},
     "integer": {8: "Int8", 16: "Int16", 32: "Int32", 64: "Int64"},
     "real": {32: "Float32", 64: "Float64", 80: "Float128", 96: "Float128", 128: "Float128"},
     "complex": {64: "Complex64", 128: "Complex128", 160: "Complex256", 192: "Complex256", 256: "Complex256"},
 }
 
 
+# Internal conversion context
+
+
 @dataclass(frozen=True)
 class _DerivedTypeContext:
+    """Keep lexical derived-type lookup facts while one parser node is converted.
+
+    The context records the owning module, imported names, procedure-local
+    imports, and locally declared type names.  It is immutable so nested
+    visitors can safely derive narrower contexts without mutating their parent.
+    """
+
     module: str | None = None
     uses: dict[str, list[FortranUseMapping]] | None = None
     procedure_uses: dict[str, list[FortranUseMapping]] | None = None
@@ -141,9 +171,25 @@ class _DerivedTypeContext:
 
 @dataclass(frozen=True)
 class _ResolvedDerivedTypeOrigin:
+    """Describe the module and spelling selected for an imported derived type.
+
+    ``import_scope`` records when a procedure-local ``use`` made the selected
+    name visible, which determines whether the public semantic name is scoped.
+    """
+
     module: str | None
     name: str
     import_scope: str | None = None
+
+
+@dataclass(frozen=True)
+class _DeclarationCallableContext:
+    """Hold lexical procedure names and imports for expression-call resolution."""
+
+    module: str | None
+    local_procedures: dict[str, SemanticFunction]
+    local_interfaces: dict[str, SemanticPrototype]
+    uses: dict[str, list[FortranUseMapping]]
 
 
 def _normalize_compile_time_values(
@@ -189,6 +235,7 @@ def _resolve_compile_time_text(text: str, compile_time_values: dict[str, str]) -
         return exact
 
     def replace_symbol(match: re.Match[str]) -> str:
+        """Replace one identifier only when the supplied values define it."""
         token = match.group(0)
         return compile_time_values.get(token.lower(), token)
 
@@ -209,18 +256,33 @@ class FortranToIRConverter(ClassVisitor):
         wrapped_derived_types: Iterable[tuple[str, str]] | None = None,
         type_facts: dict[tuple[str, str | None], dict[str, object]] | None = None,
     ):
+        """Configure parser-fact conversion without performing any conversion.
+
+        ``type_map`` overrides intrinsic kind-to-semantic-name mapping;
+        ``compile_time_values`` resolves parser-preserved expressions;
+        ``wrapped_derived_types`` marks imported types with generated wrappers;
+        and ``type_facts`` supplies compiler-measured storage facts.  Inputs are
+        normalized into lookup-friendly forms and retained for later visitors.
+        """
         self.type_map = FORTRAN_TYPE_MAP if type_map is None else type_map
         self.compile_time_values = _normalize_compile_time_values(compile_time_values)
         self.wrapped_derived_types = {
             (str(module).lower(), str(name).lower()) for module, name in (wrapped_derived_types or [])
         }
+        self._known_procedures: set[tuple[str, str]] = set()
         self.type_facts = {
             (str(base_type).lower(), None if kind is None else str(kind).lower()): dict(fact)
             for (base_type, kind), fact in (type_facts or {}).items()
         }
 
     def visit(self, node, **context):
-        """Dispatch one parsed Fortran model through its class visitor."""
+        """Convert one supported parsed model using the shared class visitor.
+
+        Call this for a specific parser model when the convenience module,
+        file, or project helpers do not match the desired input shape.  The
+        result type follows ``node``; unsupported model classes raise
+        :class:`TypeError`.
+        """
         return self._visit(node, **context)
 
     @staticmethod
@@ -229,7 +291,13 @@ class FortranToIRConverter(ClassVisitor):
         raise TypeError(f"Unsupported Fortran parse object: {type(node)!r}")
 
     def first_module(self, parsed):
-        """Accept a FortranModule, FortranFile, or legacy signature list in tests."""
+        """Select one module from supported single-module conversion inputs.
+
+        A :class:`FortranModule` is returned unchanged, a file contributes its
+        first module, and the legacy signature-list form becomes a synthetic
+        module.  Empty files and unsupported shapes retain their established
+        :class:`ValueError` and :class:`TypeError` failures.
+        """
         if isinstance(parsed, FortranModule):
             return parsed
         if isinstance(parsed, FortranFile):
@@ -242,13 +310,22 @@ class FortranToIRConverter(ClassVisitor):
             return FortranModule(name=module_name or "", procedures=procedures)
         raise TypeError(f"Unsupported Fortran parse object: {type(parsed)!r}")
 
+    # Container visitors
+
     def _visit_FortranFile(
         self,
         parsed_file: FortranFile,
         *,
         standalone_module_name: str | None = None,
     ) -> list[SemanticModule]:
+        """Convert every module and standalone procedure group in one file.
+
+        The method first expands the wrapped-derived-type lookup from the file,
+        then preserves parser module order.  Standalone procedures are emitted
+        last as the requested synthetic module when present.
+        """
         converter = self._with_additional_wrapped_types(self._wrapped_types_from_file(parsed_file))
+        converter = converter._with_additional_known_procedures(self._known_procedures_from_file(parsed_file))
         modules = [converter.visit(module) for module in parsed_file.modules]
         if parsed_file.procedures:
             modules.append(
@@ -261,7 +338,14 @@ class FortranToIRConverter(ClassVisitor):
         return modules
 
     def _visit_FortranProject(self, project: FortranProject) -> list[SemanticModule]:
+        """Convert project files in order with project-wide type and callback context.
+
+        Each file receives the known project type set plus its own declarations,
+        while imported callback interfaces are resolved against the project.
+        The returned module ordering matches the input file and parser order.
+        """
         converter = self._with_additional_wrapped_types(self._wrapped_types_from_project(project))
+        converter = converter._with_additional_known_procedures(self._known_procedures_from_project(project))
         semantic_modules = []
         for parsed_file in project.files:
             file_converter = converter._with_additional_wrapped_types(converter._wrapped_types_from_file(parsed_file))
@@ -282,34 +366,58 @@ class FortranToIRConverter(ClassVisitor):
                 )
         return semantic_modules
 
+    # Variable and argument visitors
+
     def _visit_FortranVariable(
         self,
         var: FortranVariable,
         *,
         derived_type_context: _DerivedTypeContext | None = None,
+        declaration_arrays: dict[str, ArrayExpressionSource] | None = None,
         as_type: bool = False,
         as_data_member: bool = False,
         binding_cls: type[SemanticVariable] = SemanticVariable,
         source_kind: str = "variable",
     ) -> SemanticType | SemanticVariable:
-        """Convert one parsed variable through the class visitor protocol."""
+        """Convert a parser variable as a type or a semantic data member.
+
+        ``as_type`` returns the normalized :class:`SemanticType`; ``as_data_member``
+        produces the requested semantic variable subtype with origin metadata.
+        The default preserves the historical type-only conversion path.
+        """
         if as_type:
-            return self._convert_variable_type(var, derived_type_context=derived_type_context)
+            return self._convert_variable_type(
+                var,
+                derived_type_context=derived_type_context,
+                declaration_arrays=declaration_arrays,
+            )
         if as_data_member:
             return self._convert_data_member(
                 var,
                 derived_type_context=derived_type_context,
                 binding_cls=binding_cls,
                 source_kind=source_kind,
+                declaration_arrays=declaration_arrays,
             )
-        return self._convert_variable_type(var, derived_type_context=derived_type_context)
+        return self._convert_variable_type(
+            var,
+            derived_type_context=derived_type_context,
+            declaration_arrays=declaration_arrays,
+        )
 
     def _convert_variable_type(
         self,
         var: FortranVariable,
         *,
         derived_type_context: _DerivedTypeContext | None = None,
+        declaration_arrays: dict[str, ArrayExpressionSource] | None = None,
     ) -> SemanticType:
+        """Build a semantic datatype, storage contract, and source metadata for ``var``.
+
+        This is the intrinsic/derived-type normalization stage.  It resolves
+        known compile-time text, applies measured type facts, and records
+        source storage facts without deciding downstream ownership policy.
+        """
         semantic_name = self._semantic_type_name(var)
         derived_type_ref = self._derived_type_ref(var, derived_type_context)
         metadata = {}
@@ -334,7 +442,7 @@ class FortranToIRConverter(ClassVisitor):
             metadata["fortran_pointer_association"] = "runtime"
         shape = [self._resolve_compile_time_text(dim) for dim in var.shape]
         if var.rank > 0:
-            storage = self._array_storage_contract(var, shape)
+            storage = self._array_storage_contract(var, shape, declaration_arrays=declaration_arrays)
         elif getattr(var, "pointer", False):
             storage = SemanticStorageContract(kind="reference", pointer_depth=1)
         else:
@@ -352,6 +460,12 @@ class FortranToIRConverter(ClassVisitor):
         return semantic_type
 
     def _character_length(self, var: FortranVariable) -> str:
+        """Return the resolved character length recorded by a parsed declaration.
+
+        The helper reads the parser's mixed kind/length spelling, preferring an
+        explicit ``len=`` fragment and otherwise preserving legacy length syntax;
+        declarations with neither continue to use Fortran's length-one default.
+        """
         raw = self._resolve_compile_time_text(str(var.kind or "")).strip()
         length_match = re.search(r"(?:^|,)\s*len\s*=\s*([^,]+)", raw, re.IGNORECASE)
         if length_match is not None:
@@ -370,15 +484,28 @@ class FortranToIRConverter(ClassVisitor):
         as_type: bool = False,
         binding_cls: type[SemanticVariable] = SemanticVariable,
         source_kind: str = "variable",
+        declaration_arrays: dict[str, ArrayExpressionSource] | None = None,
     ) -> SemanticArgument | SemanticVariable:
+        """Convert a dummy argument, including callback and storage facts.
+
+        The visitor returns a type or data member in the explicit modes used by
+        related visitors; otherwise it produces a :class:`SemanticArgument`.
+        It mutates the freshly built semantic type with access and storage facts
+        inferred from the parser declaration before constructing the argument.
+        """
         if as_type:
-            return self._convert_variable_type(arg, derived_type_context=derived_type_context)
+            return self._convert_variable_type(
+                arg,
+                derived_type_context=derived_type_context,
+                declaration_arrays=declaration_arrays,
+            )
         if as_data_member:
             return self._convert_data_member(
                 arg,
                 derived_type_context=derived_type_context,
                 binding_cls=binding_cls,
                 source_kind=source_kind,
+                declaration_arrays=declaration_arrays,
             )
         if arg.base_type.lower() == "procedure":
             semantic_type = self._callback_semantic_type(
@@ -387,7 +514,11 @@ class FortranToIRConverter(ClassVisitor):
                 derived_type_context=derived_type_context,
             )
         else:
-            semantic_type = self._convert_variable_type(arg, derived_type_context=derived_type_context)
+            semantic_type = self._convert_variable_type(
+                arg,
+                derived_type_context=derived_type_context,
+                declaration_arrays=declaration_arrays,
+            )
         access = self._argument_access(arg, semantic_type)
         if semantic_type.storage is not None and semantic_type.storage.kind == "callback":
             pass
@@ -406,7 +537,7 @@ class FortranToIRConverter(ClassVisitor):
         metadata = {}
         if getattr(arg, "pass_by_value", False) and str(getattr(arg, "base_type", "")).casefold() == "derived":
             metadata[NATIVE_BY_VALUE_METADATA] = True
-        return SemanticArgument(
+        argument = SemanticArgument(
             name=arg.name,
             semantic_type=semantic_type,
             optional=getattr(arg, "optional", False),
@@ -414,6 +545,11 @@ class FortranToIRConverter(ClassVisitor):
             metadata=metadata,
             origin=self._argument_origin(arg),
         )
+        # Source access is an internal optimization fact, not part of the
+        # serialized semantic contract.  It lets policy omit a useless copy-in
+        # for intent(out) arrays without changing scalar ownership behavior.
+        argument._source_reads_argument = access[0]
+        return argument
 
     def _convert_data_member(
         self,
@@ -422,8 +558,19 @@ class FortranToIRConverter(ClassVisitor):
         derived_type_context: _DerivedTypeContext | None = None,
         binding_cls: type[SemanticVariable] = SemanticVariable,
         source_kind: str = "variable",
+        declaration_arrays: dict[str, ArrayExpressionSource] | None = None,
     ) -> SemanticVariable:
-        semantic_type = self._convert_variable_type(var, derived_type_context=derived_type_context)
+        """Create a module variable or derived-type field from a parsed declaration.
+
+        The result carries normalized type, initializer, visibility, and source
+        origin facts.  Array storage receives allocation and pointer facts from
+        the declaration; no wrapper accessor or ownership policy is chosen here.
+        """
+        semantic_type = self._convert_variable_type(
+            var,
+            derived_type_context=derived_type_context,
+            declaration_arrays=declaration_arrays,
+        )
         if semantic_type.storage is not None and semantic_type.storage.array is not None:
             semantic_type.storage.array.allocatable = getattr(var, "allocatable", False)
             semantic_type.storage.array.pointer = getattr(var, "pointer", False)
@@ -485,6 +632,13 @@ class FortranToIRConverter(ClassVisitor):
         *,
         derived_type_context: _DerivedTypeContext | None,
     ) -> SemanticType:
+        """Build the callback semantic type for a procedure dummy when resolvable.
+
+        A pointer dummy or unknown interface follows ordinary variable
+        conversion.  For a known interface, the helper converts its arguments
+        and result into prototype metadata and normalizes non-value callback
+        dummies to writable references.
+        """
         if getattr(arg, "pointer", False):
             return self._convert_variable_type(arg, derived_type_context=derived_type_context)
         interface_name = str(arg.kind or arg.name)
@@ -497,6 +651,7 @@ class FortranToIRConverter(ClassVisitor):
         callback_arguments = [self.visit(item, derived_type_context=context) for item in projected_arguments]
         for source_argument, callback_argument in zip(projected_arguments, callback_arguments, strict=True):
             self._normalize_callback_reference_storage(callback_argument, source_argument)
+            self._record_prototype_argument_intent(callback_argument, source_argument)
         callback_return = (
             self.visit(signature.result, derived_type_context=context, as_type=True)
             if signature.result
@@ -568,19 +723,30 @@ class FortranToIRConverter(ClassVisitor):
             semantic_type.storage.mutable = True
         semantic_type.ownership.mutable = True
 
+    @staticmethod
+    def _record_prototype_argument_intent(
+        argument: SemanticArgument,
+        source_argument: FortranArgument | FortranVariable,
+    ) -> None:
+        """Retain exact dummy direction only inside an interface prototype."""
+        intent = getattr(source_argument, "intent", None)
+        if intent is not None:
+            argument.origin.metadata[PROTOTYPE_INTENT_METADATA] = intent
+
     def _module_prototypes(
         self,
         module: FortranModule,
         context: _DerivedTypeContext,
         referenced: set[str],
+        called: set[str],
     ) -> list[SemanticPrototype]:
-        """Convert abstract and callback-local interfaces into semantic prototypes."""
+        """Convert every referenced interface into one exact prototype signature."""
         prototypes: list[SemanticPrototype] = []
         seen: set[str] = set()
         for interface in module.interfaces:
             for signature in interface.procedures:
                 name = interface.name if interface.name and len(interface.procedures) == 1 else signature.name
-                if not interface.abstract and name.casefold() not in referenced:
+                if not (interface.abstract or name.casefold() in referenced or name.casefold() in called):
                     continue
                 if name in seen:
                     continue
@@ -588,6 +754,7 @@ class FortranToIRConverter(ClassVisitor):
                 arguments = [self.visit(item, derived_type_context=context) for item in signature.arguments]
                 for source_argument, argument in zip(signature.arguments, arguments, strict=True):
                     self._normalize_callback_reference_storage(argument, source_argument)
+                    self._record_prototype_argument_intent(argument, source_argument)
                 return_type = (
                     self.visit(signature.result, derived_type_context=context, as_type=True)
                     if signature.result is not None
@@ -606,13 +773,41 @@ class FortranToIRConverter(ClassVisitor):
                             native_name=name,
                             native_scope=module.name,
                             source_kind="prototype",
+                            metadata={"fortran_interface_kind": "abstract" if interface.abstract else "explicit"},
                         ),
+                        pure=any(attribute.casefold() == "pure" for attribute in signature.attributes),
                     )
                 )
         return prototypes
 
     @staticmethod
+    def _module_declaration_call_names(module: FortranModule) -> set[str]:
+        """Collect bare call names appearing in module-owned declaration shapes."""
+        variables = [
+            *getattr(module, "variables", ()),
+            *(field for derived in module.derived_types for field in derived.fields),
+            *(
+                variable
+                for procedure in module.procedures
+                for variable in (*procedure.arguments, procedure.result)
+                if variable is not None
+            ),
+        ]
+        return {
+            call.casefold()
+            for variable in variables
+            for dimension in getattr(variable, "shape", ())
+            for call in declaration_expression_calls(str(dimension))
+            if call != "<invalid>" and "." not in call
+        }
+
+    @staticmethod
     def _visit_FortranEnumerator(enumerator: FortranEnumerator, *, enum: FortranEnum) -> SemanticVariable:
+        """Convert one enum member into a constant integer semantic variable.
+
+        The output preserves the parser value, visibility, enum identity, and
+        ``bind(C)`` provenance so printers and later stages can consume it.
+        """
         semantic_type = SemanticType(
             "Int32",
             dtype="Int32",
@@ -651,17 +846,35 @@ class FortranToIRConverter(ClassVisitor):
         derived_type_context: _DerivedTypeContext | None = None,
         callback_interfaces: dict[str, FortranProcedureSignature] | None = None,
     ) -> SemanticFunction:
+        """Convert a parsed procedure signature into its callable semantic contract.
+
+        Arguments are reordered only through the existing optional-argument
+        projection rule, receive derived-type and callback context, and then
+        drive the returned function's projection.  Pointer results retain their
+        established result-policy metadata.
+        """
         context = self._procedure_derived_type_context(proc, derived_type_context)
+        declaration_arrays = self._array_expression_sources((*proc.arguments, proc.result))
         arguments = [
             self.visit(
                 arg,
                 derived_type_context=context,
                 callback_interfaces=callback_interfaces,
+                declaration_arrays=declaration_arrays,
             )
             for arg in self._projected_procedure_arguments(proc)
         ]
         metadata = self._procedure_metadata(proc)
-        return_type = self.visit(proc.result, derived_type_context=context, as_type=True) if proc.result else None
+        return_type = (
+            self.visit(
+                proc.result,
+                derived_type_context=context,
+                declaration_arrays=declaration_arrays,
+                as_type=True,
+            )
+            if proc.result
+            else None
+        )
         if return_type is not None and getattr(proc.result, "pointer", False):
             self._apply_pointer_result_policy(return_type)
         return SemanticFunction(
@@ -688,6 +901,12 @@ class FortranToIRConverter(ClassVisitor):
         *,
         derived_type_context: _DerivedTypeContext | None = None,
     ) -> SemanticClass:
+        """Convert a Fortran derived type into fields, bound methods, and overload sets.
+
+        The returned class preserves component ordering and type attributes,
+        derives method bindings from already converted procedures, and records
+        declaration facts for later semantic and printing stages.
+        """
         lookup = procedure_lookup or {}
         context = derived_type_context or _DerivedTypeContext(
             module=dtype.module,
@@ -717,6 +936,7 @@ class FortranToIRConverter(ClassVisitor):
         final_procedures = list(getattr(dtype, "final_procedures", []))
         if final_procedures:
             metadata["fortran_final_procedures"] = final_procedures
+        declaration_arrays = self._array_expression_sources(dtype.fields)
         return SemanticClass(
             name=dtype.name,
             native_name=dtype.name,
@@ -727,6 +947,7 @@ class FortranToIRConverter(ClassVisitor):
                     derived_type_context=context,
                     binding_cls=SemanticField,
                     source_kind="field",
+                    declaration_arrays=declaration_arrays,
                 )
                 for field in dtype.fields
             ],
@@ -745,6 +966,7 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _derived_type_component_fact(field: FortranArgument) -> dict[str, object]:
+        """Return the declaration facts retained for one derived-type component."""
         return {
             "name": field.name,
             "source_type": FortranToIRConverter._fortran_source_type(field),
@@ -762,11 +984,22 @@ class FortranToIRConverter(ClassVisitor):
         *,
         callback_interfaces: dict[str, FortranProcedureSignature] | None = None,
     ) -> SemanticModule:
+        """Assemble the semantic contents of one parsed Fortran module.
+
+        The method establishes derived-type and callback context, converts
+        procedures before classes, then assembles interfaces, variables, enum
+        constants, imports, and visibility.  It deliberately records facts only;
+        later policy completion owns wrapper behavior decisions.
+        """
         context = self._module_derived_type_context(module)
         callback_interfaces = {
             **(callback_interfaces or {}),
             **self._callback_interface_lookup(module),
         }
+        source_procedures = [
+            *module.procedures,
+            *self._module_explicit_interface_procedures(module),
+        ]
         semantic_functions = [
             self.visit(
                 proc,
@@ -774,7 +1007,7 @@ class FortranToIRConverter(ClassVisitor):
                 derived_type_context=context,
                 callback_interfaces=callback_interfaces,
             )
-            for proc in module.procedures
+            for proc in source_procedures
         ]
         callback_prototypes = {
             argument.semantic_type.name.casefold()
@@ -782,8 +1015,21 @@ class FortranToIRConverter(ClassVisitor):
             for argument in function.arguments
             if argument.semantic_type.storage is not None and argument.semantic_type.storage.kind == "callback"
         }
-        prototypes = self._module_prototypes(module, context, callback_prototypes)
+        prototypes = self._module_prototypes(
+            module,
+            context,
+            callback_prototypes,
+            self._module_declaration_call_names(module),
+        )
         procedure_lookup = {func.name.casefold(): func for func in semantic_functions}
+        for procedure, function in zip(source_procedures, semantic_functions, strict=True):
+            callable_context = self._declaration_callable_context(
+                module,
+                functions=semantic_functions,
+                prototypes=prototypes,
+                uses={**module.uses, **procedure.uses},
+            )
+            self._record_function_declaration_callables(function, callable_context)
 
         semantic_classes = [
             self.visit(
@@ -795,6 +1041,14 @@ class FortranToIRConverter(ClassVisitor):
         ]
         for semantic_cls in semantic_classes:
             semantic_cls.visibility = self._symbol_visibility(module, semantic_cls.name)
+            self._record_class_declaration_callables(
+                semantic_cls,
+                self._declaration_callable_context(
+                    module,
+                    functions=semantic_functions,
+                    prototypes=prototypes,
+                ),
+            )
 
         overload_sets = self._module_overload_sets(
             module,
@@ -809,14 +1063,30 @@ class FortranToIRConverter(ClassVisitor):
             for enum in getattr(module, "enums", [])
             for enumerator in enum.enumerators
         ]
+        representable_variables = [
+            var for var in getattr(module, "variables", []) if var.name.casefold() not in common_variables
+        ]
+        declaration_arrays = self._array_expression_sources(getattr(module, "variables", []))
         module_variables = [
-            self.visit(var, as_data_member=True, derived_type_context=context)
-            for var in getattr(module, "variables", [])
-            if var.name.casefold() not in common_variables
+            self.visit(
+                var,
+                as_data_member=True,
+                derived_type_context=context,
+                declaration_arrays=declaration_arrays,
+            )
+            for var in representable_variables
         ]
         for variable in module_variables:
             if variable.origin.native_scope is None:
                 variable.origin.native_scope = module.name
+            self._record_declaration_callables(
+                variable.semantic_type,
+                self._declaration_callable_context(
+                    module,
+                    functions=semantic_functions,
+                    prototypes=prototypes,
+                ),
+            )
         return SemanticModule(
             name=module.name,
             functions=semantic_functions,
@@ -834,6 +1104,50 @@ class FortranToIRConverter(ClassVisitor):
             ),
         )
 
+    def _record_function_declaration_callables(
+        self,
+        function: SemanticFunction,
+        context: _DeclarationCallableContext,
+    ) -> None:
+        """Record expression-call provenance for one function's arrays in place."""
+        for argument in function.arguments:
+            self._record_declaration_callables(argument.semantic_type, context)
+        self._record_declaration_callables(function.return_type, context)
+        for variable in function.locals:
+            self._record_declaration_callables(variable.semantic_type, context)
+
+    def _record_class_declaration_callables(
+        self,
+        semantic_class: SemanticClass,
+        context: _DeclarationCallableContext,
+    ) -> None:
+        """Record native calls for fields and recursively nested class members."""
+        for field in semantic_class.fields:
+            self._record_declaration_callables(field.semantic_type, context)
+        for method in semantic_class.methods:
+            self._record_function_declaration_callables(method, context)
+        for nested in semantic_class.classes:
+            self._record_class_declaration_callables(nested, context)
+
+    @staticmethod
+    def _array_expression_sources(
+        variables: Iterable[FortranVariable | None],
+    ) -> dict[str, ArrayExpressionSource]:
+        """Index declared arrays for inquiry translation within one source scope.
+
+        The helper consumes parser variables, ignores absent/scalar entries,
+        and returns case-preserving names with rank and source lower bounds.
+        It does not resolve or mutate declaration expressions.
+        """
+        return {
+            variable.name: ArrayExpressionSource(
+                rank=variable.rank,
+                lower_bounds=tuple(getattr(variable, "lbound", ()) or ()),
+            )
+            for variable in variables
+            if variable is not None and int(variable.rank or 0) > 0
+        }
+
     def procedures_to_semantic_module(
         self,
         procedures: list[FortranProcedureSignature],
@@ -841,9 +1155,27 @@ class FortranToIRConverter(ClassVisitor):
         name: str,
         callback_interfaces: dict[str, FortranProcedureSignature] | None = None,
     ) -> SemanticModule:
+        """Package standalone procedures as the synthetic semantic module ``name``.
+
+        This is used by file and project conversion after parser module handling.
+        Procedure order and optional callback lookup are passed unchanged to the
+        existing procedure visitor.
+        """
+        semantic_functions = [self.visit(proc, callback_interfaces=callback_interfaces) for proc in procedures]
+        function_lookup = {function.name.casefold(): function for function in semantic_functions}
+        for procedure, function in zip(procedures, semantic_functions, strict=True):
+            self._record_function_declaration_callables(
+                function,
+                _DeclarationCallableContext(
+                    module=None,
+                    local_procedures=function_lookup,
+                    local_interfaces={},
+                    uses=dict(procedure.uses),
+                ),
+            )
         return SemanticModule(
             name=name,
-            functions=[self.visit(proc, callback_interfaces=callback_interfaces) for proc in procedures],
+            functions=semantic_functions,
             origin=SemanticOrigin(
                 source_language="fortran",
                 source_kind="external_root",
@@ -852,6 +1184,7 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _module_imports(module: FortranModule) -> list[str | SemanticImport]:
+        """Translate parser ``use`` mappings while preserving parser declaration order."""
         imports: list[str | SemanticImport] = []
         for module_name, mappings in module.uses.items():
             if not mappings:
@@ -865,24 +1198,171 @@ class FortranToIRConverter(ClassVisitor):
                 )
         return imports
 
+    def _declaration_callable_context(
+        self,
+        module: FortranModule,
+        functions: Iterable[SemanticFunction] = (),
+        prototypes: Iterable[SemanticPrototype] = (),
+        *,
+        uses: dict[str, list[FortranUseMapping]] | None = None,
+    ) -> _DeclarationCallableContext:
+        """Build lexical procedure facts for one module-owned declaration."""
+        return _DeclarationCallableContext(
+            module=module.name,
+            local_procedures={function.name.casefold(): function for function in functions},
+            local_interfaces={prototype.name.casefold(): prototype for prototype in prototypes},
+            uses=dict(module.uses if uses is None else uses),
+        )
+
+    def _record_declaration_callables(
+        self,
+        semantic_type: SemanticType | None,
+        context: _DeclarationCallableContext,
+    ) -> None:
+        """Attach native identities for calls in every axis of one array type.
+
+        The helper consumes an already translated semantic shape and mutates
+        only its array provenance. Public helper calls are omitted unless
+        normal Fortran name resolution finds a native procedure that shadows
+        the helper name; unresolved user calls remain explicit references.
+        """
+        storage = semantic_type.storage if semantic_type is not None else None
+        array = storage.array if storage is not None else None
+        if array is None:
+            return
+        array.expression_callables = [
+            self._expression_callable_references(expression, context) for expression in array.shape
+        ]
+
+    def _expression_callable_references(
+        self,
+        expression: str,
+        context: _DeclarationCallableContext,
+    ) -> list[SemanticExpressionCallable]:
+        """Resolve calls in one axis expression without evaluating their bodies."""
+        references: list[SemanticExpressionCallable] = []
+        for name in declaration_expression_calls(expression):
+            reference = self._resolve_declaration_callable(name, context)
+            if reference is not None:
+                references.append(reference)
+            elif name != "<invalid>" and not is_declaration_expression_helper(name):
+                references.append(
+                    SemanticExpressionCallable(
+                        name=name,
+                        native_name=name.rsplit(".", 1)[-1],
+                        source_language="fortran",
+                    )
+                )
+        return references
+
+    def _resolve_declaration_callable(
+        self,
+        name: str,
+        context: _DeclarationCallableContext,
+    ) -> SemanticExpressionCallable | None:
+        """Resolve one bare call through local declarations and ``USE`` maps."""
+        if "." in name:
+            return None
+        key = name.casefold()
+        interface = context.local_interfaces.get(key)
+        if interface is not None:
+            is_abstract_source = interface.origin.metadata.get("fortran_interface_kind") == "abstract"
+            return SemanticExpressionCallable(
+                name=name,
+                native_name=interface.native_name or interface.name,
+                native_scope=context.module if is_abstract_source else None,
+                source_language="fortran",
+                placement="abstract" if is_abstract_source else "standalone",
+                declaration=interface,
+            )
+
+        local = context.local_procedures.get(key)
+        if local is not None:
+            return SemanticExpressionCallable(
+                name=name,
+                native_name=local.native_name or local.name,
+                native_scope=context.module,
+                source_language="fortran",
+                placement="module" if context.module is not None else "standalone",
+                declaration=local,
+            )
+
+        explicit = [
+            (module_name, mapping.source)
+            for module_name, mappings in context.uses.items()
+            for mapping in mappings
+            if mapping.local_name.casefold() == key
+        ]
+        if len(explicit) == 1:
+            return SemanticExpressionCallable(
+                name=name,
+                native_name=explicit[0][1],
+                native_scope=explicit[0][0],
+                source_language="fortran",
+                placement="module",
+            )
+        if explicit:
+            return None
+
+        wildcard_modules = [module_name for module_name, mappings in context.uses.items() if not mappings]
+        known_origins = [
+            module_name for module_name in wildcard_modules if (module_name.casefold(), key) in self._known_procedures
+        ]
+        if len(known_origins) != 1:
+            return None
+        return SemanticExpressionCallable(
+            name=name,
+            native_name=name,
+            native_scope=known_origins[0],
+            source_language="fortran",
+            placement="module",
+        )
+
     def _with_additional_wrapped_types(
         self,
         wrapped_types: Iterable[tuple[str, str]],
     ) -> FortranToIRConverter:
+        """Return this converter or a clone that also recognizes ``wrapped_types``.
+
+        The existing converter is reused when the normalized set is unchanged;
+        otherwise the clone preserves every other conversion configuration.
+        """
         merged = self.wrapped_derived_types | {
             (str(module).lower(), str(name).lower()) for module, name in wrapped_types
         }
         if merged == self.wrapped_derived_types:
             return self
-        return FortranToIRConverter(
+        converter = FortranToIRConverter(
             type_map=self.type_map,
             compile_time_values=self.compile_time_values,
             wrapped_derived_types=merged,
             type_facts=self.type_facts,
         )
+        converter._known_procedures = set(self._known_procedures)
+        return converter
+
+    def _with_additional_known_procedures(
+        self,
+        procedures: Iterable[tuple[str, str]],
+    ) -> FortranToIRConverter:
+        """Return this converter or a clone with more module-procedure identities."""
+        merged = self._known_procedures | {
+            (str(module).casefold(), str(name).casefold()) for module, name in procedures
+        }
+        if merged == self._known_procedures:
+            return self
+        converter = FortranToIRConverter(
+            type_map=self.type_map,
+            compile_time_values=self.compile_time_values,
+            wrapped_derived_types=self.wrapped_derived_types,
+            type_facts=self.type_facts,
+        )
+        converter._known_procedures = merged
+        return converter
 
     @staticmethod
     def _wrapped_types_from_file(parsed_file: FortranFile) -> set[tuple[str, str]]:
+        """Collect module-qualified derived types declared by one parsed file."""
         return {
             (dtype.module.lower(), dtype.name.lower())
             for module in parsed_file.modules
@@ -891,11 +1371,49 @@ class FortranToIRConverter(ClassVisitor):
         }
 
     @staticmethod
+    def _known_procedures_from_file(parsed_file: FortranFile) -> set[tuple[str, str]]:
+        """Collect module-qualified procedures declared by one parsed file."""
+        return {(module.name, procedure.name) for module in parsed_file.modules for procedure in module.procedures}
+
+    @staticmethod
+    def _known_procedures_from_project(project: FortranProject) -> set[tuple[str, str]]:
+        """Collect module-qualified procedures known to one parsed project."""
+        return {(module.name, procedure.name) for module in project.modules.values() for procedure in module.procedures}
+
+    @staticmethod
+    def _module_explicit_interface_procedures(
+        module: FortranModule,
+    ) -> list[FortranProcedureSignature]:
+        """Return explicitly public procedures declared by unnamed interfaces.
+
+        An explicit public list makes the module declaration the authoritative
+        wrapper contract. Other unnamed interface declarations remain
+        interface-only facts even when a matching implementation is parsed.
+        """
+        public_names = {name.casefold() for name in module.public_symbols}
+        declared_names = {procedure.name.casefold() for procedure in module.procedures}
+        procedures: list[FortranProcedureSignature] = []
+        for interface in module.interfaces:
+            if interface.name is not None or interface.abstract:
+                continue
+            for procedure in interface.procedures:
+                name = procedure.name.casefold()
+                if name in declared_names:
+                    continue
+                if name not in public_names:
+                    continue
+                declared_names.add(name)
+                procedures.append(procedure)
+        return procedures
+
+    @staticmethod
     def _wrapped_types_from_project(project: FortranProject) -> set[tuple[str, str]]:
+        """Collect project-known module-qualified derived types for import resolution."""
         return {(dtype.module.lower(), dtype.name.lower()) for dtype in project.derived_types.values() if dtype.module}
 
     @staticmethod
     def _module_derived_type_context(module: FortranModule) -> _DerivedTypeContext:
+        """Create the lexical type lookup context owned by ``module``."""
         return _DerivedTypeContext(
             module=module.name,
             uses=module.uses,
@@ -907,6 +1425,11 @@ class FortranToIRConverter(ClassVisitor):
         proc: FortranProcedureSignature,
         parent: _DerivedTypeContext | None,
     ) -> _DerivedTypeContext:
+        """Extend a parent type context with one procedure's imports and scope.
+
+        The new context keeps enclosing local types while separating procedure-
+        local imports, which later controls imported type qualification.
+        """
         uses = dict(parent.uses or {}) if parent is not None else {}
         uses.update(proc.uses)
         return _DerivedTypeContext(
@@ -921,6 +1444,11 @@ class FortranToIRConverter(ClassVisitor):
         proc: FortranProcedureSignature,
         parent: _DerivedTypeContext | None,
     ) -> dict[str, list[FortranUseMapping]]:
+        """Return imports introduced locally by ``proc`` relative to its parent.
+
+        A parser-preserved ``_local_uses`` mapping takes precedence; otherwise
+        only imports differing from the parent context are returned.
+        """
         local_uses = getattr(proc, "_local_uses", None)
         if isinstance(local_uses, dict):
             return dict(local_uses)
@@ -933,6 +1461,12 @@ class FortranToIRConverter(ClassVisitor):
         var: FortranVariable,
         context: _DerivedTypeContext | None,
     ) -> tuple[str, dict[str, object]] | None:
+        """Return an imported derived type's public name and reference metadata.
+
+        Local, unresolved, and non-derived declarations produce ``None``.  A
+        procedure-local import is deliberately qualified to avoid colliding with
+        module-level names; the returned metadata records wrapper availability.
+        """
         if var.base_type.lower() != "derived":
             return None
         local_name = str(var.kind)
@@ -963,6 +1497,12 @@ class FortranToIRConverter(ClassVisitor):
         local_name: str,
         context: _DerivedTypeContext | None,
     ) -> _ResolvedDerivedTypeOrigin:
+        """Resolve ``local_name`` against local declarations and lexical imports.
+
+        Unambiguous local declarations win.  When a module import and a
+        procedure-local import identify the same type, the result records the
+        procedure scope so callers can preserve its qualified semantic spelling.
+        """
         lname = local_name.lower()
         if context is None:
             return _ResolvedDerivedTypeOrigin(None, local_name)
@@ -982,6 +1522,12 @@ class FortranToIRConverter(ClassVisitor):
         local_name: str,
         uses: dict[str, list[FortranUseMapping]] | None,
     ) -> _ResolvedDerivedTypeOrigin:
+        """Resolve one derived-type spelling from explicit or wildcard ``use`` maps.
+
+        Only an unambiguous match is returned.  Ambiguous explicit or wildcard
+        imports intentionally remain unresolved so this conversion stage does
+        not invent a native identity.
+        """
         lname = local_name.lower()
         explicit: list[tuple[str, str]] = []
         wildcard_modules: list[str] = []
@@ -1010,6 +1556,12 @@ class FortranToIRConverter(ClassVisitor):
         return _ResolvedDerivedTypeOrigin(None, local_name)
 
     def _semantic_type_name(self, var: FortranVariable) -> str:
+        """Map a parsed intrinsic, derived, or procedure declaration to its dtype name.
+
+        Compiler storage facts take precedence over the configured kind map.
+        Unsupported or incomplete parser facts retain their established
+        :class:`ValueError` diagnostics rather than being silently approximated.
+        """
         base_type = var.base_type.lower()
         if base_type == "unknown":
             raise ValueError(f"Unknown Fortran datatype for variable '{var.name}'")
@@ -1039,6 +1591,7 @@ class FortranToIRConverter(ClassVisitor):
         return semantic_type
 
     def _semantic_kind_key(self, var: FortranVariable) -> str | None:
+        """Normalize the declaration's kind text for semantic type-map lookup."""
         raw_kind = var.target_kind_expression or var.kind
         if not raw_kind:
             return None
@@ -1055,6 +1608,11 @@ class FortranToIRConverter(ClassVisitor):
         return kind
 
     def _target_type_key(self, var: FortranVariable) -> tuple[str, str | None]:
+        """Return the normalized lookup key used for compiler storage facts.
+
+        Character length syntax intentionally maps to the default character
+        storage key, while explicit character kind clauses retain their kind.
+        """
         base_type = var.base_type.lower()
         raw_kind = var.target_kind_expression or var.kind
         if not raw_kind:
@@ -1073,6 +1631,7 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _character_kind_key(kind: str, *, character_length_syntax: bool = False) -> str | None:
+        """Extract a character-kind key while ignoring length-only spellings."""
         if character_length_syntax:
             return None
         kind_match = re.search(r"(?:^|,)\s*kind\s*=\s*([^,]+)", kind)
@@ -1083,6 +1642,7 @@ class FortranToIRConverter(ClassVisitor):
         return kind or None
 
     def _target_type_fact(self, var: FortranVariable) -> dict[str, object] | None:
+        """Return legacy fixed-width or configured compiler facts for ``var``."""
         if var.declared_storage_bits is not None:
             return {
                 "base_type": var.base_type.lower(),
@@ -1094,16 +1654,16 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _semantic_type_from_target_fact(fact: dict[str, object]) -> str | None:
+        """Map one measured intrinsic storage fact to its semantic dtype, if known."""
         base_type = str(fact.get("base_type") or "").lower()
         bits = int(fact.get("bits") or 0)
-        if base_type == "logical":
-            return "Bool"
         if base_type == "character":
             return "String"
         return _FORTRAN_STORAGE_TYPE_MAP.get(base_type, {}).get(bits)
 
     @staticmethod
     def _literal_kind_key(kind: str) -> str | None:
+        """Map a literal ``kind(...)`` real expression to its conventional width key."""
         match = re.fullmatch(r"kind\(\s*[-+]?\d+(?:\.\d*)?([edq])[-+]?\d*\s*\)", kind)
         if match is None:
             return None
@@ -1117,10 +1677,12 @@ class FortranToIRConverter(ClassVisitor):
         return None
 
     def _resolve_compile_time_text(self, text: str) -> str:
+        """Resolve this converter's known compile-time values in ``text``."""
         return _resolve_compile_time_text(text, self.compile_time_values)
 
     @staticmethod
     def _variable_origin(var: FortranVariable) -> SemanticOrigin:
+        """Create source identity metadata for a non-argument declaration."""
         return SemanticOrigin(
             source_language="fortran",
             native_name=var.name,
@@ -1131,6 +1693,7 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _argument_origin(arg: FortranArgument | FortranVariable) -> SemanticOrigin:
+        """Create source identity metadata for a dummy argument or variable."""
         return SemanticOrigin(
             source_language="fortran",
             native_name=arg.name,
@@ -1142,6 +1705,7 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _data_origin(var: FortranArgument | FortranVariable, *, source_kind: str) -> SemanticOrigin:
+        """Create source identity metadata for a module variable or type field."""
         return SemanticOrigin(
             source_language="fortran",
             native_name=var.name,
@@ -1153,6 +1717,7 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _fortran_source_type(var: FortranVariable) -> str:
+        """Render the parser declaration's native Fortran type spelling for metadata."""
         if var.base_type == "derived":
             specifier = "class" if getattr(var, "polymorphic", False) else "type"
             dtype = str(var.kind or "*")
@@ -1163,6 +1728,7 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _fortran_variable_metadata(var: FortranVariable) -> dict[str, object]:
+        """Return parser storage and declaration facts that semantic IR must retain."""
         metadata: dict[str, object] = {
             "rank": var.rank,
             "shape": list(var.shape),
@@ -1186,10 +1752,13 @@ class FortranToIRConverter(ClassVisitor):
             metadata["polymorphic"] = True
         if getattr(var, "is_parameter", False):
             metadata["constant"] = True
+        if var.declared_storage_bits is not None:
+            metadata["declared_storage_bits"] = var.declared_storage_bits
         return metadata
 
     @staticmethod
     def _procedure_metadata(proc: FortranProcedureSignature) -> dict[str, object]:
+        """Return native procedure attributes and optional bind name for semantic IR."""
         metadata: dict[str, object] = {}
         if proc.attributes:
             metadata["fortran_attributes"] = list(proc.attributes)
@@ -1199,13 +1768,27 @@ class FortranToIRConverter(ClassVisitor):
                 metadata["fortran_bind_c_name"] = proc.bind_name
         return metadata
 
+    # Storage and argument-contract helpers
+
     def _array_storage_contract(
         self,
         var: FortranVariable,
         shape: list[str],
+        *,
+        declaration_arrays: dict[str, ArrayExpressionSource] | None = None,
     ) -> SemanticStorageContract:
+        """Construct the semantic array storage contract for a parsed declaration.
+
+        The helper derives category, axes, bounds, order, contiguity, allocation,
+        and pointer facts from ``var`` and already resolved ``shape`` text.
+        """
         category = self._array_category(var, shape)
-        axes = self._array_axes(shape, category, contiguous=getattr(var, "contiguous", False))
+        axes = self._array_axes(
+            shape,
+            category,
+            contiguous=getattr(var, "contiguous", False),
+            declaration_arrays=declaration_arrays,
+        )
         rank = var.rank
         order = self._array_order(rank, category, contiguous=getattr(var, "contiguous", False))
         lower_bounds, upper_bounds = self._array_bound_metadata(shape)
@@ -1229,11 +1812,17 @@ class FortranToIRConverter(ClassVisitor):
         )
 
     def _resolve_optional_compile_time_text(self, text: str | None) -> str | None:
+        """Resolve optional bound text while preserving an absent bound as ``None``."""
         if text is None:
             return None
         return self._resolve_compile_time_text(text)
 
     def _array_bound_metadata(self, shape: list[str]) -> tuple[list[str | None], list[str | None]]:
+        """Split Fortran dimension tokens into optional lower and upper bounds.
+
+        Default lower bound ``1`` is omitted, assumed-size ``*`` is retained as
+        an upper marker, and fully absent bound lists stay empty for compatibility.
+        """
         lower_bounds: list[str | None] = []
         upper_bounds: list[str | None] = []
         for dim in shape:
@@ -1253,6 +1842,7 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _array_category(var: FortranVariable, shape: list[str]) -> str:
+        """Classify parsed array dimensions for semantic storage metadata."""
         cleaned = [dim.strip() for dim in shape]
         if cleaned == [".."]:
             return "assumed_rank"
@@ -1271,7 +1861,20 @@ class FortranToIRConverter(ClassVisitor):
         return "explicit_shape"
 
     @classmethod
-    def _array_axes(cls, shape: list[str], category: str, *, contiguous: bool) -> list[str]:
+    def _array_axes(
+        cls,
+        shape: list[str],
+        category: str,
+        *,
+        contiguous: bool,
+        declaration_arrays: dict[str, ArrayExpressionSource] | None = None,
+    ) -> list[str]:
+        """Convert native bounds into Python-form public extent expressions.
+
+        The source ``shape`` remains unchanged elsewhere in the array contract.
+        Explicit bounds are converted to extents first, then the shared
+        expression layer translates Fortran inquiries and operators.
+        """
         if category == "assumed_rank":
             return ["..."]
         if category == "assumed_shape" and not contiguous:
@@ -1288,101 +1891,39 @@ class FortranToIRConverter(ClassVisitor):
                 continue
             lower, upper = cls._dimension_bounds(token)
             if lower in {None, "1"} and upper:
-                axes.append(cls._canonical_dimension_expression(upper))
+                extent = upper
             elif lower is not None and upper is not None:
-                axes.append(cls._canonical_dimension_expression(f"({upper}) - ({lower}) + 1"))
+                extent = f"({upper}) - ({lower}) + 1"
             elif ":" in token:
                 axes.append(":")
+                continue
             else:
-                axes.append(cls._canonical_dimension_expression(token))
+                extent = token
+            public_extent = fortran_extent_to_python(extent, declaration_arrays)
+            axes.append(canonicalize_declaration_extent(public_extent))
         return axes
 
     @staticmethod
     def _dimension_bounds(token: str) -> tuple[str | None, str | None]:
-        if ":" not in token:
-            return "1", token
-        lower, upper = token.split(":", 1)
-        return lower.strip() or None, upper.strip() or None
+        """Return the lower and upper parts of one Fortran dimension token."""
+        return split_dimension_bounds(token)
 
     @staticmethod
     def _has_omitted_upper_bound(token: str) -> bool:
-        return ":" in token and token.split(":", 1)[1].strip() == ""
-
-    @staticmethod
-    def _canonical_dimension_expression(expression: str) -> str:
-        try:
-            parsed = ast.parse(expression, mode="eval").body
-            return ast.unparse(FortranToIRConverter._simplify_additive_dimension(parsed))
-        except SyntaxError:
-            return expression
-
-    @staticmethod
-    def _simplify_additive_dimension(expression: ast.expr) -> ast.expr:
-        """Fold additive bound arithmetic into the public extent expression."""
-        terms: list[tuple[int, ast.expr]] = []
-
-        def collect(node: ast.expr, sign: int = 1) -> None:
-            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-                collect(node.left, sign)
-                collect(node.right, sign)
-                return
-            if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Sub):
-                collect(node.left, sign)
-                collect(node.right, -sign)
-                return
-            if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
-                collect(node.operand, -sign)
-                return
-            terms.append((sign, node))
-
-        collect(expression)
-        constant = sum(
-            sign * node.value
-            for sign, node in terms
-            if isinstance(node, ast.Constant) and isinstance(node.value, int) and not isinstance(node.value, bool)
-        )
-        symbolic = [
-            (sign, node)
-            for sign, node in terms
-            if not (isinstance(node, ast.Constant) and isinstance(node.value, int) and not isinstance(node.value, bool))
-        ]
-
-        coefficients: dict[str, tuple[ast.expr, int]] = {}
-        order: list[str] = []
-        for sign, node in symbolic:
-            key = ast.dump(node, include_attributes=False)
-            if key not in coefficients:
-                coefficients[key] = (node, 0)
-                order.append(key)
-            original, coefficient = coefficients[key]
-            coefficients[key] = (original, coefficient + sign)
-
-        result: ast.expr | None = None
-        for key in order:
-            node, coefficient = coefficients[key]
-            for _ in range(abs(coefficient)):
-                if result is None:
-                    result = node if coefficient > 0 else ast.UnaryOp(op=ast.USub(), operand=node)
-                else:
-                    operator: ast.operator = ast.Add() if coefficient > 0 else ast.Sub()
-                    result = ast.BinOp(left=result, op=operator, right=node)
-
-        if result is None:
-            return ast.Constant(value=constant)
-        if constant > 0:
-            return ast.BinOp(left=result, op=ast.Add(), right=ast.Constant(value=constant))
-        if constant < 0:
-            return ast.BinOp(left=result, op=ast.Sub(), right=ast.Constant(value=-constant))
-        return result
+        """Return whether a dimension's colon form has no explicit upper bound."""
+        bounds = split_top_level_expression(token, ":")
+        return len(bounds) > 1 and not ":".join(bounds[1:]).strip()
 
     @staticmethod
     def _array_order(rank: int, category: str, *, contiguous: bool) -> str | None:
+        """Return Fortran order for multidimensional arrays and ``None`` otherwise."""
         if rank <= 1:
             return None
         return "ORDER_F"
 
     @staticmethod
     def _array_contiguous(category: str, *, contiguous: bool) -> bool | None:
+        """Derive contiguity certainty from parser category and explicit attribute."""
         if contiguous:
             return True
         if category in {"explicit_shape", "assumed_size", "deferred_shape"}:
@@ -1393,10 +1934,12 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _is_strided_axis(axis: str) -> bool:
+        """Return whether an encoded public axis carries the strided marker."""
         return "Strided" in axis
 
     @staticmethod
     def _reference_storage_contract(*, writes_argument: bool) -> SemanticStorageContract:
+        """Create the scalar by-reference contract implied by argument access."""
         read_only = not writes_argument
         return SemanticStorageContract(
             kind="reference",
@@ -1407,6 +1950,7 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _scalar_storage_contract(*, writes_argument: bool) -> SemanticStorageContract:
+        """Create the rank-zero descriptor contract used for writable optional scalars."""
         read_only = not writes_argument
         return SemanticStorageContract(
             kind="array",
@@ -1426,6 +1970,12 @@ class FortranToIRConverter(ClassVisitor):
         *,
         writes_argument: bool,
     ) -> None:
+        """Apply argument mutability and array declaration facts in place.
+
+        ``semantic_type`` must already carry an array storage contract.  Missing
+        storage is intentionally ignored, preserving callers that cannot form
+        an array contract for unsupported declarations.
+        """
         if semantic_type.storage is None:
             return
         read_only = not writes_argument
@@ -1439,15 +1989,18 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _add_variable_constraints(semantic_type: SemanticType, var: FortranVariable) -> None:
+        """Append declaration-implied constraints to ``semantic_type`` in place."""
         if getattr(var, "is_parameter", False):
             semantic_type.constraints.append(SemanticConstraint("Constant"))
 
     @staticmethod
     def _apply_argument_ownership(semantic_type: SemanticType, *, writes_argument: bool) -> None:
+        """Record argument mutability on the already constructed ownership metadata."""
         semantic_type.ownership.mutable = writes_argument
 
     @staticmethod
     def _apply_pointer_input_policy(semantic_type: SemanticType) -> None:
+        """Record the existing caller-owned policy for a non-writing pointer input."""
         set_ownership_metadata(
             semantic_type.metadata,
             owner="caller",
@@ -1457,6 +2010,7 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _apply_pointer_result_policy(semantic_type: SemanticType) -> None:
+        """Record the existing Python snapshot policy for a scalar pointer result."""
         if semantic_type.rank > 0:
             return
         set_ownership_metadata(
@@ -1471,6 +2025,7 @@ class FortranToIRConverter(ClassVisitor):
         arg: FortranArgument | FortranVariable,
         semantic_type: SemanticType,
     ) -> tuple[bool, bool]:
+        """Return parser-provided read/write facts or the established conservative default."""
         reads = getattr(arg, "reads_argument", None)
         writes = getattr(arg, "writes_argument", None)
         if reads is None or writes is None:
@@ -1481,17 +2036,27 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _argument_has_writable_storage(argument: SemanticArgument) -> bool:
+        """Return whether semantic ownership or storage marks an argument writable."""
         storage = argument.semantic_type.storage
         return bool(
             argument.semantic_type.ownership.mutable
             or (storage is not None and (storage.mutable or not storage.read_only))
         )
 
+    # Derived-type binding and generic-interface helpers
+
     def _bound_methods(
         self,
         dtype: FortranDerivedType,
         procedure_lookup: dict[str, SemanticFunction],
     ) -> list[SemanticMethod]:
+        """Project resolved type-bound procedure bindings into semantic methods.
+
+        Procedures missing from ``procedure_lookup`` are ignored as before.
+        For matched bindings, this marks the original procedure as type-bound,
+        then copies the relevant signature and binding-only metadata into a
+        method without leaking temporary mutation into the method metadata.
+        """
         methods: list[SemanticMethod] = []
         bindings = getattr(dtype, "procedure_bindings", ()) or [
             {"name": method_name, "attrs": []} for method_name in dtype.methods
@@ -1543,6 +2108,12 @@ class FortranToIRConverter(ClassVisitor):
         context: _DerivedTypeContext,
         semantic_classes: list[SemanticClass],
     ) -> list[ProcedureOverloadSet]:
+        """Convert module generic interfaces into function or class overload sets.
+
+        Normal procedure generics remain module overloads.  Defined operators
+        and assignment are attached to their derived classes, while unsupported
+        constructors preserve the existing descriptive conversion failure.
+        """
         overload_sets: list[ProcedureOverloadSet] = []
         class_map = {semantic_class.name.casefold(): semantic_class for semantic_class in semantic_classes}
         for interface in module.interfaces:
@@ -1551,7 +2122,7 @@ class FortranToIRConverter(ClassVisitor):
             inline_lookup = {
                 signature.name.casefold(): self.visit(
                     signature,
-                    visibility=self._symbol_visibility(module, interface.name),
+                    visibility=self._symbol_visibility(module, signature.name),
                     derived_type_context=context,
                 )
                 for signature in interface.procedures
@@ -1595,6 +2166,12 @@ class FortranToIRConverter(ClassVisitor):
         dtype: FortranDerivedType,
         methods: list[SemanticMethod],
     ) -> list[ProcedureOverloadSet]:
+        """Convert a derived type's generic bindings into method overload sets.
+
+        Resolved method targets keep binding visibility; malformed or missing
+        generic targets preserve the previous empty-placeholder behavior for
+        ordinary procedure names and are otherwise omitted.
+        """
         lookup = {method.name.casefold(): method for method in methods}
         overload_sets: list[ProcedureOverloadSet] = []
         for binding in dtype.generic_bindings:
@@ -1640,6 +2217,12 @@ class FortranToIRConverter(ClassVisitor):
         lookup: dict[str, SemanticFunction],
         classes: dict[str, SemanticClass],
     ) -> None:
+        """Replace valid defined-assignment projections on their original procedures.
+
+        The generic candidates are only a view; this mutates the matching
+        original lookup entry so later consumers see the same bound-object
+        result projection as the defined-assignment overload.
+        """
         kind, token = self._defined_generic_identity(generic_name)
         if kind != "assignment":
             return
@@ -1655,6 +2238,7 @@ class FortranToIRConverter(ClassVisitor):
         overload_sets: list[ProcedureOverloadSet],
         incoming: list[ProcedureOverloadSet],
     ) -> None:
+        """Append incoming overload candidates to matching named sets in place."""
         for overload_set in incoming:
             existing = next((item for item in overload_sets if item.name == overload_set.name), None)
             if existing is None:
@@ -1664,6 +2248,11 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _normal_overload_set(name: str, procedures: list[SemanticFunction]) -> ProcedureOverloadSet:
+        """Copy regular generic candidates and attach generic dispatch metadata.
+
+        Type-bound methods are projected back to ordinary functions while
+        retaining their bound-object position or static flag in metadata.
+        """
         candidates = []
         for procedure in procedures:
             candidate = deepcopy(procedure)
@@ -1698,6 +2287,12 @@ class FortranToIRConverter(ClassVisitor):
         procedures: list[SemanticFunction],
         classes: dict[str, SemanticClass],
     ) -> list[tuple[SemanticClass, list[ProcedureOverloadSet]]]:
+        """Map valid defined operators or assignments onto affected semantic classes.
+
+        Candidates failing the existing representation checks are skipped.  For
+        valid assignment interfaces the candidate projection is changed to
+        return the passed object before its class-local overload set is built.
+        """
         grouped: dict[str, tuple[SemanticClass, dict[str, ProcedureOverloadSet]]] = {}
         kind, token = self._defined_generic_identity(generic_name)
         if kind is None:
@@ -1730,6 +2325,7 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _defined_generic_identity(name: str) -> tuple[str | None, str]:
+        """Classify a Fortran defined generic spelling and return its normalized token."""
         compact = re.sub(r"\s+", "", name).casefold()
         if compact == "assignment(=)":
             return "assignment", "="
@@ -1770,6 +2366,7 @@ class FortranToIRConverter(ClassVisitor):
         procedure: SemanticFunction,
         classes: dict[str, SemanticClass],
     ) -> str | None:
+        """Return the representation error for a defined generic, or ``None`` when valid."""
         arguments = procedure.arguments
         if kind == "assignment":
             if len(arguments) != 2 or procedure.return_type is not None:
@@ -1790,7 +2387,7 @@ class FortranToIRConverter(ClassVisitor):
             return f"defined operator {token!r} must be a function with {sorted(expected_arities)} operand count"
         if not any(argument.semantic_type.name.casefold() in classes for argument in arguments):
             return "defined operator must have at least one wrapped derived-type operand"
-        if token in _COMPARISON_OPERATOR_METHODS and procedure.return_type.dtype != "Bool":
+        if token in _COMPARISON_OPERATOR_METHODS and not is_boolean_semantic_type_name(procedure.return_type.dtype):
             return "defined relational operator must return Bool"
         return None
 
@@ -1801,6 +2398,12 @@ class FortranToIRConverter(ClassVisitor):
         procedure: SemanticFunction,
         classes: dict[str, SemanticClass],
     ) -> list[tuple[SemanticClass, str, str, int]]:
+        """Return class, overload-set, method, and bound-position projections for a generic.
+
+        Assignment maps to ``assign`` on its left-hand derived type.  Operators
+        are emitted for each distinct derived-type operand, preserving reflected
+        and comparison method naming rules.
+        """
         if kind == "assignment":
             semantic_class = classes[procedure.arguments[0].semantic_type.name.casefold()]
             return [(semantic_class, "assign", "assign", 0)]
@@ -1843,6 +2446,7 @@ class FortranToIRConverter(ClassVisitor):
         method_name: str,
         bound_position: int,
     ) -> SemanticFunction:
+        """Copy a generic candidate and attach its overload and binding metadata."""
         candidate = deepcopy(procedure)
         candidate.metadata[FORTRAN_GENERIC_NAME_METADATA] = generic_name
         candidate.metadata[OVERLOAD_KIND_METADATA] = (
@@ -1868,6 +2472,12 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _assignment_projection(procedure: SemanticFunction, bound_position: int) -> list[ProjectionMapping]:
+        """Return ``procedure`` projection with its assigned object as result zero.
+
+        Native order is preserved; visible Python argument positions are
+        recomputed around hidden outputs, and copied mapping values prevent
+        mutation of the original projection.
+        """
         projection = []
         python_position = 0
         for mapping in sorted(procedure.projection, key=lambda item: item.native_position or 0):
@@ -1904,6 +2514,7 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _as_semantic_function(procedure: SemanticFunction) -> SemanticFunction:
+        """Copy a procedure-like candidate into the plain function representation used by overloads."""
         return SemanticFunction(
             name=procedure.native_name or procedure.name,
             native_name=procedure.native_name,
@@ -1919,6 +2530,7 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _is_procedure_generic_name(name: str) -> bool:
+        """Return whether a generic spelling is an ordinary callable identifier."""
         return re.fullmatch(r"[a-z_]\w*", name, re.IGNORECASE) is not None
 
     @staticmethod
@@ -1928,6 +2540,7 @@ class FortranToIRConverter(ClassVisitor):
         *,
         visibility: str | None,
     ) -> tuple[list[SemanticFunction], list[str]]:
+        """Copy resolved generic targets and list target names absent from ``procedure_lookup``."""
         procedures: list[SemanticFunction] = []
         missing: list[str] = []
         for target_name in target_names:
@@ -1946,6 +2559,12 @@ class FortranToIRConverter(ClassVisitor):
         proc: SemanticFunction,
         binding_attributes: tuple[str, ...],
     ) -> tuple[str | None, int | None]:
+        """Identify a type-bound procedure's passed-object argument and position.
+
+        ``nopass`` returns no object.  An omitted ``pass`` attribute defaults to
+        the first argument; explicit missing names keep the established
+        :class:`ValueError` diagnostics.
+        """
         if "nopass" in binding_attributes:
             return None, None
 
@@ -1970,6 +2589,7 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _procedure_binding_names(name: str) -> tuple[str, str]:
+        """Split a Fortran binding ``local => target`` spelling into both names."""
         if "=>" not in name:
             return name.strip(), name.strip()
         binding_name, target_name = name.split("=>", 1)
@@ -1977,6 +2597,7 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _projected_procedure_arguments(proc: FortranProcedureSignature) -> list[FortranArgument]:
+        """Return procedure dummies with required arguments preceding optional ones."""
         args = list(proc.arguments)
         return [
             *[arg for arg in args if not getattr(arg, "optional", False)],
@@ -1993,6 +2614,7 @@ class FortranToIRConverter(ClassVisitor):
         is_character_replacement: bool,
         is_descriptor_replacement: bool,
     ) -> bool:
+        """Return whether an output/replacement must be exposed as a Python result."""
         if (
             is_primitive_scalar_replacement
             or is_allocatable_replacement
@@ -2013,6 +2635,7 @@ class FortranToIRConverter(ClassVisitor):
         is_output: bool,
         semantic_type: SemanticType | None,
     ) -> bool:
+        """Return whether a nonoptional pure-output dummy is hidden from Python input."""
         if not is_output or getattr(native_arg, "optional", False):
             return False
         return (
@@ -2026,6 +2649,12 @@ class FortranToIRConverter(ClassVisitor):
         proc: FortranProcedureSignature,
         arguments: list[SemanticArgument],
     ) -> list[ProjectionMapping]:
+        """Build native-to-Python argument and result mappings for one procedure.
+
+        The existing flow classifies each dummy's access and storage form, marks
+        returned outputs, assigns stable Python/result positions, and records
+        descriptor or by-value projection details consumed by later stages.
+        """
         by_name = {arg.name: arg for arg in arguments}
 
         projection: list[ProjectionMapping] = []
@@ -2091,6 +2720,7 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _is_allocatable_array(semantic_type: SemanticType | None) -> bool:
+        """Return whether a semantic type has allocatable array storage."""
         return bool(
             semantic_type is not None
             and semantic_type.storage is not None
@@ -2100,6 +2730,7 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _is_native_descriptor_output(semantic_type: SemanticType | None) -> bool:
+        """Return whether output storage uses an allocatable, pointer, or scalar descriptor."""
         if semantic_type is None:
             return False
         if FortranToIRConverter._is_scalar_descriptor(semantic_type):
@@ -2110,6 +2741,7 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _is_scalar_descriptor(semantic_type: SemanticType | None) -> bool:
+        """Return whether a rank-zero type is represented by an allocatable or pointer descriptor."""
         return bool(
             semantic_type is not None
             and semantic_type.rank == 0
@@ -2118,6 +2750,7 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _is_primitive_scalar_replacement(semantic_type: SemanticType | None) -> bool:
+        """Return whether a mutable rank-zero primitive is returned as a replacement value."""
         return bool(
             semantic_type is not None
             and semantic_type.rank == 0
@@ -2160,6 +2793,7 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _is_python_value_scalar_output(semantic_type: SemanticType | None) -> bool:
+        """Return whether a rank-zero non-descriptor maps directly to a Python value."""
         return bool(
             semantic_type is not None
             and semantic_type.rank == 0
@@ -2169,10 +2803,12 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _is_scalar_character(semantic_type: SemanticType | None) -> bool:
+        """Return whether ``semantic_type`` is a rank-zero semantic string."""
         return bool(semantic_type is not None and semantic_type.rank == 0 and semantic_type.name == "String")
 
     @staticmethod
     def _base_classes(dtype: FortranDerivedType) -> list[str]:
+        """Return the optional Fortran extension parent as semantic class names."""
         if not dtype.extends:
             return []
         if isinstance(dtype.extends, str):
@@ -2181,12 +2817,14 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _standalone_module_name(parsed_file: FortranFile) -> str:
+        """Choose the stable synthetic module name for file-level procedures."""
         if parsed_file.filename:
             return Path(parsed_file.filename).stem
         return "standalone"
 
     @staticmethod
     def _symbol_visibility(module: FortranModule, symbol_name: str) -> str:
+        """Resolve explicit private/public lists before the module default visibility."""
         lname = symbol_name.lower()
         public_set = {s.lower() for s in getattr(module, "public_symbols", [])}
         private_set = {s.lower() for s in getattr(module, "private_symbols", [])}
@@ -2197,11 +2835,15 @@ class FortranToIRConverter(ClassVisitor):
         return getattr(module, "default_visibility", "public")
 
 
+# Compile-time requirement collection and specialization
+
+
 def _requirement_unit_name(
     *,
     module: str | None = None,
     unit_name: str | None = None,
 ) -> str:
+    """Return a diagnostic unit label from optional module and local-unit names."""
     if module and unit_name:
         return f"{module}.{unit_name}"
     return unit_name or module or "<source>"
@@ -2326,6 +2968,7 @@ class _FortranVariableContextVisitor(ClassVisitor):
         *,
         unit_kind: str,
     ):
+        """Yield variable, procedure, and type contexts owned by a module-like node."""
         owner = node.name
         for variable in node.variables:
             yield _variable_context(variable, unit_kind=unit_kind, unit=owner, module=owner, role="variable")
@@ -2336,6 +2979,7 @@ class _FortranVariableContextVisitor(ClassVisitor):
 
 
 def _variable_context(variable, *, unit_kind, unit, module, role, **extra):
+    """Pair one parser variable with the stable diagnostic context used by collectors."""
     return variable, {
         "unit_kind": unit_kind,
         "unit": unit,
@@ -2347,6 +2991,7 @@ def _variable_context(variable, *, unit_kind, unit, module, role, **extra):
 
 
 def _compile_time_requirement_message(code: str, symbol: str, expression: str) -> str:
+    """Build the existing user-facing message for one unresolved-value requirement."""
     if code == "parameter_value":
         return f"Parameter '{symbol}' needs a compile-time value for expression '{expression}'."
     if code == "unsupported_kind":
@@ -2355,7 +3000,17 @@ def _compile_time_requirement_message(code: str, symbol: str, expression: str) -
 
 
 def fortran_type_storage_expression(base_type: str, kind: str | None = None) -> str:
-    """Return the compiler expression that measures one intrinsic type."""
+    """Return the Fortran ``storage_size`` expression for one intrinsic type.
+
+    Use this when executing a requirement returned by
+    :func:`collect_fortran_type_storage_requirements` with a target compiler.
+    ``base_type`` must be an integer, real, complex, or logical intrinsic;
+    unsupported probe types raise :class:`ValueError`.
+
+    Example:
+        >>> fortran_type_storage_expression("real", "8")
+        'storage_size(real(0.0,kind=8))'
+    """
     constructors = {
         "integer": "int(0)",
         "real": "real(0.0)",
@@ -2376,7 +3031,18 @@ def collect_fortran_type_storage_requirements(
     *,
     compile_time_values: dict[str, int | str] | None = None,
 ) -> list[dict[str, object]]:
-    """Collect unique compiler storage queries needed by semantic conversion."""
+    """Collect distinct compiler storage queries required for semantic conversion.
+
+    Pass a parsed Fortran module, file, or project before invoking a target
+    probe.  Each result keeps the normalized base type, kind, expression, and
+    first parser context that needs it; callers normally feed probe facts back
+    to the conversion helpers through ``type_facts``.
+
+    Example:
+        >>> parsed = FortranFile(variables=[FortranVariable(name="value", base_type="real", kind="8")])
+        >>> collect_fortran_type_storage_requirements(parsed)[0]["expression"]
+        'storage_size(real(0.0,kind=8))'
+    """
     converter = FortranToIRConverter(compile_time_values=compile_time_values)
     requirements: list[dict[str, object]] = []
     seen: set[tuple[str, str | None]] = set()
@@ -2418,7 +3084,7 @@ def collect_semantic_compile_time_requirements(
 
     Example:
         >>> from prik import parse_fortran_file
-        >>> parsed = parse_fortran_file("module m\ninteger, parameter :: rk = selected_real_kind(12)\nend module")
+        >>> parsed = parse_fortran_file("module m\\ninteger, parameter :: rk = selected_real_kind(12)\\nend module")
         >>> reqs = collect_semantic_compile_time_requirements(parsed)
         >>> reqs[0]["symbol"]
         'rk'
@@ -2431,6 +3097,7 @@ def collect_semantic_compile_time_requirements(
     def add_requirement(
         code: str, ctx: dict, *, expression: str, base_type: str | None = None, kind: str | None = None
     ) -> None:
+        """Append one unique unresolved-value requirement using parser diagnostic context."""
         symbol = str(ctx.get("symbol") or "")
         item = {
             "code": code,
@@ -2481,6 +3148,7 @@ def collect_semantic_compile_time_requirements(
 
 
 def _resolve_semantic_value(value, compile_time_values: dict[str, str]):
+    """Recursively resolve compile-time text inside a semantic metadata value."""
     if isinstance(value, str):
         return _resolve_compile_time_text(value, compile_time_values)
     if isinstance(value, list):
@@ -2496,6 +3164,7 @@ def _resolve_semantic_type_compile_time_values(
     semantic_type: SemanticType | None,
     compile_time_values: dict[str, str],
 ) -> None:
+    """Resolve shape, constraint, and storage text on one semantic type in place."""
     if semantic_type is None:
         return
     semantic_type.shape = [_resolve_compile_time_text(dim, compile_time_values) for dim in semantic_type.shape]
@@ -2526,6 +3195,7 @@ def _resolve_semantic_argument_compile_time_values(
     arg: SemanticArgument | SemanticVariable,
     compile_time_values: dict[str, str],
 ) -> None:
+    """Resolve type, default, and metadata text on one semantic argument in place."""
     _resolve_semantic_type_compile_time_values(arg.semantic_type, compile_time_values)
     arg.default_value = _resolve_semantic_value(arg.default_value, compile_time_values)
     arg.metadata = _resolve_semantic_value(arg.metadata, compile_time_values)
@@ -2535,6 +3205,7 @@ def _resolve_semantic_function_compile_time_values(
     func: SemanticFunction,
     compile_time_values: dict[str, str],
 ) -> None:
+    """Resolve all type-bearing fields and projection values on one function in place."""
     for arg in func.arguments:
         _resolve_semantic_argument_compile_time_values(arg, compile_time_values)
     for local in func.locals:
@@ -2549,6 +3220,7 @@ def _resolve_semantic_module_compile_time_values(
     module: SemanticModule,
     compile_time_values: dict[str, str],
 ) -> None:
+    """Resolve compile-time text across one module's variables, functions, and classes."""
     for var in module.variables:
         _resolve_semantic_argument_compile_time_values(var, compile_time_values)
     for func in module.functions:
@@ -2589,6 +3261,12 @@ def _converter_for(
     wrapped_derived_types: Iterable[tuple[str, str]] | None = None,
     type_facts: dict[tuple[str, str | None], dict[str, object]] | None = None,
 ) -> FortranToIRConverter:
+    """Return the shared default converter or an isolated configured converter.
+
+    The shared instance is used only for the all-default case.  Supplying any
+    conversion input creates a new instance so per-call compile-time values and
+    facts never leak into unrelated conversions.
+    """
     if compile_time_values is None and wrapped_derived_types is None and type_facts is None:
         return _DEFAULT_CONVERTER
     return FortranToIRConverter(
@@ -2608,6 +3286,24 @@ def fortran_module_to_semantic_module(
     wrapped_derived_types: Iterable[tuple[str, str]] | None = None,
     type_facts: dict[tuple[str, str | None], dict[str, object]] | None = None,
 ) -> SemanticModule:
+    """Convert one parsed Fortran module into a :class:`SemanticModule`.
+
+    Use this for a selected :class:`FortranModule`, or for a file whose first
+    module is intentionally the target.  Optional compile-time values and
+    compiler storage facts complete parser-known datatype conversion; imported
+    wrapper identities may be supplied through ``wrapped_derived_types``.
+    Unsupported types or an empty file raise the existing conversion errors.
+
+    Example:
+        >>> parsed = FortranModule(
+        ...     name="math",
+        ...     procedures=[FortranProcedureSignature(name="scale", kind="subroutine", arguments=[
+        ...         FortranArgument(name="value", base_type="real", kind="8")
+        ...     ])],
+        ... )
+        >>> fortran_module_to_semantic_module(parsed).functions[0].arguments[0].semantic_type.name
+        'Float64'
+    """
     converter = _converter_for(compile_time_values, wrapped_derived_types, type_facts)
     return converter.visit(converter.first_module(module))
 
@@ -2620,6 +3316,17 @@ def fortran_file_to_semantic_modules(
     wrapped_derived_types: Iterable[tuple[str, str]] | None = None,
     type_facts: dict[tuple[str, str | None], dict[str, object]] | None = None,
 ) -> list[SemanticModule]:
+    """Convert every module and standalone procedure group in one parsed file.
+
+    Use this rather than the single-module helper when file-level procedures
+    matter.  Parser module ordering is retained, and ``standalone_module_name``
+    controls the synthetic module used for top-level procedures.
+
+    Example:
+        >>> parsed = FortranFile(procedures=[FortranProcedureSignature(name="tick", kind="subroutine")])
+        >>> [module.name for module in fortran_file_to_semantic_modules(parsed)]
+        ['standalone']
+    """
     return _converter_for(compile_time_values, wrapped_derived_types, type_facts).visit(
         parsed_file,
         standalone_module_name=standalone_module_name,
@@ -2632,8 +3339,39 @@ def fortran_project_to_semantic_modules(
     compile_time_values: dict[str, int | str] | None = None,
     type_facts: dict[tuple[str, str | None], dict[str, object]] | None = None,
 ) -> list[SemanticModule]:
+    """Convert an ordered parsed Fortran project with project-wide type context.
+
+    Use this for multi-file conversion where imported derived types and callback
+    interfaces must resolve across files.  The output preserves project file
+    and parser module order; type facts and compile-time values apply to every
+    converted module.
+
+    Example:
+        >>> project = FortranProject(files=[FortranFile(modules=[FortranModule(name="math")])])
+        >>> [module.name for module in fortran_project_to_semantic_modules(project)]
+        ['math']
+    """
     return _converter_for(compile_time_values, type_facts=type_facts).visit(project)
 
 
 if __name__ == "__main__":
-    pass
+    from prik.parsers.fortran.models import FortranArgument, FortranModule, FortranProcedureSignature
+
+    parsed_module = FortranModule(
+        name="math",
+        procedures=[
+            FortranProcedureSignature(
+                name="scale",
+                kind="subroutine",
+                module="math",
+                arguments=[FortranArgument(name="value", base_type="real", kind="8", procedure="scale")],
+            )
+        ],
+    )
+    semantic_module = fortran_module_to_semantic_module(parsed_module)
+    semantic_argument = semantic_module.functions[0].arguments[0]
+    print(
+        f"{semantic_module.name}.{semantic_module.functions[0].name}"
+        f"({semantic_argument.name}): {semantic_argument.semantic_type.name}"
+        f" via {semantic_argument.semantic_type.storage.kind} storage"
+    )

@@ -63,7 +63,7 @@ from prik.semantics.native_contract import native_contract_issues
 from prik.semantics.policy_completion import complete_semantic_policies
 
 
-from prik.wrapper_codegen.printers import emit_module
+from prik.codegen.printers import emit_module
 
 from prik import parse_fortran_file
 

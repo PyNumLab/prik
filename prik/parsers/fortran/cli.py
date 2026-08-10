@@ -81,7 +81,7 @@ def _parse_paths(paths: list[str]) -> dict[str, dict]:
 def _semantic_report(paths: list[str]) -> dict[str, dict]:
     """Generate semantic IR and pyi text per parsed file."""
     from prik.semantics.fortran2ir import fortran_module_to_semantic_module
-    from prik.wrapper_codegen.printers import emit_module
+    from prik.codegen.printers import emit_module
 
     parsed = _parse_paths(paths)
     semantic_out: dict[str, dict] = {}

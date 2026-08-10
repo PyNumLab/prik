@@ -21,7 +21,20 @@ DEFAULT_OUTPUT_SOURCE = NATIVE_FIXTURES / "fdefault_output.f"
 SCALE_SOURCE = NATIVE_FIXTURES / "scale.f90"
 SCALAR_SOURCE = SCALE_SOURCE
 HOME_POINTS_SOURCE = NATIVE_FIXTURES / "home_points.f90"
+BUILD_MODULE = Path(__file__).resolve().parents[4] / "prik" / "pipeline" / "build.py"
 pytestmark = pytest.mark.fortran_end_to_end
+
+
+def test_build_module_direct_execution_runs_the_public_api_example():
+    result = subprocess.run(
+        [sys.executable, str(BUILD_MODULE)],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=BUILD_MODULE.parents[2],
+    )
+
+    assert result.stdout == "scale(3.0, 2.5) = 7.5\n"
 
 
 def test_verbose_mode_prints_full_direct_build_commands(tmp_path: Path):
@@ -260,7 +273,7 @@ def test_fortran_wrapper_out_names_importable_shared_library(tmp_path: Path):
     assert module.scale(np.float64(3.0), np.float64(2.5)) == np.float64(7.5)
 
 
-def test_documented_homepage_points_example_builds_and_imports(tmp_path: Path):
+def test_documented_readme_points_example_builds_and_imports(tmp_path: Path):
     source = tmp_path / "points.f90"
     build_dir = tmp_path / "build" / "geometry"
     shutil.copyfile(HOME_POINTS_SOURCE, source)

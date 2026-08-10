@@ -36,7 +36,7 @@ reference and summarized later in Language Support.
 Status terms used below:
 
 - **Generated**: emitted today by `--pyi` or
-  `wrapper_codegen.printers.pyi_printer`.
+  `codegen.printers.pyi_printer`.
 - **Loaded**: accepted today by `prik.parsers.pyi` and converted back to
   semantic IR.
 - **Planning**: can be lowered by the implemented wrapper planner once its
@@ -70,14 +70,25 @@ instead of matching the final spelling. For example, importing
 has the same name, generated contracts alias only the imported control name:
 
 ```python
-from prik.contracts import Final, Flat as LayoutFlat, Float64, Int32
+from prik.contracts import Final, Flat as prik_Flat, Float64, Int32
 
 Flat: Final[Int32] = 10
-values: Float64[LayoutFlat]
+values: Float64[prik_Flat]
 ```
 
-The alias spelling in generated files is an implementation detail; edited
-contracts may use any non-conflicting local alias imported from
+Generated contracts use `prik_<control-name>` for such collisions, adding a
+numeric suffix only if that alias is also occupied. This keeps a same-named
+standalone procedure unchanged instead of inventing a Python rename and
+`@bind` pair:
+
+```python
+from prik.contracts import Int32, standalone as prik_standalone
+
+@prik_standalone
+def standalone() -> Int32: ...
+```
+
+Edited contracts may use any non-conflicting local alias imported from
 `prik.contracts`.
 
 Bare-name compatibility is not part of the format. Contract files must import
@@ -285,12 +296,12 @@ from prik.contracts import Float64
 def update(value: Float64[()]) -> None: ...
 ```
 
-Only standalone procedures carry `@external`:
+Only standalone procedures carry `@standalone`:
 
 ```python
-from prik.contracts import Float64, external
+from prik.contracts import Float64, standalone
 
-@external
+@standalone
 def update(value: Float64[()]) -> None: ...
 ```
 
@@ -316,7 +327,7 @@ the declared ABI.
 ### Contained Module Procedures
 
 One Fortran module maps to one `.pyi` file named for that module. A procedure
-declared without `@external` in that module contract is contained in the native
+declared without `@standalone` in that module contract is contained in the native
 Fortran module:
 
 ```python
@@ -337,21 +348,21 @@ The contract must retain the native module name even when Python export policy
 later aliases or hides `update`. A modified module `.pyi` cannot move the
 procedure to another module or reinterpret it as standalone.
 
-### Standalone External Procedures
+### Standalone Procedures
 
 A procedure outside every Fortran module is marked explicitly with
-`@external`:
+`@standalone`:
 
 ```python
-from prik.contracts import Float64, Int32, external
+from prik.contracts import Float64, Int32, standalone
 
 # externals/dgesv.pyi
-@external
+@standalone
 def dgesv(a: Float64[:, :], b: Float64[:, :]) -> Int32: ...
 ```
 
-`@external` is immutable native-placement metadata. The bridge calls the
-external procedure without a `use <module>` statement. Classic
+`@standalone` is immutable native-placement metadata. The bridge calls the
+standalone procedure without a `use <module>` statement. Classic
 implicit-interface-compatible procedures use a compact `external` declaration;
 features that require an explicit interface retain one. The procedure needs no
 Fortran `.mod` file, but its defining object, archive, or shared library must be
@@ -361,19 +372,19 @@ Python-visible renaming is separate from placement. `@bind` retains the native
 Fortran procedure name while the declaration uses a wrapper name:
 
 ```python
-from prik.contracts import Float64, Int32, bind, external
+from prik.contracts import Float64, Int32, bind, standalone
 
-@external
+@standalone
 @bind("dgesv")
 def solve(a: Float64[:, :], b: Float64[:, :]) -> Int32: ...
 ```
 
-Here the bridge calls the external native procedure `dgesv`; the root export
+Here the bridge calls the standalone native procedure `dgesv`; the root export
 contract may expose the wrapper declaration as `solve`. `@bind` does not turn a
-module procedure into an external procedure and `@external` does not rename a
+module procedure into a standalone procedure and `@standalone` does not rename a
 symbol.
 
-Every generated standalone declaration must carry `@external`. Handwritten
+Every generated standalone declaration must carry `@standalone`. Handwritten
 contracts must do the same. Missing or contradictory placement metadata must
 fail during `.pyi` validation or wrapper planning, before bridge emission or native
 compilation.
@@ -390,8 +401,8 @@ the generator does not add per-source directories.
 | One source containing one module | `__init__.pyi` plus one `<module>.pyi` leaf |
 | One source containing several modules | `__init__.pyi` plus one flat leaf per native module |
 | Several ordered sources containing modules | one combined package with one `__init__.pyi` and one flat leaf per native module across all sources |
-| One fixed- or free-form source containing only standalone procedures | one `__init__.pyi` entry with `@external` on every procedure |
-| Several standalone-procedure sources, such as BLAS/LAPACK | one compact `__init__.pyi` entry containing all generated `@external` declarations |
+| One fixed- or free-form source containing only standalone procedures | one `__init__.pyi` entry with `@standalone` on every procedure |
+| Several standalone-procedure sources, such as BLAS/LAPACK | one compact `__init__.pyi` entry containing all generated `@standalone` declarations |
 | Mixed modules and standalone procedures | one entry contract containing standalone declarations and importing module leaves |
 
 For example, explicit output for `basic_subroutine.f90` containing module `m1`
@@ -420,14 +431,14 @@ unless `--out NAME` overrides it, so the same declaration is exposed as
 `m1.update(...)` instead of under a package child namespace.
 
 A mixed source keeps standalone procedures in the entry contract and marks each
-one with `@external`:
+one with `@standalone`:
 
 ```python
-from prik.contracts import Float64, external
+from prik.contracts import Float64, standalone
 
 from . import m1
 
-@external
+@standalone
 def func(value: Float64[()]) -> None: ...
 ```
 
@@ -464,13 +475,13 @@ contract:
 
 ```text
 contracts/
-└── __init__.pyi  # @external dgesv, @external dgetrf, @external dgetrs
+└── __init__.pyi  # @standalone dgesv, @standalone dgetrf, @standalone dgetrs
 ```
 
 The entry is still the sole wrapper input. The native build plan remains
 separate: each original Fortran source may compile to its own object, or the
 procedures may come from one archive or shared library. This compact generated
-shape applies only to standalone `@external` procedures. If a bundle also
+shape applies only to standalone `@standalone` procedures. If a bundle also
 contains native modules, those modules still generate one flat module leaf per
 native module and the entry imports those leaves.
 
@@ -478,9 +489,9 @@ For legacy BLAS/LAPACK-style assumed-size arrays such as `DX(*)`, generated
 contracts use `Flat`:
 
 ```python
-from prik.contracts import Addr, Flat, Float64, Int32, external
+from prik.contracts import Addr, Flat, Float64, Int32, standalone
 
-@external
+@standalone
 def DAXPY(
     N: Addr(Int32),
     DA: Addr(Float64),
@@ -514,9 +525,9 @@ PRIK_C_DOCS_END -->
 <!-- PRIK_C_DOCS_START
 ```python
 
-from prik.contracts import Addr, Annotated, Flat, Float64, Int32, ORDER_C, external
+from prik.contracts import Addr, Annotated, Flat, Float64, Int32, ORDER_C, standalone
 
-@external
+@standalone
 def row_sums(
     n: Addr(Int32),
     values: Annotated[Float64[Flat, 3], ORDER_C],
@@ -588,7 +599,7 @@ files while the generated bridge is compiled:
 ```
 
 Archives do not normally contain `.mod` files, so module directories remain
-separate inputs. Standalone `@external` procedures require no `.mod` file because
+separate inputs. Standalone `@standalone` procedures require no `.mod` file because
 the semantic contract supplies either their implicit external declaration or
 their required explicit interface.
 
@@ -603,7 +614,7 @@ Required link cases are:
 | Vendor shared implementation | direct `.so` path or `--native-library NAME` plus search directory |
 | Mixed implementation | objects, archives, direct shared libraries, and named libraries in one ordered plan |
 | Module procedures | native artifacts plus every required `.mod` search directory |
-| Standalone procedures | native artifacts only; declaration mode comes from the completed `@external` contract |
+| Standalone procedures | native artifacts only; declaration mode comes from the completed `@standalone` contract |
 
 Static link order is semantically significant: dependent objects precede the
 archives or libraries that satisfy them, and dependent libraries precede their
@@ -785,43 +796,84 @@ PRIK_C_DOCS_END -->
 
 | Family | Names |
 | --- | --- |
-| Booleans and generic values | `Bool`, `Any` |
+| Booleans and generic values | `Bool`, `Bool8`, `Bool16`, `Bool32`, `Bool64`, `Any` |
 | Signed integers | `Int`, `Int8`, `Int16`, `Int32`, `Int64` |
 | Unsigned integers | `UInt8`, `UInt16`, `UInt32`, `UInt64`, `SizeT` |
 | Reals | `Float32`, `Float64`, `Float128` |
 | Complex | `Complex64`, `Complex128`, `Complex256` |
 | Text | `String` |
 | User types | class names and imported type names |
-| Named callable prototypes | `@prototype` function declarations referenced by name |
-| Prototype primitive reference | `Addr(T)` inside a `@prototype` declaration |
-| Prototype non-primitive value override | `Value(T)` inside a `@prototype` declaration |
+| Exact native procedure signatures | `@prototype` function declarations |
+| Prototype uses | callback annotations or direct calls in declaration expressions |
+| Procedure characteristics | `@pure`, and `In(T)`, `Out(T)`, or `InOut(T)` dummy direction |
+| Prototype primitive reference | `Addr(T)` inside an intent wrapper |
+| Prototype non-primitive value override | `Value(T)` inside an intent wrapper |
+
+All Boolean names accept and return Python/NumPy Boolean values. `Bool` is the
+portable one-byte boundary contract and is equivalent to `Bool8` at that
+boundary. A numbered name additionally records native Boolean storage bits so
+language-specific lowering can preserve the native declaration without
+exposing a language spelling such as a Fortran kind in the Python API.
 
 <!-- PRIK_C_DOCS_START
 `Unknown` is intentionally rejected in `.pyi` annotations. Generated stubs must
 resolve or block unsupported source types instead of emitting unknown contracts.
 Current C callback placeholders such as `CFunctionPointer` can appear in
 generated stubs when source callback policy is incomplete; replace them with a
-named prototype before building a wrapper. A prototype records the
-transport facts required by the generated adapter: native argument order,
-type, rank, shape, character length, result shape, and value/reference passing.
-It does not repeat native callback direction:
+named prototype before building a wrapper. A prototype is the exact
+native procedure-interface contract: it records native argument order, dummy
+direction, type, rank, shape, character length, result shape,
+value/reference passing, and procedure characteristics. It is not an editable
+Python call projection.
+
+Every `@prototype` declares one exact signature using the same internal model.
+Referencing the prototype as an annotation requests a callback dummy; calling
+its name in a declaration expression requests a concrete standalone native
+entity. These roles cannot be combined for one declaration: a specification
+function must be pure, while a Python callback adapter necessarily calls the
+Python runtime and cannot satisfy a pure Fortran procedure contract. Post-IR
+policy blocks the mixed use before planning.
 
 ```python
-from prik.contracts import Addr, Float64, Int32, prototype
+from prik.contracts import Addr, Float64, In, InOut, Int32, prototype
 
 @prototype
-def update_values(count: Addr(Int32), scale: Float64, values: Float64[:]) -> None: ...
+def update_values(
+    count: In(Addr(Int32)),
+    scale: In(Float64),
+    values: InOut(Float64[:]),
+) -> None: ...
 
 def apply_update(callback: update_values) -> None: ...
 ```
 
-Bare primitive callback arguments use native value passing, matching ordinary
-wrapper signatures. Use `Addr(T)` when a primitive callback dummy is passed by
-reference; Python still receives an independent NumPy scalar value. Arrays
-become writable NumPy views, fixed-length character references become mutable
-rank-zero bytes storage, and wrapped objects retain their native reference.
-`Value(T)` is reserved for supported non-primitive scalar value dummies, such
-as derived types declared with the Fortran `value` attribute.
+`In(T)`, `Out(T)`, and `InOut(T)` preserve the exact native dummy direction;
+omitting an intent wrapper preserves an omitted native `intent`. Primitive
+prototype arguments use native value passing unless wrapped in `Addr(T)`.
+Arrays, characters, and wrapped objects use their declared reference or
+descriptor representation. `Value(T)` records an exact non-primitive scalar
+value dummy, such as a derived type declared with the Fortran `value`
+attribute. Direction and transport are independent, so a reference integer
+input is written `In(Addr(Int32))` while a value integer input is
+`In(Int32)`.
+
+A direct call to a prototype name declares that native name as a standalone
+procedure entity. It therefore does not also use `@standalone`. `@pure`
+preserves the exact pure procedure characteristic:
+
+```python
+from prik.contracts import Addr, In, Int32, prototype, pure
+
+@pure
+@prototype
+def extent_for(n: In(Addr(Int32))) -> Int32: ...
+```
+
+Directly used prototypes are interface-only dependencies, are never Python
+exports, and are resolved by the linker from the native objects, archives, or
+shared libraries supplied to the build. `@standalone` remains the placement
+marker for ordinary permissive wrapper declarations; combining it with
+`@prototype` is rejected because prototype use determines its entity role.
 
 Prototype declarations are not runtime functions and are not exported from the
 generated Python module. They may be referenced from another semantic contract
@@ -833,15 +885,22 @@ from .callback_shapes import transform
 def apply_transform(callback: transform) -> None: ...
 ```
 
-Post-IR policy completes each prototype reference as an implicit external or a
-named explicit declaration. The named form is selected whenever the prototype
-contains an explicit-interface-only characteristic such as an optional or
-descriptor dummy, polymorphism, or an array/pointer/allocatable
-result. The backend imports that real interface from the prototype's native
-module, including its native direction attributes; the semantic `.pyi` does not
-duplicate them. Primitive `Addr(...)` or non-primitive `Value(...)` alone may
-still use a typed external declaration when no other characteristic requires
-the explicit interface.
+Post-IR policy classifies every prototype use before planning. One shared
+prototype-signature record type supplies either callback or direct dependency
+policy. Fortran lowering always gives a supported signature a generated
+`prik_` abstract-interface name. Callback adapters and concrete standalone
+entities are then declared with `procedure(prik_...)`; direct prototypes never
+fall back to an implicit `external` declaration. A declaration-expression call
+additionally requires a pure prototype with a scalar integer result and
+specification-function-compatible dummies. Missing direction, transport,
+purity, result, symbol identity, or argument compatibility is a named blocker.
+
+Module procedures are not restated as prototypes. A same-module
+function or a function imported from another semantic module retains its native
+module provenance, and the bridge obtains its authoritative interface with
+`use module, only: procedure`. Direct prototype use is reserved for the case
+where no `.mod` interface exists and the bridge must declare a standalone
+procedure entity from the generated abstract signature.
 
 Optional callback dummies and allocatable, pointer, or polymorphic callback
 dummies and results are currently rejected during policy completion.
@@ -1036,6 +1095,8 @@ argv: Addr[3](Int8)
 
 `Addr[1](T)` is invalid; use `Addr(T)`.
 
+### Array Storage and Declaration Expressions
+
 Array storage uses NumPy-style subscriptions:
 
 <!-- PRIK_C_DOCS_START
@@ -1065,14 +1126,60 @@ Dimension entries have the following meaning:
 | `Flat` | edge-position flat contiguous storage dimension |
 | `...` | rank-polymorphic storage |
 
+Declaration extents use Python expression syntax, even when a contract was
+generated from another source language. Generated Fortran contracts translate
+array inquiries to the corresponding public array properties:
+
+| Fortran declaration expression | Generated `.pyi` expression |
+| --- | --- |
+| `size(values)` | `values.size` |
+| `size(values, 2)` | `values.shape[1]` |
+| `rank(values)` | `values.ndim` |
+| `lbound(values, 2)` | declared lower bound, or `1` when empty |
+| `ubound(values, 2)` | lower bound plus `values.shape[1] - 1`, or `0` when empty |
+| first-axis extent | `len(values)` or `values.shape[0]` |
+| `extent_for(n)` | `extent_for(n)` |
+
+Arithmetic, parentheses, integer powers, comparisons, conditional expressions,
+and the pure integer helpers `abs`, `int`, `min`, `max`, `len`, and `sum` may
+compose these values.
+`values.size` always means the product of every axis. Attribute access is
+limited to `.size`, `.shape[index]`, and `.ndim` on a visible array argument.
+The expression is declarative and is not evaluated by importing the `.pyi`.
+Policy completion resolves every referenced value to an existing wrapper-plan
+role before code generation.
+
+These bounds belong to the Fortran dummy declaration; they are not replaced
+with Python's zero-based index origin. An omitted assumed-shape lower bound is
+one, while an explicit `0:` or `start:` bound is preserved. Consequently,
+`ubound(values, d) - lbound(values, d) + 1` reduces to
+`values.shape[d - 1]`. Direct `lbound` and `ubound` expressions retain
+Fortran's empty-dimension results of one and zero, respectively.
+
 Generated `.pyi` prints `::` and bounded forms such as `0:n:` for stride-aware
 axes. Edited contracts may still use the explicit `::Strided` and
 `0:n:Strided` spellings; they load to the same semantic array contract.
-Wrapper planning uses the structured array contract to distinguish layout dimensions
-from extent expressions. Names such as `Strided` and `Flat` remain ordinary
-symbols when they occur in native extent expressions. Called Fortran shape
-intrinsics such as `size(v)` are recognized only after visible symbols are
-resolved; the referenced value `v` must still be visible in the interface.
+Wrapper planning uses the structured array contract to distinguish layout
+dimensions from extent expressions. Names such as `Strided` and `Flat` remain
+ordinary symbols when they occur in native extent expressions. Array-property
+references are resolved only after visible symbols are known. A shape index
+must be an integer literal in range, and the referenced array must be visible
+in the Python interface. Wrapper planning records those input-array extent
+dependencies, so binding and bridge generation only render their planned ABI
+roles. A source-language specification function remains a call expression
+instead of being translated to a Python helper. Its semantic reference records
+the local spelling, original native name, native placement, and exact concrete
+prototype when one is required. Thus a same-module function is resolved against
+declarations in this contract, an imported function is resolved through the
+contract's import and alias information, and a standalone function is resolved
+against a concrete `@pure @prototype`. The `.pyi` call is declarative and is
+never executed as Python. Policy selects module import or explicit-interface
+evaluation before planning and blocks incomplete or invalid dependencies rather
+than guessing an equivalent boundary value. Native-dependent result axes are
+evaluated by the main Fortran bridge and returned as integer ABI outputs for
+NumPy construction. Caller-provided arrays retain their actual extent fields;
+the C binding validates rank and layout but does not call the native
+specification function or duplicate the callee's explicit-extent contract.
 
 <!-- PRIK_C_DOCS_START
 `Flat` must appear exactly once at either edge of a concrete-rank array.
@@ -2348,7 +2455,7 @@ Generated `.pyi` currently covers these exact-contract areas:
 | Area | Generated behavior |
 | --- | --- |
 | Fortran intrinsic scalars | compiler-aware semantic dtype names |
-| Native scope | module-leaf filename, or `@external` for standalone procedures |
+| Native scope | module-leaf filename, or `@standalone` for standalone procedures |
 | Functions/subroutines | declaration return shape, optional native rename, ABI argument order, and direct result |
 | Hidden Fortran outputs | Python returns plus generated `@native_call` in native argument order |
 | Scalar address inputs | Python-visible `T` plus `Addr(Arg(...))` native-call projection |
@@ -2362,7 +2469,7 @@ Generated `.pyi` currently covers these exact-contract areas:
 | Fortran defined assignment | explicit mutating `assign(...)` overloads |
 | Opaque types | `Opaque` classes and owner-module dependency stubs |
 | Imports | retained contract dependencies with aliases; source kind modules are omitted after dtype resolution |
-| Callbacks | named `@prototype` declarations when source interfaces resolve |
+| Callbacks | named `@prototype` declarations with exact direction and transport |
 
 <!-- PRIK_C_DOCS_START
 | C primitive scalars | compiler-probed semantic dtype names when a target report is supplied |
@@ -2402,7 +2509,7 @@ ambiguous, unsafe, or stale before wrapper lowering:
   for the generated derived-type constructor shape.
 - nested enum declarations.
 - ordinary function bodies instead of `...`.
-- unsupported decorators other than `@private`, `@bind`, `@external`,
+- unsupported decorators other than `@private`, `@bind`, `@standalone`,
   `@native_call`, `@native_type`,
   `@overload("specific")`, the class-operator `generic=` form, `@raises`,
   `@nogil`, and `@staticmethod`.

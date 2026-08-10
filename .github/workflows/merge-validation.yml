@@ -44,7 +44,7 @@ jobs:
       - name: Ruff format
         run: python -m ruff format --check .
       - name: Wrapper-plan generator contracts
-        run: python tools/check_wrapper_codegen_complexity.py
+        run: python tools/check_codegen_complexity.py
       - name: Bandit security scan
         run: python -m bandit -c pyproject.toml -r prik --severity-level medium --confidence-level medium
       - name: Vulture dead-code scan
@@ -413,7 +413,7 @@ jobs:
           python tools/run_fortran_toolchain_lane.py \
             --compiler gfortran \
             --junit-dir "$RUNNER_TEMP"
-      - name: Run full suite without BLAS or LAPACK
+      - name: Run full suite without real-library examples
         env:
           PYTHONPATH: .
           HYPOTHESIS_PROFILE: ci
@@ -437,7 +437,7 @@ jobs:
           done
 
   native-libraries:
-    name: BLAS + LAPACK · Ubuntu 24.04 · Python 3.12
+    name: BLAS + LAPACK + FFTPACK + MINPACK · Ubuntu 24.04 · Python 3.12
     needs: [unit-tests, unit-tests-macos]
     if: >-
       ${{ !contains(github.event.pull_request.labels.*.name, 'ignore-real-library-wrappers') }}
@@ -520,6 +520,20 @@ jobs:
         run: |
           source examples/lapack/build_all.sh
           python -m pytest -q examples/lapack/tests examples/lapack/ci/full_surface.py
+      - name: Run FFTPACK 31-procedure full-surface audit
+        env:
+          PYTHONPATH: .
+          HYPOTHESIS_PROFILE: ci
+        run: |
+          source examples/fftpack/build_all.sh
+          python -m pytest -q examples/fftpack/tests
+      - name: Run MINPACK 22-procedure and parameter-array full-surface audit
+        env:
+          PYTHONPATH: .
+          HYPOTHESIS_PROFILE: ci
+        run: |
+          source examples/minpack/build_all.sh
+          python -m pytest -q examples/minpack/tests
 
   documentation-benchmark:
     name: Documentation performance benchmark · Ubuntu 24.04 ARM64 · Python 3.12
@@ -598,6 +612,10 @@ jobs:
           path: |
             benchmarks/results/f2py.json
             benchmarks/results/prik.json
+            benchmarks/results/f2py-prik-first.json
+            benchmarks/results/f2py-f2py-first.json
+            benchmarks/results/prik-prik-first.json
+            benchmarks/results/prik-f2py-first.json
             benchmarks/results/f2py-build.json
             benchmarks/results/prik-build.json
             docs/user/performance.md

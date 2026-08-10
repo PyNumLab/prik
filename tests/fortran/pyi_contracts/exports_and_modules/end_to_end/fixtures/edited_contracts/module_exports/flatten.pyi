@@ -1,7 +1,7 @@
 # Intentional difference: flatten the non-colliding public names.
-from prik.contracts import Int32, external
+from prik.contracts import Int32, standalone
 from .module1 import *
 from .module2 import *
 
-@external
+@standalone
 def standalone() -> Int32: ...

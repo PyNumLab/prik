@@ -40,7 +40,7 @@ from prik.semantics.c2ir import (
 )
 from prik.semantics.pyi2ir import convert_pyi_to_ir
 from prik.pipeline.pyi import pyi_file_to_semantic_module, pyi_paths_to_semantic_modules, pyi_text_to_semantic_module
-from prik.wrapper_codegen.printers import emit_module_stubs, opaque_dependency_modules
+from prik.codegen.printers import emit_module_stubs, opaque_dependency_modules
 from prik.runtime.handles import AllocatableArray, NativeArrayHandleBase, PointerArray
 
 __version__ = _distribution_version("prik")

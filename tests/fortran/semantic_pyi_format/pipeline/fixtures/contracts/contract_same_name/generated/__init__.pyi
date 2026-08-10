@@ -1,5 +1,5 @@
-from prik.contracts import external
+from prik.contracts import standalone
 from . import contract_same_name
 
-@external
+@standalone
 def external_ping() -> None: ...
