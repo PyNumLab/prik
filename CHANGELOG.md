@@ -7,6 +7,8 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+## 0.2.0 — 2026-08-10
+
 ### Added
 
 - Added maintained FFTPACK and MINPACK examples built from the upstream
