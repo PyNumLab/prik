@@ -28,7 +28,9 @@ release tags add a leading `v` to the package version.
   `tests/tools/`, removed the generic `tests/shared/` bucket, and mirrored
   internal tests by production package with narrower support helpers; removed
   recursive layout-policing tests that froze maintainer organization, retaining
-  exceptional release safety under `tests/workflows/`.
+  exceptional release safety under `tests/workflows/`. The maintainer-tool and
+  workflow-safety suites now also run through the repository's tracked pre-push
+  hook for earlier local feedback while remaining enforced by GitHub Actions.
 - Simplified the documented DGESV validation and the LAPACK test suite to use
   explicit NumPy Fortran-order copies, with documented numerical-test helper
   conventions.

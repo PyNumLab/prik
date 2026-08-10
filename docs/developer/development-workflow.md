@@ -1337,6 +1337,18 @@ PYTHONPATH=. pytest -q tests/tools
 PYTHONPATH=. pytest -q tests/workflows
 ```
 
+Maintainer-tool and workflow-safety tests run locally before every push. Enable
+the tracked hook once in each clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The hook runs `tests/tools/` and `tests/workflows/` and rejects the push if
+either suite fails. GitHub Actions runs them again as the shared enforcement
+boundary alongside the required product, documentation, compiler, coverage,
+and real-library checks.
+
 As a project policy, do not merge pull requests unless all checks are green.
 
 ### Fixture Maintenance

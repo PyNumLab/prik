@@ -202,7 +202,10 @@ validators stay parameterized over applicable pages. Page-specific content
 contracts live in a module named for the documentation area they protect.
 Workflow checks belong under `tests/workflows/` only when they
 protect concrete behavior or release safety; they should not duplicate or
-freeze the current CI organization.
+freeze the current CI organization. Tests for maintainer tools and workflow
+safety run through the tracked pre-push hook for early feedback and remain in
+GitHub Actions for shared enforcement. Enable the hook once per clone with
+`git config core.hooksPath .githooks`.
 
 Test support contains reusable construction or assertion behavior, not an
 alternate import surface for production code. Tests import `pytest`, Python

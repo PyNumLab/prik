@@ -23,6 +23,7 @@ testing and pre-commit are not part of the active stack.
 
 | Cadence | Tools |
 | --- | --- |
+| Local pre-push | Maintainer-tool tests in `tests/tools/` and workflow-safety tests in `tests/workflows/` |
 | Pull request and protected-branch push | pytest, bounded property/fuzz cases, stable-seed pytest-randomly, Ruff, Bandit, Vulture, staged Radon policy, and project coverage |
 | Pull request, protected-branch push, weekly, and manual | Pinned Intel IFX/ICX and LLVM Flang/Clang profile checks plus strict Fortran toolchain smoke |
 | Validated pull request and main-branch push | Pinned ARM64 prik/f2py correctness and rigorous performance benchmark |

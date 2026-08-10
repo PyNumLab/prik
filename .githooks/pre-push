@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+"""Run repository-maintainer checks before Git sends a push."""
+
+from pathlib import Path
+import subprocess
+import sys
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+REQUIRED_TESTS = ("tests/tools", "tests/workflows")
+
+
+def main() -> int:
+    """Return pytest's status for the required local pre-push suites."""
+    print(
+        "Running required pre-push tests: tests/tools tests/workflows",
+        flush=True,
+    )
+    completed = subprocess.run(  # noqa: S603
+        [sys.executable, "-m", "pytest", "-q", *REQUIRED_TESTS],
+        cwd=REPOSITORY_ROOT,
+        check=False,
+    )
+    return completed.returncode
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
