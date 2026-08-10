@@ -1068,18 +1068,28 @@ def test_documentation_homepage_demonstrates_prik_before_getting_started() -> No
     result_index = page.index("# 7.5", call_index)
     advantages_index = page.index("## Why PRIK", result_index)
     evidence_index = page.index("## Proven on real Fortran libraries", advantages_index)
-    install_index = page.index("[Install PRIK →]", evidence_index)
+    performance_index = page.index("## Measured against NumPy's f2py", evidence_index)
+    runtime_chart_index = page.index("user/assets/performance-comparison.svg", performance_index)
+    build_chart_index = page.index("user/assets/build-time-comparison.svg", runtime_chart_index)
+    methodology_index = page.index("[See the benchmark machine, full results, and methodology →]", build_chart_index)
+    install_index = page.index("[Install PRIK →]", methodology_index)
     getting_started_index = page.index("[Read Getting Started →]", install_index)
 
     assert introduction_index < example_heading_index < source_index < build_index
     assert build_index < import_index < call_index < result_index
-    assert result_index < advantages_index < evidence_index < install_index < getting_started_index
+    assert result_index < advantages_index < evidence_index < performance_index
+    assert performance_index < runtime_chart_index < build_chart_index
+    assert build_chart_index < methodology_index < install_index < getting_started_index
     assert "python3 -m pip install prik" in page
     assert "No manual binding code is required." in page
     assert "[BLAS](user/examples/blas-wrapper.md)" in page
     assert "[LAPACK](user/examples/lapack-wrapper.md)" in page
     assert "[FFTPACK](user/examples/fftpack-wrapper.md)" in page
     assert "[MINPACK](user/examples/minpack-wrapper.md)" in page
+    assert "The charts show the current published snapshot" in page
+    assert "specific to its machine and toolchain" in page
+    assert "PRIK was faster in" not in page
+    assert page.count("{ .prik-performance-chart }") == 2
     assert page.count("{ .prik-primary-cta }") == 2
     assert "developer/index.md" not in page
     assert "maintainer/README.md" not in page

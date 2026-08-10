@@ -85,6 +85,27 @@ The maintained examples wrap and numerically validate
 [performance comparison](user/performance.md) measures PRIK and NumPy's f2py
 against the same Fortran kernels.
 
+## Measured against NumPy's f2py
+
+The published benchmark compares both tools on the same Fortran sources and
+the same machine. The charts show the current published snapshot. Results are
+specific to its machine and toolchain, which are documented with the full results.
+
+**Runtime-call performance** — values above `1.0×` favor PRIK.
+
+[![Relative runtime performance of PRIK and f2py across call, vector, and matrix workloads. Values above 1.0 mean PRIK is faster.](user/assets/performance-comparison.svg)](user/performance.md)
+{ .prik-performance-chart }
+
+The chart shows `f2py time ÷ PRIK time`: values above `1.0×` favor PRIK and
+values below `1.0×` favor f2py.
+
+**Clean end-to-end build time** — lower times are better.
+
+[![Clean end-to-end build time for PRIK and f2py under development and optimized compiler profiles. Lower times are better.](user/assets/build-time-comparison.svg)](user/performance.md#clean-build-time)
+{ .prik-performance-chart }
+
+[See the benchmark machine, full results, and methodology →](user/performance.md)
+
 **Ready to wrap your Fortran project?**
 
 [Install PRIK →](user/getting-started/installation.md){ .prik-primary-cta }
