@@ -268,6 +268,21 @@ compile-time folding. If an initializer cannot be evaluated safely, such as
 original initializer for validation, debugging, downstream diagnostics, and
 JSON consumers.
 
+Source-level compile-time resolution consumes those parsed parameter models;
+it does not rescan stored source text for a second parameter representation.
+The parser first builds one `_CompileTimeSymbols` table whose module entries
+have already resolved transitive aliases. For example, module parameters
+`word = 4` and `rk = word * 2` produce `{"word": "4", "rk": "8"}`;
+`use kinds, only: wp => rk` then exposes `{"wp": "8"}` to the consuming
+scope. File parsing and project/CLI parsing use the same table construction and
+the same procedure, module-like-variable, and derived-field consumers.
+
+This resolution is limited to facts visible from source. Compiler-dependent
+expressions such as `selected_real_kind(12)` remain symbolic for the later
+probe/semantic stages. Imported module expressions in procedure argument
+shapes also remain symbolic at file and project boundaries so policy completion
+can retain their native spelling and role dependencies.
+
 Procedure-local parameters may be folded into argument shapes during procedure
 finalization. Module-level and `use`-associated parameters used in procedure
 argument shapes are kept symbolic in the signature (`x(n)` remains `["n"]`)
@@ -323,8 +338,9 @@ The recursive parsing pattern is:
 5. Validate sibling names and scope-local duplicate declarations.
 6. Finalize procedure arguments/results after local declarations and
    parameters are known.
-7. Resolve cross-file or imported compile-time facts only at project or
-   semantic-conversion boundaries.
+7. Resolve source-visible cross-file or imported compile-time aliases through
+   one project symbol table, while leaving compiler-dependent facts for
+   semantic conversion and target probing.
 
 When adding another parser, keep these test layers separate:
 

@@ -489,35 +489,23 @@ def _parse_fortran_source_files(
     paths: list[Path],
     preprocessing: PreprocessingConfig,
 ):
-    """Parse Fortran sources and resolve cross-file module parameters."""
+    """Parse Fortran sources and apply the parser's shared project resolution.
+
+    Each path is preprocessed and parsed once while retaining its path/model
+    pair. The completed models are then passed together to the parser's project
+    compile-time coordinator. For example, a kind parameter from the first file
+    can resolve a procedure or derived field in the second file without the CLI
+    owning a second resolution algorithm. The ordered ``(path, file)`` pairs
+    are returned for stage reporting.
+    """
     parser = FortranParser()
     parsed_files = []
     for path in paths:
         code, _preprocessing_recipe = _fortran_source_for_path(path, preprocessing)
         parsed_files.append((path, parser.parse_file(code, filename=str(path))))
 
-    _resolve_fortran_project_parameters(parser, [parsed for _path, parsed in parsed_files])
+    parser._resolve_project_compile_time_facts([parsed for _path, parsed in parsed_files])
     return parsed_files
-
-
-def _resolve_fortran_project_parameters(parser: FortranParser, parsed_files) -> None:
-    """Apply project-wide parameter facts without enforcing global symbols."""
-    module_params = parser._helper_project_module_symbols(parsed_files)
-
-    seen_procedures: set[int] = set()
-    for parsed_file in parsed_files:
-        for proc in parser._helper_project_file_procedures(parsed_file):
-            if id(proc) not in seen_procedures:
-                parser._resolve_signature_kinds(proc, module_params, resolve_shapes=False)
-                seen_procedures.add(id(proc))
-        for module in parsed_file.modules:
-            parser._resolve_module_variable_kinds(module, module_params)
-        for submodule in parsed_file.submodules:
-            parser._resolve_module_variable_kinds(submodule, module_params)
-        for program in parsed_file.programs:
-            parser._resolve_module_variable_kinds(program, module_params)
-        for block_data in parsed_file.block_data_units:
-            parser._resolve_module_variable_kinds(block_data, module_params)
 
 
 def _parse_c_semantic_sources(context: _SemanticPipelineContext) -> _ParsedSemanticSources:

@@ -280,6 +280,42 @@ _DECLARATION_FLAG_FIELDS = MappingProxyType(
         "parameter": "parameter",
     }
 )
+_EMPTY_COMPILE_TIME_SYMBOLS: Mapping[str, str] = MappingProxyType({})
+
+
+@dataclass(frozen=True)
+class _CompileTimeSymbols:
+    """Store resolved source-level symbols grouped by native module.
+
+    ``modules`` receives expressions whose aliases have already been folded.
+    For example, ``{"kinds": {"word": "4", "rk": "8"}}`` records the
+    resolved result of ``rk = word * 2``. :meth:`in_module` then returns the
+    read-only ``{"word": "4", "rk": "8"}`` mapping for a consumer in
+    ``kinds``. Unknown or absent module names produce an empty mapping.
+    """
+
+    modules: Mapping[str, Mapping[str, str]]
+
+    def __post_init__(self) -> None:
+        """Normalize names and freeze nested mappings after construction."""
+        normalized = {
+            module_name.casefold(): MappingProxyType(
+                {symbol.casefold(): str(value) for symbol, value in symbols.items()}
+            )
+            for module_name, symbols in self.modules.items()
+        }
+        object.__setattr__(self, "modules", MappingProxyType(normalized))
+
+    def in_module(self, module_name: str | None) -> Mapping[str, str]:
+        """Return resolved symbols owned or reexported by ``module_name``.
+
+        For example, ``in_module("KINDS")`` finds the normalized ``kinds``
+        entry. ``in_module(None)`` and an unknown module return the shared empty
+        read-only mapping rather than creating mutable state.
+        """
+        if module_name is None:
+            return _EMPTY_COMPILE_TIME_SYMBOLS
+        return self.modules.get(module_name.casefold(), _EMPTY_COMPILE_TIME_SYMBOLS)
 
 
 @dataclass
@@ -1214,7 +1250,7 @@ class _ParsedFileUnits:
 class _CompileTimeResolver:
     """Resolve compile-time expressions against one immutable symbol snapshot."""
 
-    def __init__(self, symbols: dict[str, str]):
+    def __init__(self, symbols: Mapping[str, str]):
         """Normalize symbol names and initialize the expression cache."""
         self.symbols = {name.lower(): str(value) for name, value in symbols.items()}
         self.cache: dict[tuple[str, bool], str] = {}
@@ -1343,7 +1379,7 @@ class FortranParser(ClassVisitor):
         units = self._helper_parse_file_units(top_units, root_scope, filename)
         self._helper_resolve_file_types(units)
         interfaces = self._helper_attach_file_interfaces(lines, filename, units)
-        self._helper_resolve_file_kinds(lines, filename, units)
+        self._resolve_file_compile_time_facts(units)
 
         # Stage 3: assemble the stable file model and its source metadata.
         return self._helper_build_fortran_file(code, filename, encoding, units, interfaces)
@@ -1895,30 +1931,38 @@ class FortranParser(ClassVisitor):
             ]
         return [iface for iface in interfaces if iface.module is None]
 
-    def _helper_resolve_file_kinds(
-        self,
-        lines: _PreprocessedLines,
-        filename: str | None,
-        units: _ParsedFileUnits,
-    ) -> None:
-        """Resolve variable and procedure kind references within one file."""
+    def _resolve_file_compile_time_facts(self, units: _ParsedFileUnits) -> None:
+        """Apply source-visible compile-time symbols within one parsed file.
+
+        ``units`` receives the models already constructed from one source file.
+        Their parameter variables build a resolved symbol table; that table is
+        then applied to procedure kinds, module-like values/shapes, and derived
+        fields. For example, module parameters ``word = 4`` and
+        ``rk = word * 2`` resolve ``real(rk)`` to kind ``8`` without rescanning
+        the source text. The method mutates the supplied parser models and
+        returns nothing.
+        """
         variable_units = [*units.modules, *units.submodules, *units.programs, *units.block_data_units]
-        module_params = self._collect_module_parameters(lines, filename)
+        symbols = self._build_compile_time_symbols(units.modules, units.submodules)
         if any(
             var.kind or var.value is not None or var.symbolic_value is not None
             for unit in variable_units
             for var in getattr(unit, "variables", [])
         ):
             for unit in variable_units:
-                self._resolve_module_variable_kinds(unit, module_params)
+                self._resolve_module_like_compile_time_facts(unit, symbols)
         for procedure in self._helper_file_procedures(units):
-            self._resolve_signature_kinds(procedure, module_params, resolve_shapes=False)
+            self._resolve_procedure_compile_time_facts(
+                procedure,
+                symbols,
+                resolve_shapes=False,
+            )
         derived_types = [
             *units.derived_types,
             *(derived_type for module in (*units.modules, *units.submodules) for derived_type in module.derived_types),
         ]
         for derived_type in derived_types:
-            self._resolve_derived_type_field_kinds(derived_type, module_params)
+            self._resolve_derived_type_compile_time_facts(derived_type, symbols)
 
     @staticmethod
     def _helper_file_procedures(units: _ParsedFileUnits):
@@ -2063,21 +2107,34 @@ class FortranParser(ClassVisitor):
         is preserved in ``project.files`` while their modules, procedures,
         types, interfaces, and dependency facts enter project registries.
         """
-        self._helper_resolve_project_kinds(parsed_files)
+        self._resolve_project_compile_time_facts(parsed_files)
         project = FortranProject(files=parsed_files)
         for parsed_file in parsed_files:
             self._helper_index_project_file(project, parsed_file)
         return project
 
-    def _helper_resolve_project_kinds(self, parsed_files: list[FortranFile]) -> None:
-        """Resolve project procedure and module-variable kinds from shared symbols."""
-        module_params = self._helper_project_module_symbols(parsed_files)
+    def _resolve_project_compile_time_facts(self, parsed_files: list[FortranFile]) -> None:
+        """Apply one resolved source-symbol table across parsed project files.
+
+        ``parsed_files`` contains models that were already parsed separately.
+        The method combines their module and submodule parameters, imports,
+        reexports, and host association, then updates every procedure,
+        module-like variable, and derived field in place. For example, a field
+        declared as ``real(wp)`` in a module importing ``wp => rk`` from a
+        module where ``rk = 8`` becomes kind ``8``. No file is read or parsed
+        again, and the method returns nothing.
+        """
+        symbols = self._build_project_compile_time_symbols(parsed_files)
 
         seen_procedures: set[int] = set()
         for parsed_file in parsed_files:
             for procedure in self._helper_project_file_procedures(parsed_file):
                 if id(procedure) not in seen_procedures:
-                    self._resolve_signature_kinds(procedure, module_params, resolve_shapes=False)
+                    self._resolve_procedure_compile_time_facts(
+                        procedure,
+                        symbols,
+                        resolve_shapes=False,
+                    )
                     seen_procedures.add(id(procedure))
             for owner in (
                 *parsed_file.modules,
@@ -2085,62 +2142,35 @@ class FortranParser(ClassVisitor):
                 *parsed_file.programs,
                 *parsed_file.block_data_units,
             ):
-                self._resolve_module_variable_kinds(owner, module_params)
-            for derived_type in parsed_file.derived_types:
-                self._resolve_derived_type_field_kinds(derived_type, module_params)
-            for module in parsed_file.modules:
-                for derived_type in module.derived_types:
-                    self._resolve_derived_type_field_kinds(derived_type, module_params)
+                self._resolve_module_like_compile_time_facts(owner, symbols)
+            for derived_type in self._project_file_derived_types(parsed_file):
+                self._resolve_derived_type_compile_time_facts(derived_type, symbols)
 
-    def _helper_project_module_symbols(self, parsed_files: list[FortranFile]) -> dict[str, dict[str, str]]:
-        """Resolve module symbols and submodule host associations."""
-        module_params: dict[str, dict[str, str]] = {}
-        owners: dict[str, FortranModule | FortranSubmodule] = {}
-        for parsed_file in parsed_files:
-            if parsed_file.source is not None:
-                module_params.update(self._collect_module_parameters(parsed_file.source, parsed_file.filename))
-            owners.update((module.name.lower(), module) for module in parsed_file.modules)
-            owners.update((submodule.name.lower(), submodule) for submodule in parsed_file.submodules)
+    def _build_project_compile_time_symbols(self, parsed_files: list[FortranFile]) -> _CompileTimeSymbols:
+        """Build resolved module symbols from existing project models.
 
-        resolved = self._resolve_module_parameter_values(module_params)
-        for _ in range(len(owners) + 1):
-            changed = False
-            for owner_name, owner in owners.items():
-                symbols = dict(resolved.get(owner_name, {}))
-                if isinstance(owner, FortranSubmodule):
-                    if owner.ancestor:
-                        symbols.update(resolved.get(owner.ancestor.lower(), {}))
-                    symbols.update(resolved.get(owner.parent.lower(), {}))
-                symbols.update(self._helper_owner_imported_symbols(owner, resolved))
-                updated = self._resolve_module_parameter_values({owner_name: symbols})[owner_name]
-                if updated != resolved.get(owner_name, {}):
-                    resolved[owner_name] = updated
-                    changed = True
-            if not changed:
-                break
-        return resolved
+        Each ``FortranFile`` contributes its parsed modules and submodules; the
+        source strings are deliberately ignored. For example, separate files
+        defining module ``kinds`` and a submodule of ``api`` produce one table
+        containing the module parameters, imports, and inherited host symbols
+        visible to both owners. The returned `_CompileTimeSymbols` is read-only.
+        """
+        modules = [module for parsed_file in parsed_files for module in parsed_file.modules]
+        submodules = [submodule for parsed_file in parsed_files for submodule in parsed_file.submodules]
+        return self._build_compile_time_symbols(modules, submodules)
 
     @staticmethod
-    def _helper_owner_imported_symbols(
-        owner: FortranModule | FortranSubmodule,
-        resolved_modules: dict[str, dict[str, str]],
-    ) -> dict[str, str]:
-        """Return explicit compile-time symbols imported into one owner."""
-        imported: dict[str, str] = {}
-        for dependency, mappings in owner.uses.items():
-            dependency_name = dependency.lower()
-            dependency_symbols = resolved_modules.get(dependency_name, {})
-            if not mappings:
-                imported.update(dependency_symbols)
-                continue
-            for mapping in mappings:
-                source_name = mapping.source.lower()
-                expression = dependency_symbols.get(source_name)
-                if expression is None and dependency_name in _INTRINSIC_COMPILE_TIME_MODULES:
-                    expression = mapping.source
-                if expression is not None:
-                    imported[mapping.local_name.lower()] = expression
-        return imported
+    def _project_file_derived_types(parsed_file: FortranFile):
+        """Yield every derived type owned by one parsed project file.
+
+        For example, a file-level type followed by types inside a module and a
+        submodule is yielded in that same ownership order. The iterator lets
+        project resolution cover all type owners without constructing another
+        registry or duplicating nested loops.
+        """
+        yield from parsed_file.derived_types
+        for module in (*parsed_file.modules, *parsed_file.submodules):
+            yield from module.derived_types
 
     @staticmethod
     def _helper_project_file_procedures(parsed_file: FortranFile):
@@ -4936,169 +4966,331 @@ class FortranParser(ClassVisitor):
                 )
             seen.add(key)
 
-    def _collect_module_parameters(self, code: _SourceOrLines, filename: str | None) -> dict[str, dict[str, str]]:
-        """Collect module specification-part parameter expressions by module."""
-        lines = self._preprocessed_lines(code, filename)
-        current_module = None
-        in_module_spec_part = False
-        output: dict[str, dict[str, str]] = {}
-        for line, _lineno, _source_line in lines:
-            s = line.strip()
-            if not s:
-                continue
-            lowered = s.lower()
-            if lowered.startswith("module ") and not re.match(r"^module\s+(procedure|subroutine|function)\b", lowered):
-                current_module = s.split()[1].lower()
-                in_module_spec_part = True
-                output.setdefault(current_module, {})
-                continue
-            if lowered.startswith("contains") and current_module is not None:
-                in_module_spec_part = False
-                continue
-            if lowered.startswith("end module"):
-                current_module = None
-                in_module_spec_part = False
-                continue
-            if current_module is None or not in_module_spec_part:
-                continue
-            if lowered == "contains":
-                in_module_spec_part = False
-                continue
-            if not in_module_spec_part:
-                continue
-            pm = _REGEX["typed_parameter"].match(s)
-            if not pm:
-                continue
-            for assign in split_csv(pm.group("body")):
-                if "=" not in assign:
+    @staticmethod
+    def _module_parameter_expressions(
+        owners: Sequence[FortranModule | FortranSubmodule],
+    ) -> dict[str, dict[str, str]]:
+        """Collect parameter expressions from parsed module-like models.
+
+        ``owners`` receives modules or submodules whose variables have already
+        been parsed. For example, variables representing ``word = 4`` and
+        ``rk = word * 2`` produce
+        ``{"module_name": {"word": "4", "rk": "word * 2"}}``. Symbolic
+        initializers are preferred so later resolution retains the original
+        dependency expression. No source text is read, and a mutable raw table
+        is returned for the resolution builder.
+        """
+        expressions: dict[str, dict[str, str]] = {}
+        for owner in owners:
+            owner_expressions: dict[str, str] = {}
+            for variable in owner.variables:
+                if not variable.is_parameter:
                     continue
-                k, v = [x.strip() for x in assign.split("=", 1)]
-                output[current_module][k.lower()] = v
-        return output
+                expression = variable.symbolic_value if variable.symbolic_value is not None else variable.value
+                if expression is not None:
+                    owner_expressions[variable.name.casefold()] = expression
+            expressions[owner.name.casefold()] = owner_expressions
+        return expressions
 
     @staticmethod
-    def _resolve_module_parameter_values(module_params: dict[str, dict[str, str]]) -> dict[str, dict[str, str]]:
-        """Resolve transitive parameter expressions inside each module."""
+    def _resolve_compile_time_symbols(
+        module_expressions: Mapping[str, Mapping[str, str]],
+    ) -> _CompileTimeSymbols:
+        """Resolve aliases and integer expressions inside each module entry.
+
+        The input is a raw table such as
+        ``{"kinds": {"word": "4", "rk": "word * 2"}}``. Each module gets
+        its own `_CompileTimeResolver`, producing a read-only
+        `_CompileTimeSymbols` where ``rk`` is ``"8"``. Unsupported
+        compiler-dependent calls remain symbolic rather than being guessed.
+        """
         resolved: dict[str, dict[str, str]] = {}
-        for module_name, params in module_params.items():
-            resolver = _CompileTimeResolver(params)
-            resolved[module_name.lower()] = {
-                name.lower(): resolver.resolve(FortranParser._resolve_symbol_reference(value, resolver.symbols))
-                for name, value in params.items()
+        for module_name, expressions in module_expressions.items():
+            normalized = {name.casefold(): str(value) for name, value in expressions.items()}
+            resolver = _CompileTimeResolver(normalized)
+            resolved[module_name.casefold()] = {
+                name: resolver.resolve(FortranParser._resolve_symbol_reference(value, resolver.symbols))
+                for name, value in normalized.items()
             }
-        return resolved
+        return _CompileTimeSymbols(resolved)
+
+    def _build_compile_time_symbols(
+        self,
+        modules: Sequence[FortranModule],
+        submodules: Sequence[FortranSubmodule],
+    ) -> _CompileTimeSymbols:
+        """Build the resolved symbol table shared by one file or project.
+
+        ``modules`` and ``submodules`` are already-parsed owners. Their local
+        parameters form the initial table; repeated passes then add explicit
+        imports, intrinsic aliases, and submodule parent/ancestor symbols until
+        no entry changes. For example, ``wp => rk`` reexports the resolved
+        value of ``rk``, while a child submodule inherits its parent's symbols.
+        The returned table is immutable and already transitively resolved.
+        """
+        owners: dict[str, FortranModule | FortranSubmodule] = {
+            owner.name.casefold(): owner for owner in (*modules, *submodules)
+        }
+        raw_expressions = self._module_parameter_expressions([*modules, *submodules])
+        initial = self._resolve_compile_time_symbols(raw_expressions)
+        resolved = {module_name: dict(symbols) for module_name, symbols in initial.modules.items()}
+
+        for _ in range(len(owners) + 1):
+            changed = False
+            for owner_name, owner in owners.items():
+                active = _CompileTimeSymbols(resolved)
+                owner_symbols = dict(active.in_module(owner_name))
+                if isinstance(owner, FortranSubmodule):
+                    if owner.ancestor:
+                        owner_symbols.update(active.in_module(owner.ancestor))
+                    owner_symbols.update(active.in_module(owner.parent))
+                owner_symbols.update(
+                    self._imported_compile_time_symbols(
+                        owner.uses,
+                        active,
+                        include_intrinsic_aliases=True,
+                    )
+                )
+                updated = dict(self._resolve_compile_time_symbols({owner_name: owner_symbols}).in_module(owner_name))
+                if updated != resolved.get(owner_name, {}):
+                    resolved[owner_name] = updated
+                    changed = True
+            if not changed:
+                break
+        return _CompileTimeSymbols(resolved)
 
     @staticmethod
-    def _resolve_signature_kinds(
-        sig: FortranProcedureSignature,
-        module_params: dict[str, dict[str, str]],
+    def _imported_compile_time_symbols(
+        uses: Mapping[str, list[FortranUseMapping]],
+        symbols: _CompileTimeSymbols,
         *,
-        resolve_shapes: bool = True,
-    ) -> None:
-        """Resolve procedure kind and optional shape expressions from scope facts."""
-        module_params = FortranParser._resolve_module_parameter_values(module_params)
-        symbol_to_value: dict[str, str] = {}
-        if sig.module:
-            symbol_to_value.update(module_params.get(sig.module.lower(), {}))
-        for mod, mappings in sig.uses.items():
-            params = module_params.get(mod.lower(), {})
-            if not params:
-                continue
+        include_intrinsic_aliases: bool,
+    ) -> dict[str, str]:
+        """Return symbols introduced by one scope's ``use`` statements.
+
+        ``uses`` supplies wildcard or explicit import mappings and ``symbols``
+        supplies already-resolved dependency modules. For example,
+        ``use kinds, only: wp => rk`` with ``kinds.rk == "8"`` returns
+        ``{"wp": "8"}``. Module-table construction enables
+        ``include_intrinsic_aliases`` so ``rk => real64`` can be reexported even
+        when the intrinsic module has no parsed model; ordinary procedure scope
+        lookup leaves that target-dependent spelling untouched.
+        """
+        imported: dict[str, str] = {}
+        for dependency, mappings in uses.items():
+            dependency_name = dependency.casefold()
+            dependency_symbols = symbols.in_module(dependency_name)
             if not mappings:
-                symbol_to_value.update(params)
+                imported.update(dependency_symbols)
                 continue
             for mapping in mappings:
-                source = mapping.source.lower()
-                local = mapping.local_name.lower()
-                if source in params:
-                    symbol_to_value[local] = params[source]
-        for name, var in sig.variables.items():
-            if var.value is not None:
-                symbol_to_value.setdefault(name.lower(), var.value)
-            elif var.symbolic_value is not None:
-                symbol_to_value.setdefault(name.lower(), var.symbolic_value)
-        variable_base_types = {name.lower(): var.base_type for name, var in sig.variables.items()}
-        variable_symbolic_values = {
-            name.lower(): var.symbolic_value or var.value for name, var in sig.variables.items()
-        }
-        resolved_variables = FortranParser._resolve_variables(
-            symbol_to_value, variable_base_types, variable_symbolic_values
+                source_name = mapping.source.casefold()
+                expression = dependency_symbols.get(source_name)
+                if (
+                    expression is None
+                    and include_intrinsic_aliases
+                    and dependency_name in _INTRINSIC_COMPILE_TIME_MODULES
+                ):
+                    expression = mapping.source
+                if expression is not None:
+                    imported[mapping.local_name.casefold()] = expression
+        return imported
+
+    @staticmethod
+    def _compile_time_symbols_for_scope(
+        owner_name: str | None,
+        uses: Mapping[str, list[FortranUseMapping]],
+        symbols: _CompileTimeSymbols,
+    ) -> dict[str, str]:
+        """Return a mutable flat symbol map visible to one parsed scope.
+
+        The method starts with symbols owned or reexported by ``owner_name`` and
+        applies the scope's direct imports. For example, a free procedure with
+        ``use kinds, only: wp => rk`` receives ``{"wp": "8"}``; a procedure
+        owned by ``solver`` also receives the symbols already attached to the
+        ``solver`` module entry. The returned copy may safely add local values.
+        """
+        visible = dict(symbols.in_module(owner_name))
+        visible.update(
+            FortranParser._imported_compile_time_symbols(
+                uses,
+                symbols,
+                include_intrinsic_aliases=False,
+            )
         )
-        for name in list(sig.variables):
-            if name.lower() in resolved_variables:
-                sig.variables[name] = resolved_variables[name.lower()]
-        resolver = _CompileTimeResolver(symbol_to_value)
-        for arg in sig.arguments:
-            if arg.kind:
-                arg.kind = FortranParser._resolve_kind_expression(arg.kind, symbol_to_value, resolver=resolver)
-            if resolve_shapes and arg.shape:
-                arg.shape = [resolver.resolve(dim) for dim in arg.shape]
-        if sig.result and sig.result.kind:
-            sig.result.kind = FortranParser._resolve_kind_expression(
-                sig.result.kind, symbol_to_value, resolver=resolver
+        return visible
+
+    @staticmethod
+    def _procedure_compile_time_symbols(
+        signature: FortranProcedureSignature,
+        symbols: _CompileTimeSymbols,
+    ) -> dict[str, str]:
+        """Return source-level symbols visible while resolving one procedure.
+
+        ``signature`` contributes its owning module, direct ``use`` mappings,
+        and local parameter variables; ``symbols`` contributes resolved module
+        entries. For example, an imported ``wp = 8`` plus local ``n = 4``
+        returns ``{"wp": "8", "n": "4"}``. Existing module/import values win
+        over duplicate local names through the established ``setdefault`` rule.
+        """
+        visible = FortranParser._compile_time_symbols_for_scope(
+            signature.module,
+            signature.uses,
+            symbols,
+        )
+        for name, variable in signature.variables.items():
+            expression = variable.value if variable.value is not None else variable.symbolic_value
+            if expression is not None:
+                visible.setdefault(name.casefold(), expression)
+        return visible
+
+    @staticmethod
+    def _resolve_procedure_variables(
+        signature: FortranProcedureSignature,
+        visible_symbols: dict[str, str],
+    ) -> None:
+        """Rebuild procedure parameter variables from resolved visible values.
+
+        The method receives one signature and its flat symbol map. For example,
+        a stored local parameter ``n = m + 1`` with visible ``m = 3`` is
+        replaced by a parameter variable whose literal value is ``4`` while its
+        original symbolic expression remains ``m + 1``. Non-parameter entries
+        in the visible map are ignored unless the signature owns that name.
+        """
+        base_types = {name.casefold(): variable.base_type for name, variable in signature.variables.items()}
+        symbolic_values = {
+            name.casefold(): variable.symbolic_value or variable.value for name, variable in signature.variables.items()
+        }
+        resolved = FortranParser._resolve_variables(visible_symbols, base_types, symbolic_values)
+        for name in list(signature.variables):
+            if name.casefold() in resolved:
+                signature.variables[name] = resolved[name.casefold()]
+
+    @staticmethod
+    def _resolve_procedure_signature_facts(
+        signature: FortranProcedureSignature,
+        visible_symbols: dict[str, str],
+        *,
+        resolve_shapes: bool,
+    ) -> None:
+        """Resolve procedure argument/result facts from one flat symbol map.
+
+        Kinds are always resolved. ``resolve_shapes=True`` additionally folds
+        argument dimensions, so ``x(n)`` with ``n = 4`` becomes ``x(4)``;
+        file/project coordinators pass ``False`` to preserve imported native
+        shape spelling. The supplied signature is mutated and no value is
+        returned.
+        """
+        resolver = _CompileTimeResolver(visible_symbols)
+        for argument in signature.arguments:
+            if argument.kind:
+                argument.kind = FortranParser._resolve_kind_expression(
+                    argument.kind,
+                    visible_symbols,
+                    resolver=resolver,
+                )
+            if resolve_shapes and argument.shape:
+                argument.shape = [resolver.resolve(dimension) for dimension in argument.shape]
+        if signature.result and signature.result.kind:
+            signature.result.kind = FortranParser._resolve_kind_expression(
+                signature.result.kind,
+                visible_symbols,
+                resolver=resolver,
             )
 
     @staticmethod
-    def _resolve_module_variable_kinds(
-        module: FortranModule | FortranSubmodule | FortranProgram | FortranBlockData,
-        module_params: dict[str, dict[str, str]],
+    def _resolve_procedure_compile_time_facts(
+        signature: FortranProcedureSignature,
+        symbols: _CompileTimeSymbols,
+        *,
+        resolve_shapes: bool,
     ) -> None:
-        """Resolve kind, value, and shape facts for module-like variables."""
-        module_params = FortranParser._resolve_module_parameter_values(module_params)
-        symbol_to_value: dict[str, str] = {}
-        if getattr(module, "name", None):
-            symbol_to_value.update(module_params.get(module.name.lower(), {}))
-        for mod, mappings in getattr(module, "uses", {}).items():
-            params = module_params.get(mod.lower(), {})
-            if not params:
-                continue
-            if not mappings:
-                symbol_to_value.update(params)
-                continue
-            for mapping in mappings:
-                source = mapping.source.lower()
-                local = mapping.local_name.lower()
-                if source in params:
-                    symbol_to_value[local] = params[source]
-        for var in getattr(module, "variables", []):
-            source_value = var.value if var.value is not None else var.symbolic_value
-            if source_value is not None:
-                symbol_to_value.setdefault(var.name.lower(), source_value)
-        resolver = _CompileTimeResolver(symbol_to_value)
-        for var in getattr(module, "variables", []):
-            source_value = var.value if var.value is not None else var.symbolic_value
-            if source_value is not None:
-                resolved_value = resolver.resolve(source_value, prefer_symbolic=False)
-                var.value = FortranParser._normalize_parameter_value(resolved_value)
-                symbol_to_value[var.name.lower()] = var.value if var.value is not None else source_value
-            if var.kind:
-                var.kind = FortranParser._resolve_kind_expression(var.kind, symbol_to_value, resolver=resolver)
-            if var.shape:
-                var.shape = [resolver.resolve(dim) for dim in var.shape]
-                var.lbound, var.ubound = FortranParser._extract_bounds(var.shape)
+        """Resolve one procedure using an already-completed module table.
+
+        ``signature`` is the model to update and ``symbols`` is the immutable
+        source-level table shared by its file or project. The method builds the
+        procedure's visible symbols, refreshes its parameter variables, and
+        resolves argument/result kinds plus optional shapes. For example,
+        imported ``wp = 8`` changes ``real(wp)`` to kind ``8``. It returns
+        nothing and never recomputes the module table.
+        """
+        visible = FortranParser._procedure_compile_time_symbols(signature, symbols)
+        FortranParser._resolve_procedure_variables(signature, visible)
+        FortranParser._resolve_procedure_signature_facts(
+            signature,
+            visible,
+            resolve_shapes=resolve_shapes,
+        )
 
     @staticmethod
-    def _resolve_derived_type_field_kinds(
-        derived_type: FortranDerivedType,
-        module_params: dict[str, dict[str, str]],
+    def _resolve_module_like_compile_time_facts(
+        owner: FortranModule | FortranSubmodule | FortranProgram | FortranBlockData,
+        symbols: _CompileTimeSymbols,
     ) -> None:
-        """Resolve kind and shape parameters for fields in their module scope.
+        """Resolve values, kinds, shapes, and bounds for module-like variables.
 
-        The helper consumes the same module parameter table as module-variable
-        resolution and mutates only the parsed field facts.  Field declaration
-        order is preserved, and unresolved native expressions remain symbolic.
+        ``owner`` supplies its variables and ``use`` mappings; ``symbols`` is
+        the already-resolved file/project table. For example, visible ``n = 4``
+        changes ``real(kind=n) :: values(0:n)`` to kind ``4`` and shape
+        ``0:4``, then refreshes its lower/upper bounds. The owner is mutated and
+        the method returns nothing.
         """
-        resolved_params = FortranParser._resolve_module_parameter_values(module_params)
-        local_parameters = set(getattr(derived_type, "_type_parameters", ()))
-        symbols = {
+        visible = FortranParser._compile_time_symbols_for_scope(
+            getattr(owner, "name", None),
+            getattr(owner, "uses", {}),
+            symbols,
+        )
+        variables = getattr(owner, "variables", [])
+        for variable in variables:
+            expression = variable.value if variable.value is not None else variable.symbolic_value
+            if expression is not None:
+                visible.setdefault(variable.name.casefold(), expression)
+
+        resolver = _CompileTimeResolver(visible)
+        for variable in variables:
+            expression = variable.value if variable.value is not None else variable.symbolic_value
+            if expression is not None:
+                resolved_value = resolver.resolve(expression, prefer_symbolic=False)
+                variable.value = FortranParser._normalize_parameter_value(resolved_value)
+                visible[variable.name.casefold()] = variable.value if variable.value is not None else expression
+            if variable.kind:
+                variable.kind = FortranParser._resolve_kind_expression(
+                    variable.kind,
+                    visible,
+                    resolver=resolver,
+                )
+            if variable.shape:
+                variable.shape = [resolver.resolve(dimension) for dimension in variable.shape]
+                variable.lbound, variable.ubound = FortranParser._extract_bounds(variable.shape)
+
+    @staticmethod
+    def _resolve_derived_type_compile_time_facts(
+        derived_type: FortranDerivedType,
+        symbols: _CompileTimeSymbols,
+    ) -> None:
+        """Resolve field kinds and shapes visible from a derived-type owner.
+
+        ``derived_type.module`` selects the owning module entry from
+        ``symbols``. Local type parameters are removed so declarations such as
+        ``type(buffer(k))`` keep their instance-dependent ``k`` symbolic, while
+        an imported module alias like ``wp = 8`` resolves ``real(wp)`` fields to
+        kind ``8``. Field order is preserved, bounds are refreshed, and the
+        method returns nothing.
+        """
+        local_parameters = {name.casefold() for name in getattr(derived_type, "_type_parameters", ())}
+        visible = {
             name: value
-            for name, value in resolved_params.get(str(derived_type.module or "").casefold(), {}).items()
+            for name, value in symbols.in_module(derived_type.module).items()
             if name.casefold() not in local_parameters
         }
-        resolver = _CompileTimeResolver(symbols)
+        resolver = _CompileTimeResolver(visible)
         for field in derived_type.fields:
             if field.kind:
-                field.kind = FortranParser._resolve_kind_expression(field.kind, symbols, resolver=resolver)
+                field.kind = FortranParser._resolve_kind_expression(
+                    field.kind,
+                    visible,
+                    resolver=resolver,
+                )
             if field.shape:
                 field.shape = [resolver.resolve(dimension) for dimension in field.shape]
                 field.lbound, field.ubound = FortranParser._extract_bounds(field.shape)
@@ -5106,7 +5298,7 @@ class FortranParser(ClassVisitor):
     @staticmethod
     def _resolve_kind_expression(
         expr: str,
-        symbols: dict[str, str],
+        symbols: Mapping[str, str],
         *,
         resolver: _CompileTimeResolver | None = None,
     ) -> str:
@@ -5119,7 +5311,7 @@ class FortranParser(ClassVisitor):
         return active_resolver.resolve(resolved)
 
     @staticmethod
-    def _resolve_symbol_reference(expr: str, symbols: dict[str, str]) -> str:
+    def _resolve_symbol_reference(expr: str, symbols: Mapping[str, str]) -> str:
         """Follow direct symbol aliases until a stable expression is reached."""
         out = expr.strip()
         seen: set[str] = set()
@@ -5205,9 +5397,9 @@ class FortranParser(ClassVisitor):
 
     @staticmethod
     def _resolve_variables(
-        symbols: dict[str, str],
-        base_types: dict[str, str] | None = None,
-        symbolic_values: dict[str, str | None] | None = None,
+        symbols: Mapping[str, str],
+        base_types: Mapping[str, str] | None = None,
+        symbolic_values: Mapping[str, str | None] | None = None,
     ) -> dict[str, FortranVariable]:
         """Build resolved parameter variables from a symbol-expression map."""
         base_types = base_types or {}

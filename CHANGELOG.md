@@ -23,6 +23,11 @@ release tags add a leading `v` to the package version.
 - Made directory project parsing read and parse each discovered Fortran file
   once before dependency ordering and project assembly.
 
+### Fixed
+
+- Unified source-level compile-time resolution across project and CLI parsing
+  so imported and host-associated kind facts also reach derived-type fields.
+
 ## 0.2.1 — 2026-08-11
 
 ### Added

@@ -268,6 +268,38 @@ end module direct_intrinsic_kind
     assert collect_semantic_compile_time_requirements(parsed) == []
 
 
+def test_cli_cross_file_resolution_reaches_imported_derived_field_kinds(tmp_path: Path):
+    precision = tmp_path / "precision.f90"
+    records = tmp_path / "records.f90"
+    precision.write_text(
+        """
+module precision
+  integer, parameter :: rk = 8
+end module precision
+""",
+        encoding="utf-8",
+    )
+    records.write_text(
+        """
+module records
+  use precision, only: wp => rk
+  type :: sample
+    real(kind=wp) :: value
+  end type sample
+end module records
+""",
+        encoding="utf-8",
+    )
+
+    parsed_files = prik_cli._parse_fortran_source_files(
+        [precision, records],
+        PreprocessingConfig(),
+    )
+    record_file = next(parsed for path, parsed in parsed_files if path == records)
+
+    assert record_file.modules[0].derived_types[0].fields[0].kind == "8"
+
+
 def test_prik_pyi_report_writes_opaque_dependency_stub_for_external_type(tmp_path: Path, monkeypatch):
     physics = tmp_path / "physics.f90"
     physics.write_text(
