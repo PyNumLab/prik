@@ -4171,14 +4171,54 @@ class FortranParser(ClassVisitor):
     # ------------------------------------------------------------------
 
     def _finalize_proc(self, state: _ProcedureState) -> FortranProcedureSignature:
-        """Validate and freeze one procedure signature from mutable scope state."""
+        """Run the ordered finalization phases for one parsed procedure.
+
+        ``state`` contains the mutable signature and specification facts built
+        while visiting the procedure. The helpers below intentionally mutate
+        that signature in the same order as declaration parsing requires, then
+        the final phase returns a distinct shallow dataclass copy.
+        """
+        # Replace header placeholders with declared symbols and reject duplicate dummy names.
+        sig = self._reconcile_procedure_signature_symbols(state)
+
+        # Catch declaration-application regressions before implicit typing can hide them.
+        self._validate_declared_procedure_arguments(sig, state)
+
+        # Resolve kinds and shapes, infer permitted dummy types, and find parameters used by the signature.
+        relevant_params = self._resolve_procedure_signature_types(sig, state)
+
+        # Recover legacy local declarations that were recorded before they could be matched to dummies.
+        self._reconcile_procedure_local_declarations(sig, state)
+
+        # Enforce explicit dummy and result declarations for non-interface IMPLICIT NONE procedures.
+        self._validate_procedure_implicit_none(sig, state)
+
+        # Expose only signature-relevant modern parameters as parsed procedure variables.
+        self._materialize_procedure_parameters(sig, state, relevant_params)
+
+        # Infer a permitted implicit function result type, then validate the completed result contract.
+        self._finalize_procedure_result_type(sig, state)
+
+        # Attach procedure-scope imports, USE associations, and common-block facts.
+        self._attach_procedure_scope_metadata(sig, state)
+
+        # Preserve the established shallow-copy boundary and attach local-only USE associations to the copy.
+        return self._copy_finalized_procedure_signature(sig, state)
+
+    def _reconcile_procedure_signature_symbols(
+        self,
+        state: _ProcedureState,
+    ) -> FortranProcedureSignature:
+        """Replace header placeholders with the symbols declared in ``state``.
+
+        ``state.signature`` supplies the header-created argument and result
+        objects, while ``state.symbols`` contains their declaration-updated
+        replacements. The method clears previously materialized variables,
+        updates the signature in place, validates dummy-name uniqueness using
+        the stored header location, and returns that same signature.
+        """
         sig = state.signature
         symbols = state.symbols
-        local_params = state.local_params
-        legacy_local_params = state.legacy_local_params
-        implicit_typed_symbols = state.implicit_typed_symbols
-        filename = state.filename
-        implicit_none = state.implicit_none
         sig.variables = {}
         sig.arguments = [symbols.get(a.name.lower(), a) for a in sig.arguments]
         if sig.result:
@@ -4187,65 +4227,132 @@ class FortranParser(ClassVisitor):
         FortranParser._validate_no_duplicate_arg_names(
             sig.arguments,
             sig.name,
-            filename,
+            state.filename,
             state.header_lineno,
             state.header_source_line,
         )
+        return sig
 
-        # Safety check: if an argument has been explicitly declared in this
-        # procedure, it must not remain unknown after declaration parsing.
-        # This catches declaration-application regressions (e.g. legacy
-        # star-kind list handling) while still allowing truly undeclared
-        # arguments to be handled by semantic conversion or wrapper planning.
-        declared_symbols = state.typed_symbols
+    @staticmethod
+    def _validate_declared_procedure_arguments(
+        sig: FortranProcedureSignature,
+        state: _ProcedureState,
+    ) -> None:
+        """Require every explicitly typed dummy to carry its parsed datatype.
+
+        The signature provides the reconciled dummy arguments and
+        ``state.typed_symbols`` identifies names that declaration parsing
+        claimed to type. The method does not mutate either object; it raises a
+        source-located internal parser diagnostic if a declared dummy is still
+        unknown, while leaving truly undeclared dummies for implicit handling.
+        """
         for arg in sig.arguments:
             if (
-                arg.name.lower() in declared_symbols and arg.base_type == "unknown"
+                arg.name.lower() in state.typed_symbols and arg.base_type == "unknown"
             ):  # pragma: no cover - defensive parser invariant.
                 raise FortranParseError(
                     f"Failed to resolve declared argument '{arg.name}' in procedure '{sig.name}'.",
-                    filename=filename,
+                    filename=state.filename,
                     code="PARSE_UNRESOLVED_ARGUMENT_TYPE",
                 )
+
+    def _resolve_procedure_signature_types(
+        self,
+        sig: FortranProcedureSignature,
+        state: _ProcedureState,
+    ) -> dict[str, str]:
+        """Resolve signature kinds and shapes against local parameters.
+
+        ``sig`` supplies the reconciled arguments and optional result;
+        ``state.local_params`` supplies procedure-local compile-time symbols,
+        and ``state.implicit_none`` controls dummy inference. The method mutates
+        argument kinds, shapes, permitted implicit base types, and the result
+        kind, then returns the parameters referenced by the resolved signature.
+        """
+        local_params = state.local_params
         local_resolver = _CompileTimeResolver(local_params)
         for arg in sig.arguments:
             if arg.kind:
                 arg.kind = self._resolve_kind_expression(arg.kind, local_params, resolver=local_resolver)
             if arg.shape:
                 arg.shape = [local_resolver.resolve(dim) for dim in arg.shape]
-            if arg.base_type == "unknown" and not implicit_none:
+            if arg.base_type == "unknown" and not state.implicit_none:
                 arg.base_type = self._infer_implicit_base_type(arg.name)
         if sig.result and sig.result.kind:
             sig.result.kind = self._resolve_kind_expression(sig.result.kind, local_params, resolver=local_resolver)
-        relevant_params = self._collect_relevant_local_params(sig, local_params)
-        declared_local_types = state.declared_local_types
-        # Defensive reconciliation: some legacy declaration forms can be parsed into
-        # `declared_local_types` before being matched back to argument symbols.
-        # If an argument is still unknown but we have an exact-name local type
-        # record, apply it before implicit-none validation to avoid false positives.
+        return self._collect_relevant_local_params(sig, local_params)
+
+    def _reconcile_procedure_local_declarations(
+        self,
+        sig: FortranProcedureSignature,
+        state: _ProcedureState,
+    ) -> None:
+        """Apply unmatched local declaration metadata to unknown dummies.
+
+        Some legacy declarations enter ``state.declared_local_types`` before
+        the parser can match them to the signature symbol table. This method
+        looks up only arguments that remain unknown, copies their base type and
+        kind, and applies preserved internal spelling/storage metadata before
+        the later ``implicit none`` validation runs.
+        """
         for arg in sig.arguments:
             if arg.base_type != "unknown":
                 continue
-            inferred = declared_local_types.get(arg.name.lower())
+            inferred = state.declared_local_types.get(arg.name.lower())
             if not inferred:
                 continue
             arg.base_type = inferred.get("base_type", arg.base_type)
             arg.kind = inferred.get("kind", arg.kind)
             self._apply_internal_type_metadata(arg, inferred)
 
-        if implicit_none and not sig.in_interface:
-            self._validate_all_args_declared(sig, filename, explicit_result=state.explicit_result)
+    def _validate_procedure_implicit_none(
+        self,
+        sig: FortranProcedureSignature,
+        state: _ProcedureState,
+    ) -> None:
+        """Enforce explicit declarations when this procedure uses IMPLICIT NONE.
 
+        ``sig`` is the reconciled and locally repaired signature; ``state``
+        supplies the implicit-typing flag, filename, and whether a function used
+        an explicit ``result(...)`` clause. Interface signatures retain their
+        existing exemption. The method performs validation only and raises the
+        established public diagnostics without mutating the signature.
+        """
+        if state.implicit_none and not sig.in_interface:
+            self._validate_all_args_declared(
+                sig,
+                state.filename,
+                explicit_result=state.explicit_result,
+            )
+
+    def _materialize_procedure_parameters(
+        self,
+        sig: FortranProcedureSignature,
+        state: _ProcedureState,
+        relevant_params: dict[str, str],
+    ) -> None:
+        """Create parsed variables for modern parameters used by the signature.
+
+        ``relevant_params`` maps referenced local parameter names to their
+        expressions. ``state`` provides declared or implicitly inferred types
+        and identifies legacy ``PARAMETER (...)`` artifacts. The method skips
+        those legacy artifacts, constructs typed :class:`FortranVariable`
+        records, preserves symbolic values and internal metadata, and stores
+        them in ``sig.variables``.
+        """
         for name, value in relevant_params.items():
-            if name.lower() in legacy_local_params:
+            if name.lower() in state.legacy_local_params:
                 # Legacy PARAMETER (...) constants are declaration artifacts in
                 # fixed-form sources; keep them available for compile-time
                 # resolution but do not expose them as parsed procedure variables.
                 continue
-            local_decl = declared_local_types.get(name.lower(), {})
+            local_decl = state.declared_local_types.get(name.lower(), {})
             var = FortranVariable(
                 name=name.lower(),
-                base_type=local_decl.get("base_type", implicit_typed_symbols.get(name.lower(), "unknown")),
+                base_type=local_decl.get(
+                    "base_type",
+                    state.implicit_typed_symbols.get(name.lower(), "unknown"),
+                ),
                 kind=local_decl.get("kind"),
                 value=self._normalize_parameter_value(value),
                 value_type="expression",
@@ -4254,25 +4361,67 @@ class FortranParser(ClassVisitor):
             self._apply_internal_type_metadata(var, local_decl)
             var.symbolic_value = value
             sig.variables[name.lower()] = var
+
+    def _finalize_procedure_result_type(
+        self,
+        sig: FortranProcedureSignature,
+        state: _ProcedureState,
+    ) -> None:
+        """Complete and validate the datatype of a function result.
+
+        Subroutines are left untouched. For functions, ``state.implicit_none``
+        decides whether an unknown result may receive Fortran implicit typing;
+        unresolved results raise the existing filename-aware diagnostic. The
+        method then delegates structural checks such as result/argument name
+        separation to ``_validate_function_result``.
+        """
         if sig.kind == "function" and sig.result and sig.result.base_type == "unknown":
-            if not implicit_none:
+            if not state.implicit_none:
                 sig.result.base_type = self._infer_implicit_base_type(sig.result.name)
             if (
                 sig.result.base_type == "unknown"
             ):  # pragma: no cover - implicit-none result validation handles public cases first.
                 raise FortranParseError(
                     f"Unknown datatype for function result '{sig.result.name}' in procedure '{sig.name}'.",
-                    filename=filename,
+                    filename=state.filename,
                     code="PARSE_UNKNOWN_FUNCTION_RESULT_TYPE",
                 )
         if sig.kind == "function":
-            self._validate_function_result(sig, filename)
+            self._validate_function_result(sig, state.filename)
+
+    @staticmethod
+    def _attach_procedure_scope_metadata(
+        sig: FortranProcedureSignature,
+        state: _ProcedureState,
+    ) -> None:
+        """Attach scope metadata collected outside the signature declarations.
+
+        ``state.imports`` becomes stable ``import(name)`` attributes without
+        duplicates, while inherited/local USE associations and common-block
+        object names are copied onto ``sig``. The method mutates those metadata
+        fields only; procedure-local USE associations remain reserved for the
+        distinct finalized copy created by the next phase.
+        """
         for symbol in sorted(state.imports):
             attr = f"import({symbol})"
             if attr not in sig.attributes:
                 sig.attributes.append(attr)
         sig.uses = dict(state.uses)
         sig.common_variables = list(state.common_variables)
+
+    @staticmethod
+    def _copy_finalized_procedure_signature(
+        sig: FortranProcedureSignature,
+        state: _ProcedureState,
+    ) -> FortranProcedureSignature:
+        """Return the established shallow final signature copy.
+
+        ``sig`` is the fully mutated working signature and ``state.local_uses``
+        contains USE associations declared directly inside the procedure. The
+        method preserves the existing shallow ``dataclasses.replace`` boundary,
+        attaches a copied private local-USE mapping to the new object, and does
+        not deep-copy arguments or other signature members.
+        """
         finalized = replace(sig)
         finalized._local_uses = dict(state.local_uses)
         return finalized
