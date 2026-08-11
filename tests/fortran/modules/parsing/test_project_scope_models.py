@@ -129,7 +129,7 @@ def test_duplicate_project_scope_names_raise_public_parse_errors():
         )
 
 
-def test_project_directory_namespace_orders_ancestor_submodule_dependencies(tmp_path):
+def test_project_directory_orders_ancestor_submodule_dependencies(tmp_path):
     (tmp_path / "ancestor.f90").write_text(
         """
 module ancestor_mod
@@ -409,7 +409,7 @@ end module precision
     assert prototype.result.kind == "real64"
 
 
-def test_directory_namespace_records_missing_and_parent_only_submodule_dependencies(tmp_path):
+def test_directory_project_records_missing_and_parent_only_submodule_dependencies(tmp_path):
     (tmp_path / "parent.f90").write_text(
         """
 module parent_mod

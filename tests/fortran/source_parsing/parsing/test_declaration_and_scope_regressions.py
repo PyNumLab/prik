@@ -242,7 +242,7 @@ def test_legacy_parameter_lines_respect_implicit_none_and_implicit_typing_contra
     assert loose_state.legacy_local_params == set()
 
 
-def test_namespace_collection_preserves_case_insensitive_dependencies_and_exact_payload(tmp_path: Path, monkeypatch):
+def test_directory_project_parses_once_and_assembles_dependency_ordered_models(tmp_path: Path, monkeypatch):
     sources = {
         "ancestor.f90": "module Ancestor_Mod\nend module Ancestor_Mod\n",
         "parent.f90": "module Parent_Mod\n  use Ancestor_Mod\n  type :: Parent_State\n  end type Parent_State\nend module Parent_Mod\n",
@@ -269,16 +269,18 @@ def test_namespace_collection_preserves_case_insensitive_dependencies_and_exact_
     for filename, source in sources.items():
         (tmp_path / filename).write_text(source, encoding="utf-8")
 
-    encodings = []
+    read_paths: list[Path] = []
+    encodings: list[str | None] = []
     original_read_text = Path.read_text
 
     def read_text(path, *args, **kwargs):
+        read_paths.append(path)
         encodings.append(kwargs.get("encoding"))
         return original_read_text(path, *args, **kwargs)
 
     monkeypatch.setattr(Path, "read_text", read_text)
 
-    namespace = FortranParser()._helper_collect_namespace(tmp_path)
+    project = parse_fortran_project(tmp_path)
 
     ancestor = str(tmp_path / "ancestor.f90")
     parent = str(tmp_path / "parent.f90")
@@ -287,42 +289,45 @@ def test_namespace_collection_preserves_case_insensitive_dependencies_and_exact_
     grandchild = str(tmp_path / "grandchild.f90")
     units = str(tmp_path / "units.f90")
 
-    assert encodings and set(encodings) == {"utf-8"}
-    assert namespace["module_to_file"] == {
-        "ancestor_mod": ancestor,
-        "helper_mod": helper,
-        "parent_mod": parent,
+    assert len(read_paths) == len(sources)
+    assert set(read_paths) == {tmp_path / filename for filename in sources}
+    assert set(encodings) == {"utf-8"}
+
+    ordered_files = [parsed_file.filename for parsed_file in project.files]
+    assert ordered_files.index(ancestor) < ordered_files.index(parent)
+    assert ordered_files.index(parent) < ordered_files.index(child)
+    assert ordered_files.index(helper) < ordered_files.index(child)
+    assert ordered_files.index(child) < ordered_files.index(grandchild)
+    assert units in ordered_files
+
+    assert {module.name for module in project.modules.values()} == {
+        "Ancestor_Mod",
+        "Helper_Mod",
+        "Parent_Mod",
     }
-    assert namespace["submodule_to_file"] == {
-        "child_mod": child,
-        "grandchild_mod": grandchild,
+    assert {submodule.name for submodule in project.submodules.values()} == {
+        "Child_Mod",
+        "Grandchild_Mod",
     }
-    assert namespace["file_dependencies"] == {
-        ancestor: [],
-        child: [ancestor, helper, parent],
-        grandchild: [child],
-        helper: [],
-        parent: [ancestor],
-        units: [],
+    assert [program.name for program in project.programs.values()] == ["Driver"]
+    assert [block.name for parsed_file in project.files for block in parsed_file.block_data_units] == ["Init_Data"]
+    assert {dtype.name for dtype in project.derived_types.values()} == {
+        "Parent_State",
+        "Child_State",
+        "File_State",
     }
-    assert namespace["files"].index(ancestor) < namespace["files"].index(parent)
-    assert namespace["files"].index(parent) < namespace["files"].index(child)
-    assert namespace["files"].index(helper) < namespace["files"].index(child)
-    assert namespace["files"].index(child) < namespace["files"].index(grandchild)
-    assert {module.name for module in namespace["modules"]} == {"Ancestor_Mod", "Helper_Mod", "Parent_Mod"}
-    assert {submodule.name for submodule in namespace["submodules"]} == {"Child_Mod", "Grandchild_Mod"}
-    assert [program.name for program in namespace["programs"]] == ["Driver"]
-    assert [block.name for block in namespace["block_data"]] == ["Init_Data"]
-    assert {dtype.name for dtype in namespace["types"]} == {"Parent_State", "Child_State", "File_State"}
-    assert {module.name: module.filename for module in namespace["modules"]} == {
+    assert {module.name: module.filename for module in project.modules.values()} == {
         "Ancestor_Mod": ancestor,
         "Helper_Mod": helper,
         "Parent_Mod": parent,
     }
-    assert {submodule.name: submodule.filename for submodule in namespace["submodules"]} == {
+    assert {submodule.name: submodule.filename for submodule in project.submodules.values()} == {
         "Child_Mod": child,
         "Grandchild_Mod": grandchild,
     }
+    assert project.dependencies["parent_mod"] == {"ancestor_mod"}
+    assert project.dependencies["child_mod"] == {"ancestor_mod", "parent_mod", "helper_mod"}
+    assert project.dependencies["grandchild_mod"] == {"child_mod"}
 
 
 def test_project_registries_preserve_qualified_aliases_values_and_dependencies():
@@ -534,7 +539,7 @@ def test_project_encoding_is_forwarded_to_explicit_path_inputs(tmp_path: Path):
     assert project.files[0].source.startswith("! caf\xe9")
 
 
-def test_project_encoding_is_forwarded_to_directory_namespace_collection(tmp_path: Path):
+def test_project_encoding_is_forwarded_to_directory_file_parsing(tmp_path: Path):
     source = tmp_path / "latin1.f90"
     source.write_bytes("! caf\xe9\nmodule encoded_mod\nend module encoded_mod\n".encode("latin-1"))
 

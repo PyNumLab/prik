@@ -174,6 +174,7 @@ _FORTRAN_LINEMARKER_RE = re.compile(
     re.IGNORECASE,
 )
 _INTRINSIC_COMPILE_TIME_MODULES = frozenset({"iso_c_binding", "iso_fortran_env"})
+_FORTRAN_SOURCE_SUFFIXES = (".f", ".for", ".ftn", ".f77", ".f90", ".f95", ".f03", ".f08")
 
 
 _PreprocessedLine = tuple[str, int | None, str | None]
@@ -1312,15 +1313,18 @@ class FortranParser(ClassVisitor):
         failures raise :class:`FortranParseError`.
         """
 
-        # Stage 1: parse each requested source in dependency-aware order.
-        parsed_files = self._helper_parse_project_files(files, encoding)
+        # Stage 1: normalize the requested input form and parse every file once.
+        if isinstance(files, dict):
+            parsed_files = self._parse_named_project_sources(files, encoding=encoding)
+        elif isinstance(files, str | Path):
+            paths = self._discover_project_paths(Path(files))
+            parsed_files = self._parse_project_files(paths, encoding=encoding)
+            parsed_files = self._order_project_files(parsed_files)
+        else:
+            parsed_files = self._parse_project_files(files, encoding=encoding)
 
-        # Stage 2: complete cross-file kinds and construct project indexes.
-        self._helper_resolve_project_kinds(parsed_files)
-        project = FortranProject(files=parsed_files)
-        for parsed_file in parsed_files:
-            self._helper_index_project_file(project, parsed_file)
-        return project
+        # Stage 2: complete cross-file facts and construct the public project.
+        return self._assemble_project(parsed_files)
 
     def parse_module(self, code: _SourceOrLines, filename: str | None = None) -> FortranModule:
         """Parse exactly one module unit from source text or normalized lines.
@@ -1907,18 +1911,113 @@ class FortranParser(ClassVisitor):
             )
         return parsed_file
 
-    def _helper_parse_project_files(
+    @staticmethod
+    def _discover_project_paths(
+        root: Path,
+        extensions: tuple[str, ...] = _FORTRAN_SOURCE_SUFFIXES,
+    ) -> list[Path]:
+        """Return supported Fortran paths below one project directory.
+
+        Discovery only identifies files; it does not read or parse them. The
+        paths are sorted so unrelated files have deterministic order before
+        dependency analysis. For example, a directory containing ``b.f90``,
+        ``a.f90``, and ``notes.txt`` produces ``[a.f90, b.f90]``.
+        """
+        return sorted(path for path in root.rglob("*") if path.suffix.lower() in extensions)
+
+    def _parse_project_files(
         self,
-        files: dict[str, str] | list[str | Path] | tuple[str | Path, ...] | str | Path,
+        paths: Sequence[str | Path],
+        *,
         encoding: str,
     ) -> list[FortranFile]:
-        """Normalize project inputs and parse each source file."""
-        if isinstance(files, dict):
-            return [self.parse_file(code, filename=fname, encoding=encoding) for fname, code in files.items()]
-        if isinstance(files, str | Path):
-            namespace = self._helper_collect_namespace(files, encoding=encoding)
-            return [self.parse_file(path, encoding=encoding) for path in namespace["files"]]
-        return [self.parse_file(path, encoding=encoding) for path in files]
+        """Read and fully parse each project file exactly once.
+
+        Input order is preserved. Each returned :class:`FortranFile` owns the
+        file's source, filename, encoding, and parsed program units. For
+        example, ``[types.f90, solver.f90]`` produces two file models in that
+        same order; dependency ordering is a separate later operation.
+        """
+        return [self.parse_file(path, encoding=encoding) for path in paths]
+
+    def _parse_named_project_sources(
+        self,
+        sources: Mapping[str, str],
+        *,
+        encoding: str,
+    ) -> list[FortranFile]:
+        """Parse an in-memory ``filename -> source`` project mapping.
+
+        Mapping insertion order is preserved and every key becomes diagnostic
+        filename provenance. For example, ``{"api.f90": "module api ..."}``
+        produces one :class:`FortranFile` named ``api.f90`` without filesystem
+        discovery.
+        """
+        return [self.parse_file(source, filename=filename, encoding=encoding) for filename, source in sources.items()]
+
+    @staticmethod
+    def _project_file_requirements(parsed_file: FortranFile) -> set[str]:
+        """Return module or submodule names required by one parsed file.
+
+        Requirements come from module and submodule ``use`` statements plus a
+        submodule's parent and optional ancestor. For example, a child
+        submodule with parent ``api`` and ``use kinds`` returns at least
+        ``{"api", "kinds"}``.
+        """
+        requirements: set[str] = set()
+        for module in parsed_file.modules:
+            requirements.update(name.lower() for name in module.uses)
+        for submodule in parsed_file.submodules:
+            requirements.update(name.lower() for name in submodule.uses)
+            requirements.add(submodule.parent.lower())
+            if submodule.ancestor:
+                requirements.add(submodule.ancestor.lower())
+        return requirements
+
+    def _order_project_files(self, parsed_files: list[FortranFile]) -> list[FortranFile]:
+        """Return existing file models in dependency-first order.
+
+        Module and submodule definitions are mapped to their provider files,
+        requirements are converted into file edges, and
+        :meth:`_topological_files` supplies deterministic cycle-tolerant order.
+        For example, parsed ``solver.f90`` using module ``kinds`` is moved
+        after the existing ``kinds.f90`` model without reparsing either file.
+        """
+        files_by_name: dict[str, FortranFile] = {}
+        unit_to_file: dict[str, str] = {}
+        for parsed_file in parsed_files:
+            filename = parsed_file.filename
+            if filename is None:
+                raise ValueError("Dependency ordering requires every parsed project file to have a filename.")
+            files_by_name[filename] = parsed_file
+            unit_to_file.update((module.name.lower(), filename) for module in parsed_file.modules)
+            unit_to_file.update((submodule.name.lower(), filename) for submodule in parsed_file.submodules)
+
+        file_dependencies: dict[str, set[str]] = {}
+        for filename, parsed_file in files_by_name.items():
+            dependencies = {
+                provider
+                for requirement in self._project_file_requirements(parsed_file)
+                if (provider := unit_to_file.get(requirement)) is not None and provider != filename
+            }
+            file_dependencies[filename] = dependencies
+
+        ordered_names = self._topological_files(file_dependencies)
+        return [files_by_name[filename] for filename in ordered_names]
+
+    def _assemble_project(self, parsed_files: list[FortranFile]) -> FortranProject:
+        """Resolve cross-file facts and index one completed project model.
+
+        The input files are already parsed and in their caller-selected or
+        dependency-derived order. For example, ``[kinds_file, solver_file]``
+        is preserved in ``project.files`` while their modules, procedures,
+        types, interfaces, and dependency facts enter project registries.
+        """
+        self._helper_resolve_project_kinds(parsed_files)
+        project = FortranProject(files=parsed_files)
+        for parsed_file in parsed_files:
+            self._helper_index_project_file(project, parsed_file)
+        return project
 
     def _helper_resolve_project_kinds(self, parsed_files: list[FortranFile]) -> None:
         """Resolve project procedure and module-variable kinds from shared symbols."""
@@ -2161,93 +2260,6 @@ class FortranParser(ClassVisitor):
                 source_line=source_line,
                 code="PARSE_PREPROCESSING_REQUIRED",
             )
-
-    def _helper_collect_namespace(
-        self,
-        root: str | Path,
-        extensions: tuple[str, ...] = (".f", ".for", ".ftn", ".f77", ".f90", ".f95", ".f03", ".f08"),
-        *,
-        encoding: str = "utf-8",
-    ) -> dict:
-        """Collect parseable source files and dependency-order them.
-
-        Project parsing uses this helper when the caller passes a directory
-        instead of an explicit file list. It performs a light first pass to map
-        modules/submodules to files, topologically orders files by ``use``
-        dependencies, then parses them in that order.
-
-        Example:
-            ``parse_project("src")`` calls this helper, receives
-            ``{"files": ordered_files, "module_to_file": ...}``, and then
-            parses each ordered path through the normal file entrypoint.
-        """
-        root_path = Path(root)
-        files = sorted([p for p in root_path.rglob("*") if p.suffix.lower() in extensions])
-        sources = {str(p): p.read_text(encoding=encoding) for p in files}
-        file_lines = {fname: preprocess_lines(code, fname) for fname, code in sources.items()}
-
-        module_to_file: dict[str, str] = {}
-        submodule_to_file: dict[str, str] = {}
-        file_to_uses: dict[str, set[str]] = {fname: set() for fname in sources}
-        for fname, _code in sources.items():
-            lines = file_lines[fname]
-            _lines, root_scope, all_units = self._helper_prepare_source_units(lines, fname)
-            modules = [
-                self._visit(unit, parent_scope=root_scope, filename=fname)
-                for unit in all_units
-                if unit.kind == "module"
-            ]
-            submodules = [
-                self._visit(unit, parent_scope=root_scope, filename=fname)
-                for unit in all_units
-                if unit.kind == "submodule"
-            ]
-            for m in modules:
-                module_to_file[m.name.lower()] = fname
-                file_to_uses[fname].update(u.lower() for u in m.uses)
-            for sm in submodules:
-                submodule_to_file[sm.name.lower()] = fname
-                file_to_uses[fname].add(sm.parent.lower())
-                if sm.ancestor:
-                    file_to_uses[fname].add(sm.ancestor.lower())
-                file_to_uses[fname].update(u.lower() for u in sm.uses)
-
-        file_dependencies: dict[str, set[str]] = {}
-        for fname, used_modules in file_to_uses.items():
-            deps = set()
-            for mod in used_modules:
-                dep_file = module_to_file.get(mod) or submodule_to_file.get(mod)
-                if dep_file and dep_file != fname:
-                    deps.add(dep_file)
-            file_dependencies[fname] = deps
-
-        ordered_files = self._topological_files(file_dependencies)
-        types = []
-        modules = []
-        submodules = []
-        programs = []
-        block_data = []
-        for f in ordered_files:
-            parsed_file = self.parse_file(sources[f], filename=f, encoding=encoding)
-            types.extend(parsed_file.derived_types)
-            types.extend(dtype for module in parsed_file.modules for dtype in module.derived_types)
-            types.extend(dtype for submodule in parsed_file.submodules for dtype in submodule.derived_types)
-            modules.extend(parsed_file.modules)
-            submodules.extend(parsed_file.submodules)
-            programs.extend(parsed_file.programs)
-            block_data.extend(parsed_file.block_data_units)
-
-        return {
-            "files": ordered_files,
-            "file_dependencies": {k: sorted(v) for k, v in file_dependencies.items()},
-            "module_to_file": module_to_file,
-            "submodule_to_file": submodule_to_file,
-            "modules": modules,
-            "submodules": submodules,
-            "programs": programs,
-            "block_data": block_data,
-            "types": types,
-        }
 
     def _helper_prepare_source_units(
         self,

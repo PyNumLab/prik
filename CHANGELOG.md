@@ -20,6 +20,8 @@ release tags add a leading `v` to the package version.
 - Stopped standalone Fortran parser discovery from descending into inaccessible
   procedure-internal subprograms; procedure-local callback interfaces remain
   classified and discoverable.
+- Made directory project parsing read and parse each discovered Fortran file
+  once before dependency ordering and project assembly.
 
 ## 0.2.1 — 2026-08-11
 

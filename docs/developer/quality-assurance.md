@@ -313,7 +313,7 @@ needed.
 
 Keep the ordinary regression tests and fixes that came from it:
 
-- Fortran project namespace collection respecting the requested encoding;
+- Fortran directory-project parsing respecting the requested encoding;
 - direct Fortran parser contracts for diagnostics, forwarding, registries,
   ownership, provenance, source locations, boundaries, and loop progress.
 

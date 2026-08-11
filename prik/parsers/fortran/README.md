@@ -12,7 +12,7 @@ callers may also use the stable parser functions and models exported from the
 
 | File | Owns |
 | --- | --- |
-| `parser.py` | Recursive Fortran parser, project assembly, namespace collection, kind resolution hooks. |
+| `parser.py` | Recursive Fortran parser, project source discovery, dependency ordering, assembly, and kind resolution. |
 | `lexer.py` | Fortran line preprocessing, comment stripping, and token preparation. |
 | `models.py` | Parser model dataclasses and diagnostics. |
 | `type_resolver.py` | Parser-level type and kind helpers. |

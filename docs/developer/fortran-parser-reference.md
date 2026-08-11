@@ -290,21 +290,25 @@ The Fortran data flow is:
 source path or source text
   -> compiler/native include preprocessing
   -> FortranParser.parse_file(...)
-  -> source-unit slices with original line numbers
+  -> classified source units with original line numbers
   -> scoped specification parsing
   -> FortranFile parser facts
-  -> parse_fortran_project(...) dependency ordering and namespace resolution
+  -> directory source discovery when requested
+  -> each FortranFile parsed exactly once
+  -> dependency ordering of the existing FortranFile objects
+  -> FortranProject cross-file resolution and indexes
   -> semantics.fortran2ir conversion
   -> policy completion, `.pyi`, and the implemented Fortran wrapper stages
 ```
 
 The recursive parsing pattern is:
 
-1. Identify direct child units at the current grammar level.
-2. Split each child into header, specification part, execution part, and
-   `contains` part where that language construct allows them.
-3. Parse declarations only from the specification part.
-4. Recurse only into direct children that are legal for the current unit kind.
+1. Construct each unit with its header, grammar regions, and retained direct
+   children already classified.
+2. Parse declarations only from the stored specification part.
+3. Recurse only into retained direct children that later parser work needs.
+4. Keep procedure execution regions opaque and omit inaccessible internal
+   procedures from the retained child tree.
 5. Validate sibling names and scope-local duplicate declarations.
 6. Finalize procedure arguments/results after local declarations and
    parameters are known.
@@ -652,23 +656,37 @@ function that created the diagnostic.
 
 ## 4) Python usage and expected outputs
 
-### 4.1 Parse folder namespace
+### 4.1 Parse a project directory
 
 ```python
 from prik import parse_fortran_project
 from pathlib import Path
 
-files = list(Path("tests/fortran/source_parsing/parsing/fixtures/general").glob("*.f90"))[:5]
-project = parse_fortran_project(files)
+project = parse_fortran_project(Path("src"))
 print(len(project.files))
 print(len(project.modules))
 ```
 
 Expected behavior:
 
-- Recursively scans Fortran files.
-- Resolves dependencies and module imports across files.
-- Returns aggregate namespace parse output.
+- Recursively discovers supported Fortran source paths.
+- Parses each discovered file exactly once into a `FortranFile`.
+- Orders those existing file models from dependency providers to consumers.
+- Resolves cross-file kinds/imports and returns an indexed `FortranProject`.
+
+The directory control flow is deliberately explicit:
+
+```text
+parse_project
+  -> _discover_project_paths
+  -> _parse_project_files
+  -> _order_project_files
+  -> _assemble_project
+```
+
+In-memory `{filename: source}` input uses `_parse_named_project_sources`
+instead of filesystem discovery. Explicit file lists use
+`_parse_project_files` and preserve caller order.
 
 ### 4.2 Parse single file and convert it to semantic IR
 
