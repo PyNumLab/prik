@@ -7,6 +7,20 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+## 0.2.1 — 2026-08-11
+
+### Added
+
+- Added machine-readable citation metadata through the repository-root
+  `CITATION.cff` file.
+- Added an About page and public development disclosure covering PRIK's
+  motivation, design principles, stewardship, and use of AI-assisted tools.
+
+### Fixed
+
+- Removed the stale `0.1.x` qualifier from the README and website alpha-status
+  wording after the `0.2.0` release.
+
 ## 0.2.0 — 2026-08-10
 
 ### Added
