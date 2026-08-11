@@ -17,6 +17,7 @@ from prik.codegen.nodes import (
     CExpressionStatement,
     CFor,
     CBreak,
+    CCase,
     CFunction,
     CFunctionPointerType,
     CFunctionPrototype,
@@ -33,6 +34,7 @@ from prik.codegen.nodes import (
     CParameter,
     CReturn,
     CStructDefinition,
+    CSwitch,
     FortranAllocate,
     FortranAssignment,
     FortranCall,
@@ -333,6 +335,21 @@ class CSourcePrinter(ClassVisitor):
     def _visit_CBreak(self, _node: CBreak) -> str:
         """Render one C loop-break statement."""
         return "break;"
+
+    def _visit_CCase(self, node: CCase) -> str:
+        """Render one switch case with an explicit terminating branch body."""
+        label = "default: {" if node.value is None else f"case {node.value.text}: {{"
+        lines = [label]
+        lines.extend(self._indented(self.visit(statement)) for statement in node.body)
+        lines.append("}")
+        return "\n".join(lines)
+
+    def _visit_CSwitch(self, node: CSwitch) -> str:
+        """Render one integer-key switch and its ordered cases."""
+        lines = [f"switch ({node.expression.text}) {{"]
+        lines.extend(self._indented(self.visit(case)) for case in node.cases)
+        lines.append("}")
+        return "\n".join(lines)
 
     def _visit_CReturn(self, node: CReturn) -> str:
         """Render one C return with or without the node expression."""

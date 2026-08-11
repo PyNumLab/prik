@@ -309,14 +309,16 @@ class OverloadArgumentMatchPlan(StageRecord):
 class OverloadPlan(StageRecord):
     """Describe an exact-match overload and the function candidates it owns.
 
-    Candidate and match tuples remain parallel in planner order. Class and
-    namespace surfaces consume this record to emit one deterministic dispatch.
+    Candidate IDs, match tuples, and receiver flags remain parallel in planner
+    order. Class and namespace surfaces consume this record to emit one
+    deterministic dispatch.
     """
 
     owner_path: str
     python_name: str
     kind: str
     candidates: tuple[FunctionPlan, ...]
+    candidate_ids: tuple[int, ...]
     candidate_matches: tuple[tuple[OverloadArgumentMatchPlan, ...], ...]
     candidate_passed_objects: tuple[bool, ...]
     unsupported_extra_argument_message: str | None = None

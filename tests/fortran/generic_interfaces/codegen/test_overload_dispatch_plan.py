@@ -7,7 +7,8 @@ import pytest
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.semantics.policy_completion import complete_semantic_policies
 from prik.semantics.wrapper_policy import OverloadMatchKind
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.codegen import CBindingGenerator, WrapperCodeGenerator, WrapperPlanner
+from prik.codegen.c.naming import CBindingNames
 
 
 def _plan():
@@ -41,6 +42,38 @@ def test_plan_records_one_exact_numpy_scalar_predicate_per_candidate():
         "Float64",
     ]
     assert [matches[0].rank for matches in overload.candidate_matches] == [0, 0]
+    assert overload.candidate_ids == (0, 1)
+
+
+def test_binding_lowers_public_overload_to_candidate_id_switch():
+    plan = _plan()
+    overload = plan.namespaces[0].overloads[0]
+
+    artifacts = WrapperCodeGenerator().generate(plan)
+    c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
+    dispatcher = CBindingNames.overload_dispatch_function(overload)
+
+    assert f'{{"convert", (PyCFunction){dispatcher}, METH_VARARGS | METH_KEYWORDS' in c_source
+    assert "int candidate_id = -1;" in c_source
+    assert "switch (candidate_id)" in c_source
+    assert "case 0: {" in c_source
+    assert "case 1: {" in c_source
+    assert "wrap__prik_overload_convert_0(self, candidate_args, candidate_kwargs)" in c_source
+    assert "wrap__prik_overload_convert_1(self, candidate_args, candidate_kwargs)" in c_source
+    assert "PyRun_String" not in c_source
+
+
+def test_binding_uses_numpy_bool_scalar_predicate_for_storage_specific_logicals():
+    assert {
+        name: CBindingGenerator._overload_numpy_scalar_kind(name)
+        for name in ("Bool", "Bool8", "Bool16", "Bool32", "Bool64")
+    } == {
+        "Bool": "Bool",
+        "Bool8": "Bool",
+        "Bool16": "Bool",
+        "Bool32": "Bool",
+        "Bool64": "Bool",
+    }
 
 
 def test_generator_rejects_ambiguous_edited_overload_plan_before_emission():
@@ -54,6 +87,28 @@ def test_generator_rejects_ambiguous_edited_overload_plan_before_emission():
     invalid = replace(plan, namespaces=(replace(namespace, overloads=(ambiguous,)),))
 
     with pytest.raises(ValueError, match="ambiguous-overload"):
+        WrapperCodeGenerator().generate(invalid)
+
+
+def test_generator_rejects_duplicate_candidate_ids_before_emission():
+    plan = _plan()
+    namespace = plan.namespaces[0]
+    overload = namespace.overloads[0]
+    duplicate_ids = replace(overload, candidate_ids=(0, 0))
+    invalid = replace(plan, namespaces=(replace(namespace, overloads=(duplicate_ids,)),))
+
+    with pytest.raises(ValueError, match="duplicate-overload-candidate-id"):
+        WrapperCodeGenerator().generate(invalid)
+
+
+def test_generator_rejects_candidate_id_reserved_for_no_match():
+    plan = _plan()
+    namespace = plan.namespaces[0]
+    overload = namespace.overloads[0]
+    invalid_ids = replace(overload, candidate_ids=(-1, 1))
+    invalid = replace(plan, namespaces=(replace(namespace, overloads=(invalid_ids,)),))
+
+    with pytest.raises(ValueError, match="invalid-overload-candidate-id"):
         WrapperCodeGenerator().generate(invalid)
 
 

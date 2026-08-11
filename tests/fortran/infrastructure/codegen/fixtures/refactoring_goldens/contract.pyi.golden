@@ -1,0 +1,136 @@
+from prik.contracts import Addr, Allocatable, Annotated, Arg, Final, Float64, In, Int32, Pass, Pointer, PointerAssociation, Return, Returns, String, bind, native_call, native_type, overload, private, prototype
+
+class holder_item:
+    def __init__(
+        self,
+        *,
+        code: Int32 = 0,
+        weight: Float64 = 0.08
+    ) -> None: ...
+
+    code: Int32 = 0
+    weight: Float64 = 0.08
+
+@native_type(finalizers=('finalize_vector',))
+class vector:
+    def __init__(
+        self,
+        *,
+        x: Float64 = 0.08,
+        y: Float64 = 0.08
+    ) -> None: ...
+
+    x: Float64 = 0.08
+    y: Float64 = 0.08
+    samples: Allocatable[Float64[:]]
+
+    @native_call([Pass(), Addr(Arg(0))])
+    def scale(
+        self,
+        factor: Float64
+    ) -> None: ...
+
+    @bind("shift_vector")
+    @native_call([Addr(Arg(0)), Pass(), Addr(Arg(1))])
+    def shift(
+        self,
+        dx: Float64,
+        dy: Float64
+    ) -> None: ...
+
+    def magnitude(self) -> Float64: ...
+
+    def replace_samples(
+        self,
+        values: Float64[::]
+    ) -> None: ...
+
+    @overload("add_vectors")
+    def __add__(
+        self,
+        right: vector
+    ) -> vector: ...
+
+@prototype
+def scalar_callback(
+    value: In(Addr(Float64))
+) -> Float64: ...
+
+default_count: Final[Int32] = 3
+
+counter: Int32
+
+workspace: Allocatable[Float64[:]]
+
+selected: Annotated[Pointer[Float64[:]], PointerAssociation("runtime")]
+
+active_vector: Allocatable[vector]
+
+selected_vector: Pointer[vector]
+
+@private
+def add_vectors(
+    left: vector,
+    right: vector
+) -> vector: ...
+
+@private
+@native_call([Addr(Arg(0))])
+def integer_to_real(
+    value: Int32
+) -> Float64: ...
+
+@private
+@native_call([Addr(Arg(0))])
+def real_to_integer(
+    value: Float64
+) -> Int32: ...
+
+@native_call([Addr(Arg(0)), Addr(Arg(1)), Arg(2), Arg(3), Arg(4)])
+def summarize(
+    required: Int32,
+    scale: Int32 = ...,
+    values: Float64[::] = ...,
+    label: String = ...,
+    item: vector = ...
+) -> Int32: ...
+
+@native_call([Addr(Arg(0)), Addr(Arg(1))])
+def make_values(
+    count: Int32,
+    fill_value: Float64
+) -> Allocatable[Float64[:]]: ...
+
+@native_call([Arg(0), Addr(Arg(1))])
+def apply_callback(
+    callback: scalar_callback,
+    value: Float64
+) -> Float64: ...
+
+@native_call([Addr(Arg(0)), Return('doubled', 0), Return('status', 1)])
+def split_value(
+    value: Float64
+) -> tuple[Float64, Int32]: ...
+
+@native_call([Allocatable(Arg(0))])
+def reset_allocatable_item(
+    value: holder_item | None
+) -> Returns["value", holder_item] | None: ...
+
+@native_call([Pointer(Arg(0)), Addr(Arg(1))])
+def shift_pointer_item(
+    value: holder_item | None,
+    amount: Float64
+) -> Returns["value", holder_item] | None: ...
+
+@bind("convert")
+@overload("integer_to_real")
+def convert(
+    value: Int32
+) -> Float64: ...
+
+@bind("convert")
+@overload("real_to_integer")
+def convert(
+    value: Float64
+) -> Int32: ...

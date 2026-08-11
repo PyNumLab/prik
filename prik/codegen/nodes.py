@@ -187,6 +187,22 @@ class CBreak(StageRecord):
 
 
 @dataclass
+class CCase(StageRecord):
+    """One value or default branch in a generated C switch."""
+
+    value: CodeExpression | None
+    body: tuple[CDeclaration | CExpressionStatement | CIf | CFor | CBreak | CReturn, ...] = ()
+
+
+@dataclass
+class CSwitch(StageRecord):
+    """C switch statement used for planned integer dispatch keys."""
+
+    expression: CodeExpression
+    cases: tuple[CCase, ...] = ()
+
+
+@dataclass
 class CReturn(StageRecord):
     """C return statement."""
 
@@ -201,7 +217,15 @@ class CFunction(StageRecord):
     return_type: str
     parameters: tuple[CParameter, ...] = ()
     body: tuple[
-        CDeclaration | CExpressionStatement | CAllowThreadsBegin | CAllowThreadsEnd | CIf | CFor | CBreak | CReturn,
+        CDeclaration
+        | CExpressionStatement
+        | CAllowThreadsBegin
+        | CAllowThreadsEnd
+        | CIf
+        | CFor
+        | CBreak
+        | CSwitch
+        | CReturn,
         ...,
     ] = ()
     storage: str | None = None

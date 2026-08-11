@@ -64,7 +64,7 @@ PRIK_C_DOCS_END -->
 | C parser facts and diagnostics | `prik/parsers/c/parser.py` | `docs/developer/c-parser-reference.md`, `docs/user/examples/recipes/inspect-c-api.md` | `tests/c/fixtures/parser/`, `tests/c/semantics/conversion/` |
 | Semantic IR shape and cross-stage metadata | `prik/semantics/models.py`, `prik/semantics/metadata.py`, `prik/semantics/fortran2ir.py`, `prik/semantics/c2ir.py` | `docs/user/reference/semantic-ir.md` | `tests/fortran/semantic_ir/semantics/`, `tests/c/semantics/conversion/` |
 | Generated Fortran bridge | `prik/codegen/fortran/bridge.py`, `prik/codegen/printers/source_printers.py` | `docs/user/reference/fortran-wrapper.md` | `tests/fortran/infrastructure/codegen/`, `tests/fortran/` generated artifact assertions |
-| Generated CPython binding and Python-visible runtime behavior | `prik/codegen/c/binding.py`, `prik/codegen/printers/source_printers.py` | `docs/user/reference/fortran-wrapper.md`, `docs/user/reference/python-api.md` | `tests/fortran/infrastructure/codegen/`, `tests/fortran/` |
+| Generated CPython binding and Python-visible runtime behavior | `prik/codegen/c/binding.py`, `prik/codegen/c/python_surface.py`, `prik/codegen/c/naming.py`, `prik/codegen/printers/source_printers.py` | `docs/user/reference/fortran-wrapper.md`, `docs/user/reference/python-api.md` | `tests/fortran/infrastructure/codegen/`, `tests/fortran/` |
 PRIK_C_DOCS_END -->
 
 ## Package Map
@@ -119,6 +119,8 @@ update this table, the package README files, and the mechanical checks in
 | `prik/codegen/generator.py` | Ordered direct bridge, binding, header, and source generation. |
 | `prik/codegen/fortran/bridge.py` | Direct Fortran bridge lowering from typed plans. |
 | `prik/codegen/c/binding.py` | Direct Python-extension binding lowering from typed plans. |
+| `prik/codegen/c/python_surface.py` | Executable derived-class facade and thin class-overload forwarding source. |
+| `prik/codegen/c/naming.py` | Shared symbols referenced by generated C and the embedded Python facade. |
 | `prik/codegen/printers/source_printers.py` | Native binding, header, and Fortran source printing. |
 | `prik/codegen/printers/pyi_printer.py` | Semantic `.pyi` printing. |
 | `prik/compiling/objects.py` | Native compile object model. |

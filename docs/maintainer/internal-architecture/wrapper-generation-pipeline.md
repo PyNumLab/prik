@@ -121,6 +121,16 @@ owning plan nodes. C method-table emission and generated Python class assembly
 only attach that text; neither backend infers signatures, ownership, mutation,
 nullability, or exception behavior while rendering source.
 
+`OverloadPlan` stores candidates, exact argument-match records, receiver
+conventions, and one unique integer candidate ID per overload set. The C
+binding binds the supplied call shape, evaluates those completed predicates in
+candidate order, and then switches on the selected ID to call the existing
+candidate wrapper. This preserves first-match behavior for overlapping
+optional domains without speculative native calls. Module generics are
+installed directly in the C method table. `PythonSurfaceEmitter` owns only the
+executable derived-class facade; overloaded methods and constructors emitted
+there are thin receiver-forwarding descriptors over private C dispatchers.
+
 `NativeCallSlotPlan` and `LifecycleActionPlan` are subordinate transfer
 details. Native slots stay indexed on `FunctionPlan` because native ABI order
 can interleave argument slots, result slots, literals, and helpers. Lifecycle

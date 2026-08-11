@@ -444,11 +444,23 @@ class WrapperCodeGenerator:
             diagnostics.append(self._diagnostic(overload.owner_path, "empty-overload", overload.python_name))
         expected = len(overload.candidates)
         for actual, code in (
+            (len(overload.candidate_ids), "incomplete-overload-candidate-ids"),
             (len(overload.candidate_matches), "incomplete-overload-match-plan"),
             (len(overload.candidate_passed_objects), "incomplete-overload-call-plan"),
         ):
             if actual != expected:
                 diagnostics.append(self._diagnostic(overload.owner_path, code, (expected, actual)))
+        if len(set(overload.candidate_ids)) != len(overload.candidate_ids):
+            diagnostics.append(
+                self._diagnostic(overload.owner_path, "duplicate-overload-candidate-id", overload.python_name)
+            )
+        if any(
+            type(candidate_id) is not int or not 0 <= candidate_id <= 2_147_483_647
+            for candidate_id in overload.candidate_ids
+        ):
+            diagnostics.append(
+                self._diagnostic(overload.owner_path, "invalid-overload-candidate-id", overload.candidate_ids)
+            )
         return tuple(diagnostics)
 
     def _overload_signature_diagnostics(

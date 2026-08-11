@@ -649,6 +649,7 @@ class WrapperPlanner(ClassVisitor):
             python_name=policy.python_name,
             kind=policy.kind,
             candidates=candidates,
+            candidate_ids=tuple(range(len(candidates))),
             candidate_matches=tuple(
                 tuple(
                     OverloadArgumentMatchPlan(
