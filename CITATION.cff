@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use PRIK in your research, please cite this software."
+title: "PRIK — Python Runtime Interop Kit"
+type: software
+
+authors:
+  - family-names: Hadjout
+    given-names: Said
+    orcid: "https://orcid.org/0000-0003-3878-3146"
+
+repository-code: "https://github.com/PyNumLab/prik"
+url: "https://pynumlab.github.io/prik/"
+license: MIT
+version: "0.2.1"
+date-released: "2026-08-11"
