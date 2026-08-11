@@ -10,12 +10,12 @@ maintainer guide below documents the same control flow.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field as dataclass_field, replace
 from pathlib import Path
 from types import MappingProxyType
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from prik.utilities.declaration_expressions import (
     evaluate_integer_expression,
@@ -95,14 +95,14 @@ The parser flow is intentionally grammar-shaped. Given this source:
     end module m
 
 `parse_file` preprocesses lines, validates obvious malformed headers, and asks
-`_SourceUnitScanner.slice_child_units` to create one file-level `ModuleUnit`.
-The `_visit_ModuleUnit` handler then receives only that substring and asks
-`_SourceUnitScanner.split_unit_parts` for header/specification/contains regions,
-visits the module specification part in a module scope, and recursively slices
-its direct children. The contained procedure is dispatched to
+`_SourceUnitScanner.scan_file_units` to create one file-level `ModuleUnit`.
+The scanner classifies that unit's header, grammar regions, and retained direct
+children while constructing it. `_visit_ModuleUnit` reads that stored
+classification, visits the module specification part in a module scope, and
+dispatches the contained procedure to
 `_visit_ProcedureUnit`, which creates a procedure scope and visits only its
 specification part; the execution part and internal subprograms are ignored for
-wrapper metadata. Internal subprogram boundaries are still sliced so malformed
+wrapper metadata. Internal subprogram boundaries are still scanned so malformed
 unit structure is rejected before their contents are skipped.
 
 Scoping follows the same recursion. A helper that parses `integer :: n` or
@@ -176,16 +176,27 @@ _FORTRAN_LINEMARKER_RE = re.compile(
 _INTRINSIC_COMPILE_TIME_MODULES = frozenset({"iso_c_binding", "iso_fortran_env"})
 
 
-_PreprocessedLines = list[tuple[str, int | None, str | None]]
+_PreprocessedLine = tuple[str, int | None, str | None]
+_PreprocessedLines = list[_PreprocessedLine]
 _SourceOrLines = str | _PreprocessedLines
+_UnitRegion = Literal["specification", "execution", "contains"]
+_UnitEndAction = Literal["not_end", "ignore", "close"]
 
 
 @dataclass(frozen=True)
 class SourceUnit:
-    """Represent one recursively sliced Fortran grammar unit.
+    """Represent one fully classified Fortran grammar unit.
 
-    The slicer retains the unit's normalized lines and original source bounds
-    so visitors can parse a local region without losing diagnostic locations.
+    The source scanner owns both the unit's exact normalized source span and
+    its structural classification. ``specification``, ``execution``, and
+    ``contains`` exclude nested unit bodies, while ``children`` contains only
+    direct units that later parser work must visit or validate. A retained
+    child's ``parent_region`` preserves whether it appeared before or after
+    its parent's direct ``contains`` statement.
+
+    Procedure-contained internal procedures are structurally scanned but are
+    not retained because PRIK cannot wrap them. Procedure-local interfaces are
+    retained because their declarations type callback dummy arguments.
     Concrete subclasses select the matching ``_visit_*`` handler.
     """
 
@@ -194,6 +205,13 @@ class SourceUnit:
     lines: _PreprocessedLines
     start_line: int | None
     end_line: int | None
+    parent_region: _UnitRegion | None
+    header: _PreprocessedLine
+    specification: _PreprocessedLines
+    execution: _PreprocessedLines
+    contains: _PreprocessedLines
+    footer: _PreprocessedLine | None
+    children: tuple[SourceUnit, ...]
 
 
 @dataclass(frozen=True)
@@ -308,18 +326,42 @@ class _UnitGrammar:
 
 
 @dataclass(frozen=True)
-class _UnitParts:
-    """Store a sliced unit's header, grammar regions, and optional footer.
+class _OpenUnit:
+    """Describe one source unit that opened but has not yet closed.
 
-    The four regions retain their original line mappings.  Visitors parse only
-    the regions supported by their corresponding :class:`_UnitGrammar`.
+    :meth:`_SourceUnitScanner.find_unit_end` stores these records in a stack.
+    The bottom record is the requested outer unit and the top record is the
+    innermost unit whose terminator is currently expected. Closing the top unit
+    pops it and exposes its container; the record itself performs no parsing.
+
+    ``kind`` is the normalized unit category used to select the matching
+    terminator grammar. ``name`` is the optional source name checked against a
+    named terminator. ``region`` is ``"specification"`` before execution or
+    ``contains`` begins, ``"execution"`` while unit-like text must be treated
+    as executable-body content, or ``"contains"`` after the unit's direct
+    ``contains`` transition.
+
+    For example, the stack evolves as follows while scanning nested units::
+
+        Source line                    Open-unit stack (outer -> inner)
+        module owner                  module owner [specification]
+        interface                     module owner [specification]
+                                      -> interface <unnamed> [specification]
+        subroutine callback()         module owner [specification]
+                                      -> interface <unnamed> [specification]
+                                      -> procedure callback [specification]
+        end subroutine callback       module owner [specification]
+                                      -> interface <unnamed> [specification]
+        end interface                 module owner [specification]
+        contains                      module owner [contains]
+
+    This is structural scan state only. It never contains a
+    :class:`_ParserScope`, declarations, or constructed parser models.
     """
 
-    header: tuple[str, int | None, str | None] | None
-    specification: _PreprocessedLines
-    execution: _PreprocessedLines
-    contains: _PreprocessedLines
-    footer: tuple[str, int | None, str | None] | None
+    kind: str
+    name: str | None
+    region: _UnitRegion = "specification"
 
 
 def _raise_invalid_fortran_syntax_line(
@@ -341,12 +383,12 @@ def _raise_invalid_fortran_syntax_line(
 
 
 class _SourceUnitScanner:
-    """Identify source-unit boundaries and split units into grammar regions.
+    """Identify boundaries and construct fully classified source units.
 
     The scanner is deliberately stateless. It recognizes lexical structure and
-    returns exact :class:`SourceUnit` substrings or :class:`_UnitParts`; it does
-    not construct semantic models, mutate parser scopes, or decide which parsed
-    declarations belong in the wrapper-facing representation.
+    returns :class:`SourceUnit` objects that already own their regions and
+    retained direct children. It does not construct semantic models, mutate
+    parser scopes, or decide which declarations enter wrapper-facing models.
     """
 
     _GRAMMARS: ClassVar[Mapping[str, _UnitGrammar]] = MappingProxyType(
@@ -391,42 +433,24 @@ class _SourceUnitScanner:
         """Return the immutable grammar profile for one source-unit kind."""
         return cls._GRAMMARS.get(kind, _UnitGrammar(kind=kind))
 
-    def slice_child_units(
+    def scan_file_units(
         self,
         lines: _PreprocessedLines,
         *,
-        parent_kind: str,
-        allowed_kinds: set[str] | None = None,
         filename: str | None = None,
-        skip_execution_region: bool = False,
     ) -> list[SourceUnit]:
-        """Return exact substrings for the direct children of one parent.
+        """Construct the direct source units found at file scope.
 
-        ``parent_kind`` supplies only the structural grammar context needed to
-        interpret interface declarations. Parser scopes and semantic models do
-        not cross this boundary. When ``skip_execution_region`` is true, unit-
-        like text after execution begins is intentionally left opaque.
+        Nested children and every unit region are classified while each
+        returned unit is constructed. Parser scopes and semantic models do not
+        cross this boundary.
         """
         units: list[SourceUnit] = []
         index = 0
-        region = "specification"
         while index < len(lines):
-            line, lineno, _ = lines[index]
+            line, _lineno, _source_line = lines[index]
             stripped = line.strip()
             if stripped.startswith("#"):
-                index += 1
-                continue
-            if skip_execution_region:
-                if self.is_contains_transition(stripped):
-                    region = "contains"
-                    index += 1
-                    continue
-                if region == "specification" and self.is_executable_statement_start(stripped):
-                    region = "execution"
-                if region == "execution":
-                    index += 1
-                    continue
-            if parent_kind == "interface" and re.match(r"^module\s+procedure\b", stripped, re.IGNORECASE):
                 index += 1
                 continue
             start = self.classify_unit_start(line)
@@ -434,40 +458,246 @@ class _SourceUnitScanner:
                 index += 1
                 continue
             kind, name = start
-            if allowed_kinds is not None and kind not in allowed_kinds:
-                index += 1
-                continue
-
-            end_index = self.find_unit_end(lines, index, kind, filename=filename)
-            if end_index is None:
-                if kind == "interface" and (lines[index][2] or "").strip().lower().startswith("end interface"):
-                    index += 1
-                    continue
-                if parent_kind == "interface" and kind == "procedure":
-                    # A procedure declaration in an interface may be closed by
-                    # `end interface` instead of its own explicit terminator.
-                    end_index = len(lines) - 1
-                else:
-                    label = self.unit_label(kind)
-                    raise FortranParseError(
-                        f"Missing end {label} for {label} '{name or '<unnamed>'}'.",
-                        filename=filename,
-                        line_number=lineno,
-                        source_line=lines[index][2],
-                        code="PARSE_MISSING_UNIT_END",
-                    )
-
+            end_index = self._required_unit_end(
+                lines,
+                index,
+                kind,
+                name,
+                filename=filename,
+            )
             units.append(
-                _SOURCE_UNIT_TYPES[kind](
-                    kind=kind,
-                    name=name,
-                    lines=lines[index : end_index + 1],
-                    start_line=lineno,
-                    end_line=lines[end_index][1],
+                self._build_source_unit(
+                    kind,
+                    name,
+                    lines[index : end_index + 1],
+                    parent_region=None,
+                    filename=filename,
                 )
             )
             index = end_index + 1
         return units
+
+    def _required_unit_end(
+        self,
+        lines: _PreprocessedLines,
+        start_index: int,
+        kind: str,
+        name: str | None,
+        *,
+        filename: str | None,
+    ) -> int:
+        """Return a file-level end index or raise the missing-end diagnostic."""
+        end_index = self.find_unit_end(lines, start_index, kind, filename=filename)
+        if end_index is not None:
+            return end_index
+        label = self.unit_label(kind)
+        raise FortranParseError(
+            f"Missing end {label} for {label} '{name or '<unnamed>'}'.",
+            filename=filename,
+            line_number=lines[start_index][1],
+            source_line=lines[start_index][2],
+            code="PARSE_MISSING_UNIT_END",
+        )
+
+    def _build_source_unit(
+        self,
+        kind: str,
+        name: str | None,
+        lines: _PreprocessedLines,
+        *,
+        parent_region: _UnitRegion | None,
+        filename: str | None,
+    ) -> SourceUnit:
+        """Classify one exact source span and recursively build needed children."""
+        grammar = self.grammar(kind)
+        header = lines[0]
+        footer = lines[-1] if lines and self.unit_end_matches(kind, lines[-1][0]) else None
+        body = lines[1:-1] if footer is not None else lines[1:]
+        specification, execution, contains, children = self._classify_unit_body(
+            grammar,
+            name,
+            body,
+            filename=filename,
+        )
+        return _SOURCE_UNIT_TYPES[kind](
+            kind=kind,
+            name=name,
+            lines=lines,
+            start_line=header[1],
+            end_line=lines[-1][1],
+            parent_region=parent_region,
+            header=header,
+            specification=specification,
+            execution=execution,
+            contains=contains,
+            footer=footer,
+            children=children,
+        )
+
+    def _classify_unit_body(
+        self,
+        grammar: _UnitGrammar,
+        name: str | None,
+        body: _PreprocessedLines,
+        *,
+        filename: str | None,
+    ) -> tuple[_PreprocessedLines, _PreprocessedLines, _PreprocessedLines, tuple[SourceUnit, ...]]:
+        """Separate body lines and construct retained direct child units.
+
+        The input excludes the owning unit's header and explicit footer. Each
+        ordinary line is appended to exactly one grammar region. A complete
+        child span is removed from those line regions and, when later parser
+        work needs it, returned as one fully classified direct child.
+        """
+        specification: _PreprocessedLines = []
+        execution: _PreprocessedLines = []
+        contains: _PreprocessedLines = []
+        children: list[SourceUnit] = []
+        region: _UnitRegion = "specification"
+        index = 0
+
+        while index < len(body):
+            source_line = body[index]
+            stripped = source_line[0].strip()
+            if not stripped:
+                index += 1
+                continue
+            if self._is_direct_contains_transition(
+                grammar,
+                name,
+                source_line,
+                filename=filename,
+            ):
+                region = "contains"
+                index += 1
+                continue
+            if region == "execution":
+                execution.append(source_line)
+                index += 1
+                continue
+            if grammar.kind == "interface" and re.match(r"^module\s+procedure\b", stripped, re.IGNORECASE):
+                specification.append(source_line)
+                index += 1
+                continue
+            child = self._classified_child_at(
+                grammar,
+                region,
+                body,
+                index,
+                filename=filename,
+            )
+            if child is not None:
+                retained_child, next_index = child
+                if retained_child is not None:
+                    children.append(retained_child)
+                index = next_index
+                continue
+            region = self._region_for_line(grammar, region, stripped)
+            self._append_region_line(
+                region,
+                source_line,
+                specification=specification,
+                execution=execution,
+                contains=contains,
+            )
+            index += 1
+        return specification, execution, contains, tuple(children)
+
+    def _is_direct_contains_transition(
+        self,
+        grammar: _UnitGrammar,
+        name: str | None,
+        source_line: _PreprocessedLine,
+        *,
+        filename: str | None,
+    ) -> bool:
+        """Validate and recognize the owning unit's direct ``contains`` line."""
+        stripped = source_line[0].strip()
+        if not self.is_contains_transition(stripped):
+            return False
+        if not grammar.has_contains_part:
+            _raise_invalid_fortran_syntax_line(
+                stripped,
+                context=f"{self.unit_label(grammar.kind)} '{name or '<unnamed>'}'",
+                filename=filename,
+                lineno=source_line[1],
+                source_line=source_line[2],
+            )
+        return True
+
+    def _classified_child_at(
+        self,
+        grammar: _UnitGrammar,
+        region: _UnitRegion,
+        body: _PreprocessedLines,
+        index: int,
+        *,
+        filename: str | None,
+    ) -> tuple[SourceUnit | None, int] | None:
+        """Return a classified child and next index when a complete child starts.
+
+        The child value is ``None`` for a valid internal procedure that PRIK
+        cannot wrap and therefore does not retain. The returned index always
+        skips the entire structurally validated child span.
+        """
+        start = self.classify_unit_start(body[index][0].strip())
+        if start is None:
+            return None
+        child_kind, child_name = start
+        child_end = self.find_unit_end(body, index, child_kind, filename=filename)
+        if child_end is None and grammar.kind == "interface" and child_kind == "procedure":
+            child_end = len(body) - 1
+        if child_end is None:
+            return None
+        if not self._retain_child(grammar, region, child_kind):
+            return None, child_end + 1
+        child = self._build_source_unit(
+            child_kind,
+            child_name,
+            body[index : child_end + 1],
+            parent_region=region,
+            filename=filename,
+        )
+        return child, child_end + 1
+
+    def _region_for_line(
+        self,
+        grammar: _UnitGrammar,
+        region: _UnitRegion,
+        stripped: str,
+    ) -> _UnitRegion:
+        """Advance a specification region when its first executable line appears."""
+        if region == "specification" and grammar.has_execution_part and self.is_executable_statement_start(stripped):
+            return "execution"
+        return region
+
+    @staticmethod
+    def _append_region_line(
+        region: _UnitRegion,
+        source_line: _PreprocessedLine,
+        *,
+        specification: _PreprocessedLines,
+        execution: _PreprocessedLines,
+        contains: _PreprocessedLines,
+    ) -> None:
+        """Append one non-child line to its already-selected grammar region."""
+        if region == "specification":
+            specification.append(source_line)
+        elif region == "execution":
+            execution.append(source_line)
+        else:
+            contains.append(source_line)
+
+    @staticmethod
+    def _retain_child(grammar: _UnitGrammar, region: _UnitRegion, child_kind: str) -> bool:
+        """Return whether later parser work needs the classified direct child.
+
+        Program and procedure internal procedures are valid but inaccessible
+        wrapper targets, so their boundaries are checked and their bodies are
+        skipped without retaining another tree level. Other non-execution
+        children remain available for model construction or syntax validation.
+        """
+        return not (grammar.ignores_contains_children and region == "contains" and child_kind == "procedure")
 
     def find_unit_end(
         self,
@@ -480,86 +710,153 @@ class _SourceUnitScanner:
         """Return the matching terminator index while respecting nested units."""
         start = self.classify_unit_start(lines[start_index][0])
         start_name = start[1] if start is not None else None
-        stack: list[tuple[str, str | None, int | None, str | None, str]] = [
-            (kind, start_name, lines[start_index][1], lines[start_index][2], "specification")
-        ]
+        stack = [_OpenUnit(kind=kind, name=start_name)]
         index = start_index + 1
         while index < len(lines):
             line, lineno, source_line = lines[index]
             line = line.strip()
-            if not line:
-                index += 1
-                continue
-            current_kind, current_name, current_line, current_source, current_region = stack[-1]
-            if current_kind == "interface" and re.match(r"^module\s+procedure\b", line, re.IGNORECASE):
+            current = stack[-1]
+            if self._skip_unit_scan_line(current, line):
                 index += 1
                 continue
 
-            closes_current, end_name = self.parse_unit_end(current_kind, line)
-            if closes_current:
-                if end_name and current_name and end_name.lower() != current_name.lower():
-                    if current_kind == "procedure" and self.has_preferred_unit_end_ahead(
-                        lines,
-                        index,
-                        current_kind,
-                        current_name,
-                    ):
-                        index += 1
-                        continue
-                    label = self.unit_label(current_kind)
-                    if current_kind != "procedure":
-                        raise FortranParseError(
-                            f"Mismatched end {label} name '{end_name}' for {label} '{current_name}'.",
-                            filename=filename,
-                            line_number=lineno,
-                            source_line=source_line,
-                            code="PARSE_MISMATCHED_UNIT_END",
-                        )
+            end_action = self._unit_end_action(
+                current,
+                lines,
+                index,
+                line,
+                filename=filename,
+                lineno=lineno,
+                source_line=source_line,
+            )
+            if end_action == "ignore":
+                index += 1
+                continue
+            if end_action == "close":
                 stack.pop()
                 if not stack:
                     return index
                 index += 1
                 continue
 
-            grammar = self.grammar(current_kind)
-            if self.is_contains_transition(line) and grammar.has_contains_part:
-                stack[-1] = (current_kind, current_name, current_line, current_source, "contains")
+            transitioned = self._unit_after_region_transition(current, line)
+            if transitioned is not None:
+                stack[-1] = transitioned
                 index += 1
                 continue
-            if (
-                current_region == "specification"
-                and grammar.has_execution_part
-                and self.is_executable_statement_start(line)
-            ):
-                stack[-1] = (current_kind, current_name, current_line, current_source, "execution")
-                index += 1
-                continue
-            if current_region == "execution":
+            if current.region == "execution":
                 index += 1
                 continue
 
-            start = self.classify_unit_start(line)
-            if start is not None and self.has_unit_end_ahead(lines, index, start[0]):
-                nested_kind, nested_name = start
-                stack.append((nested_kind, nested_name, lineno, source_line, "specification"))
+            nested = self._nested_open_unit(lines, index, line)
+            if nested is not None:
+                stack.append(nested)
                 index += 1
                 continue
 
-            for open_kind, _open_name, _open_line, _open_source, _open_region in reversed(stack):
-                closes_open, _end_name = self.parse_unit_end(open_kind, line)
-                if not closes_open:
-                    continue
-                label = self.unit_label(current_kind)
-                expected = self.unit_label(open_kind)
-                raise FortranParseError(
-                    f"Unexpected end {expected} while parsing {label} '{current_name or '<unnamed>'}'.",
-                    filename=filename,
-                    line_number=lineno,
-                    source_line=source_line,
-                    code="PARSE_UNEXPECTED_UNIT_END",
-                )
+            self._validate_no_outer_unit_end(
+                stack,
+                current,
+                line,
+                filename=filename,
+                lineno=lineno,
+                source_line=source_line,
+            )
             index += 1
         return None
+
+    @staticmethod
+    def _skip_unit_scan_line(current: _OpenUnit, line: str) -> bool:
+        """Skip blank lines and interface ``module procedure`` references."""
+        return not line or bool(current.kind == "interface" and re.match(r"^module\s+procedure\b", line, re.IGNORECASE))
+
+    def _unit_end_action(
+        self,
+        current: _OpenUnit,
+        lines: _PreprocessedLines,
+        index: int,
+        line: str,
+        *,
+        filename: str | None,
+        lineno: int | None,
+        source_line: str | None,
+    ) -> _UnitEndAction:
+        """Classify how one line affects the innermost open unit.
+
+        A non-terminator returns ``"not_end"``. A matching terminator returns
+        ``"close"``. A mismatched procedure terminator returns ``"ignore"``
+        only when a preferred exact or unnamed terminator still occurs later;
+        structural unit name mismatches retain their existing diagnostic.
+        """
+        closes_current, end_name = self.parse_unit_end(current.kind, line)
+        if not closes_current:
+            return "not_end"
+        names_mismatch = bool(end_name and current.name and end_name.lower() != current.name.lower())
+        if not names_mismatch:
+            return "close"
+        if current.kind == "procedure":
+            if self.has_preferred_unit_end_ahead(lines, index, current.kind, current.name):
+                return "ignore"
+            return "close"
+        label = self.unit_label(current.kind)
+        raise FortranParseError(
+            f"Mismatched end {label} name '{end_name}' for {label} '{current.name}'.",
+            filename=filename,
+            line_number=lineno,
+            source_line=source_line,
+            code="PARSE_MISMATCHED_UNIT_END",
+        )
+
+    def _unit_after_region_transition(self, current: _OpenUnit, line: str) -> _OpenUnit | None:
+        """Return the updated open unit when ``line`` changes its region."""
+        grammar = self.grammar(current.kind)
+        if self.is_contains_transition(line) and grammar.has_contains_part:
+            return replace(current, region="contains")
+        if (
+            current.region == "specification"
+            and grammar.has_execution_part
+            and self.is_executable_statement_start(line)
+        ):
+            return replace(current, region="execution")
+        return None
+
+    def _nested_open_unit(
+        self,
+        lines: _PreprocessedLines,
+        index: int,
+        line: str,
+    ) -> _OpenUnit | None:
+        """Return a nested open-unit record when a complete child starts here."""
+        start = self.classify_unit_start(line)
+        if start is None or not self.has_unit_end_ahead(lines, index, start[0]):
+            return None
+        nested_kind, nested_name = start
+        return _OpenUnit(kind=nested_kind, name=nested_name)
+
+    def _validate_no_outer_unit_end(
+        self,
+        stack: list[_OpenUnit],
+        current: _OpenUnit,
+        line: str,
+        *,
+        filename: str | None,
+        lineno: int | None,
+        source_line: str | None,
+    ) -> None:
+        """Reject a line that closes an outer unit before the current unit."""
+        for open_unit in reversed(stack):
+            closes_open, _end_name = self.parse_unit_end(open_unit.kind, line)
+            if not closes_open:
+                continue
+            label = self.unit_label(current.kind)
+            expected = self.unit_label(open_unit.kind)
+            raise FortranParseError(
+                f"Unexpected end {expected} while parsing {label} '{current.name or '<unnamed>'}'.",
+                filename=filename,
+                line_number=lineno,
+                source_line=source_line,
+                code="PARSE_UNEXPECTED_UNIT_END",
+            )
 
     def has_unit_end_ahead(self, lines: _PreprocessedLines, start_index: int, kind: str) -> bool:
         """Return whether a candidate opener has a usable later terminator."""
@@ -584,123 +881,6 @@ class _SourceUnitScanner:
             if matched and (not start_name or not end_name or end_name.lower() == start_name.lower()):
                 return True
         return False
-
-    def split_unit_parts(self, unit: SourceUnit, *, filename: str | None = None) -> _UnitParts:
-        """Split one unit substring into specification, execution, and contains."""
-        grammar = self.grammar(unit.kind)
-        header = unit.lines[0] if unit.lines else None
-        footer = unit.lines[-1] if unit.lines and self.unit_end_matches(unit.kind, unit.lines[-1][0]) else None
-        body = unit.lines[1:-1] if footer is not None else unit.lines[1:]
-        specification: _PreprocessedLines = []
-        execution: _PreprocessedLines = []
-        contains: _PreprocessedLines = []
-        region = "specification"
-        index = 0
-
-        while index < len(body):
-            line, _, _ = body[index]
-            stripped = line.strip()
-            if not stripped:
-                index += 1
-                continue
-            if self.is_contains_transition(stripped):
-                if not grammar.has_contains_part:
-                    _raise_invalid_fortran_syntax_line(
-                        stripped,
-                        context=f"{self.unit_label(grammar.kind)} '{unit.name or '<unnamed>'}'",
-                        filename=filename,
-                        lineno=body[index][1],
-                        source_line=body[index][2],
-                    )
-                region = "contains"
-                index += 1
-                continue
-
-            if grammar.kind == "interface" and re.match(r"^module\s+procedure\b", stripped, re.IGNORECASE):
-                specification.append(body[index])
-                index += 1
-                continue
-
-            start = self.classify_unit_start(stripped)
-            if start is not None:
-                child_kind, _ = start
-                child_end = self.find_unit_end(body, index, child_kind, filename=filename)
-                if child_end is not None:
-                    index = child_end + 1
-                    continue
-                if grammar.kind == "interface" and child_kind == "procedure":
-                    break
-
-            if (
-                region == "specification"
-                and grammar.has_execution_part
-                and self.is_executable_statement_start(stripped)
-            ):
-                region = "execution"
-
-            if region == "specification":
-                specification.append(body[index])
-            elif region == "execution":
-                execution.append(body[index])
-            else:
-                contains.append(body[index])
-            index += 1
-
-        return _UnitParts(
-            header=header,
-            specification=specification,
-            execution=execution,
-            contains=contains,
-            footer=footer,
-        )
-
-    def child_unit_region(self, unit: SourceUnit, parts: _UnitParts, child: SourceUnit) -> str:
-        """Return the parent grammar region containing one direct child."""
-        child_line = child.start_line
-        if child_line is None:
-            return "specification"
-        contains_line = self.direct_contains_line(unit, filename=None)
-        if contains_line is not None and child_line > contains_line:
-            return "contains"
-        execution_line = next(
-            (lineno for _line, lineno, _source_line in parts.execution if lineno is not None),
-            None,
-        )
-        if execution_line is not None and child_line >= execution_line:
-            return "execution"
-        return "specification"
-
-    def nonexecution_child_units(self, unit: SourceUnit, *, filename: str | None) -> list[SourceUnit]:
-        """Return direct nested units outside an intentionally opaque execution part."""
-        grammar = self.grammar(unit.kind)
-        child_units = self.slice_child_units(
-            unit.lines[1:-1],
-            parent_kind=unit.kind,
-            filename=filename,
-            skip_execution_region=grammar.has_execution_part,
-        )
-        if not grammar.has_execution_part:
-            return child_units
-        parts = self.split_unit_parts(unit, filename=filename)
-        return [child for child in child_units if self.child_unit_region(unit, parts, child) != "execution"]
-
-    def direct_contains_line(self, unit: SourceUnit, *, filename: str | None) -> int | None:
-        """Return the direct ``contains`` line while skipping nested units."""
-        body = unit.lines[1:-1]
-        index = 0
-        while index < len(body):
-            line, lineno, _source_line = body[index]
-            stripped = line.strip()
-            if self.is_contains_transition(stripped):
-                return lineno
-            start = self.classify_unit_start(stripped)
-            if start is not None:
-                child_end = self.find_unit_end(body, index, start[0], filename=filename)
-                if child_end is not None:
-                    index = child_end + 1
-                    continue
-            index += 1
-        return None
 
     @staticmethod
     def parse_derived_type_start(line: str) -> tuple[str, list[str]] | None:
@@ -1044,14 +1224,13 @@ class FortranParser(ClassVisitor):
 
     Parsing pipeline used by `parse_file`:
     1. Preprocess source into normalized lines (`_preprocessed_lines`).
-    2. Slice direct file-level source units (`module`, `submodule`,
+    2. Construct fully classified direct file-level source units (`module`, `submodule`,
        `program`, standalone `procedure`, `block data`, file-level
        `interface`, and file-level derived type).
     3. Dispatch each `SourceUnit` through its `_visit_<ClassName>` handler.
-    4. Each unit visitor parses only that unit's own substring, builds its own
-       `_ParserScope`, splits the unit into grammar regions, visits the
-       specification part, and recursively slices direct children where the
-       grammar allows them.
+    4. Each unit visitor builds its own `_ParserScope`, visits the unit's
+       scanner-owned specification region, and consumes its retained direct
+       children where the grammar allows them.
     5. Shared declaration helpers push variables, procedure symbols, and type
        fields into the active scope model.
     6. Build `FortranFile` symbol table and standalone entity lists.
@@ -1266,7 +1445,7 @@ class FortranParser(ClassVisitor):
         filename: str | None,
     ) -> FortranModule:
         """Visit a sliced `module ... end module` unit."""
-        header = unit.lines[0]
+        header = unit.header
         module = self._parse_module_header(header[0].strip(), filename, lineno=header[1], source_line=header[2])
         if module is None:  # pragma: no cover - slicer only dispatches module units with module headers.
             raise FortranParseError(
@@ -1277,14 +1456,11 @@ class FortranParser(ClassVisitor):
                 code="PARSE_EXPECTED_UNIT",
             )
         scope = self._helper_scope_for_model("module", module, parent=parent_scope)
-        parts = self._source_unit_scanner.split_unit_parts(unit, filename=filename)
-        self._parse_specification_part(scope, parts.specification, filename=filename)
+        self._parse_specification_part(scope, unit.specification, filename=filename)
 
-        child_units = self._source_unit_scanner.slice_child_units(
-            unit.lines[1:-1], parent_kind=scope.kind, filename=filename
-        )
-        self._helper_validate_child_unit_regions(unit, parts, child_units, filename=filename)
-        self._helper_validate_contains_lines(scope, parts.contains, filename=filename)
+        child_units = unit.children
+        self._helper_validate_child_unit_regions(unit, child_units, filename=filename)
+        self._helper_validate_contains_lines(scope, unit.contains, filename=filename)
         self._helper_validate_sibling_units(child_units, parent_scope=scope, filename=filename)
         self._populate_module_like_children(module, child_units, scope=scope, filename=filename)
         self._validate_module_variables(module, filename)
@@ -1299,7 +1475,7 @@ class FortranParser(ClassVisitor):
         filename: str | None,
     ) -> FortranSubmodule:
         """Visit a sliced `submodule (...) name ... end submodule` unit."""
-        header = unit.lines[0]
+        header = unit.header
         submodule = self._parse_submodule_header(header[0].strip(), filename)
         if submodule is None:  # pragma: no cover - slicer only dispatches submodule units with submodule headers.
             raise FortranParseError(
@@ -1310,14 +1486,11 @@ class FortranParser(ClassVisitor):
                 code="PARSE_EXPECTED_UNIT",
             )
         scope = self._helper_scope_for_model("submodule", submodule, parent=parent_scope)
-        parts = self._source_unit_scanner.split_unit_parts(unit, filename=filename)
-        self._parse_specification_part(scope, parts.specification, filename=filename)
+        self._parse_specification_part(scope, unit.specification, filename=filename)
 
-        child_units = self._source_unit_scanner.slice_child_units(
-            unit.lines[1:-1], parent_kind=scope.kind, filename=filename
-        )
-        self._helper_validate_child_unit_regions(unit, parts, child_units, filename=filename)
-        self._helper_validate_contains_lines(scope, parts.contains, filename=filename)
+        child_units = unit.children
+        self._helper_validate_child_unit_regions(unit, child_units, filename=filename)
+        self._helper_validate_contains_lines(scope, unit.contains, filename=filename)
         self._helper_validate_sibling_units(child_units, parent_scope=scope, filename=filename)
         self._populate_module_like_children(submodule, child_units, scope=scope, filename=filename)
         self._validate_module_variables(submodule, filename)
@@ -1369,7 +1542,7 @@ class FortranParser(ClassVisitor):
         filename: str | None,
     ) -> FortranProgram:
         """Visit a sliced `program ... end program` unit."""
-        header = unit.lines[0]
+        header = unit.header
         program = self._parse_program_header(header[0].strip(), filename)
         if program is None:  # pragma: no cover - slicer only dispatches program units with program headers.
             raise FortranParseError(
@@ -1380,17 +1553,14 @@ class FortranParser(ClassVisitor):
                 code="PARSE_EXPECTED_UNIT",
             )
         scope = self._helper_scope_for_model("program", program, parent=parent_scope)
-        parts = self._source_unit_scanner.split_unit_parts(unit, filename=filename)
-        self._parse_specification_part(scope, parts.specification, filename=filename)
-        child_units = self._source_unit_scanner.nonexecution_child_units(unit, filename=filename)
-        self._helper_validate_child_unit_regions(unit, parts, child_units, filename=filename)
-        self._helper_validate_contains_lines(scope, parts.contains, filename=filename)
+        self._parse_specification_part(scope, unit.specification, filename=filename)
+        child_units = unit.children
+        self._helper_validate_child_unit_regions(unit, child_units, filename=filename)
+        self._helper_validate_contains_lines(scope, unit.contains, filename=filename)
         self._helper_validate_ignored_child_units(
             [child for child in child_units if child.kind != "enum"],
             parent_scope=scope,
             filename=filename,
-            unit=unit,
-            parts=parts,
         )
         program.enums.extend(
             self._visit(child, parent_scope=scope, filename=filename) for child in child_units if child.kind == "enum"
@@ -1411,7 +1581,7 @@ class FortranParser(ClassVisitor):
         filename: str | None,
     ) -> FortranBlockData:
         """Visit a sliced `block data ... end block data` unit."""
-        header = unit.lines[0]
+        header = unit.header
         block_data = self._parse_block_data_header(header[0].strip(), filename)
         if block_data is None:  # pragma: no cover - slicer only dispatches block-data units with block-data headers.
             raise FortranParseError(
@@ -1422,12 +1592,9 @@ class FortranParser(ClassVisitor):
                 code="PARSE_EXPECTED_UNIT",
             )
         scope = self._helper_scope_for_model("block_data", block_data, parent=parent_scope)
-        parts = self._source_unit_scanner.split_unit_parts(unit, filename=filename)
-        self._parse_specification_part(scope, parts.specification, filename=filename)
-        child_units = self._source_unit_scanner.slice_child_units(
-            unit.lines[1:-1], parent_kind=scope.kind, filename=filename
-        )
-        self._helper_validate_child_unit_regions(unit, parts, child_units, filename=filename)
+        self._parse_specification_part(scope, unit.specification, filename=filename)
+        child_units = unit.children
+        self._helper_validate_child_unit_regions(unit, child_units, filename=filename)
         self._validate_variable_declarations(
             block_data.variables,
             owner_kind="block data",
@@ -1444,7 +1611,7 @@ class FortranParser(ClassVisitor):
         filename: str | None,
     ) -> FortranDerivedType:
         """Visit a sliced derived-type definition."""
-        header = unit.lines[0]
+        header = unit.header
         dtype = self._init_derived_type(header[0].strip(), current_module=parent_scope.module_owner)
         if dtype is None:  # pragma: no cover - slicer only dispatches derived-type units with type headers.
             raise FortranParseError(
@@ -1455,9 +1622,8 @@ class FortranParser(ClassVisitor):
                 code="PARSE_EXPECTED_UNIT",
             )
         scope = self._helper_scope_for_model("derived_type", dtype, parent=parent_scope)
-        parts = self._source_unit_scanner.split_unit_parts(unit, filename=filename)
-        self._parse_specification_part(scope, parts.specification, filename=filename)
-        for line, lineno, source_line in parts.contains:
+        self._parse_specification_part(scope, unit.specification, filename=filename)
+        for line, lineno, source_line in unit.contains:
             stripped = line.strip()
             if not stripped:
                 continue
@@ -1468,10 +1634,8 @@ class FortranParser(ClassVisitor):
                 lineno=lineno,
                 source_line=source_line,
             )
-        child_units = self._source_unit_scanner.slice_child_units(
-            unit.lines[1:-1], parent_kind=scope.kind, filename=filename
-        )
-        self._helper_validate_child_unit_regions(unit, parts, child_units, filename=filename)
+        child_units = unit.children
+        self._helper_validate_child_unit_regions(unit, child_units, filename=filename)
         self._validate_derived_type_fields(dtype, filename)
         return dtype
 
@@ -1493,7 +1657,7 @@ class FortranParser(ClassVisitor):
         filename: str | None,
     ) -> FortranInterface:
         """Visit a sliced interface block."""
-        header = unit.lines[0]
+        header = unit.header
         starts_interface, interface_name = self._source_unit_scanner.parse_interface_header(header[0].strip())
         if not starts_interface:  # pragma: no cover - slicer only dispatches interface units with interface headers.
             raise FortranParseError(
@@ -1509,14 +1673,9 @@ class FortranParser(ClassVisitor):
             abstract=header[0].strip().lower().startswith("abstract interface"),
         )
         scope = self._helper_scope_for_model("interface", interface, parent=parent_scope)
-        parts = self._source_unit_scanner.split_unit_parts(unit, filename=filename)
-        self._helper_validate_interface_lines(scope, parts.specification, filename=filename)
-        interface.specific_procedures.extend(self._interface_specific_procedure_names(parts.specification))
-        child_units = self._source_unit_scanner.slice_child_units(
-            unit.lines[1:-1],
-            parent_kind=scope.kind,
-            filename=filename,
-        )
+        self._helper_validate_interface_lines(scope, unit.specification, filename=filename)
+        interface.specific_procedures.extend(self._interface_specific_procedure_names(unit.specification))
+        child_units = unit.children
         for child in child_units:
             if child.kind != "procedure":
                 _raise_invalid_fortran_syntax_line(
@@ -1563,7 +1722,7 @@ class FortranParser(ClassVisitor):
         in_interface: bool = False,
     ) -> FortranProcedureSignature:
         """Visit a sliced procedure body or interface procedure declaration."""
-        header = unit.lines[0]
+        header = unit.header
         proc_state = self._parse_procedure_header(
             header[0].strip(),
             parent_scope.module_owner,
@@ -1592,19 +1751,16 @@ class FortranParser(ClassVisitor):
         proc_state.header_source_line = header[2]
         proc_state.uses.update(getattr(parent_scope.model, "uses", {}))
         scope = self._helper_scope_for_model("procedure", proc_state.signature, parent=parent_scope, state=proc_state)
-        parts = self._source_unit_scanner.split_unit_parts(unit, filename=filename)
-        self._parse_specification_part(scope, parts.specification, filename=filename)
-        child_units = self._source_unit_scanner.nonexecution_child_units(unit, filename=filename)
-        self._helper_validate_child_unit_regions(unit, parts, child_units, filename=filename)
-        self._helper_validate_contains_lines(scope, parts.contains, filename=filename)
+        self._parse_specification_part(scope, unit.specification, filename=filename)
+        child_units = unit.children
+        self._helper_validate_child_unit_regions(unit, child_units, filename=filename)
+        self._helper_validate_contains_lines(scope, unit.contains, filename=filename)
         self._helper_validate_ignored_child_units(
             [child for child in child_units if child.kind != "interface"],
             parent_scope=scope,
             filename=filename,
-            unit=unit,
-            parts=parts,
         )
-        self._helper_apply_local_interface_declarations(proc_state, unit, parts, scope, filename=filename)
+        self._helper_apply_local_interface_declarations(proc_state, unit, scope, filename=filename)
         return self._finalize_proc(proc_state)
 
     # ------------------------------------------------------------------
@@ -2112,9 +2268,8 @@ class FortranParser(ClassVisitor):
         """
         lines = self._preprocessed_lines(code, filename)
         root_scope = _ParserScope(kind="file", name=None)
-        units = self._source_unit_scanner.slice_child_units(
+        units = self._source_unit_scanner.scan_file_units(
             lines,
-            parent_kind=root_scope.kind,
             filename=filename,
         )
         self._helper_validate_file_scope_unparsed_lines(lines, filename)
@@ -2132,10 +2287,10 @@ class FortranParser(ClassVisitor):
         singular parsing selects one source unit directly instead of parsing a
         plural result list and checking its length afterward.
         """
-        lines, root_scope, _all_units = self._helper_prepare_source_units(code, filename)
+        _lines, root_scope, all_units = self._helper_prepare_source_units(code, filename)
         interfaces: list[tuple[SourceUnit, _ParserScope]] = []
 
-        def collect(scope: _ParserScope, child_units: list[SourceUnit]) -> None:
+        def collect(scope: _ParserScope, child_units: Sequence[SourceUnit]) -> None:
             """Walk non-execution children and retain interface units."""
             for child in child_units:
                 if child.kind == "interface":
@@ -2148,10 +2303,7 @@ class FortranParser(ClassVisitor):
                         parent=scope,
                         module_owner=child.name,
                     )
-                    collect(
-                        child_scope,
-                        self._source_unit_scanner.nonexecution_child_units(child, filename=filename),
-                    )
+                    collect(child_scope, child.children)
                     continue
                 if child.kind in {"procedure", "program"}:
                     child_scope = _ParserScope(
@@ -2160,19 +2312,9 @@ class FortranParser(ClassVisitor):
                         parent=scope,
                         module_owner=scope.module_owner,
                     )
-                    collect(
-                        child_scope,
-                        self._source_unit_scanner.nonexecution_child_units(child, filename=filename),
-                    )
+                    collect(child_scope, child.children)
 
-        collect(
-            root_scope,
-            self._source_unit_scanner.slice_child_units(
-                lines,
-                parent_kind=root_scope.kind,
-                filename=filename,
-            ),
-        )
+        collect(root_scope, all_units)
         return interfaces
 
     def _collect_derived_type_source_units(
@@ -2181,10 +2323,10 @@ class FortranParser(ClassVisitor):
         filename: str | None,
     ) -> list[tuple[SourceUnit, _ParserScope]]:
         """Collect derived-type units with their module/program scope context."""
-        lines, root_scope, _all_units = self._helper_prepare_source_units(code, filename)
+        _lines, root_scope, all_units = self._helper_prepare_source_units(code, filename)
         types: list[tuple[SourceUnit, _ParserScope]] = []
 
-        def collect(scope: _ParserScope, child_units: list[SourceUnit]) -> None:
+        def collect(scope: _ParserScope, child_units: Sequence[SourceUnit]) -> None:
             """Walk nested grammar units and retain derived-type units."""
             for child in child_units:
                 if child.kind == "derived_type":
@@ -2197,10 +2339,7 @@ class FortranParser(ClassVisitor):
                         parent=scope,
                         module_owner=child.name if child.kind in {"module", "submodule"} else scope.module_owner,
                     )
-                    collect(
-                        child_scope,
-                        self._source_unit_scanner.nonexecution_child_units(child, filename=filename),
-                    )
+                    collect(child_scope, child.children)
                     continue
                 if child.kind == "procedure":
                     child_scope = _ParserScope(
@@ -2209,19 +2348,9 @@ class FortranParser(ClassVisitor):
                         parent=scope,
                         module_owner=scope.module_owner,
                     )
-                    collect(
-                        child_scope,
-                        self._source_unit_scanner.nonexecution_child_units(child, filename=filename),
-                    )
+                    collect(child_scope, child.children)
 
-        collect(
-            root_scope,
-            self._source_unit_scanner.slice_child_units(
-                lines,
-                parent_kind=root_scope.kind,
-                filename=filename,
-            ),
-        )
+        collect(root_scope, all_units)
         return types
 
     def _helper_validate_possible_unit_header(
@@ -2319,8 +2448,7 @@ class FortranParser(ClassVisitor):
     def _helper_validate_child_unit_regions(
         self,
         unit: SourceUnit,
-        parts: _UnitParts,
-        child_units: list[SourceUnit],
+        child_units: Sequence[SourceUnit],
         *,
         filename: str | None,
     ) -> None:
@@ -2357,9 +2485,9 @@ class FortranParser(ClassVisitor):
         }
         grammar_regions = allowed.get(unit.kind, {})
         for child in child_units:
-            region = self._source_unit_scanner.child_unit_region(unit, parts, child)
-            if region == "execution":
-                continue
+            region = child.parent_region
+            if region is None:  # pragma: no cover - only file-level units have no parent region.
+                raise AssertionError("A nested SourceUnit must record its parent region.")
             if child.kind in grammar_regions.get(region, set()):
                 continue
             _raise_invalid_fortran_syntax_line(
@@ -2459,12 +2587,11 @@ class FortranParser(ClassVisitor):
         module_owner: str | None,
     ) -> FortranEnum:
         """Parse an interoperability enum block into enumerator constants."""
-        parts = self._source_unit_scanner.split_unit_parts(unit, filename=filename)
-        bind_c = bool(unit.lines and _REGEX["bind_c"].search(unit.lines[0][0]))
+        bind_c = bool(_REGEX["bind_c"].search(unit.header[0]))
         enum = FortranEnum(name=unit.name, module=module_owner, bind_c=bind_c)
         symbols: dict[str, str] = {}
         next_value: int | None = 0
-        for line, lineno, source_line in parts.specification:
+        for line, lineno, source_line in unit.specification:
             stripped = line.strip()
             if not stripped or stripped.startswith("#"):
                 continue
@@ -2490,12 +2617,7 @@ class FortranParser(ClassVisitor):
                 lineno=lineno,
                 source_line=source_line,
             )
-        child_units = self._source_unit_scanner.slice_child_units(
-            unit.lines[1:-1],
-            parent_kind="enum",
-            filename=filename,
-        )
-        self._helper_validate_child_unit_regions(unit, parts, child_units, filename=filename)
+        self._helper_validate_child_unit_regions(unit, unit.children, filename=filename)
         return enum
 
     @staticmethod
@@ -2534,23 +2656,15 @@ class FortranParser(ClassVisitor):
 
     def _helper_validate_ignored_child_units(
         self,
-        child_units: list[SourceUnit],
+        child_units: Sequence[SourceUnit],
         *,
         parent_scope: _ParserScope,
         filename: str | None,
-        unit: SourceUnit | None = None,
-        parts: _UnitParts | None = None,
     ) -> None:
         """Check or skip nested units that are intentionally omitted from metadata."""
         for child in child_units:
-            if (
-                unit is not None
-                and parts is not None
-                and self._source_unit_scanner.child_unit_region(unit, parts, child) == "execution"
-            ):
-                continue
             if child.kind == "procedure":
-                # The slicer has already checked the nested unit boundary and
+                # The scanner has already checked the nested unit boundary and
                 # the caller has checked its grammar region. Internal procedure
                 # declarations and bodies do not affect wrapper metadata.
                 continue
@@ -2561,7 +2675,7 @@ class FortranParser(ClassVisitor):
 
     def _helper_validate_sibling_units(
         self,
-        units: list[SourceUnit],
+        units: Sequence[SourceUnit],
         *,
         parent_scope: _ParserScope,
         filename: str | None,
@@ -3110,8 +3224,8 @@ class FortranParser(ClassVisitor):
 
         The helper name mirrors the grammar term "specification part". It is
         called by module, submodule, program, procedure, derived-type, and
-        block-data visitors after `_SourceUnitScanner.split_unit_parts` has
-        isolated the relevant region.
+        block-data visitors after `_SourceUnitScanner` has stored the relevant
+        region directly on their `SourceUnit`.
 
         Example:
             A program and a procedure both have executable statements, but this
@@ -3530,7 +3644,6 @@ class FortranParser(ClassVisitor):
         self,
         proc_state: _ProcedureState,
         unit: SourceUnit,
-        parts: _UnitParts,
         scope: _ParserScope,
         *,
         filename: str | None,
@@ -3539,25 +3652,17 @@ class FortranParser(ClassVisitor):
 
         Interface blocks inside procedures are not wrapper targets themselves,
         but their procedure names can be dummy arguments of the enclosing
-        procedure. This helper reuses the source-unit slicer to find those
-        local interface declarations and annotate the matching argument as a
-        procedure callback.
+        procedure. This helper consumes the procedure's already-classified
+        direct children and annotates the matching argument as a procedure
+        callback.
 
         Example:
             In ``subroutine apply(cb)`` with a local ``interface`` containing
             ``subroutine cb(x)``, this helper updates the already-known dummy
             argument ``cb`` so its base type becomes ``"procedure"``.
         """
-        interface_units = self._source_unit_scanner.slice_child_units(
-            unit.lines[1:-1],
-            parent_kind=scope.kind,
-            allowed_kinds={"interface"},
-            filename=filename,
-            skip_execution_region=True,
-        )
+        interface_units = [child for child in unit.children if child.kind == "interface"]
         for interface_unit in interface_units:
-            if self._source_unit_scanner.child_unit_region(unit, parts, interface_unit) == "execution":
-                continue
             interface = self._visit(interface_unit, parent_scope=scope, filename=filename)
             for signature in interface.procedures:
                 name = signature.name

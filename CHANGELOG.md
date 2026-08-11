@@ -17,6 +17,9 @@ release tags add a leading `v` to the package version.
 - Moved exact overload selection from generated Python predicate chains to
   generated C dispatchers with planned candidate IDs and direct switch-based
   calls to the selected existing wrapper.
+- Stopped standalone Fortran parser discovery from descending into inaccessible
+  procedure-internal subprograms; procedure-local callback interfaces remain
+  classified and discoverable.
 
 ## 0.2.1 — 2026-08-11
 

@@ -5,10 +5,7 @@ from prik.parsers.fortran.models import (
     FortranArgument,
     FortranProcedureSignature,
 )
-from prik.parsers.fortran.parser import (
-    FortranParser,
-    _SourceUnitScanner,
-)
+from prik.parsers.fortran.parser import FortranParser
 from tests.fortran._support.parser_regressions import _unit
 
 
@@ -49,8 +46,7 @@ end module c_api
     assert proc.arguments[0].pass_by_value is True
 
 
-def test_nonexecution_child_units_keep_specification_and_contains_children_only():
-    scanner = _SourceUnitScanner()
+def test_procedure_children_exclude_execution_text_and_internal_procedures():
     unit = _unit(
         "procedure",
         "work",
@@ -68,14 +64,15 @@ def test_nonexecution_child_units_keep_specification_and_contains_children_only(
         "end subroutine work",
     )
 
-    children = scanner.nonexecution_child_units(
-        unit,
-        filename="children.f90",
-    )
-
-    assert [(child.kind, child.name, child.start_line, child.end_line) for child in children] == [
+    assert [(child.kind, child.name, child.start_line, child.end_line) for child in unit.children] == [
         ("derived_type", "local_state", 2, 3),
-        ("procedure", "inner", 10, 11),
+    ]
+    assert [line.strip() for line, _lineno, _source in unit.execution] == [
+        "call setup()",
+        "interface",
+        "subroutine hidden()",
+        "end subroutine hidden",
+        "end interface",
     ]
 
 

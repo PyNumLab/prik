@@ -16,61 +16,76 @@ from prik.parsers.fortran.parser import (
     FortranParser,
     _ParserScope,
     _SourceUnitScanner,
-    _UnitParts,
 )
 from tests.fortran._support.parser_regressions import (
-    _empty_unit,
     _lines,
     _unit,
 )
 
 
-def test_unit_region_helpers_preserve_specification_execution_and_contains_boundaries():
+def test_source_unit_classification_preserves_child_regions_and_direct_ownership():
     scanner = _SourceUnitScanner()
-    unit = _unit(
-        "procedure",
-        "work",
-        "subroutine work()",
-        "integer :: value",
-        "type :: local_state",
-        "end type local_state",
-        "value = 1",
-        "contains",
-        "subroutine inner()",
-        "end subroutine inner",
-        "end subroutine work",
-    )
-    parts = _UnitParts(
-        header=unit.lines[0],
-        specification=[unit.lines[1]],
-        execution=[unit.lines[4]],
-        contains=[unit.lines[6], unit.lines[7]],
-        footer=unit.lines[-1],
-    )
+    unit = scanner.scan_file_units(
+        _lines(
+            "module owner",
+            "integer :: value",
+            "interface callbacks",
+            "  subroutine callback()",
+            "  end subroutine callback",
+            "end interface callbacks",
+            "interface generic_work",
+            "  module procedure work",
+            "end interface generic_work",
+            "contains",
+            "# generated marker",
+            "subroutine work()",
+            "end subroutine work",
+            "end module owner",
+        ),
+        filename="regions.f90",
+    )[0]
 
-    assert scanner.direct_contains_line(unit, filename="regions.f90") == 6
-    assert scanner.child_unit_region(unit, parts, _empty_unit("derived_type", "unknown", None, None)) == (
-        "specification"
-    )
-    assert scanner.child_unit_region(unit, parts, _unit("derived_type", "local_state", "type :: local_state")) == (
-        "specification"
-    )
-    assert (
-        scanner.child_unit_region(
-            unit,
-            parts,
-            _empty_unit("interface", None, 5, 5),
-        )
-        == "execution"
-    )
-    assert (
-        scanner.child_unit_region(
-            unit,
-            parts,
-            _empty_unit("procedure", "inner", 7, 8),
-        )
-        == "contains"
-    )
+    assert unit.header == unit.lines[0]
+    assert unit.footer == unit.lines[-1]
+    assert [line for line, _lineno, _source in unit.specification] == ["integer :: value"]
+    assert unit.execution == []
+    assert [line.strip() for line, _lineno, _source in unit.contains] == ["# generated marker"]
+    assert [(child.kind, child.name, child.parent_region) for child in unit.children] == [
+        ("interface", "callbacks", "specification"),
+        ("interface", "generic_work", "specification"),
+        ("procedure", "work", "contains"),
+    ]
+    assert [(child.kind, child.name, child.parent_region) for child in unit.children[0].children] == [
+        ("procedure", "callback", "specification")
+    ]
+    assert [line.strip() for line, _lineno, _source in unit.children[1].specification] == ["module procedure work"]
+
+
+def test_procedure_classification_keeps_local_interfaces_and_omits_internal_procedures():
+    scanner = _SourceUnitScanner()
+    unit = scanner.scan_file_units(
+        _lines(
+            "subroutine work(callback)",
+            "integer :: value",
+            "interface",
+            "  subroutine callback()",
+            "  end subroutine callback",
+            "end interface",
+            "value = 1",
+            "contains",
+            "subroutine inner()",
+            "end subroutine inner",
+            "end subroutine work",
+        ),
+        filename="regions.f90",
+    )[0]
+
+    assert [line for line, _lineno, _source in unit.specification] == ["integer :: value"]
+    assert [line for line, _lineno, _source in unit.execution] == ["value = 1"]
+    assert unit.contains == []
+    assert [(child.kind, child.name, child.parent_region) for child in unit.children] == [
+        ("interface", None, "specification")
+    ]
 
     assert scanner.has_preferred_unit_end_ahead(unit.lines, 0, "procedure", "work") is True
     assert scanner.has_preferred_unit_end_ahead(unit.lines, 0, "procedure", "missing") is False
@@ -78,12 +93,25 @@ def test_unit_region_helpers_preserve_specification_execution_and_contains_bound
     immediate_type = _lines("type :: immediate", "end type immediate")
     assert scanner.has_preferred_unit_end_ahead(immediate_type, 0, "derived_type", "immediate") is True
     assert scanner.has_unit_end_ahead(immediate_type, 0, "derived_type") is True
-    assert scanner.has_unit_end_ahead(unit.lines, 2, "derived_type") is True
-    assert scanner.has_unit_end_ahead(unit.lines, 6, "procedure") is True
-    assert scanner.has_unit_end_ahead(unit.lines[:-1], 0, "procedure") is True
+    assert scanner.has_unit_end_ahead(unit.lines, 0, "procedure") is True
 
-    immediate_contains = _unit("module", "owner", "module owner", "contains", "end module owner")
-    assert scanner.direct_contains_line(immediate_contains, filename="regions.f90") == 2
+
+def test_unit_end_search_tracks_nested_specification_and_contains_units():
+    scanner = _SourceUnitScanner()
+    lines = _lines(
+        "subroutine work()",
+        "type :: local_state",
+        "end type local_state",
+        "contains",
+        "subroutine inner()",
+        "end subroutine inner",
+        "end subroutine work",
+    )
+
+    assert scanner.find_unit_end(lines, 0, "procedure", filename="regions.f90") == 6
+    assert scanner.has_unit_end_ahead(lines, 1, "derived_type") is True
+    assert scanner.has_unit_end_ahead(lines, 4, "procedure") is True
+    assert scanner.has_unit_end_ahead(lines[:-1], 0, "procedure") is True
 
 
 def test_source_preparation_rejects_raw_cpp_and_preserves_root_units_and_source_form(tmp_path: Path):
@@ -129,7 +157,7 @@ end subroutine global_step
     assert error.value.code == "PARSE_PREPROCESSING_REQUIRED"
 
 
-def test_child_unit_slicing_skips_preprocessed_linemarkers_and_blank_unit_starts():
+def test_file_unit_scanning_skips_preprocessed_linemarkers_and_blank_unit_starts():
     scanner = _SourceUnitScanner()
     lines = _lines(
         '# 4 "generated.f90"',
@@ -138,9 +166,8 @@ def test_child_unit_slicing_skips_preprocessed_linemarkers_and_blank_unit_starts
         "end module owner",
     )
 
-    units = scanner.slice_child_units(
+    units = scanner.scan_file_units(
         lines,
-        parent_kind="file",
         filename="generated.f90",
     )
 
@@ -195,8 +222,7 @@ def test_unit_end_and_header_validation_preserve_public_diagnostics():
     assert procedure_error.value.code == "PARSE_MALFORMED_HEADER"
 
 
-def test_unit_part_splitting_skips_nested_units_and_preserves_executable_boundary():
-    scanner = _SourceUnitScanner()
+def test_classified_unit_regions_skip_nested_units_and_preserve_executable_boundary():
     unit = _unit(
         "procedure",
         "work",
@@ -214,13 +240,11 @@ def test_unit_part_splitting_skips_nested_units_and_preserves_executable_boundar
         "end subroutine work",
     )
 
-    parts = scanner.split_unit_parts(unit, filename="parts.f90")
-
-    assert [line for line, _lineno, _source in parts.specification] == ["integer :: counter"]
-    assert [line for line, _lineno, _source in parts.execution] == ["counter = counter + 1"]
-    assert parts.contains == []
-    assert parts.header == unit.lines[0]
-    assert parts.footer == unit.lines[-1]
+    assert [line for line, _lineno, _source in unit.specification] == ["integer :: counter"]
+    assert [line for line, _lineno, _source in unit.execution] == ["counter = counter + 1"]
+    assert unit.contains == []
+    assert unit.header == unit.lines[0]
+    assert unit.footer == unit.lines[-1]
 
 
 def test_sibling_unit_validation_ignores_unnamed_units_and_preserves_duplicate_diagnostics():

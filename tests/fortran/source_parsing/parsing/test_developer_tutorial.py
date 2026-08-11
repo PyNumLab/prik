@@ -4,10 +4,10 @@ This test is intentionally written as a small walkthrough rather than as a
 black-box public API test. It shows the private visitor/scanner sequence that
 maintainers should follow when changing `prik/parsers/fortran/parser.py`:
 
-1. preprocess, then scan file-level source units,
-2. ask `_SourceUnitScanner` to split one unit into grammar parts,
+1. preprocess, then scan fully classified file-level source units,
+2. inspect the scanner-owned grammar regions and direct children,
 3. visit the unit with a scope,
-4. recursively slice and inspect its direct children.
+4. inspect a retained child without rescanning its parent's source.
 """
 
 from prik.parsers.fortran.parser import FortranParser, _SourceUnitScanner
@@ -45,16 +45,12 @@ def test_developer_tutorial_recursive_unit_visitors_and_helpers():
     module_unit = top_units[0]
     module_grammar = scanner.grammar("module")
     assert module_grammar.has_contains_part is True
-    module_parts = scanner.split_unit_parts(
-        module_unit,
-        filename="developer_tutorial.f90",
-    )
-    assert module_parts.header == module_unit.lines[0]
-    assert [line[0].strip() for line in module_parts.specification] == [
+    assert module_unit.header == module_unit.lines[0]
+    assert [line[0].strip() for line in module_unit.specification] == [
         "implicit none",
         "integer, parameter :: n = 8",
     ]
-    assert module_parts.contains == []
+    assert module_unit.contains == []
 
     module = parser._visit(
         module_unit,
@@ -66,28 +62,20 @@ def test_developer_tutorial_recursive_unit_visitors_and_helpers():
     assert module.variables[0].value == "8"
     assert module.variables[0].symbolic_value == "8"
 
-    module_scope = parser._helper_scope_for_model("module", module, parent=root_scope)
-    child_units = scanner.slice_child_units(
-        module_unit.lines[1:-1],
-        parent_kind=module_scope.kind,
-        filename="developer_tutorial.f90",
-    )
+    child_units = module_unit.children
     assert [(unit.kind, unit.name, unit.start_line, unit.end_line) for unit in child_units] == [
         ("procedure", "total", 5, 9)
     ]
+    assert child_units[0].parent_region == "contains"
 
     procedure_unit = child_units[0]
-    procedure_parts = scanner.split_unit_parts(
-        procedure_unit,
-        filename="developer_tutorial.f90",
-    )
-    assert [line[0].strip() for line in procedure_parts.specification] == [
+    assert [line[0].strip() for line in procedure_unit.specification] == [
         "implicit none",
         "real, intent(in) :: values(n)",
         "real :: out",
     ]
-    assert procedure_parts.execution == []
-    assert procedure_parts.contains == []
+    assert procedure_unit.execution == []
+    assert procedure_unit.contains == []
 
     proc = module.procedures[0]
     assert proc.name == "total"

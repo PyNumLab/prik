@@ -147,14 +147,14 @@ feature inventory, public API, diagnostics, project behavior, semantic handoff,
 or maintenance workflow changes.
 PRIK_C_DOCS_END -->
 
-`parse_file` is the central orchestration path. It first slices the source into
-direct file-level units, then each class visitor parses only its own substring
-and recursively slices direct children. This is the key parser design: each
+`parse_file` is the central orchestration path. The scanner first constructs
+fully classified direct file-level units, then each class visitor parses only
+the stored regions and children it owns. This is the key parser design: each
 Fortran grammar unit has a header, a specification region, optional execution
-region, and optional `contains` region. The differences between modules,
-programs, procedures, derived types, interfaces, and block data are expressed
-by small visitor decisions and grammar flags rather than separate whole-file
-parsing loops.
+region, optional `contains` region, and retained direct children. The
+differences between modules, programs, procedures, derived types, interfaces,
+and block data are expressed by small visitor decisions and grammar flags
+rather than separate whole-file parsing loops.
 
 Nested unit boundaries and placement outside execution regions are checked even
 when they are not exported as wrapper metadata. Internal procedures inside a
@@ -181,23 +181,22 @@ end module m
 The parser handles it in this order:
 
 1. `parse_file` preprocesses the source and asks the stateless
-   `_SourceUnitScanner.slice_child_units` collaborator to scan at file scope.
-   The result is one `ModuleUnit` carrying the module name, exact lines, and
-   source locations. The scanner receives the parent kind, not `_ParserScope`.
+   `_SourceUnitScanner.scan_file_units` collaborator to scan at file scope.
+   The result is one `ModuleUnit` carrying the module name, exact lines, source
+   locations, classified grammar regions, and retained direct children. The
+   scanner remains independent of `_ParserScope` and constructed models.
 2. the shared `ClassVisitor._visit` dispatcher selects `_visit_ModuleUnit`.
-3. `_visit_ModuleUnit` creates a module `_ParserScope`, asks
-   `_SourceUnitScanner.split_unit_parts` for the structural regions, and sends
-   only the module specification lines to `_parse_specification_part`.
+3. `_visit_ModuleUnit` creates a module `_ParserScope` and sends the unit's
+   already-classified specification lines to `_parse_specification_part`.
 4. `_parse_specification_part` uses the shared declaration backend:
    `_helper_parse_declaration_line` parses `integer, parameter :: n = 4`, then
    `_helper_push_declaration_to_scope` appends the resulting parameter variable
    to `FortranModule.variables`.
-5. The module visitor recursively slices direct children from its substring.
-   It finds one procedure unit, `scale`, and dispatches it to
+5. The module visitor reads the scanner-owned direct children. It finds one
+   procedure unit, `scale`, and dispatches it to
    `_visit_ProcedureUnit`.
-6. `_visit_ProcedureUnit` creates a procedure `_ParserScope`, splits the
-   procedure into header/specification/execution/contains, and visits only the
-   specification part. The same declaration backend parses
+6. `_visit_ProcedureUnit` creates a procedure `_ParserScope` and visits only
+   the stored specification part. The same declaration backend parses
    `real, intent(inout) :: x(n)` and pushes the metadata into the procedure
    argument symbol table.
 
@@ -213,6 +212,25 @@ model visitors, declaration parsing, sibling validation, and diagnostics that
 depend on constructed parser models. Splitting the scanner into another file
 would not strengthen that boundary; its private source tuples, grammar records,
 and unit classes are all local to this parser module.
+
+Each `SourceUnit` is fully classified by the scanner. In addition to its exact
+source span, kind, and name, it owns its header, specification, execution,
+`contains`, footer, and retained direct child units. A child records whether it
+occurred in its parent's specification or `contains` region, so a module-level
+interface is not confused with a contained procedure. Children are retained
+only when later parser work needs them for model construction or validation.
+That includes module-like unit children, interface procedure declarations,
+procedure-local interfaces used to type callback dummy arguments, and local
+declarative units whose syntax still needs validation. Internal procedures
+below a procedure's `contains` statement are structurally scanned but are not
+retained as wrapper targets. Execution regions remain opaque.
+
+While matching one unit's terminator, the scanner keeps a stack of `_OpenUnit`
+records. Each record names one unit that has opened but not yet closed and
+stores its structural region. The top record is the innermost unit; popping it
+after its terminator exposes the containing module, interface, or procedure.
+This stack is structural parser state only: it contains no `_ParserScope` and
+does not own declarations or parser models.
 
 End-name validation is strict for structural units whose names define exported
 scope boundaries, such as modules, submodules, programs, interfaces, and
