@@ -41,6 +41,7 @@ C_DOCS_END = "PRIK_C_DOCS_END -->"
 C_DOCS_DISABLED = "<!-- PRIK_C_DOCS_DISABLED:"
 VISIBLE_C_DOCUMENTATION_EXCEPTIONS = {
     "README.md": ("Fortran and C compilers",),
+    "docs/user/about.md": ("C-to-Python interoperability", "C++"),
     "docs/user/getting-started/index.md": ("`gcc`",),
     "docs/user/getting-started/installation.md": (
         "matching C\ncompiler",
