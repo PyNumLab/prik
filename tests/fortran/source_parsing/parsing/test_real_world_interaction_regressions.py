@@ -2,6 +2,7 @@
 
 from prik import parse_fortran_file
 from prik.parsers.fortran.lexer import preprocess_lines, strip_comment
+from prik.parsers.fortran.models import FortranProcedureSignature
 from prik.parsers.fortran.parser import FortranParser
 from prik.parsers.fortran.utils import split_csv
 
@@ -120,7 +121,11 @@ end function evaluate
 
 
 def test_procedure_include_is_recorded_before_signature_finalization():
-    state: dict[str, list[str]] = {}
+    parser = FortranParser()
+    state = parser._new_procedure_scope_state(
+        FortranProcedureSignature("include_contract", "subroutine"),
+        symbols={},
+    )
 
-    assert FortranParser()._handle_proc_include_or_import_line("include 'constants.inc'", state) is True
-    assert state["includes"] == ["'constants.inc'"]
+    assert parser._handle_proc_include_or_import_line("include 'constants.inc'", state) is True
+    assert state.includes == ["'constants.inc'"]

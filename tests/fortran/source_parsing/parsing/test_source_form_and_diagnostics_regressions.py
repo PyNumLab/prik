@@ -273,17 +273,13 @@ def test_finalize_proc_duplicate_argument_diagnostic_preserves_header_metadata()
         arguments=[FortranArgument("value"), FortranArgument("VALUE")],
     )
 
+    state = parser._new_procedure_scope_state(signature, symbols={})
+    state.filename = "finalize_contract.f90"
+    state.header_lineno = 12
+    state.header_source_line = "subroutine step(value, VALUE)"
+
     with pytest.raises(FortranParseError) as error:
-        parser._finalize_proc(
-            {
-                "signature": signature,
-                "symbols": {},
-                "uses": {},
-                "filename": "finalize_contract.f90",
-                "header_lineno": 12,
-                "header_source_line": "subroutine step(value, VALUE)",
-            }
-        )
+        parser._finalize_proc(state)
 
     assert error.value.base_message == "Duplicate argument name 'VALUE' in procedure 'step'."
     assert error.value.filename == "finalize_contract.f90"
@@ -323,7 +319,10 @@ def test_declaration_push_preserves_type_field_metadata_and_duplicate_field_diag
 
 def test_unknown_procedure_declaration_diagnostic_preserves_public_metadata():
     parser = FortranParser()
-    state = {"signature": FortranProcedureSignature(name="work", kind="subroutine")}
+    state = parser._new_procedure_scope_state(
+        FortranProcedureSignature(name="work", kind="subroutine"),
+        symbols={},
+    )
 
     with pytest.raises(FortranParseError) as error:
         parser._handle_unknown_proc_declaration(

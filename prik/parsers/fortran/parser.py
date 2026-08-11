@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from copy import deepcopy
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field as dataclass_field, replace
 from pathlib import Path
 
 from prik.utilities.declaration_expressions import (
@@ -238,13 +238,43 @@ _SOURCE_UNIT_TYPES = {
 
 
 @dataclass
+class _ProcedureState:
+    """Accumulate mutable facts while parsing and finalizing one procedure.
+
+    The enclosing :class:`_ParserScope` owns lexical nesting and native-module
+    ownership. This record owns only the procedure-local signature, symbol
+    table, specification metadata, and source locations collected before the
+    signature is finalized.
+    """
+
+    signature: FortranProcedureSignature
+    symbols: dict[str, FortranArgument]
+    typed_symbols: set[str] = dataclass_field(default_factory=set)
+    uses: dict[str, list[FortranUseMapping]] = dataclass_field(default_factory=dict)
+    local_uses: dict[str, list[FortranUseMapping]] = dataclass_field(default_factory=dict)
+    local_params: dict[str, str] = dataclass_field(default_factory=dict)
+    legacy_local_params: set[str] = dataclass_field(default_factory=set)
+    implicit_typed_symbols: dict[str, str] = dataclass_field(default_factory=dict)
+    declared_local_types: dict[str, dict[str, object]] = dataclass_field(default_factory=dict)
+    implicit_none: bool = False
+    imports: set[str] = dataclass_field(default_factory=set)
+    external_symbols: set[str] = dataclass_field(default_factory=set)
+    includes: list[str] = dataclass_field(default_factory=list)
+    common_variables: list[str] = dataclass_field(default_factory=list)
+    filename: str | None = None
+    header_lineno: int | None = None
+    header_source_line: str | None = None
+    explicit_result: bool = False
+
+
+@dataclass
 class _ParserScope:
     """Carry explicit ownership and mutable state while visiting one unit.
 
     ``model`` receives parsed declarations, ``parent`` preserves lexical
-    ownership, and procedure visitors use ``state`` for their temporary symbol
-    table.  Helpers receive this record explicitly rather than relying on
-    parser-global scope.
+    ownership, and procedure visitors attach their temporary
+    :class:`_ProcedureState`. Helpers receive this record explicitly rather
+    than relying on parser-global scope.
     """
 
     kind: str
@@ -252,7 +282,7 @@ class _ParserScope:
     model: object | None = None
     parent: _ParserScope | None = None
     module_owner: str | None = None
-    state: dict | None = None
+    state: _ProcedureState | None = None
 
 
 @dataclass(frozen=True)
@@ -898,13 +928,11 @@ class FortranParser(ClassVisitor):
                 source_line=header[2],
                 code="PARSE_EXPECTED_UNIT",
             )
-        proc_state["filename"] = filename
-        proc_state["header_lineno"] = header[1]
-        proc_state["header_source_line"] = header[2]
-        proc_state["uses"].update(getattr(parent_scope.model, "uses", {}))
-        scope = self._helper_scope_for_model(
-            "procedure", proc_state["signature"], parent=parent_scope, state=proc_state
-        )
+        proc_state.filename = filename
+        proc_state.header_lineno = header[1]
+        proc_state.header_source_line = header[2]
+        proc_state.uses.update(getattr(parent_scope.model, "uses", {}))
+        scope = self._helper_scope_for_model("procedure", proc_state.signature, parent=parent_scope, state=proc_state)
         parts = self._helper_split_unit_parts(unit, self._helper_unit_grammar("procedure"), filename=filename)
         self._parse_specification_part(scope, parts.specification, filename=filename)
         child_units = self._helper_nonexecution_child_units(unit, parent_scope=scope, filename=filename)
@@ -2597,7 +2625,7 @@ class FortranParser(ClassVisitor):
         filename: str | None = None,
         lineno: int | None = None,
         source_line: str | None = None,
-    ):
+    ) -> _ProcedureState | None:
         """Build procedure scope state from a subroutine or function header."""
         module_proc = _REGEX["module_procedure_impl"].match(line)
         if module_proc and not in_interface:
@@ -2618,7 +2646,12 @@ class FortranParser(ClassVisitor):
             source_line=source_line,
         )
 
-    def _module_procedure_scope(self, match, module: str | None, in_interface: bool):
+    def _module_procedure_scope(
+        self,
+        match,
+        module: str | None,
+        in_interface: bool,
+    ) -> _ProcedureState:
         """Create temporary procedure state for one ``module procedure`` header.
 
         Such implementation declarations have no explicit dummy list here.
@@ -2634,7 +2667,12 @@ class FortranParser(ClassVisitor):
         )
         return self._new_procedure_scope_state(sig, symbols={})
 
-    def _subroutine_scope(self, match, module: str | None, in_interface: bool):
+    def _subroutine_scope(
+        self,
+        match,
+        module: str | None,
+        in_interface: bool,
+    ) -> _ProcedureState:
         """Create procedure state from one recognized subroutine header.
 
         The header match supplies attributes, dummy names, optional ``bind(c)``
@@ -2665,7 +2703,7 @@ class FortranParser(ClassVisitor):
         filename: str | None,
         lineno: int | None,
         source_line: str | None,
-    ):
+    ) -> _ProcedureState:
         """Create procedure state from one recognized function header.
 
         The helper initializes dummy arguments and the result symbol, parses an
@@ -2780,7 +2818,7 @@ class FortranParser(ClassVisitor):
         *,
         parent: _ParserScope | None = None,
         module_owner: str | None = None,
-        state: dict | None = None,
+        state: _ProcedureState | None = None,
     ) -> _ParserScope:
         """Build the scope object passed through shared helpers.
 
@@ -2819,42 +2857,34 @@ class FortranParser(ClassVisitor):
         symbols: dict[str, FortranArgument],
         typed_symbols: set[str] | None = None,
         explicit_result: bool = False,
-    ) -> dict:
+    ) -> _ProcedureState:
         """Create mutable procedure parsing state shared by spec-line helpers."""
-        state = {
-            "signature": signature,
-            "symbols": symbols,
-            "typed_symbols": typed_symbols or set(),
-            "uses": {},
-            "local_uses": {},
-            "in_contains": False,
-            "local_params": {},
-            "legacy_local_params": set(),
-            "implicit_typed_symbols": {},
-            "declared_local_types": {},
-            "implicit_none": False,
-            "imports": set(),
-            "external_symbols": set(),
-            "includes": [],
-            "common_variables": [],
-            "filename": None,
-            "local_type_depth": 0,
-        }
-        if explicit_result:
-            state["explicit_result"] = True
-        return state
+        return _ProcedureState(
+            signature=signature,
+            symbols=symbols,
+            typed_symbols=typed_symbols or set(),
+            explicit_result=explicit_result,
+        )
 
-    def _proc_scope_get_symbol(self, proc_state: dict, name: str) -> FortranArgument | None:
+    def _proc_scope_get_symbol(
+        self,
+        proc_state: _ProcedureState,
+        name: str,
+    ) -> FortranArgument | None:
         """Return one procedure symbol by case-insensitive name."""
-        return proc_state["symbols"].get(self._scope_key(name))
+        return proc_state.symbols.get(self._scope_key(name))
 
-    def _proc_scope_symbol_is_declared(self, proc_state: dict, name: str) -> bool:
+    def _proc_scope_symbol_is_declared(
+        self,
+        proc_state: _ProcedureState,
+        name: str,
+    ) -> bool:
         """Return whether a procedure symbol already has an explicit type."""
-        return self._scope_key(name) in proc_state["typed_symbols"]
+        return self._scope_key(name) in proc_state.typed_symbols
 
     def _proc_scope_mark_declared_symbol(
         self,
-        proc_state: dict,
+        proc_state: _ProcedureState,
         name: str,
         *,
         filename: str | None = None,
@@ -2863,35 +2893,52 @@ class FortranParser(ClassVisitor):
     ) -> str:
         """Record an explicitly typed procedure symbol and reject duplicates."""
         key = self._scope_key(name)
-        if key in proc_state["typed_symbols"]:
+        if key in proc_state.typed_symbols:
             raise FortranParseError(
-                f"Duplicate declaration of symbol '{name}' in procedure '{proc_state['signature'].name}'.",
+                f"Duplicate declaration of symbol '{name}' in procedure '{proc_state.signature.name}'.",
                 filename=filename,
                 line_number=line_number,
                 source_line=source_line,
                 code="PARSE_DUPLICATE_DECLARATION",
             )
-        proc_state["typed_symbols"].add(key)
+        proc_state.typed_symbols.add(key)
         return key
 
-    def _proc_scope_add_external_symbol(self, proc_state: dict, name: str) -> str:
+    def _proc_scope_add_external_symbol(
+        self,
+        proc_state: _ProcedureState,
+        name: str,
+    ) -> str:
         """Record an external procedure symbol and update a matching dummy."""
         key = self._scope_key(name)
-        proc_state.setdefault("external_symbols", set()).add(key)
+        proc_state.external_symbols.add(key)
         arg = self._proc_scope_get_symbol(proc_state, key)
         if arg is not None and arg.base_type == "unknown":
             arg.base_type = "procedure"
         return key
 
-    def _proc_scope_add_include(self, proc_state: dict, include_path: str) -> None:
+    def _proc_scope_add_include(
+        self,
+        proc_state: _ProcedureState,
+        include_path: str,
+    ) -> None:
         """Record one procedure-local include path."""
-        proc_state.setdefault("includes", []).append(include_path)
+        proc_state.includes.append(include_path)
 
-    def _proc_scope_add_imports(self, proc_state: dict, names: list[str]) -> None:
+    def _proc_scope_add_imports(
+        self,
+        proc_state: _ProcedureState,
+        names: list[str],
+    ) -> None:
         """Record interface imports visible inside a procedure declaration."""
-        proc_state.setdefault("imports", set()).update(self._scope_key(n) for n in names if n.strip())
+        proc_state.imports.update(self._scope_key(n) for n in names if n.strip())
 
-    def _proc_scope_set_declared_local_type(self, proc_state: dict, name: str, meta: dict) -> None:
+    def _proc_scope_set_declared_local_type(
+        self,
+        proc_state: _ProcedureState,
+        name: str,
+        meta: dict,
+    ) -> None:
         """Store type metadata for a declared local symbol."""
         key = self._scope_key(name)
         declared_type = {
@@ -2906,11 +2953,11 @@ class FortranParser(ClassVisitor):
         ):
             if metadata_key in meta and (metadata_key != "polymorphic" or meta[metadata_key]):
                 declared_type[metadata_key] = meta[metadata_key]
-        proc_state["declared_local_types"][key] = declared_type
+        proc_state.declared_local_types[key] = declared_type
 
     def _proc_scope_add_local_parameter(
         self,
-        proc_state: dict,
+        proc_state: _ProcedureState,
         name: str,
         value: str,
         *,
@@ -2925,25 +2972,25 @@ class FortranParser(ClassVisitor):
         key = self._scope_key(name)
         if require_declared and not self._proc_scope_symbol_is_declared(proc_state, key):
             raise FortranParseError(
-                f"Unknown datatype for PARAMETER symbol '{name}' in procedure '{proc_state['signature'].name}'.",
+                f"Unknown datatype for PARAMETER symbol '{name}' in procedure '{proc_state.signature.name}'.",
                 filename=filename,
                 line_number=line_number,
                 source_line=source_line,
                 code="PARSE_UNKNOWN_PARAMETER_TYPE",
             )
-        if key in proc_state["local_params"]:
+        if key in proc_state.local_params:
             raise FortranParseError(
-                f"Duplicate PARAMETER declaration of symbol '{name}' in procedure '{proc_state['signature'].name}'.",
+                f"Duplicate PARAMETER declaration of symbol '{name}' in procedure '{proc_state.signature.name}'.",
                 filename=filename,
                 line_number=line_number,
                 source_line=source_line,
                 code="PARSE_DUPLICATE_PARAMETER",
             )
-        proc_state["local_params"][key] = value
+        proc_state.local_params[key] = value
         if register_implicit_if_missing and not self._proc_scope_symbol_is_declared(proc_state, key):
-            proc_state["implicit_typed_symbols"][key] = self._infer_implicit_base_type(name)
+            proc_state.implicit_typed_symbols[key] = self._infer_implicit_base_type(name)
         if legacy:
-            proc_state["legacy_local_params"].add(key)
+            proc_state.legacy_local_params.add(key)
 
     @staticmethod
     def _insert_unique_scope_symbol(
@@ -3193,7 +3240,7 @@ class FortranParser(ClassVisitor):
     def _parse_procedure_spec_line(
         self,
         line: str,
-        proc_state: dict,
+        proc_state: _ProcedureState,
         filename: str | None = None,
         lineno: int | None = None,
         source_line: str | None = None,
@@ -3214,11 +3261,11 @@ class FortranParser(ClassVisitor):
         """
         stripped = line.strip()
         if re.match(r"^common\b", stripped, flags=re.IGNORECASE):
-            self._record_common_variables(proc_state["common_variables"], stripped)
+            self._record_common_variables(proc_state.common_variables, stripped)
             return
         if self._is_openmp_declarative_directive(stripped):
             raise FortranParseError(
-                f"Unsupported OpenMP declarative directive in procedure '{proc_state['signature'].name}': {stripped}",
+                f"Unsupported OpenMP declarative directive in procedure '{proc_state.signature.name}': {stripped}",
                 filename=filename,
                 line_number=lineno,
                 source_line=source_line,
@@ -3231,8 +3278,8 @@ class FortranParser(ClassVisitor):
         parsed_use = self._parse_use_statement(stripped)
         if parsed_use:
             module_name, mappings = parsed_use
-            proc_state["uses"][module_name] = mappings
-            proc_state["local_uses"][module_name] = mappings
+            proc_state.uses[module_name] = mappings
+            proc_state.local_uses[module_name] = mappings
             return
         # This parser is a subset parser focused on wrapper-relevant metadata.
         # These statements do not affect extracted signature typing/shapes.
@@ -3255,13 +3302,13 @@ class FortranParser(ClassVisitor):
             stripped,
             _ParserScope(
                 kind="procedure",
-                name=proc_state["signature"].name,
-                model=proc_state["signature"],
+                name=proc_state.signature.name,
+                model=proc_state.signature,
                 state=proc_state,
-                module_owner=proc_state["signature"].module,
+                module_owner=proc_state.signature.module,
             ),
             role="procedure_symbol",
-            filename=proc_state.get("filename") or filename,
+            filename=proc_state.filename or filename,
             lineno=lineno,
             source_line=source_line,
             include_argument_access=True,
@@ -3396,7 +3443,7 @@ class FortranParser(ClassVisitor):
 
     def _helper_apply_local_interface_declarations(
         self,
-        proc_state: dict,
+        proc_state: _ProcedureState,
         unit: SourceUnit,
         parts: _UnitParts,
         scope: _ParserScope,
@@ -3606,7 +3653,7 @@ class FortranParser(ClassVisitor):
                     filename=filename,
                     code="PARSE_INTERNAL_STATE",
                 )
-            if meta["base_type"] == "procedure" and meta["kind"] in proc_state.get("imports", set()):
+            if meta["base_type"] == "procedure" and meta["kind"] in proc_state.imports:
                 meta["kind"] = None
             for entity in split_csv(right):
                 raw_name, shape = self._var(entity)
@@ -3884,24 +3931,32 @@ class FortranParser(ClassVisitor):
     # Procedure specification handlers
     # ------------------------------------------------------------------
 
-    def _handle_proc_implicit_line(self, line: str, proc_state: dict) -> bool:
+    def _handle_proc_implicit_line(
+        self,
+        line: str,
+        proc_state: _ProcedureState,
+    ) -> bool:
         """Handle a procedure ``implicit`` statement.
 
         Procedure parsing keeps implicit typing in the procedure state because
         it affects later finalization of undeclared dummy arguments.
 
         Example:
-            ``implicit none`` sets ``proc_state["implicit_none"]`` so
+            ``implicit none`` sets ``proc_state.implicit_none`` so
             `_finalize_proc` can require every argument to have an explicit
             declaration.
         """
         if not re.match(r"^implicit\b", line, flags=re.IGNORECASE):
             return False
         if re.match(r"^implicit\s+none\b", line, flags=re.IGNORECASE):
-            proc_state["implicit_none"] = True
+            proc_state.implicit_none = True
         return True
 
-    def _handle_proc_external_line(self, line: str, proc_state: dict) -> bool:
+    def _handle_proc_external_line(
+        self,
+        line: str,
+        proc_state: _ProcedureState,
+    ) -> bool:
         """Handle a procedure ``external`` statement.
 
         External symbols are stored in the procedure state before declaration
@@ -3937,7 +3992,11 @@ class FortranParser(ClassVisitor):
         )
         return any(re.match(pattern, line, flags=re.IGNORECASE) for pattern in ignored_patterns)
 
-    def _handle_proc_include_or_import_line(self, line: str, proc_state: dict) -> bool:
+    def _handle_proc_include_or_import_line(
+        self,
+        line: str,
+        proc_state: _ProcedureState,
+    ) -> bool:
         """Handle procedure-level ``include`` and ``import`` statements.
 
         These statements are procedure-specific specification-part metadata, so
@@ -3962,7 +4021,7 @@ class FortranParser(ClassVisitor):
     def _handle_proc_parameter_line(
         self,
         line: str,
-        proc_state: dict,
+        proc_state: _ProcedureState,
         *,
         filename: str | None,
         lineno: int | None,
@@ -4009,7 +4068,7 @@ class FortranParser(ClassVisitor):
                     filename=filename,
                     line_number=lineno,
                     source_line=source_line,
-                    require_declared=proc_state.get("implicit_none", False),
+                    require_declared=proc_state.implicit_none,
                     register_implicit_if_missing=not declared,
                     legacy=declared,
                 )
@@ -4062,7 +4121,7 @@ class FortranParser(ClassVisitor):
     def _handle_unknown_proc_declaration(
         self,
         line: str,
-        proc_state: dict,
+        proc_state: _ProcedureState,
         *,
         filename: str | None,
         lineno: int | None,
@@ -4083,7 +4142,7 @@ class FortranParser(ClassVisitor):
         if not self._looks_like_unknown_proc_declaration(line):
             self._raise_invalid_fortran_syntax_line(
                 line,
-                context=f"procedure '{proc_state['signature'].name}' specification part",
+                context=f"procedure '{proc_state.signature.name}' specification part",
                 filename=filename,
                 lineno=lineno,
                 source_line=source_line,
@@ -4091,7 +4150,7 @@ class FortranParser(ClassVisitor):
         if _REGEX["unsupported_class_star"].search(line):
             raise FortranParseError(
                 f"Unsupported assumed-type CLASS(*) declaration for procedure "
-                f"'{proc_state['signature'].name}': {line.strip()}",
+                f"'{proc_state.signature.name}': {line.strip()}",
                 filename=filename,
                 line_number=lineno,
                 source_line=source_line,
@@ -4100,7 +4159,7 @@ class FortranParser(ClassVisitor):
         if any(_REGEX[pattern_key].search(line) for pattern_key in _UNSUPPORTED_PATTERN_KEYS):
             return
         raise FortranParseError(
-            f"Unknown or unsupported datatype declaration for procedure '{proc_state['signature'].name}': {line.strip()}",
+            f"Unknown or unsupported datatype declaration for procedure '{proc_state.signature.name}': {line.strip()}",
             filename=filename,
             line_number=lineno,
             source_line=source_line,
@@ -4111,15 +4170,15 @@ class FortranParser(ClassVisitor):
     # Finalization and compile-time resolution
     # ------------------------------------------------------------------
 
-    def _finalize_proc(self, state: dict) -> FortranProcedureSignature:
+    def _finalize_proc(self, state: _ProcedureState) -> FortranProcedureSignature:
         """Validate and freeze one procedure signature from mutable scope state."""
-        sig = state["signature"]
-        symbols = state["symbols"]
-        local_params = state.get("local_params", {})
-        legacy_local_params = state.get("legacy_local_params", set())
-        implicit_typed_symbols = state.get("implicit_typed_symbols", {})
-        filename = state.get("filename")
-        implicit_none = state.get("implicit_none", False)
+        sig = state.signature
+        symbols = state.symbols
+        local_params = state.local_params
+        legacy_local_params = state.legacy_local_params
+        implicit_typed_symbols = state.implicit_typed_symbols
+        filename = state.filename
+        implicit_none = state.implicit_none
         sig.variables = {}
         sig.arguments = [symbols.get(a.name.lower(), a) for a in sig.arguments]
         if sig.result:
@@ -4129,8 +4188,8 @@ class FortranParser(ClassVisitor):
             sig.arguments,
             sig.name,
             filename,
-            state.get("header_lineno"),
-            state.get("header_source_line"),
+            state.header_lineno,
+            state.header_source_line,
         )
 
         # Safety check: if an argument has been explicitly declared in this
@@ -4138,7 +4197,7 @@ class FortranParser(ClassVisitor):
         # This catches declaration-application regressions (e.g. legacy
         # star-kind list handling) while still allowing truly undeclared
         # arguments to be handled by semantic conversion or wrapper planning.
-        declared_symbols = state.get("typed_symbols", set())
+        declared_symbols = state.typed_symbols
         for arg in sig.arguments:
             if (
                 arg.name.lower() in declared_symbols and arg.base_type == "unknown"
@@ -4159,7 +4218,7 @@ class FortranParser(ClassVisitor):
         if sig.result and sig.result.kind:
             sig.result.kind = self._resolve_kind_expression(sig.result.kind, local_params, resolver=local_resolver)
         relevant_params = self._collect_relevant_local_params(sig, local_params)
-        declared_local_types = state.get("declared_local_types", {})
+        declared_local_types = state.declared_local_types
         # Defensive reconciliation: some legacy declaration forms can be parsed into
         # `declared_local_types` before being matched back to argument symbols.
         # If an argument is still unknown but we have an exact-name local type
@@ -4175,7 +4234,7 @@ class FortranParser(ClassVisitor):
             self._apply_internal_type_metadata(arg, inferred)
 
         if implicit_none and not sig.in_interface:
-            self._validate_all_args_declared(sig, filename, explicit_result=bool(state.get("explicit_result", False)))
+            self._validate_all_args_declared(sig, filename, explicit_result=state.explicit_result)
 
         for name, value in relevant_params.items():
             if name.lower() in legacy_local_params:
@@ -4208,14 +4267,14 @@ class FortranParser(ClassVisitor):
                 )
         if sig.kind == "function":
             self._validate_function_result(sig, filename)
-        for symbol in sorted(state.get("imports", set())):
+        for symbol in sorted(state.imports):
             attr = f"import({symbol})"
             if attr not in sig.attributes:
                 sig.attributes.append(attr)
-        sig.uses = dict(state["uses"])
-        sig.common_variables = list(state.get("common_variables", ()))
+        sig.uses = dict(state.uses)
+        sig.common_variables = list(state.common_variables)
         finalized = replace(sig)
-        finalized._local_uses = dict(state.get("local_uses", {}))
+        finalized._local_uses = dict(state.local_uses)
         return finalized
 
     @staticmethod

@@ -151,8 +151,8 @@ def test_procedure_declaration_push_updates_dummy_or_records_local_type_and_dupl
 
     assert signature.arguments[0].base_type == "procedure"
     assert signature.arguments[0].kind == "callback_iface"
-    assert state["external_symbols"] == {"callback"}
-    assert state["declared_local_types"] == {"scratch": {"base_type": "real", "kind": "rk"}}
+    assert state.external_symbols == {"callback"}
+    assert state.declared_local_types == {"scratch": {"base_type": "real", "kind": "rk"}}
 
     with pytest.raises(FortranParseError) as error:
         parser._helper_push_declaration_to_scope(
@@ -187,9 +187,9 @@ def test_procedure_parameter_lines_preserve_local_parameter_state_and_duplicate_
         lineno=5,
         source_line="integer, parameter :: n = 4, m = n + 2",
     )
-    assert state["local_params"] == {"n": "4", "m": "n + 2"}
-    assert state["legacy_local_params"] == set()
-    assert state["implicit_typed_symbols"] == {}
+    assert state.local_params == {"n": "4", "m": "n + 2"}
+    assert state.legacy_local_params == set()
+    assert state.implicit_typed_symbols == {}
 
     with pytest.raises(FortranParseError) as error:
         parser._handle_proc_parameter_line(
@@ -211,7 +211,7 @@ def test_legacy_parameter_lines_respect_implicit_none_and_implicit_typing_contra
     parser = FortranParser()
     strict_signature = FortranProcedureSignature("strict", "subroutine")
     strict_state = parser._new_procedure_scope_state(strict_signature, symbols={})
-    strict_state["implicit_none"] = True
+    strict_state.implicit_none = True
 
     with pytest.raises(FortranParseError) as error:
         parser._handle_proc_parameter_line(
@@ -237,9 +237,9 @@ def test_legacy_parameter_lines_respect_implicit_none_and_implicit_typing_contra
         lineno=9,
         source_line="parameter (ival = 2, alpha = 1.0)",
     )
-    assert loose_state["local_params"] == {"ival": "2", "alpha": "1.0"}
-    assert loose_state["implicit_typed_symbols"] == {"ival": "integer", "alpha": "real"}
-    assert loose_state["legacy_local_params"] == set()
+    assert loose_state.local_params == {"ival": "2", "alpha": "1.0"}
+    assert loose_state.implicit_typed_symbols == {"ival": "integer", "alpha": "real"}
+    assert loose_state.legacy_local_params == set()
 
 
 def test_namespace_collection_preserves_case_insensitive_dependencies_and_exact_payload(tmp_path: Path, monkeypatch):
@@ -547,14 +547,15 @@ def test_project_encoding_is_forwarded_to_directory_namespace_collection(tmp_pat
 
 def test_scope_include_import_and_derived_type_binding_contracts():
     parser = FortranParser()
-    state = {}
+    state = parser._new_procedure_scope_state(
+        FortranProcedureSignature("scope_contract", "subroutine"),
+        symbols={},
+    )
     parser._proc_scope_add_include(state, "shared.inc")
     parser._proc_scope_add_imports(state, ["State_T", " ", "Callback"])
 
-    assert state == {
-        "includes": ["shared.inc"],
-        "imports": {"state_t", "callback"},
-    }
+    assert state.includes == ["shared.inc"]
+    assert state.imports == {"state_t", "callback"}
 
     dtype = parser._init_derived_type(
         "type, extends(parent(kind)), public :: child",
@@ -593,7 +594,10 @@ def test_scope_include_import_and_derived_type_binding_contracts():
 
 def test_unknown_procedure_declaration_kind_preserves_declaration_and_invalid_syntax_split():
     parser = FortranParser()
-    state = {"signature": FortranProcedureSignature(name="work", kind="subroutine")}
+    state = parser._new_procedure_scope_state(
+        FortranProcedureSignature(name="work", kind="subroutine"),
+        symbols={},
+    )
 
     with pytest.raises(FortranParseError) as declaration_error:
         parser._handle_unknown_proc_declaration(

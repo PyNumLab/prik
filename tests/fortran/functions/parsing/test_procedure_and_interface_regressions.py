@@ -91,16 +91,16 @@ def test_finalize_proc_resolves_signature_arguments_imports_and_uses_without_exp
         ],
     )
 
-    finalized = parser._finalize_proc(
-        {
-            "signature": signature,
-            "symbols": {argument.name.lower(): argument for argument in signature.arguments},
-            "uses": {"precision_mod": []},
-            "local_params": {"rk": "8", "count": "4"},
-            "imports": {"state_t", "callback"},
-            "filename": "finalize_contract.f90",
-        }
+    state = parser._new_procedure_scope_state(
+        signature,
+        symbols={argument.name.lower(): argument for argument in signature.arguments},
     )
+    state.uses = {"precision_mod": []}
+    state.local_params = {"rk": "8", "count": "4"}
+    state.imports = {"state_t", "callback"}
+    state.filename = "finalize_contract.f90"
+
+    finalized = parser._finalize_proc(state)
 
     assert finalized is not signature
     assert [(argument.name, argument.base_type, argument.kind, argument.shape) for argument in finalized.arguments] == [
