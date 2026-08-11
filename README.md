@@ -43,8 +43,8 @@ the user guide, examples, and reference material.
 - [How it works](#how-it-works)
 - [Native Project Inputs](#native-project-inputs)
 - [Python API](#python-api)
-- [Citation](#citation)
 - [Development](#development)
+- [Citation](#citation)
 - [License](#license)
 - [Documentation](#documentation)
 
@@ -554,14 +554,6 @@ PRIK_C_DOCS_END -->
 For native projects with macros, includes, or target flags, use the
 compiler-preprocessed CLI path or an equivalent preprocessing configuration.
 
-## Citation
-
-If you use PRIK in research, cite the release you used. PRIK `0.2.1` is
-archived at [10.5281/zenodo.21881988](https://doi.org/10.5281/zenodo.21881988),
-while [10.5281/zenodo.21881987](https://doi.org/10.5281/zenodo.21881987) covers
-all releases. Machine-readable metadata is available in
-[`CITATION.cff`](CITATION.cff).
-
 ## Development
 
 PRIK is created and maintained by Said Hadjout, with extensive use of
@@ -579,6 +571,14 @@ Run the full suite from the repository root:
 ```bash
 PYTHONPATH=. python3 -m pytest -q
 ```
+
+## Citation
+
+If you use PRIK in research, cite the release you used. PRIK `0.2.1` is
+archived at [10.5281/zenodo.21881988](https://doi.org/10.5281/zenodo.21881988),
+while [10.5281/zenodo.21881987](https://doi.org/10.5281/zenodo.21881987) covers
+all releases. Machine-readable metadata is available in
+[`CITATION.cff`](CITATION.cff).
 
 ## License
 
