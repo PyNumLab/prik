@@ -15,6 +15,7 @@ from prik.parsers.fortran.models import (
 from prik.parsers.fortran.parser import (
     FortranParser,
     _ParserScope,
+    _SourceUnitScanner,
     _UnitParts,
 )
 from tests.fortran._support.parser_regressions import (
@@ -25,7 +26,7 @@ from tests.fortran._support.parser_regressions import (
 
 
 def test_unit_region_helpers_preserve_specification_execution_and_contains_boundaries():
-    parser = FortranParser()
+    scanner = _SourceUnitScanner()
     unit = _unit(
         "procedure",
         "work",
@@ -47,15 +48,15 @@ def test_unit_region_helpers_preserve_specification_execution_and_contains_bound
         footer=unit.lines[-1],
     )
 
-    assert parser._helper_direct_contains_line(unit, filename="regions.f90") == 6
-    assert parser._helper_child_unit_region(unit, parts, _empty_unit("derived_type", "unknown", None, None)) == (
+    assert scanner.direct_contains_line(unit, filename="regions.f90") == 6
+    assert scanner.child_unit_region(unit, parts, _empty_unit("derived_type", "unknown", None, None)) == (
         "specification"
     )
-    assert parser._helper_child_unit_region(
-        unit, parts, _unit("derived_type", "local_state", "type :: local_state")
-    ) == ("specification")
+    assert scanner.child_unit_region(unit, parts, _unit("derived_type", "local_state", "type :: local_state")) == (
+        "specification"
+    )
     assert (
-        parser._helper_child_unit_region(
+        scanner.child_unit_region(
             unit,
             parts,
             _empty_unit("interface", None, 5, 5),
@@ -63,7 +64,7 @@ def test_unit_region_helpers_preserve_specification_execution_and_contains_bound
         == "execution"
     )
     assert (
-        parser._helper_child_unit_region(
+        scanner.child_unit_region(
             unit,
             parts,
             _empty_unit("procedure", "inner", 7, 8),
@@ -71,18 +72,18 @@ def test_unit_region_helpers_preserve_specification_execution_and_contains_bound
         == "contains"
     )
 
-    assert parser._helper_has_preferred_unit_end_ahead(unit.lines, 0, "procedure", "work") is True
-    assert parser._helper_has_preferred_unit_end_ahead(unit.lines, 0, "procedure", "missing") is False
-    assert parser._helper_has_preferred_unit_end_ahead(unit.lines[:-1], 0, "procedure", "work") is False
+    assert scanner.has_preferred_unit_end_ahead(unit.lines, 0, "procedure", "work") is True
+    assert scanner.has_preferred_unit_end_ahead(unit.lines, 0, "procedure", "missing") is False
+    assert scanner.has_preferred_unit_end_ahead(unit.lines[:-1], 0, "procedure", "work") is False
     immediate_type = _lines("type :: immediate", "end type immediate")
-    assert parser._helper_has_preferred_unit_end_ahead(immediate_type, 0, "derived_type", "immediate") is True
-    assert parser._helper_has_unit_end_ahead(immediate_type, 0, "derived_type") is True
-    assert parser._helper_has_unit_end_ahead(unit.lines, 2, "derived_type") is True
-    assert parser._helper_has_unit_end_ahead(unit.lines, 6, "procedure") is True
-    assert parser._helper_has_unit_end_ahead(unit.lines[:-1], 0, "procedure") is True
+    assert scanner.has_preferred_unit_end_ahead(immediate_type, 0, "derived_type", "immediate") is True
+    assert scanner.has_unit_end_ahead(immediate_type, 0, "derived_type") is True
+    assert scanner.has_unit_end_ahead(unit.lines, 2, "derived_type") is True
+    assert scanner.has_unit_end_ahead(unit.lines, 6, "procedure") is True
+    assert scanner.has_unit_end_ahead(unit.lines[:-1], 0, "procedure") is True
 
     immediate_contains = _unit("module", "owner", "module owner", "contains", "end module owner")
-    assert parser._helper_direct_contains_line(immediate_contains, filename="regions.f90") == 2
+    assert scanner.direct_contains_line(immediate_contains, filename="regions.f90") == 2
 
 
 def test_source_preparation_rejects_raw_cpp_and_preserves_root_units_and_source_form(tmp_path: Path):
@@ -129,7 +130,7 @@ end subroutine global_step
 
 
 def test_child_unit_slicing_skips_preprocessed_linemarkers_and_blank_unit_starts():
-    parser = FortranParser()
+    scanner = _SourceUnitScanner()
     lines = _lines(
         '# 4 "generated.f90"',
         "",
@@ -137,31 +138,32 @@ def test_child_unit_slicing_skips_preprocessed_linemarkers_and_blank_unit_starts
         "end module owner",
     )
 
-    units = parser._helper_slice_child_units(
+    units = scanner.slice_child_units(
         lines,
-        parent_scope=_ParserScope(kind="file", name=None),
+        parent_kind="file",
         filename="generated.f90",
     )
 
     assert [(unit.kind, unit.name) for unit in units] == [("module", "owner")]
-    assert parser._helper_classify_unit_start("   ") is None
+    assert scanner.classify_unit_start("   ") is None
 
 
 def test_unit_end_and_header_validation_preserve_public_diagnostics():
     parser = FortranParser()
+    scanner = _SourceUnitScanner()
 
-    assert parser._helper_parse_unit_end("module", "end module owner_mod") == (True, "owner_mod")
-    assert parser._helper_parse_unit_end("block_data", "end") == (True, None)
-    assert parser._helper_parse_unit_end("procedure", "end function value") == (True, "value")
-    assert parser._helper_unit_end_matches("enum", "end enum") is True
-    assert parser._helper_unit_label("block_data") == "block data"
+    assert scanner.parse_unit_end("module", "end module owner_mod") == (True, "owner_mod")
+    assert scanner.parse_unit_end("block_data", "end") == (True, None)
+    assert scanner.parse_unit_end("procedure", "end function value") == (True, "value")
+    assert scanner.unit_end_matches("enum", "end enum") is True
+    assert scanner.unit_label("block_data") == "block data"
     assert parser._parse_submodule_header("submodule (ancestor_mod:parent_mod) child_mod", "headers.f90").parent == (
         "parent_mod"
     )
     assert parser._split_submodule_parent("ancestor_mod:parent_mod") == ("parent_mod", "ancestor_mod")
     assert parser._split_submodule_parent("parent_mod") == ("parent_mod", None)
-    assert parser._parse_interface_header("abstract interface") == (True, None)
-    assert parser._parse_interface_header("interface callbacks") == (True, "callbacks")
+    assert scanner.parse_interface_header("abstract interface") == (True, None)
+    assert scanner.parse_interface_header("interface callbacks") == (True, "callbacks")
 
     with pytest.raises(FortranParseError) as module_error:
         parser._parse_module_header(
@@ -194,7 +196,7 @@ def test_unit_end_and_header_validation_preserve_public_diagnostics():
 
 
 def test_unit_part_splitting_skips_nested_units_and_preserves_executable_boundary():
-    parser = FortranParser()
+    scanner = _SourceUnitScanner()
     unit = _unit(
         "procedure",
         "work",
@@ -212,7 +214,7 @@ def test_unit_part_splitting_skips_nested_units_and_preserves_executable_boundar
         "end subroutine work",
     )
 
-    parts = parser._helper_split_unit_parts(unit, parser._helper_unit_grammar("procedure"), filename="parts.f90")
+    parts = scanner.split_unit_parts(unit, filename="parts.f90")
 
     assert [line for line, _lineno, _source in parts.specification] == ["integer :: counter"]
     assert [line for line, _lineno, _source in parts.execution] == ["counter = counter + 1"]
@@ -562,7 +564,6 @@ def test_singular_parser_entrypoint_diagnostics_preserve_names_entities_and_file
         ("_parse_program_header", None, "program", "program"),
         ("_parse_block_data_header", None, "block_data", "block data"),
         ("_init_derived_type", None, "derived_type", "derived-type"),
-        ("_parse_interface_header", (False, None), "interface", "interface"),
     ],
 )
 def test_source_unit_visitor_defensive_diagnostics_preserve_public_metadata(
@@ -583,6 +584,24 @@ def test_source_unit_visitor_defensive_diagnostics_preserve_public_metadata(
         )
 
     assert error.value.base_message == f"Expected {entity_name} unit."
+    assert error.value.filename == "visitor_contract.f90"
+    assert error.value.line_number == 1
+    assert error.value.source_line == "broken header"
+    assert error.value.code == "PARSE_EXPECTED_UNIT"
+
+
+def test_interface_unit_defensive_diagnostic_uses_scanner_header_recognition(monkeypatch):
+    parser = FortranParser()
+    monkeypatch.setattr(parser._source_unit_scanner, "parse_interface_header", lambda _line: (False, None))
+
+    with pytest.raises(FortranParseError) as error:
+        parser._visit(
+            _unit("interface", "broken", "broken header", "broken footer"),
+            parent_scope=_ParserScope(kind="file", name=None),
+            filename="visitor_contract.f90",
+        )
+
+    assert error.value.base_message == "Expected interface unit."
     assert error.value.filename == "visitor_contract.f90"
     assert error.value.line_number == 1
     assert error.value.source_line == "broken header"

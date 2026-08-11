@@ -40,7 +40,7 @@ PRIK_C_DOCS_END -->
 | CLI request | `prik/cli.py` | source paths and stage flags | selected stage or wrapper build options | `tests/fortran/command_line_interface/pipeline/` |
 | Build orchestration | `prik/pipeline/build.py` | ordered Fortran sources or `.pyi` contracts plus explicit native artifacts | `WrapperBuildResult`, `NativeBuildPlan`, and generated artifact plan | wrapper build-mode tests |
 | Preprocessing | `prik/pipeline/preprocessing.py` | source path, compiler config | preprocessed source and dependency facts | preprocessing tests |
-| Parser project model | `prik/parsers/fortran/parser.py` | preprocessed Fortran source | parser project with modules, procedures, types, visibility | Fortran parser fixture tests |
+| Parser project model | `prik/parsers/fortran/parser.py` (`_SourceUnitScanner` for structural boundaries/regions; `FortranParser` for scopes and model construction) | preprocessed Fortran source | parser project with modules, procedures, types, visibility | Fortran parser fixture tests |
 | Target probes | `prik/probes/fortran_types.py` | semantic type requirements and compiler flags | resolved kind/storage facts | Fortran type probe tests |
 | Semantic IR | `prik/semantics/fortran2ir.py` | parser project and target facts | `SemanticModule` objects | semantic Fortran tests |
 | Semantic policy completion | `prik/semantics/policy_completion.py`, `prik/semantics/ownership.py` | full semantic modules with signatures and `.pyi` overrides | semantic modules annotated with every ownership, transfer, destruction, mutability, storage, accessor, and projection decision needed by wrapper generation | ownership-policy tests |

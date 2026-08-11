@@ -1,16 +1,16 @@
 """Executable developer tutorial for the grammar-style parser internals.
 
 This test is intentionally written as a small walkthrough rather than as a
-black-box public API test. It shows the private visitor/helper sequence that
+black-box public API test. It shows the private visitor/scanner sequence that
 maintainers should follow when changing `prik/parsers/fortran/parser.py`:
 
-1. preprocess and slice file-level source units,
-2. split one unit into grammar parts,
+1. preprocess, then scan file-level source units,
+2. ask `_SourceUnitScanner` to split one unit into grammar parts,
 3. visit the unit with a scope,
 4. recursively slice and inspect its direct children.
 """
 
-from prik.parsers.fortran.parser import FortranParser
+from prik.parsers.fortran.parser import FortranParser, _SourceUnitScanner
 
 
 def test_developer_tutorial_recursive_unit_visitors_and_helpers():
@@ -31,6 +31,7 @@ def test_developer_tutorial_recursive_unit_visitors_and_helpers():
     )
 
     parser = FortranParser()
+    scanner = _SourceUnitScanner()
 
     lines, root_scope, top_units = parser._helper_prepare_source_units(
         source,
@@ -42,10 +43,10 @@ def test_developer_tutorial_recursive_unit_visitors_and_helpers():
     ]
 
     module_unit = top_units[0]
-    module_grammar = parser._helper_unit_grammar("module")
-    module_parts = parser._helper_split_unit_parts(
+    module_grammar = scanner.grammar("module")
+    assert module_grammar.has_contains_part is True
+    module_parts = scanner.split_unit_parts(
         module_unit,
-        module_grammar,
         filename="developer_tutorial.f90",
     )
     assert module_parts.header == module_unit.lines[0]
@@ -66,9 +67,9 @@ def test_developer_tutorial_recursive_unit_visitors_and_helpers():
     assert module.variables[0].symbolic_value == "8"
 
     module_scope = parser._helper_scope_for_model("module", module, parent=root_scope)
-    child_units = parser._helper_slice_child_units(
+    child_units = scanner.slice_child_units(
         module_unit.lines[1:-1],
-        parent_scope=module_scope,
+        parent_kind=module_scope.kind,
         filename="developer_tutorial.f90",
     )
     assert [(unit.kind, unit.name, unit.start_line, unit.end_line) for unit in child_units] == [
@@ -76,9 +77,8 @@ def test_developer_tutorial_recursive_unit_visitors_and_helpers():
     ]
 
     procedure_unit = child_units[0]
-    procedure_parts = parser._helper_split_unit_parts(
+    procedure_parts = scanner.split_unit_parts(
         procedure_unit,
-        parser._helper_unit_grammar("procedure"),
         filename="developer_tutorial.f90",
     )
     assert [line[0].strip() for line in procedure_parts.specification] == [

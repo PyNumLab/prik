@@ -3,7 +3,7 @@
 from prik import parse_fortran_file
 from prik.parsers.fortran.lexer import preprocess_lines, strip_comment
 from prik.parsers.fortran.models import FortranProcedureSignature
-from prik.parsers.fortran.parser import FortranParser
+from prik.parsers.fortran.parser import FortranParser, _SourceUnitScanner
 from prik.parsers.fortran.utils import split_csv
 
 
@@ -117,7 +117,7 @@ end function evaluate
     assert signature.result is not None
     assert signature.result.kind == "selected_real_kind(12)"
     assert signature.common_variables == ["cache"]
-    assert FortranParser._is_executable_statement_start("square(value) = value * value") is False
+    assert _SourceUnitScanner.is_executable_statement_start("square(value) = value * value") is False
 
 
 def test_procedure_include_is_recorded_before_signature_finalization():

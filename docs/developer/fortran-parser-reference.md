@@ -180,13 +180,14 @@ end module m
 
 The parser handles it in this order:
 
-1. `parse_file` preprocesses the source and calls `_helper_slice_child_units`
-   at file scope. The result is one `ModuleUnit` carrying the module name,
-   lines, and source locations.
+1. `parse_file` preprocesses the source and asks the stateless
+   `_SourceUnitScanner.slice_child_units` collaborator to scan at file scope.
+   The result is one `ModuleUnit` carrying the module name, exact lines, and
+   source locations. The scanner receives the parent kind, not `_ParserScope`.
 2. the shared `ClassVisitor._visit` dispatcher selects `_visit_ModuleUnit`.
-3. `_visit_ModuleUnit` creates a module `_ParserScope`, calls
-   `_helper_split_unit_parts`, and sends only the module specification lines to
-   `_parse_specification_part`.
+3. `_visit_ModuleUnit` creates a module `_ParserScope`, asks
+   `_SourceUnitScanner.split_unit_parts` for the structural regions, and sends
+   only the module specification lines to `_parse_specification_part`.
 4. `_parse_specification_part` uses the shared declaration backend:
    `_helper_parse_declaration_line` parses `integer, parameter :: n = 4`, then
    `_helper_push_declaration_to_scope` appends the resulting parameter variable
@@ -204,6 +205,14 @@ Scope is always an explicit argument to the shared helpers. That is the reason
 two modules can each define `type :: state` without conflict, while two
 same-level `module m` declarations or two same-level contained procedures with
 the same name are rejected by `_helper_validate_sibling_units`.
+
+The ownership boundary is deliberate: `_SourceUnitScanner` recognizes unit
+openers and terminators, matches nested boundaries, and separates
+specification, execution, and `contains` regions. `FortranParser` owns scopes,
+model visitors, declaration parsing, sibling validation, and diagnostics that
+depend on constructed parser models. Splitting the scanner into another file
+would not strengthen that boundary; its private source tuples, grammar records,
+and unit classes are all local to this parser module.
 
 End-name validation is strict for structural units whose names define exported
 scope boundaries, such as modules, submodules, programs, interfaces, and

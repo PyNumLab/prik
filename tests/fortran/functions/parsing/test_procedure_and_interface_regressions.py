@@ -7,7 +7,7 @@ from prik.parsers.fortran.models import (
 )
 from prik.parsers.fortran.parser import (
     FortranParser,
-    _ParserScope,
+    _SourceUnitScanner,
 )
 from tests.fortran._support.parser_regressions import _unit
 
@@ -50,7 +50,7 @@ end module c_api
 
 
 def test_nonexecution_child_units_keep_specification_and_contains_children_only():
-    parser = FortranParser()
+    scanner = _SourceUnitScanner()
     unit = _unit(
         "procedure",
         "work",
@@ -68,9 +68,8 @@ def test_nonexecution_child_units_keep_specification_and_contains_children_only(
         "end subroutine work",
     )
 
-    children = parser._helper_nonexecution_child_units(
+    children = scanner.nonexecution_child_units(
         unit,
-        parent_scope=_ParserScope(kind="procedure", name="work"),
         filename="children.f90",
     )
 
