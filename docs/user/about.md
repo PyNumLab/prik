@@ -78,6 +78,14 @@ Longer term, PRIK is intended to support additional native languages and
 execution environments, including C++, CUDA, and other backends. These are
 future directions and are not part of the current release.
 
+## Citation
+
+If you use PRIK in research, cite the release you used. PRIK `0.2.1` is
+archived at [10.5281/zenodo.21881988](https://doi.org/10.5281/zenodo.21881988),
+while [10.5281/zenodo.21881987](https://doi.org/10.5281/zenodo.21881987) covers
+all releases. Machine-readable metadata is available in
+[`CITATION.cff`](https://github.com/PyNumLab/prik/blob/main/CITATION.cff).
+
 ## Stewardship and development
 
 PRIK is created and maintained by **Said Hadjout**

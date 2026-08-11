@@ -7,6 +7,11 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+### Added
+
+- Added Zenodo version and concept DOI links to the citation metadata, README,
+  and About page.
+
 ## 0.2.1 — 2026-08-11
 
 ### Added

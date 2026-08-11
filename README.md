@@ -9,6 +9,7 @@ importable extensions and editable `.pyi` contracts for Pythonic APIs.
 [![Tests](https://github.com/PyNumLab/prik/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/PyNumLab/prik/actions/workflows/tests.yml)
 [![Static Analysis](https://github.com/PyNumLab/prik/actions/workflows/static-analysis.yml/badge.svg?branch=main)](https://github.com/PyNumLab/prik/actions/workflows/static-analysis.yml)
 [![codecov](https://codecov.io/gh/PyNumLab/prik/graph/badge.svg?token=QZRRCS5YO6)](https://codecov.io/gh/PyNumLab/prik)
+[![DOI](https://zenodo.org/badge/1241799694.svg)](https://doi.org/10.5281/zenodo.21881987)
 
 It preserves modules, derived types, arrays, callbacks, and native behavior so
 you can shape the resulting API without writing low-level binding code.
@@ -42,6 +43,7 @@ the user guide, examples, and reference material.
 - [How it works](#how-it-works)
 - [Native Project Inputs](#native-project-inputs)
 - [Python API](#python-api)
+- [Citation](#citation)
 - [Development](#development)
 - [License](#license)
 - [Documentation](#documentation)
@@ -551,6 +553,14 @@ PRIK_C_DOCS_END -->
 
 For native projects with macros, includes, or target flags, use the
 compiler-preprocessed CLI path or an equivalent preprocessing configuration.
+
+## Citation
+
+If you use PRIK in research, cite the release you used. PRIK `0.2.1` is
+archived at [10.5281/zenodo.21881988](https://doi.org/10.5281/zenodo.21881988),
+while [10.5281/zenodo.21881987](https://doi.org/10.5281/zenodo.21881987) covers
+all releases. Machine-readable metadata is available in
+[`CITATION.cff`](CITATION.cff).
 
 ## Development
 
