@@ -314,16 +314,16 @@ def test_finalize_proc_duplicate_argument_diagnostic_preserves_header_metadata()
     assert error.value.code == "PARSE_DUPLICATE_ARGUMENT"
 
 
-def test_declaration_push_preserves_type_field_metadata_and_duplicate_field_diagnostic():
+def test_declaration_storage_preserves_type_field_metadata_and_duplicate_field_diagnostic():
     parser = FortranParser()
     dtype = FortranDerivedType("state_t")
     scope = _ParserScope(kind="derived_type", name=dtype.name, model=dtype)
-    meta = parser._new_decl_meta("integer", "i4")
-    meta.update({"pointer": True, "shape": [":"], "rank": 1})
+    declaration = parser._new_declaration("integer", "i4")
+    parser._apply_declaration_attributes(declaration, ["pointer", "dimension(:)"])
 
-    parser._helper_push_declaration_to_scope(
+    parser._store_declaration(
         scope,
-        meta=meta,
+        declaration=declaration,
         right="ids, IDs",
         role="type_field",
         filename="declarations.f90",

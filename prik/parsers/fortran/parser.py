@@ -107,11 +107,11 @@ unit structure is rejected before their contents are skipped.
 
 Scoping follows the same recursion. A helper that parses `integer :: n` or
 `real :: x(n)` receives a `_ParserScope` argument. The shared declaration parser
-builds the same metadata for variables, procedure arguments/results, and
-derived-type fields; `_helper_push_declaration_to_scope` stores the symbol in
-the current scope model. This is why the same derived-type name can exist in
-two modules, while duplicate names at one sibling level are rejected by the
-slicer validation.
+builds the same typed `_Declaration` for variables, procedure
+arguments/results, and derived-type fields; `_store_declaration` selects the
+storage helper for the current scope model. This is why the same derived-type
+name can exist in two modules, while duplicate names at one sibling level are
+rejected by the slicer validation.
 """
 
 _REGEX: dict[str, re.Pattern[str]] = {
@@ -267,6 +267,56 @@ _SOURCE_UNIT_TYPES = {
 }
 
 
+_DeclarationRole = Literal["procedure_symbol", "type_field", "module_variable"]
+_DECLARATION_FLAG_FIELDS = MappingProxyType(
+    {
+        "optional": "optional",
+        "value": "value",
+        "allocatable": "allocatable",
+        "pointer": "pointer",
+        "target": "target",
+        "contiguous": "contiguous",
+        "external": "external",
+        "parameter": "parameter",
+    }
+)
+
+
+@dataclass
+class _Declaration:
+    """Hold normalized type and attribute facts for one declaration statement.
+
+    The record describes the facts shared by every entity after ``::``; entity
+    names, inline shapes, and initializers are parsed separately before model
+    storage. For example, ``real(kind=rk), pointer, dimension(:) :: values``
+    produces ``base_type="real"``, ``kind="rk"``, ``pointer=True``, and
+    ``shape=[":"]``. This parser-local record is not part of the public parser
+    model or the later semantic policy.
+    """
+
+    base_type: str
+    kind: str = ""
+    rank: int = 0
+    shape: list[str] = dataclass_field(default_factory=list)
+    intent: str | None = None
+    reads_argument: bool | None = None
+    writes_argument: bool | None = None
+    optional: bool = False
+    value: bool = False
+    allocatable: bool = False
+    pointer: bool = False
+    target: bool = False
+    contiguous: bool = False
+    external: bool = False
+    parameter: bool = False
+    polymorphic: bool = False
+    visibility: str = "public"
+    explicit_visibility: str | None = None
+    target_kind_expression: str | None = None
+    character_length_syntax: bool = False
+    declared_storage_bits: int | None = None
+
+
 @dataclass
 class _ProcedureState:
     """Accumulate mutable facts while parsing and finalizing one procedure.
@@ -285,7 +335,7 @@ class _ProcedureState:
     local_params: dict[str, str] = dataclass_field(default_factory=dict)
     legacy_local_params: set[str] = dataclass_field(default_factory=set)
     implicit_typed_symbols: dict[str, str] = dataclass_field(default_factory=dict)
-    declared_local_types: dict[str, dict[str, object]] = dataclass_field(default_factory=dict)
+    declared_local_types: dict[str, _Declaration] = dataclass_field(default_factory=dict)
     implicit_none: bool = False
     imports: set[str] = dataclass_field(default_factory=set)
     external_symbols: set[str] = dataclass_field(default_factory=set)
@@ -323,7 +373,7 @@ class _UnitGrammar:
     has_execution_part: bool = False
     has_contains_part: bool = False
     ignores_contains_children: bool = False
-    declaration_role: str | None = None
+    declaration_role: _DeclarationRole | None = None
 
 
 @dataclass(frozen=True)
@@ -1232,8 +1282,8 @@ class FortranParser(ClassVisitor):
     4. Each unit visitor builds its own `_ParserScope`, visits the unit's
        scanner-owned specification region, and consumes its retained direct
        children where the grammar allows them.
-    5. Shared declaration helpers push variables, procedure symbols, and type
-       fields into the active scope model.
+    5. Shared declaration helpers create a typed declaration and store its
+       variables, procedure symbols, or type fields in the active scope model.
     6. Build `FortranFile` symbol table and standalone entity lists.
 
     Class section map:
@@ -3148,23 +3198,19 @@ class FortranParser(ClassVisitor):
         self,
         proc_state: _ProcedureState,
         name: str,
-        meta: dict,
+        declaration: _Declaration,
     ) -> None:
-        """Store type metadata for a declared local symbol."""
+        """Store an independent typed declaration for one local symbol.
+
+        For example, a local ``real(kind=rk) :: scratch`` stores a declaration
+        under ``scratch`` so procedure finalization can later type a matching
+        parameter or unresolved dummy without relying on dictionary keys.
+        """
         key = self._scope_key(name)
-        declared_type = {
-            "base_type": meta["base_type"],
-            "kind": meta["kind"],
-        }
-        for metadata_key in (
-            "target_kind_expression",
-            "character_length_syntax",
-            "declared_storage_bits",
-            "polymorphic",
-        ):
-            if metadata_key in meta and (metadata_key != "polymorphic" or meta[metadata_key]):
-                declared_type[metadata_key] = meta[metadata_key]
-        proc_state.declared_local_types[key] = declared_type
+        proc_state.declared_local_types[key] = replace(
+            declaration,
+            shape=list(declaration.shape),
+        )
 
     def _proc_scope_add_local_parameter(
         self,
@@ -3294,7 +3340,7 @@ class FortranParser(ClassVisitor):
 
         Example:
             In a program scope, ``integer, parameter :: n = 8`` is parsed by
-            `_helper_parse_declaration_line` and pushed to
+            `_helper_parse_declaration_line` and stored in
             `program.variables`. In a module scope, ``private :: work`` updates
             module visibility instead of creating a variable.
         """
@@ -3702,7 +3748,7 @@ class FortranParser(ClassVisitor):
         line: str,
         scope: _ParserScope,
         *,
-        role: str,
+        role: _DeclarationRole,
         filename: str | None,
         lineno: int | None,
         source_line: str | None,
@@ -3714,7 +3760,7 @@ class FortranParser(ClassVisitor):
         This is the common declaration backend for module variables, program
         variables, block-data variables, derived-type fields, and procedure
         arguments/results. The `role` argument captures the small differences
-        in where the parsed symbol is pushed.
+        in where the parsed symbol is stored.
 
         Example:
             ``real :: x(:)`` with role ``procedure_symbol`` updates
@@ -3732,16 +3778,20 @@ class FortranParser(ClassVisitor):
         parsed_decl = self._parse_declaration_left(left, parse_character_star=parse_character_star)
         if parsed_decl is None:
             return False
-        meta, attrs = parsed_decl
+        declaration, attrs = parsed_decl
         if not has_separator:
-            legacy_right = self._legacy_declaration_entities(left, meta)
+            legacy_right = self._legacy_declaration_entities(left, declaration)
             if legacy_right is not None:
                 right = legacy_right
                 attrs = []
-        self._apply_decl_attrs(meta, attrs, include_argument_access=include_argument_access)
-        self._helper_push_declaration_to_scope(
+        self._apply_declaration_attributes(
+            declaration,
+            attrs,
+            include_argument_access=include_argument_access,
+        )
+        self._store_declaration(
             scope,
-            meta=meta,
+            declaration=declaration,
             right=right,
             role=role,
             filename=filename,
@@ -3755,8 +3805,14 @@ class FortranParser(ClassVisitor):
         left: str,
         *,
         parse_character_star: bool = True,
-    ) -> tuple[dict, list[str]] | None:
-        """Parse a declaration prefix into normalized metadata and attributes."""
+    ) -> tuple[_Declaration, list[str]] | None:
+        """Parse a declaration prefix into a typed record and raw attributes.
+
+        For example, ``real(kind=rk), pointer`` returns a declaration with
+        base type ``real`` and kind ``rk``, plus ``["pointer"]`` for the
+        attribute-normalization step. Entity names after ``::`` are not part of
+        this prefix parser.
+        """
         star_kind = self._find_legacy_star_kind(left)
         char_star = _REGEX["char_star"].match(left) if parse_character_star else None
         if char_star:
@@ -3764,48 +3820,53 @@ class FortranParser(ClassVisitor):
             if kind.startswith("(") and kind.endswith(")"):
                 kind = kind[1:-1].strip()
             trailing = (char_star.group("rest") or "").strip().lstrip(", ")
-            meta = self._new_decl_meta("character", kind)
-            meta["character_length_syntax"] = True
-            return meta, split_csv(trailing)
+            declaration = self._new_declaration("character", kind)
+            declaration.character_length_syntax = True
+            return declaration, split_csv(trailing)
         if star_kind:
             base, kind = star_kind
             tail = self._strip_legacy_star_kind_prefix(left)
             attrs = split_csv(tail.lstrip(", ")) if tail.startswith(",") else []
-            meta = self._new_decl_meta(base.lower(), kind)
+            declaration = self._new_declaration(base.lower(), kind)
             if base.lower() == "character":
-                meta["character_length_syntax"] = True
+                declaration.character_length_syntax = True
             else:
-                meta["declared_storage_bits"] = int(kind) * 8
-            return meta, attrs
+                declaration.declared_storage_bits = int(kind) * 8
+            return declaration, attrs
 
         intrinsic = self._split_intrinsic_type_spec(left)
         derived = _REGEX["type_field"].match(left)
         class_derived = _REGEX["class_field"].match(left)
         if intrinsic:
             base, type_spec, tail = intrinsic
-            meta = self._intrinsic_decl_meta(base, type_spec)
-            return meta, split_csv(tail.strip().lstrip(", "))
+            declaration = self._intrinsic_declaration(base, type_spec)
+            return declaration, split_csv(tail.strip().lstrip(", "))
         if derived or class_derived:
             decl = derived or class_derived
-            meta = self._new_decl_meta("derived", decl.group("dtype"))
-            meta["polymorphic"] = class_derived is not None
-            return meta, split_csv((decl.group("attrs") or "").strip().lstrip(", "))
+            declaration = self._new_declaration("derived", decl.group("dtype"))
+            declaration.polymorphic = class_derived is not None
+            return declaration, split_csv((decl.group("attrs") or "").strip().lstrip(", "))
         if re.match(r"^procedure\s*\(", left, re.IGNORECASE):
             procm = _REGEX["procedure_dummy"].match(left)
             iface = procm.group("iface").lower() if procm else None
-            return self._new_decl_meta("procedure", iface), split_csv(
+            return self._new_declaration("procedure", iface), split_csv(
                 (procm.group("attrs") if procm else "").strip().lstrip(", ")
             )
         return None
 
-    def _legacy_declaration_entities(self, left: str, meta: dict) -> str | None:
-        """Return the entity-list tail from a declaration without `::`."""
+    def _legacy_declaration_entities(self, left: str, declaration: _Declaration) -> str | None:
+        """Return the entity-list tail from a declaration without ``::``.
+
+        ``integer*4 values(3)`` returns ``values(3)``. The typed declaration
+        tells character-length syntax apart from intrinsic storage-width
+        syntax while the original prefix remains available for slicing.
+        """
         char_star = _REGEX["char_star"].match(left)
         if char_star:
             return (char_star.group("rest") or "").strip().lstrip(", ")
 
         star_kind = self._find_legacy_star_kind(left)
-        if star_kind and meta["base_type"] != "character":
+        if star_kind and declaration.base_type != "character":
             return self._strip_legacy_star_kind_prefix(left).lstrip(", ")
 
         intrinsic = self._split_intrinsic_type_spec(left)
@@ -3823,62 +3884,34 @@ class FortranParser(ClassVisitor):
                 return tail
         return None  # pragma: no cover - invalid legacy declaration tails are ignored.
 
-    def _helper_push_declaration_to_scope(
+    def _store_declaration(
         self,
         scope: _ParserScope,
         *,
-        meta: dict,
+        declaration: _Declaration,
         right: str,
-        role: str,
+        role: _DeclarationRole,
         filename: str | None,
         lineno: int | None,
         source_line: str | None,
     ) -> None:
-        """Push parsed declaration entities into the correct scope model.
+        """Dispatch parsed entities to the storage owner selected by ``role``.
 
-        The name says "push" because parsing a declaration is only half of the
-        job; the other half is storing the resulting symbol in the active unit
-        scope. This helper is the common storage point for variables, fields,
-        and procedure arguments/results.
-
-        Example:
-            ``integer :: n`` in a module appends `FortranVariable("n")` to
-            `module.variables`, while the same declaration inside
-            ``subroutine step(n)`` updates the existing `FortranArgument("n")`
-            in the procedure signature.
+        Parsing a declaration is separate from storing its entities. For
+        example, ``integer :: n`` in a module appends a variable through
+        :meth:`_store_scope_variable_declaration`, while the same statement in
+        ``subroutine step(n)`` updates the existing dummy through
+        :meth:`_store_procedure_declaration`.
         """
         if role == "procedure_symbol":
-            proc_state = scope.state
-            if proc_state is None:  # pragma: no cover - internal helper misuse.
-                raise FortranParseError(
-                    "Procedure declaration scope is missing state.",
-                    filename=filename,
-                    code="PARSE_INTERNAL_STATE",
-                )
-            if meta["base_type"] == "procedure" and meta["kind"] in proc_state.imports:
-                meta["kind"] = None
-            for entity in split_csv(right):
-                raw_name, shape = self._var(entity)
-                if not raw_name:
-                    continue
-                entity_meta = self._entity_decl_meta(raw_name, meta)
-                normalized_name = self._normalize_declared_name(raw_name, entity_meta)
-                if not normalized_name:
-                    continue
-                lowered_name = self._proc_scope_mark_declared_symbol(
-                    proc_state,
-                    normalized_name,
-                    filename=filename,
-                    line_number=lineno,
-                    source_line=source_line,
-                )
-                if meta.get("external"):
-                    self._proc_scope_add_external_symbol(proc_state, lowered_name)
-                arg = self._proc_scope_get_symbol(proc_state, lowered_name)
-                if arg is None:
-                    self._proc_scope_set_declared_local_type(proc_state, lowered_name, entity_meta)
-                    continue
-                self._apply(arg, entity_meta, shape)
+            self._store_procedure_declaration(
+                scope,
+                declaration,
+                right,
+                filename=filename,
+                lineno=lineno,
+                source_line=source_line,
+            )
             return
 
         target = scope.model
@@ -3888,38 +3921,133 @@ class FortranParser(ClassVisitor):
                 filename=filename,
                 code="PARSE_INTERNAL_STATE",
             )
+        if role == "type_field":
+            self._store_type_field_declaration(target, declaration, right)
+            return
+        self._store_scope_variable_declaration(scope, target, declaration, right)
 
-        for entity in split_csv(right):
-            declared_entity, initializer = split_declaration_assignment(entity)
-            raw_name, shape = self._var(declared_entity)
-            if not raw_name:
+    def _store_procedure_declaration(
+        self,
+        scope: _ParserScope,
+        declaration: _Declaration,
+        right: str,
+        *,
+        filename: str | None,
+        lineno: int | None,
+        source_line: str | None,
+    ) -> None:
+        """Store declaration entities in one procedure symbol table.
+
+        Example:
+            ``real(kind=rk) :: value, scratch`` updates a dummy named ``value``
+            and retains the same typed declaration for the local ``scratch``.
+            Source metadata is forwarded to duplicate-declaration diagnostics.
+        """
+        proc_state = scope.state
+        if proc_state is None:  # pragma: no cover - internal helper misuse.
+            raise FortranParseError(
+                "Procedure declaration scope is missing state.",
+                filename=filename,
+                code="PARSE_INTERNAL_STATE",
+            )
+        if declaration.base_type == "procedure" and declaration.kind in proc_state.imports:
+            declaration.kind = ""
+        for normalized_name, shape, _initializer, entity_declaration in self._declaration_entities(
+            right,
+            declaration,
+        ):
+            lowered_name = self._proc_scope_mark_declared_symbol(
+                proc_state,
+                normalized_name,
+                filename=filename,
+                line_number=lineno,
+                source_line=source_line,
+            )
+            if declaration.external:
+                self._proc_scope_add_external_symbol(proc_state, lowered_name)
+            arg = self._proc_scope_get_symbol(proc_state, lowered_name)
+            if arg is None:
+                self._proc_scope_set_declared_local_type(proc_state, lowered_name, entity_declaration)
                 continue
-            entity_meta = self._entity_decl_meta(raw_name, meta)
-            normalized_name = self._normalize_declared_name(raw_name, entity_meta)
-            if not normalized_name:
-                continue
-            if role == "type_field":
-                field = FortranArgument(name=normalized_name)
-                self._apply(field, entity_meta, shape)
-                if initializer is not None:
-                    field.value = self._normalize_parameter_value(initializer)
-                    field.symbolic_value = initializer
-                    field.value_type = "expression"
-                target.fields.append(field)
-                continue
+            self._apply_declaration(arg, entity_declaration, shape)
+
+    def _store_type_field_declaration(self, target, declaration: _Declaration, right: str) -> None:
+        """Append every entity in one declaration to a derived-type model.
+
+        For example, ``integer, pointer :: ids(:) => null()`` creates one field
+        with its inline shape, pointer attribute, and symbolic initializer.
+        """
+        for normalized_name, shape, initializer, entity_declaration in self._declaration_entities(
+            right,
+            declaration,
+        ):
+            field = FortranArgument(name=normalized_name)
+            self._apply_declaration(field, entity_declaration, shape)
+            if initializer is not None:
+                field.value = self._normalize_parameter_value(initializer)
+                field.symbolic_value = initializer
+                field.value_type = "expression"
+            target.fields.append(field)
+
+    def _store_scope_variable_declaration(
+        self,
+        scope: _ParserScope,
+        target,
+        declaration: _Declaration,
+        right: str,
+    ) -> None:
+        """Append declaration entities to a module-like variable collection.
+
+        For example, ``integer, parameter :: n = 4`` creates one parameter
+        variable, preserves ``4`` as its symbolic value, and records explicit
+        module visibility when the declaration supplies it.
+        """
+        for normalized_name, shape, initializer, entity_declaration in self._declaration_entities(
+            right,
+            declaration,
+        ):
             var = FortranArgument(name=normalized_name)
-            self._apply(var, entity_meta, shape)
-            self._record_declaration_visibility(scope, target, var, entity_meta)
-            if initializer is not None and meta["parameter"]:
+            self._apply_declaration(var, entity_declaration, shape)
+            self._record_declaration_visibility(scope, target, var, entity_declaration)
+            if initializer is not None and declaration.parameter:
                 var.value = self._normalize_parameter_value(initializer)
                 var.symbolic_value = initializer
                 var.value_type = "expression"
             target.variables.append(var)
 
+    def _declaration_entities(
+        self,
+        right: str,
+        declaration: _Declaration,
+    ) -> list[tuple[str, list[str], str | None, _Declaration]]:
+        """Return normalized entities paired with their effective declaration.
+
+        ``names(3), label*8 = 'ready'`` produces two entries. Each entry owns
+        its name, inline shape, optional initializer, and a declaration copy
+        only when entity-local character length changes the shared statement
+        declaration.
+        """
+        entities: list[tuple[str, list[str], str | None, _Declaration]] = []
+        for entity in split_csv(right):
+            declared_entity, initializer = split_declaration_assignment(entity)
+            raw_name, shape = self._var(declared_entity)
+            if not raw_name:
+                continue
+            entity_declaration = self._entity_declaration(raw_name, declaration)
+            normalized_name = self._normalize_declared_name(raw_name, entity_declaration)
+            if normalized_name:
+                entities.append((normalized_name, shape, initializer, entity_declaration))
+        return entities
+
     @staticmethod
-    def _record_declaration_visibility(scope: _ParserScope, target, var: FortranArgument, meta: dict) -> None:
+    def _record_declaration_visibility(
+        scope: _ParserScope,
+        target,
+        var: FortranArgument,
+        declaration: _Declaration,
+    ) -> None:
         """Make declaration-level module visibility survive finalization."""
-        visibility = meta.get("explicit_visibility")
+        visibility = declaration.explicit_visibility
         if scope.kind != "module" or visibility not in {"public", "private"}:
             return
         symbols = getattr(target, f"{visibility}_symbols")
@@ -3927,64 +4055,60 @@ class FortranParser(ClassVisitor):
             symbols.append(var.name)
 
     @staticmethod
-    def _entity_decl_meta(raw_name: str, meta: dict) -> dict:
-        """Copy character metadata when one entity supplies ``*length`` syntax.
+    def _entity_declaration(raw_name: str, declaration: _Declaration) -> _Declaration:
+        """Return the effective declaration for one entity spelling.
 
         Non-character entities and declarations without an entity-level star
-        return the original ``meta`` mapping unchanged.  For ``character``
-        entities, a copied mapping records the length as ``kind`` without
-        mutating sibling entities' declaration metadata.
+        return the shared record unchanged. For ``character`` entities such as
+        ``label*8``, a copied declaration records kind ``8`` without mutating
+        sibling entities from the same statement.
         """
-        if meta["base_type"] != "character":
-            return meta
+        if declaration.base_type != "character":
+            return declaration
         match = re.search(r"\*\s*(\([^)]*\)|\*|[A-Za-z_]\w*|\d+)\s*$", raw_name)
         if match is None:
-            return meta
+            return declaration
         length = match.group(1).strip()
         if length.startswith("(") and length.endswith(")"):
             length = length[1:-1].strip()
-        entity_meta = dict(meta)
-        entity_meta["kind"] = length
-        entity_meta["character_length_syntax"] = True
-        return entity_meta
+        return replace(
+            declaration,
+            kind=length,
+            shape=list(declaration.shape),
+            character_length_syntax=True,
+        )
 
     @staticmethod
-    def _new_decl_meta(base_type: str, kind: str | None) -> dict:
-        """Return default declaration metadata for one normalized base type."""
-        return {
-            "base_type": base_type,
-            "kind": kind or "",
-            "rank": 0,
-            "shape": [],
-            "intent": None,
-            "reads_argument": None,
-            "writes_argument": None,
-            "optional": False,
-            "value": False,
-            "allocatable": False,
-            "pointer": False,
-            "target": False,
-            "contiguous": False,
-            "external": False,
-            "parameter": False,
-            "polymorphic": False,
-            "visibility": "public",
-            "explicit_visibility": None,
-        }
+    def _new_declaration(base_type: str, kind: str | None) -> _Declaration:
+        """Create the default typed record for one normalized type spelling.
+
+        For example, ``_new_declaration("real", "rk")`` returns a scalar,
+        public, non-pointer declaration whose remaining attributes are false
+        or absent until the attribute list is applied.
+        """
+        return _Declaration(base_type=base_type, kind=kind or "")
 
     @staticmethod
-    def _intrinsic_decl_meta(base_type: str, type_spec: str) -> dict:
-        """Normalize one intrinsic spelling while retaining target-only facts."""
+    def _intrinsic_declaration(base_type: str, type_spec: str) -> _Declaration:
+        """Normalize an intrinsic type spelling into a typed declaration.
+
+        ``double precision`` records its compiler kind expression, while
+        ``character(len=8)`` retains that the parsed kind text denotes a
+        character length rather than a storage kind.
+        """
         if base_type in {"double precision", "double complex"}:
             normalized = "real" if base_type == "double precision" else "complex"
-            meta = FortranParser._new_decl_meta(normalized, None)
-            meta["target_kind_expression"] = "kind(1.0d0)"
-            return meta
+            declaration = FortranParser._new_declaration(normalized, None)
+            declaration.target_kind_expression = "kind(1.0d0)"
+            return declaration
 
-        meta = FortranParser._new_decl_meta(base_type, extract_kind_from_type_spec(base_type, type_spec))
+        declaration = FortranParser._new_declaration(
+            base_type,
+            extract_kind_from_type_spec(base_type, type_spec),
+        )
         if base_type == "character" and type_spec and re.search(r"\bkind\s*=", type_spec, re.IGNORECASE) is None:
-            meta["character_length_syntax"] = True
-        return meta
+            declaration.character_length_syntax = True
+        return declaration
 
     @staticmethod
     def _apply_type_spelling_metadata(var: FortranVariable, spelling: str) -> None:
@@ -4011,44 +4135,41 @@ class FortranParser(ClassVisitor):
             var._character_length_syntax = True
 
     @staticmethod
-    def _apply_decl_attrs(meta: dict, attrs: list[str], *, include_argument_access: bool = False) -> None:
-        """Merge declaration attributes into normalized metadata."""
-        for a in attrs:
-            la = a.lower()
-            if include_argument_access and la.startswith("intent") and "(" in la and ")" in la:
-                content = re.sub(r"\s+", "", la.split("(", 1)[1].rsplit(")", 1)[0])
-                meta["intent"] = content
-                meta["reads_argument"] = content.startswith("in")
-                meta["writes_argument"] = content.endswith("out")
-            elif la == "optional":
-                meta["optional"] = True
-            elif la == "value":
-                meta["value"] = True
-            elif la == "allocatable":
-                meta["allocatable"] = True
-            elif la == "pointer":
-                meta["pointer"] = True
-            elif la == "target":
-                meta["target"] = True
-            elif la == "contiguous":
-                meta["contiguous"] = True
-            elif la == "external":
-                meta["external"] = True
-            elif la == "parameter":
-                meta["parameter"] = True
-            elif la in {"public", "private"}:
-                meta["visibility"] = la
-                meta["explicit_visibility"] = la
-            elif la.startswith("dimension") and "(" in a and ")" in a:
-                shape = split_csv(a[a.find("(") + 1 : a.rfind(")")])
-                meta["shape"] = shape
-                meta["rank"] = len(shape)
+    def _apply_declaration_attributes(
+        declaration: _Declaration,
+        attributes: list[str],
+        *,
+        include_argument_access: bool = False,
+    ) -> None:
+        """Normalize source attributes into one typed declaration record.
+
+        Simple flags such as ``pointer`` and ``optional`` map directly to
+        Boolean fields. ``intent(inout)`` additionally records read/write
+        access, while ``dimension(0:n)`` records shape and rank.
+        """
+        for attribute in attributes:
+            lowered = attribute.lower()
+            flag_field = _DECLARATION_FLAG_FIELDS.get(lowered)
+            if flag_field is not None:
+                setattr(declaration, flag_field, True)
+            elif include_argument_access and lowered.startswith("intent") and "(" in lowered and ")" in lowered:
+                content = re.sub(r"\s+", "", lowered.split("(", 1)[1].rsplit(")", 1)[0])
+                declaration.intent = content
+                declaration.reads_argument = content.startswith("in")
+                declaration.writes_argument = content.endswith("out")
+            elif lowered in {"public", "private"}:
+                declaration.visibility = lowered
+                declaration.explicit_visibility = lowered
+            elif lowered.startswith("dimension") and "(" in attribute and ")" in attribute:
+                shape = split_csv(attribute[attribute.find("(") + 1 : attribute.rfind(")")])
+                declaration.shape = shape
+                declaration.rank = len(shape)
 
     @staticmethod
-    def _normalize_declared_name(name: str, meta: dict) -> str:
+    def _normalize_declared_name(name: str, declaration: _Declaration) -> str:
         """Strip legacy entity-local spelling from a declared symbol name."""
         normalized_name = re.sub(r"^\*\s*[0-9]+\s*", "", name).strip()
-        if meta["base_type"] == "character" and "*" in normalized_name:
+        if declaration.base_type == "character" and "*" in normalized_name:
             # Legacy CHARACTER declarations may carry entity-local length
             # specifiers (e.g. NAME*(*) or SUBNAM*6). Strip the `*len`
             # suffix so symbol lookup matches procedure arguments.
@@ -4077,40 +4198,40 @@ class FortranParser(ClassVisitor):
         return e, []
 
     @staticmethod
-    def _apply(arg: FortranArgument, meta: dict, shape: list[str]):
-        """Apply normalized declaration metadata to an argument-like model."""
-        arg.base_type = meta["base_type"]
-        arg.kind = meta["kind"] or ""
-        arg.intent = meta["intent"]
-        arg.reads_argument = meta["reads_argument"]
-        arg.writes_argument = meta["writes_argument"]
-        arg.optional = meta["optional"]
-        arg.pass_by_value = meta["value"]
-        arg.allocatable = meta["allocatable"]
-        arg.pointer = meta["pointer"]
-        arg.target = meta["target"]
-        arg.contiguous = meta["contiguous"]
-        arg.is_parameter = meta["parameter"]
-        arg.visibility = meta["visibility"]
-        FortranParser._apply_internal_type_metadata(arg, meta)
+    def _apply_declaration(arg: FortranArgument, declaration: _Declaration, shape: list[str]) -> None:
+        """Copy one typed declaration onto an argument-like parser model."""
+        arg.base_type = declaration.base_type
+        arg.kind = declaration.kind
+        arg.intent = declaration.intent
+        arg.reads_argument = declaration.reads_argument
+        arg.writes_argument = declaration.writes_argument
+        arg.optional = declaration.optional
+        arg.pass_by_value = declaration.value
+        arg.allocatable = declaration.allocatable
+        arg.pointer = declaration.pointer
+        arg.target = declaration.target
+        arg.contiguous = declaration.contiguous
+        arg.is_parameter = declaration.parameter
+        arg.visibility = declaration.visibility
+        FortranParser._apply_internal_type_metadata(arg, declaration)
         if shape:
             arg.shape = shape
             arg.rank = len(shape)
         else:
-            arg.shape = list(meta["shape"])
-            arg.rank = meta["rank"]
+            arg.shape = list(declaration.shape)
+            arg.rank = declaration.rank
         arg.lbound, arg.ubound = FortranParser._extract_bounds(arg.shape)
 
     @staticmethod
-    def _apply_internal_type_metadata(arg: FortranVariable, meta: dict) -> None:
-        """Apply compiler-relevant facts that stay outside serialized models."""
-        if meta.get("target_kind_expression"):
-            arg._target_kind_expression = meta["target_kind_expression"]
-        if meta.get("character_length_syntax"):
+    def _apply_internal_type_metadata(arg: FortranVariable, declaration: _Declaration) -> None:
+        """Copy compiler-relevant declaration facts outside serialized fields."""
+        if declaration.target_kind_expression:
+            arg._target_kind_expression = declaration.target_kind_expression
+        if declaration.character_length_syntax:
             arg._character_length_syntax = True
-        if meta.get("declared_storage_bits") is not None:
-            arg._declared_storage_bits = int(meta["declared_storage_bits"])
-        if meta.get("polymorphic"):
+        if declaration.declared_storage_bits is not None:
+            arg._declared_storage_bits = declaration.declared_storage_bits
+        if declaration.polymorphic:
             arg._fortran_polymorphic = True
 
     @staticmethod
@@ -4503,8 +4624,8 @@ class FortranParser(ClassVisitor):
             inferred = state.declared_local_types.get(arg.name.lower())
             if not inferred:
                 continue
-            arg.base_type = inferred.get("base_type", arg.base_type)
-            arg.kind = inferred.get("kind", arg.kind)
+            arg.base_type = inferred.base_type
+            arg.kind = inferred.kind
             self._apply_internal_type_metadata(arg, inferred)
 
     def _validate_procedure_implicit_none(
@@ -4548,19 +4669,21 @@ class FortranParser(ClassVisitor):
                 # fixed-form sources; keep them available for compile-time
                 # resolution but do not expose them as parsed procedure variables.
                 continue
-            local_decl = state.declared_local_types.get(name.lower(), {})
+            local_declaration = state.declared_local_types.get(name.lower())
             var = FortranVariable(
                 name=name.lower(),
-                base_type=local_decl.get(
-                    "base_type",
-                    state.implicit_typed_symbols.get(name.lower(), "unknown"),
+                base_type=(
+                    local_declaration.base_type
+                    if local_declaration is not None
+                    else state.implicit_typed_symbols.get(name.lower(), "unknown")
                 ),
-                kind=local_decl.get("kind"),
+                kind=local_declaration.kind if local_declaration is not None else None,
                 value=self._normalize_parameter_value(value),
                 value_type="expression",
                 is_parameter=True,
             )
-            self._apply_internal_type_metadata(var, local_decl)
+            if local_declaration is not None:
+                self._apply_internal_type_metadata(var, local_declaration)
             var.symbolic_value = value
             sig.variables[name.lower()] = var
 

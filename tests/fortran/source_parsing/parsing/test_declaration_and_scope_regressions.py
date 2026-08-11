@@ -10,6 +10,7 @@ from prik.parsers.fortran.models import (
     FortranProcedureSignature,
 )
 from prik.parsers.fortran.parser import (
+    _Declaration,
     FortranParser,
     _ParserScope,
     parse_fortran_project,
@@ -88,16 +89,19 @@ def test_compile_time_resolution_helpers_preserve_kind_shape_values_and_literal_
     assert parser._infer_implicit_base_type("alpha") == "real"
 
 
-def test_declaration_push_preserves_module_variables_parameters_and_bounds():
+def test_declaration_storage_preserves_module_variables_parameters_visibility_and_bounds():
     parser = FortranParser()
     module = FortranModule("owner_mod")
     scope = _ParserScope(kind="module", name=module.name, model=module, module_owner=module.name)
-    meta = parser._new_decl_meta("real", "rk")
-    meta.update({"parameter": True, "shape": ["0:n"], "rank": 1})
+    declaration = parser._new_declaration("real", "rk")
+    parser._apply_declaration_attributes(
+        declaration,
+        ["parameter", "private", "dimension(0:n)"],
+    )
 
-    parser._helper_push_declaration_to_scope(
+    parser._store_declaration(
         scope,
-        meta=meta,
+        declaration=declaration,
         right="weights = 1.0_rk",
         role="module_variable",
         filename="declarations.f90",
@@ -112,9 +116,10 @@ def test_declaration_push_preserves_module_variables_parameters_and_bounds():
     assert module.variables[0].value == "1"
     assert module.variables[0].symbolic_value == "1.0_rk"
     assert module.variables[0].value_type == "expression"
+    assert module.private_symbols == ["weights"]
 
 
-def test_procedure_declaration_push_updates_dummy_or_records_local_type_and_duplicate_metadata():
+def test_procedure_declaration_storage_updates_dummy_or_records_local_type_and_duplicate_metadata():
     parser = FortranParser()
     signature = FortranProcedureSignature(
         "apply",
@@ -126,22 +131,22 @@ def test_procedure_declaration_push_updates_dummy_or_records_local_type_and_dupl
         symbols={argument.name.lower(): argument for argument in signature.arguments},
     )
     scope = _ParserScope(kind="procedure", name=signature.name, model=signature, state=state)
-    proc_meta = parser._new_decl_meta("procedure", "callback_iface")
-    proc_meta["external"] = True
+    procedure_declaration = parser._new_declaration("procedure", "callback_iface")
+    procedure_declaration.external = True
 
-    parser._helper_push_declaration_to_scope(
+    parser._store_declaration(
         scope,
-        meta=proc_meta,
+        declaration=procedure_declaration,
         right="callback",
         role="procedure_symbol",
         filename="declarations.f90",
         lineno=9,
         source_line="procedure(callback_iface), external :: callback",
     )
-    local_meta = parser._new_decl_meta("real", "rk")
-    parser._helper_push_declaration_to_scope(
+    local_declaration = parser._new_declaration("real", "rk")
+    parser._store_declaration(
         scope,
-        meta=local_meta,
+        declaration=local_declaration,
         right="scratch",
         role="procedure_symbol",
         filename="declarations.f90",
@@ -152,12 +157,12 @@ def test_procedure_declaration_push_updates_dummy_or_records_local_type_and_dupl
     assert signature.arguments[0].base_type == "procedure"
     assert signature.arguments[0].kind == "callback_iface"
     assert state.external_symbols == {"callback"}
-    assert state.declared_local_types == {"scratch": {"base_type": "real", "kind": "rk"}}
+    assert state.declared_local_types == {"scratch": _Declaration(base_type="real", kind="rk")}
 
     with pytest.raises(FortranParseError) as error:
-        parser._helper_push_declaration_to_scope(
+        parser._store_declaration(
             scope,
-            meta=parser._new_decl_meta("integer", ""),
+            declaration=parser._new_declaration("integer", ""),
             right="callback",
             role="procedure_symbol",
             filename="declarations.f90",
@@ -170,6 +175,52 @@ def test_procedure_declaration_push_updates_dummy_or_records_local_type_and_dupl
     assert error.value.line_number == 11
     assert error.value.source_line == "integer :: callback"
     assert error.value.code == "PARSE_DUPLICATE_DECLARATION"
+
+
+def test_entity_character_length_uses_an_independent_typed_declaration():
+    parser = FortranParser()
+    declaration = parser._new_declaration("character", "default_len")
+
+    entity_declaration = parser._entity_declaration("label*(name_len)", declaration)
+
+    assert entity_declaration is not declaration
+    assert entity_declaration.kind == "name_len"
+    assert entity_declaration.character_length_syntax is True
+    assert declaration.kind == "default_len"
+    assert declaration.character_length_syntax is False
+
+
+def test_procedure_finalization_consumes_typed_local_declarations():
+    parser = FortranParser()
+    signature = FortranProcedureSignature(
+        "consume",
+        "subroutine",
+        arguments=[FortranArgument("value")],
+    )
+    state = parser._new_procedure_scope_state(
+        signature,
+        symbols={"value": signature.arguments[0]},
+    )
+    state.declared_local_types["value"] = _Declaration(
+        base_type="real",
+        kind="rk",
+        declared_storage_bits=64,
+    )
+    state.declared_local_types["n"] = _Declaration(
+        base_type="integer",
+        kind="i4",
+        target_kind_expression="kind(1)",
+    )
+
+    parser._reconcile_procedure_local_declarations(signature, state)
+    parser._materialize_procedure_parameters(signature, state, {"n": "4"})
+
+    assert signature.arguments[0].base_type == "real"
+    assert signature.arguments[0].kind == "rk"
+    assert signature.arguments[0].declared_storage_bits == 64
+    assert signature.variables["n"].base_type == "integer"
+    assert signature.variables["n"].kind == "i4"
+    assert signature.variables["n"].target_kind_expression == "kind(1)"
 
 
 def test_procedure_parameter_lines_preserve_local_parameter_state_and_duplicate_metadata():

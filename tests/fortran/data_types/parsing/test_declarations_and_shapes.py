@@ -102,10 +102,10 @@ def test_legacy_character_star_kind_sets_length_metadata_when_character_prefix_i
     parsed = FortranParser()._parse_declaration_left("character*8", parse_character_star=False)
 
     assert parsed is not None
-    metadata, attributes = parsed
-    assert metadata["base_type"] == "character"
-    assert metadata["kind"] == "8"
-    assert metadata["character_length_syntax"] is True
+    declaration, attributes = parsed
+    assert declaration.base_type == "character"
+    assert declaration.kind == "8"
+    assert declaration.character_length_syntax is True
     assert attributes == []
 
 

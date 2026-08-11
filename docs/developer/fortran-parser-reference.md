@@ -189,16 +189,18 @@ The parser handles it in this order:
 3. `_visit_ModuleUnit` creates a module `_ParserScope` and sends the unit's
    already-classified specification lines to `_parse_specification_part`.
 4. `_parse_specification_part` uses the shared declaration backend:
-   `_helper_parse_declaration_line` parses `integer, parameter :: n = 4`, then
-   `_helper_push_declaration_to_scope` appends the resulting parameter variable
-   to `FortranModule.variables`.
+   `_helper_parse_declaration_line` parses `integer, parameter :: n = 4` into a
+   typed `_Declaration`, then `_store_declaration` dispatches to the
+   module-like-variable storage helper, which appends the resulting parameter
+   variable to `FortranModule.variables`.
 5. The module visitor reads the scanner-owned direct children. It finds one
    procedure unit, `scale`, and dispatches it to
    `_visit_ProcedureUnit`.
 6. `_visit_ProcedureUnit` creates a procedure `_ParserScope` and visits only
    the stored specification part. The same declaration backend parses
-   `real, intent(inout) :: x(n)` and pushes the metadata into the procedure
-   argument symbol table.
+   `real, intent(inout) :: x(n)` and sends the typed declaration to the
+   procedure-symbol storage helper, which updates `x` in the procedure argument
+   symbol table.
 
 Scope is always an explicit argument to the shared helpers. That is the reason
 two modules can each define `type :: state` without conflict, while two
@@ -212,6 +214,15 @@ model visitors, declaration parsing, sibling validation, and diagnostics that
 depend on constructed parser models. Splitting the scanner into another file
 would not strengthen that boundary; its private source tuples, grammar records,
 and unit classes are all local to this parser module.
+
+Declaration parsing has its own local ownership boundary. `_Declaration`
+records the normalized type spelling and declaration attributes shared by an
+entity list. For example, `real(kind=rk), pointer, dimension(:) :: values`
+produces one declaration with base type `real`, kind `rk`, pointer enabled, and
+shape `[:]`; `values` remains a separate entity name. Storage helpers then turn
+that record into procedure symbols, derived-type fields, or module-like
+variables. The record is parser-internal and never becomes a second public
+parser model or semantic-policy object.
 
 Each `SourceUnit` is fully classified by the scanner. In addition to its exact
 source span, kind, and name, it owns its header, specification, execution,
