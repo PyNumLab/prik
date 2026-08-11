@@ -11,6 +11,7 @@ from __future__ import annotations
 import ast
 from collections.abc import Iterable
 from copy import deepcopy
+from dataclasses import dataclass, field, replace
 import json
 import keyword
 import re
@@ -71,16 +72,78 @@ _CONTRACT_ALIAS_PREFIX = "prik_"
 _FLAT_DIMENSION_PRINT_SENTINEL = "@prik.Flat"
 
 
+@dataclass(frozen=True)
+class _PyiEmissionContext:
+    """Own all state accumulated while rendering one semantic node tree."""
+
+    normalize_fortran_public_names: bool
+    default_array_order: str | None = None
+    semantic_class_names: frozenset[str] = frozenset()
+    contract_aliases: dict[str, str] = field(default_factory=dict)
+    contract_imports: set[str] = field(default_factory=set)
+    naming_policy: NamingPolicy = field(default_factory=NamingPolicy)
+    reserved_public_names: dict[tuple[tuple[str, ...], str, object], str] = field(default_factory=dict)
+    public_namespace: tuple[str, ...] = ()
+
+    def contract(self, name: str) -> str:
+        """Return one local contract spelling and record its required import."""
+        if name not in CONTRACT_SYMBOLS:
+            return name
+        self.contract_imports.add(name)
+        return self.contract_aliases.get(name, name)
+
+    def contract_type(self, name: str) -> str:
+        """Return the local spelling for one contract type name."""
+        if name in CONTRACT_TYPE_NAMES:
+            return self.contract(name)
+        return name
+
+    def inside_class(self, name: str) -> _PyiEmissionContext:
+        """Return a child namespace view sharing this emission's accumulators."""
+        return replace(self, public_namespace=(*self.public_namespace, name))
+
+    def public_name(self, raw_name: str, *, category: str, owner: object) -> str:
+        """Reserve and return one normalized name inside the current namespace."""
+        key = (self.public_namespace, category, self._public_owner_key(owner))
+        reserved = self.reserved_public_names.get(key)
+        if reserved is not None:
+            return reserved
+        public_name = self.naming_policy.reserve_public_name(
+            self.public_namespace,
+            raw_name,
+            category=category,
+            owner=raw_name,
+        )
+        self.reserved_public_names[key] = public_name
+        return public_name
+
+    def contract_import(self) -> str:
+        """Return the direct import for contract symbols used by this emission."""
+        if not self.contract_imports:
+            return ""
+        items = []
+        for name in sorted(self.contract_imports):
+            alias = self.contract_aliases.get(name)
+            items.append(f"{name} as {alias}" if alias else name)
+        return f"from {_CONTRACT_MODULE} import {', '.join(items)}"
+
+    @staticmethod
+    def _public_owner_key(owner: object) -> object:
+        """Return a stable cache key for one emitted public declaration."""
+        if isinstance(owner, str | int | tuple):
+            return owner
+        return id(owner)
+
+
 class PyiPrinter(ClassVisitor):
     """Emit editable Python stub text from semantic IR models.
 
     The class follows the same reading order as ``FortranParser``: its public
     entrypoint comes first, semantic model visitors follow in model-flow order,
     and formatting helpers remain next to the visitor group that owns them.
-    Use emit for a module or individual semantic model. Module emission
-    temporarily tracks imports, aliases, and namespace names, then restores
-    previous state so one printer instance can safely emit more than one
-    independent module.
+    Use emit for a module or individual semantic model. Each call creates one
+    explicit emission context for imports, aliases, array defaults, and public
+    names, so reusable printer instances never carry active module state.
     """
 
     # ------------------------------------------------------------------
@@ -88,54 +151,40 @@ class PyiPrinter(ClassVisitor):
     # ------------------------------------------------------------------
 
     def __init__(self, *, normalize_fortran_public_names: bool = False):
-        """Configure a printer and initialize its per-emission state.
+        """Configure public-name normalization for independent emissions.
 
         Set normalize_fortran_public_names when emitting source-derived Fortran
-        contracts whose public names need Python normalization. Import, alias,
-        and namespace state is reset or restored around module emission; normal
-        individual-node emission does not mutate the input model.
+        contracts whose public names need Python normalization.
         """
         self._normalize_fortran_public_names = normalize_fortran_public_names
-        self._naming_policy = NamingPolicy()
-        self._public_namespace: tuple[str, ...] = ()
-        self._reserved_public_names: dict[tuple[tuple[str, ...], str, object], str] = {}
-        self._semantic_class_names: set[str] = set()
-        self._contract_imports: set[str] = set()
-        self._contract_aliases: dict[str, str] = {}
-        self._default_array_order: str | None = None
 
     def emit(self, node) -> str:
         """Render one supported semantic model to semantic .pyi text.
 
         Pass a SemanticModule for a complete contract or another supported
         semantic record for an isolated representation. Module emission
-        installs source-language array defaults and, when requested, isolated
-        public-name normalization state; both are restored before this method
-        returns or raises.
+        constructs a fresh context containing source-language array defaults,
+        contract aliases, import accumulation, and public-name reservations.
         """
+        context = self._emission_context(node)
+        return self._visit(node, context)
+
+    def _emission_context(self, node) -> _PyiEmissionContext:
+        """Build isolated state for one public emission call."""
         if not isinstance(node, SemanticModule):
-            return self._visit(node)
-        # Stage 1: install source-specific defaults for this module emission.
-        previous_default_order = self._default_array_order
-        self._default_array_order = self._native_default_array_order(node.origin.source_language)
-        try:
-            if not self._normalize_fortran_public_names:
-                return self._visit(node)
-            # Stage 2: normalize public names in isolated naming state.
-            previous_policy = self._naming_policy
-            previous_namespace = self._public_namespace
-            previous_reserved = self._reserved_public_names
-            self._naming_policy = NamingPolicy()
-            self._public_namespace = ()
-            self._reserved_public_names = {}
-            try:
-                return self._visit(node)
-            finally:
-                self._naming_policy = previous_policy
-                self._public_namespace = previous_namespace
-                self._reserved_public_names = previous_reserved
-        finally:
-            self._default_array_order = previous_default_order
+            return _PyiEmissionContext(
+                normalize_fortran_public_names=self._normalize_fortran_public_names,
+            )
+        return _PyiEmissionContext(
+            normalize_fortran_public_names=self._normalize_fortran_public_names,
+            default_array_order=self._native_default_array_order(node.origin.source_language),
+            semantic_class_names=frozenset(
+                str(cls.name)
+                for cls in node.classes
+                if cls.origin.source_language == "fortran" and cls.origin.source_kind == "derived_type"
+            ),
+            contract_aliases=self._contract_aliases_for_module(node),
+        )
 
     @staticmethod
     def _visit_not_supported(node):
@@ -146,19 +195,27 @@ class PyiPrinter(ClassVisitor):
     # Model visitors
     # ------------------------------------------------------------------
 
-    def _visit_SemanticConstraint(self, constraint: SemanticConstraint) -> str:
+    def _visit_SemanticConstraint(
+        self,
+        constraint: SemanticConstraint,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Emit constraint syntax."""
         if constraint.name == "Constant":
             raise ValueError("Constant constraints are emitted through Final[...] data declarations")
         if constraint.name == "Shape":
             raise ValueError("Shape constraints are not canonical; put dimensions inside T[...]")
-        name = self._contract(constraint.name)
+        name = context.contract(constraint.name)
         if not constraint.arguments:
             return name
         args = ", ".join(map(repr, constraint.arguments))
         return f"{name}({args})"
 
-    def _visit_SemanticType(self, semantic_type: SemanticType) -> str:
+    def _visit_SemanticType(
+        self,
+        semantic_type: SemanticType,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Emit semantic type syntax."""
         if semantic_type.name == "Unknown" or semantic_type.dtype == "Unknown":
             raise ValueError("Cannot emit .pyi with unresolved semantic type 'Unknown'")
@@ -167,87 +224,120 @@ class PyiPrinter(ClassVisitor):
             text = semantic_type.name
         elif array_descriptor is not None:
             wrapper = "Allocatable" if array_descriptor == "allocatable" else "Pointer"
-            text = f"{self._contract(wrapper)}[{self._visit(native_array_data_type(semantic_type))}]"
+            text = f"{context.contract(wrapper)}[{self._visit(native_array_data_type(semantic_type), context)}]"
         elif self._is_scalar_allocatable_descriptor(semantic_type):
-            text = f"{self._contract('Allocatable')}[{self._scalar_descriptor_inner_text(semantic_type)}]"
+            text = f"{context.contract('Allocatable')}[{self._scalar_descriptor_inner_text(semantic_type, context)}]"
         elif self._is_scalar_pointer_descriptor(semantic_type):
-            text = f"{self._contract('Pointer')}[{self._scalar_descriptor_inner_text(semantic_type)}]"
+            text = f"{context.contract('Pointer')}[{self._scalar_descriptor_inner_text(semantic_type, context)}]"
         elif semantic_type.storage is not None:
-            text = self._emit_storage_type(semantic_type)
+            text = self._emit_storage_type(semantic_type, context)
         else:
-            text = self._semantic_base_type(semantic_type)
+            text = self._semantic_base_type(semantic_type, context)
         annotations = [
-            *self._semantic_annotation_metadata(semantic_type),
+            *self._semantic_annotation_metadata(semantic_type, context),
         ]
         if array_descriptor is None:
-            annotations.extend(self._visit(constraint) for constraint in semantic_type.constraints)
+            annotations.extend(self._visit(constraint, context) for constraint in semantic_type.constraints)
         if annotations:
-            return self._annotated_type_text(text, annotations)
+            return self._annotated_type_text(text, annotations, context)
         return text
 
-    def _visit_SemanticArgument(self, arg: SemanticArgument) -> str:
+    def _visit_SemanticArgument(
+        self,
+        arg: SemanticArgument,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Emit argument syntax."""
         name = self._parameter_target(arg.name)
         return self._emit_typed_name(
             name,
             arg,
+            context,
             original_name=arg.name if name != arg.name else None,
         )
 
-    def _visit_SemanticVariable(self, arg: SemanticVariable) -> str:
+    def _visit_SemanticVariable(
+        self,
+        arg: SemanticVariable,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Emit data member syntax."""
-        return self._emit_data_member(arg)
+        return self._emit_data_member(arg, context)
 
-    def _visit_SemanticFunction(self, func: SemanticFunction) -> str:
+    def _visit_SemanticFunction(
+        self,
+        func: SemanticFunction,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Emit function syntax."""
-        return self._emit_function(func)
+        return self._emit_function(func, context)
 
-    def _visit_SemanticPrototype(self, prototype: SemanticPrototype) -> str:
+    def _visit_SemanticPrototype(
+        self,
+        prototype: SemanticPrototype,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Emit one reusable exact native procedure signature."""
         return_type = prototype.return_type or SemanticType("None", dtype="None")
         arguments = []
         for argument in prototype.arguments:
-            text = f"{self._parameter_target(argument.name)}: {self._emit_prototype_argument(argument)}"
+            text = f"{self._parameter_target(argument.name)}: {self._emit_prototype_argument(argument, context)}"
             if argument.optional:
                 text += " = ..."
             arguments.append(text)
         decorators = []
         if prototype.pure:
-            decorators.append(f"@{self._contract('pure')}")
-        decorators.append(f"@{self._contract('prototype')}")
+            decorators.append(f"@{context.contract('pure')}")
+        decorators.append(f"@{context.contract('prototype')}")
         return self._emit_callable(
             name=prototype.name,
             arguments=arguments,
-            return_type=self._visit(return_type),
+            return_type=self._visit(return_type, context),
             decorator="\n".join(decorators) + "\n",
             def_indent="",
             parameter_indent="    ",
         )
 
-    def _emit_function(self, func: SemanticFunction, *, name_owner: object | None = None) -> str:
+    def _emit_function(
+        self,
+        func: SemanticFunction,
+        context: _PyiEmissionContext,
+        *,
+        name_owner: object | None = None,
+    ) -> str:
         """Emit function syntax with an optional shared overload-set public name."""
-        return_type = self._projected_return_annotation(func)
-        name = self._callable_name(func, owner=name_owner)
-        decorator = self._decorators(func, emitted_name=name)
+        return_type = self._projected_return_annotation(func, context)
+        name = self._callable_name(func, context, owner=name_owner)
+        decorator = self._decorators(func, context, emitted_name=name)
         return self._emit_callable(
             name=name,
-            arguments=[self._emit_call_argument(func, arg) for arg in self._call_arguments(func)],
+            arguments=[self._emit_call_argument(func, arg, context) for arg in self._call_arguments(func)],
             return_type=return_type,
             decorator=decorator,
             def_indent="",
             parameter_indent="    ",
         )
 
-    def _visit_SemanticMethod(self, method: SemanticMethod) -> str:
+    def _visit_SemanticMethod(
+        self,
+        method: SemanticMethod,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Emit method syntax."""
-        return self._emit_method(method)
+        return self._emit_method(method, context)
 
-    def _emit_method(self, method: SemanticMethod, *, name_owner: object | None = None) -> str:
+    def _emit_method(
+        self,
+        method: SemanticMethod,
+        context: _PyiEmissionContext,
+        *,
+        name_owner: object | None = None,
+    ) -> str:
         """Emit method syntax with an optional shared overload-set public name."""
-        return_type = self._projected_return_annotation(method)
-        name = self._callable_name(method, owner=name_owner)
-        decorator = self._decorators(method, indent="    ", emitted_name=name)
-        arguments = [self._emit_call_argument(method, arg) for arg in self._method_call_arguments(method)]
+        return_type = self._projected_return_annotation(method, context)
+        name = self._callable_name(method, context, owner=name_owner)
+        decorator = self._decorators(method, context, indent="    ", emitted_name=name)
+        arguments = [self._emit_call_argument(method, arg, context) for arg in self._method_call_arguments(method)]
         if not method.is_static:
             arguments.insert(0, "self")
         return self._emit_callable(
@@ -259,7 +349,13 @@ class PyiPrinter(ClassVisitor):
             parameter_indent="        ",
         ).rstrip()
 
-    def _visit_ProcedureOverloadSet(self, overload_set: ProcedureOverloadSet, *, in_class: bool = False) -> str:
+    def _visit_ProcedureOverloadSet(
+        self,
+        overload_set: ProcedureOverloadSet,
+        context: _PyiEmissionContext,
+        *,
+        in_class: bool = False,
+    ) -> str:
         """Emit overload set syntax."""
         definitions = []
         for procedure in overload_set.procedures:
@@ -269,6 +365,7 @@ class PyiPrinter(ClassVisitor):
                 candidate = self._overload_method(overload_set, candidate)
                 definition = self._emit_method(
                     candidate,
+                    context,
                     name_owner=("overload", overload_set.name, candidate.name),
                 )
                 indent = "    "
@@ -276,28 +373,32 @@ class PyiPrinter(ClassVisitor):
                 candidate.name = overload_set.name
                 definition = self._emit_function(
                     candidate,
+                    context,
                     name_owner=("overload", overload_set.name),
                 )
                 indent = ""
             generic = self._overload_generic_argument(candidate, overload_set.name) if in_class else ""
             bind_target = candidate.metadata.get(BIND_TARGET_METADATA)
-            bind = f"{indent}@{self._contract('bind')}({json.dumps(str(bind_target))})\n" if bind_target else ""
-            definitions.append(f'{bind}{indent}@{self._contract("overload")}("{target}"{generic})\n{definition}')
+            bind = f"{indent}@{context.contract('bind')}({json.dumps(str(bind_target))})\n" if bind_target else ""
+            definitions.append(f'{bind}{indent}@{context.contract("overload")}("{target}"{generic})\n{definition}')
         return "\n\n".join(definitions)
 
-    def _visit_SemanticClass(self, cls: SemanticClass) -> str:
+    def _visit_SemanticClass(
+        self,
+        cls: SemanticClass,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Emit class syntax."""
-        bases = f"({', '.join(self._class_base_text(base) for base in cls.base_classes)})" if cls.base_classes else ""
-        previous_namespace = self._public_namespace
-        self._public_namespace = (*self._public_namespace, cls.name)
-        try:
-            body = self._class_body(cls)
-        finally:
-            self._public_namespace = previous_namespace
+        bases = (
+            f"({', '.join(self._class_base_text(base, context) for base in cls.base_classes)})"
+            if cls.base_classes
+            else ""
+        )
+        body = self._class_body(cls, context.inside_class(cls.name))
         decorators = []
         if self._is_private(cls):
-            decorators.append(f"@{self._contract('private')}")
-        native_type = self._native_type_decorator(cls)
+            decorators.append(f"@{context.contract('private')}")
+        native_type = self._native_type_decorator(cls, context)
         if native_type:
             decorators.append(native_type)
         decorator_text = "\n".join(decorators)
@@ -308,11 +409,13 @@ class PyiPrinter(ClassVisitor):
 {body}
 """.strip()
 
-    def _class_base_text(self, base: str) -> str:
+    @staticmethod
+    def _class_base_text(base: str, context: _PyiEmissionContext) -> str:
         """Return an imported contract base name or a user base name."""
-        return self._contract_type(base)
+        return context.contract_type(base)
 
-    def _native_type_decorator(self, cls: SemanticClass) -> str:
+    @staticmethod
+    def _native_type_decorator(cls: SemanticClass, context: _PyiEmissionContext) -> str:
         """Emit native derived-type metadata when the class needs it."""
         if cls.origin.source_language != "fortran" or cls.origin.source_kind != "derived_type":
             return ""
@@ -323,85 +426,101 @@ class PyiPrinter(ClassVisitor):
             parts.append(f"attributes={attributes!r}")
         if finalizers:
             parts.append(f"finalizers={finalizers!r}")
-        return f"@{self._contract('native_type')}({', '.join(parts)})" if parts else ""
+        return f"@{context.contract('native_type')}({', '.join(parts)})" if parts else ""
 
-    def _visit_SemanticModule(self, module: SemanticModule) -> str:
+    def _visit_SemanticModule(
+        self,
+        module: SemanticModule,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Render one module through alias setup, ordered bodies, and imports.
 
-        Class names and contract imports are temporary state because nested
-        visitors resolve references through them. The previous state is restored
-        even when a body visitor rejects invalid semantic input.
+        The explicit context is shared by nested visitors so they contribute
+        import and name reservations to this module without mutating the
+        reusable printer.
         """
-        # Stage 1: establish names and aliases visible to nested visitors.
-        previous_class_names = self._semantic_class_names
-        previous_contract_imports = self._contract_imports
-        previous_contract_aliases = self._contract_aliases
-        self._semantic_class_names = {
-            str(cls.name)
-            for cls in module.classes
-            if cls.origin.source_language == "fortran" and cls.origin.source_kind == "derived_type"
-        }
-        self._contract_imports = set()
-        self._contract_aliases = self._contract_aliases_for_module(module)
         body_sections: list[str] = []
-        try:
-            # Stage 2: render public bodies in stable contract order.
-            self._append_items(body_sections, self._contract_items(module.classes), self.emit)
-            self._append_items(body_sections, module.prototypes, self._visit)
-            self._append_items(body_sections, self._contract_items(module.variables), self._emit_module_variable)
-            overload_targets = self._module_overload_target_names(module)
-            self._append_items(
-                body_sections,
-                self._contract_items(module.functions, keep_names=overload_targets),
-                self._visit,
-            )
-            self._append_items(body_sections, module.overload_sets, self._visit)
-            # Stage 3: synthesize imports after visitors have recorded requirements.
-            sections: list[str] = []
-            self._append_imports(sections, module)
-            sections.extend(body_sections)
-            return "\n".join(sections).rstrip()
-        finally:
-            self._semantic_class_names = previous_class_names
-            self._contract_imports = previous_contract_imports
-            self._contract_aliases = previous_contract_aliases
+        self._append_items(
+            body_sections,
+            self._contract_items(module.classes),
+            lambda item: self._visit(item, context),
+        )
+        self._append_items(
+            body_sections,
+            module.prototypes,
+            lambda item: self._visit(item, context),
+        )
+        self._append_items(
+            body_sections,
+            self._contract_items(module.variables),
+            lambda item: self._emit_module_variable(item, context),
+        )
+        overload_targets = self._module_overload_target_names(module)
+        self._append_items(
+            body_sections,
+            self._contract_items(module.functions, keep_names=overload_targets),
+            lambda item: self._visit(item, context),
+        )
+        self._append_items(
+            body_sections,
+            module.overload_sets,
+            lambda item: self._visit(item, context),
+        )
+        sections: list[str] = []
+        self._append_imports(sections, module, context)
+        sections.extend(body_sections)
+        return "\n".join(sections).rstrip()
 
     # ------------------------------------------------------------------
     # Shared helpers
     # ------------------------------------------------------------------
 
-    def _emit_storage_type(self, semantic_type: SemanticType) -> str:
+    def _emit_storage_type(
+        self,
+        semantic_type: SemanticType,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Emit storage type syntax."""
         storage = semantic_type.storage
-        base_type = self._semantic_base_type(semantic_type)
+        base_type = self._semantic_base_type(semantic_type, context)
         if storage is None:
             return base_type
         if storage.kind == "value":
             return base_type
         if storage.kind in {"reference", "pointer", "address"}:
-            if self._is_normal_storage_address(semantic_type):
+            if self._is_normal_storage_address(semantic_type, context):
                 return base_type
-            target = self._address_target_type(semantic_type)
+            target = self._address_target_type(semantic_type, context)
             if storage.pointer_depth > 1:
-                return f"{self._contract('Addr')}[{storage.pointer_depth}]({target})"
-            return f"{self._contract('Addr')}({target})"
+                return f"{context.contract('Addr')}[{storage.pointer_depth}]({target})"
+            return f"{context.contract('Addr')}({target})"
         if storage.kind == "array":
-            return self._emit_array_type(semantic_type)
+            return self._emit_array_type(semantic_type, context)
         return base_type
 
-    def _semantic_base_type(self, semantic_type: SemanticType, *, include_deferred_length: bool = False) -> str:
+    @staticmethod
+    def _semantic_base_type(
+        semantic_type: SemanticType,
+        context: _PyiEmissionContext,
+        *,
+        include_deferred_length: bool = False,
+    ) -> str:
         """Return the semantic dtype including fixed character length."""
         if semantic_type.name != "String":
-            return self._contract_type(semantic_type.name)
+            return context.contract_type(semantic_type.name)
         length = semantic_type.metadata.get("fortran_character_length")
-        string = self._contract("String")
+        string = context.contract("String")
         if length is None or str(length) in {"", "*"}:
             return string
         if str(length) == ":":
             return f"{string}[:]" if include_deferred_length else string
         return f"{string}[{length}]"
 
-    def _is_normal_storage_address(self, semantic_type: SemanticType) -> bool:
+    @staticmethod
+    def _is_normal_storage_address(
+        semantic_type: SemanticType,
+        context: _PyiEmissionContext,
+    ) -> bool:
         """Return whether address storage is hidden behind the normal Python object."""
         storage = semantic_type.storage
         return bool(
@@ -412,14 +531,22 @@ class PyiPrinter(ClassVisitor):
             and storage.metadata.get(ADDRESS_ROLE_METADATA) != ADDRESS_ROLE_RAW
             and (
                 semantic_type.name == "String"
-                or str(semantic_type.name) in self._semantic_class_names
+                or str(semantic_type.name) in context.semantic_class_names
                 or semantic_type.metadata.get(_WRAPPED_CALLABLE_TYPE_METADATA)
             )
         )
 
-    def _address_target_type(self, semantic_type: SemanticType) -> str:
+    def _address_target_type(
+        self,
+        semantic_type: SemanticType,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Return the pointee type spelling for a raw address contract."""
-        base_type = self._semantic_base_type(semantic_type, include_deferred_length=semantic_type.rank > 0)
+        base_type = self._semantic_base_type(
+            semantic_type,
+            context,
+            include_deferred_length=semantic_type.rank > 0,
+        )
         if semantic_type.rank <= 0:
             return base_type
         dimensions = semantic_type.shape
@@ -429,24 +556,31 @@ class PyiPrinter(ClassVisitor):
             dimensions = tuple(array.source_shape or array.shape) if array is not None else ()
         return f"{base_type}[{', '.join(str(dimension) for dimension in dimensions)}]"
 
-    def _emit_array_type(self, semantic_type: SemanticType) -> str:
+    def _emit_array_type(
+        self,
+        semantic_type: SemanticType,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Emit array type syntax."""
         storage = semantic_type.storage
         array = storage.array if storage is not None else None
         if array is not None and array.category == SCALAR_STORAGE_CATEGORY:
-            return f"{self._semantic_base_type(semantic_type, include_deferred_length=True)}[()]"
-        dimensions = self._array_dimensions(semantic_type, array)
-        base = f"{self._semantic_base_type(semantic_type, include_deferred_length=True)}[{', '.join(dimensions)}]"
+            return f"{self._semantic_base_type(semantic_type, context, include_deferred_length=True)}[()]"
+        dimensions = self._array_dimensions(semantic_type, array, context)
+        base = (
+            f"{self._semantic_base_type(semantic_type, context, include_deferred_length=True)}[{', '.join(dimensions)}]"
+        )
 
-        metadata = self._array_annotation_metadata(array)
+        metadata = self._array_annotation_metadata(array, context)
         if metadata:
-            return self._annotated_type_text(base, metadata)
+            return self._annotated_type_text(base, metadata, context)
         return base
 
     def _array_dimensions(
         self,
         semantic_type: SemanticType,
         array: SemanticArrayContract | None,
+        context: _PyiEmissionContext,
     ) -> list[str]:
         """Handle array dimensions for the current generation context."""
         if array is not None and array.category == "assumed_size" and array.source_shape:
@@ -461,7 +595,7 @@ class PyiPrinter(ClassVisitor):
         if not shape and semantic_type.rank > 0:
             shape = [":" for _ in range(semantic_type.rank)]
         dimensions = [PyiPrinter._printed_array_dimension(dim) for dim in shape]
-        return [self._contract("Flat") if dim == _FLAT_DIMENSION_PRINT_SENTINEL else dim for dim in dimensions]
+        return [context.contract("Flat") if dim == _FLAT_DIMENSION_PRINT_SENTINEL else dim for dim in dimensions]
 
     @staticmethod
     def _assumed_size_array_dimension(dimension: object) -> str:
@@ -494,7 +628,11 @@ class PyiPrinter(ClassVisitor):
             return text[: -len("Strided")]
         return text
 
-    def _array_annotation_metadata(self, array: SemanticArrayContract | None) -> list[str]:
+    @staticmethod
+    def _array_annotation_metadata(
+        array: SemanticArrayContract | None,
+        context: _PyiEmissionContext,
+    ) -> list[str]:
         """Handle array annotation metadata for the current generation context."""
         if array is None:
             return []
@@ -503,18 +641,18 @@ class PyiPrinter(ClassVisitor):
         metadata: list[str] = []
         if (
             array.order in {"ORDER_F", "ORDER_ANY"}
-            and array.order != self._default_array_order
+            and array.order != context.default_array_order
             and not (array.category == "assumed_size" and array.order == "ORDER_F")
         ):
-            metadata.append(self._contract(array.order))
-        if array.order == "ORDER_C" and array.order != self._default_array_order:
-            metadata.append(self._contract("ORDER_C"))
+            metadata.append(context.contract(array.order))
+        if array.order == "ORDER_C" and array.order != context.default_array_order:
+            metadata.append(context.contract("ORDER_C"))
         if array.copy_order == "ORDER_F":
-            metadata.append(self._contract("COPY_F"))
+            metadata.append(context.contract("COPY_F"))
         if array.allocatable:
-            metadata.append(self._contract("Allocatable"))
+            metadata.append(context.contract("Allocatable"))
         if array.pointer:
-            metadata.append(self._contract("Pointer"))
+            metadata.append(context.contract("Pointer"))
         return metadata
 
     @staticmethod
@@ -526,36 +664,44 @@ class PyiPrinter(ClassVisitor):
             return "ORDER_C"
         return "ORDER_F"
 
-    def _semantic_annotation_metadata(self, semantic_type: SemanticType) -> list[str]:
+    def _semantic_annotation_metadata(
+        self,
+        semantic_type: SemanticType,
+        context: _PyiEmissionContext,
+    ) -> list[str]:
         """Handle semantic annotation metadata for the current generation context."""
         metadata: list[str] = []
         source_type = (semantic_type.origin.source_type or "").casefold().replace(" ", "")
         if source_type in {"type(*)", "class(*)"} or semantic_type.metadata.get("fortran_assumed_type"):
-            metadata.append(self._contract("AssumedType"))
+            metadata.append(context.contract("AssumedType"))
         if semantic_type.metadata.get("fortran_polymorphic"):
-            metadata.append(self._contract("Polymorphic"))
+            metadata.append(context.contract("Polymorphic"))
         if (
             semantic_type.metadata.get("fortran_allocatable")
             and not self._is_scalar_allocatable_descriptor(semantic_type)
             and native_array_descriptor_kind(semantic_type) is None
         ):
-            metadata.append(self._contract("FortranAllocatable"))
+            metadata.append(context.contract("FortranAllocatable"))
         if semantic_type.metadata.get("aliased"):
-            metadata.append(self._contract("Aliased"))
+            metadata.append(context.contract("Aliased"))
         if semantic_type.metadata.get(PYTHON_VALUE_MUTABILITY_METADATA) == PYTHON_VALUE_IMMUTABLE:
-            metadata.append(self._contract("Immutable"))
+            metadata.append(context.contract("Immutable"))
         if semantic_type.metadata.get(MAYBE_UNALLOCATED_METADATA):
-            metadata.append(self._contract("MaybeUnallocated"))
+            metadata.append(context.contract("MaybeUnallocated"))
         pointer_association = semantic_type.metadata.get("fortran_pointer_association")
         if pointer_association is not None and not self._is_scalar_pointer_descriptor(semantic_type):
-            metadata.append(f"{self._contract('PointerAssociation')}({json.dumps(str(pointer_association))})")
-        pointer_policy = self._pointer_policy_annotation(semantic_type)
+            metadata.append(f"{context.contract('PointerAssociation')}({json.dumps(str(pointer_association))})")
+        pointer_policy = self._pointer_policy_annotation(semantic_type, context)
         if pointer_policy is not None:
             metadata.append(pointer_policy)
-        metadata.extend(self._ownership_policy_annotations(semantic_type))
+        metadata.extend(self._ownership_policy_annotations(semantic_type, context))
         return metadata
 
-    def _pointer_policy_annotation(self, semantic_type: SemanticType) -> str | None:
+    @staticmethod
+    def _pointer_policy_annotation(
+        semantic_type: SemanticType,
+        context: _PyiEmissionContext,
+    ) -> str | None:
         """Render one structured pointer policy annotation when present."""
         pointer_policy = semantic_type.metadata.get(POINTER_POLICY_METADATA)
         if not isinstance(pointer_policy, dict):
@@ -566,9 +712,13 @@ class PyiPrinter(ClassVisitor):
             if value is not None:
                 rendered = repr(value) if isinstance(value, bool) else json.dumps(str(value))
                 arguments.append(f"{name}={rendered}")
-        return f"{self._contract('PointerPolicy')}({', '.join(arguments)})"
+        return f"{context.contract('PointerPolicy')}({', '.join(arguments)})"
 
-    def _ownership_policy_annotations(self, semantic_type: SemanticType) -> tuple[str, ...]:
+    @staticmethod
+    def _ownership_policy_annotations(
+        semantic_type: SemanticType,
+        context: _PyiEmissionContext,
+    ) -> tuple[str, ...]:
         """Render explicit owner, transfer, and destruction policy metadata."""
         ownership_policy = semantic_type.metadata.get(OWNERSHIP_POLICY_METADATA)
         if not isinstance(ownership_policy, dict):
@@ -579,7 +729,7 @@ class PyiPrinter(ClassVisitor):
             ("destruction", "Destruction"),
         )
         return tuple(
-            f"{self._contract(contract)}({json.dumps(str(ownership_policy[key]))})"
+            f"{context.contract(contract)}({json.dumps(str(ownership_policy[key]))})"
             for key, contract in fields
             if ownership_policy.get(key) is not None
         )
@@ -603,9 +753,13 @@ class PyiPrinter(ClassVisitor):
             and not (storage is not None and storage.array is not None)
         )
 
-    def _scalar_descriptor_inner_text(self, semantic_type: SemanticType) -> str:
+    def _scalar_descriptor_inner_text(
+        self,
+        semantic_type: SemanticType,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Emit the scalar descriptor element type without descriptor metadata."""
-        return self._visit(self._visible_scalar_descriptor_type(semantic_type))
+        return self._visit(self._visible_scalar_descriptor_type(semantic_type), context)
 
     @staticmethod
     def _scalar_descriptor_kind(semantic_type: SemanticType | None) -> str | None:
@@ -629,32 +783,44 @@ class PyiPrinter(ClassVisitor):
         visible.ownership.mutable = False
         return visible
 
-    def _emit_prototype_argument(self, argument: SemanticArgument) -> str:
+    def _emit_prototype_argument(
+        self,
+        argument: SemanticArgument,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Emit one exact prototype dummy with direction around transport."""
         if self._is_prototype_descriptor_type(argument.semantic_type):
-            transport = self._prototype_descriptor_type_text(argument.semantic_type)
+            transport = self._prototype_descriptor_type_text(argument.semantic_type, context)
         else:
-            transport = self._prototype_argument_transport(argument)
+            transport = self._prototype_argument_transport(argument, context)
         intent = getattr(argument.origin, "metadata", {}).get(PROTOTYPE_INTENT_METADATA)
         if intent is None:
             return transport
         wrapper = {"in": "In", "out": "Out", "inout": "InOut"}.get(str(intent).casefold())
         if wrapper is None:
             raise ValueError(f"Unsupported prototype intent {intent!r} on {argument.name!r}")
-        return f"{self._contract(wrapper)}({transport})"
+        return f"{context.contract(wrapper)}({transport})"
 
-    def _prototype_argument_transport(self, argument: SemanticArgument) -> str:
+    def _prototype_argument_transport(
+        self,
+        argument: SemanticArgument,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Emit one prototype dummy's exact value or reference transport."""
-        inner = self._prototype_argument_inner_type(argument.semantic_type)
+        inner = self._prototype_argument_inner_type(argument.semantic_type, context)
         if bool(getattr(argument.origin, "metadata", {}).get("value")):
             if self._is_prototype_primitive_value(argument.semantic_type):
                 return inner
-            return f"{self._contract('Value')}({inner})"
+            return f"{context.contract('Value')}({inner})"
         if self._is_prototype_primitive_reference(argument.semantic_type):
-            return f"{self._contract('Addr')}({inner})"
+            return f"{context.contract('Addr')}({inner})"
         return inner
 
-    def _prototype_argument_inner_type(self, semantic_type: SemanticType) -> str:
+    def _prototype_argument_inner_type(
+        self,
+        semantic_type: SemanticType,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Return the native prototype dummy type without transport wrappers."""
         storage = semantic_type.storage
         if (
@@ -663,19 +829,23 @@ class PyiPrinter(ClassVisitor):
             and storage.array is not None
             and storage.array.category == SCALAR_STORAGE_CATEGORY
         ):
-            return self._semantic_base_type(semantic_type, include_deferred_length=True)
+            return self._semantic_base_type(semantic_type, context, include_deferred_length=True)
         if storage is not None and storage.kind in {"reference", "address", "pointer"}:
-            return self._address_target_type(semantic_type)
-        return self._visit(semantic_type)
+            return self._address_target_type(semantic_type, context)
+        return self._visit(semantic_type, context)
 
-    def _prototype_descriptor_type_text(self, semantic_type: SemanticType) -> str:
+    def _prototype_descriptor_type_text(
+        self,
+        semantic_type: SemanticType,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Render descriptor metadata without a second reference wrapper."""
         if semantic_type.metadata.get("fortran_allocatable") or semantic_type.metadata.get("fortran_pointer"):
-            return self._visit(semantic_type)
+            return self._visit(semantic_type, context)
         visible = deepcopy(semantic_type)
         if visible.storage is not None and visible.storage.kind in {"reference", "address", "pointer"}:
             visible.storage = None
-        return self._visit(visible)
+        return self._visit(visible, context)
 
     @staticmethod
     def _is_prototype_primitive_value(semantic_type: SemanticType) -> bool:
@@ -724,21 +894,31 @@ class PyiPrinter(ClassVisitor):
             )
         )
 
-    def _emit_data_member(self, variable: SemanticVariable) -> str:
+    def _emit_data_member(
+        self,
+        variable: SemanticVariable,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Emit a variable in class-field context rather than argument context."""
-        name = self._data_member_name(variable)
+        name = self._data_member_name(variable, context)
         return self._emit_typed_name(
             self._annotation_target(name),
             variable,
+            context,
             original_name=variable.name if name != variable.name else None,
         )
 
-    def _emit_module_variable(self, arg: SemanticVariable) -> str:
+    def _emit_module_variable(
+        self,
+        arg: SemanticVariable,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Emit module variable syntax."""
-        name = self._module_variable_name(arg)
+        name = self._module_variable_name(arg, context)
         return self._emit_typed_name(
             self._annotation_target(name),
             arg,
+            context,
             original_name=arg.name if name != arg.name else None,
         )
 
@@ -752,6 +932,7 @@ class PyiPrinter(ClassVisitor):
         self,
         name: str,
         arg: SemanticVariable,
+        context: _PyiEmissionContext,
         *,
         original_name: str | None = None,
         nullable: bool = False,
@@ -759,16 +940,16 @@ class PyiPrinter(ClassVisitor):
     ) -> str:
         """Emit typed name syntax."""
         semantic_type = self._without_constant_constraint(arg.semantic_type)
-        type_text = self._visit(semantic_type)
+        type_text = self._visit(semantic_type, context)
         annotation_metadata = []
         if original_name is not None:
-            annotation_metadata.append(f"{self._contract('SourceName')}({json.dumps(original_name)})")
+            annotation_metadata.append(f"{context.contract('SourceName')}({json.dumps(original_name)})")
         if annotation_metadata:
-            type_text = self._annotated_type_text(type_text, annotation_metadata)
+            type_text = self._annotated_type_text(type_text, annotation_metadata, context)
         if self._is_constant(arg.semantic_type):
-            type_text = f"{self._contract('Final')}[{type_text}]"
+            type_text = f"{context.contract('Final')}[{type_text}]"
         if getattr(arg, "visibility", "public") == "private":
-            type_text = f"{self._contract('private')}[{type_text}]"
+            type_text = f"{context.contract('private')}[{type_text}]"
         optional_absent_handle = arg.semantic_type.metadata.get(OPTIONAL_ABSENT_HANDLE_METADATA) or (
             arg.optional and native_array_descriptor_kind(arg.semantic_type) is not None
         )
@@ -786,7 +967,12 @@ class PyiPrinter(ClassVisitor):
                 text += f" = {default_value}"
         return text
 
-    def _emit_call_argument(self, func: SemanticFunction, arg: SemanticArgument) -> str:
+    def _emit_call_argument(
+        self,
+        func: SemanticFunction,
+        arg: SemanticArgument,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Emit a callable argument with compact output metadata when possible."""
         name = self._parameter_target(arg.name)
         emitted_arg = self._projected_address_argument(func, arg)
@@ -801,6 +987,7 @@ class PyiPrinter(ClassVisitor):
         return self._emit_typed_name(
             name,
             emitted_arg,
+            context,
             original_name=arg.name if name != arg.name else None,
             nullable=descriptor_kind is not None,
             allow_optional_absent_handle=True,
@@ -859,10 +1046,15 @@ class PyiPrinter(ClassVisitor):
             and (mapping.python_name or mapping.native_name) == arg.name
         )
 
-    def _annotated_type_text(self, type_text: str, metadata: list[str]) -> str:
+    @staticmethod
+    def _annotated_type_text(
+        type_text: str,
+        metadata: list[str],
+        context: _PyiEmissionContext,
+    ) -> str:
         """Handle annotated type text for the current generation context."""
         suffix = ", ".join(metadata)
-        annotated = self._contract("Annotated")
+        annotated = context.contract("Annotated")
         if type_text.startswith(f"{annotated}[") and type_text.endswith("]"):
             return f"{type_text[:-1]}, {suffix}]"
         return f"{annotated}[{type_text}, {suffix}]"
@@ -1005,32 +1197,40 @@ class PyiPrinter(ClassVisitor):
         args = (",\n" + parameter_indent).join(arguments)
         return f"{decorator}{def_indent}def {name}(\n{parameter_indent}{args}\n{def_indent}) -> {return_type}: ..."
 
-    def _class_body(self, cls: SemanticClass) -> str:
+    def _class_body(
+        self,
+        cls: SemanticClass,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Handle class body for the current generation context."""
         body_parts = []
 
         nested_classes = "\n\n".join(
-            self._indent_block(self._visit(nested), "    ") for nested in self._contract_items(cls.classes)
+            self._indent_block(self._visit(nested, context), "    ") for nested in self._contract_items(cls.classes)
         )
         if nested_classes:
             body_parts.append(nested_classes)
 
-        constructor = self._class_constructor(cls)
+        constructor = self._class_constructor(cls, context)
         if constructor:
             body_parts.append(constructor)
 
-        fields = "\n".join(f"    {self._emit_data_member(field)}" for field in self._contract_items(cls.fields))
+        fields = "\n".join(
+            f"    {self._emit_data_member(field, context)}" for field in self._contract_items(cls.fields)
+        )
         if fields:
             body_parts.append(fields)
 
         overload_targets = self._overload_target_names(cls.overload_sets)
         methods = "\n\n".join(
-            self._visit(method) for method in self._contract_items(cls.methods, keep_names=overload_targets)
+            self._visit(method, context) for method in self._contract_items(cls.methods, keep_names=overload_targets)
         )
         if methods:
             body_parts.append(methods)
 
-        overload_sets = "\n\n".join(self._visit(overload_set, in_class=True) for overload_set in cls.overload_sets)
+        overload_sets = "\n\n".join(
+            self._visit(overload_set, context, in_class=True) for overload_set in cls.overload_sets
+        )
         if overload_sets:
             body_parts.append(overload_sets)
 
@@ -1038,12 +1238,16 @@ class PyiPrinter(ClassVisitor):
             return "    pass"
         return "\n\n".join(body_parts)
 
-    def _class_constructor(self, cls: SemanticClass) -> str:
+    def _class_constructor(
+        self,
+        cls: SemanticClass,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Handle class constructor for the current generation context."""
         if cls.origin.source_language != "fortran":
             return ""
         arguments = [
-            self._constructor_argument(field) for field in cls.fields if self._constructor_accepts_field(field)
+            self._constructor_argument(field, context) for field in cls.fields if self._constructor_accepts_field(field)
         ]
         if not arguments and cls.fields:
             return "    def __init__(self) -> None: ..."
@@ -1058,11 +1262,15 @@ class PyiPrinter(ClassVisitor):
             parameter_indent="        ",
         ).rstrip()
 
-    def _constructor_argument(self, field: SemanticVariable) -> str:
+    def _constructor_argument(
+        self,
+        field: SemanticVariable,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Handle constructor argument for the current generation context."""
-        name = self._data_member_name(field)
+        name = self._data_member_name(field, context)
         semantic_type = self._without_constant_constraint(field.semantic_type)
-        type_text = self._visit(semantic_type)
+        type_text = self._visit(semantic_type, context)
         default_value = (
             self._fortran_literal_text(field.metadata.get("fortran_initializer"))
             or self._python_literal_text(field.default_value)
@@ -1071,7 +1279,8 @@ class PyiPrinter(ClassVisitor):
         if name != field.name:
             type_text = self._annotated_type_text(
                 type_text,
-                [f"{self._contract('SourceName')}({json.dumps(field.name)})"],
+                [f"{context.contract('SourceName')}({json.dumps(field.name)})"],
+                context,
             )
         return f"{name}: {type_text} = {default_value}"
 
@@ -1090,19 +1299,6 @@ class PyiPrinter(ClassVisitor):
     def _indent_block(text: str, indent: str) -> str:
         """Handle indent block for the current generation context."""
         return "\n".join(f"{indent}{line}" if line else line for line in text.splitlines())
-
-    def _contract(self, name: str) -> str:
-        """Return the local imported spelling for one prik contract symbol."""
-        if name not in CONTRACT_SYMBOLS:
-            return name
-        self._contract_imports.add(name)
-        return self._contract_aliases.get(name, name)
-
-    def _contract_type(self, name: str) -> str:
-        """Return the local spelling for a contract type name."""
-        if name in CONTRACT_TYPE_NAMES:
-            return self._contract(name)
-        return name
 
     @classmethod
     def _contract_aliases_for_module(cls, module: SemanticModule) -> dict[str, str]:
@@ -1179,9 +1375,14 @@ class PyiPrinter(ClassVisitor):
             names.add(alias or module_name.split(".", 1)[0])
         return names
 
-    def _append_imports(self, sections: list[str], module: SemanticModule) -> None:
+    def _append_imports(
+        self,
+        sections: list[str],
+        module: SemanticModule,
+        context: _PyiEmissionContext,
+    ) -> None:
         """Append imports."""
-        contract_import = self._contract_import()
+        contract_import = context.contract_import()
         if contract_import:
             sections.append(contract_import)
         imports = self._effective_imports(module)
@@ -1189,16 +1390,6 @@ class PyiPrinter(ClassVisitor):
             sections.append(self._emit_import(imp))
         if contract_import or imports:
             sections.append("")
-
-    def _contract_import(self) -> str:
-        """Emit the direct import for contract symbols used by the generated stub."""
-        if not self._contract_imports:
-            return ""
-        items = []
-        for name in sorted(self._contract_imports):
-            alias = self._contract_aliases.get(name)
-            items.append(f"{name} as {alias}" if alias else name)
-        return f"from {_CONTRACT_MODULE} import {', '.join(items)}"
 
     @classmethod
     def _effective_imports(cls, module: SemanticModule) -> list[str | SemanticImport]:
@@ -1536,17 +1727,21 @@ class PyiPrinter(ClassVisitor):
         metadata = getattr(origin, "metadata", {})
         return isinstance(metadata, dict) and bool(metadata.get(USER_PRIVATE_METADATA))
 
-    def _projected_return_annotation(self, func: SemanticFunction) -> str:
+    def _projected_return_annotation(
+        self,
+        func: SemanticFunction,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Handle projected return annotation for the current generation context."""
         parts = []
         if func.return_type:
             if self._scalar_descriptor_kind(func.return_type) is not None:
                 visible_result = self._visible_scalar_descriptor_type(func.return_type)
-                parts.append(f"{self._visit(visible_result)} | None")
+                parts.append(f"{self._visit(visible_result, context)} | None")
             else:
-                parts.append(self._visit(self._visible_wrapped_callable_type(func.return_type)))
+                parts.append(self._visit(self._visible_wrapped_callable_type(func.return_type), context))
         parts.extend(
-            self._projected_argument_return(func, arg, visible=visible)
+            self._projected_argument_return(func, context, arg, visible=visible)
             for _, arg, visible in sorted(
                 self._projected_return_arguments(func),
                 key=lambda item: item[0],
@@ -1592,6 +1787,7 @@ class PyiPrinter(ClassVisitor):
     def _projected_argument_return(
         self,
         func_or_arg: SemanticFunction | SemanticArgument,
+        context: _PyiEmissionContext,
         arg: SemanticArgument | None = None,
         *,
         visible: bool,
@@ -1606,10 +1802,16 @@ class PyiPrinter(ClassVisitor):
             func = None
             projected_arg = func_or_arg
         if visible:
-            return self._named_return(projected_arg, func=func)
-        return self._plain_projected_return(projected_arg)
+            return self._named_return(projected_arg, context, func=func)
+        return self._plain_projected_return(projected_arg, context)
 
-    def _named_return(self, arg: SemanticArgument, *, func: SemanticFunction | None = None) -> str:
+    def _named_return(
+        self,
+        arg: SemanticArgument,
+        context: _PyiEmissionContext,
+        *,
+        func: SemanticFunction | None = None,
+    ) -> str:
         """Handle named return for the current generation context."""
         semantic_type = self._visible_projected_type(
             arg.semantic_type,
@@ -1618,7 +1820,7 @@ class PyiPrinter(ClassVisitor):
         descriptor_kind = self._scalar_descriptor_kind(semantic_type)
         if descriptor_kind is not None:
             semantic_type = self._visible_scalar_descriptor_type(semantic_type)
-        return_text = f'{self._contract("Returns")}["{arg.name}", {self._visit(semantic_type)}]'
+        return_text = f'{context.contract("Returns")}["{arg.name}", {self._visit(semantic_type, context)}]'
         if descriptor_kind is not None or arg.optional:
             return f"{return_text} | None"
         return return_text
@@ -1673,7 +1875,11 @@ class PyiPrinter(ClassVisitor):
         visible.metadata[_WRAPPED_CALLABLE_TYPE_METADATA] = True
         return visible
 
-    def _plain_projected_return(self, arg: SemanticArgument) -> str:
+    def _plain_projected_return(
+        self,
+        arg: SemanticArgument,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Handle plain projected return for the current generation context."""
         semantic_type = deepcopy(arg.semantic_type)
         descriptor_kind = self._scalar_descriptor_kind(semantic_type)
@@ -1686,87 +1892,86 @@ class PyiPrinter(ClassVisitor):
             and (storage.kind == "reference" or storage.kind == "address")
         ):
             semantic_type.storage = None
-        type_text = self._visit(semantic_type)
+        type_text = self._visit(semantic_type, context)
         if descriptor_kind is not None or arg.optional:
             return f"{type_text} | None"
         return type_text
 
-    def _callable_name(self, func: SemanticFunction, *, owner: object | None = None) -> str:
+    @staticmethod
+    def _callable_name(
+        func: SemanticFunction,
+        context: _PyiEmissionContext,
+        *,
+        owner: object | None = None,
+    ) -> str:
         """Return the Python-visible callable name to write in the contract."""
         if (
-            not self._normalize_fortran_public_names
+            not context.normalize_fortran_public_names
             or func.name.startswith("__")
             or func.origin.source_language != "fortran"
         ):
             return func.name
-        return self._public_name(
+        return context.public_name(
             func.name,
             category="method" if isinstance(func, SemanticMethod) else "function",
             owner=owner if owner is not None else func,
         )
 
-    def _data_member_name(self, variable: SemanticVariable) -> str:
+    @staticmethod
+    def _data_member_name(
+        variable: SemanticVariable,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Return the Python-visible class data-member name."""
-        if not self._normalize_fortran_public_names:
+        if not context.normalize_fortran_public_names:
             return variable.name
-        return self._public_name(variable.name, category="field", owner=variable)
-
-    def _module_variable_name(self, variable: SemanticVariable) -> str:
-        """Return the Python-visible module variable name."""
-        if not self._normalize_fortran_public_names:
-            return variable.name
-        return self._public_name(variable.name, category="variable", owner=variable)
-
-    def _public_name(self, raw_name: str, *, category: str, owner: object) -> str:
-        """Reserve and return a normalized Python public name."""
-        key = (self._public_namespace, category, self._public_owner_key(owner))
-        reserved = self._reserved_public_names.get(key)
-        if reserved is not None:
-            return reserved
-        public_name = self._naming_policy.reserve_public_name(
-            self._public_namespace,
-            raw_name,
-            category=category,
-            owner=raw_name,
-        )
-        self._reserved_public_names[key] = public_name
-        return public_name
+        return context.public_name(variable.name, category="field", owner=variable)
 
     @staticmethod
-    def _public_owner_key(owner: object) -> object:
-        """Return a stable cache key for one emitted public declaration."""
-        if isinstance(owner, str | int | tuple):
-            return owner
-        return id(owner)
+    def _module_variable_name(
+        variable: SemanticVariable,
+        context: _PyiEmissionContext,
+    ) -> str:
+        """Return the Python-visible module variable name."""
+        if not context.normalize_fortran_public_names:
+            return variable.name
+        return context.public_name(variable.name, category="variable", owner=variable)
 
-    def _decorators(self, func: SemanticFunction, *, indent: str = "", emitted_name: str | None = None) -> str:
+    def _decorators(
+        self,
+        func: SemanticFunction,
+        context: _PyiEmissionContext,
+        *,
+        indent: str = "",
+        emitted_name: str | None = None,
+    ) -> str:
         """Handle decorators for the current generation context."""
         decorators = []
         emitted_name = emitted_name or func.name
         if self._is_private(func):
-            decorators.append(f"{indent}@{self._contract('private')}")
+            decorators.append(f"{indent}@{context.contract('private')}")
         if isinstance(func, SemanticMethod) and func.is_static:
             decorators.append(f"{indent}@staticmethod")
         bind_target = func.metadata.get(BIND_TARGET_METADATA)
         if bind_target is None and func.native_name and func.native_name != emitted_name:
             bind_target = func.native_name
         if bind_target and not func.metadata.get(OVERLOAD_TARGET_METADATA):
-            decorators.append(f"{indent}@{self._contract('bind')}({json.dumps(str(bind_target))})")
+            decorators.append(f"{indent}@{context.contract('bind')}({json.dumps(str(bind_target))})")
         if (
             func.origin.source_language == "fortran"
             and func.origin.native_scope is None
             and not isinstance(func, SemanticMethod)
             and not func.metadata.get(OVERLOAD_TARGET_METADATA)
         ):
-            decorators.append(f"{indent}@{self._contract('standalone')}")
+            decorators.append(f"{indent}@{context.contract('standalone')}")
         if not func.metadata.get(OVERLOAD_TARGET_METADATA) and self._requires_native_call(func):
             decorators.append(
-                f"{indent}{self._native_call(self._pyi_projection(func), self._native_result_projection(func))}"
+                f"{indent}{self._native_call(self._pyi_projection(func), context, self._native_result_projection(func))}"
             )
         if isinstance(policy := func.metadata.get(RUNTIME_STATUS_ERROR_METADATA), dict):
-            decorators.append(f"{indent}{self._raises(policy)}")
+            decorators.append(f"{indent}{self._raises(policy, context)}")
         if func.metadata.get(RUNTIME_RELEASE_GIL_METADATA):
-            decorators.append(f"{indent}@{self._contract('nogil')}")
+            decorators.append(f"{indent}@{context.contract('nogil')}")
         if not decorators:
             return ""
         return "\n".join(decorators) + "\n"
@@ -1919,7 +2124,11 @@ class PyiPrinter(ClassVisitor):
             mapping.value = {"kind": "arg", "position": mapping.python_position}
         return projection
 
-    def _raises(self, policy: dict[str, object]) -> str:
+    @staticmethod
+    def _raises(
+        policy: dict[str, object],
+        context: _PyiEmissionContext,
+    ) -> str:
         """Handle raises for the current generation context."""
         status = policy.get("status")
         if not isinstance(status, str) or not status:
@@ -1934,87 +2143,105 @@ class PyiPrinter(ClassVisitor):
         if not isinstance(success, int) or isinstance(success, bool):
             raise ValueError("raises metadata success must be an integer")
         parts.append(f"success={success}")
-        return f"@{self._contract('raises')}({', '.join(parts)})"
+        return f"@{context.contract('raises')}({', '.join(parts)})"
 
     def _native_call(
         self,
         projection: list[ProjectionMapping],
+        context: _PyiEmissionContext,
         native_result: ProjectionMapping | None = None,
     ) -> str:
         """Handle native call for the current generation context."""
         entries = ", ".join(
-            self._native_projection_entry(mapping)
+            self._native_projection_entry(mapping, context)
             for mapping in sorted(
                 projection, key=lambda item: item.native_position if item.native_position is not None else -1
             )
         )
         suffix = ""
         if native_result is not None:
-            suffix = f", result={self._native_projection_value(native_result)}"
-        return f"@{self._contract('native_call')}([{entries}]{suffix})"
+            suffix = f", result={self._native_projection_value(native_result, context)}"
+        return f"@{context.contract('native_call')}([{entries}]{suffix})"
 
-    def _native_projection_entry(self, mapping: ProjectionMapping) -> str:
+    def _native_projection_entry(
+        self,
+        mapping: ProjectionMapping,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Handle native projection entry for the current generation context."""
         if mapping.value_kind:
-            return self._native_projection_value(mapping)
+            return self._native_projection_value(mapping, context)
         if mapping.python_position is not None:
-            return f"{self._contract('Arg')}({mapping.python_position})"
+            return f"{context.contract('Arg')}({mapping.python_position})"
         if mapping.result_position is not None:
             if mapping.native_name:
-                return f"{self._contract('Return')}({mapping.native_name!r}, {mapping.result_position})"
-            return f"{self._contract('Return')}({mapping.result_position})"
+                return f"{context.contract('Return')}({mapping.native_name!r}, {mapping.result_position})"
+            return f"{context.contract('Return')}({mapping.result_position})"
         raise ValueError("native_call cannot represent a native-only projection entry")
 
-    def _native_projection_value(self, mapping: ProjectionMapping) -> str:
+    def _native_projection_value(
+        self,
+        mapping: ProjectionMapping,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Handle native projection value for the current generation context."""
         if mapping.value_kind == "addr":
-            return f"{self._contract('Addr')}({self._native_value_ref(mapping.value)})"
+            return f"{context.contract('Addr')}({self._native_value_ref(mapping.value, context)})"
         if mapping.value_kind == "value":
-            return f"{self._contract('Value')}({self._native_value_ref(mapping.value)})"
+            return f"{context.contract('Value')}({self._native_value_ref(mapping.value, context)})"
         if mapping.value_kind in {"allocatable", "pointer"}:
             helper = "Allocatable" if mapping.value_kind == "allocatable" else "Pointer"
-            return f"{self._contract(helper)}({self._native_value_ref(mapping.value)})"
+            return f"{context.contract(helper)}({self._native_value_ref(mapping.value, context)})"
         if mapping.value_kind == "literal":
-            return self._native_literal_value(mapping.value)
+            return self._native_literal_value(mapping.value, context)
         if mapping.value_kind == "len":
-            return f"{self._contract('Len')}({self._native_value_ref(mapping.value)})"
+            return f"{context.contract('Len')}({self._native_value_ref(mapping.value, context)})"
         if mapping.value_kind == "shape":
-            return f"{self._native_value_ref(mapping.value['value'])}.shape[{mapping.value['dim']}]"
+            return f"{self._native_value_ref(mapping.value['value'], context)}.shape[{mapping.value['dim']}]"
         if mapping.value_kind == "is_present":
-            return f"{self._contract('IsPresent')}({self._native_value_ref(mapping.value)})"
+            return f"{context.contract('IsPresent')}({self._native_value_ref(mapping.value, context)})"
         if mapping.value_kind == "work":
-            return f"{self._contract('Work')}({mapping.value!r})"
+            return f"{context.contract('Work')}({mapping.value!r})"
         if mapping.value_kind == "pass":
-            return f"{self._contract('Pass')}()"
+            return f"{context.contract('Pass')}()"
         raise ValueError(f"Unsupported native_call projection entry: {mapping.value_kind!r}")
 
-    def _native_literal_value(self, value: object) -> str:
+    def _native_literal_value(
+        self,
+        value: object,
+        context: _PyiEmissionContext,
+    ) -> str:
         """Emit a hidden native literal with its ABI type."""
         if not isinstance(value, dict) or "type" not in value or "value" not in value:
             raise ValueError("native_call literal entries require 'type' and 'value'")
         literal = value["value"]
         rendered = json.dumps(literal) if isinstance(literal, str) else repr(literal)
-        return f"{self._native_literal_type(str(value['type']))}({rendered})"
+        return f"{self._native_literal_type(str(value['type']), context)}({rendered})"
 
-    def _native_literal_type(self, type_text: str) -> str:
+    @staticmethod
+    def _native_literal_type(type_text: str, context: _PyiEmissionContext) -> str:
         """Return a typed-literal type with imported contract base name."""
         match = re.fullmatch(r"([A-Za-z_]\w*)(.*)", type_text)
         if match is None:
             return type_text
         name, suffix = match.groups()
-        return f"{self._contract(name)}{suffix}" if name in CONTRACT_SYMBOLS else type_text
+        return f"{context.contract(name)}{suffix}" if name in CONTRACT_SYMBOLS else type_text
 
-    def _native_value_ref(self, value: dict[str, int | str]) -> str:
+    @staticmethod
+    def _native_value_ref(
+        value: dict[str, int | str],
+        context: _PyiEmissionContext,
+    ) -> str:
         """Handle native value ref for the current generation context."""
         kind = value.get("kind")
         if kind == "arg":
-            return f"{self._contract('Arg')}({value['position']})"
+            return f"{context.contract('Arg')}({value['position']})"
         if kind == "return":
             if value.get("name"):
-                return f"{self._contract('Return')}({value['name']!r}, {value['position']})"
-            return f"{self._contract('Return')}({value['position']})"
+                return f"{context.contract('Return')}({value['name']!r}, {value['position']})"
+            return f"{context.contract('Return')}({value['position']})"
         if kind == "work":
-            return f"{self._contract('Work')}({value['name']!r})"
+            return f"{context.contract('Work')}({value['name']!r})"
         raise ValueError(f"Unsupported native_call value reference: {kind!r}")
 
     @staticmethod
@@ -2147,8 +2374,8 @@ def emit_module(module: SemanticModule, *, normalize_fortran_public_names: bool 
     """Render one semantic module through the shared default printer.
 
     Use this convenience entrypoint for ordinary one-module emission. Set
-    normalize_fortran_public_names to use an isolated normalized printer;
-    otherwise the reusable default printer restores its module-local state.
+    normalize_fortran_public_names to use a printer configured for normalized
+    public names. Both paths create a fresh module emission context.
     """
     if normalize_fortran_public_names:
         return PyiPrinter(normalize_fortran_public_names=True).emit(module)

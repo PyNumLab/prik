@@ -485,19 +485,22 @@ def test_printer_projection_return_helpers_and_keyword_data_members():
             )
         ],
     )
+    context = printer._emission_context(module)
 
-    assert printer._projected_argument_return(argument, visible=True) == 'Returns["x", Addr(Float64)] | None'
-    assert printer._named_return(plain) == 'Returns["value", Int32]'
-    assert printer._projected_argument_return(argument, visible=False) == "Float64 | None"
-    assert printer._projected_argument_return(plain, visible=False) == "Int32"
+    assert printer._projected_argument_return(argument, context, visible=True) == 'Returns["x", Addr(Float64)] | None'
+    assert printer._named_return(plain, context) == 'Returns["value", Int32]'
+    assert printer._projected_argument_return(argument, context, visible=False) == "Float64 | None"
+    assert printer._projected_argument_return(plain, context, visible=False) == "Int32"
     assert "var['class']: Int32" in emit_module(module)
     assert "@native_call([Return(0)])" in emit_module(module)
 
 
 def test_native_call_sorts_synthetic_entries_before_native_positions():
+    printer = PyiPrinter()
     projection = [
         ProjectionMapping(native_position=0, value_kind="literal", value={"type": "Int32", "value": 1}),
         ProjectionMapping(result_position=0),
     ]
 
-    assert PyiPrinter()._native_call(projection) == "@native_call([Return(0), Int32(1)])"
+    context = printer._emission_context(SemanticModule(name="native_call"))
+    assert printer._native_call(projection, context) == "@native_call([Return(0), Int32(1)])"

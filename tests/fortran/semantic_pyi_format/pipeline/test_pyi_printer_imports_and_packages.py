@@ -64,6 +64,22 @@ def test_fortran_generated_contracts_reserve_colliding_public_names_by_namespace
     assert "def lambda__3" not in code
 
 
+def test_pyi_emission_context_isolates_modules_and_shares_nested_imports():
+    printer = PyiPrinter(normalize_fortran_public_names=True)
+    first = printer._emission_context(SemanticModule(name="first"))
+    second = printer._emission_context(SemanticModule(name="second"))
+    nested = first.inside_class("record_t")
+
+    first.contract("Addr")
+    nested.contract("Pointer")
+
+    assert first.contract_import() == "from prik.contracts import Addr, Pointer"
+    assert nested.contract_import() == first.contract_import()
+    assert nested.public_namespace == ("record_t",)
+    assert first.public_namespace == ()
+    assert second.contract_import() == ""
+
+
 def test_printer_validation_and_opaque_dependency_edge_cases():
     printer = PyiPrinter()
 
@@ -71,7 +87,8 @@ def test_printer_validation_and_opaque_dependency_edge_cases():
         printer.emit(SemanticConstraint("Shape"))
 
     plain_type = SemanticType("Float64", dtype="Float64")
-    assert printer._emit_storage_type(plain_type) == "Float64"
+    context = printer._emission_context(SemanticModule(name="edge_cases"))
+    assert printer._emit_storage_type(plain_type, context) == "Float64"
 
     malformed_import = SemanticType(
         "external_type",
