@@ -16,7 +16,7 @@ import pytest
 
 from prik import cli as prik_cli
 from prik.parsers.fortran import cli as fortran_parser_cli
-from prik.pipeline.preprocessing import (
+from prik.preprocessing import (
     PreprocessingConfig,
     PreprocessingDiagnostic,
     PreprocessingError,

@@ -296,7 +296,7 @@ PRIK_C_DOCS_END -->
 - `void` return -> `None`.
 - `_Bool` -> `Bool`.
 - All modeled primitive integer, real, and complex spellings consume supplied
-  `prik.probes.c_types` facts. Plain `char` signedness, integer widths, real
+  `prik.preprocessing.probes.c_types` facts. Plain `char` signedness, integer widths, real
   storage widths and precision metadata, and complex storage widths come from
   the selected compiler target.
 - `int` keeps semantic name `Int` while its concrete dtype follows the target.
@@ -308,7 +308,7 @@ PRIK_C_DOCS_END -->
 - Local typedef chains are resolved when their parser model definitions are
   available.
 - `size_t` maps to `SizeT` without a target probe; supplied
-  `prik.probes.c_types` facts override standard typedefs with width-specific
+  `prik.preprocessing.probes.c_types` facts override standard typedefs with width-specific
   `Int*`, `UInt*`, or `Float*` semantic names.
 - Opaque standard-type probe facts such as `FILE` create named opaque semantic
   classes when referenced by converted declarations.

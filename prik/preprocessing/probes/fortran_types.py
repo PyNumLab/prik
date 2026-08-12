@@ -24,7 +24,7 @@ import subprocess
 import tempfile
 from typing import Any
 
-from prik.pipeline.preprocessing import PreprocessingConfig, PreprocessingError, validate_macro_name
+from prik.preprocessing import PreprocessingConfig, PreprocessingError, validate_macro_name
 
 
 # Cache identity and generated-source configuration.
@@ -882,7 +882,7 @@ def _value_for_expression(values: Mapping[str, int], expression: str) -> int | N
 def main(argv: list[str] | None = None) -> int:
     """Run the probe CLI and print one report as indented JSON.
 
-    Use this entrypoint from ``python -m prik.probes.fortran_types`` with an
+    Use this entrypoint from ``python -m prik.preprocessing.probes.fortran_types`` with an
     explicit ``--compiler`` and one or more ``--expr`` arguments. ``argv`` is
     accepted for embedding and tests; otherwise command-line arguments are
     parsed. Invalid macro definitions and probe failures are reported through

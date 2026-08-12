@@ -2,8 +2,9 @@
 
 from pathlib import Path
 
-import prik.pipeline.preprocessing as preprocessing
-from prik.pipeline.preprocessing import PreprocessingConfig, expand_native_fortran_includes
+import prik.preprocessing.source as preprocessing
+import prik.preprocessing.fortran as fortran_preprocessing
+from prik.preprocessing import PreprocessingConfig, expand_native_fortran_includes
 
 
 def test_linemarker_included_files_fortran_metadata_and_duplicate_entries(tmp_path: Path):
@@ -103,6 +104,21 @@ def test_linemarker_nested_returns_restore_parent_stack(tmp_path: Path):
     )[1]
     assert direct_include.included_by == str(root)
     assert direct_include.include_line == 1
+
+
+def test_native_include_line_marker_and_mapping_helpers_preserve_provenance(tmp_path: Path):
+    root = tmp_path / "root.F90"
+    mappings = preprocessing.parse_linemarker_mappings('# 7 "api.inc"\ninteger :: value\n', filename=str(root))
+
+    assert fortran_preprocessing._line_marker(3, 'dir\\api".inc') == '# 3 "dir\\\\api\\".inc"'
+    assert fortran_preprocessing._line_marker(3, "api.inc", 1) == '# 3 "api.inc" 1'
+    assert fortran_preprocessing._mapping_for_generated_line(mappings, mappings[0].generated_line, root) == mappings[0]
+
+    fallback = fortran_preprocessing._mapping_for_generated_line([], 99, root)
+    assert fallback.generated_line == 99
+    assert fallback.original_path == str(root)
+    assert fallback.original_line == 99
+    assert fallback.include_stack == [str(root)]
 
 
 def test_native_fortran_include_expansion_is_recursive_and_preserves_duplicates(tmp_path: Path):

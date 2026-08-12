@@ -16,3 +16,6 @@ must not construct wrapper plans or render backend output.
 Raw ownership and pointer-contract metadata belongs to
 `../semantics/ownership_metadata.py`. Planning consumes completed records from
 this package through `../planning/planner.py`.
+
+For cross-stage navigation, see `docs/developer/source-map.md` and
+`docs/developer/feature-to-code-map.md`.

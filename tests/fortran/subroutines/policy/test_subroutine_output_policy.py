@@ -4,7 +4,7 @@ from pathlib import Path
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.parsers.fortran.parser import parse_fortran_project
 from prik.pipeline.build import _apply_source_python_exports, _fortran_source_for_pipeline, _merge_wrapper_modules
-from prik.pipeline.preprocessing import PreprocessingConfig
+from prik.preprocessing import PreprocessingConfig
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.policy.ownership import (
     NativeBarrierAction,

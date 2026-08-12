@@ -13,7 +13,7 @@ import numpy as np
 
 from prik.parsers.fortran.parser import parse_fortran_project
 from prik.pipeline import build as pipeline
-from prik.pipeline.preprocessing import PreprocessingConfig
+from prik.preprocessing import PreprocessingConfig
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.policy.completion import complete_semantic_policies
 from prik.codegen import (

@@ -12,7 +12,7 @@ def test_c_preprocessor_module_direct_execution_example():
     repository_root = Path(__file__).parents[3]
 
     result = subprocess.run(
-        [sys.executable, "prik/parsers/c/preprocessor.py"],
+        [sys.executable, "prik/preprocessing/c.py"],
         cwd=repository_root,
         capture_output=True,
         text=True,
@@ -59,7 +59,7 @@ def test_lexer_removes_multiline_block_comments_but_preserves_following_line_num
 
 
 def test_line_continuations_preserve_original_line_numbers():
-    from prik.parsers.c.preprocessor import normalize_c_source
+    from prik.preprocessing.c import normalize_c_source
 
     normalized = normalize_c_source(
         "#define SUM(a, b) \\\n  ((a) + (b))\nint x;\n",
@@ -100,7 +100,7 @@ def test_c_lexer_covers_linemarker_escapes_top_level_strings_and_eof_records():
         normalize_c_source,
         split_top_level_c_source,
     )
-    from prik.parsers.c.preprocessor import _record_location
+    from prik.preprocessing.c import _record_location
 
     assert _unescape_linemarker_filename(r"a\nb\rc\td\\e\"f\x") == 'a\nb\rc\td\\e"fx'
     assert _unescape_linemarker_filename("tail\\") == "tail\\"
@@ -362,7 +362,7 @@ def test_c_preprocessor_helpers_cover_include_dirs_and_filesystem_errors(tmp_pat
     from pathlib import Path
 
     from prik.parsers.c.lexer import CLogicalRecord
-    from prik.parsers.c.preprocessor import _record_location, _resolve_local_include
+    from prik.preprocessing.c import _record_location, _resolve_local_include
 
     include_dir = tmp_path / "include"
     include_dir.mkdir()
@@ -405,7 +405,7 @@ def test_c_preprocessor_helpers_cover_include_dirs_and_filesystem_errors(tmp_pat
 
 
 def test_collect_preprocessor_metadata_preserves_locations_and_diagnostics(tmp_path):
-    from prik.parsers.c.preprocessor import collect_preprocessor_metadata
+    from prik.preprocessing.c import collect_preprocessor_metadata
 
     include_dir = tmp_path / "include"
     include_dir.mkdir()

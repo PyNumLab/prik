@@ -38,9 +38,9 @@ from prik.parsers.fortran.models import FortranVariable
 from prik.semantics.c2ir import CToIRConverter
 from prik.semantics.fortran2ir import FortranToIRConverter, fortran_type_storage_expression
 
-from prik.pipeline.preprocessing import PreprocessingConfig
-from prik.probes.c_types import probe_c_standard_types_cached
-from prik.probes.fortran_types import evaluate_fortran_type_facts, probe_fortran_type_expressions_cached
+from prik.preprocessing import PreprocessingConfig
+from prik.preprocessing.probes.c_types import probe_c_standard_types_cached
+from prik.preprocessing.probes.fortran_types import evaluate_fortran_type_facts, probe_fortran_type_expressions_cached
 
 
 # C report inventory.

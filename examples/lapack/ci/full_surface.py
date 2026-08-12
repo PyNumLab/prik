@@ -9,7 +9,7 @@ import pytest
 from ..routine_inventory import EXPECTED_LAPACK_PROCEDURES
 from examples.lapack.tests.helpers import assert_runtime_smoke
 from prik.parsers.fortran.parser import parse_fortran_file
-from prik.pipeline.preprocessing import PreprocessingConfig, preprocess_source
+from prik.preprocessing import PreprocessingConfig, preprocess_source
 
 
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]

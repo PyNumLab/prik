@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.compiling.objects import ObjectFile
+from prik.compiler.objects import ObjectFile
 from prik.pipeline.build import (
     NativeBuildPlan,
     NativeLinkItem,

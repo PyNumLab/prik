@@ -76,7 +76,7 @@ def __getattr__(name: str):
         module = import_module("prik.cli")
         return getattr(module, name)
     if name in _FORTRAN_TYPE_PROBE_EXPORTS:
-        module = import_module("prik.probes.fortran_types")
+        module = import_module("prik.preprocessing.probes.fortran_types")
         return getattr(module, name)
     if name in _WRAPPING_EXPORTS:
         module = import_module("prik.pipeline.build")

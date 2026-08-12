@@ -3,8 +3,8 @@
 import json
 from pathlib import Path
 
-import prik.pipeline.preprocessing as preprocessing
-from prik.pipeline.preprocessing import PreprocessingConfig, build_compile_commands_invocation
+import prik.preprocessing.source as preprocessing
+from prik.preprocessing import PreprocessingConfig, build_compile_commands_invocation
 
 
 def test_compile_commands_filters_dependency_and_windows_compile_flags(tmp_path: Path):
@@ -99,14 +99,6 @@ def test_linemarker_dependency_exposure_and_macro_edges(tmp_path: Path):
         "private"
     )
     assert preprocessing._exposure_for("api.h", "root", PreprocessingConfig(include_exposure="roots-only")) == "public"
-    assert preprocessing._line_marker(3, 'dir\\api".h') == '# 3 "dir\\\\api\\".h"'
-    assert preprocessing._line_marker(3, "api.h", 1) == '# 3 "api.h" 1'
-    assert preprocessing._mapping_for_generated_line(mappings, mappings[0].generated_line, root) == mappings[0]
-    fallback = preprocessing._mapping_for_generated_line([], 99, root)
-    assert fallback.generated_line == 99
-    assert fallback.original_path == str(root)
-    assert fallback.original_line == 99
-    assert fallback.include_stack == [str(root)]
     no_filename_mappings = preprocessing.parse_linemarker_mappings("#line 42\nint next;\n", filename=str(root))
     assert no_filename_mappings[0].original_path == str(root)
     assert no_filename_mappings[0].original_line == 42
@@ -217,10 +209,6 @@ def test_linemarker_parser_accepts_bare_filename():
 def test_dependency_kind_requires_both_system_filename_brackets():
     assert preprocessing._dependency_kind("<api.h") == "project"
     assert preprocessing._dependency_kind("api.h>") == "project"
-
-
-def test_line_marker_escapes_paths_and_omits_absent_flag():
-    assert preprocessing._line_marker(3, 'dir\\api".h') == '# 3 "dir\\\\api\\".h"'
 
 
 def test_linemarker_mapping_and_macro_helpers_cover_default_and_return_edges():

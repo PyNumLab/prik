@@ -21,7 +21,7 @@ from collections.abc import Sequence
 from contextlib import suppress
 from typing import Any
 
-from prik.pipeline.preprocessing import PreprocessingConfig, PreprocessingError, validate_macro_name
+from prik.preprocessing import PreprocessingConfig, PreprocessingError, validate_macro_name
 
 
 # Probe schema, fact classification, and cache identity.
@@ -632,7 +632,7 @@ def _write_cached_report(path: Path, report: CStandardTypeProbeReport) -> None:
 def main(argv: list[str] | None = None) -> int:
     """Run the C ABI probe CLI and print one report as indented JSON.
 
-    Use this entrypoint from python -m prik.probes.c_types with an explicit
+    Use this entrypoint from python -m prik.preprocessing.probes.c_types with an explicit
     compiler. Argv is accepted for embedding and tests; otherwise command-line
     arguments are parsed. Invalid macros and probe failures go through
     argparse, while success writes the report to standard output and returns

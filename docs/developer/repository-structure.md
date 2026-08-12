@@ -18,13 +18,16 @@ artifacts used by tests. Navigate by ownership boundary first, then by file.
 | --- | --- |
 | `prik/` | Python package implementation. Start with [source-map.md](source-map.md) for entrypoints and [feature-to-code-map.md](feature-to-code-map.md) when starting from behavior. |
 | `prik/contracts/` | Public semantic `.pyi` contract vocabulary imported directly by generated and edited contracts. |
-| `prik/pipeline/` | Shared preprocessing, semantic `.pyi` loading, cross-stage datatype reports, and high-level wrapper build orchestration. |
-| `prik/probes/` | Compiler-derived target facts and reusable probe reports. |
+| `prik/compiler/` | Reusable compiler command execution, compile objects, vendor profiles, native support installation, and linking. |
+| `prik/preprocessing/` | C and Fortran source preprocessing, provenance, native includes, and compiler-derived target probes. |
+| `prik/pipeline/` | Semantic `.pyi` loading, cross-stage datatype reports, wrapper rendering, and high-level wrapper build orchestration. |
 | `prik/runtime/` | Python runtime objects used by generated extension modules. |
 | `prik/parsers/` | Public namespace for language and semantic-contract frontends and parser models. |
 | `prik/semantics/` | Semantic IR, scalar datatype vocabulary, source-to-IR conversion, and `.pyi` conversion. |
+| `prik/policy/` | Immutable post-IR policy vocabulary plus policy construction and completion. |
+| `prik/planning/` | Backend-neutral wrapper-plan records and mechanical projection from completed policy. |
 | `prik/codegen/` | Backend datatype projection and plan-driven native bridge/binding lowering. |
-| `prik/compiling/` | Native compile objects, compiler command orchestration, native support installation, and linking. |
+| `prik/printers/` | Language-specific serialization of C nodes, Fortran nodes, and semantic IR. |
 | `prik/binding_support/` | Bundled header-only native support copied into generated wrapper builds. |
 | `prik/naming/` | Unified public-name and generated-symbol policy. |
 | `prik/utilities/` | Small shared Python utilities. |
@@ -37,9 +40,10 @@ The major source packages have local README files under `prik/` for
 developers reading directly in the source tree. Those README files should link
 back to the maintained source-navigation docs instead of old top-level docs.
 
-Only `prik/__init__.py`, `prik/__main__.py`, and `prik/cli.py` live directly at
-the package root. Public library symbols are deliberately flattened through
-`prik/__init__.py`; internal modules are imported through their owning package.
+Only `prik/__init__.py`, `prik/__main__.py`, `prik/cli.py`, and the shared
+`prik/stage_values.py` record module live directly at the package root. Public
+library symbols are deliberately flattened through `prik/__init__.py`;
+internal modules are imported through their owning package.
 The deliberate public submodule namespaces are `prik.contracts`, whose import
 path is part of semantic `.pyi` syntax, and `prik.parsers`, which groups the
 language-specific frontends. Stable convenience functions remain flattened

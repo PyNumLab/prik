@@ -62,7 +62,7 @@ PRIK deliberately has four related but non-interchangeable authorities.
 
 | Authority | Owner | Key | Value | Purpose |
 | --- | --- | --- | --- | --- |
-| Native target facts | `prik/probes/` | compiler expression or native spelling | measured kind, storage, precision, signedness, or availability | Describe the selected compiler target. |
+| Native target facts | `prik/preprocessing/probes/` | compiler expression or native spelling | measured kind, storage, precision, signedness, or availability | Describe the selected compiler target. |
 | Semantic scalar catalogue | `prik/semantics/scalar_types.py` | stable semantic name such as `Float64` | family and intrinsic storage facts | Define language-neutral scalar vocabulary without importing NumPy. |
 | Runtime contract factories | `prik/contracts/__init__.py` | semantic contract name | real NumPy scalar factory or an explicit constructor error | Make public semantic `.pyi` symbols safely usable at runtime where supported. |
 | Backend datatype catalogues | `prik/codegen/primitive_scalar_types.py` | resolved semantic name | emitted NumPy expressions plus native spellings, NumPy type macros, Python parse/result behavior, and descriptor spelling | Project semantic dtypes for reporting and lower implemented primitive scalar plans without coupling the two generators. |
@@ -87,7 +87,7 @@ bridge compilation. Flags that change kinds, widths, ABI, or target architecture
 must reach probing. A report measured under one target must not be reused as if
 it described another.
 
-`prik/probes/fortran_types.py` compiles generated measurement programs and
+`prik/preprocessing/probes/fortran_types.py` compiles generated measurement programs and
 returns `FortranTypeProbeReport`. Its cache identity includes the generated
 source, compiler identity, flags, working directory, target environment, and
 optional runner. The two main outputs are:
@@ -101,7 +101,7 @@ type facts to `FortranToIRConverter`. Probes never decide ownership, Python
 visibility, output projection, or wrapper support.
 
 <!-- PRIK_C_DOCS_START
-The C inspection path follows the same separation. `prik/probes/c_types.py`
+The C inspection path follows the same separation. `prik/preprocessing/probes/c_types.py`
 measures width, signedness, precision, availability, and opaque-handle facts
 for standard C spellings. `CToIRConverter` consumes the report and maps known
 facts to stable semantic dtypes. Missing or unsupported facts remain explicit

@@ -7,8 +7,8 @@ import sys
 
 import pytest
 
-import prik.pipeline.preprocessing as preprocessing
-from prik.pipeline.preprocessing import (
+import prik.preprocessing.source as preprocessing
+from prik.preprocessing import (
     PreprocessingConfig,
     PreprocessingError,
     run_compiler_preprocessor,
@@ -20,7 +20,7 @@ def test_preprocessing_module_direct_execution_example():
     repository_root = Path(__file__).parents[3]
 
     result = subprocess.run(
-        [sys.executable, "prik/pipeline/preprocessing.py"],
+        [sys.executable, "prik/preprocessing/source.py"],
         cwd=repository_root,
         capture_output=True,
         text=True,

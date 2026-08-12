@@ -20,7 +20,7 @@ import pytest
 from tests.fortran._support.pyi_fixtures import assert_generated_pyi_package_matches_fixture
 from tests.fortran._support.fmath_cases import fmath_cases
 from prik import build_pyi_extension
-from prik.compiling.objects import ObjectFile
+from prik.compiler.objects import ObjectFile
 from prik.parsers.fortran.parser import parse_fortran_project
 from prik.pipeline.build import (
     NativeBuildPlan,
@@ -30,7 +30,7 @@ from prik.pipeline.build import (
     _merge_wrapper_modules,
     _new_compiler,
 )
-from prik.pipeline.preprocessing import PreprocessingConfig
+from prik.preprocessing import PreprocessingConfig
 from prik.pipeline.build import build_fortran_extension
 from prik.runtime.handles import AllocatableArray
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules

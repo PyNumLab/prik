@@ -9,7 +9,7 @@ publication: draft
 
 # Compiler-Backed Preprocessing Reference
 
-`prik/pipeline/preprocessing.py` owns compiler-backed preprocessing for the wrapper
+`prik/preprocessing/source.py` owns compiler-backed preprocessing for the wrapper
 pipeline. The parsers consume one expanded source stream; they do not evaluate
 CPP branches or emulate macro expansion.
 

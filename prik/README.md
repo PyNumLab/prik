@@ -9,9 +9,11 @@ jumping directly into generated-code internals.
 | File or package | Owns |
 | --- | --- |
 | `cli.py` | User CLI stages, output routing, diagnostics, and wrapper option validation. |
+| `stage_values.py` | Shared stage-result records used by public inspection workflows. |
 | `contracts/` | Public names used by semantic `.pyi` contracts. |
-| `pipeline/` | Preprocessing, semantic `.pyi` loading, datatype mapping reports, wrapper generation orchestration, and end-to-end builds. |
-| `probes/` | Compiler-derived native target facts. |
+| `compiler/` | Reusable compiler commands, compile objects, native support installation, and linking. |
+| `preprocessing/` | C/Fortran source preparation, provenance, native includes, and compiler-derived target facts. |
+| `pipeline/` | Semantic `.pyi` loading, datatype mapping reports, wrapper generation orchestration, and end-to-end builds. |
 | `runtime/` | Python runtime objects used by generated extensions. |
 | `parsers/` | Parser namespace containing the `c`, `fortran`, and semantic `.pyi` frontends. |
 | `semantics/` | Language-neutral semantic IR, scalar datatype vocabulary, declaration-expression provenance, and `.pyi` conversion. |
@@ -19,7 +21,8 @@ jumping directly into generated-code internals.
 | `planning/` | Editable backend-neutral wrapper implementation plans. |
 | `codegen/` | Backend datatype projection, plan-driven documentation, and direct C/Fortran syntax-node lowering. |
 | `printers/` | C, Fortran, and semantic `.pyi` serialization. |
-| `compiling/` | Native compiler objects, wrapper compilation, native support installation, and linking. |
+| `binding_support/` | Header-only native support installed into generated wrapper builds. |
+| `naming/` | Shared public-name and generated-symbol policy. |
 | `utilities/` | Shared parsing, normalization, rendering, evaluation, and visitor helpers. |
 
 The package root contains the public entrypoint modules plus the shared

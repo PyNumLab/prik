@@ -14,16 +14,16 @@ import sys
 import time
 from types import ModuleType
 
-from prik.compiling.objects import ObjectFile
-from prik.compiling.compilers import Compiler, get_condaless_search_path
-from prik.compiling.native_support import install_native_support
+from prik.compiler.objects import ObjectFile
+from prik.compiler.compilers import Compiler, get_condaless_search_path
+from prik.compiler.native_support import install_native_support
 from prik.parsers.fortran.parser import parse_fortran_project
-from prik.probes.fortran_types import (
+from prik.preprocessing.probes.fortran_types import (
     evaluate_fortran_type_facts,
     evaluate_fortran_type_requirements,
     resolve_fortran_logical_storage_types,
 )
-from prik.pipeline.preprocessing import PreprocessingConfig, preprocess_source
+from prik.preprocessing import PreprocessingConfig, preprocess_source
 from prik.pipeline.wrapper import GeneratedSource, GeneratedWrapper, WrapperGenerator
 from prik.semantics.fortran2ir import (
     collect_fortran_type_storage_requirements,

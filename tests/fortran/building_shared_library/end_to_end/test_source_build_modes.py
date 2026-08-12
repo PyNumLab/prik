@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 from tests.fortran._support.wrapper_build import _sole_native_module
-from prik.pipeline.preprocessing import PreprocessingConfig
+from prik.preprocessing import PreprocessingConfig
 from prik.pipeline.build import NativeBuildPlan, NativeLinkItem, build_fortran_extension
 
 NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"

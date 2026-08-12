@@ -9,14 +9,14 @@ from types import SimpleNamespace
 
 import pytest
 
-import prik.probes.fortran_types as fortran_type_probe
+import prik.preprocessing.probes.fortran_types as fortran_type_probe
 from prik.semantics.fortran2ir import (
     collect_semantic_compile_time_requirements,
     fortran_module_to_semantic_module,
 )
 from prik import parse_fortran_file as parse_fortran_source
 from prik import parse_fortran_project
-from prik.probes.fortran_types import (
+from prik.preprocessing.probes.fortran_types import (
     FortranTypeProbeRecipe,
     FortranTypeProbeReport,
     FortranTypeProbeError,
@@ -31,7 +31,7 @@ from prik.probes.fortran_types import (
     probe_fortran_type_expressions_cached,
     resolve_fortran_logical_storage_types,
 )
-from prik.pipeline.preprocessing import PreprocessingConfig
+from prik.preprocessing import PreprocessingConfig
 
 
 _FC = shutil.which("gfortran") or shutil.which("f95")
@@ -486,7 +486,7 @@ def test_fortran_type_probe_module_cli_emits_json_for_semantic_input(tmp_path):
         [
             sys.executable,
             "-m",
-            "prik.probes.fortran_types",
+            "prik.preprocessing.probes.fortran_types",
             "--compiler",
             compiler,
             "--expr",
@@ -511,7 +511,7 @@ def test_fortran_type_probe_module_cli_emits_json_for_semantic_input(tmp_path):
 
 def test_fortran_type_probe_direct_script_runs_its_no_argument_example():
     completed = subprocess.run(
-        [sys.executable, "prik/probes/fortran_types.py"],
+        [sys.executable, "prik/preprocessing/probes/fortran_types.py"],
         cwd=Path(__file__).resolve().parents[4],
         capture_output=True,
         text=True,

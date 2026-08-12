@@ -14,6 +14,10 @@ release tags add a leading `v` to the package version.
 
 ### Changed
 
+- Reorganized compiler and pre-parse infrastructure into `prik.compiler` and
+  `prik.preprocessing`, including C/Fortran preprocessing and target probes;
+  the former `prik.compiling`, `prik.probes`, parser-local C preprocessor, and
+  pipeline-local preprocessing import paths were removed.
 - Replaced the public semantic-to-NumPy helper API with stage-owned semantic,
   contract-runtime, and code-generation datatype catalogues, and documented the
   complete internal datatype lifecycle from compiler probing to runtime

@@ -1,4 +1,4 @@
-# Compiling Package
+# Compiler Package
 
 This package owns native compiler command construction, compile objects,
 generated wrapper compilation, native support installation, and shared-library
@@ -15,7 +15,7 @@ linking.
 
 Generated-wrapper object assembly and shared-library orchestration live in
 `prik/pipeline/build.py`, where the canonical rendered wrapper artifacts are
-available. The compiling package does not import or regenerate wrapper plans,
+available. The compiler package does not import or regenerate wrapper plans,
 infer semantic policy, or traverse an implicit dependency graph.
 
 ## Pipeline Position

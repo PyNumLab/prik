@@ -11,7 +11,7 @@ import pytest
 from tests.fortran._support.pyi_fixtures import assert_generated_pyi_package_matches_fixture
 from tests.fortran._support.wrapper_build import _compiler
 from prik import build_pyi_extension
-from prik.compiling.objects import ObjectFile
+from prik.compiler.objects import ObjectFile
 from prik.pipeline.build import _new_compiler
 
 FEATURE_ROOT = Path(__file__).parents[1]

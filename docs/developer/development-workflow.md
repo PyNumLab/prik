@@ -207,7 +207,7 @@ implementation files.
 | --- | --- | --- |
 | Fortran parse output | `prik/parsers/fortran/parser.py`, `prik/parsers/fortran/models.py`, `prik/parsers/fortran/lexer.py` | `tests/fortran/source_parsing/parsing/`, `tests/fortran/source_parsing/parsing/test_fortran_fixture_suite.py`, `tests/fortran/source_parsing/parsing/test_error_handling.py` |
 | CLI stage selection and output | `prik/cli.py`, `prik/parsers/fortran/cli.py` | `tests/fortran/command_line_interface/pipeline/` |
-| Fortran target type probing and cache | `prik/probes/fortran_types.py` | `tests/fortran/data_types/probes/test_fortran_type_probes.py` |
+| Fortran target type probing and cache | `prik/preprocessing/probes/fortran_types.py` | `tests/fortran/data_types/probes/test_fortran_type_probes.py` |
 | Generated target datatype mapping examples | `prik/pipeline/type_mapping_report.py` | `tests/fortran/data_types/pipeline/test_type_mapping_report.py`, `tests/docs/test_examples.py` |
 | Fortran to semantic IR | `prik/semantics/fortran2ir.py`, `prik/semantics/models.py` | `tests/fortran/semantic_ir/semantics/` |
 | `.pyi` printing | `prik/printers/pyi.py` | `tests/fortran/semantic_pyi_format/pipeline/`, `tests/fortran/semantic_pyi_format/pipeline/test_modern_example.py` |
@@ -215,13 +215,13 @@ implementation files.
 | Semantic policy completion | `prik/policy/completion.py`, `prik/policy/ownership.py` | `tests/fortran/infrastructure/semantics/` and feature-local `policy/` directories |
 | Fortran wrapper orchestration | `prik/pipeline/build.py` | `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py`, `tests/fortran/building_shared_library/end_to_end/test_multi_source_builds.py` |
 | Wrapper planning, owner-local errors, and direct lowering | `prik/planning/models.py`, `prik/planning/planner.py`, `prik/pipeline/wrapper.py` | `tests/fortran/infrastructure/codegen/`, feature-local `codegen/` stages |
-| Native compilation and binding support | `prik/compiling/`, `prik/binding_support/` | `tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py`, `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py` |
+| Native compilation and binding support | `prik/compiler/`, `prik/binding_support/` | `tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py`, `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py` |
 | Executable Markdown examples | `README.md`, `docs/*.md` | `tests/docs/test_examples.py` |
 
 <!-- PRIK_C_DOCS_START
 | C parse output | `prik/parsers/c/parser.py`, `prik/parsers/c/models.py`, `prik/parsers/c/lexer.py` | `tests/c/parsing/test_c_declarations_and_declarators.py`, `tests/c/parsing/test_c_fixture_suite.py`, `tests/c/parsing/test_c_error_fixture_suite.py` |
-| Compiler preprocessing | `prik/pipeline/preprocessing.py` | `tests/fortran/source_preprocessing/preprocessing/`, `tests/fortran/source_preprocessing/preprocessing/test_parser_boundaries.py`, `tests/c/parsing/test_c_lexer_preprocessor.py` |
-| C target ABI probing and cache | `prik/probes/c_types.py` | `tests/c/probes/test_c_types.py` |
+| Compiler preprocessing | `prik/preprocessing/source.py` | `tests/fortran/source_preprocessing/preprocessing/`, `tests/fortran/source_preprocessing/preprocessing/test_parser_boundaries.py`, `tests/c/parsing/test_c_lexer_preprocessor.py` |
+| C target ABI probing and cache | `prik/preprocessing/probes/c_types.py` | `tests/c/probes/test_c_types.py` |
 | C to semantic IR | `prik/semantics/c2ir.py`, `prik/semantics/models.py` | `tests/c/semantics/conversion/` |
 | Fortran-to-C bridge and CPython binding | `prik/codegen/fortran/bridge.py`, `prik/codegen/c/binding.py` | `tests/fortran/infrastructure/codegen/`, feature-local `codegen/` stages |
 | Public API exports | `prik/__init__.py` | `tests/fortran/source_parsing/parsing/test_public_entrypoints.py`, `tests/c/parsing/test_c_public_api_skeleton.py` |
@@ -458,7 +458,7 @@ package entrypoint. New cross-language user behavior normally belongs in
 
 ### Preprocessing Internals
 
-`prik/pipeline/preprocessing.py` owns compiler-backed preprocessing and provenance. The
+`prik/preprocessing/source.py` owns compiler-backed preprocessing and provenance. The
 main value object is `PreprocessingConfig`; the main execution path is
 `run_compiler_preprocessor_with_recipe(...)`.
 
@@ -520,7 +520,7 @@ from pathlib import Path
 
 from prik import parse_fortran_file
 from semantics.fortran2ir import fortran_file_to_semantic_modules
-from prik.pipeline.preprocessing import PreprocessingConfig, preprocess_source
+from prik.preprocessing import PreprocessingConfig, preprocess_source
 
 path = Path("configured.F90")
 preprocessed = preprocess_source(
@@ -590,7 +590,7 @@ from pathlib import Path
 from c_parser.cli import attach_preprocessing_recipe
 from prik import parse_c_file
 from semantics.c2ir import c_file_to_semantic_modules
-from prik.pipeline.preprocessing import PreprocessingConfig, preprocess_source
+from prik.preprocessing import PreprocessingConfig, preprocess_source
 
 path = Path("api.h")
 preprocessed = preprocess_source(
@@ -789,7 +789,7 @@ For direct-compiler C semantic and `.pyi` stages, `prik/cli.py` runs
 to `prik/semantics/c2ir.py`. The public `prik probe` command exposes the report
 as an inspection output; semantic stages do not accept that report as a second
 input path. Probe execution, cache, and refresh policy belong to
-`prik/probes/c_types.py`.
+`prik/preprocessing/probes/c_types.py`.
 PRIK_C_DOCS_END -->
 
 Fortran target datatype mapping and compile-time path:
@@ -856,7 +856,7 @@ The main ownership boundaries are:
   into validated typed plans;
 - `prik/pipeline/wrapper.py`: direct bridge, binding, and source
   artifact generation;
-- `prik/compiling/`: compiler commands and shared-library linking; and
+- `prik/compiler/`: compiler commands and shared-library linking; and
 - `prik/binding_support/`: native binding support copied into each build.
 
 <!-- PRIK_C_DOCS_START
@@ -1301,7 +1301,7 @@ diagnostic formatting.
 1. Add CLI tests in `tests/fortran/command_line_interface/pipeline/` first.
 2. Implement shared dispatch and output behavior in `prik/cli.py`.
 3. Keep Fortran package-specific CLI behavior in `prik/parsers/fortran/cli.py`.
-4. If compiler preprocessing behavior changes, update `prik/pipeline/preprocessing.py`
+4. If compiler preprocessing behavior changes, update `prik/preprocessing/source.py`
    and preprocessing tests.
 5. Update the relevant [User Guide](../user/guide/index.md) or checked
    [example](../user/examples/index.md) for user-facing commands and this guide

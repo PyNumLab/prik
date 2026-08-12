@@ -14,7 +14,7 @@ _CJSON_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "native" / "json
 
 
 def _preprocessed_cjson_source(filename: str) -> str:
-    from prik.pipeline.preprocessing import PreprocessingConfig, preprocess_source
+    from prik.preprocessing import PreprocessingConfig, preprocess_source
 
     compiler = shutil.which("cc")
     if compiler is None:

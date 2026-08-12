@@ -100,7 +100,7 @@ def test_c_fixture_headers_with_macros_require_preprocessing(fixture):
 )
 def test_c_fixture_headers_parse_after_compiler_preprocessing(fixture, defines):
     from prik.parsers.c import parse_c_file
-    from prik.pipeline.preprocessing import PreprocessingConfig, preprocess_source
+    from prik.preprocessing import PreprocessingConfig, preprocess_source
 
     compiler = shutil.which("cc")
     if compiler is None:

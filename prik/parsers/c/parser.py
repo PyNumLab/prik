@@ -129,7 +129,7 @@ from prik.parsers.c.models import (
     CLongDoubleComplex,
     CLongLong,
 )
-from prik.parsers.c.preprocessor import collect_preprocessor_metadata
+from prik.preprocessing.c import collect_preprocessor_metadata
 from prik.parsers.c.type_resolver import resolve_project_types
 
 _C_SOURCE_SUFFIXES = {".c", ".h", ".i"}

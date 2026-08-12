@@ -1,8 +1,8 @@
 """Collect safe raw-preprocessor metadata for the C parser.
 
-This parser-local module deliberately does not expand macros or choose
+This preprocessing-stage module deliberately does not expand macros or choose
 conditional-compilation branches; compiler-backed expansion belongs to
-``prik.pipeline.preprocessing``.  Before raw C grammar parsing, it normalizes
+``prik.preprocessing.source``. Before raw C grammar parsing, it normalizes
 comments and continuations, records literal ``#include`` and ``#pragma`` facts,
 and reports unresolved quoted includes without reading included source.
 """

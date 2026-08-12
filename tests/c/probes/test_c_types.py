@@ -10,8 +10,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import prik.probes.c_types as c_type_probe
-from prik.probes.c_types import (
+import prik.preprocessing.probes.c_types as c_type_probe
+from prik.preprocessing.probes.c_types import (
     CStandardTypeProbeRecipe,
     CStandardTypeProbeReport,
     CStandardTypeProbeError,
@@ -22,7 +22,7 @@ from prik.probes.c_types import (
     probe_c_standard_types_cached,
     probe_c_standard_types,
 )
-from prik.pipeline.preprocessing import PreprocessingConfig
+from prik.preprocessing import PreprocessingConfig
 
 
 _CC = shutil.which("cc")
@@ -318,7 +318,7 @@ def test_c_standard_type_probe_cache_directory_precedence(monkeypatch, tmp_path)
 def test_c_standard_type_probe_module_cli_emits_json_for_semantic_input():
     compiler = _required_c_compiler()
     completed = subprocess.run(
-        [sys.executable, "-m", "prik.probes.c_types", "--compiler", compiler],
+        [sys.executable, "-m", "prik.preprocessing.probes.c_types", "--compiler", compiler],
         capture_output=True,
         text=True,
         check=True,
@@ -333,7 +333,7 @@ def test_c_standard_type_probe_module_cli_emits_json_for_semantic_input():
 
 def test_c_standard_type_probe_direct_script_runs_its_no_argument_example():
     completed = subprocess.run(
-        [sys.executable, "prik/probes/c_types.py"],
+        [sys.executable, "prik/preprocessing/probes/c_types.py"],
         cwd=Path(__file__).resolve().parents[3],
         capture_output=True,
         text=True,

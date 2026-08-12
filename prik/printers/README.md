@@ -14,3 +14,6 @@ wrapper planning, cross-language orchestration, filenames, or build behavior.
 two native source printers, assigns stable wrapper filenames, and returns one
 generated-wrapper result. `../pipeline/build.py` writes or compiles that
 result.
+
+For cross-stage navigation, see `docs/developer/source-map.md` and
+`docs/developer/feature-to-code-map.md`.

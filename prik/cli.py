@@ -19,16 +19,16 @@ from prik.parsers.fortran.models import FortranParseError
 from prik.parsers.fortran.parser import FortranParser
 from prik.semantics.c2ir import c_project_to_semantic_modules
 from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
-from prik.probes.c_types import (
+from prik.preprocessing.probes.c_types import (
     CStandardTypeProbeError,
     probe_c_standard_types_cached,
 )
-from prik.probes.fortran_types import (
+from prik.preprocessing.probes.fortran_types import (
     FortranTypeProbeReport,
     probe_fortran_type_expressions_cached,
 )
 from prik.pipeline.type_mapping_report import c_type_mapping_markdown, fortran_type_mapping_markdown
-from prik.pipeline.preprocessing import (
+from prik.preprocessing import (
     PreprocessingConfig,
     PreprocessingError,
     run_compiler_preprocessor_with_recipe,
@@ -759,7 +759,7 @@ def _fortran_compile_time_values(
         return None
 
     from prik.semantics.fortran2ir import collect_semantic_compile_time_requirements
-    from prik.probes.fortran_types import evaluate_fortran_type_requirements
+    from prik.preprocessing.probes.fortran_types import evaluate_fortran_type_requirements
 
     requirements = collect_semantic_compile_time_requirements(parsed)
     if not requirements:
@@ -787,7 +787,7 @@ def _fortran_type_facts(
         return None
 
     from prik.semantics.fortran2ir import collect_fortran_type_storage_requirements
-    from prik.probes.fortran_types import evaluate_fortran_type_facts
+    from prik.preprocessing.probes.fortran_types import evaluate_fortran_type_facts
 
     requirements = collect_fortran_type_storage_requirements(parsed, compile_time_values=compile_time_values)
     if not requirements:
