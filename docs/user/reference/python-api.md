@@ -212,7 +212,7 @@ module. The method requires that the shared-library file already exists, so a
 direct build can import at once and a Makefile result can import after `make`
 has produced the extension.
 
-## Target type and NumPy helpers
+## Target type probing
 
 | Symbol | Purpose |
 | --- | --- |
@@ -222,14 +222,10 @@ has produced the extension.
 | `fortran_type_probe_expressions` | Produces expressions used by the Fortran type probe. |
 | `probe_fortran_type_expressions` | Runs Fortran type probes for selected expressions. |
 | `evaluate_fortran_type_requirements` | Evaluates semantic requirements against a Fortran type probe report. |
-| `SEMANTIC_DTYPE_TO_NUMPY_DTYPE` | Default semantic dtype to NumPy dtype map. |
-| `semantic_dtype_to_numpy_dtype` | Maps one semantic dtype to a NumPy dtype. |
-| `semantic_dtype_to_numpy_dtype_map` | Returns a semantic dtype to NumPy dtype mapping. |
-| `semantic_type_to_numpy_dtype` | Maps one semantic type to a NumPy dtype. |
-| `numpy_dtype_expression` | Returns the generated expression for a NumPy dtype. |
 
-These helpers are public because wrapper contracts need deterministic target
-type and NumPy dtype mapping. The CLI type-probe flags are documented in
+These helpers expose compiler-target measurement. Semantic-to-NumPy projection
+is an internal code-generation concern consumed through completed wrapper
+plans, not a public conversion API. The CLI type-probe flags are documented in
 [CLI Commands Reference](cli-commands.md).
 
 ## Current boundaries

@@ -13,7 +13,7 @@ import keyword
 import re
 from collections.abc import Iterable
 
-from prik.types.numpy import SEMANTIC_SCALAR_TYPE_NAMES
+from prik.semantics.scalar_types import SEMANTIC_SCALAR_TYPE_NAMES
 from prik.policy.ownership import (
     CodegenAction,
     OwnershipDecision,

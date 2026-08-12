@@ -41,7 +41,11 @@ from prik.utilities.declaration_expressions import (
 )
 from prik.semantics.ownership_metadata import set_ownership_metadata
 from prik.semantics.metadata import BIND_TARGET_METADATA, PROJECTED_OUTPUT_METADATA, SCALAR_STORAGE_CATEGORY
-from prik.types.numpy import BOOLEAN_STORAGE_BITS, SEMANTIC_SCALAR_TYPE_NAMES, is_boolean_semantic_type_name
+from prik.semantics.scalar_types import (
+    BOOLEAN_STORAGE_BITS,
+    SEMANTIC_SCALAR_TYPE_NAMES,
+    is_boolean_semantic_type_name,
+)
 from prik.utilities.visitor import ClassVisitor
 
 from prik.semantics.models import (

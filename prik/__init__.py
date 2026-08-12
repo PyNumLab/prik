@@ -59,13 +59,6 @@ _FORTRAN_TYPE_PROBE_EXPORTS = {
     "fortran_type_probe_expressions",
     "probe_fortran_type_expressions",
 }
-_NUMPY_TYPE_EXPORTS = {
-    "SEMANTIC_DTYPE_TO_NUMPY_DTYPE",
-    "numpy_dtype_expression",
-    "semantic_dtype_to_numpy_dtype",
-    "semantic_dtype_to_numpy_dtype_map",
-    "semantic_type_to_numpy_dtype",
-}
 _WRAPPING_EXPORTS = {
     "NativeBuildPlan",
     "NativeCompilationUnit",
@@ -85,9 +78,6 @@ def __getattr__(name: str):
     if name in _FORTRAN_TYPE_PROBE_EXPORTS:
         module = import_module("prik.probes.fortran_types")
         return getattr(module, name)
-    if name in _NUMPY_TYPE_EXPORTS:
-        module = import_module("prik.types.numpy")
-        return getattr(module, name)
     if name in _WRAPPING_EXPORTS:
         module = import_module("prik.pipeline.build")
         return getattr(module, name)
@@ -95,7 +85,6 @@ def __getattr__(name: str):
 
 
 __all__ = (
-    "SEMANTIC_DTYPE_TO_NUMPY_DTYPE",
     "AllocatableArray",
     "CFile",
     "CParseError",
@@ -143,7 +132,6 @@ __all__ = (
     "fortran_project_to_semantic_modules",
     "fortran_type_probe_expressions",
     "main",
-    "numpy_dtype_expression",
     "opaque_dependency_modules",
     "parse_c_file",
     "parse_c_project",
@@ -156,7 +144,4 @@ __all__ = (
     "pyi_paths_to_semantic_modules",
     "pyi_text_to_semantic_module",
     "resolve_semantic_compile_time_values",
-    "semantic_dtype_to_numpy_dtype",
-    "semantic_dtype_to_numpy_dtype_map",
-    "semantic_type_to_numpy_dtype",
 )

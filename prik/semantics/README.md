@@ -9,6 +9,7 @@ implementation plans live in `../planning/`.
 | File | Owns |
 | --- | --- |
 | `models.py` | Semantic IR dataclasses and core model metadata. |
+| `scalar_types.py` | Stable primitive scalar names, families, and intrinsic storage facts without NumPy or backend spellings. |
 | `metadata.py` | Cross-stage semantic metadata keys consumed after `.pyi`, C, or Fortran conversion. |
 | `fortran2ir.py` | Fortran parser facts to semantic modules. |
 | `c2ir.py` | C parser facts to semantic modules. |
@@ -104,6 +105,7 @@ completion remains the next shared stage after those converters produce
 - `.pyi` wrapper checklist: `docs/maintainer/roadmap/semantic-pyi-wrapper-checklist.md`
 - Source navigation: `docs/developer/source-map.md`, `docs/developer/feature-to-code-map.md`
 - Pipeline map: `docs/maintainer/internal-architecture/pipeline-map.md`
+- Datatype lifecycle: `docs/maintainer/internal-architecture/type-system.md`
 - Semantic tests: `tests/fortran/semantic_ir/semantics/`
 - `.pyi` tests: `tests/fortran/semantic_pyi_format/`
 - Wrapper behavior that reaches the typed plan: `tests/fortran/`

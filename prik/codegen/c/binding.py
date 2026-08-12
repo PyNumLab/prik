@@ -50,7 +50,7 @@ from prik.policy.models import (
 )
 from prik.codegen.c.naming import CBindingNames
 from prik.codegen.c.python_surface import PythonSurfaceContext, PythonSurfaceEmitter
-from prik.types.numpy import is_boolean_semantic_type_name
+from prik.semantics.scalar_types import is_boolean_semantic_type_name
 from prik.codegen.nodes import (
     CAllowThreadsBegin,
     CAllowThreadsEnd,

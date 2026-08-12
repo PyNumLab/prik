@@ -36,6 +36,8 @@ def test_concrete_primitive_default_constructors_return_zero_numpy_scalars():
         assert isinstance(value, scalar_type), contract
         assert value == scalar_type(0), contract
 
+    assert set(contracts._CONTRACT_NUMPY_FACTORIES) == {contract.__name__ for contract, _ in cases}
+
 
 def test_primitive_contract_constructors_reject_values_and_array_annotations():
     with pytest.raises(TypeError, match="ordinary array contract annotations"):

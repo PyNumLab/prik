@@ -161,7 +161,7 @@ nav:
           - Wrapper Generation Pipeline: maintainer/internal-architecture/wrapper-generation-pipeline.md
           - AST Design: maintainer/internal-architecture/ast-design.md
           - Semantic Passes: maintainer/internal-architecture/semantic-passes.md
-          - Type System: maintainer/internal-architecture/type-system.md
+          - Datatype Lifecycle: maintainer/internal-architecture/type-system.md
           - Runtime Layer: maintainer/internal-architecture/runtime-layer.md
           - Ownership Tracking: maintainer/internal-architecture/ownership-tracking.md
           - Dependency Analysis: maintainer/internal-architecture/dependency-analysis.md

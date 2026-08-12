@@ -18,13 +18,12 @@ artifacts used by tests. Navigate by ownership boundary first, then by file.
 | --- | --- |
 | `prik/` | Python package implementation. Start with [source-map.md](source-map.md) for entrypoints and [feature-to-code-map.md](feature-to-code-map.md) when starting from behavior. |
 | `prik/contracts/` | Public semantic `.pyi` contract vocabulary imported directly by generated and edited contracts. |
-| `prik/pipeline/` | Shared preprocessing, semantic `.pyi` loading, and high-level wrapper build orchestration. |
-| `prik/probes/` | Compiler-derived target facts and target type mapping reports. |
+| `prik/pipeline/` | Shared preprocessing, semantic `.pyi` loading, cross-stage datatype reports, and high-level wrapper build orchestration. |
+| `prik/probes/` | Compiler-derived target facts and reusable probe reports. |
 | `prik/runtime/` | Python runtime objects used by generated extension modules. |
-| `prik/types/` | Cross-layer mappings from resolved semantic types to Python ecosystem types. |
 | `prik/parsers/` | Public namespace for language and semantic-contract frontends and parser models. |
-| `prik/semantics/` | Semantic IR, source-to-IR conversion, `.pyi` parsing, and policy completion. |
-| `prik/codegen/` | Typed wrapper plans, direct native bridge/binding lowering, and source and semantic `.pyi` printers. |
+| `prik/semantics/` | Semantic IR, scalar datatype vocabulary, source-to-IR conversion, and `.pyi` conversion. |
+| `prik/codegen/` | Backend datatype projection and plan-driven native bridge/binding lowering. |
 | `prik/compiling/` | Native compile objects, compiler command orchestration, native support installation, and linking. |
 | `prik/binding_support/` | Bundled header-only native support copied into generated wrapper builds. |
 | `prik/naming/` | Unified public-name and generated-symbol policy. |

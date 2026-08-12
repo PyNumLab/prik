@@ -51,7 +51,7 @@ from prik.policy.completion import complete_semantic_policies
 from prik.pipeline.pyi import _PyiSemanticModuleCache
 from prik.semantics.pyi_metadata import PYI_LOADED_METADATA
 from prik.planning import WrapperPlanner
-from prik.types.numpy import boolean_storage_bits, is_boolean_semantic_type_name
+from prik.semantics.scalar_types import boolean_storage_bits, is_boolean_semantic_type_name
 
 
 _DEFAULT_BUILD_DIR_NAME = "__prik__"

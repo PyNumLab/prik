@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-import prik.probes.report as type_mapping_report
+import prik.pipeline.type_mapping_report as type_mapping_report
 
 
 @pytest.mark.parametrize(
@@ -109,7 +109,7 @@ def test_type_mapping_report_direct_script_runs_its_no_argument_example():
         pytest.skip("cc is required for the direct type-mapping example")
 
     completed = subprocess.run(
-        [sys.executable, "prik/probes/report.py"],
+        [sys.executable, "prik/pipeline/type_mapping_report.py"],
         cwd=Path(__file__).resolve().parents[4],
         capture_output=True,
         text=True,

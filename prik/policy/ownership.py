@@ -52,7 +52,7 @@ from prik.semantics.metadata import (
 )
 from prik.semantics.models import PYTHON_VALUE_IMMUTABLE, PYTHON_VALUE_MUTABILITY_METADATA
 from prik.semantics.ownership_metadata import OWNERSHIP_POLICY_METADATA, POINTER_POLICY_METADATA
-from prik.types.numpy import BOOLEAN_SEMANTIC_TYPE_NAMES
+from prik.semantics.scalar_types import BOOLEAN_SEMANTIC_TYPE_NAMES
 
 
 # Completed policy vocabulary

@@ -63,10 +63,11 @@ The Python package layout follows those ownership boundaries:
 
 | Package | Owns | Must not become |
 | --- | --- | --- |
-| `prik/contracts/` | The public semantic `.pyi` vocabulary | A home for semantic conversion or runtime type mapping |
-| `prik/types/` | Mappings from resolved semantic types to Python ecosystem types | A second semantic IR model |
-| `prik/probes/` | Compiler-derived target facts and reports built from those facts | Semantic policy or build orchestration |
-| `prik/pipeline/` | Source preprocessing, semantic `.pyi` loading, and end-to-end wrapper build orchestration | Parser models, semantic decisions, or compiler implementation details |
+| `prik/contracts/` | The public semantic `.pyi` vocabulary and its local runtime scalar factories | A home for semantic conversion or backend datatype lowering |
+| `prik/semantics/scalar_types.py` | Stable scalar identities, families, and intrinsic storage facts | NumPy or generated-language spelling |
+| `prik/codegen/primitive_scalar_types.py` | Semantic-to-backend and NumPy scalar projection for implemented lowering lanes | A reverse semantic inference service |
+| `prik/probes/` | Compiler-derived target facts | Semantic policy, cross-stage reporting, or build orchestration |
+| `prik/pipeline/` | Source preprocessing, semantic `.pyi` loading, datatype mapping reports, and end-to-end wrapper build orchestration | Parser models, semantic decisions, or compiler implementation details |
 | `prik/runtime/` | Python objects used by generated extensions at execution time | Build-time semantic or codegen policy |
 | `prik/utilities/` | Small domain-neutral mechanisms such as class visitor dispatch | A miscellaneous home for semantic or pipeline concepts |
 

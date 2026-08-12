@@ -153,7 +153,7 @@ from prik.utilities.declaration_expressions import (
     declaration_extent_references,
     resolve_declaration_extent,
 )
-from prik.types.numpy import BOOLEAN_SEMANTIC_TYPE_NAMES, is_boolean_semantic_type_name
+from prik.semantics.scalar_types import BOOLEAN_SEMANTIC_TYPE_NAMES, is_boolean_semantic_type_name
 
 
 _PLAN_PRIMITIVE_SCALAR_TYPES = frozenset(

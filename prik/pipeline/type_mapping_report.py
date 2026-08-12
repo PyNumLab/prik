@@ -1,9 +1,9 @@
-"""Generate target-specific native-to-semantic-to-NumPy mapping reports.
+"""Orchestrate target-specific native-to-semantic-to-NumPy reports.
 
-The public functions measure compiler-dependent target facts through the probe
-stage, convert the supported native spellings through existing semantic
-converters, and render Markdown for documentation or inspection. They report
-the selected target; they do not define parser facts or semantic policy.
+The public functions combine compiler probes, the normal semantic converters,
+and codegen's NumPy projection catalogue before rendering Markdown.  This is a
+cross-stage inspection pipeline, not a probe implementation or an alternative
+datatype conversion path.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import argparse
 from collections.abc import Sequence
 import platform
 
+from prik.codegen.primitive_scalar_types import NumpyDtypeRegistry
 from prik.parsers.c.models import (
     CBool,
     CChar,
@@ -40,7 +41,6 @@ from prik.semantics.fortran2ir import FortranToIRConverter, fortran_type_storage
 from prik.pipeline.preprocessing import PreprocessingConfig
 from prik.probes.c_types import probe_c_standard_types_cached
 from prik.probes.fortran_types import evaluate_fortran_type_facts, probe_fortran_type_expressions_cached
-from prik.types.numpy import numpy_dtype_expression
 
 
 # C report inventory.
@@ -340,7 +340,7 @@ def _numpy_dtype(semantic_dtype: str | None) -> str:
     note because the NumPy string type is not the native character layout.
     """
     try:
-        expression = numpy_dtype_expression(semantic_dtype)
+        expression = NumpyDtypeRegistry.expression_for(semantic_dtype)
     except KeyError:
         return "unsupported"
     if semantic_dtype == "String":
@@ -369,7 +369,7 @@ def _markdown_table(native_header: str, rows: list[tuple[str, str, str, str]]) -
 def main(argv: list[str] | None = None) -> int:
     """Print one compiler-generated C or Fortran datatype mapping table.
 
-    Use this entrypoint from python -m prik.probes.report with a required
+    Use this entrypoint from ``python -m prik.pipeline.type_mapping_report`` with a required
     language and optional compiler, target, runner, and cache settings. Argv is
     accepted for embedding and tests; on success the chosen report is written
     to standard output and zero is returned. Compiler probe and conversion

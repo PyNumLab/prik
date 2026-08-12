@@ -53,7 +53,7 @@ from prik.policy.models import (
     OptionalMode,
     ScalarLogicalABI,
 )
-from prik.types.numpy import is_boolean_semantic_type_name
+from prik.semantics.scalar_types import is_boolean_semantic_type_name
 from prik.codegen.nodes import (
     CodeExpression,
     FortranAllocate,

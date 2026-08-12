@@ -145,9 +145,10 @@ PRIK_C_DOCS_END -->
   explanation of the current wrapper stages, semantic-policy boundary,
   pass/planner/emitter distinctions, incremental decomposition criteria, and
   acceptance criteria for bridge and binding refactoring.
-- [ ] `docs/maintainer/internal-architecture/type-system.md`: document scalar kinds, arrays,
-  characters, derived types, pointers, allocatables, callbacks, and unsupported
-  storage forms.
+- [x] `docs/maintainer/internal-architecture/type-system.md`: maintained datatype
+  lifecycle from compiler probing through semantic normalization, policy,
+  planning, backend registries, generated NumPy boundaries, runtime validation,
+  and non-primitive storage families.
 - [ ] `docs/maintainer/internal-architecture/runtime-layer.md`: document native support
   installation, extension initialization, callbacks, cleanup, and shared native
   state.

@@ -17,7 +17,9 @@ details. They are separate from user guides and high-level design documents.
 - [Pipeline map](pipeline-map.md)
 - [AST design](ast-design.md)
 - [Symbol tables](symbol-tables.md)
-- [Type system](type-system.md)
+- [Datatype lifecycle](type-system.md): compiler probing, semantic scalar
+  identities, policy/planning boundaries, backend mappings, and runtime
+  validation.
 - [Semantic passes](semantic-passes.md)
 - [Dependency analysis](dependency-analysis.md)
 - [Wrapper generation pipeline](wrapper-generation-pipeline.md)

@@ -16,14 +16,15 @@ import json
 import keyword
 import re
 
+from prik.codegen.primitive_scalar_types import NumpyDtypeRegistry
 from prik.contracts import CONTRACT_SYMBOLS, CONTRACT_TYPE_NAMES
 from prik.naming import NamingPolicy
+from prik.semantics.scalar_types import SEMANTIC_SCALAR_TYPE_NAMES
 from prik.semantics.ownership_metadata import (
     OWNERSHIP_POLICY_METADATA,
     POINTER_POLICY_FIELDS,
     POINTER_POLICY_METADATA,
 )
-from prik.types.numpy import SEMANTIC_DTYPE_TO_NUMPY_DTYPE, SEMANTIC_SCALAR_TYPE_NAMES
 from prik.semantics.metadata import (
     ADDRESS_ROLE_METADATA,
     ADDRESS_ROLE_PROJECTION,
@@ -1296,7 +1297,7 @@ class PyiPrinter(ClassVisitor):
             field.visibility == "public"
             and semantic_type.rank == 0
             and semantic_type.name != "String"
-            and semantic_type.name in SEMANTIC_DTYPE_TO_NUMPY_DTYPE
+            and semantic_type.name in NumpyDtypeRegistry.TYPES
         )
 
     @staticmethod

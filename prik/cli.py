@@ -27,7 +27,7 @@ from prik.probes.fortran_types import (
     FortranTypeProbeReport,
     probe_fortran_type_expressions_cached,
 )
-from prik.probes.report import c_type_mapping_markdown, fortran_type_mapping_markdown
+from prik.pipeline.type_mapping_report import c_type_mapping_markdown, fortran_type_mapping_markdown
 from prik.pipeline.preprocessing import (
     PreprocessingConfig,
     PreprocessingError,

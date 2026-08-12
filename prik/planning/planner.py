@@ -121,7 +121,7 @@ from prik.planning.models import (
     TransformationPlan,
 )
 from prik.naming.native_symbols import NativeSymbolNames
-from prik.types.numpy import BOOLEAN_SEMANTIC_TYPE_NAMES
+from prik.semantics.scalar_types import BOOLEAN_SEMANTIC_TYPE_NAMES
 from prik.utilities.visitor import ClassVisitor
 
 

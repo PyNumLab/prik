@@ -34,7 +34,7 @@ from prik.planning.models import (
     OverloadPlan,
     ResultPlan,
 )
-from prik.types.numpy import BOOLEAN_SEMANTIC_TYPE_NAMES
+from prik.semantics.scalar_types import BOOLEAN_SEMANTIC_TYPE_NAMES
 
 
 _SCALAR_TYPES = {

@@ -14,6 +14,10 @@ release tags add a leading `v` to the package version.
 
 ### Changed
 
+- Replaced the public semantic-to-NumPy helper API with stage-owned semantic,
+  contract-runtime, and code-generation datatype catalogues, and documented the
+  complete internal datatype lifecycle from compiler probing to runtime
+  validation.
 - Separated post-IR policy and wrapper planning into `prik.policy` and
   `prik.planning`; code generation now renders plan-driven docstrings, and the
   former maintainer import paths were removed.
