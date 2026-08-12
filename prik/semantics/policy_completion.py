@@ -177,6 +177,9 @@ def _complete_ownership_policies(
     # Resolve identities before any class, field, or callable policy uses them.
     _complete_local_derived_type_identities(module)
 
+    # Reuse one source-ordered class population while later phases replace its policies.
+    class_nodes = tuple(_iter_semantic_classes(module.classes))
+
     # Complete persistent module state and its accessors first.
     for variable in module.variables:
         _complete_variable(variable, OwnershipContext.module_variable())
@@ -186,20 +189,20 @@ def _complete_ownership_policies(
     for semantic_class in module.classes:
         class_scope = str(semantic_class.origin.native_scope or module.name)
         _complete_class(semantic_class, f"{class_scope}.{semantic_class.name}")
-    derived_types = _complete_derived_type_graph_policies(module.classes)
+    derived_types = _complete_derived_type_graph_policies(class_nodes)
     _complete_class_surface_policies(
-        module.classes,
+        class_nodes,
         derived_types,
         strict_wrapper_names=strict_wrapper_names,
     )
-    polymorphic_variants = _polymorphic_variant_map(module.classes)
+    polymorphic_variants = _polymorphic_variant_map(class_nodes)
     _complete_class_method_policies(
-        module.classes,
+        class_nodes,
         module.functions,
         derived_types,
         polymorphic_variants,
     )
-    _complete_class_overload_policies(module.classes)
+    _complete_class_overload_policies(class_nodes)
     # Attach module-variable policies after their type and accessor facts exist.
     for variable in module.variables:
         variable_scope = str(variable.origin.native_scope or module.name)
@@ -337,32 +340,34 @@ def _complete_class(semantic_class: models.SemanticClass, owner_path: str) -> No
 
 
 def _derived_type_policy_map(
-    classes: list[models.SemanticClass],
+    class_nodes: tuple[models.SemanticClass, ...],
 ) -> dict[tuple[str, str], DerivedTypePolicy]:
-    """Return completed type policies by canonical semantic identity."""
-    policies: dict[tuple[str, str], DerivedTypePolicy] = {}
+    """Index one ordered class population by completed native type identity.
 
-    def collect(semantic_class: models.SemanticClass) -> None:
-        """Store an already-completed class policy under its canonical identity."""
-        policy = semantic_class.metadata.get(models.RESOLVED_DERIVED_TYPE_POLICY_METADATA)
-        if isinstance(policy, DerivedTypePolicy):
-            policies[policy.type_identity] = policy
-        for nested in semantic_class.classes:
-            collect(nested)
-
-    for semantic_class in classes:
-        collect(semantic_class)
-    return policies
+    ``class_nodes`` is the stable flattened sequence collected for this policy
+    run. For example, a ``point`` policy with identity ``("geometry", "point")``
+    is returned under that tuple for derived-member graph lookup.
+    """
+    return {
+        policy.type_identity: policy
+        for semantic_class in class_nodes
+        for policy in (semantic_class.metadata.get(models.RESOLVED_DERIVED_TYPE_POLICY_METADATA),)
+        if isinstance(policy, DerivedTypePolicy)
+    }
 
 
 def _complete_derived_type_graph_policies(
-    classes: list[models.SemanticClass],
+    class_nodes: tuple[models.SemanticClass, ...],
 ) -> dict[tuple[str, str], DerivedTypePolicy]:
-    """Validate finite derived member graphs after every local type is known."""
-    policies = _derived_type_policy_map(classes)
+    """Validate each ordered class's member graph after all local types are known.
 
-    def complete(semantic_class: models.SemanticClass) -> None:
-        """Complete recursive member-path policies for one class before indexing it."""
+    The input is the shared flattened class sequence. Each derived policy is
+    replaced with its completed graph blockers and the returned identity map is
+    updated so later classes see the completed version.
+    """
+    policies = _derived_type_policy_map(class_nodes)
+
+    for semantic_class in class_nodes:
         policy = semantic_class.metadata.get(models.RESOLVED_DERIVED_TYPE_POLICY_METADATA)
         if isinstance(policy, DerivedTypePolicy):
             _paths, graph_blockers = derived_member_path_policies(policy, policies)
@@ -370,28 +375,29 @@ def _complete_derived_type_graph_policies(
             completed = replace(policy, supported=not blockers, blockers=blockers)
             semantic_class.metadata[models.RESOLVED_DERIVED_TYPE_POLICY_METADATA] = completed
             policies[completed.type_identity] = completed
-        for nested in semantic_class.classes:
-            complete(nested)
-
-    for semantic_class in classes:
-        complete(semantic_class)
     return policies
 
 
 def _complete_class_surface_policies(
-    classes: list[models.SemanticClass],
+    class_nodes: tuple[models.SemanticClass, ...],
     derived_types: dict[tuple[str, str], DerivedTypePolicy],
     *,
     strict_wrapper_names: bool,
 ) -> None:
-    """Complete class orchestration after every derived identity is known."""
+    """Complete every ordered class surface after derived identities are known.
+
+    ``class_nodes`` is the shared depth-first sequence for this module. The pass
+    attaches constructor, method, export, inheritance, and effective-field
+    policy to each class while ``derived_types`` provides identity-based graph
+    lookup.
+    """
     identities = {
         semantic_class.name: policy.type_identity
-        for semantic_class in _iter_semantic_classes(classes)
+        for semantic_class in class_nodes
         for policy in (semantic_class.metadata.get(models.RESOLVED_DERIVED_TYPE_POLICY_METADATA),)
         if isinstance(policy, DerivedTypePolicy)
     }
-    for semantic_class in _iter_semantic_classes(classes):
+    for semantic_class in class_nodes:
         derived = semantic_class.metadata.get(models.RESOLVED_DERIVED_TYPE_POLICY_METADATA)
         if not isinstance(derived, DerivedTypePolicy):
             continue
@@ -414,7 +420,7 @@ def _complete_class_surface_policies(
 
     surfaces = {
         surface.type_identity: (semantic_class, surface)
-        for semantic_class in _iter_semantic_classes(classes)
+        for semantic_class in class_nodes
         for surface in (semantic_class.metadata.get(models.RESOLVED_CLASS_SURFACE_POLICY_METADATA),)
         if isinstance(surface, ClassSurfacePolicy)
     }
@@ -444,15 +450,20 @@ def _complete_class_surface_policies(
 
 
 def _complete_class_method_policies(
-    classes: list[models.SemanticClass],
+    class_nodes: tuple[models.SemanticClass, ...],
     module_functions: list[models.SemanticFunction],
     derived_types: dict[tuple[str, str], DerivedTypePolicy],
     polymorphic_variants: dict[tuple[str, str], tuple[tuple[str, str], ...]],
 ) -> None:
-    """Complete methods once from class policy, type graphs, and dispatch sets."""
+    """Complete each ordered class's methods from policy and dispatch graphs.
+
+    The shared ``class_nodes`` sequence fixes traversal order; module functions,
+    derived policies, and polymorphic variants supply the completed targets used
+    to classify each method invocation.
+    """
     type_bound_targets = _type_bound_target_names(module_functions)
     module_targets = {str(function.native_name or function.name) for function in module_functions}
-    for semantic_class in _iter_semantic_classes(classes):
+    for semantic_class in class_nodes:
         _complete_one_class_method_policy(
             semantic_class,
             type_bound_targets,
@@ -670,9 +681,14 @@ def _native_type_bound_binding_name(method: models.SemanticMethod) -> str:
     return name
 
 
-def _complete_class_overload_policies(classes: list[models.SemanticClass]) -> None:
-    """Attach exact runtime predicates after concrete calls are completed."""
-    for semantic_class in _iter_semantic_classes(classes):
+def _complete_class_overload_policies(class_nodes: tuple[models.SemanticClass, ...]) -> None:
+    """Attach exact runtime predicates to every ordered class overload.
+
+    This final class phase reads the already-completed concrete call policies
+    for ``class_nodes`` and replaces each surface with its completed overload
+    candidates and blockers.
+    """
+    for semantic_class in class_nodes:
         surface = semantic_class.metadata.get(models.RESOLVED_CLASS_SURFACE_POLICY_METADATA)
         if not isinstance(surface, ClassSurfacePolicy):
             continue
@@ -832,12 +848,17 @@ def _iter_semantic_classes(classes: list[models.SemanticClass]):
 
 
 def _polymorphic_variant_map(
-    classes: list[models.SemanticClass],
+    class_nodes: tuple[models.SemanticClass, ...],
 ) -> dict[tuple[str, str], tuple[tuple[str, str], ...]]:
-    """Enumerate known extensions from completed base identities, most-derived first."""
+    """Enumerate known extensions from ordered class surfaces, most-derived first.
+
+    For each identity in ``class_nodes``, the result contains that type and every
+    transitive extension, ordered from the last discovered derived class back to
+    its base for runtime dispatch.
+    """
     surfaces = tuple(
         surface
-        for semantic_class in _iter_semantic_classes(classes)
+        for semantic_class in class_nodes
         for surface in (semantic_class.metadata.get(models.RESOLVED_CLASS_SURFACE_POLICY_METADATA),)
         if isinstance(surface, ClassSurfacePolicy)
     )

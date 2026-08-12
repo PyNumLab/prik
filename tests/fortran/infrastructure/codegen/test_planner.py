@@ -13,6 +13,7 @@ import pytest
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.semantics.models import PYTHON_EXPORTS_METADATA
 from prik.semantics.policy_completion import complete_semantic_policies
+from prik.codegen.planner import _ClassPolicyCatalog
 from prik.codegen import (
     WrapperCodeGenerator,
     WrapperPlanner,
@@ -134,6 +135,33 @@ def hidden(x: Int32) -> Int32: ...
     plan = WrapperPlanner().build(module)
 
     assert [function.binding.python_name for function in plan.namespaces[0].functions] == ["visible"]
+
+
+def test_class_policy_catalog_organizes_nested_classes_and_callable_owner_paths():
+    module = parse_pyi_text(
+        """
+class outer:
+    class inner:
+        @native_call([Pass(), Addr(Arg(0))])
+        def shift(self, dx: Float64) -> None: ...
+
+        @overload("shift")
+        def move(self, dx: Float64) -> None: ...
+""",
+        module_name="nested_catalog",
+    )
+    complete_semantic_policies(module)
+
+    catalog = _ClassPolicyCatalog.from_module(module)
+    outer, inner = catalog.entries
+
+    assert tuple(entry.semantic_class.name for entry in catalog.entries) == ("outer", "inner")
+    assert inner.methods_by_owner_path["nested_catalog.outer.inner.shift"].name == "shift"
+    assert inner.method_policies_by_owner_path["nested_catalog.outer.inner.shift"].python_name == "shift"
+    assert inner.overload_functions_by_owner_path["nested_catalog.outer.inner.move.shift"].name == "shift"
+
+    with pytest.raises(TypeError):
+        inner.methods_by_owner_path["nested_catalog.outer.inner.shift"] = outer.semantic_class
 
 
 def test_planner_projects_required_array_buffer_policy():

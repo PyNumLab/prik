@@ -11,7 +11,9 @@ between their consumers, and names the backend roles needed by later stages.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from dataclasses import replace
+from collections.abc import Mapping
+from dataclasses import dataclass, replace
+from types import MappingProxyType
 
 from prik.semantics import models
 from prik.semantics.native_array_handles import NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER
@@ -22,6 +24,7 @@ from prik.semantics.wrapper_policy import (
     CallbackHandoffPolicy,
     CallbackResultPolicy,
     CallbackTransferPolicy,
+    ClassMethodPolicy,
     DeclarationCallablePolicy,
     ClassSurfacePolicy,
     DerivedCallPolicy,
@@ -135,6 +138,101 @@ _DATATYPE_FAMILIES = {
 }
 
 
+@dataclass(frozen=True)
+class _ClassPolicyEntry:
+    """Organize the completed policies and callable declarations for one class.
+
+    ``semantic_class`` is the source-ordered semantic declaration.  The two
+    policy fields are the final post-IR decisions consumed by planning.  The
+    owner-path maps connect constructor, method, and overload policy references
+    back to their semantic callables without reconstructing those relationships
+    in each planning helper.
+
+    For example, an entry for ``geometry.Point`` maps the constructor path
+    ``geometry.Point.__init__`` to its ``SemanticMethod`` and an overload path
+    such as ``geometry.Point.move.move_real`` to its concrete function.
+    """
+
+    semantic_class: models.SemanticClass
+    derived_policy: DerivedTypePolicy
+    surface_policy: ClassSurfacePolicy
+    methods_by_owner_path: Mapping[str, models.SemanticMethod]
+    method_policies_by_owner_path: Mapping[str, ClassMethodPolicy]
+    overload_functions_by_owner_path: Mapping[str, models.SemanticFunction]
+
+    @classmethod
+    def from_semantic_class(cls, semantic_class: models.SemanticClass) -> _ClassPolicyEntry:
+        """Build one entry from a class whose post-IR policy is complete.
+
+        The completed accessors fail closed when the class is unsupported or
+        incomplete.  Otherwise this method associates the class's method and
+        overload declarations with the stable owner paths already recorded by
+        its surface policy.  It organizes existing policy and does not infer or
+        modify any semantic decision.
+        """
+        derived_policy = completed_derived_type_policy(semantic_class)
+        surface_policy = completed_class_surface_policy(semantic_class)
+        owner_path = surface_policy.owner_path
+        return cls(
+            semantic_class=semantic_class,
+            derived_policy=derived_policy,
+            surface_policy=surface_policy,
+            methods_by_owner_path=MappingProxyType(
+                {f"{owner_path}.{method.name}": method for method in semantic_class.methods}
+            ),
+            method_policies_by_owner_path=MappingProxyType(
+                {method.owner_path: method for method in surface_policy.methods}
+            ),
+            overload_functions_by_owner_path=MappingProxyType(
+                {
+                    f"{owner_path}.{overload.name}.{procedure.name}": procedure
+                    for overload in semantic_class.overload_sets
+                    for procedure in overload.procedures
+                }
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class _ClassPolicyCatalog:
+    """Organize completed class policies for one wrapper-planning operation.
+
+    ``entries`` contains every public semantic class in stable depth-first
+    source order. Each entry joins the semantic declaration to its completed
+    derived-type policy, Python class-surface policy, and callable owner-path
+    maps so later planning helpers share one organized view.
+
+    For example, the ``point`` entry supplies both its completed class surface
+    and the constructor callable selected by that surface. The catalog is a
+    read-only planning view; it neither owns nor completes semantic policy.
+    """
+
+    entries: tuple[_ClassPolicyEntry, ...]
+
+    @classmethod
+    def from_module(cls, module: models.SemanticModule) -> _ClassPolicyCatalog:
+        """Collect one module's completed class policies in source order.
+
+        The method recursively visits nested classes, creates one catalog entry
+        per public declaration, and gives planning one shared collection. For a
+        module containing public ``point`` followed by ``circle``, the returned
+        ``entries`` tuple preserves exactly that order.
+        """
+        entries = tuple(
+            _ClassPolicyEntry.from_semantic_class(semantic_class)
+            for semantic_class in cls._semantic_classes(module.classes)
+            if semantic_class.visibility == "public"
+        )
+        return cls(entries=entries)
+
+    @classmethod
+    def _semantic_classes(cls, classes: list[models.SemanticClass]):
+        """Yield top-level and nested semantic classes in depth-first source order."""
+        for semantic_class in classes:
+            yield semantic_class
+            yield from cls._semantic_classes(semantic_class.classes)
+
+
 class WrapperPlanner(ClassVisitor):
     """Project a policy-completed semantic module into an editable ``ModulePlan``.
 
@@ -204,13 +302,28 @@ class WrapperPlanner(ClassVisitor):
             required_headers=self._required_headers(namespaces),
         )
 
-    def _namespace_member_plans(self, module: models.SemanticModule) -> tuple[dict, dict, dict, dict, dict]:
-        """Build namespace-owned plan maps before linking private callables."""
+    def _namespace_member_plans(
+        self,
+        module: models.SemanticModule,
+    ) -> tuple[dict, dict, dict, dict, dict]:
+        """Build namespace-owned plan maps from one shared class-policy catalog.
+
+        Direct functions and variables are projected first. The local catalog
+        then organizes each public class once so derived-type and Python-class
+        projections consume the same semantic declaration, completed policies,
+        and callable owner-path maps.
+        """
+        # Project ordinary module members independently from class-owned surfaces.
+        functions = self._functions_by_namespace(module)
+        variables = self._variables_by_namespace(module)
+
+        # Join each class to its completed policies and callables once for both projections.
+        class_policies = _ClassPolicyCatalog.from_module(module)
         return (
-            self._functions_by_namespace(module),
-            self._variables_by_namespace(module),
-            self._derived_types_by_namespace(module),
-            self._classes_by_namespace(module),
+            functions,
+            variables,
+            self._derived_types_by_namespace(class_policies),
+            self._classes_by_namespace(module.name, class_policies),
             self._module_overloads_by_namespace(module),
         )
 
@@ -317,15 +430,13 @@ class WrapperPlanner(ClassVisitor):
     # Derived-type definitions, fields, and class surfaces.
     def _derived_types_by_namespace(
         self,
-        module: models.SemanticModule,
+        class_policies: _ClassPolicyCatalog,
     ) -> dict[tuple[str, ...], list[DerivedTypePlan]]:
         """Project opaque types from completed class and field policies."""
         grouped = defaultdict(list)
-        for semantic_class in self._semantic_classes(module.classes):
-            if semantic_class.visibility != "public":
-                continue
-            policy = completed_derived_type_policy(semantic_class)
-            surface = completed_class_surface_policy(semantic_class)
+        for entry in class_policies.entries:
+            policy = entry.derived_policy
+            surface = entry.surface_policy
             exports_by_namespace = defaultdict(list)
             for export in policy.python_exports:
                 exports_by_namespace[export.namespace].append(export.name)
@@ -365,60 +476,49 @@ class WrapperPlanner(ClassVisitor):
     # Generated class surfaces compose Phase 8 types and ordinary function plans.
     def _classes_by_namespace(
         self,
-        module: models.SemanticModule,
+        module_name: str,
+        class_policies: _ClassPolicyCatalog,
     ) -> dict[tuple[str, ...], list[ClassSurfacePlan]]:
         """Project completed class surfaces into their public namespaces."""
         grouped = defaultdict(list)
-        for semantic_class in self._semantic_classes(module.classes):
-            if semantic_class.visibility != "public":
-                continue
-            policy = completed_class_surface_policy(semantic_class)
+        for entry in class_policies.entries:
+            policy = entry.surface_policy
             exports_by_namespace = defaultdict(list)
             for export in policy.python_exports:
                 exports_by_namespace[export.namespace].append(export.name)
             for namespace, python_names in exports_by_namespace.items():
                 grouped[namespace].append(
                     self._class_surface_plan(
-                        module.name,
+                        module_name,
                         namespace,
-                        semantic_class,
-                        policy,
+                        entry,
                         tuple(python_names),
                     )
                 )
         return grouped
 
-    @staticmethod
-    def _semantic_classes(classes: list[models.SemanticClass]):
-        """Yield classes in source order while retaining nested declarations."""
-        for semantic_class in classes:
-            yield semantic_class
-            yield from WrapperPlanner._semantic_classes(semantic_class.classes)
-
     def _class_surface_plan(
         self,
         module_name: str,
         namespace: tuple[str, ...],
-        semantic_class: models.SemanticClass,
-        policy: ClassSurfacePolicy,
+        entry: _ClassPolicyEntry,
         python_names: tuple[str, ...],
     ) -> ClassSurfacePlan:
         """Compose one class plan from completed method and constructor facts."""
-        methods = self._class_method_plans(module_name, namespace, semantic_class, policy)
+        policy = entry.surface_policy
+        methods = self._class_method_plans(module_name, namespace, entry)
         overloads_by_name = {overload.python_name: overload for overload in policy.overloads}
         overloads = self._class_overload_plans(
             module_name,
             namespace,
-            semantic_class,
-            policy.type_identity,
+            entry,
             overloads_by_name,
         )
         fields = tuple(self._derived_field_plan(field) for field in policy.effective_fields)
         constructor = self._constructor_plan(
             module_name,
             namespace,
-            semantic_class,
-            policy,
+            entry,
             overloads_by_name,
             python_name=python_names[0],
             fields=fields,
@@ -446,17 +546,17 @@ class WrapperPlanner(ClassVisitor):
         self,
         module_name: str,
         namespace: tuple[str, ...],
-        semantic_class: models.SemanticClass,
-        policy: ClassSurfacePolicy,
+        entry: _ClassPolicyEntry,
     ) -> tuple[ClassMethodPlan, ...]:
         """Link public methods in source order."""
-        methods_by_owner = self._class_methods_by_owner(policy)
+        semantic_class = entry.semantic_class
+        policy = entry.surface_policy
         methods = []
         for method in semantic_class.methods:
             if method.name == "__init__":
                 continue
             owner_path = f"{policy.owner_path}.{method.name}"
-            method_policy = methods_by_owner[owner_path]
+            method_policy = entry.method_policies_by_owner_path[owner_path]
             if not method_policy.public:
                 continue
             methods.append(
@@ -470,28 +570,24 @@ class WrapperPlanner(ClassVisitor):
             )
         return tuple(methods)
 
-    @staticmethod
-    def _class_methods_by_owner(policy: ClassSurfacePolicy) -> dict[str, object]:
-        """Index completed method records by their stable semantic owner path."""
-        return {method.owner_path: method for method in policy.methods}
-
     def _class_overload_plans(
         self,
         module_name: str,
         namespace: tuple[str, ...],
-        semantic_class: models.SemanticClass,
-        type_identity: tuple[str, str],
+        entry: _ClassPolicyEntry,
         policies: dict[str, OverloadPolicy],
     ) -> tuple[OverloadPlan, ...]:
         """Link every non-constructor overload set to ordinary function plans."""
-        functions = self._class_overload_functions(semantic_class, policies.values())
         return tuple(
             self._overload_plan(
                 module_name,
                 namespace,
                 policy,
-                functions,
-                private_name=lambda name, index: self._class_callable_name(type_identity, f"{name}_{index}"),
+                entry.overload_functions_by_owner_path,
+                private_name=lambda name, index: self._class_callable_name(
+                    entry.surface_policy.type_identity,
+                    f"{name}_{index}",
+                ),
             )
             for policy in policies.values()
             if policy.python_name != "__init__"
@@ -501,26 +597,24 @@ class WrapperPlanner(ClassVisitor):
         self,
         module_name: str,
         namespace: tuple[str, ...],
-        semantic_class: models.SemanticClass,
-        policy: ClassSurfacePolicy,
+        entry: _ClassPolicyEntry,
         overloads_by_name: dict,
         *,
         python_name: str,
         fields: tuple[DerivedFieldPlan, ...],
     ) -> ConstructorPlan:
         """Link one completed constructor to its target and lifecycle records."""
+        policy = entry.surface_policy
         constructor = policy.constructor
         target = self._bound_constructor_target_plan(
             module_name,
             namespace,
-            semantic_class,
-            policy,
+            entry,
         )
         overload = self._constructor_overload_plan(
             module_name,
             namespace,
-            semantic_class,
-            policy.type_identity,
+            entry,
             overloads_by_name,
         )
         plan = ConstructorPlan(
@@ -540,17 +634,14 @@ class WrapperPlanner(ClassVisitor):
         self,
         module_name: str,
         namespace: tuple[str, ...],
-        semantic_class: models.SemanticClass,
-        policy: ClassSurfacePolicy,
+        entry: _ClassPolicyEntry,
     ) -> FunctionPlan | None:
         """Project the direct constructor call selected by completed policy."""
+        policy = entry.surface_policy
         target_path = policy.constructor.target_owner_path
         if target_path is None:
             return None
-        method = next(
-            (item for item in semantic_class.methods if f"{policy.owner_path}.{item.name}" == target_path),
-            None,
-        )
+        method = entry.methods_by_owner_path.get(target_path)
         if method is None:
             return None
         return self._function_plan(
@@ -567,20 +658,21 @@ class WrapperPlanner(ClassVisitor):
         self,
         module_name: str,
         namespace: tuple[str, ...],
-        semantic_class: models.SemanticClass,
-        type_identity: tuple[str, str],
+        entry: _ClassPolicyEntry,
         policies: dict[str, OverloadPolicy],
     ) -> OverloadPlan | None:
         """Return the constructor-owned overload set, when one was completed."""
         policy = policies.get("__init__")
         if policy is not None:
-            functions = self._class_overload_functions(semantic_class, (policy,))
             return self._overload_plan(
                 module_name,
                 namespace,
                 policy,
-                functions,
-                private_name=lambda name, index: self._class_callable_name(type_identity, f"{name}_{index}"),
+                entry.overload_functions_by_owner_path,
+                private_name=lambda name, index: self._class_callable_name(
+                    entry.surface_policy.type_identity,
+                    f"{name}_{index}",
+                ),
             )
         return None
 
@@ -671,37 +763,6 @@ class WrapperPlanner(ClassVisitor):
         )
         plan.docstring = self.docstrings.overload(plan)
         return plan
-
-    @staticmethod
-    def _class_overload_functions(
-        semantic_class: models.SemanticClass,
-        policies,
-    ) -> dict[str, models.SemanticFunction]:
-        """Index only concrete class procedures selected by completed overload policy."""
-        selected = WrapperPlanner._selected_overload_owner_paths(policies)
-        owner_path = completed_class_surface_policy(semantic_class).owner_path
-        return {
-            path: procedure
-            for path, procedure in WrapperPlanner._class_overload_entries(semantic_class, owner_path)
-            if path in selected
-        }
-
-    @staticmethod
-    def _selected_overload_owner_paths(policies) -> set[str]:
-        """Return concrete owner paths referenced by completed overloads."""
-        return {candidate.owner_path for policy in policies for candidate in policy.candidates}
-
-    @staticmethod
-    def _class_overload_entries(
-        semantic_class: models.SemanticClass,
-        owner_path: str,
-    ) -> tuple[tuple[str, models.SemanticFunction], ...]:
-        """Pair every concrete class procedure with its completed owner path."""
-        return tuple(
-            (f"{owner_path}.{overload.name}.{procedure.name}", procedure)
-            for overload in semantic_class.overload_sets
-            for procedure in overload.procedures
-        )
 
     def _class_callable_name(self, type_identity: tuple[str, str], name: str) -> str:
         """Return one private callable export fixed during plan construction."""

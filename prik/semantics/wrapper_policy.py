@@ -3261,113 +3261,213 @@ def _direct_result_policy(context: _FunctionPolicyContext) -> _ResultPolicyCandi
 
 
 def _hidden_result_policies(context: _FunctionPolicyContext) -> tuple[_ResultPolicyCandidate, ...]:
-    """Return hidden-output candidates using one function-wide policy context.
+    """Coordinate hidden-output selection and policy construction.
 
-    Each hidden projected argument produces a candidate containing either its
-    completed result policy or ``None`` plus the blockers that prevented it.
-    Runtime-status outputs are omitted because their completed status policy
-    consumes them instead of exposing them as ordinary Python results.
+    A source-generated hidden output is normally a nonoptional Fortran dummy
+    such as ``integer, intent(out) :: status``.  Native code receives writable
+    storage for that dummy, but Python does not pass an argument; the wrapper
+    returns the written value instead.  Not every ``intent(out)`` dummy is
+    hidden—for example, ordinary output arrays can remain visible—and edited
+    semantic contracts can express the same role directly with ``Return(...)``.
+    Therefore this stage recognizes the completed policy facts
+    ``projects_result=True`` and ``python_visible=False`` rather than reading
+    Fortran ``intent`` again.
+
+    The context supplies one completed semantic function.  This coordinator
+    indexes its result projections, omits arguments reserved for runtime-status
+    handling, and asks ``_hidden_result_candidate`` to complete each remaining
+    hidden output.  For example, a subroutine with hidden ``value`` and
+    ``status`` outputs returns only the ``value`` candidate when ``status`` is
+    consumed by ``Raises(...)``.
     """
     function = context.function
-    owner_path = context.owner_path
-    derived_types = context.derived_types
-    policies = []
+
+    # Index result mappings once so each hidden argument has a direct lookup;
+    # first-entry-wins preserves the previous ``next(...)`` behavior.
+    projections = _hidden_result_projection_index(function)
+
+    # Resolve outputs owned by runtime error handling before ordinary result
+    # selection so status and message values are not exposed twice.
     suppressed_outputs = _runtime_status_output_owner_paths(function)
+
+    policies = []
     for argument in function.arguments:
-        decision = _ownership_decision(argument, models.RESOLVED_OWNERSHIP_POLICY_METADATA)
-        if decision is None or not (decision.projects_result and not decision.python_visible):
+        # Select only non-visible projected arguments that remain ordinary
+        # Python results after runtime-status outputs have been removed.
+        decision = _hidden_result_ownership(context, argument, suppressed_outputs)
+        if decision is None:
             continue
-        if f"{owner_path}.{argument.name}" in suppressed_outputs:
-            continue
-        mapping = next(
-            (
-                item
-                for item in function.projection
-                if item.result_position is not None and item.python_name == argument.name
-            ),
-            None,
-        )
-        if mapping is None:
-            policies.append(
-                _ResultPolicyCandidate(
-                    None,
-                    (f"hidden result {argument.name!r} has no completed return projection",),
-                )
-            )
-            continue
-        blockers = _hidden_result_blockers(argument, decision, mapping)
-        native_array_handle = _native_array_handle_wrapper_policy(
-            argument.semantic_type,
-            argument.metadata.get(models.RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA),
-            f"{owner_path}.{argument.name}",
-        )
-        scalar_descriptor = _scalar_descriptor_result_policy(
-            argument.semantic_type,
-            decision,
-            descriptor_kind=mapping.value_kind,
-        )
-        bridge_data_action, bridge_copy_reason = _native_result_bridge_data_action(
-            argument.semantic_type,
-            descriptor_kind=mapping.value_kind,
-        )
-        bridge_data_action, bridge_copy_reason = _logical_argument_bridge_action(
-            argument,
-            decision,
-            bridge_data_action,
-            bridge_copy_reason,
-        )
-        if bridge_data_action is BridgeDataAction.BLOCKED and decision.kind is not ObjectKind.SCALAR:
-            blockers = (*blockers, f"hidden result {argument.name!r} has no completed bridge data action")
-        derived = _derived_handoff_policy(
-            argument.semantic_type,
-            decision,
-            owner_path=f"{owner_path}.{argument.name}",
-            origin=DerivedObjectOrigin.WRAPPER_RESULT,
-            derived_types=derived_types,
-        )
-        blockers = (
-            *blockers,
-            *_derived_type_definition_blockers(
-                f"hidden result {argument.name!r}",
-                derived,
-                derived_types,
-            ),
-            *_allocatable_holder_field_blockers(
-                f"hidden result {argument.name!r}",
-                derived,
-                derived_types,
-                required=bool(derived is not None and derived.storage is DerivedObjectStorage.ALLOCATABLE_HOLDER),
-            ),
-        )
+
+        # Complete the selected argument from its indexed projection and keep
+        # any failure beside the candidate that produced it.
         policies.append(
-            _ResultPolicyCandidate(
-                ResultPolicy(
-                    owner_path=f"{owner_path}.{argument.name}",
-                    semantic_type_name=argument.semantic_type.name,
-                    rank=int(argument.semantic_type.rank or 0),
-                    direct_result_abi=DirectResultABI.NOT_APPLICABLE,
-                    ownership=decision,
-                    codegen_action=decision.codegen_action,
-                    python_barrier_action=decision.python_barrier_action,
-                    native_barrier_action=decision.native_barrier_action,
-                    storage_mode=decision.storage_mode,
-                    boundary_storage_mode=decision.boundary_storage_mode or decision.storage_mode,
-                    bridge_data_action=bridge_data_action,
-                    bridge_copy_reason=bridge_copy_reason,
-                    character_length=_character_length(argument.semantic_type),
-                    array=_array_handoff_policy(argument.semantic_type),
-                    source_kind="hidden_output",
-                    native_name=mapping.native_name or argument.name,
-                    native_position=mapping.native_position,
-                    result_position=int(mapping.result_position),
-                    native_array_handle=native_array_handle,
-                    scalar_descriptor=scalar_descriptor,
-                    derived=derived,
-                ),
-                tuple(blockers),
+            _hidden_result_candidate(
+                context,
+                argument,
+                decision,
+                projections.get(argument.name),
             )
         )
     return tuple(policies)
+
+
+def _hidden_result_projection_index(
+    function: models.SemanticFunction,
+) -> dict[str, models.ProjectionMapping]:
+    """Index the first named result projection for each hidden argument.
+
+    ``function.projection`` may mix arguments, literals, and results.  A result
+    mapping represents hidden native output storage—commonly an ``intent(out)``
+    dummy—through ``Return(...)``.  This
+    helper keeps mappings with both a Python name and result position, keyed by
+    that name, and preserves the first match used by the former linear lookup.
+    For example, ``Return('value')`` becomes ``{'value': mapping}``, while an
+    ordinary ``Arg(0)`` mapping is omitted.
+    """
+    projections: dict[str, models.ProjectionMapping] = {}
+    for mapping in function.projection:
+        if mapping.result_position is None or not isinstance(mapping.python_name, str):
+            continue
+        projections.setdefault(mapping.python_name, mapping)
+    return projections
+
+
+def _hidden_result_ownership(
+    context: _FunctionPolicyContext,
+    argument: models.SemanticArgument,
+    suppressed_outputs: frozenset[str],
+) -> OwnershipDecision | None:
+    """Return ownership only when an argument is an exposed hidden result.
+
+    The helper receives one possible native output dummy and the owner paths
+    reserved by runtime status handling.  Source parsing may originally have
+    classified that dummy from ``intent(out)``, but this policy stage requires
+    the completed, source-independent ownership facts
+    ``projects_result=True`` and ``python_visible=False``, then rejects a
+    reserved path.  For example, hidden ``value`` returns its decision, while
+    hidden ``status`` returns ``None`` when ``module.proc.status`` appears in
+    ``suppressed_outputs``.
+    """
+    decision = _ownership_decision(argument, models.RESOLVED_OWNERSHIP_POLICY_METADATA)
+    if decision is None or not (decision.projects_result and not decision.python_visible):
+        return None
+    if f"{context.owner_path}.{argument.name}" in suppressed_outputs:
+        return None
+    return decision
+
+
+def _hidden_result_candidate(
+    context: _FunctionPolicyContext,
+    argument: models.SemanticArgument,
+    decision: OwnershipDecision,
+    mapping: models.ProjectionMapping | None,
+) -> _ResultPolicyCandidate:
+    """Build one hidden result and retain every blocker found while doing so.
+
+    ``argument`` and ``decision`` identify a selected hidden native output
+    dummy, commonly a scalar or allocatable ``intent(out)`` argument;
+    ``mapping``
+    supplies its native and Python result positions.  The helper completes
+    descriptor, bridge, logical, and derived handoffs before returning a
+    ``ResultPolicy``.  For example, hidden ``doubled`` at native position 1 and
+    result position 0 becomes a ``source_kind='hidden_output'`` candidate; a
+    missing mapping instead returns ``policy=None`` with a projection blocker.
+    """
+    if mapping is None:
+        return _ResultPolicyCandidate(
+            None,
+            (f"hidden result {argument.name!r} has no completed return projection",),
+        )
+
+    owner_path = f"{context.owner_path}.{argument.name}"
+    label = f"hidden result {argument.name!r}"
+
+    # Validate the completed ownership family and result positions before
+    # constructing backend-neutral descriptor and bridge details.
+    blockers = _hidden_result_blockers(argument, decision, mapping)
+
+    # Complete persistent descriptor behavior for allocatable or pointer
+    # arrays; ordinary scalar and array results receive ``None`` here.
+    native_array_handle = _native_array_handle_wrapper_policy(
+        argument.semantic_type,
+        argument.metadata.get(models.RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA),
+        owner_path,
+    )
+
+    # Preserve nullable rank-zero descriptor state separately from normal
+    # scalar results, using the mapping's descriptor kind as the ABI selector.
+    scalar_descriptor = _scalar_descriptor_result_policy(
+        argument.semantic_type,
+        decision,
+        descriptor_kind=mapping.value_kind,
+    )
+
+    # Select result data movement and then apply any native logical-kind
+    # adaptation required for the same hidden argument.
+    bridge_data_action, bridge_copy_reason = _native_result_bridge_data_action(
+        argument.semantic_type,
+        descriptor_kind=mapping.value_kind,
+    )
+    bridge_data_action, bridge_copy_reason = _logical_argument_bridge_action(
+        argument,
+        decision,
+        bridge_data_action,
+        bridge_copy_reason,
+    )
+    if bridge_data_action is BridgeDataAction.BLOCKED and decision.kind is not ObjectKind.SCALAR:
+        blockers = (*blockers, f"{label} has no completed bridge data action")
+
+    # Complete an opaque derived-object handoff only when the semantic type is
+    # a wrapped derived type; primitive and ordinary array results use ``None``.
+    derived = _derived_handoff_policy(
+        argument.semantic_type,
+        decision,
+        owner_path=owner_path,
+        origin=DerivedObjectOrigin.WRAPPER_RESULT,
+        derived_types=context.derived_types,
+    )
+
+    # Require the referenced derived definition and any allocatable-holder
+    # member support before exposing this candidate to wrapper planning.
+    blockers = (
+        *blockers,
+        *_derived_type_definition_blockers(label, derived, context.derived_types),
+        *_allocatable_holder_field_blockers(
+            label,
+            derived,
+            context.derived_types,
+            required=bool(derived is not None and derived.storage is DerivedObjectStorage.ALLOCATABLE_HOLDER),
+        ),
+    )
+
+    # Store the completed selections in the immutable result record consumed
+    # mechanically by wrapper planning and both generated backends.
+    return _ResultPolicyCandidate(
+        ResultPolicy(
+            owner_path=owner_path,
+            semantic_type_name=argument.semantic_type.name,
+            rank=int(argument.semantic_type.rank or 0),
+            direct_result_abi=DirectResultABI.NOT_APPLICABLE,
+            ownership=decision,
+            codegen_action=decision.codegen_action,
+            python_barrier_action=decision.python_barrier_action,
+            native_barrier_action=decision.native_barrier_action,
+            storage_mode=decision.storage_mode,
+            boundary_storage_mode=decision.boundary_storage_mode or decision.storage_mode,
+            bridge_data_action=bridge_data_action,
+            bridge_copy_reason=bridge_copy_reason,
+            character_length=_character_length(argument.semantic_type),
+            array=_array_handoff_policy(argument.semantic_type),
+            source_kind="hidden_output",
+            native_name=mapping.native_name or argument.name,
+            native_position=mapping.native_position,
+            result_position=int(mapping.result_position),
+            native_array_handle=native_array_handle,
+            scalar_descriptor=scalar_descriptor,
+            derived=derived,
+        ),
+        tuple(blockers),
+    )
 
 
 def _native_call_slot_policies(

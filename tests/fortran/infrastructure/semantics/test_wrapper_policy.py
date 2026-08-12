@@ -35,6 +35,7 @@ from prik.semantics.wrapper_policy import (
     NativeStatusErrorPolicy,
     OptionalMode,
     PythonExceptionKind,
+    build_function_wrapper_policy,
     completed_function_wrapper_policy,
 )
 
@@ -105,6 +106,45 @@ def hidden_storage_result() -> Float64[()]: ...
     assert hidden.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION
     assert hidden_policy.native_call_slots[0].result_position == hidden.result_position
     assert hidden_policy.native_call_slots[0].native_barrier_action is hidden.native_barrier_action
+
+
+def test_hidden_result_policy_reports_a_missing_return_projection_after_selection():
+    module = parse_pyi_text(
+        """
+@native_call([Return("status", 0)])
+def hidden_status() -> Int32: ...
+""",
+        module_name="missing_hidden_projection",
+    )
+    complete_semantic_policies(module)
+    function = module.functions[0]
+
+    # Preserve the completed hidden-output ownership decision while removing
+    # its result mapping to characterize the candidate builder's fail-closed path.
+    function.projection = []
+    policy = build_function_wrapper_policy(
+        function,
+        owner_path="missing_hidden_projection.hidden_status",
+    )
+
+    assert policy.results == ()
+    assert "hidden result 'status' has no completed return projection" in policy.blockers
+
+
+def test_hidden_result_policy_keeps_blocked_bridge_action_on_the_candidate():
+    module = parse_pyi_text(
+        """
+@native_call([Return("message", 0)])
+def hidden_message() -> String: ...
+""",
+        module_name="blocked_hidden_bridge",
+    )
+    complete_semantic_policies(module)
+
+    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
+
+    assert policy.results[0].bridge_data_action is BridgeDataAction.BLOCKED
+    assert "hidden result 'message' has no completed bridge data action" in policy.blockers
 
 
 def test_external_declaration_mode_is_completed_from_native_abi_requirements():
