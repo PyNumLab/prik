@@ -215,7 +215,7 @@ implementation files.
 | Semantic policy completion | `prik/policy/completion.py`, `prik/policy/ownership.py` | `tests/fortran/infrastructure/semantics/` and feature-local `policy/` directories |
 | Fortran wrapper orchestration | `prik/pipeline/build.py` | `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py`, `tests/fortran/building_shared_library/end_to_end/test_multi_source_builds.py` |
 | Wrapper planning, owner-local errors, and direct lowering | `prik/planning/models.py`, `prik/planning/planner.py`, `prik/pipeline/wrapper.py` | `tests/fortran/infrastructure/codegen/`, feature-local `codegen/` stages |
-| Native compilation and binding support | `prik/compiler/`, `prik/binding_support/` | `tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py`, `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py` |
+| Native compilation and binding support | `prik/compiler/`, `prik/runtime/native_support/` | `tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py`, `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py` |
 | Executable Markdown examples | `README.md`, `docs/*.md` | `tests/docs/test_examples.py` |
 
 <!-- PRIK_C_DOCS_START
@@ -341,7 +341,7 @@ Mapping happens during parser-to-IR conversion:
   `prik/pipeline/type_mapping_report.py`.
 
 The complete ownership and lookup boundaries are documented for maintainers in
-`docs/maintainer/internal-architecture/type-system.md`.
+`docs/developer/internal-architecture/type-system.md`.
 
 <!-- PRIK_C_DOCS_START
 - C primitive, typedef, and probe-aware mapping lives in `prik/semantics/c2ir.py`.
@@ -857,7 +857,7 @@ The main ownership boundaries are:
 - `prik/pipeline/wrapper.py`: direct bridge, binding, and source
   artifact generation;
 - `prik/compiler/`: compiler commands and shared-library linking; and
-- `prik/binding_support/`: native binding support copied into each build.
+- `prik/runtime/native_support/`: native runtime support copied into each build as `binding_support/`.
 
 <!-- PRIK_C_DOCS_START
 - `prik/codegen/fortran/bridge.py`: Fortran-to-C ABI adaptation;

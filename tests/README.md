@@ -33,7 +33,7 @@ GitHub Actions runs the checks again as the shared enforcement boundary.
 The Fortran feature index maps each maintained User Guide and semantic `.pyi`
 page to its final directory and focused command. The cleanup contract and
 progress gates live in
-[`../docs/maintainer/roadmap/fortran-test-suite-cleanup-checklist.md`](../docs/maintainer/roadmap/fortran-test-suite-cleanup-checklist.md).
+[`../docs/developer/roadmap/fortran-test-suite-cleanup-checklist.md`](../docs/developer/roadmap/fortran-test-suite-cleanup-checklist.md).
 
 ## Ownership contract
 
@@ -165,7 +165,12 @@ language source printers use `infrastructure/printers/` and the wrapper
 orchestrator uses `infrastructure/pipeline/test_wrapper_generator.py`.
 User-visible behavior does not move to infrastructure merely because it reaches
 those modules. Retained production `if __name__ == "__main__"` demonstrations
-are smoke-tested by the same dedicated module owner.
+are cross-stage executable architecture contracts. Their output assertions are
+grouped in
+`tests/fortran/infrastructure/execution_examples/test_execution_examples.py`, with one
+explicitly named test per demonstrated production file; feature-local modules
+continue to prove the underlying parser, policy, generation, or runtime
+behavior.
 
 Shared support modules provide builders and assertions only. They do not
 re-export `pytest`, standard-library modules, or production symbols.

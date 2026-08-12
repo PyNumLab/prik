@@ -14,14 +14,13 @@ jumping directly into generated-code internals.
 | `compiler/` | Reusable compiler commands, compile objects, native support installation, and linking. |
 | `preprocessing/` | C/Fortran source preparation, provenance, native includes, and compiler-derived target facts. |
 | `pipeline/` | Semantic `.pyi` loading, datatype mapping reports, wrapper generation orchestration, and end-to-end builds. |
-| `runtime/` | Python runtime objects used by generated extensions. |
+| `runtime/` | Python runtime objects and bundled native runtime support used by generated extensions. |
 | `parsers/` | Parser namespace containing the `c`, `fortran`, and semantic `.pyi` frontends. |
 | `semantics/` | Language-neutral semantic IR, scalar datatype vocabulary, declaration-expression provenance, and `.pyi` conversion. |
 | `policy/` | Completed ownership and interoperability policy. |
 | `planning/` | Editable backend-neutral wrapper implementation plans. |
 | `codegen/` | Backend datatype projection, plan-driven documentation, and direct C/Fortran syntax-node lowering. |
 | `printers/` | C, Fortran, and semantic `.pyi` serialization. |
-| `binding_support/` | Header-only native support installed into generated wrapper builds. |
 | `naming/` | Shared public-name and generated-symbol policy. |
 | `utilities/` | Shared parsing, normalization, rendering, evaluation, and visitor helpers. |
 
@@ -44,7 +43,7 @@ printers, bridges, and bindings must not infer missing expression semantics.
 - `docs/developer/source-map.md`
 - `docs/developer/feature-to-code-map.md`
 - `docs/developer/repository-structure.md`
-- `docs/maintainer/internal-architecture/pipeline-map.md`
+- `docs/developer/internal-architecture/pipeline-map.md`
 
 Keep user-facing support claims in the docs backed by focused tests and, for
 wrapper behavior, runtime tests that compile, import, call, mutate, and check

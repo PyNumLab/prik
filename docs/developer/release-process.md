@@ -63,13 +63,17 @@ Build the same artifacts locally when reviewing the release candidate:
 
 ```bash
 python3 -m pip install --upgrade build twine
-python3 -m build
-python3 -m twine check dist/*
+python3 -m build --outdir .artifacts/dist
+python3 -m twine check .artifacts/dist/*
 ```
 
-`dist/` must contain one source distribution and one universal wheel. The
-source distribution must include the repository-root `CHANGELOG.md`. Install
-the wheel in a fresh virtual environment and verify `prik --version`,
+`.artifacts/dist/` must contain one source distribution and one universal
+wheel. The hidden `.artifacts/` tree contains reproducible local and CI output;
+only its ignore placeholder is maintained source. The repository-root
+`setup.cfg` also directs setuptools' temporary `.egg-info` metadata into that
+hidden tree. The source distribution must include the repository-root
+`CHANGELOG.md`. Install the wheel in a fresh virtual environment and verify
+`prik --version`,
 `prik.__version__`, `prik --help`, and `python -m prik --help` before creating
 the release.
 

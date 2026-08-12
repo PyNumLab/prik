@@ -101,3 +101,22 @@ def completed_python_exports(
     if not exports and getattr(owner, "visibility", "public") != "private":
         exports.append(PythonExportPolicy((), normalize_public_name(default_name).name))
     return tuple(dict.fromkeys(exports))
+
+
+if __name__ == "__main__":
+    example_function = models.SemanticFunction(
+        "scale_value",
+        native_name="SCALE_VALUE",
+        metadata={
+            models.PYTHON_EXPORTS_METADATA: [
+                {"namespace": ("linear_algebra",), "name": None},
+            ]
+        },
+    )
+    example_module = models.SemanticModule("math", functions=[example_function])
+    complete_python_export_policy(example_module)
+    example_export = completed_python_exports(example_function, example_function.name)[0]
+
+    print(f"Native semantic owner: {example_module.name}.{example_function.native_name}")
+    print(f"Python export: {'.'.join((*example_export.namespace, example_export.name))}")
+    print(f"Completed policy type: {type(example_export).__name__}")

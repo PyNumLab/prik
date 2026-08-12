@@ -1,9 +1,5 @@
 """Internal ownership defaults, dispatch, and validation contracts."""
 
-from pathlib import Path
-import subprocess
-import sys
-
 import pytest
 from prik.semantics.metadata import ADDRESS_ROLE_PROJECTION
 from prik.policy.ownership import (
@@ -378,19 +374,3 @@ def test_barrier_dispatchers_reject_missing_completed_actions():
         PythonBarrierDispatcher({}).handler_name_for_decision(decision, "x")
     with pytest.raises(ValueError, match="native-barrier handler"):
         NativeBarrierDispatcher({}).handler_name_for_decision(decision, "x")
-
-
-def test_ownership_policy_direct_example_is_runnable():
-    repository_root = Path(__file__).resolve().parents[4]
-
-    result = subprocess.run(
-        [sys.executable, "prik/policy/ownership.py"],
-        cwd=repository_root,
-        capture_output=True,
-        check=True,
-        text=True,
-    )
-
-    assert result.stdout == (
-        "before: math.scale(value): Float64 semantic IR\nafter: scalar/caller/call_local; scalar_value -> pass_value\n"
-    )

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
-import subprocess
-import sys
 
 import pytest
 
@@ -519,16 +517,3 @@ def test_scalar_copy_in_out_reuses_one_binding_local_without_bridge_copy():
     assert "call native_bump(value)" in bridge_source
     assert "value =" not in bridge_source
     assert "value_input" not in bridge_source
-
-
-def test_generator_direct_example_is_runnable():
-    repository_root = Path(__file__).resolve().parents[4]
-    result = subprocess.run(
-        [sys.executable, str(repository_root / "prik/pipeline/wrapper.py")],
-        cwd=repository_root,
-        capture_output=True,
-        check=True,
-        text=True,
-    )
-
-    assert "Extension initializer: PyInit_generator_demo" in result.stdout

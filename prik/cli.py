@@ -2434,3 +2434,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     _print_main_output(args, payload, parse_payload, semantic_payload, print_limit)
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -322,3 +322,70 @@ __all__ = (
     "array_interop_policy",
     "native_array_handle_build_requirements",
 )
+
+
+if __name__ == "__main__":
+    from prik.semantics.models import (
+        RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA,
+        SemanticArrayContract,
+        SemanticModule,
+        SemanticStorageContract,
+        SemanticType,
+        SemanticVariable,
+    )
+    from prik.semantics.native_array_handles import mark_native_array_handle
+
+    example_type = SemanticType(
+        "Float64",
+        rank=1,
+        dtype="float64",
+        shape=["n"],
+        storage=SemanticStorageContract(
+            kind="array",
+            array=SemanticArrayContract(rank=1, shape=["n"], pointer=True),
+        ),
+    )
+    mark_native_array_handle(example_type, "pointer")
+    example_policy = NativeArrayHandlePolicy(
+        descriptor_kind="pointer",
+        handle_kind="pointer",
+        origin="module",
+        owner="native",
+        owner_retention="native",
+        descriptor_ownership="borrowed",
+        borrowed=True,
+        getter_behavior="view",
+        python_setter="blocked",
+        native_setter="reassociate",
+        output_projection="handle",
+        result_allocation="none",
+        release="none",
+        target_lifetime="owner",
+        destroy_behavior="nullify",
+        to_numpy="borrowed_view",
+        descriptor_interop="pointer_c_descriptor",
+        nullable=True,
+        optional_absent=False,
+        storage_mode="alias",
+        operations=("to_numpy", "nullify"),
+    )
+    example_variable = SemanticVariable(
+        "values",
+        example_type,
+        metadata={RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA: example_policy},
+    )
+    example_module = SemanticModule("state", variables=[example_variable])
+    example_interop = array_interop_policy(
+        example_type,
+        owner="state.values",
+        native_array_handle_policy=example_policy,
+    )
+    example_requirements = native_array_handle_build_requirements(example_module)
+
+    print(
+        f"Handle policy: {example_policy.descriptor_kind}/{example_policy.handle_kind}, "
+        f"storage={example_policy.storage_mode}"
+    )
+    print(f"Allowed operations: {', '.join(example_policy.operations)}")
+    print(f"Array ABI: {example_interop.abi}")
+    print(f"Selected build header: {example_requirements.headers[0]}")

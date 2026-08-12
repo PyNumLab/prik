@@ -127,3 +127,25 @@ __all__ = (
     "native_array_descriptor_kind",
     "native_array_handle_facts",
 )
+
+
+if __name__ == "__main__":
+    from prik.semantics.models import SemanticArrayContract, SemanticStorageContract
+
+    example_type = SemanticType(
+        "Float64",
+        rank=2,
+        dtype="float64",
+        shape=["rows", "columns"],
+        storage=SemanticStorageContract(
+            kind="array",
+            array=SemanticArrayContract(rank=2, shape=["rows", "columns"], order="F"),
+        ),
+    )
+    mark_native_array_handle(example_type, "allocatable")
+    example_facts = native_array_handle_facts(example_type)
+
+    print(f"Descriptor kind: {example_facts.descriptor_kind}")
+    print(f"Data facet: {example_facts.data_type.name}, rank={example_facts.rank}, shape={example_facts.shape}")
+    print(f"Element facet: {example_facts.element_type.name}, rank={example_facts.element_type.rank}")
+    print(f"Handle marker retained by data facet: {is_native_array_handle(example_facts.data_type)}")

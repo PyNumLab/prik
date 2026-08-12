@@ -5,6 +5,7 @@ repo_url: https://github.com/PyNumLab/prik
 repo_name: GitHub
 edit_uri: blob/main/docs/
 docs_dir: docs
+site_dir: .artifacts/site
 theme:
   name: readthedocs
   custom_dir: docs_theme
@@ -117,8 +118,9 @@ nav:
       - Language Support:
           - Overview: user/language-support/index.md
           - Feature Matrix: user/language-support/feature-matrix.md
-  - Developer Documentation:
+  - Contributor Documentation:
       - Overview: developer/index.md
+      - Architecture: developer/architecture.md
       - Development Workflow: developer/development-workflow.md
       - Source Map: developer/source-map.md
       - Feature To Code Map: developer/feature-to-code-map.md
@@ -138,39 +140,36 @@ nav:
           - Contribution Guide: developer/contributing/contribution-guide.md
           - Pull Request Workflow: developer/contributing/pull-request-workflow.md
           - Review Process: developer/contributing/review-process.md
-  - Maintainer Documentation:
-      - Overview: maintainer/README.md
-      - Documentation Architecture: maintainer/documentation-architecture.md
-      - CI/CD: maintainer/ci-cd.md
-      - Release Process: maintainer/release-process.md
+      - Documentation Architecture: developer/documentation-architecture.md
+      - CI/CD: developer/ci-cd.md
+      - Release Process: developer/release-process.md
       - Design:
-          - Overview: maintainer/design/index.md
-          - Overall Architecture: maintainer/design/overall-architecture.md
-          - Parser Architecture: maintainer/design/parser-architecture.md
-          - Semantic Analysis: maintainer/design/semantic-analysis.md
-          - Runtime Model: maintainer/design/runtime-model.md
-          - Error Propagation Model: maintainer/design/error-propagation-model.md
-          - Memory Ownership Model: maintainer/design/memory-ownership-model.md
-          - Code Generation: maintainer/design/code-generation.md
-          - CPython Integration: maintainer/design/cpython-integration.md
-          - Multilanguage Runtime Architecture: maintainer/design/semantic-multilanguage-wrapper-runtime-architecture.md
-          - Wrapper Design Notes: maintainer/design/wrapper-design-notes.md
+          - Overview: developer/design/index.md
+          - Parser Architecture: developer/design/parser-architecture.md
+          - Semantic Analysis: developer/design/semantic-analysis.md
+          - Runtime Model: developer/design/runtime-model.md
+          - Error Propagation Model: developer/design/error-propagation-model.md
+          - Memory Ownership Model: developer/design/memory-ownership-model.md
+          - Code Generation: developer/design/code-generation.md
+          - CPython Integration: developer/design/cpython-integration.md
+          - Multilanguage Runtime Architecture: developer/design/semantic-multilanguage-wrapper-runtime-architecture.md
+          - Wrapper Design Notes: developer/design/wrapper-design-notes.md
       - Internal Architecture:
-          - Overview: maintainer/internal-architecture/index.md
-          - Pipeline Map: maintainer/internal-architecture/pipeline-map.md
-          - Wrapper Generation Pipeline: maintainer/internal-architecture/wrapper-generation-pipeline.md
-          - AST Design: maintainer/internal-architecture/ast-design.md
-          - Semantic Passes: maintainer/internal-architecture/semantic-passes.md
-          - Datatype Lifecycle: maintainer/internal-architecture/type-system.md
-          - Runtime Layer: maintainer/internal-architecture/runtime-layer.md
-          - Ownership Tracking: maintainer/internal-architecture/ownership-tracking.md
-          - Dependency Analysis: maintainer/internal-architecture/dependency-analysis.md
-          - Error Handling Pipeline: maintainer/internal-architecture/error-handling-pipeline.md
-          - Symbol Tables: maintainer/internal-architecture/symbol-tables.md
+          - Overview: developer/internal-architecture/index.md
+          - Pipeline Map: developer/internal-architecture/pipeline-map.md
+          - Wrapper Generation Pipeline: developer/internal-architecture/wrapper-generation-pipeline.md
+          - AST Design: developer/internal-architecture/ast-design.md
+          - Semantic Passes: developer/internal-architecture/semantic-passes.md
+          - Datatype Lifecycle: developer/internal-architecture/type-system.md
+          - Runtime Layer: developer/internal-architecture/runtime-layer.md
+          - Ownership Tracking: developer/internal-architecture/ownership-tracking.md
+          - Dependency Analysis: developer/internal-architecture/dependency-analysis.md
+          - Error Handling Pipeline: developer/internal-architecture/error-handling-pipeline.md
+          - Symbol Tables: developer/internal-architecture/symbol-tables.md
       - Roadmaps:
-          - Overview: maintainer/roadmap/index.md
-          - Language-First Test Suite and Fortran Cleanup: maintainer/roadmap/fortran-test-suite-cleanup-checklist.md
-          - Documentation Content: maintainer/roadmap/documentation-content-checklist.md
-          - Semantic .pyi Wrapper: maintainer/roadmap/semantic-pyi-wrapper-checklist.md
-          - Native Array Handles: maintainer/roadmap/native-array-handle-checklist.md
-          - Wrapper Plan Migration: maintainer/roadmap/wrapper-plan-migration-checklist.md
+          - Overview: developer/roadmap/index.md
+          - Language-First Test Suite and Fortran Cleanup: developer/roadmap/fortran-test-suite-cleanup-checklist.md
+          - Documentation Content: developer/roadmap/documentation-content-checklist.md
+          - Semantic .pyi Wrapper: developer/roadmap/semantic-pyi-wrapper-checklist.md
+          - Native Array Handles: developer/roadmap/native-array-handle-checklist.md
+          - Wrapper Plan Migration: developer/roadmap/wrapper-plan-migration-checklist.md

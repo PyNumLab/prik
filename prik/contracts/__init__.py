@@ -395,3 +395,14 @@ CONTRACT_TYPE_NAMES = frozenset(
 )
 
 __all__ = tuple(sorted(CONTRACT_SYMBOLS))
+
+
+if __name__ == "__main__":
+    scalar = Float64()
+    matrix_contract = Float64[:, :]
+
+    print(f"Float64() -> {scalar!r} ({type(scalar).__name__})")
+    print(
+        "Float64[:, :] -> "
+        f"element={matrix_contract.element_type.__name__}, rank={matrix_contract.rank}, shape={matrix_contract.shape}"
+    )

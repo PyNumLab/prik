@@ -35,3 +35,18 @@ class ObjectFile:
         object.__setattr__(self, "library_dirs", tuple(Path(path) for path in self.library_dirs))
         object.__setattr__(self, "libraries", tuple(str(library) for library in self.libraries))
         object.__setattr__(self, "tools", frozenset(str(tool) for tool in self.tools))
+
+
+if __name__ == "__main__":
+    compile_input = ObjectFile(
+        source=Path("generated/bridge.f90"),
+        object_path=Path("build/bridge.o"),
+        language="fortran",
+        flags=("-O2",),
+        include_dirs=(Path("build/modules"),),
+    )
+
+    print(f"Compile input: {compile_input.source} -> {compile_input.object_path}")
+    print(f"Language: {compile_input.language}")
+    print(f"Flags: {compile_input.flags}")
+    print("Include directories: " + ", ".join(str(path) for path in compile_input.include_dirs))

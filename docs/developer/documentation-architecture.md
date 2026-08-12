@@ -1,8 +1,8 @@
 ---
 title: Documentation Architecture
-audience: maintainers
+audience: developers, maintainers, contributors
 prerequisites: repository checkout, documentation metadata standard
-related: README.md, ../developer/testing-strategy.md, ../user/index.md
+related: architecture.md, testing-strategy.md, ../user/index.md
 status: maintained
 publication: draft
 ---
@@ -11,23 +11,25 @@ publication: draft
 
 This page defines how prik documentation is organized and maintained. It is a
 repository-governance contract, not part of the product-learning material.
-`mkdocs.yml` owns the complete intended navigation for the User, Developer,
-and Maintainer lanes. A publication hook filters that tree so GitHub Pages
-contains only pages explicitly marked as reviewed.
+`mkdocs.yml` owns the complete intended navigation for the User and Contributor
+areas. A publication hook filters that tree so GitHub Pages contains only
+pages explicitly marked as reviewed.
 
 ## Architecture Principles
 
-1. Active documentation has three physical lanes: `user/`, `developer/`, and
-   `maintainer/`. Every lane may be published after review.
-2. `docs/index.md` is the website entry point. Each lane index gates its whole
-   lane: a draft lane index prevents every page below that lane from entering
+1. Active documentation has two physical areas: `user/` and `developer/`. The
+   latter is presented as Contributor Documentation and serves developers,
+   maintainers, and future contributors from one architectural account. Both
+   areas may be published after review.
+2. `docs/index.md` is the website entry point. Each area index gates its whole
+   area: a draft area index prevents every page below that area from entering
    the production site, even when an individual child page is marked reviewed.
 3. Implemented behavior is documented as supported only when current code and
    tests prove it. Public user pages describe behavior and limits without
    exposing internal test-evidence ledgers.
 4. Planned behavior is marked explicitly and never presented as an implemented
    user contract.
-5. Maintainer policy and volatile internals do not appear in user workflows.
+5. Contributor governance and volatile internals do not appear in user workflows.
 6. Historical material remains under `old_docs/` and outside active navigation.
 7. User-facing source-driven examples show the complete input source before the
    command that consumes it. Generated paths must come from an immediately
@@ -49,23 +51,23 @@ contains only pages explicitly marked as reviewed.
 `PRIK — Python Runtime Interop Kit` identity and public description, shows the
 shortest checked source-to-import workflow, summarizes the product's concrete
 advantages, and links to real-library evidence before sending the reader into
-Getting Started. Developer, Maintainer, and deeper User Guide destinations stay
-available through site navigation instead of competing with that first task.
+Getting Started. Contributor and deeper User Guide destinations stay available
+through site navigation instead of competing with that first task.
 The FAQ uses natural task questions as concise routes to authoritative guides;
 it does not duplicate those guides.
 
-## Audience Lanes
+## Audience Areas
 
-| Lane | Primary reader | Publication | Content |
+| Area | Primary reader | Publication | Content |
 | --- | --- | --- | --- |
 | `user/` | People using prik | Documentation website after review | Getting Started, guides, performance benchmarks, tutorials, examples, public reference, support status, FAQ, troubleshooting |
-| `developer/` | People changing prik | Documentation website after review | Source orientation, implementation maps, testing, coding standards, feature work, contribution workflow |
-| `maintainer/` | People governing prik | Documentation website after review | Documentation policy, design decisions, internal architecture, CI administration, releases, roadmaps |
+| `developer/` | Developers, maintainers, and future contributors changing or governing prik | Documentation website after review | Architecture, source orientation, design decisions, internal maps, testing, coding standards, feature work, contribution workflows, documentation policy, CI administration, releases, and roadmaps |
 
-Pages use their primary audience for placement. A developer may consult a
-maintainer design record, but that does not make governance material part of
-the developer workflow. Cross-lane links should be exceptional and explain why
-the reader is leaving the current lane.
+Pages use their task and stability for placement within the contributor tree.
+Implemented architecture, design proposals, roadmaps, and release procedures
+remain separate topics, but they do not claim separate architectural
+audiences. Cross-area links between user and contributor documentation should
+explain why the reader is leaving the current task.
 
 ## Reading Order And Cross-Links
 
@@ -86,7 +88,7 @@ metadata and a TODO section.
 
 Each page includes the behavior, warning, ownership fact, or limitation needed
 for its current task. A forward reference never defers a fact needed now.
-README documentation lists, lane indexes, and explicit navigation menus are
+README documentation lists, area indexes, and explicit navigation menus are
 exceptions because choosing a destination is their purpose. Same-page anchors
 and links to source or test evidence do not change documentation reading order.
 Contextual links to `user/reference/pyi-contracts/` are also allowed after a
@@ -117,9 +119,8 @@ as `draft`. Production builds include a Markdown page only when:
 
 1. its own front matter says `publication: reviewed`;
 2. `docs/index.md` is reviewed; and
-3. for a page in `user/`, `developer/`, or `maintainer/`, that lane's index is
-   also reviewed (`user/index.md`, `developer/index.md`, or
-   `maintainer/README.md`).
+3. for a page in `user/` or `developer/`, that area's index is also reviewed
+   (`user/index.md` or `developer/index.md`).
 
 The publication hook removes every other Markdown page from the MkDocs file
 collection and navigation before rendering, so drafts do not enter generated
@@ -167,15 +168,13 @@ docs/
     troubleshooting/
   developer/
     index.md
+    architecture.md
     contributing/
-    source and workflow pages
-  maintainer/
-    README.md
     documentation-architecture.md
     design/
     internal-architecture/
     roadmap/
-    CI and release policy
+    CI, release, source, and workflow pages
   javascripts/
     code-copy.js
   stylesheets/
@@ -188,11 +187,11 @@ The repository-root `CHANGELOG.md` is the canonical release history. It lives
 beside `README.md` and `pyproject.toml` so GitHub and package users can find it
 without navigating the documentation website.
 
-New active pages must be created in one of the three lanes. Website-only static
+New active pages must be created in one of the two areas. Website-only static
 behavior and presentation assets live in `javascripts/` and `stylesheets/`.
-Do not restore top-level topic directories or place maintainer rules beside the
-website landing page. Historical `old_docs/` material is never eligible for
-website publication.
+Do not restore separate developer/maintainer architecture trees or place
+contributor governance beside the website landing page. Historical
+`old_docs/` material is never eligible for website publication.
 
 The Performance page keeps its explanatory text and reproduction workflow in
 reviewed Markdown. Result-dependent summary, table, and environment blocks are
@@ -219,9 +218,9 @@ the order-specific suites remain in the uploaded artifact for auditability.
 ## Continuous Documentation Quality
 
 - Require metadata for every active page.
-- Keep website navigation, repository routing, lane indexes, and physical lanes
+- Keep website navigation, repository routing, area indexes, and physical areas
   synchronized.
-- Reject draft pages and draft-gated lanes from published site navigation.
+- Reject draft pages and draft-gated areas from published site navigation.
 - Require explicit publication metadata on every active page.
 - Check that User documentation does not link forward from instructional prose,
   except for the documented contextual `.pyi` contract references.

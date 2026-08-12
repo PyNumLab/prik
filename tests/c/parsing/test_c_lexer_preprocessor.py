@@ -1,28 +1,6 @@
 """C lexer and lightweight preprocessing coverage."""
 
-import subprocess
-import sys
-from pathlib import Path
-
 import pytest
-
-
-def test_c_preprocessor_module_direct_execution_example():
-    """Run the raw-directive metadata example from the repository root."""
-    repository_root = Path(__file__).parents[3]
-
-    result = subprocess.run(
-        [sys.executable, "prik/preprocessing/c.py"],
-        cwd=repository_root,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-
-    assert result.stdout == (
-        "Raw directive: #pragma once\nIncludes: local state.h, system stddef.h\nDiagnostic: C_UNRESOLVED_INCLUDE\n"
-        "Resolved include: state.h (diagnostics: 0)\n"
-    )
 
 
 def test_lexer_removes_comments_without_changing_string_or_char_literals():

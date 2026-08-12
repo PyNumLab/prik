@@ -14,20 +14,15 @@ DOCS_ROOT = ROOT / "docs"
 FEATURE_MATRIX_PATH = DOCS_ROOT / "user/language-support/feature-matrix.md"
 CLI_REFERENCE_PATH = DOCS_ROOT / "user/reference/cli-commands.md"
 PYTHON_API_REFERENCE_PATH = DOCS_ROOT / "user/reference/python-api.md"
-DOCUMENTATION_CHECKLIST_PATH = DOCS_ROOT / "maintainer/roadmap/documentation-content-checklist.md"
+DOCUMENTATION_CHECKLIST_PATH = DOCS_ROOT / "developer/roadmap/documentation-content-checklist.md"
 DOC_PATHS = sorted(path for path in DOCS_ROOT.rglob("*.md") if "old_docs" not in path.parts)
 WEBSITE_DOCUMENTATION_PATHS = [
     DOCS_ROOT / "index.md",
     *sorted((DOCS_ROOT / "user").rglob("*.md")),
     *sorted((DOCS_ROOT / "developer").rglob("*.md")),
-    *sorted((DOCS_ROOT / "maintainer").rglob("*.md")),
-]
-LEARNING_DOCUMENTATION_PATHS = [
-    *sorted((DOCS_ROOT / "user").rglob("*.md")),
-    *sorted((DOCS_ROOT / "developer").rglob("*.md")),
 ]
 DEFERRED_C_PAGE_PATHS = [
-    ROOT / "docs/maintainer/design/cpython-integration.md",
+    ROOT / "docs/developer/design/cpython-integration.md",
     ROOT / "docs/developer/c-parser-reference.md",
     ROOT / "docs/user/examples/recipes/inspect-c-api.md",
 ]
@@ -130,11 +125,11 @@ REQUIRED_AREA_INDEXES = [
     "user/faq/index.md",
     "user/troubleshooting/index.md",
     "developer/index.md",
+    "developer/architecture.md",
     "developer/contributing/index.md",
-    "maintainer/README.md",
-    "maintainer/design/index.md",
-    "maintainer/internal-architecture/index.md",
-    "maintainer/roadmap/index.md",
+    "developer/design/index.md",
+    "developer/internal-architecture/index.md",
+    "developer/roadmap/index.md",
 ]
 REQUIRED_REFERENCE_PAGES = [
     "user/reference/index.md",
@@ -150,9 +145,9 @@ REQUIRED_REFERENCE_PAGES = [
     "user/reference/diagnostic-codes.md",
 ]
 REQUIRED_ROADMAP_PAGES = [
-    "maintainer/roadmap/index.md",
-    "maintainer/roadmap/semantic-pyi-wrapper-checklist.md",
-    "maintainer/roadmap/documentation-content-checklist.md",
+    "developer/roadmap/index.md",
+    "developer/roadmap/semantic-pyi-wrapper-checklist.md",
+    "developer/roadmap/documentation-content-checklist.md",
 ]
 REQUIRED_GETTING_STARTED_PAGES = [
     "user/getting-started/index.md",
@@ -244,15 +239,17 @@ CLI_REFERENCE_OPTIONS = [
 ]
 CLI_VISIBLE_HELP_OPTIONS = CLI_REFERENCE_OPTIONS
 REQUIRED_SOURCE_NAVIGATION_PAGES = [
+    "developer/architecture.md",
     "developer/source-map.md",
     "developer/feature-to-code-map.md",
     "developer/repository-structure.md",
 ]
 SOURCE_NAVIGATION_CORPUS = [
+    "docs/developer/architecture.md",
     "docs/developer/source-map.md",
     "docs/developer/feature-to-code-map.md",
     "docs/developer/repository-structure.md",
-    "docs/maintainer/internal-architecture/pipeline-map.md",
+    "docs/developer/internal-architecture/pipeline-map.md",
     "prik/README.md",
     "prik/parsers/README.md",
     "prik/parsers/c/README.md",
@@ -310,7 +307,7 @@ SOURCE_NAVIGATION_HOTSPOTS = [
     "prik/compiler/compilers.py",
     "prik/compiler/native_support.py",
     "prik/naming/policy.py",
-    "prik/binding_support/",
+    "prik/runtime/native_support/",
 ]
 SOURCE_NAVIGATION_PUBLIC_DOCS = [
     "README.md",
@@ -325,7 +322,7 @@ SOURCE_NAVIGATION_PUBLIC_DOCS = [
     "docs/user/reference/python-api.md",
     "docs/user/reference/semantic-ir.md",
     "docs/user/reference/semantic-pyi-format.md",
-    "docs/maintainer/internal-architecture/type-system.md",
+    "docs/developer/internal-architecture/type-system.md",
     "docs/developer/build-system.md",
     "docs/developer/c-parser-reference.md",
     "docs/developer/fortran-parser-reference.md",

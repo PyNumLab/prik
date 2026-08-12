@@ -6,10 +6,10 @@ import shutil
 from filelock import FileLock
 import numpy as np
 
-import prik.binding_support as binding_support_folder
+import prik.runtime.native_support as native_support_folder
 
 _NATIVE_SUPPORT_IMPORT = "binding_support"
-_NATIVE_SUPPORT_SOURCE = Path(binding_support_folder.__file__).parent
+_NATIVE_SUPPORT_SOURCE = Path(native_support_folder.__file__).parent
 
 
 def _numpy_version_header() -> str:
@@ -39,3 +39,18 @@ def install_native_support(imports, *, prik_dirpath, verbose: bool | int = False
         _numpy_version_header(),
         encoding="utf-8",
     )
+
+
+if __name__ == "__main__":
+    from tempfile import TemporaryDirectory
+
+    with TemporaryDirectory() as directory:
+        install_native_support(
+            ("binding_support/prik_binding.h",),
+            prik_dirpath=directory,
+        )
+        installed = Path(directory) / "binding_support"
+
+        print(f"Installed directory: {installed.name}")
+        print(f"Binding header present: {(installed / 'prik_binding.h').is_file()}")
+        print(f"NumPy version header present: {(installed / 'numpy_version.h').is_file()}")

@@ -11,8 +11,8 @@ publication: draft
 
 GitHub Actions owns repository quality checks and the reviewed-documentation
 deployment. The documentation workflow builds the same filtered MkDocs site
-that maintainers can preview locally, uploads the generated `site/` directory,
-and deploys it through GitHub Pages.
+that maintainers can preview locally, uploads the generated
+`.artifacts/site/` directory, and deploys it through GitHub Pages.
 
 Workflow names identify a unique pipeline scope, and every job display name is
 self-contained. The `Pull Request` workflow declares the staged validation jobs
@@ -24,11 +24,12 @@ after those jobs complete. Required status checks must use the exact `workflow
 treats a renamed check as a different context, update the repository ruleset
 whenever either half of that name changes.
 
-Packaging output under `build/` is generated, ignored, and must never be
-committed. In addition to keeping distribution artifacts out of the source
-tree, this ensures rename-aware quality gates compare the previous package
-directly with its current source path instead of matching it to a duplicate
-under `build/lib/`.
+Generated documentation and distribution output lives under the ignored,
+hidden `.artifacts/` directory and must never be committed. Packaging scratch
+output and setuptools `.egg-info` metadata are directed beneath the same hidden
+root. Keeping every generated copy out of the maintained source tree ensures
+rename-aware quality gates compare the previous package directly with its
+current source path instead of matching it to a generated duplicate.
 
 PyPI publication is deliberately separate from ordinary push and pull-request
 workflows. Publishing a GitHub Release triggers a build job, followed by a
@@ -105,7 +106,7 @@ Enable the repository once through **Settings > Pages > Build and deployment >
 Source > GitHub Actions**. Then open **Actions > Documentation > Run workflow**,
 select `main`, and run it. Later documentation changes deploy automatically
 after they are merged or pushed to `main`; maintainers do not build or upload
-`site/` themselves.
+`.artifacts/site/` themselves.
 
 Before changing a page to `publication: reviewed`, preview the production view
 with `python3 -m mkdocs serve`. Use

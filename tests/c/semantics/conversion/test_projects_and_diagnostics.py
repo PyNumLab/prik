@@ -1,9 +1,6 @@
 """Tests split by stable ownership concept from `test_functions_and_callbacks.py`."""
 
 from dataclasses import asdict
-from pathlib import Path
-import subprocess
-import sys
 
 import pytest
 
@@ -36,18 +33,6 @@ from tests.c.semantics.conversion._support import (
     _c_origin,
     _function,
 )
-
-
-def test_c_to_ir_direct_script_runs_its_no_argument_example():
-    completed = subprocess.run(
-        [sys.executable, "prik/semantics/c2ir.py"],
-        cwd=Path(__file__).resolve().parents[4],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-
-    assert completed.stdout.strip() == "math.scale(value): Int <- Int"
 
 
 def test_c2ir_explicit_project_headers_import_types_from_their_owner_module():

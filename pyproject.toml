@@ -77,7 +77,7 @@ where = ["."]
 include = ["prik*"]
 
 [tool.setuptools.package-data]
-"prik.binding_support" = ["*.h", "LICENSE"]
+"prik.runtime.native_support" = ["*.h", "LICENSE"]
 
 [project.scripts]
 prik = "prik.cli:main"

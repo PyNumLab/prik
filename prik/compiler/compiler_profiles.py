@@ -305,3 +305,13 @@ def fortran_compiler_family(executable: str) -> tuple[str, str, str]:
             return token, vendor, c_executable
     supported = ", ".join(token for token, _vendor, _c_executable in _FORTRAN_COMPILER_FAMILIES)
     raise ValueError(f"Unknown Fortran compiler family for {executable!r}; expected one of: {supported}")
+
+
+if __name__ == "__main__":
+    token, vendor, c_executable = fortran_compiler_family("/opt/toolchain/bin/gfortran-13")
+    fortran_profile = available_compilers[vendor]["fortran"]
+
+    print(f"Selected family: {token}")
+    print(f"Compiler profile: {vendor}")
+    print(f"Matching C executable: {c_executable}")
+    print(f"Fortran module-output flag: {fortran_profile['module_output_flag']}")

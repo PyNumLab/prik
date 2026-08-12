@@ -13,8 +13,8 @@ import subprocess
 import threading
 import warnings
 
-from .objects import ObjectFile
-from .compiler_profiles import available_compilers, fortran_compiler_family, vendors
+from prik.compiler.compiler_profiles import available_compilers, fortran_compiler_family, vendors
+from prik.compiler.objects import ObjectFile
 
 __all__ = ("Compiler", "get_condaless_search_path")
 
@@ -350,3 +350,29 @@ class Compiler:
     @staticmethod
     def _library_flags(libraries: Iterable[str]) -> tuple[str, ...]:
         return tuple(library if library.startswith("-l") else f"-l{library}" for library in libraries)
+
+
+if __name__ == "__main__":
+    from tempfile import TemporaryDirectory
+
+    with TemporaryDirectory() as directory:
+        build_dir = Path(directory)
+        compile_input = ObjectFile(
+            source=build_dir / "demo.c",
+            object_path=build_dir / "demo.o",
+            language="c",
+            flags=("-DPRIK_COMPILER_DEMO=1",),
+        )
+        compiler = Compiler(
+            "GNU",
+            execute_commands=False,
+            executables={"c": shutil.which("true") or "true"},
+        )
+        command = compiler.compile_object(compile_input)
+
+        print("Compiler profile: GNU")
+        print(f"Compile input: {compile_input.source.name} -> {compile_input.object_path.name}")
+        print(f"Recorded without execution: {not compile_input.object_path.exists()}")
+        print(f"Contains compile switch: {'-c' in command}")
+        print(f"Contains requested flag: {'-DPRIK_COMPILER_DEMO=1' in command}")
+        print(f"Commands recorded: {len(compiler.command_log)}")

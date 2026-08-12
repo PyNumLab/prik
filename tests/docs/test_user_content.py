@@ -60,7 +60,6 @@ def test_documentation_homepage_demonstrates_prik_before_getting_started() -> No
     assert page.count("{ .prik-performance-chart }") == 2
     assert page.count("{ .prik-primary-cta }") == 2
     assert "developer/index.md" not in page
-    assert "maintainer/README.md" not in page
     assert "user/guide/" not in page
 
 

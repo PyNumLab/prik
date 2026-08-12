@@ -9,14 +9,13 @@ publication: draft
 
 # Design Documents
 
-Design documents record long-term technical decisions for maintainers. They do
-not by themselves establish native binding support.
+Design documents record long-term technical decisions and proposals for all
+contributors. They do not by themselves establish native binding support.
 
 ## Pages
 
 - [Wrapper design notes](wrapper-design-notes.md)
 - [Semantic multilanguage wrapper runtime architecture](semantic-multilanguage-wrapper-runtime-architecture.md)
-- [Overall architecture](overall-architecture.md)
 - [Parser architecture](parser-architecture.md)
 - [Semantic analysis](semantic-analysis.md)
 - [Code generation](code-generation.md)

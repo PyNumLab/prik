@@ -10,7 +10,7 @@ publication: draft
 # Roadmap
 
 This repository-only roadmap tracks implementation and documentation work for
-maintainers. Public support status remains in User documentation.
+contributors. Public support status remains in User documentation.
 
 ## Planned Features
 

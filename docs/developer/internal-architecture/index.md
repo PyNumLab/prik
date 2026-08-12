@@ -9,7 +9,7 @@ publication: draft
 
 # Internal Architecture
 
-Internal architecture pages are for maintainers who need implementation-level
+Internal architecture pages are for contributors who need implementation-level
 details. They are separate from user guides and high-level design documents.
 
 ## Pages
@@ -29,5 +29,5 @@ details. They are separate from user guides and high-level design documents.
 
 ## TODO
 
-- TODO: Fill these pages from implementation evidence and maintainer workflows.
+- TODO: Fill these pages from implementation evidence and contributor workflows.
 - TODO: Keep volatile internals out of user-facing workflow pages.

@@ -48,3 +48,23 @@ class StageRecord:
         if isinstance(value, set):
             return frozenset(StageRecord._freeze_value(item) for item in value)
         return value
+
+
+if __name__ == "__main__":
+    from dataclasses import dataclass, field
+
+    @dataclass
+    class ParserOutput(StageRecord):
+        """Small parser-stage value used by the direct architecture example."""
+
+        module: str
+        procedures: list[str] = field(default_factory=list)
+
+    parsed = ParserOutput(module="geometry", procedures=["scale", "norm"])
+    print(f"Editable parser output: {parsed.module} -> {parsed.procedures}")
+    consumed = parsed.freeze()
+    print(f"Frozen consumer input: {consumed.module} -> {consumed.procedures}")
+    try:
+        consumed.module = "changed"
+    except FrozenStageRecordError as exc:
+        print(f"Mutation rejected: {exc}")

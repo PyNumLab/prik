@@ -102,10 +102,10 @@ completion remains the next shared stage after those converters produce
 
 - Semantic reference: `docs/user/reference/semantic-ir.md`
 - `.pyi` reference: `docs/user/reference/semantic-pyi-format.md`
-- `.pyi` wrapper checklist: `docs/maintainer/roadmap/semantic-pyi-wrapper-checklist.md`
+- `.pyi` wrapper checklist: `docs/developer/roadmap/semantic-pyi-wrapper-checklist.md`
 - Source navigation: `docs/developer/source-map.md`, `docs/developer/feature-to-code-map.md`
-- Pipeline map: `docs/maintainer/internal-architecture/pipeline-map.md`
-- Datatype lifecycle: `docs/maintainer/internal-architecture/type-system.md`
+- Pipeline map: `docs/developer/internal-architecture/pipeline-map.md`
+- Datatype lifecycle: `docs/developer/internal-architecture/type-system.md`
 - Semantic tests: `tests/fortran/semantic_ir/semantics/`
 - `.pyi` tests: `tests/fortran/semantic_pyi_format/`
 - Wrapper behavior that reaches the typed plan: `tests/fortran/`

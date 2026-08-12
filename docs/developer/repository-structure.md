@@ -21,14 +21,13 @@ artifacts used by tests. Navigate by ownership boundary first, then by file.
 | `prik/compiler/` | Reusable compiler command execution, compile objects, vendor profiles, native support installation, and linking. |
 | `prik/preprocessing/` | C and Fortran source preprocessing, provenance, native includes, and compiler-derived target probes. |
 | `prik/pipeline/` | Semantic `.pyi` loading, cross-stage datatype reports, wrapper rendering, and high-level wrapper build orchestration. |
-| `prik/runtime/` | Python runtime objects used by generated extension modules. |
+| `prik/runtime/` | Python runtime objects plus bundled header-only native support used by generated extension modules. |
 | `prik/parsers/` | Public namespace for language and semantic-contract frontends and parser models. |
 | `prik/semantics/` | Semantic IR, scalar datatype vocabulary, source-to-IR conversion, and `.pyi` conversion. |
 | `prik/policy/` | Immutable post-IR policy vocabulary plus policy construction and completion. |
 | `prik/planning/` | Backend-neutral wrapper-plan records and mechanical projection from completed policy. |
 | `prik/codegen/` | Backend datatype projection and plan-driven native bridge/binding lowering. |
 | `prik/printers/` | Language-specific serialization of C nodes, Fortran nodes, and semantic IR. |
-| `prik/binding_support/` | Bundled header-only native support copied into generated wrapper builds. |
 | `prik/naming/` | Unified public-name and generated-symbol policy. |
 | `prik/utilities/` | Small shared Python utilities. |
 | `examples/blas/` | Complete runnable Reference BLAS correctness project and the repository's single authoritative full BLAS source set under `native/`. |

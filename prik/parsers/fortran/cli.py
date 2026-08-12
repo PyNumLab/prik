@@ -7,8 +7,8 @@ import sys
 from dataclasses import asdict, fields, is_dataclass
 from pathlib import Path
 
-from .models import FortranParseError
-from .parser import FortranParser
+from prik.parsers.fortran.models import FortranParseError
+from prik.parsers.fortran.parser import FortranParser
 
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
@@ -341,5 +341,36 @@ def main() -> int:
     return 0
 
 
+def _direct_example() -> None:
+    """Render one in-memory parser result using the normal report formatter."""
+
+    parsed = FortranParser().parse_file(
+        """\
+module geometry
+contains
+  real function norm(value)
+    real, intent(in) :: value
+    norm = abs(value)
+  end function norm
+end module geometry
+""",
+        filename="geometry.f90",
+    )
+    report = {
+        "geometry.f90": {
+            "signatures": [_to_dict_no_parent(item) for item in parsed.procedures],
+            "types": [_to_dict_no_parent(item) for item in parsed.derived_types],
+            "modules": [_to_dict_no_parent(item) for item in parsed.modules],
+            "submodules": [_to_dict_no_parent(item) for item in parsed.submodules],
+            "programs": [_to_dict_no_parent(item) for item in parsed.programs],
+            "block_data": [_to_dict_no_parent(item) for item in parsed.block_data_units],
+        }
+    }
+    print(_format_report(report, print_limit=2))
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    if len(sys.argv) == 1:
+        _direct_example()
+    else:
+        raise SystemExit(main())

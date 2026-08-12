@@ -1,8 +1,8 @@
 ---
 title: Pipeline Map
 audience: maintainers
-prerequisites: source map, overall architecture
-related: ../../developer/source-map.md, wrapper-generation-pipeline.md, runtime-layer.md
+prerequisites: contributor architecture guide, source map
+related: ../architecture.md, ../source-map.md, wrapper-generation-pipeline.md, runtime-layer.md
 status: maintained
 publication: draft
 ---

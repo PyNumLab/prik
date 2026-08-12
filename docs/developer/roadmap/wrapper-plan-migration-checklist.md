@@ -3842,7 +3842,7 @@ they do not expose the public callback semantics deferred to Phase 10.
   native target ownership by default, explicit known-owner retention, direct
   association writeback, and holder-only destruction. Remove the old blanket
   target-ownership blocker rather than retaining it as a compatibility path.
-- [x] Update public and maintainer documentation to teach the five actual
+- [x] Update public and contributor documentation to teach the five actual
   declarations, six dummy forms, complete matrix, direct versus scoped
   address acquisition, holder and module transactions, `INTENT(IN)` pointer
   exception, target lifetime, native pointer-target ownership, multi-argument

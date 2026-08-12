@@ -145,3 +145,11 @@ __all__ = (
     "pyi_text_to_semantic_module",
     "resolve_semantic_compile_time_values",
 )
+
+
+if __name__ == "__main__":
+    parsed = parse_fortran_file("subroutine ping()\nend subroutine ping\n", filename="ping.f90")
+    procedure = parsed.procedures[0]
+
+    print(f"PRIK {__version__}")
+    print(f"Public parser result: {procedure.kind} {procedure.name} from {parsed.filename}")

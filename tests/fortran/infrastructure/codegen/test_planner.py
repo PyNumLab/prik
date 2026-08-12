@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-import subprocess
-import sys
 
 from dataclasses import replace
 
@@ -208,16 +205,3 @@ label: String = "ready"
         match=r"Semantic variable 'labels\.label'.*module variable initializer requires a write-through native setter",
     ):
         WrapperPlanner().build(module)
-
-
-def test_planner_direct_example_is_runnable():
-    repository_root = Path(__file__).resolve().parents[4]
-    result = subprocess.run(
-        [sys.executable, str(repository_root / "prik/planning/planner.py")],
-        cwd=repository_root,
-        capture_output=True,
-        check=True,
-        text=True,
-    )
-
-    assert "Native target: DOUBLE_VALUE" in result.stdout

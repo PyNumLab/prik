@@ -1,29 +1,6 @@
 """C parser public API coverage for the current partial subset."""
 
-import subprocess
-import sys
 from pathlib import Path
-
-
-def test_c_parser_module_direct_execution_example():
-    """Run the documented source-to-`CFile` example from the repository root."""
-    repository_root = Path(__file__).parents[3]
-
-    result = subprocess.run(
-        [sys.executable, "prik/parsers/c/parser.py"],
-        cwd=repository_root,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-
-    assert result.stdout == (
-        "Parsed: state_api.h\n"
-        "Typedef: api_size -> unsigned long\n"
-        "Struct: state (id)\n"
-        "Function: count() -> api_size\n"
-        "Function: step(value) -> pointer to struct state\n"
-    )
 
 
 def test_c_parser_path_and_include_key_helpers_preserve_boundary_contracts(monkeypatch):

@@ -1586,3 +1586,33 @@ __all__ = (
     "NativeArrayHandleBase",
     "PointerArray",
 )
+
+
+if __name__ == "__main__":
+    # Generated extensions supply small operation dictionaries like this one.
+    # The adapter turns their raw call signatures into the stable handle API.
+    state = {"array": np.array([1.0, 2.0, 3.0], dtype=np.float64)}
+
+    def resize(*extents: np.int64) -> None:
+        state["array"] = np.zeros(tuple(int(extent) for extent in extents), dtype=np.float64)
+
+    array = _native_array_handle_from_generated_ops(
+        "allocatable",
+        np.float64,
+        1,
+        {
+            "allocated": lambda: True,
+            "array_actual": lambda: state["array"].ctypes.data,
+            "descriptor": lambda: state["array"].ctypes.data,
+            "shape": lambda: state["array"].shape,
+            "to_numpy": lambda: state["array"],
+            "resize": resize,
+        },
+    )
+
+    print(f"Runtime handle: {type(array).__name__}")
+    print(f"Descriptor kind: {array.descriptor_kind}")
+    print(f"Initial view: {array.to_numpy().tolist()}")
+    array.resize(4)
+    print(f"Resized shape: {array.shape}")
+    print(f"Generated resize received NumPy extents: {state['array'].shape == (4,)}")

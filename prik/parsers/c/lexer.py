@@ -800,3 +800,17 @@ __all__ = (
     "top_level_split",
     "top_level_split_with_offsets",
 )
+
+
+if __name__ == "__main__":
+    example_source = """\
+/* public declarations */
+struct point { double x; double y; };
+double norm(struct point value);
+"""
+    example_tokens = lex_c_source(example_source, filename="geometry.h")
+    example_segments = split_top_level_c_source(example_source, filename="geometry.h")
+
+    print("Identifier tokens:", " ".join(token.text for token in example_tokens if token.kind == "identifier"))
+    for segment in example_segments:
+        print(f"Segment at line {segment.original_start_line}: {segment.text} [{segment.terminator}]")

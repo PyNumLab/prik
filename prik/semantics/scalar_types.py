@@ -108,3 +108,11 @@ __all__ = (
     "boolean_storage_bits",
     "is_boolean_semantic_type_name",
 )
+
+
+if __name__ == "__main__":
+    for example_name in ("Float64", "Int"):
+        example_spec = SEMANTIC_SCALAR_TYPES[example_name]
+        storage = f"{example_spec.storage_bits} bits" if example_spec.storage_bits is not None else "target-dependent"
+        print(f"{example_name}: family={example_spec.family.value}, storage={storage}")
+    print("Backend spelling stored here: False")

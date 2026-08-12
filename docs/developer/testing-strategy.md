@@ -13,7 +13,7 @@ The canonical ownership and command map is
 [`../../tests/README.md`](../../tests/README.md). The Fortran feature index is
 [`../../tests/fortran/README.md`](../../tests/fortran/README.md). Maintainers
 record the active migration gates in
-`docs/maintainer/roadmap/fortran-test-suite-cleanup-checklist.md`.
+`docs/developer/roadmap/fortran-test-suite-cleanup-checklist.md`.
 
 ## Choose tests by language, feature, and stage
 
@@ -125,7 +125,10 @@ Keep fixtures beside their final behavioral owner:
   integration.
 
 Generate build products and temporary contracts in temporary directories.
-Check in generated `.pyi` only where exact generation text,
+Compiler capability probes must also run with a temporary working directory so
+side products such as Fortran `.mod` files cannot escape into the repository
+root merely because the primary object or executable has an explicit output
+path. Check in generated `.pyi` only where exact generation text,
 imports, placement, or package shape is the invariant.
 
 For BLAS behavior, source `examples/blas/build_all.sh`, then run

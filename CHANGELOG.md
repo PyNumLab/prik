@@ -9,11 +9,28 @@ release tags add a leading `v` to the package version.
 
 ### Added
 
+- Added a canonical contributor architecture guide with complete
+  folder-by-folder stage ownership, change routes, reproducible direct
+  examples, representative output, and focused evidence owners.
 - Added Zenodo version and concept DOI links to the citation metadata, README,
   and About page.
 
 ### Changed
 
+- Moved generated documentation and distribution output under the hidden
+  `.artifacts/` directory in local commands and CI workflows.
+- Centralized every production-file execution-example output contract in one
+  contributor-architecture test inventory with one named test per file.
+- Renamed the central infrastructure owner to `execution_examples/` so its
+  responsibility is explicit in the test tree.
+- Consolidated developer and maintainer material under one Contributor
+  Documentation tree and removed the separate maintainer documentation lane.
+- Moved the bundled header-only binding runtime from the package root into
+  `prik.runtime.native_support`; generated builds continue to receive it under
+  their internal `binding_support/` include directory.
+- Deferred the contributor architecture sections for the immature C input
+  parser and C-to-IR path while retaining the generated CPython C binding
+  backend documentation required by Fortran wrappers.
 - Reorganized compiler and pre-parse infrastructure into `prik.compiler` and
   `prik.preprocessing`, including C/Fortran preprocessing and target probes;
   the former `prik.compiling`, `prik.probes`, parser-local C preprocessor, and

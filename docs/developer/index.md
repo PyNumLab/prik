@@ -1,19 +1,21 @@
 ---
-title: Developer Documentation
-audience: developers, contributors
+title: Contributor Documentation
+audience: developers, maintainers, contributors
 prerequisites: repository checkout
-related: development-workflow.md, source-map.md, contributing/index.md
+related: architecture.md, development-workflow.md, contributing/index.md
 status: maintained
 publication: draft
 ---
 
-# Developer Documentation
+# Contributor Documentation
 
-This lane is for changing prik. It maps public behavior to implementation and
-tests, then provides focused contribution workflows.
+This is the single documentation area for changing and maintaining prik. Start
+with the architecture guide, then follow the focused implementation, testing,
+governance, and contribution references needed for the change.
 
 ## Orientation
 
+- [Contributor architecture guide](architecture.md)
 - [Development workflow](development-workflow.md)
 - [Repository structure](repository-structure.md)
 - [Source map](source-map.md)
@@ -35,3 +37,18 @@ PRIK_C_DOCS_END -->
 - [Adding a Fortran construct](adding-a-fortran-construct.md)
 - [Adding a code-generation backend](adding-a-code-generation-backend.md)
 - [Contributing](contributing/index.md)
+
+## Design And Internal Architecture
+
+- [Design documents](design/index.md)
+- [Internal architecture](internal-architecture/index.md)
+- [Pipeline map](internal-architecture/pipeline-map.md)
+- [Datatype lifecycle](internal-architecture/type-system.md)
+- [Ownership tracking](internal-architecture/ownership-tracking.md)
+
+## Project Operations And Planning
+
+- [Documentation architecture](documentation-architecture.md)
+- [CI/CD](ci-cd.md)
+- [Release process](release-process.md)
+- [Roadmaps](roadmap/index.md)

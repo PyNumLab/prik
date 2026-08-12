@@ -4,8 +4,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[4]
-SUPPORT_HEADER = ROOT / "prik" / "binding_support" / "prik_binding.h"
-SUPPORT_SOURCE = ROOT / "prik" / "binding_support" / "prik_binding.c"
+SUPPORT_HEADER = ROOT / "prik" / "runtime" / "native_support" / "prik_binding.h"
+SUPPORT_SOURCE = ROOT / "prik" / "runtime" / "native_support" / "prik_binding.c"
 
 
 def test_native_binding_support_is_header_only_and_exposes_the_small_prik_api():

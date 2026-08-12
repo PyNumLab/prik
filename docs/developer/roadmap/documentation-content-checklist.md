@@ -104,10 +104,10 @@ PRIK_C_DOCS_END -->
   documentation front matter, no-compatibility-layer rule, parser/codegen
   organization, public contributor rules, TODO markers, support-claim
   discipline, and review expectations.
-- [ ] `docs/maintainer/ci-cd.md`: document current GitHub Actions gates,
+- [ ] `docs/developer/ci-cd.md`: document current GitHub Actions gates,
   coverage policy, static-analysis policy, docs checks, and local caveats for
   CI-only environment values.
-- [ ] `docs/maintainer/release-process.md`: document versioning, changelog,
+- [ ] `docs/developer/release-process.md`: document versioning, changelog,
   release verification, wheel/source distribution limits, and documentation
   publication steps.
 - [ ] `docs/developer/contributing/contribution-guide.md`: document setup, issue scope,
@@ -119,54 +119,54 @@ PRIK_C_DOCS_END -->
   comments.
 ### Design And Internal Architecture
 
-- [ ] `docs/maintainer/design/overall-architecture.md`: document system components,
-  pipeline stages, data contracts, supported language routes, and deferred
-  routes.
-- [ ] `docs/maintainer/design/parser-architecture.md`: document parser ownership,
+- [x] `docs/developer/architecture.md`: document system components, pipeline
+  stages, data contracts, supported language routes, and deferred routes in
+  the canonical contributor entry page.
+- [ ] `docs/developer/design/parser-architecture.md`: document parser ownership,
   preprocessing boundaries, model facts, diagnostics, and fixture strategy.
-- [ ] `docs/maintainer/design/semantic-analysis.md`: document source-to-IR lowering,
+- [ ] `docs/developer/design/semantic-analysis.md`: document source-to-IR lowering,
   `.pyi`-to-IR loading, policy completion, wrapper-planning errors, and invariants.
-- [ ] `docs/maintainer/design/runtime-model.md`: document native support files, generated
+- [ ] `docs/developer/design/runtime-model.md`: document native support files, generated
   wrappers, native state, callbacks, threading, and finalization.
-- [ ] `docs/maintainer/design/error-propagation-model.md`: document diagnostic categories,
+- [ ] `docs/developer/design/error-propagation-model.md`: document diagnostic categories,
   Python exception projection, native failure handling, cleanup, and user-facing
   message shape.
-- [ ] `docs/maintainer/design/memory-ownership-model.md`: finish the design page around
+- [ ] `docs/developer/design/memory-ownership-model.md`: finish the design page around
   policy-completion ownership decisions, transfer actions, mutability, setter
   exposure, and release responsibility.
-- [ ] `docs/maintainer/internal-architecture/ast-design.md`: document parser AST, semantic
+- [ ] `docs/developer/internal-architecture/ast-design.md`: document parser AST, semantic
   IR, completed wrapper plans, generated source syntax, what each layer may
   store, and what must not leak across
   layers.
-- [ ] `docs/maintainer/internal-architecture/semantic-passes.md`: document semantic pass
+- [ ] `docs/developer/internal-architecture/semantic-passes.md`: document semantic pass
   ordering, completed policy decisions, planner validation, and handoff to
   `ir2ast`.
-- [x] `docs/maintainer/internal-architecture/wrapper-generation-pipeline.md`: maintained
+- [x] `docs/developer/internal-architecture/wrapper-generation-pipeline.md`: maintained
   explanation of the current wrapper stages, semantic-policy boundary,
   pass/planner/emitter distinctions, incremental decomposition criteria, and
   acceptance criteria for bridge and binding refactoring.
-- [x] `docs/maintainer/internal-architecture/type-system.md`: maintained datatype
+- [x] `docs/developer/internal-architecture/type-system.md`: maintained datatype
   lifecycle from compiler probing through semantic normalization, policy,
   planning, backend registries, generated NumPy boundaries, runtime validation,
   and non-primitive storage families.
-- [ ] `docs/maintainer/internal-architecture/runtime-layer.md`: document native support
+- [ ] `docs/developer/internal-architecture/runtime-layer.md`: document native support
   installation, extension initialization, callbacks, cleanup, and shared native
   state.
-- [ ] `docs/maintainer/internal-architecture/dependency-analysis.md`: document current
+- [ ] `docs/developer/internal-architecture/dependency-analysis.md`: document current
   source ordering, preprocessing dependency facts, generated build plans, and
   future automatic dependency discovery.
-- [ ] `docs/maintainer/internal-architecture/error-handling-pipeline.md`: document
+- [ ] `docs/developer/internal-architecture/error-handling-pipeline.md`: document
   diagnostic creation, path-aware `.pyi` loader errors, wrapper-planning failures,
   generated validation failures, and native runtime errors.
-- [ ] `docs/maintainer/internal-architecture/symbol-tables.md`: document public naming,
+- [ ] `docs/developer/internal-architecture/symbol-tables.md`: document public naming,
   generated-symbol reservation, collision policy, imports, scopes, and package
   names.
 
 <!-- PRIK_C_DOCS_START
-- [ ] `docs/maintainer/design/code-generation.md`: document wrapper-plan and generated-source boundaries, bridge
+- [ ] `docs/developer/design/code-generation.md`: document wrapper-plan and generated-source boundaries, bridge
   generation, CPython binding generation, printers, and forbidden semantic
   inference in backends.
-- [ ] `docs/maintainer/design/cpython-integration.md`: document CPython API usage, NumPy
+- [ ] `docs/developer/design/cpython-integration.md`: document CPython API usage, NumPy
   C API integration, extension module layout, reference ownership, and error
   propagation.
 PRIK_C_DOCS_END -->
@@ -211,9 +211,9 @@ PRIK_C_DOCS_END -->
   are planned, with expected prerequisites and runtime cost.
 - [ ] `docs/user/examples/index.md`: split verified cookbook recipes from
   planned larger examples and state the evidence required for each example.
-- [ ] `docs/maintainer/design/index.md`: explain which design documents are accepted
+- [ ] `docs/developer/design/index.md`: explain which design documents are accepted
   architecture and which are placeholders.
-- [ ] `docs/maintainer/internal-architecture/index.md`: route maintainers to pipeline,
+- [ ] `docs/developer/internal-architecture/index.md`: route contributors to pipeline,
   semantic pass, runtime, type-system, ownership, and symbol-table pages.
 - [ ] `docs/developer/contributing/index.md`: route contributors to contribution,
   pull-request, review, and coding-standard pages.
@@ -235,8 +235,8 @@ PRIK_C_DOCS_END -->
     lowering, bridge, and binding boundaries.
   - [ ] Each page has been reviewed explicitly; change `publication: draft` to
     `publication: reviewed` only after that review.
-  - [ ] Each lane index is reviewed last, after the lane pages intended for its
-    initial publication are ready. A draft lane index keeps the complete lane
+  - [ ] Each area index is reviewed last, after the pages intended for its
+    initial publication are ready. A draft area index keeps the complete area
     out of production.
   - [ ] A local draft preview and the Pages workflow artifact have validated
     navigation, links, search, rendering, and the static site build before
@@ -249,13 +249,13 @@ evidence. Keep them current as behavior changes, but do not treat them as the
 primary placeholder queue.
 
 - [x] `docs/index.md`: maintained website entry point for all reviewed
-  documentation lanes.
-- [x] `docs/user/index.md`: maintained User documentation lane entry point.
-- [x] `docs/developer/index.md`: maintained Developer documentation lane entry
-  point.
-- [x] `docs/maintainer/README.md`: maintained Maintainer documentation entry
-  point, publication-gated like the User and Developer indexes.
-- [x] `docs/maintainer/documentation-architecture.md`: maintained three-lane
+  documentation areas.
+- [x] `docs/user/index.md`: maintained User documentation entry point.
+- [x] `docs/developer/index.md`: maintained Contributor documentation entry
+  point for developers and maintainers.
+- [x] `docs/developer/architecture.md`: canonical contributor architecture
+  orientation and folder-by-folder rollout plan.
+- [x] `docs/developer/documentation-architecture.md`: maintained two-area
   documentation and publication contract.
 - [x] `docs/user/getting-started/index.md`: maintained beginner route from
   installation through the normal rebuild workflow.
@@ -343,12 +343,12 @@ primary placeholder queue.
   parser reference.
 - [x] `docs/developer/quality-assurance.md`: maintained quality and QA
   policy reference.
-- [x] `docs/maintainer/internal-architecture/pipeline-map.md`: maintained pipeline and
+- [x] `docs/developer/internal-architecture/pipeline-map.md`: maintained pipeline and
   concept-ownership map.
-- [x] `docs/maintainer/internal-architecture/ownership-tracking.md`: maintained
+- [x] `docs/developer/internal-architecture/ownership-tracking.md`: maintained
   ownership philosophy, completed policy vocabulary, supported lifetime triples,
   pointer-policy boundary, validation order, source routes, and safety boundary.
-- [x] `docs/maintainer/roadmap/semantic-pyi-wrapper-checklist.md`: active implementation
+- [x] `docs/developer/roadmap/semantic-pyi-wrapper-checklist.md`: active implementation
   roadmap for semantic `.pyi` wrapper parity.
 
 <!-- PRIK_C_DOCS_START

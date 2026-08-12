@@ -537,3 +537,51 @@ class PythonSurfaceEmitter(ClassVisitor):
             if field.setter_action is SetterAction.WRITE_THROUGH:
                 entries.append(f"'{field.name}_set': {CBindingNames.module_member_method(variable, member, 'set')}")
         return "{" + ", ".join(entries) + "}"
+
+
+if __name__ == "__main__":
+    from prik.planning.models import ConstructorPlan
+
+    example_identity = ("state", "state_t")
+    example_derived = DerivedTypePlan(
+        owner_path="state.State",
+        type_name="State",
+        type_identity=example_identity,
+        backend_symbol="state_t",
+        native_type_name="state_t",
+        native_scope="state",
+        python_names=("State",),
+        fields=(),
+        finalizers=(),
+        bind_c=False,
+        sequence=False,
+    )
+    example_surface = ClassSurfacePlan(
+        owner_path="state.State",
+        type_identity=example_identity,
+        python_names=("State",),
+        base_identities=(),
+        constructor=ConstructorPlan(
+            kind=ClassConstructorKind.ABSENT,
+            fields=(),
+            target_owner_path=None,
+            overload_name=None,
+            lifecycle=(),
+            rejection_message="State objects come from native code.",
+            docstring="Construction is disabled.",
+        ),
+        methods=(),
+        overloads=(),
+        registration=(),
+        docstring="Opaque native state.",
+    )
+    example_namespace = NamespacePlan(
+        owner_path="state",
+        python_path=(),
+        derived_types=(example_derived,),
+        classes=(example_surface,),
+    )
+    example_context = PythonSurfaceContext(frozenset(), frozenset(), frozenset())
+
+    print("Rendered Python facade:")
+    print(PythonSurfaceEmitter(example_context).emit(example_namespace))

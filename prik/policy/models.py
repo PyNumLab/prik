@@ -1209,3 +1209,33 @@ class FunctionWrapperPolicy:
     writeback_actions: tuple[LifecyclePolicy, ...] = ()
     cleanup_actions: tuple[LifecyclePolicy, ...] = ()
     release_actions: tuple[LifecyclePolicy, ...] = ()
+
+
+if __name__ == "__main__":
+    example_array = ArrayHandoffPolicy(
+        rank=2,
+        shape=("rows", "columns"),
+        axes=("rows", "columns"),
+        order="F",
+        native_order="F",
+        contiguous=True,
+    )
+    example_lifecycle = LifecyclePolicy(
+        owner_path="math.scale.values",
+        phase=WritebackPhase.COPY_OUT,
+        source_role="argument",
+        codegen_action=CodegenAction.COPY_IN_OUT,
+        semantic_type_name="Float64",
+        result_position=0,
+        object_kind=ObjectKind.NUMPY_ARRAY,
+    )
+
+    print(f"Array policy: rank={example_array.rank}, shape={example_array.shape}, order={example_array.order}")
+    print(
+        f"Lifecycle policy: {example_lifecycle.phase.value} "
+        f"{example_lifecycle.operation.value} via {example_lifecycle.codegen_action.value}"
+    )
+    try:
+        example_lifecycle.source_role = "result"
+    except AttributeError:
+        print("Completed record mutation rejected: True")

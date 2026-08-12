@@ -533,7 +533,7 @@ The proposed target is Python wrappers for C libraries on a selected Linux ABI.
 Its primary design requirement is that a semantic `.pyi` file plus a compiled
 library be sufficient to generate a wrapper, with C header parsing used only as
 optional input generation. Related deferred policy is tracked in
-[wrapper design notes](../../maintainer/design/wrapper-design-notes.md).
+[wrapper design notes](../../developer/design/wrapper-design-notes.md).
 PRIK_C_DOCS_END -->
 
 <!-- PRIK_C_DOCS_START

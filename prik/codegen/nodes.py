@@ -452,3 +452,31 @@ class FortranModule(StageRecord):
     declarations: tuple[FortranDeclaration, ...] = ()
     procedures: tuple[FortranFunction, ...] = ()
     standalone_procedures: tuple[FortranFunction, ...] = ()
+
+
+if __name__ == "__main__":
+    example_c_function = CFunction(
+        "wrap_ping",
+        "PyObject *",
+        parameters=(CParameter("self", "PyObject *"),),
+        body=(CReturn(CodeExpression("Py_None")),),
+    )
+    example_c_module = CModule("demo_wrapper", functions=(example_c_function,))
+    example_fortran_function = FortranFunction(
+        "bind_c_ping",
+        bind_name="PING",
+        bind_c=True,
+        body=(FortranCall("native_ping"),),
+        is_subroutine=True,
+    )
+    example_fortran_module = FortranModule("bind_c_demo_wrapper", procedures=(example_fortran_function,))
+
+    print(
+        f"C node tree: {type(example_c_module).__name__} -> "
+        f"{example_c_function.name} -> {type(example_c_function.body[0]).__name__}"
+    )
+    print(
+        f"Fortran node tree: {type(example_fortran_module).__name__} -> "
+        f"{example_fortran_function.name} -> {type(example_fortran_function.body[0]).__name__}"
+    )
+    print("Source text rendered: False")

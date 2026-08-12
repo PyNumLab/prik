@@ -104,3 +104,38 @@ __all__ = (
     "set_ownership_metadata",
     "set_pointer_policy_metadata",
 )
+
+
+if __name__ == "__main__":
+    example_metadata: dict[str, Any] = {}
+    set_ownership_metadata(
+        example_metadata,
+        owner="caller",
+        transfer="in_place",
+        destruction="caller",
+    )
+    set_pointer_policy_metadata(
+        example_metadata,
+        nullable=True,
+        transfer="borrowed_view",
+        target_owner="native",
+        lifetime="owner",
+        deallocation="native",
+        shape_source="descriptor",
+        contiguity="fortran",
+        reassociation="forbidden",
+        aliasing="borrowed",
+        mutability="mutable",
+    )
+
+    ownership = example_metadata[OWNERSHIP_POLICY_METADATA]
+    pointer = example_metadata[POINTER_POLICY_METADATA]
+    print(
+        f"Raw ownership request: owner={ownership['owner']}, "
+        f"transfer={ownership['transfer']}, destruction={ownership['destruction']}"
+    )
+    print(
+        f"Pointer contract: nullable={pointer['nullable']}, "
+        f"lifetime={pointer['lifetime']}, reassociation={pointer['reassociation']}"
+    )
+    print("Completed lowering action present: False")

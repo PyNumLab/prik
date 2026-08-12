@@ -356,4 +356,28 @@ class CSourcePrinter(ClassVisitor):
         return "\n".join(f"    {line}" for line in text.splitlines())
 
 
+if __name__ == "__main__":
+    from prik.codegen.nodes import CodeExpression
+
+    binding_module = CModule(
+        name="printer_demo_wrapper",
+        includes=(CInclude("Python.h"),),
+        functions=(
+            CFunction(
+                name="wrap_ping",
+                return_type="PyObject *",
+                parameters=(CParameter("self", "PyObject *"),),
+                body=(
+                    CExpressionStatement(CodeExpression("Py_INCREF(Py_None)")),
+                    CReturn(CodeExpression("Py_None")),
+                ),
+                storage="static",
+            ),
+        ),
+    )
+
+    print("Rendered C binding source:")
+    print(CSourcePrinter().doprint(binding_module))
+
+
 # Fortran source rendering

@@ -4,7 +4,6 @@ import json
 import shutil
 import subprocess
 import sys
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -507,21 +506,6 @@ def test_fortran_type_probe_module_cli_emits_json_for_semantic_input(tmp_path):
     assert payload["values"]["selected_real_kind(12)"] > 0
     assert payload["recipe"]["compiler"] == compiler
     assert payload["source_text"].startswith("program prik_fortran_type_probe")
-
-
-def test_fortran_type_probe_direct_script_runs_its_no_argument_example():
-    completed = subprocess.run(
-        [sys.executable, "prik/preprocessing/probes/fortran_types.py"],
-        cwd=Path(__file__).resolve().parents[4],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-
-    label, separator, raw_value = completed.stdout.strip().partition(" = ")
-    assert label == "selected_int_kind(9)"
-    assert separator == " = "
-    assert int(raw_value) > 0
 
 
 def test_prik_semantics_cli_evaluates_collected_fortran_type_requirements(tmp_path):

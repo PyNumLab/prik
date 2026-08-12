@@ -245,3 +245,23 @@ def pyi_paths_to_semantic_modules(
         encoding=encoding,
         native_language=native_language,
     )
+
+
+if __name__ == "__main__":
+    example_source = """\
+from prik.contracts import Float64
+
+def scale(value: Float64) -> Float64: ...
+"""
+    example_module = pyi_text_to_semantic_module(
+        example_source,
+        module_name="math",
+        filename="math.pyi",
+    )
+    example_stubs = emit_module_stubs(example_module)
+
+    print(f"Loaded semantic module: {example_module.name}")
+    print(f"Loaded contract marker: {example_module.metadata[PYI_LOADED_METADATA]}")
+    print("Functions:", ", ".join(function.name for function in example_module.functions))
+    print("Re-emitted module:")
+    print(example_stubs["math"])

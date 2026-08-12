@@ -2,7 +2,7 @@
 title: Wrapper Design Notes
 audience: maintainers
 prerequisites: Fortran wrapper reference, semantic IR reference
-related: overall-architecture.md, ../internal-architecture/wrapper-generation-pipeline.md
+related: ../architecture.md, ../internal-architecture/wrapper-generation-pipeline.md
 status: design
 publication: draft
 ---

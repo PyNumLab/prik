@@ -697,3 +697,31 @@ def _iter_module_semantic_types(module: SemanticModule):
             for argument in procedure.arguments:
                 yield from _iter_semantic_type_tree(argument.semantic_type)
             yield from _iter_semantic_type_tree(procedure.return_type)
+
+
+if __name__ == "__main__":
+    example_type = SemanticType(
+        "Float64",
+        rank=1,
+        dtype="float64",
+        shape=["n"],
+        storage=SemanticStorageContract(
+            kind="array",
+            array=SemanticArrayContract(rank=1, shape=["n"], order="F"),
+        ),
+        origin=SemanticOrigin(source_language="fortran", source_type="real"),
+    )
+    example_function = SemanticFunction(
+        "scale",
+        native_name="SCALE",
+        arguments=[SemanticArgument("values", example_type)],
+    )
+    example_module = SemanticModule("geometry", functions=[example_function])
+
+    print(f"Semantic module: {example_module.name}")
+    print(f"Function: {example_function.name} -> native {example_function.native_name}")
+    print(
+        f"Argument: values: {example_type.name}, rank={example_type.rank}, "
+        f"shape={tuple(example_type.shape)}, order={example_type.storage.array.order}"
+    )
+    print(f"Source provenance: {example_type.origin.source_language} {example_type.origin.source_type}")

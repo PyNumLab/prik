@@ -15,7 +15,6 @@ def test_root_and_lane_indexes_gate_reviewed_pages() -> None:
         "user/draft.md": "draft",
         "developer/index.md": "draft",
         "developer/ready.md": "reviewed",
-        "maintainer/README.md": None,
     }
 
     assert mkdocs_publication._reviewed_paths(states) == {

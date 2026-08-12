@@ -43,3 +43,13 @@ def create_incremented_string(
         if not clashes:
             return candidate, number + 1
     raise RuntimeError("unreachable: an unbounded counter always yields a candidate")
+
+
+if __name__ == "__main__":
+    name, next_counter = create_incremented_string(
+        {"temporary_2", "temporary_3"},
+        prefix="temporary",
+    )
+
+    print(f"First available name: {name}")
+    print(f"Next counter: {next_counter}")

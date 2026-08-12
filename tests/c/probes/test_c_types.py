@@ -5,7 +5,6 @@ import os
 import shutil
 import subprocess
 import sys
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -329,19 +328,3 @@ def test_c_standard_type_probe_module_cli_emits_json_for_semantic_input():
     assert payload["types"]["FILE"]["kind"] == "opaque_handle"
     assert payload["recipe"]["compiler"] == compiler
     assert payload["source_text"].startswith("#include <complex.h>")
-
-
-def test_c_standard_type_probe_direct_script_runs_its_no_argument_example():
-    completed = subprocess.run(
-        [sys.executable, "prik/preprocessing/probes/c_types.py"],
-        cwd=Path(__file__).resolve().parents[3],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-
-    label, separator, raw_value = completed.stdout.strip().partition(": ")
-    assert label == "int"
-    assert separator == ": "
-    assert raw_value.endswith("-bit signed")
-    assert int(raw_value.removesuffix("-bit signed")) >= 16

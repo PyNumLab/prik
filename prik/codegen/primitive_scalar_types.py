@@ -179,3 +179,16 @@ __all__ = (
     "NumpyDtypeRegistry",
     "PrimitiveScalarTypeRegistry",
 )
+
+
+if __name__ == "__main__":
+    example_type = PrimitiveScalarTypeRegistry.type_for("Float64")
+    second_lookup = PrimitiveScalarTypeRegistry.type_for("Float64")
+
+    print(
+        f"Float64: C={example_type.c_spelling}; "
+        f"Fortran={example_type.fortran_spelling}; "
+        f"NumPy={NumpyDtypeRegistry.expression_for('Float64')}"
+    )
+    print(f"NumPy C macro: {example_type.numpy_type_macro}")
+    print(f"Fresh editable node per lookup: {example_type is not second_lookup}")

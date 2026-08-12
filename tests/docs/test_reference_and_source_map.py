@@ -199,6 +199,24 @@ def test_static_site_seed_configuration_exists() -> None:
     assert (ROOT / "mkdocs.yml").is_file()
 
 
+def test_generated_site_and_distribution_outputs_share_hidden_root() -> None:
+    site_configuration = (ROOT / "mkdocs.yml").read_text(encoding="utf-8")
+    release_workflow = (ROOT / ".github/workflows/publish-to-pypi.yml").read_text(encoding="utf-8")
+    docs_workflow = (ROOT / ".github/workflows/docs.yml").read_text(encoding="utf-8")
+    setup_configuration = (ROOT / "setup.cfg").read_text(encoding="utf-8")
+    artifact_ignores = (ROOT / ".artifacts/.gitignore").read_text(encoding="utf-8").splitlines()
+    source_manifest = (ROOT / "MANIFEST.in").read_text(encoding="utf-8")
+
+    assert "site_dir: .artifacts/site" in site_configuration
+    assert "python -m build --outdir .artifacts/dist" in release_workflow
+    assert "path: .artifacts/dist/" in release_workflow
+    assert "packages-dir: .artifacts/dist/" in release_workflow
+    assert "path: .artifacts/site" in docs_workflow
+    assert "egg_base = .artifacts" in setup_configuration
+    assert artifact_ignores == ["*", "!.gitignore"]
+    assert "include .artifacts/.gitignore" in source_manifest
+
+
 def test_site_theme_keeps_sidebar_open_and_code_blocks_copyable() -> None:
     site_configuration = (ROOT / "mkdocs.yml").read_text(encoding="utf-8")
     assert "name: readthedocs" in site_configuration

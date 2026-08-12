@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-import subprocess
-import sys
 
 import ast
 import re
@@ -217,16 +214,3 @@ def test_source_printers_do_not_import_wrapper_plan_models():
         )
 
     assert "prik.planning.models" not in imports
-
-
-def test_fortran_source_printer_direct_example_is_runnable():
-    repository_root = Path(__file__).resolve().parents[4]
-    result = subprocess.run(
-        [sys.executable, str(repository_root / "prik/printers/fortran.py")],
-        cwd=repository_root,
-        capture_output=True,
-        check=True,
-        text=True,
-    )
-
-    assert "Rendered Fortran bridge source:" in result.stdout

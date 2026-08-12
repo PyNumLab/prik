@@ -1,9 +1,5 @@
 """Internal generated-docstring contracts."""
 
-from pathlib import Path
-import subprocess
-import sys
-
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import WrapperPlanner
@@ -44,16 +40,3 @@ def test_codegen_preserves_explicit_plan_docstring_overrides():
 
     assert namespace.docstring == ""
     assert function.binding.docstring == "Custom scale documentation."
-
-
-def test_docstrings_direct_example_is_runnable():
-    repository_root = Path(__file__).resolve().parents[4]
-    result = subprocess.run(
-        [sys.executable, str(repository_root / "prik/codegen/docstrings.py")],
-        cwd=repository_root,
-        capture_output=True,
-        check=True,
-        text=True,
-    )
-
-    assert "double_value" in result.stdout

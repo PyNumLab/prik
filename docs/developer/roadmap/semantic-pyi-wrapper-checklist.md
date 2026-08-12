@@ -429,7 +429,7 @@ PRIK_C_DOCS_END -->
   before semantic policy completion runs. Evidence:
   `tests/fortran/semantic_pyi_format/parsing/test_python_ast_contracts.py::test_pyi_parser_returns_python_ast_only`,
   `prik/semantics/README.md`, and
-  `docs/maintainer/internal-architecture/pipeline-map.md`.
+  `docs/developer/internal-architecture/pipeline-map.md`.
 - [x] Risky-but-explicit identity contracts document their exact behavior
   instead of being silently healed. Fixed-length `String[n]` `intent(inout)`
   identity calls may return `None` with no observable Python mutation when the

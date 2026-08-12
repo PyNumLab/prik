@@ -25,18 +25,6 @@ BUILD_MODULE = Path(__file__).resolve().parents[4] / "prik" / "pipeline" / "buil
 pytestmark = pytest.mark.fortran_end_to_end
 
 
-def test_build_module_direct_execution_runs_the_public_api_example():
-    result = subprocess.run(
-        [sys.executable, str(BUILD_MODULE)],
-        capture_output=True,
-        text=True,
-        check=True,
-        cwd=BUILD_MODULE.parents[2],
-    )
-
-    assert result.stdout == "scale(3.0, 2.5) = 7.5\n"
-
-
 def test_verbose_mode_prints_full_direct_build_commands(tmp_path: Path):
     source = tmp_path / "verbose_api.f90"
     shutil.copyfile(VERBOSE_SOURCE, source)

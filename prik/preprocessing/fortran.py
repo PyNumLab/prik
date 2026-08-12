@@ -209,3 +209,27 @@ def expand_native_fortran_includes(
 
 
 __all__ = ("expand_native_fortran_includes",)
+
+
+if __name__ == "__main__":
+    from tempfile import TemporaryDirectory
+
+    with TemporaryDirectory() as directory:
+        source_path = Path(directory) / "geometry.f90"
+        include_path = Path(directory) / "dimensions.inc"
+        source = "module geometry\ninclude 'dimensions.inc'\nend module geometry\n"
+        source_path.write_text(source, encoding="utf-8")
+        include_path.write_text("integer, parameter :: dimensions = 3\n", encoding="utf-8")
+
+        expanded, dependencies, mappings, diagnostics = expand_native_fortran_includes(
+            source,
+            root_path=source_path,
+            include_dirs=(),
+        )
+        parser_lines = tuple(line for line in expanded.splitlines() if not line.lstrip().startswith("#"))
+
+        print("Expanded parser input:")
+        print("\n".join(parser_lines))
+        print(f"Native include dependencies: {len(dependencies)}")
+        print(f"Generated source mappings: {len(mappings)}")
+        print(f"Diagnostics: {len(diagnostics)}")

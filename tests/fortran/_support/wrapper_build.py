@@ -186,6 +186,7 @@ end module probe
             capture_output=True,
             text=True,
             check=False,
+            cwd=directory,
         )
     return result.returncode == 0
 

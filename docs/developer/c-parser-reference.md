@@ -1192,7 +1192,7 @@ PRIK_C_DOCS_END &#45;&#45;>
 The C parser documentation now lives in this top-level file:
 `docs/developer/c-parser-reference.md`. Shared semantic behavior is documented in
 [`semantic-ir.md`](../user/reference/semantic-ir.md), and wrapper-generation policy notes live in
-[`wrapper-design-notes.md`](../maintainer/design/wrapper-design-notes.md).
+[`wrapper-design-notes.md`](design/wrapper-design-notes.md).
 PRIK_C_DOCS_END &#45;&#45;>
 
 <!&#45;&#45; PRIK_C_DOCS_START
