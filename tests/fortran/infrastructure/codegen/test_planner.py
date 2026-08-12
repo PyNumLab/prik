@@ -12,12 +12,10 @@ import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.semantics.models import PYTHON_EXPORTS_METADATA
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.codegen.planner import _ClassPolicyCatalog
-from prik.codegen import (
-    WrapperCodeGenerator,
-    WrapperPlanner,
-)
+from prik.policy.completion import complete_semantic_policies
+from prik.planning.planner import _ClassPolicyCatalog
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 
 def _plan(source: str, *, module_name: str = "fmath"):
@@ -88,7 +86,7 @@ def right_value(x: Int32) -> Int32: ...
     module.functions[0].metadata[PYTHON_EXPORTS_METADATA] = [{"namespace": ("left",), "name": "shared_value"}]
     module.functions[1].metadata[PYTHON_EXPORTS_METADATA] = [{"namespace": ("right",), "name": "shared_value"}]
     complete_semantic_policies(module)
-    artifacts = WrapperCodeGenerator().generate(WrapperPlanner().build(module))
+    artifacts = WrapperGenerator().generate(WrapperPlanner().build(module))
     c_source = next(source.text for source in artifacts.sources if source.path.name.endswith(".c"))
 
     assert "PyModule_Create(&namespaced_left_module)" in c_source
@@ -215,7 +213,7 @@ label: String = "ready"
 def test_planner_direct_example_is_runnable():
     repository_root = Path(__file__).resolve().parents[4]
     result = subprocess.run(
-        [sys.executable, str(repository_root / "prik/codegen/planner.py")],
+        [sys.executable, str(repository_root / "prik/planning/planner.py")],
         cwd=repository_root,
         capture_output=True,
         check=True,

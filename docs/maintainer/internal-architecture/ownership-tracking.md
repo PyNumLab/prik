@@ -259,19 +259,20 @@ different implementation.
 
 The main source owners are:
 
-- `prik/semantics/ownership.py`: vocabulary, defaults, overrides, validation,
+- `prik/policy/ownership.py`: vocabulary, defaults, overrides, validation,
   and completed actions;
-- `prik/semantics/policy_completion.py`: attachment of decisions to semantic
+- `prik/policy/completion.py`: attachment of decisions to semantic
   variables, functions, fields, classes, and module state;
-- `prik/semantics/wrapper_policy.py`: completed wrapper-policy records and
+- `prik/policy/construction.py`: completed wrapper-policy records and
   cross-feature validation;
-- `prik/codegen/planner.py`: projection into the immutable wrapper plan;
+- `prik/policy/models.py`: immutable feature-specific completed-policy records;
+- `prik/planning/planner.py`: projection into the editable wrapper plan;
 - `prik/codegen/c/binding.py` and `prik/codegen/fortran/bridge.py`: strict
   dispatch from planned actions into emitted mechanisms.
 
 The enums documented on this page are the shared ownership vocabulary defined
 in `ownership.py`. Feature-specific completed policies also define narrower
-mechanical enums in `wrapper_policy.py`, such as derived-object owner
+mechanical enums in `models.py`, such as derived-object owner
 retention/release and native-array descriptor ownership/release. Those values
 refine an already completed ownership decision for one implementation family;
 they do not form another competing ownership system.

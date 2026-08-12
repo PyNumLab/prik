@@ -28,12 +28,18 @@ they do not reconstruct policy from datatype, `intent`, shape, alias flags, or
 local memory checks.
 
 The immutable backend-neutral vocabulary consumed across this boundary lives
-in `prik/semantics/wrapper_policy_models.py`. It owns completed action enums,
-policy records, and stable cross-stage reason constants, but no construction
-rules. `prik/semantics/wrapper_policy.py` owns the semantic rules that build and
-validate those records. Planning and lowering import completed model types from
-the model module; only post-IR completion and planner accessors depend on the
-construction module.
+in `prik/policy/models.py`. It owns completed action enums, policy records, and
+stable cross-stage reason constants, but no construction rules.
+`prik/policy/construction.py` owns the semantic rules that build and validate
+those records, and `prik/policy/completion.py` owns their ordered attachment to
+the semantic IR. Raw contract metadata remains in
+`prik/semantics/ownership_metadata.py`; ownership resolution and completed
+ownership vocabulary live in `prik/policy/ownership.py`.
+
+Planning is a separate package. `prik/planning/models.py` owns the editable,
+backend-neutral wrapper-plan records and `prik/planning/planner.py` mechanically
+projects completed policy into those records. Planning does not render C,
+Fortran, Python, or documentation text.
 
 Native-source `intent` may be consumed while importing a source declaration to
 propose default Python argument/result positions. It is not retained in the
@@ -73,16 +79,21 @@ The public direct-generation boundary is:
 ```python
 complete_semantic_policies(module)
 plan = WrapperPlanner().build(module)
-artifacts = WrapperCodeGenerator().generate(plan)
+generated = WrapperGenerator().generate(plan)
 ```
 
-`WrapperCodeGenerator.generate()` freezes the plan, runs the shared validator,
-runs both backend preflight checks, lowers recursively to C and Fortran syntax
-nodes, and asks the source printers to render those nodes. Build integration
-compiles the rendered sources; it does not own datatype transfer policy.
-Wrapper C/Fortran source printers and the semantic `.pyi` printer share
-`prik/codegen/printers/`; no compatibility printer remains under the
-legacy codegen package.
+`WrapperGenerator.generate()` in `prik/pipeline/wrapper.py` is the one wrapper
+orchestrator. It completes plan-driven documentation, freezes and validates the
+plan, runs both backend preflight checks, asks the C binding and Fortran bridge
+generators for syntax nodes, renders those nodes through the language printers,
+assigns their stable filenames, and returns one `GeneratedWrapper`. Build
+integration writes or compiles that result; it does not own datatype transfer
+policy.
+
+The language printers are the inverse-facing companions of the language
+parsers. `prik/printers/c.py`, `prik/printers/fortran.py`, and
+`prik/printers/pyi.py` serialize already-formed C nodes, Fortran nodes, or
+semantic IR respectively. They do not plan wrappers or coordinate builds.
 
 Wrapper builds have no legacy route or fallback. An unsupported completed plan
 fails with its exact owner path before either backend emits source.
@@ -122,12 +133,14 @@ value.
 They own export names, call order, result order, runtime/GIL envelopes, and
 aggregation, but not datatype policy.
 
-Python-facing documentation is also a plan projection. The shared docstring
-builder consumes completed namespace, module-variable, class, overload,
-argument, result, and lifecycle records and stores the rendered text on the
-owning plan nodes. C method-table emission and generated Python class assembly
-only attach that text; neither backend infers signatures, ownership, mutation,
-nullability, or exception behavior while rendering source.
+Python-facing documentation is generated from the completed wrapper plan.
+`prik/codegen/docstrings.py` owns this presentation step and is invoked by the
+wrapper pipeline after planning and before the plan is frozen. It fills
+only unresolved documentation fields, preserving explicit editable-plan
+overrides, and renders child documentation before class and namespace
+summaries. C method-table emission and generated Python class assembly only
+attach the completed text; neither backend infers signatures, ownership,
+mutation, nullability, or exception behavior while rendering source.
 
 `OverloadPlan` stores candidates, exact argument-match records, receiver
 conventions, and one unique integer candidate ID per overload set. The C
@@ -219,7 +232,7 @@ whether the transfer itself is a scalar, string, or array.
 
 Inspect the real records directly with normal Python prints. The primary path
 is `complete_semantic_policies()` -> `WrapperPlanner.build()` ->
-`WrapperCodeGenerator.generate()`. Generated artifacts from real passing
+`WrapperGenerator.generate()`. Generated wrappers from real passing
 feature-local `tests/fortran/*/end_to_end/` cases are the behavioral
 oracle; plan unit tests cover action and graph invariants. Production source
 and semantic-`.pyi` builds both use this one path; unsupported completed policy

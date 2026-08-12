@@ -14,10 +14,8 @@ import re
 from collections.abc import Iterable
 
 from prik.types.numpy import SEMANTIC_SCALAR_TYPE_NAMES
-from prik.semantics.ownership import (
+from prik.policy.ownership import (
     CodegenAction,
-    OWNERSHIP_POLICY_METADATA,
-    POINTER_POLICY_METADATA,
     OwnershipDecision,
     OwnershipContext,
     ObjectKind,
@@ -25,6 +23,7 @@ from prik.semantics.ownership import (
     default_ownership_policy,
     ownership_context_for_argument,
 )
+from prik.semantics.ownership_metadata import OWNERSHIP_POLICY_METADATA, POINTER_POLICY_METADATA
 from prik.semantics.metadata import (
     ADDRESS_ROLE_METADATA,
     ADDRESS_ROLE_PROJECTION,
@@ -36,8 +35,9 @@ from prik.semantics.metadata import (
     SCALAR_STORAGE_CATEGORY,
 )
 from prik.semantics import models
-from prik.semantics.native_array_handles import NativeArrayHandlePolicy, native_array_descriptor_kind
-from prik.semantics.wrapper_policy_models import (
+from prik.policy.native_array_handles import NativeArrayHandlePolicy
+from prik.semantics.native_array_handles import native_array_descriptor_kind
+from prik.policy.models import (
     ArgumentPolicy,
     OverloadArgumentPolicy,
     OverloadMatchKind,
@@ -54,7 +54,7 @@ from prik.semantics.wrapper_policy_models import (
     OptionalMode,
     PythonExceptionKind,
 )
-from prik.semantics.wrapper_policy import (
+from prik.policy.construction import (
     build_callback_handoff_policy,
     build_class_surface_policy,
     build_derived_field_policy,
@@ -65,7 +65,7 @@ from prik.semantics.wrapper_policy import (
     derived_member_path_policies,
     overload_builtin_scalar_family,
 )
-from prik.semantics.wrapper_exports import complete_python_export_policy
+from prik.policy.exports import complete_python_export_policy
 
 __all__ = ("complete_semantic_policies",)
 
@@ -778,11 +778,7 @@ def _overload_candidate_builtin_signature(arguments: tuple[OverloadArgumentPolic
         (
             argument.kind,
             argument.optional,
-            (
-                overload_builtin_scalar_family(argument.semantic_type_name)
-                if argument.accept_builtin_scalar
-                else argument.semantic_type_name
-            ),
+            (argument.builtin_scalar_family or argument.semantic_type_name),
             argument.rank,
             argument.derived_type_identity,
         )
@@ -838,8 +834,24 @@ def _overload_argument_match(
         semantic_type_name=argument.semantic_type_name,
         rank=argument.rank,
         derived_type_identity=derived_identity,
-        accept_builtin_scalar=accept_builtin_scalar and match_kind is OverloadMatchKind.NUMPY_SCALAR,
+        builtin_scalar_family=_accepted_builtin_scalar_family(
+            argument.semantic_type_name,
+            match_kind=match_kind,
+            accept_builtin_scalar=accept_builtin_scalar,
+        ),
     )
+
+
+def _accepted_builtin_scalar_family(
+    semantic_type_name: str,
+    *,
+    match_kind: OverloadMatchKind,
+    accept_builtin_scalar: bool,
+) -> str | None:
+    """Complete the optional reflected-dispatch scalar family."""
+    if not accept_builtin_scalar or match_kind is not OverloadMatchKind.NUMPY_SCALAR:
+        return None
+    return overload_builtin_scalar_family(semantic_type_name)
 
 
 def _iter_semantic_classes(classes: list[models.SemanticClass]):

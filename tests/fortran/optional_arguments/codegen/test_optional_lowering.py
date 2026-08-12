@@ -9,9 +9,10 @@ import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.pipeline.pyi import pyi_file_to_semantic_module
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy_models import BridgeDataAction, OptionalMode
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import BridgeDataAction, OptionalMode
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 
 OPTIONAL_FIXED_CONTRACT = (
@@ -21,7 +22,7 @@ OPTIONAL_FIXED_CONTRACT = (
 
 def _artifacts(module):
     complete_semantic_policies(module)
-    return WrapperCodeGenerator().generate(WrapperPlanner().build(module))
+    return WrapperGenerator().generate(WrapperPlanner().build(module))
 
 
 def _source(artifacts, suffix: str) -> str:
@@ -41,7 +42,7 @@ def test_optional_scalar_lowering_distinguishes_absent_or_none_from_value():
 
     assert factor.binding.optional_mode is OptionalMode.NULLABLE_VALUE
     assert factor.bridge.optional_mode is OptionalMode.NULLABLE_VALUE
-    artifacts = WrapperCodeGenerator().generate(plan)
+    artifacts = WrapperGenerator().generate(plan)
     c_source = _source(artifacts, ".c")
     fortran_source = _source(artifacts, ".f90")
 
@@ -71,7 +72,7 @@ def alloc_state(value: Annotated[Float64, Immutable] | None = ...) -> Int32: ...
     assert value.bridge.presence_role == "scalar_optional_descriptors.alloc_state.value:present"
     assert value.bridge.data_action is BridgeDataAction.COPY_REPRESENTATION
     assert value.bridge.copy_reason == "materialize owned Fortran allocatable scalar storage from the binding value"
-    artifacts = WrapperCodeGenerator().generate(plan)
+    artifacts = WrapperGenerator().generate(plan)
     c_source = _source(artifacts, ".c")
     fortran_source = _source(artifacts, ".f90")
 
@@ -97,7 +98,7 @@ def optional_literal(value: Annotated[Float64, Immutable] | None = ...) -> Float
     complete_semantic_policies(module)
 
     with pytest.raises(ValueError, match="optional-native-literal-combination"):
-        WrapperCodeGenerator().generate(WrapperPlanner().build(module))
+        WrapperGenerator().generate(WrapperPlanner().build(module))
 
 
 def test_required_descriptor_keeps_python_presence_separate_from_native_state_and_copyout():
@@ -117,7 +118,7 @@ def update(value: Float64 | None) -> Returns["value", Float64] | None: ...
     assert value.bridge.descriptor_output_role == f"{value.owner_path}:descriptor-output"
     assert value.bridge.descriptor_output_presence_role == f"{value.owner_path}:descriptor-output-present"
 
-    artifacts = WrapperCodeGenerator().generate(plan)
+    artifacts = WrapperGenerator().generate(plan)
     c_source = _source(artifacts, ".c")
     fortran_source = _source(artifacts, ".f90")
 
@@ -148,4 +149,4 @@ def alloc_state(value: Annotated[Float64, Immutable] | None = ...) -> Int32: ...
     invalid = _replace_root_function(plan, replace(function, arguments=(invalid_argument,)))
 
     with pytest.raises(ValueError, match="missing-descriptor-presence-role"):
-        WrapperCodeGenerator().generate(invalid)
+        WrapperGenerator().generate(invalid)

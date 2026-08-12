@@ -9,7 +9,7 @@ from a datatype, native ``intent``, shape, or backend-local condition.
 Records appear in plan-tree order: shared vocabulary; derived and class
 surfaces; array and descriptor facets; module and procedure views; callback
 and transfer records; then module-level orchestration. Consumers normally use
-the ``ModulePlan`` root returned by :class:`prik.codegen.WrapperPlanner`.
+the ``ModulePlan`` root returned by :class:`prik.planning.WrapperPlanner`.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from prik.semantics.ownership import (
+from prik.policy.ownership import (
     AssignmentMode,
     CodegenAction,
     DestructionPolicy,
@@ -30,7 +30,7 @@ from prik.semantics.ownership import (
     StorageMode,
     TransferMode,
 )
-from prik.semantics.wrapper_policy_models import (
+from prik.policy.models import (
     ArgumentConversionPhase,
     ArgumentHandoffMode,
     ArrayLogicalABI,
@@ -206,7 +206,7 @@ class DerivedFieldPlan(StageRecord):
     array: ArrayHandoffPlan | None = None
     native_array_handle: NativeArrayHandlePlan | None = None
     derived: DerivedHandoffPlan | None = None
-    docstring: str = ""
+    docstring: str | None = None
 
 
 @dataclass
@@ -272,7 +272,7 @@ class ConstructorPlan(StageRecord):
     rejection_message: str | None = None
     target: FunctionPlan | None = None
     overload: OverloadPlan | None = None
-    docstring: str = ""
+    docstring: str | None = None
 
 
 @dataclass
@@ -289,12 +289,17 @@ class ClassMethodPlan(StageRecord):
     passed_object_position: int | None
     public: bool
     function: FunctionPlan
-    docstring: str = ""
+    docstring: str | None = None
 
 
 @dataclass
 class OverloadArgumentMatchPlan(StageRecord):
-    """Store one exact argument predicate selected for overload dispatch."""
+    """Store one exact argument predicate selected for overload dispatch.
+
+    A non-null ``builtin_scalar_family`` is the completed reflected-operator
+    exception to the otherwise exact NumPy scalar match. Lowering dispatches
+    that family directly and does not classify it again from the semantic type.
+    """
 
     python_name: str
     kind: OverloadMatchKind
@@ -302,7 +307,7 @@ class OverloadArgumentMatchPlan(StageRecord):
     semantic_type_name: str
     rank: int
     derived_type_identity: tuple[str, str] | None
-    accept_builtin_scalar: bool = False
+    builtin_scalar_family: str | None = None
 
 
 @dataclass
@@ -323,7 +328,7 @@ class OverloadPlan(StageRecord):
     candidate_passed_objects: tuple[bool, ...]
     unsupported_extra_argument_message: str | None = None
     identity_receiver_shortcut: bool = False
-    docstring: str = ""
+    docstring: str | None = None
 
 
 @dataclass
@@ -342,7 +347,7 @@ class ClassSurfacePlan(StageRecord):
     methods: tuple[ClassMethodPlan, ...]
     overloads: tuple[OverloadPlan, ...]
     registration: tuple[ClassRegistrationAction, ...]
-    docstring: str = ""
+    docstring: str | None = None
 
 
 @dataclass
@@ -601,19 +606,20 @@ class ModuleVariablePlan(StageRecord):
     array: ArrayHandoffPlan | None
     native_array_handle: NativeArrayHandlePlan | None
     derived: DerivedModuleObjectPlan | None = None
-    docstring: str = ""
+    docstring: str | None = None
 
 
 @dataclass
 class BindingFunctionPlan(StageRecord):
     """Store Python-visible call behavior for one generated binding function.
 
-    The planner fixes public naming, documentation, GIL handling, optional
-    status projection, and argument-conversion order before generation.
+    The planner fixes public naming, GIL handling, optional status projection,
+    and argument-conversion order. Code generation fills an unresolved
+    docstring while preserving any explicit editable-plan value.
     """
 
     python_name: str
-    docstring: str
+    docstring: str | None
     release_gil: bool
     status_error: BindingStatusErrorPlan | None
     argument_conversion_order: tuple[str, ...]
@@ -1066,7 +1072,7 @@ class NamespacePlan(StageRecord):
     derived_types: tuple[DerivedTypePlan, ...] = ()
     classes: tuple[ClassSurfacePlan, ...] = ()
     overloads: tuple[OverloadPlan, ...] = ()
-    docstring: str = ""
+    docstring: str | None = None
 
 
 @dataclass
@@ -1075,7 +1081,7 @@ class ModulePlan(StageRecord):
 
     Constructed by ``WrapperPlanner.build()``, this root joins binding and
     bridge module views with an explicit namespace tree and required headers.
-    Pass it to ``WrapperCodeGenerator.generate()``; generation validates then
+    Pass it to ``WrapperGenerator.generate()``; generation validates then
     freezes the graph before it renders artifacts.
     """
 

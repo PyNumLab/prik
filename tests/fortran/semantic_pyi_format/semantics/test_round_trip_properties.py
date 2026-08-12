@@ -5,7 +5,7 @@ from hypothesis import (
     given,
     strategies as st,
 )
-from prik.codegen.printers import emit_module
+from prik.printers import emit_module
 from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
 from prik.semantics.models import (
     EXTERNAL_TYPE_REF_METADATA,

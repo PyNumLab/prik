@@ -16,8 +16,8 @@ from dataclasses import dataclass, replace
 from types import MappingProxyType
 
 from prik.semantics import models
-from prik.semantics.native_array_handles import NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER
-from prik.semantics.wrapper_policy_models import (
+from prik.policy.native_array_handles import NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER
+from prik.policy.models import (
     ArgumentConversionPhase,
     ArgumentHandoffMode,
     ArrayHandoffPolicy,
@@ -58,16 +58,15 @@ from prik.semantics.wrapper_policy_models import (
     TransformationPolicy,
     WritebackPhase,
 )
-from prik.semantics.wrapper_policy import (
+from prik.policy.construction import (
     completed_class_surface_policy,
     completed_derived_type_policy,
     completed_function_wrapper_policy,
     completed_module_variable_policy,
 )
-from prik.semantics.wrapper_exports import PythonExportPolicy
-from prik.semantics.ownership import NativeBarrierAction, SetterAction
-from prik.codegen.docstrings import WrapperDocstringBuilder
-from prik.codegen.plan import (
+from prik.policy.exports import PythonExportPolicy
+from prik.policy.ownership import NativeBarrierAction, SetterAction
+from prik.planning.models import (
     ArrayHandoffPlan,
     ArgumentTransferPlan,
     BindingArgumentPlan,
@@ -121,9 +120,9 @@ from prik.codegen.plan import (
     ScalarDescriptorResultPlan,
     TransformationPlan,
 )
-from prik.codegen.naming import NativeSymbolNames
-from prik.codegen.visitor import ClassVisitor
+from prik.naming.native_symbols import NativeSymbolNames
 from prik.types.numpy import BOOLEAN_SEMANTIC_TYPE_NAMES
+from prik.utilities.visitor import ClassVisitor
 
 
 _DATATYPE_FAMILIES = {
@@ -245,14 +244,14 @@ class WrapperPlanner(ClassVisitor):
     code generator validates and freezes it.
     """
 
-    def __init__(self):
-        """Initialize visitor state and the shared plan-docstring builder.
+    def visit(self, node, *args, **kwargs):
+        """Project one completed policy record through its named handler."""
+        return self._visit(node, *args, **kwargs)
 
-        Per-module caches are reset at the beginning of :meth:`build`, so a
-        planner instance can safely project more than one semantic module.
-        """
-        super().__init__()
-        self.docstrings = WrapperDocstringBuilder()
+    @staticmethod
+    def _visit_not_supported(node):
+        """Reject inputs outside the completed semantic-policy vocabulary."""
+        raise TypeError(f"WrapperPlanner does not support completed policy {type(node).__name__}")
 
     def build(self, module: models.SemanticModule) -> ModulePlan:
         """Build an editable wrapper plan from one policy-completed module.
@@ -260,7 +259,7 @@ class WrapperPlanner(ClassVisitor):
         Call this after post-IR policy completion.  ``module`` supplies all
         ownership, transfer, ABI, export, and lifecycle decisions; this method
         does not infer or replace them.  The returned ``ModulePlan`` is the
-        normal input to ``WrapperCodeGenerator.generate``.
+        normal input to ``WrapperGenerator.generate``.
 
         Raises:
             ValueError: If completed policy is missing, inconsistent, or has
@@ -377,7 +376,7 @@ class WrapperPlanner(ClassVisitor):
         classes: tuple[ClassSurfacePlan, ...],
         overloads: tuple[OverloadPlan, ...],
     ) -> NamespacePlan:
-        """Freeze one namespace with stable public documentation."""
+        """Create one namespace after its generated symbols are complete."""
         return NamespacePlan(
             owner_path=self._namespace_owner_path(module_name, path),
             python_path=path,
@@ -386,14 +385,6 @@ class WrapperPlanner(ClassVisitor):
             derived_types=derived_types,
             classes=classes,
             overloads=overloads,
-            docstring=self.docstrings.namespace(
-                module_name,
-                path,
-                functions,
-                variables,
-                classes,
-                overloads,
-            ),
         )
 
     def _complete_derived_backend_symbols(self, module: models.SemanticModule) -> None:
@@ -516,14 +507,11 @@ class WrapperPlanner(ClassVisitor):
             entry,
             overloads_by_name,
         )
-        fields = tuple(self._derived_field_plan(field) for field in policy.effective_fields)
         constructor = self._constructor_plan(
             module_name,
             namespace,
             entry,
             overloads_by_name,
-            python_name=python_names[0],
-            fields=fields,
         )
         return ClassSurfacePlan(
             owner_path=policy.owner_path,
@@ -534,14 +522,6 @@ class WrapperPlanner(ClassVisitor):
             methods=methods,
             overloads=overloads,
             registration=policy.registration,
-            docstring=self.docstrings.class_surface(
-                python_names[0],
-                policy.type_identity[1],
-                constructor,
-                fields,
-                methods,
-                overloads,
-            ),
         )
 
     def _class_method_plans(
@@ -601,9 +581,6 @@ class WrapperPlanner(ClassVisitor):
         namespace: tuple[str, ...],
         entry: _ClassPolicyEntry,
         overloads_by_name: dict,
-        *,
-        python_name: str,
-        fields: tuple[DerivedFieldPlan, ...],
     ) -> ConstructorPlan:
         """Link one completed constructor to its target and lifecycle records."""
         policy = entry.surface_policy
@@ -619,7 +596,7 @@ class WrapperPlanner(ClassVisitor):
             entry,
             overloads_by_name,
         )
-        plan = ConstructorPlan(
+        return ConstructorPlan(
             kind=constructor.kind,
             fields=tuple(self._constructor_field_plan(field) for field in constructor.fields),
             target_owner_path=constructor.target_owner_path,
@@ -629,8 +606,6 @@ class WrapperPlanner(ClassVisitor):
             target=target,
             overload=overload,
         )
-        plan.docstring = self.docstrings.constructor(python_name, plan, fields)
-        return plan
 
     def _bound_constructor_target_plan(
         self,
@@ -705,7 +680,7 @@ class WrapperPlanner(ClassVisitor):
             module_name,
             public=False,
         )
-        plan = ClassMethodPlan(
+        return ClassMethodPlan(
             owner_path=policy.owner_path,
             python_name=policy.python_name,
             kind=policy.kind,
@@ -713,8 +688,6 @@ class WrapperPlanner(ClassVisitor):
             public=policy.public,
             function=function,
         )
-        plan.docstring = self.docstrings.method(plan)
-        return plan
 
     def _overload_plan(
         self,
@@ -738,7 +711,7 @@ class WrapperPlanner(ClassVisitor):
             )
             for index, candidate in enumerate(policy.candidates)
         )
-        plan = OverloadPlan(
+        return OverloadPlan(
             owner_path=policy.owner_path,
             python_name=policy.python_name,
             kind=policy.kind,
@@ -753,7 +726,7 @@ class WrapperPlanner(ClassVisitor):
                         semantic_type_name=argument.semantic_type_name,
                         rank=argument.rank,
                         derived_type_identity=argument.derived_type_identity,
-                        accept_builtin_scalar=argument.accept_builtin_scalar,
+                        builtin_scalar_family=argument.builtin_scalar_family,
                     )
                     for argument in candidate.arguments
                 )
@@ -763,8 +736,6 @@ class WrapperPlanner(ClassVisitor):
             unsupported_extra_argument_message=policy.unsupported_extra_argument_message,
             identity_receiver_shortcut=policy.identity_receiver_shortcut,
         )
-        plan.docstring = self.docstrings.overload(plan)
-        return plan
 
     def _class_callable_name(self, type_identity: tuple[str, str], name: str) -> str:
         """Return one private callable export fixed during plan construction."""
@@ -816,9 +787,7 @@ class WrapperPlanner(ClassVisitor):
                 array=array,
             ),
             derived=self._derived_handoff_plan(policy.derived),
-            docstring="",
         )
-        plan.docstring = self.docstrings.field(plan)
         self._derived_field_plans[policy.owner_path] = plan
         return plan
 
@@ -986,7 +955,7 @@ class WrapperPlanner(ClassVisitor):
         # Roles are present only where the completed accessor policy requires them.
         getter_role = self._module_getter_role(policy)
         setter_role = f"{policy.owner_path}:setter" if policy.setter_action is SetterAction.WRITE_THROUGH else None
-        plan = ModuleVariablePlan(
+        return ModuleVariablePlan(
             owner_path=self._export_owner_path(module_name, namespace, python_names[0]),
             symbol_name=policy.native_name.casefold(),
             semantic_type_name=policy.semantic_type_name,
@@ -1031,10 +1000,7 @@ class WrapperPlanner(ClassVisitor):
                 if policy.derived is not None
                 else None
             ),
-            docstring="",
         )
-        plan.docstring = self.docstrings.module_variable(plan)
-        return plan
 
     @staticmethod
     def _module_getter_role(policy: ModuleVariablePolicy) -> str | None:
@@ -1077,12 +1043,7 @@ class WrapperPlanner(ClassVisitor):
             symbol_name=export.name.casefold(),
             binding=BindingFunctionPlan(
                 python_name=export.name,
-                docstring=self.docstrings.function(
-                    export.name,
-                    arguments,
-                    results,
-                    status_error=status_error,
-                ),
+                docstring=None,
                 release_gil=policy.release_gil,
                 status_error=status_error,
                 argument_conversion_order=self._binding_argument_conversion_order(arguments),
@@ -2319,7 +2280,7 @@ class WrapperPlanner(ClassVisitor):
 
 if __name__ == "__main__":
     from prik.semantics.models import SemanticArgument, SemanticFunction, SemanticModule, SemanticType
-    from prik.semantics.policy_completion import complete_semantic_policies
+    from prik.policy.completion import complete_semantic_policies
 
     module = SemanticModule(
         name="planner_demo",

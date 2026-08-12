@@ -9,7 +9,7 @@ from prik import build_pyi_extension
 from prik.pipeline import build as build_pipeline
 from prik.pipeline.build import _discover_pyi_imports, _pyi_contract_bundle, _pyi_dependency_path
 from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
-from prik.codegen.printers import emit_module
+from prik.printers import emit_module
 
 FIXTURES = Path(__file__).parent / "fixtures"
 CONTRACT_FIXTURES = FIXTURES / "contracts"

@@ -6,7 +6,7 @@ import sys
 
 import pytest
 from prik.semantics.metadata import ADDRESS_ROLE_PROJECTION
-from prik.semantics.ownership import (
+from prik.policy.ownership import (
     CodegenAction,
     DestructionPolicy,
     NativeBarrierAction,
@@ -22,8 +22,8 @@ from prik.semantics.ownership import (
     StorageMode,
     TransferMode,
     default_ownership_policy,
-    set_ownership_metadata,
 )
+from prik.semantics.ownership_metadata import set_ownership_metadata
 from tests.fortran._support.ownership_policy import (
     _address_type,
     _array_type,
@@ -384,7 +384,7 @@ def test_ownership_policy_direct_example_is_runnable():
     repository_root = Path(__file__).resolve().parents[4]
 
     result = subprocess.run(
-        [sys.executable, "prik/semantics/ownership.py"],
+        [sys.executable, "prik/policy/ownership.py"],
         cwd=repository_root,
         capture_output=True,
         check=True,

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy_models import OptionalMode
-from prik.codegen import CBindingGenerator, WrapperCodeGenerator, WrapperPlanner
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import OptionalMode
+from prik.codegen import CBindingGenerator
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 
 def _later_array_plan():
@@ -58,7 +60,7 @@ def test_optional_assumed_rank_and_character_arrays_have_explicit_distinct_roles
 
 
 def test_optional_assumed_rank_and_character_lowering_follow_named_plan_fields():
-    artifacts = WrapperCodeGenerator().generate(_later_array_plan())
+    artifacts = WrapperGenerator().generate(_later_array_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 

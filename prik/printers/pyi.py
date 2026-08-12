@@ -18,7 +18,11 @@ import re
 
 from prik.contracts import CONTRACT_SYMBOLS, CONTRACT_TYPE_NAMES
 from prik.naming import NamingPolicy
-from prik.semantics.ownership import OWNERSHIP_POLICY_METADATA, POINTER_POLICY_FIELDS, POINTER_POLICY_METADATA
+from prik.semantics.ownership_metadata import (
+    OWNERSHIP_POLICY_METADATA,
+    POINTER_POLICY_FIELDS,
+    POINTER_POLICY_METADATA,
+)
 from prik.types.numpy import SEMANTIC_DTYPE_TO_NUMPY_DTYPE, SEMANTIC_SCALAR_TYPE_NAMES
 from prik.semantics.metadata import (
     ADDRESS_ROLE_METADATA,
@@ -2338,34 +2342,6 @@ class PyiPrinter(ClassVisitor):
             target = f"{target}_"
         return target
 
-    @staticmethod
-    def _opaque_dependency_class(type_name: str, c_kind: str | None) -> SemanticClass:
-        """Build the semantic placeholder for one missing opaque dependency."""
-        base_classes: list[str] = []
-        metadata: dict[str, object] = {"representation": "opaque"}
-        if c_kind == "struct":
-            base_classes.append("CStruct")
-            metadata["c_kind"] = "struct"
-        elif c_kind == "union":
-            base_classes.append("CUnion")
-            metadata["c_kind"] = "union"
-        base_classes.append("Opaque")
-        return SemanticClass(
-            name=type_name,
-            native_name=type_name,
-            base_classes=base_classes,
-            metadata=metadata,
-        )
-
-    @staticmethod
-    def _module_list(modules: SemanticModule | Iterable[SemanticModule] | None) -> list[SemanticModule]:
-        """Normalize one semantic module or an iterable to a list."""
-        if modules is None:
-            return []
-        if isinstance(modules, SemanticModule):
-            return [modules]
-        return list(modules)
-
 
 _DEFAULT_PRINTER = PyiPrinter()
 
@@ -2380,91 +2356,6 @@ def emit_module(module: SemanticModule, *, normalize_fortran_public_names: bool 
     if normalize_fortran_public_names:
         return PyiPrinter(normalize_fortran_public_names=True).emit(module)
     return _DEFAULT_PRINTER.emit(module)
-
-
-def opaque_dependency_modules(
-    modules: SemanticModule | Iterable[SemanticModule],
-    *,
-    available_modules: Iterable[SemanticModule] | None = None,
-) -> list[SemanticModule]:
-    """Build semantic modules for opaque types referenced but not supplied.
-
-    Use this before package emission when a contract refers to C opaque types
-    from absent modules. The input modules are inspected but not mutated; the
-    returned list is ordered deterministically by module and type name.
-    """
-    source_modules = PyiPrinter._module_list(modules)
-    known_modules = PyiPrinter._module_list(available_modules) if available_modules is not None else source_modules
-    known_classes = {
-        (module.name, cls.name) for module in known_modules for cls in module.classes if isinstance(cls, SemanticClass)
-    }
-    dependencies: dict[str, dict[str, str | None]] = {}
-    for module in source_modules:
-        for semantic_type in _iter_module_semantic_types(module):
-            ref = semantic_type.metadata.get(EXTERNAL_TYPE_REF_METADATA)
-            if not isinstance(ref, dict) or ref.get("representation") != "opaque":
-                continue
-            origin_module = ref.get("origin_module")
-            type_name = ref.get("name")
-            if not isinstance(origin_module, str) or not isinstance(type_name, str):
-                continue
-            if (origin_module, type_name) in known_classes:
-                continue
-            c_kind = semantic_type.metadata.get("c_kind")
-            dependencies.setdefault(origin_module, {}).setdefault(
-                type_name,
-                c_kind if c_kind in {"struct", "union"} else None,
-            )
-    return [
-        SemanticModule(
-            name=module_name,
-            classes=[
-                PyiPrinter._opaque_dependency_class(type_name, c_kind)
-                for type_name, c_kind in sorted(type_kinds.items())
-            ],
-        )
-        for module_name, type_kinds in sorted(dependencies.items())
-    ]
-
-
-def emit_module_stubs(
-    modules: SemanticModule | Iterable[SemanticModule],
-    *,
-    available_modules: Iterable[SemanticModule] | None = None,
-    normalize_fortran_public_names: bool = False,
-) -> dict[str, str]:
-    """Render complete stub text for semantic modules and opaque dependencies.
-
-    Inputs are deep-copied before dependency insertion and policy completion,
-    so callers retain their original semantic modules. The returned mapping is
-    keyed by module name and is normally written into a generated contract
-    package by a pipeline stage.
-    """
-    from prik.semantics.policy_completion import complete_semantic_policies
-
-    source_modules = PyiPrinter._module_list(modules)
-    emitted_modules: dict[str, SemanticModule] = {}
-    for module in source_modules:
-        if module.name in emitted_modules:
-            raise ValueError(f"Cannot emit duplicate semantic module '{module.name}'")
-        emitted_modules[module.name] = deepcopy(module)
-
-    for dependency in opaque_dependency_modules(
-        source_modules,
-        available_modules=available_modules,
-    ):
-        target = emitted_modules.setdefault(dependency.name, SemanticModule(name=dependency.name))
-        existing = {cls.name for cls in target.classes}
-        target.classes.extend(cls for cls in dependency.classes if cls.name not in existing)
-
-    complete_semantic_policies(emitted_modules.values())
-    return {
-        module_name: emit_module(
-            module,
-            normalize_fortran_public_names=normalize_fortran_public_names,
-        ).strip()
-        for module_name, module in emitted_modules.items()
-    }
 
 
 if __name__ == "__main__":

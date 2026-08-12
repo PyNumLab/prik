@@ -1,4 +1,4 @@
-"""Tests for building already-rendered wrapper-plan artifacts."""
+"""Tests for building the complete result returned by wrapper generation."""
 
 from __future__ import annotations
 
@@ -11,21 +11,17 @@ from prik.compiling.objects import ObjectFile
 from prik.pipeline.build import (
     NativeBuildPlan,
     NativeLinkItem,
-    _build_rendered_wrapper_extension,
-    _generated_wrapper_plan_artifacts,
+    _build_generated_wrapper_extension,
+    _generate_wrapper,
 )
-from prik.pipeline.wrapper_artifacts import (
-    GeneratedSourceFile,
-    GeneratedWrapperArtifacts,
-    RenderedGeneratedWrapperArtifacts,
+from prik.pipeline.wrapper import (
+    GeneratedSource,
+    GeneratedWrapper,
+    WrapperGenerator,
 )
-from prik.semantics.policy_completion import complete_semantic_policies
+from prik.policy.completion import complete_semantic_policies
 from prik.stage_values import FrozenStageRecordError
-from prik.codegen import (
-    ModulePlan,
-    WrapperCodeGenerator,
-    WrapperPlanner,
-)
+from prik.planning import ModulePlan, WrapperPlanner
 
 
 class RecordingCompiler:
@@ -82,8 +78,8 @@ def _module_plan(source: str, *, module_name: str) -> ModulePlan:
     return WrapperPlanner().build(module)
 
 
-def _rendered_artifacts(source: str, *, module_name: str) -> RenderedGeneratedWrapperArtifacts:
-    return WrapperCodeGenerator().generate(_module_plan(source, module_name=module_name))
+def _generated_wrapper(source: str, *, module_name: str) -> GeneratedWrapper:
+    return WrapperGenerator().generate(_module_plan(source, module_name=module_name))
 
 
 def test_real_wrapper_build_path_raises_the_completed_policy_error_directly():
@@ -96,11 +92,11 @@ def test_real_wrapper_build_path_raises_the_completed_policy_error_directly():
         ValueError,
         match=r"Semantic variable 'labels\.label'.*module variable initializer requires a write-through native setter",
     ):
-        _generated_wrapper_plan_artifacts(module, strict_wrapper_names=False)
+        _generate_wrapper(module, strict_wrapper_names=False)
 
 
-def test_build_rendered_wrapper_extension_writes_compiles_runtime_and_links(tmp_path: Path, capsys):
-    rendered = _rendered_artifacts(
+def test_build_generated_wrapper_extension_writes_compiles_runtime_and_links(tmp_path: Path, capsys):
+    rendered = _generated_wrapper(
         """
 @bind("SCALE")
 @native_call([Addr(Arg(0))])
@@ -127,7 +123,7 @@ def scale(x: Float64) -> Float64: ...
     )
     compiler = RecordingCompiler()
 
-    result = _build_rendered_wrapper_extension(
+    result = _build_generated_wrapper_extension(
         rendered,
         output_dir=tmp_path / "build",
         shared_library_output_dir=tmp_path / "extension",
@@ -199,19 +195,20 @@ def scale(x: Float64) -> Float64: ...
     ]
 
 
-def test_build_rendered_wrapper_extension_rejects_unknown_native_support_key(tmp_path: Path):
-    rendered = RenderedGeneratedWrapperArtifacts(
-        artifacts=GeneratedWrapperArtifacts(
-            module_name="bad_runtime",
-            binding_sources=(Path("bad_runtime_wrapper.c"),),
-            native_support_keys=("unknown_native_support",),
-        ),
-        sources=(GeneratedSourceFile(Path("bad_runtime_wrapper.c"), "PyObject *unused;\n"),),
+def test_build_generated_wrapper_extension_rejects_unknown_native_support_key(tmp_path: Path):
+    rendered = GeneratedWrapper(
+        module_name="bad_runtime",
+        sources=(GeneratedSource(Path("bad_runtime_wrapper.c"), "PyObject *unused;\n"),),
+        bridge_sources=(),
+        binding_sources=(Path("bad_runtime_wrapper.c"),),
+        headers=(),
+        native_support_keys=("unknown_native_support",),
+        required_headers=(),
         extension_init_name="PyInit_bad_runtime",
     )
 
     with pytest.raises(ValueError, match="Unsupported wrapper native support key"):
-        _build_rendered_wrapper_extension(
+        _build_generated_wrapper_extension(
             rendered,
             output_dir=tmp_path,
             compiler=RecordingCompiler(),

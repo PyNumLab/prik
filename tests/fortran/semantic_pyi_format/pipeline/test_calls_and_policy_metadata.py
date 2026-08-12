@@ -2,7 +2,7 @@
 
 import pytest
 from prik import parse_fortran_file as parse_fortran_source
-from prik.codegen.printers import (
+from prik.printers import (
     PyiPrinter,
     emit_module,
 )
@@ -20,7 +20,7 @@ from prik.semantics.models import (
 )
 from tests.fortran._support.printer_models import (
     generate_pyi,
-    generate_wrapper_artifacts,
+    generate_wrapper,
     normalize,
     parse_pyi_text,
     rendered_source,
@@ -436,7 +436,7 @@ def update(scale: Float64 | None = ..., target: Float64 | None = ...) -> None: .
 """,
         module_name="optional_scalar_descriptors",
     )
-    artifacts = generate_wrapper_artifacts(loaded)
+    artifacts = generate_wrapper(loaded)
     bridge_source = rendered_source(artifacts, ".f90")
     c_wrapper = rendered_source(artifacts, ".c")
 

@@ -1,14 +1,21 @@
 """Exact generic dispatch evidence at the shared wrapper-plan boundary."""
 
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy_models import OverloadMatchKind
-from prik.codegen import CBindingGenerator, WrapperCodeGenerator, WrapperPlanner
+from prik.pipeline.pyi import pyi_file_to_semantic_module
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import OverloadMatchKind
+from prik.codegen import CBindingGenerator
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 from prik.codegen.c.naming import CBindingNames
+
+
+DEFINED_OPERATORS = Path(__file__).parents[1] / "end_to_end/fixtures/contracts/foperators_f90/foperators_f90.pyi"
 
 
 def _plan():
@@ -45,11 +52,33 @@ def test_plan_records_one_exact_numpy_scalar_predicate_per_candidate():
     assert overload.candidate_ids == (0, 1)
 
 
+def test_policy_completes_builtin_scalar_family_only_for_reflected_dispatch():
+    module = pyi_file_to_semantic_module(DEFINED_OPERATORS)
+    complete_semantic_policies(module)
+    plan = WrapperPlanner().build(module)
+    vector = next(
+        surface
+        for namespace in plan.namespaces
+        for surface in namespace.classes
+        if surface.type_identity[1] == "vector"
+    )
+    overloads = {overload.python_name: overload for overload in vector.overloads}
+
+    assert [
+        match.builtin_scalar_family for candidate in overloads["__radd__"].candidate_matches for match in candidate
+    ] == ["float"]
+    assert all(
+        match.builtin_scalar_family is None
+        for candidate in overloads["__add__"].candidate_matches
+        for match in candidate
+    )
+
+
 def test_binding_lowers_public_overload_to_candidate_id_switch():
     plan = _plan()
     overload = plan.namespaces[0].overloads[0]
 
-    artifacts = WrapperCodeGenerator().generate(plan)
+    artifacts = WrapperGenerator().generate(plan)
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     dispatcher = CBindingNames.overload_dispatch_function(overload)
 
@@ -87,7 +116,7 @@ def test_generator_rejects_ambiguous_edited_overload_plan_before_emission():
     invalid = replace(plan, namespaces=(replace(namespace, overloads=(ambiguous,)),))
 
     with pytest.raises(ValueError, match="ambiguous-overload"):
-        WrapperCodeGenerator().generate(invalid)
+        WrapperGenerator().generate(invalid)
 
 
 def test_generator_rejects_duplicate_candidate_ids_before_emission():
@@ -98,7 +127,7 @@ def test_generator_rejects_duplicate_candidate_ids_before_emission():
     invalid = replace(plan, namespaces=(replace(namespace, overloads=(duplicate_ids,)),))
 
     with pytest.raises(ValueError, match="duplicate-overload-candidate-id"):
-        WrapperCodeGenerator().generate(invalid)
+        WrapperGenerator().generate(invalid)
 
 
 def test_generator_rejects_candidate_id_reserved_for_no_match():
@@ -109,7 +138,7 @@ def test_generator_rejects_candidate_id_reserved_for_no_match():
     invalid = replace(plan, namespaces=(replace(namespace, overloads=(invalid_ids,)),))
 
     with pytest.raises(ValueError, match="invalid-overload-candidate-id"):
-        WrapperCodeGenerator().generate(invalid)
+        WrapperGenerator().generate(invalid)
 
 
 def test_generic_candidate_with_array_of_derived_values_is_blocked_before_lowering():

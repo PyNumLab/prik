@@ -5,10 +5,11 @@ from dataclasses import replace
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.ownership import CodegenAction, NativeBarrierAction, ObjectKind
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy_models import WritebackPhase
-from prik.codegen import DatatypeFamily, WrapperCodeGenerator, WrapperPlanner
+from prik.policy.ownership import CodegenAction, NativeBarrierAction, ObjectKind
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import WritebackPhase
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import DatatypeFamily, WrapperPlanner
 
 
 def _plan(source: str, *, module_name: str):
@@ -18,7 +19,7 @@ def _plan(source: str, *, module_name: str):
 
 
 def _rendered_c(plan) -> str:
-    artifacts = WrapperCodeGenerator().generate(plan)
+    artifacts = WrapperGenerator().generate(plan)
     return next(source.text for source in artifacts.sources if source.path.suffix == ".c")
 
 

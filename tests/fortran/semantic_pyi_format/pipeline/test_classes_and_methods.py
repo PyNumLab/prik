@@ -2,11 +2,8 @@
 
 import pytest
 from prik import parse_fortran_file as parse_fortran_source
-from prik.codegen.printers import (
-    PyiPrinter,
-    emit_module,
-    emit_module_stubs,
-)
+from prik.pipeline.pyi import emit_module_stubs
+from prik.printers import PyiPrinter, emit_module
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 from prik.semantics.models import (
     ProjectionMapping,
@@ -20,7 +17,7 @@ from prik.semantics.models import (
 from tests.fortran._support.printer_models import (
     OPERATOR_F90_SOURCE,
     generate_pyi,
-    generate_wrapper_artifacts,
+    generate_wrapper,
     normalize,
     parse_pyi_text,
     rendered_source,
@@ -387,7 +384,7 @@ def test_defined_operator_pyi_generates_wrapper_sources_without_fortran_source()
     )
     pyi = emit_module(semantic_module)
     loaded = parse_pyi_text(pyi, module_name=semantic_module.name)
-    generated = generate_wrapper_artifacts(loaded)
+    generated = generate_wrapper(loaded)
 
     assert [path.name for path in generated.source_paths] == [
         "bind_c_foperators_f90_wrapper.f90",

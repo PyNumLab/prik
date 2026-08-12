@@ -3,13 +3,15 @@
 import prik
 import pytest
 from prik import parse_fortran_file as parse_fortran_source
-from prik.codegen.printers import (
+from prik.printers import (
     PyiPrinter,
     emit_module,
+)
+from prik.pipeline.pyi import (
     emit_module_stubs,
     opaque_dependency_modules,
+    pyi_text_to_semantic_module as _parse_pyi_text,
 )
-from prik.pipeline.pyi import pyi_text_to_semantic_module as _parse_pyi_text
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 from prik.semantics.models import (
     SemanticArgument,

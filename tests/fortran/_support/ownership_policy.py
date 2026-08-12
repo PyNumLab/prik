@@ -8,7 +8,7 @@ from prik.semantics.metadata import (
 )
 
 
-from prik.semantics.ownership import (
+from prik.policy.ownership import (
     OwnershipContext,
 )
 
@@ -18,7 +18,7 @@ from prik.semantics.models import (
     SemanticType,
 )
 
-from prik.semantics.native_array_handles import (
+from prik.policy.native_array_handles import (
     NativeArrayHandlePolicy,
 )
 

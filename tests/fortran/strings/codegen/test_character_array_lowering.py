@@ -5,11 +5,12 @@ from __future__ import annotations
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.ownership import CodegenAction, NativeBarrierAction, ObjectKind
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy_models import BridgeDataAction
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
-from prik.codegen.plan import DatatypeFamily
+from prik.policy.ownership import CodegenAction, NativeBarrierAction, ObjectKind
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import BridgeDataAction
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
+from prik.planning.models import DatatypeFamily
 
 
 def _later_array_plan():
@@ -48,7 +49,7 @@ def test_character_itemsize_edit_fails_before_backend_lowering():
     character.itemsize_role = None
 
     with pytest.raises(ValueError, match="invalid-array-itemsize"):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)
 
 
 def test_fixed_width_character_array_results_reuse_the_ordinary_array_copy_plan():
@@ -70,7 +71,7 @@ def test_fixed_width_character_array_results_reuse_the_ordinary_array_copy_plan(
 
 
 def test_fixed_width_character_array_results_lower_itemsize_into_both_backends():
-    artifacts = WrapperCodeGenerator().generate(_character_array_result_plan())
+    artifacts = WrapperGenerator().generate(_character_array_result_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
@@ -99,4 +100,4 @@ def test_fixed_width_character_array_result_itemsize_edit_fails_before_lowering(
     result.array.itemsize = None
 
     with pytest.raises(ValueError, match="invalid-array-result-itemsize"):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)

@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 
 from prik.utilities.declaration_expressions import render_declaration_extent
-from prik.semantics.ownership import (
+from prik.policy.ownership import (
     AssignmentMode,
     CodegenAction,
     NativeBarrierAction,
@@ -21,7 +21,7 @@ from prik.semantics.ownership import (
     SetterAction,
 )
 from prik.semantics.metadata import SCALAR_STORAGE_CATEGORY
-from prik.semantics.wrapper_policy_models import (
+from prik.policy.models import (
     ArgumentHandoffMode,
     ArrayLogicalABI,
     ArrayWritebackABI,
@@ -74,8 +74,8 @@ from prik.codegen.nodes import (
     FortranTypeDefinition,
     FortranUse,
 )
-from prik.codegen.naming import NativeSymbolNames
-from prik.codegen.plan import (
+from prik.naming.native_symbols import NativeSymbolNames
+from prik.planning.models import (
     ArrayHandoffPlan,
     ArgumentTransferPlan,
     CallbackHandoffPlan,
@@ -7972,9 +7972,9 @@ class FortranBridgeGenerator(ClassVisitor):
 
 
 if __name__ == "__main__":
-    from prik.codegen.planner import WrapperPlanner
+    from prik.planning.planner import WrapperPlanner
     from prik.semantics.models import SemanticArgument, SemanticFunction, SemanticModule, SemanticType
-    from prik.semantics.policy_completion import complete_semantic_policies
+    from prik.policy.completion import complete_semantic_policies
 
     module = SemanticModule(
         name="bridge_demo",

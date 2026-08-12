@@ -10,13 +10,16 @@ jumping directly into generated-code internals.
 | --- | --- |
 | `cli.py` | User CLI stages, output routing, diagnostics, and wrapper option validation. |
 | `contracts/` | Public names used by semantic `.pyi` contracts. |
-| `pipeline/` | Preprocessing, semantic `.pyi` loading, and end-to-end wrapper builds. |
+| `pipeline/` | Preprocessing, semantic `.pyi` loading, wrapper generation orchestration, and end-to-end builds. |
 | `probes/` | C ABI facts, Fortran kind/storage facts, and type mapping reports. |
 | `runtime/` | Python runtime objects used by generated extensions. |
 | `types/` | Semantic-to-Python ecosystem type mappings. |
 | `parsers/` | Parser namespace containing the `c`, `fortran`, and semantic `.pyi` frontends. |
-| `semantics/` | Language-neutral semantic IR, declaration-expression provenance, policy completion, and `.pyi` conversion. |
-| `codegen/` | Canonical wrapper plans, direct native bridge/binding generation, and source printers. |
+| `semantics/` | Language-neutral semantic IR, declaration-expression provenance, and `.pyi` conversion. |
+| `policy/` | Completed ownership and interoperability policy. |
+| `planning/` | Editable backend-neutral wrapper implementation plans. |
+| `codegen/` | Plan-driven documentation and direct C/Fortran syntax-node lowering. |
+| `printers/` | C, Fortran, and semantic `.pyi` serialization. |
 | `compiling/` | Native compiler objects, wrapper compilation, native support installation, and linking. |
 | `utilities/` | Shared parsing, normalization, rendering, evaluation, and visitor helpers. |
 
@@ -29,9 +32,9 @@ is part of semantic `.pyi` syntax. Parser-specific imports use the public
 
 Array declaration expressions cross three source packages in a fixed order:
 `utilities/declaration_expressions.py` parses and normalizes expression text,
-`semantics/` records native callable provenance and completes support policy,
-and `codegen/` consumes only the completed result while rendering generated
-artifacts. Follow that order when changing an expression feature; source
+`semantics/` records native callable provenance, `policy/` completes support,
+and `codegen/` consumes only the completed plan while lowering generated
+nodes. Follow that order when changing an expression feature; language
 printers, bridges, and bindings must not infer missing expression semantics.
 
 ## Source Navigation Docs

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from prik.codegen.naming import NativeSymbolNames
-from prik.codegen.plan import (
+from prik.naming.native_symbols import NativeSymbolNames
+from prik.planning.models import (
     ClassSurfacePlan,
     DerivedFieldPlan,
     DerivedMemberPathPlan,

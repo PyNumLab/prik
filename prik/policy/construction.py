@@ -1,7 +1,7 @@
 """Project completed semantic decisions into backend-neutral wrapper policies.
 
 This module consumes semantic signatures and ownership decisions completed by
-``policy_completion``.  It produces immutable records for wrapper planning:
+``completion``.  It produces immutable records for wrapper planning:
 Python/native boundaries, ordered call slots, result projections, lifecycle,
 module and derived-object access, and fail-closed support blockers.  Planners
 and backend generators consume these records without inferring replacement
@@ -25,13 +25,13 @@ from prik.semantics.metadata import (
     SCALAR_STORAGE_CATEGORY,
     SUPPRESS_DEFAULT_CONSTRUCTOR_METADATA,
 )
-from prik.semantics.native_array_handles import (
+from prik.policy.native_array_handles import (
     NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER,
     NativeArrayHandlePolicy as CompletedNativeArrayHandlePolicy,
-    native_array_descriptor_kind,
 )
-from prik.semantics.wrapper_exports import PythonExportPolicy, completed_python_exports
-from prik.semantics.ownership import (
+from prik.semantics.native_array_handles import native_array_descriptor_kind
+from prik.policy.exports import PythonExportPolicy, completed_python_exports
+from prik.policy.ownership import (
     AssignmentMode,
     CodegenAction,
     DestructionPolicy,
@@ -44,7 +44,7 @@ from prik.semantics.ownership import (
     StorageMode,
     TransferMode,
 )
-from prik.semantics.wrapper_policy_models import (
+from prik.policy.models import (
     FIXED_STRING_RESULT_COPY_REASON,
     ORDINARY_ARRAY_RESULT_COPY_REASON,
     OWNED_NATIVE_ARRAY_HANDLE_COPY_REASON,

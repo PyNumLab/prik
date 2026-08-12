@@ -22,12 +22,12 @@ Semantic IR
   -> post-IR policy completion
   -> WrapperPlanner.build(module)
   -> editable ModulePlan
-  -> WrapperCodeGenerator.generate(plan)
+  -> WrapperGenerator.generate(plan)
        -> freeze and validate the received plan
        -> recursively synthesize C binding nodes
        -> recursively synthesize Fortran bridge nodes
        -> print backend nodes
-       -> RenderedGeneratedWrapperArtifacts
+       -> GeneratedWrapper
   -> existing build/link orchestration
 ```
 
@@ -41,10 +41,10 @@ The public generation boundary is deliberately small:
 ```python
 complete_semantic_policies(module)
 plan = WrapperPlanner().build(module)
-artifacts = WrapperCodeGenerator().generate(plan)
+generated_wrapper = WrapperGenerator().generate(plan)
 ```
 
-`WrapperCodeGenerator.generate` accepts `ModulePlan` only. It does not accept
+`WrapperGenerator.generate` accepts `ModulePlan` only. It does not accept
 semantic modules, build a plan itself, select an alternate lowering route, or
 retry a prior route after direct generation begins.
 
@@ -241,12 +241,12 @@ rather than in a backend exception.
 Every consumer freezes the exact object it receives:
 
 ```text
-editable ModulePlan -- WrapperCodeGenerator --> frozen ModulePlan
+editable ModulePlan -- WrapperGenerator --> frozen ModulePlan
 editable backend modules -- source printers --> frozen backend modules
-editable generated artifacts -- build integration --> frozen artifacts
+editable GeneratedWrapper -- build integration --> frozen GeneratedWrapper
 ```
 
-At the start of `WrapperCodeGenerator.generate(plan)`, the generator must:
+At the start of `WrapperGenerator.generate(plan)`, the generator must:
 
 1. recursively freeze that exact plan object;
 2. run the complete binding/bridge plan-consistency validation on the final
@@ -256,16 +256,16 @@ At the start of `WrapperCodeGenerator.generate(plan)`, the generator must:
    consume those nodes.
 
 Later mutation of the received plan raises `FrozenStageRecordError`. Backend
-nodes remain editable until their printer consumes them. Generated artifacts
-remain editable until `_build_rendered_wrapper_extension(...)` consumes them.
+nodes remain editable until their printer consumes them. The generated wrapper
+remains editable until `_build_generated_wrapper_extension(...)` consumes it.
 
 `WrapperPlanner` does not validate its output. It mechanically projects an
 editable plan, which may temporarily be inconsistent while a maintainer edits
-it. `WrapperCodeGenerator` owns the private structured validation methods and
+it. `WrapperGenerator` owns the private structured validation methods and
 is the only validation consumer. There is no standalone validator class or
 public validation operation.
 
-`WrapperCodeGenerator._validate_plan()` is the single plan-consistency gate.
+`WrapperGenerator._validate_plan()` is the single plan-consistency gate.
 It validates the complete binding/bridge graph after the editable plan has
 been frozen and before either backend preflight or visitor runs. The gate stays
 small by composing `_plan_diagnostics()` from typed private diagnostics for
@@ -302,7 +302,7 @@ Structural validation preserves these invariants:
 
 ## Direct Recursive Lowering
 
-`WrapperCodeGenerator` owns two private backend visitors:
+`WrapperGenerator` owns two private backend visitors:
 
 ```python
 c_module, c_header = CBindingGenerator().visit(plan)
@@ -335,8 +335,8 @@ nodes. Do not introduce another wrapper-specific transport model.
 The public orchestration stays visibly direct:
 
 ```python
-class WrapperCodeGenerator:
-    def generate(self, plan: ModulePlan) -> RenderedGeneratedWrapperArtifacts:
+class WrapperGenerator:
+    def generate(self, plan: ModulePlan) -> GeneratedWrapper:
         plan.freeze()
         self._validate_plan(plan)
         self._c_generator.require_supported(plan)
@@ -348,7 +348,7 @@ class WrapperCodeGenerator:
         c_source = self._c_printer.doprint(c_module)
         c_header_source = self._c_printer.doprint(c_header)
         fortran_source = self._fortran_printer.doprint(fortran_module)
-        return self._rendered_artifacts(
+        return self._generated_wrapper(
             plan.owner_path,
             c_source,
             c_header_source,
@@ -356,8 +356,8 @@ class WrapperCodeGenerator:
         )
 ```
 
-The generator constructs `RenderedGeneratedWrapperArtifacts` directly from the
-printed source plus artifact metadata. It does not duplicate native build plans,
+The generator constructs `GeneratedWrapper` directly from the
+printed source plus build metadata. It does not duplicate native build plans,
 compiler selection, link ordering, native-support installation, or compilation
 policy; those remain in existing build/link orchestration.
 
@@ -480,7 +480,7 @@ bridge = FortranBridgeGenerator()
 print(function.arguments[0].binding.optional_mode)
 print(function.arguments[0].bridge.optional_mode)
 
-artifacts = WrapperCodeGenerator(
+generated_wrapper = WrapperGenerator(
     c_generator=binding,
     fortran_generator=bridge,
 ).generate(plan)
@@ -501,7 +501,7 @@ Focused tests must prove:
 - `WrapperPlanner.build(module)` returns a directly mutable plan;
 - direct edits to binding and bridge views change the relevant generated C and
   Fortran source;
-- `WrapperCodeGenerator.generate(plan)` freezes the exact consumed plan;
+- `WrapperGenerator.generate(plan)` freezes the exact consumed plan;
 - module visitors recursively include generated function nodes;
 - function visitors recursively include argument, result, and lifecycle nodes;
 - directly named backend lowering methods cover every supported plan action;
@@ -579,7 +579,7 @@ new row here before later implementation starts.
 Statuses have the meanings defined above: `legacy` still uses the current
 `semantic_ir_to_codegen_ast()` route, `dual-route` runs the same generation
 unit and runtime assertions through both implementations, `wrapper-plan` uses
-only `WrapperPlan -> WrapperCodeGenerator`, `not-applicable` does not generate
+only `WrapperPlan -> WrapperGenerator`, `not-applicable` does not generate
 a runtime wrapper, and `deferred-real-library` is reserved for the full BLAS
 and LAPACK corpus until Phase 12.
 
@@ -921,13 +921,13 @@ the product contract.
   plans, including module/function/result/lifecycle scope as well as arguments.
 - [x] Remove plan-owned method names and handler registries; add typed
   datatype-family facts required by direct lowering.
-- [x] Keep structural plan validation private to `WrapperCodeGenerator`, with
+- [x] Keep structural plan validation private to `WrapperGenerator`, with
   no planner-time validation or standalone validator class, and verify every
   listed invariant after direct plan edits.
 
 ### Direct generator boundary
 
-- [x] Change `WrapperCodeGenerator.generate` to consume only `ModulePlan`,
+- [x] Change `WrapperGenerator.generate` to consume only `ModulePlan`,
   freeze it, validate it, validate lowering support, recursively generate
   backend nodes, print them, and return artifacts directly.
 - [x] Implement recursive `CBindingGenerator` synthesis of complete C modules,
@@ -1189,7 +1189,7 @@ bridge-owned null-terminated storage that the binding converts and frees after
 the GIL is reacquired. Generated symbol spelling differs from the legacy
 artifacts, but the same source and edited-`.pyi` concurrency, exception,
 cleanup, and runtime assertions pass. Production cutover also reused the
-existing rendered-artifact build path for inferred native module include
+existing generated-wrapper build path for inferred native module include
 directories, native library directories, `.pyi` manifests, verbose timing,
 and scalar external explicit interfaces; no legacy retry was added.
 
@@ -2288,7 +2288,7 @@ sources of truth:
 - `prik/semantics/native_array_handles.py` defines
   `NativeArrayHandlePolicy`, `ArrayInteropPolicy`, handle facts, descriptor
   kinds, and completed build requirements.
-- `prik/semantics/policy_completion.py` completes handle kind, origin, owner,
+- `prik/policy/completion.py` completes handle kind, origin, owner,
   owner retention, descriptor ownership, getter/setter behavior, output
   projection, release, target lifetime, destruction, extraction, interop,
   nullability, storage mode, operations, and blockers before `ir2ast.py`.
@@ -3110,18 +3110,18 @@ copied native-array-handle extraction.
 Use the current implementation as an oracle, not as permission to preserve its
 architecture:
 
-- `prik/semantics/ownership.py` already names `DERIVED_TYPE`,
+- `prik/policy/ownership.py` already names `DERIVED_TYPE`,
   `PASS_WRAPPER_ADDRESS`, `WRAPPER_INSTANCE`, and `BORROWED_VIEW`, and contains
   the current argument/result/module/field owner defaults. Remove the obsolete
   derived whole-object snapshot action without disturbing ordinary result
   copies, scalar descriptor value copies, or explicit non-object uses of
   `snapshot_copy` transfer policy.
-- `prik/semantics/policy_completion.py` is the only allowed owner of origin,
+- `prik/policy/completion.py` is the only allowed owner of origin,
   ownership, transfer, destruction, mutability, nullability, projection,
   release, storage, getter/setter, owner-retention, module-object handoff, and
   field decisions. It must complete module-proxy policy for plain module
   objects and direct-address borrowed policy for `Aliased` module objects.
-- `prik/semantics/wrapper_policy.py` must gain a derived-specific policy branch.
+- `prik/policy/construction.py` must gain a derived-specific policy branch.
   Derived values must not continue through primitive-scalar blockers,
   primitive result checks, or primitive bridge data-action selection.
 - `prik/semantics/ir2ast.py` and the legacy generators remain the generated
@@ -4751,7 +4751,7 @@ declared before an earlier array dummy without reordering the native call.
 
 Cutover contract: source builds, semantic-`.pyi` builds, Makefile generation,
 manifest replay, and strict-name validation all use completed policy ->
-`WrapperPlan` -> `WrapperCodeGenerator`. The build API has no route selector,
+`WrapperPlan` -> `WrapperGenerator`. The build API has no route selector,
 rollback flag, or silent fallback; an unsupported owner path fails before any
 backend or legacy lowering runs.
 
@@ -4780,7 +4780,7 @@ backend or legacy lowering runs.
   package during migration. After final cutover, remove the legacy package
   pieces proven unused and keep `prik.codegen` as the canonical
   generator rather than performing a second package rename.
-- [x] Keep semantic `.pyi` emission under `prik.codegen.printers` and
+- [x] Keep semantic `.pyi` emission under `prik.printers` and
   retire focused tests of the old semantic AST, bridge, binding, and printer
   implementation before deleting the legacy package.
 - [x] Remove the temporary legacy route and its route diagnostics after every
@@ -4833,7 +4833,7 @@ maintainability reports, and `git diff --check` all passed.
 - [x] The final report for each lane names the plan actions added, the binding
   and bridge handlers they dispatch to, and the handoff specs validated.
 - [x] No unsupported wrapper lane uses old lowering/codegen; focused tests now
-  target completed policy, `WrapperPlan`, `WrapperCodeGenerator`, or compiled
+  target completed policy, `WrapperPlan`, `WrapperGenerator`, or compiled
   public behavior rather than `ir2ast.py` and `prik.codegen` internals.
 - [x] The final cutover report includes the completed `tests/wrapper` migration
   matrix and confirms every wrapper-generating row uses the wrapper-plan route.

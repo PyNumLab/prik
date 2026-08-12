@@ -19,10 +19,11 @@ from pathlib import Path
 import pytest
 
 from prik import parse_fortran_project
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
-from prik.codegen.printers import emit_module_stubs
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
+from prik.pipeline.pyi import emit_module_stubs
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
-from prik.semantics.policy_completion import complete_semantic_policies
+from prik.policy.completion import complete_semantic_policies
 
 
 _FIXTURE_DIR = Path(__file__).parent / "fixtures" / "refactoring_goldens"
@@ -86,7 +87,7 @@ def refactoring_golden_outputs() -> _RefactoringGoldenOutputs:
 
     complete_semantic_policies(semantic_modules)
     plan = WrapperPlanner().build(semantic_modules[0])
-    artifacts = WrapperCodeGenerator().generate(plan)
+    artifacts = WrapperGenerator().generate(plan)
 
     return _RefactoringGoldenOutputs(
         parser_json=parser_json,

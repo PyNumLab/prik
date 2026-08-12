@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from prik.codegen.plan import FunctionPlan
+from prik.planning.models import FunctionPlan
 
 
 class OverloadPlanQueries:

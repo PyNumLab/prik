@@ -2,9 +2,10 @@
 
 from prik import parse_fortran_file
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy_models import BridgeDataAction, ScalarLogicalABI
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import BridgeDataAction, ScalarLogicalABI
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 
 SOURCE = """
@@ -44,7 +45,7 @@ def test_bridge_mechanically_lowers_completed_default_logical_kind_copies():
     module_plan, _function = _logical_function_plan()
 
     bridge_source = next(
-        source.text for source in WrapperCodeGenerator().generate(module_plan).sources if source.path.suffix == ".f90"
+        source.text for source in WrapperGenerator().generate(module_plan).sources if source.path.suffix == ".f90"
     )
 
     assert "logical(c_bool), value :: input" in bridge_source

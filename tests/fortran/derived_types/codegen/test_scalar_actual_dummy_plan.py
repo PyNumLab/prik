@@ -7,8 +7,8 @@ from dataclasses import replace
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy_models import (
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import (
     DerivedActualAccess,
     DerivedCallAction,
     DerivedDummyCategory,
@@ -16,7 +16,8 @@ from prik.semantics.wrapper_policy_models import (
     DerivedOwnerRetention,
     DerivedRelease,
 )
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 
 CONTRACT = """
@@ -222,7 +223,7 @@ class item:
     complete_semantic_policies(module)
     bridge = next(
         source.text
-        for source in WrapperCodeGenerator().generate(WrapperPlanner().build(module)).sources
+        for source in WrapperGenerator().generate(WrapperPlanner().build(module)).sources
         if source.path.suffix == ".f90"
     )
 
@@ -240,7 +241,7 @@ def test_validation_rejects_a_pointer_holder_without_completed_target_ownership(
     )
 
     with pytest.raises(ValueError, match="missing-derived-pointer-target-owner"):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)
 
 
 def test_validation_rejects_a_backend_invented_matrix_gap():
@@ -251,11 +252,11 @@ def test_validation_rejects_a_backend_invented_matrix_gap():
     argument.derived_call = replace(argument.derived_call, cases=argument.derived_call.cases[:-1])
 
     with pytest.raises(ValueError, match="incomplete-derived-call-matrix"):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)
 
 
 def test_artifacts_emit_shared_holders_typed_origin_operations_and_one_native_call():
-    artifacts = WrapperCodeGenerator().generate(WrapperPlanner().build(_module()))
+    artifacts = WrapperGenerator().generate(WrapperPlanner().build(_module()))
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 

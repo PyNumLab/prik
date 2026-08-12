@@ -7,9 +7,10 @@ from dataclasses import replace
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.ownership import CodegenAction, NativeBarrierAction
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.policy.ownership import CodegenAction, NativeBarrierAction
+from prik.policy.completion import complete_semantic_policies
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 
 def _multiple_result_plan():
@@ -44,7 +45,7 @@ def test_multiple_scalar_result_plan_has_ordered_binding_consumers_and_shared_hi
 
 
 def test_multiple_scalar_results_lower_to_binding_tuple_and_one_bridge_function_call():
-    artifacts = WrapperCodeGenerator().generate(_multiple_result_plan())
+    artifacts = WrapperGenerator().generate(_multiple_result_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
@@ -69,14 +70,14 @@ def test_multiple_scalar_result_validation_rejects_position_and_consumer_drift()
 
     hidden.result_position = 0
     with pytest.raises(ValueError, match=r"duplicate-binding-result-position.*missing-binding-result-position"):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)
 
     plan = _multiple_result_plan()
     function = plan.namespaces[0].functions[0]
     direct, _hidden = function.results
     function.results = (direct,)
     with pytest.raises(ValueError, match="unclaimed-native-result"):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)
 
     plan = _multiple_result_plan()
     function = plan.namespaces[0].functions[0]
@@ -84,11 +85,11 @@ def test_multiple_scalar_result_validation_rejects_position_and_consumer_drift()
     duplicate = replace(hidden, owner_path=f"{hidden.owner_path}.duplicate", result_position=2)
     function.results = (direct, hidden, duplicate)
     with pytest.raises(ValueError, match="multiple-native-result-consumers"):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)
 
     plan = _multiple_result_plan()
     function = plan.namespaces[0].functions[0]
     _direct, hidden = function.results
     hidden.native_call_slot = replace(hidden.native_call_slot)
     with pytest.raises(ValueError, match="inconsistent-function-result-slot"):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)

@@ -188,7 +188,7 @@ For example, semantic-policy internals use
 `infrastructure/semantics/test_ownership.py` and
 `test_policy_completion.py`; wrapper internals use
 `infrastructure/codegen/test_plan.py`, `test_planner.py`, and
-`test_generator.py`. Other internal owners mirror `prik/compiling/`,
+`tests/fortran/infrastructure/pipeline/test_wrapper_generator.py`. Other internal owners mirror `prik/compiling/`,
 `prik/contracts/`, `prik/pipeline/`, `prik/runtime/`, and the remaining source
 packages when they have real internal tests. Do not create empty mirror
 directories or combine multiple production owners in generic backend or policy

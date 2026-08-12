@@ -7,7 +7,7 @@ from dataclasses import replace
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.ownership import (
+from prik.policy.ownership import (
     CodegenAction,
     DestructionPolicy,
     ObjectKind,
@@ -15,16 +15,17 @@ from prik.semantics.ownership import (
     StorageMode,
     TransferMode,
 )
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy_models import (
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import (
     BridgeDataAction,
     OptionalMode,
     PythonExceptionKind,
     STRING_REPLACEMENT_COPY_REASON,
     WritebackPhase,
 )
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
-from prik.codegen.plan import BindingStatusErrorPlan, DatatypeFamily
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
+from prik.planning.models import BindingStatusErrorPlan, DatatypeFamily
 
 
 def _fixed_writeback_module():
@@ -80,7 +81,7 @@ def test_fixed_replacement_projects_completed_argument_and_lifecycle_facts():
 
 
 def test_fixed_string_writeback_dispatches_to_named_binding_and_bridge_lowering():
-    artifacts = WrapperCodeGenerator().generate(_fixed_writeback_plan())
+    artifacts = WrapperGenerator().generate(_fixed_writeback_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
@@ -113,7 +114,7 @@ def test_fixed_string_replacement_allocation_runs_after_other_argument_conversio
         module_name="fixed_string_cleanup_order",
     )
     complete_semantic_policies(module)
-    artifacts = WrapperCodeGenerator().generate(WrapperPlanner().build(module))
+    artifacts = WrapperGenerator().generate(WrapperPlanner().build(module))
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
 
     assert c_source.index("prik_int32_unpack_exact(bound_count_obj, &bound_count)") < c_source.index(
@@ -152,7 +153,7 @@ def optional_identity(label: String = ...) -> None: ...
         module_name="assumed_optional_string_writeback",
     )
     complete_semantic_policies(module)
-    artifacts = WrapperCodeGenerator().generate(WrapperPlanner().build(module))
+    artifacts = WrapperGenerator().generate(WrapperPlanner().build(module))
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
@@ -205,7 +206,7 @@ def test_fixed_string_writeback_plan_edits_fail_before_backend_lowering(edit: st
         argument.bridge.optional_mode = OptionalMode.DESCRIPTOR
 
     with pytest.raises(ValueError, match=diagnostic):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)
 
 
 def test_fixed_string_writeback_status_edit_fails_at_generator_validation():
@@ -222,4 +223,4 @@ def test_fixed_string_writeback_status_edit_fails_at_generator_validation():
     )
 
     with pytest.raises(ValueError, match="string-writeback-with-status-error"):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)

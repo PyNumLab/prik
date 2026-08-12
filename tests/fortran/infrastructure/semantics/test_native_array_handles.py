@@ -1,6 +1,6 @@
 """Internal native-array handle policy dispatch contracts."""
 
-from prik.semantics.native_array_handles import (
+from prik.policy.native_array_handles import (
     ArrayInteropPolicy,
     ArrayInteropPolicyDispatcher,
 )

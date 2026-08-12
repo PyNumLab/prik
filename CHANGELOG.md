@@ -14,6 +14,12 @@ release tags add a leading `v` to the package version.
 
 ### Changed
 
+- Separated post-IR policy and wrapper planning into `prik.policy` and
+  `prik.planning`; code generation now renders plan-driven docstrings, and the
+  former maintainer import paths were removed.
+- Added a top-level language-printer package for C, Fortran, and semantic
+  `.pyi` output, and made `pipeline.wrapper.WrapperGenerator` the single
+  plan-to-rendered-wrapper orchestration boundary.
 - Documented the completed ownership vocabulary, lifetime-policy philosophy,
   pointer-policy boundary, and maintainer change routes in one maintained
   architecture reference.

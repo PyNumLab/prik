@@ -9,25 +9,28 @@ re-derived from native declarations or backend output.
 
 from __future__ import annotations
 
-from prik.semantics.ownership import OwnershipOwner, SetterAction, TransferMode
-from prik.semantics.wrapper_policy_models import (
+from prik.policy.ownership import OwnershipOwner, SetterAction, TransferMode
+from prik.policy.models import (
     ClassConstructorKind,
     ModuleGetterAction,
     NativeArrayDescriptorKind,
     OptionalMode,
 )
-from prik.codegen.plan import (
+from prik.planning.models import (
     ArgumentTransferPlan,
     ArrayHandoffPlan,
     BindingStatusErrorPlan,
     CallbackHandoffPlan,
     CallbackTransferPlan,
     ClassMethodPlan,
+    ClassSurfacePlan,
     ConstructorPlan,
     DatatypeFamily,
     DerivedFieldPlan,
     FunctionPlan,
+    ModulePlan,
     ModuleVariablePlan,
+    NamespacePlan,
     OverloadPlan,
     ResultPlan,
 )
@@ -53,13 +56,110 @@ _UNKNOWN_EXTENTS = frozenset({"", ":", "::", "*", ".."})
 class WrapperDocstringBuilder:
     """Build compact, public NumPy-style documentation from completed plans.
 
-    Use the public entrypoints while ``WrapperPlanner`` constructs namespace,
-    callable, class, and attribute plan records.  The builder preserves the
-    completed plan's public visibility, ordering, ownership, and transfer
-    facts, returning plain strings that generators later attach to public
-    Python surfaces.  Its sections cover summaries, callable documentation,
-    constructors and attributes, then shared formatting helpers.
+    :meth:`render` is called by ``WrapperGenerator`` after planning. It
+    fills unresolved documentation fields in dependency order while preserving
+    explicit editable-plan strings, including an intentionally empty string.
+    The remaining public methods render individual plan records without
+    changing policy or transfer facts.
     """
+
+    def render(self, plan: ModulePlan) -> ModulePlan:
+        """Fill unresolved Python-facing documentation on one editable plan.
+
+        Child callables, fields, overloads, constructors, and variables are
+        rendered before their class and namespace summaries. Existing strings
+        are explicit plan overrides and remain unchanged. The same plan is
+        returned for generation-stage chaining.
+        """
+        for namespace in plan.namespaces:
+            self._render_namespace(plan.owner_path, namespace)
+        return plan
+
+    def _render_namespace(self, module_name: str, namespace: NamespacePlan) -> None:
+        """Render one namespace's children before its aggregate summary."""
+        for function in namespace.functions:
+            self._render_function(function)
+        for derived_type in namespace.derived_types:
+            for field in derived_type.fields:
+                self._render_field(field)
+        for variable in namespace.variables:
+            self._render_module_variable(variable)
+        for overload in namespace.overloads:
+            self._render_overload(overload)
+
+        derived_types = {item.type_identity: item for item in namespace.derived_types}
+        for surface in namespace.classes:
+            derived_type = derived_types.get(surface.type_identity)
+            self._render_class_surface(surface, () if derived_type is None else derived_type.fields)
+
+        if namespace.docstring is None:
+            namespace.docstring = self.namespace(
+                module_name,
+                namespace.python_path,
+                namespace.functions,
+                namespace.variables,
+                namespace.classes,
+                namespace.overloads,
+            )
+
+    def _render_function(self, function: FunctionPlan) -> None:
+        """Render one ordinary callable unless the editable plan overrides it."""
+        if function.binding.docstring is None:
+            function.binding.docstring = self.function(
+                function.binding.python_name,
+                function.arguments,
+                function.results,
+                status_error=function.binding.status_error,
+            )
+
+    def _render_field(self, field: DerivedFieldPlan) -> None:
+        """Render one class field unless the editable plan overrides it."""
+        if field.docstring is None:
+            field.docstring = self.field(field)
+
+    def _render_module_variable(self, variable: ModuleVariablePlan) -> None:
+        """Render one module attribute unless the editable plan overrides it."""
+        if variable.docstring is None:
+            variable.docstring = self.module_variable(variable)
+
+    def _render_overload(self, overload: OverloadPlan) -> None:
+        """Render overload candidates before their public dispatcher summary."""
+        for candidate in overload.candidates:
+            self._render_function(candidate)
+        if overload.docstring is None:
+            overload.docstring = self.overload(overload)
+
+    def _render_class_surface(
+        self,
+        surface: ClassSurfacePlan,
+        fields: tuple[DerivedFieldPlan, ...],
+    ) -> None:
+        """Render one class's dependent records before its aggregate summary."""
+        for field in fields:
+            self._render_field(field)
+        for method in surface.methods:
+            self._render_function(method.function)
+            if method.docstring is None:
+                method.docstring = self.method(method)
+        for overload in surface.overloads:
+            self._render_overload(overload)
+
+        constructor = surface.constructor
+        if constructor.target is not None:
+            self._render_function(constructor.target)
+        if constructor.overload is not None:
+            self._render_overload(constructor.overload)
+        if constructor.docstring is None:
+            constructor.docstring = self.constructor(surface.python_names[0], constructor, fields)
+        if surface.docstring is None:
+            surface.docstring = self.class_surface(
+                surface.python_names[0],
+                surface.type_identity[1],
+                constructor,
+                fields,
+                surface.methods,
+                surface.overloads,
+            )
 
     # Public entrypoints: namespace and class summaries.
     def namespace(
@@ -406,7 +506,7 @@ class WrapperDocstringBuilder:
         lines.extend(("", heading, "-" * len(heading), *body))
 
     @staticmethod
-    def _first_line(docstring: str) -> str:
+    def _first_line(docstring: str | None) -> str:
         """Return the first summary line from rendered text or an empty string.
 
         Namespace and class summaries use this to embed a callable's compact
@@ -891,6 +991,8 @@ class WrapperDocstringBuilder:
         without rebuilding getter/setter policy.  A nonstandard first line is
         returned unchanged as one summary line.
         """
+        if variable.docstring is None:
+            raise ValueError(f"Module variable {variable.owner_path!r} has no rendered documentation")
         first, *details = variable.docstring.splitlines()
         _name, separator, type_name = first.partition(" : ")
         if not separator:
@@ -926,9 +1028,9 @@ class WrapperDocstringBuilder:
 
 
 if __name__ == "__main__":
-    from prik.codegen.planner import WrapperPlanner
+    from prik.planning.planner import WrapperPlanner
     from prik.semantics.models import SemanticArgument, SemanticFunction, SemanticModule, SemanticType
-    from prik.semantics.policy_completion import complete_semantic_policies
+    from prik.policy.completion import complete_semantic_policies
 
     module = SemanticModule(
         name="docstring_demo",
@@ -942,12 +1044,8 @@ if __name__ == "__main__":
         ],
     )
     complete_semantic_policies(module)
-    function = WrapperPlanner().build(module).namespaces[0].functions[0]
-    docstring = WrapperDocstringBuilder().function(
-        function.binding.python_name,
-        function.arguments,
-        function.results,
-        status_error=function.binding.status_error,
-    )
+    plan = WrapperPlanner().build(module)
+    WrapperDocstringBuilder().render(plan)
+    docstring = plan.namespaces[0].functions[0].binding.docstring
 
     print(docstring)

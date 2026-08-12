@@ -2,9 +2,9 @@
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.semantics.models import RESOLVED_OWNERSHIP_POLICY_METADATA
-from prik.semantics.ownership import CodegenAction, ObjectKind, StorageMode
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import completed_function_wrapper_policy
+from prik.policy.ownership import CodegenAction, ObjectKind, StorageMode
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.construction import completed_function_wrapper_policy
 
 
 def _completed_policy(source: str):

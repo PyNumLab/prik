@@ -1,26 +1,22 @@
-"""Freeze, validate, lower, and render editable wrapper plans.
+"""Generate complete rendered wrappers from editable wrapper plans.
 
-``WrapperCodeGenerator`` is the final consumer of an editable ``ModulePlan``.
-It validates cross-view plan consistency, asks each backend to preflight its
-own lowering capability, renders the resulting C, Fortran, and header nodes,
-and returns source-bearing wrapper artifacts for build integration.  Semantic
-policy remains upstream: this module validates and lowers completed decisions
-without selecting replacements.
+``WrapperGenerator`` is the pipeline boundary between an editable
+``ModulePlan`` and source-bearing ``GeneratedWrapper``. It validates cross-view
+plan consistency, asks each backend to preflight and lower its completed plan,
+prints the resulting C, Fortran, and header nodes, assigns stable filenames,
+and returns the complete handoff consumed by build integration.
 """
 
 from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 import time
 
-from prik.pipeline.wrapper_artifacts import (
-    GeneratedSourceFile,
-    GeneratedWrapperArtifacts,
-    RenderedGeneratedWrapperArtifacts,
-)
-from prik.semantics.ownership import (
+from prik.stage_values import StageRecord
+from prik.policy.ownership import (
     AssignmentMode,
     CodegenAction,
     DestructionPolicy,
@@ -33,7 +29,7 @@ from prik.semantics.ownership import (
     TransferMode,
 )
 from prik.semantics.metadata import SCALAR_STORAGE_CATEGORY
-from prik.semantics.wrapper_policy_models import (
+from prik.policy.models import (
     ArgumentHandoffMode,
     ArrayLogicalABI,
     ArrayWritebackABI,
@@ -93,11 +89,11 @@ from prik.semantics.wrapper_policy_models import (
     TransformationLayer,
     WritebackPhase,
 )
-from prik.semantics.native_array_handles import NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER
-from prik.semantics.wrapper_policy import overload_builtin_scalar_family
+from prik.policy.native_array_handles import NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER
 from prik.codegen.c.binding import CBindingGenerator
+from prik.codegen.docstrings import WrapperDocstringBuilder
 from prik.codegen.fortran.bridge import FortranBridgeGenerator
-from prik.codegen.plan import (
+from prik.planning.models import (
     ArrayHandoffPlan,
     ArgumentTransferPlan,
     CallbackHandoffPlan,
@@ -119,18 +115,57 @@ from prik.codegen.plan import (
     ResultPlan,
     WrapperPlanDiagnostic,
 )
-from prik.codegen.printers import CSourcePrinter, FortranSourcePrinter
+from prik.printers import CSourcePrinter, FortranSourcePrinter
+
+__all__ = ("GeneratedSource", "GeneratedWrapper", "WrapperGenerator")
 
 
-class WrapperCodeGenerator:
-    """Turn one editable ``ModulePlan`` into rendered wrapper artifacts.
+@dataclass
+class GeneratedSource(StageRecord):
+    """One generated source payload before it is written to disk."""
+
+    path: Path
+    text: str
+
+
+@dataclass
+class GeneratedWrapper(StageRecord):
+    """Rendered wrapper sources and the metadata required by build integration."""
+
+    module_name: str
+    sources: tuple[GeneratedSource, ...]
+    bridge_sources: tuple[Path, ...]
+    binding_sources: tuple[Path, ...]
+    headers: tuple[Path, ...]
+    native_support_keys: tuple[str, ...]
+    required_headers: tuple[str, ...]
+    extension_init_name: str
+
+    @property
+    def source_paths(self) -> tuple[Path, ...]:
+        """Return generated payload paths in stable write order."""
+        return tuple(source.path for source in self.sources)
+
+    @property
+    def compile_sources(self) -> tuple[Path, ...]:
+        """Return bridge and binding source paths in compiler order."""
+        return (*self.bridge_sources, *self.binding_sources)
+
+    @property
+    def generated_files(self) -> tuple[Path, ...]:
+        """Return all generated wrapper paths, including headers."""
+        return (*self.compile_sources, *self.headers)
+
+
+class WrapperGenerator:
+    """Turn one editable ``ModulePlan`` into one complete generated wrapper.
 
     Use :meth:`generate` after ``WrapperPlanner.build`` and before build
     integration writes or compiles sources.  This class owns the plan's final
     freeze and cross-backend consistency validation, then delegates backend
     node construction and source printing to the injected or default C and
     Fortran components.  Its private sections cover the generation entrypoint,
-    typed plan diagnostics, and artifact assembly.
+    typed plan diagnostics, and generated-wrapper assembly.
     """
 
     def __init__(
@@ -138,18 +173,21 @@ class WrapperCodeGenerator:
         *,
         c_generator: CBindingGenerator | None = None,
         fortran_generator: FortranBridgeGenerator | None = None,
+        docstring_builder: WrapperDocstringBuilder | None = None,
         c_printer: CSourcePrinter | None = None,
         fortran_printer: FortranSourcePrinter | None = None,
     ):
         """Create a generator with default or explicitly supplied backend components.
 
-        Supplying a generator or printer is useful when an established caller
-        needs to observe or substitute a backend implementation.  Omitted
-        components use the standard direct-lowering and printing paths; no
-        plan policy is stored or inferred during initialization.
+        Supplying a docstring builder, backend generator, or printer is useful
+        when an established caller needs to observe or substitute one
+        generation component. Omitted components use the standard plan-driven
+        documentation, direct-lowering, and printing paths; no semantic policy
+        is stored or inferred during initialization.
         """
         self._c_generator = c_generator or CBindingGenerator()
         self._fortran_generator = fortran_generator or FortranBridgeGenerator()
+        self._docstring_builder = docstring_builder or WrapperDocstringBuilder()
         self._c_printer = c_printer or CSourcePrinter()
         self._fortran_printer = fortran_printer or FortranSourcePrinter()
 
@@ -159,8 +197,8 @@ class WrapperCodeGenerator:
         plan: ModulePlan,
         *,
         progress: Callable[[str, float | None], None] | None = None,
-    ) -> RenderedGeneratedWrapperArtifacts:
-        """Render one editable plan into C, Fortran, header, and build artifacts.
+    ) -> GeneratedWrapper:
+        """Render one editable plan into a complete generated wrapper.
 
         The received ``plan`` is frozen before validation, so later mutation
         raises the stage-record error.  ``progress``, when provided, receives
@@ -172,6 +210,9 @@ class WrapperCodeGenerator:
             ValueError: If the frozen plan is inconsistent or a selected
                 backend cannot lower one of its completed actions.
         """
+        # Complete presentation from the editable plan before consuming and freezing it.
+        self._docstring_builder.render(plan)
+
         # Freeze the exact editable handoff, then validate cross-backend plan facts.
         plan.freeze()
         self._validate_plan(plan)
@@ -208,7 +249,7 @@ class WrapperCodeGenerator:
             progress("Generate binding header", time.perf_counter() - started)
 
         # Assemble source text with the stable filenames consumed by build integration.
-        return self._rendered_artifacts(
+        return self._generated_wrapper(
             plan.owner_path,
             c_sources,
             c_header_source,
@@ -259,7 +300,7 @@ class WrapperCodeGenerator:
             for overload in namespace.overloads:
                 diagnostics.extend(self._overload_diagnostics(overload, functions))
 
-        # Validate graph-wide ordering, generated spellings, and artifact dependencies.
+        # Validate graph-wide ordering, generated spellings, and header dependencies.
         diagnostics.extend(self._class_graph_diagnostics(plan))
         diagnostics.extend(self._generated_symbol_diagnostics(plan))
         diagnostics.extend(self._required_header_diagnostics(plan))
@@ -502,11 +543,7 @@ class WrapperCodeGenerator:
             (
                 match.kind,
                 match.optional,
-                (
-                    overload_builtin_scalar_family(match.semantic_type_name)
-                    if match.accept_builtin_scalar
-                    else match.semantic_type_name
-                ),
+                match.builtin_scalar_family or match.semantic_type_name,
                 match.rank,
                 match.derived_type_identity,
             )
@@ -1672,7 +1709,7 @@ class WrapperCodeGenerator:
             argument.passed_by_value,
             argument.intent,
             argument.character_length,
-            WrapperCodeGenerator._prototype_array_shape(argument.array),
+            WrapperGenerator._prototype_array_shape(argument.array),
             argument.derived_type_identity,
             argument.derived_backend_symbol,
         ) == (
@@ -1682,7 +1719,7 @@ class WrapperCodeGenerator:
             transfer.passed_by_value,
             transfer.intent,
             transfer.character_length,
-            WrapperCodeGenerator._prototype_array_shape(transfer.array),
+            WrapperGenerator._prototype_array_shape(transfer.array),
             transfer.derived_type_identity,
             transfer.derived_backend_symbol,
         )
@@ -1697,14 +1734,14 @@ class WrapperCodeGenerator:
             result.semantic_type_name,
             result.rank,
             result.character_length,
-            WrapperCodeGenerator._prototype_array_shape(result.array),
+            WrapperGenerator._prototype_array_shape(result.array),
             result.derived_type_identity,
             result.derived_backend_symbol,
         ) == (
             transfer.semantic_type_name,
             transfer.rank,
             transfer.character_length,
-            WrapperCodeGenerator._prototype_array_shape(transfer.array),
+            WrapperGenerator._prototype_array_shape(transfer.array),
             transfer.derived_type_identity,
             transfer.derived_backend_symbol,
         )
@@ -5039,7 +5076,7 @@ class WrapperCodeGenerator:
             for role in (argument.array.extent_roles if argument.array is not None else ())
         )
 
-    # Diagnostic formatting and rendered-artifact assembly.
+    # Diagnostic formatting and generated-wrapper assembly.
     def _diagnostic(self, owner_path: str, code: str, detail: object) -> WrapperPlanDiagnostic:
         """Create one normalized diagnostic from an owner, stable code, and detail.
 
@@ -5059,7 +5096,7 @@ class WrapperCodeGenerator:
         details = "; ".join(f"{item.owner_path}:{item.code}:{item.message}" for item in diagnostics)
         return f"Invalid edited wrapper plan before generation: {details}"
 
-    def _rendered_artifacts(
+    def _generated_wrapper(
         self,
         module_name: str,
         c_sources: tuple[str, ...],
@@ -5067,47 +5104,43 @@ class WrapperCodeGenerator:
         fortran_source: str,
         native_support_keys: tuple[str, ...],
         required_headers: tuple[str, ...],
-    ) -> RenderedGeneratedWrapperArtifacts:
+    ) -> GeneratedWrapper:
         """Package rendered source text with the filenames owned by build integration.
 
         Binding translation-unit paths preserve the primary file followed by
-        zero-padded worker shards.  The returned artifacts place bridge, C
+        zero-padded worker shards. The returned wrapper places bridge, C
         sources, and header text in that stable order; this helper does not
-        write files or freeze the newly assembled artifact records.
+        write files or freeze the newly assembled source records.
         """
         # Name bridge, binding, and header files before pairing each with rendered text.
         binding_sources = (
             Path(f"{module_name}_wrapper.c"),
             *(Path(f"{module_name}_wrapper_{index:03d}.c") for index in range(1, len(c_sources))),
         )
-        artifacts = GeneratedWrapperArtifacts(
+        bridge_sources = (Path(f"bind_c_{module_name}_wrapper.f90"),)
+        headers = (Path(f"{module_name}_wrapper.h"),)
+
+        # Preserve build-consumed source ordering: bridge, binding units, then header.
+        return GeneratedWrapper(
             module_name=module_name,
-            bridge_sources=(Path(f"bind_c_{module_name}_wrapper.f90"),),
+            extension_init_name=f"PyInit_{module_name}",
+            sources=(
+                GeneratedSource(bridge_sources[0], fortran_source),
+                *(GeneratedSource(path, source) for path, source in zip(binding_sources, c_sources, strict=True)),
+                GeneratedSource(headers[0], c_header),
+            ),
+            bridge_sources=bridge_sources,
             binding_sources=binding_sources,
-            header_files=(Path(f"{module_name}_wrapper.h"),),
+            headers=headers,
             native_support_keys=native_support_keys,
             required_headers=required_headers,
         )
 
-        # Preserve build-consumed source ordering: bridge, binding units, then header.
-        return RenderedGeneratedWrapperArtifacts(
-            artifacts=artifacts,
-            extension_init_name=f"PyInit_{module_name}",
-            sources=(
-                GeneratedSourceFile(artifacts.bridge_sources[0], fortran_source),
-                *(
-                    GeneratedSourceFile(path, source)
-                    for path, source in zip(artifacts.binding_sources, c_sources, strict=True)
-                ),
-                GeneratedSourceFile(artifacts.header_files[0], c_header),
-            ),
-        )
-
 
 if __name__ == "__main__":
-    from prik.codegen.planner import WrapperPlanner
+    from prik.planning.planner import WrapperPlanner
     from prik.semantics.models import SemanticArgument, SemanticFunction, SemanticModule, SemanticType
-    from prik.semantics.policy_completion import complete_semantic_policies
+    from prik.policy.completion import complete_semantic_policies
 
     module = SemanticModule(
         name="generator_demo",
@@ -5121,8 +5154,8 @@ if __name__ == "__main__":
         ],
     )
     complete_semantic_policies(module)
-    rendered = WrapperCodeGenerator().generate(WrapperPlanner().build(module))
+    rendered = WrapperGenerator().generate(WrapperPlanner().build(module))
 
     print(f"Extension initializer: {rendered.extension_init_name}")
     print("Rendered sources:", ", ".join(source.path.name for source in rendered.sources))
-    print("Native support:", ", ".join(rendered.artifacts.native_support_keys) or "none")
+    print("Native support:", ", ".join(rendered.native_support_keys) or "none")

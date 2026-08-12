@@ -5,8 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from prik.pipeline.pyi import pyi_file_to_semantic_module
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.policy.completion import complete_semantic_policies
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 
 RECURSION_CONTRACT = (
@@ -27,6 +28,6 @@ def test_recursive_runtime_contract_keeps_the_gil_by_default():
 
     assert plan.namespaces[0].functions
     assert all(function.binding.release_gil is False for function in plan.namespaces[0].functions)
-    c_source = _rendered_source(WrapperCodeGenerator().generate(plan), ".c")
+    c_source = _rendered_source(WrapperGenerator().generate(plan), ".c")
     assert "Py_BEGIN_ALLOW_THREADS" not in c_source
     assert "Py_END_ALLOW_THREADS" not in c_source

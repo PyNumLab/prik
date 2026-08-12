@@ -1,7 +1,7 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
 import pytest
-from prik.codegen.printers import emit_module
+from prik.printers import emit_module
 from prik.parsers.fortran.models import (
     FortranArgument,
     FortranDerivedType,

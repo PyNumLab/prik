@@ -3,7 +3,7 @@
 This module owns the stable enums, frozen policy records, and cross-stage
 reason constants produced by post-IR policy construction and consumed by
 wrapper planning and lowering. It contains no semantic policy construction:
-those rules remain in :mod:`prik.semantics.wrapper_policy`.
+those rules remain in :mod:`prik.policy.construction`.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from prik.semantics.ownership import (
+from prik.policy.ownership import (
     AssignmentMode,
     CodegenAction,
     NativeBarrierAction,
@@ -23,7 +23,7 @@ from prik.semantics.ownership import (
     SetterAction,
     StorageMode,
 )
-from prik.semantics.wrapper_exports import PythonExportPolicy
+from prik.policy.exports import PythonExportPolicy
 
 
 FIXED_STRING_RESULT_COPY_REASON = "copy fixed-length Fortran character output into C-owned null-terminated storage"
@@ -569,7 +569,12 @@ class ClassMethodPolicy:
 
 @dataclass(frozen=True)
 class OverloadArgumentPolicy:
-    """One completed exact-type predicate in an overload signature."""
+    """One completed exact-type predicate in an overload signature.
+
+    ``builtin_scalar_family`` is ``bool``, ``int``, ``float``, or ``complex``
+    only when reflected dispatch admits that exact Python builtin beside the
+    recorded NumPy scalar type. ``None`` keeps dispatch NumPy-exact.
+    """
 
     python_name: str
     kind: OverloadMatchKind
@@ -577,7 +582,7 @@ class OverloadArgumentPolicy:
     semantic_type_name: str
     rank: int
     derived_type_identity: tuple[str, str] | None
-    accept_builtin_scalar: bool = False
+    builtin_scalar_family: str | None = None
 
 
 @dataclass(frozen=True)

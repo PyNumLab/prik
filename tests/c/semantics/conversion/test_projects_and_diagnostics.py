@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from prik.codegen.printers import emit_module_stubs
+from prik.pipeline.pyi import emit_module_stubs
 from prik.parsers.c import parse_c_file, parse_c_project
 from prik.parsers.c.models import (
     CEnum,

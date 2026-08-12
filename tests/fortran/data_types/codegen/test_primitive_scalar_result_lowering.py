@@ -5,9 +5,10 @@ from __future__ import annotations
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy_models import DirectResultABI
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import DirectResultABI
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 
 @pytest.mark.parametrize(
@@ -24,7 +25,7 @@ from prik.codegen import WrapperCodeGenerator, WrapperPlanner
 def test_direct_scalar_result_registry_projects_supported_type_facts(type_name, numpy_type, result_kind):
     module = parse_pyi_text(f"def identity(x: {type_name}) -> {type_name}: ...", module_name="scalar_result")
     complete_semantic_policies(module)
-    artifacts = WrapperCodeGenerator().generate(WrapperPlanner().build(module))
+    artifacts = WrapperGenerator().generate(WrapperPlanner().build(module))
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
 
     helper_suffix = numpy_type.casefold().removeprefix("npy_")
@@ -43,7 +44,7 @@ def test_direct_bool_result_normalizes_the_fortran_truth_bit_before_c_conversion
 
     assert result.direct_result_abi is DirectResultABI.LOGICAL_LOW_BIT_INT8
 
-    artifacts = WrapperCodeGenerator().generate(plan)
+    artifacts = WrapperGenerator().generate(plan)
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     fortran_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
@@ -65,4 +66,4 @@ def test_generator_rejects_a_non_normalized_direct_bool_result_abi():
     plan.namespaces[0].functions[0].results[0].direct_result_abi = DirectResultABI.NATIVE_SCALAR
 
     with pytest.raises(ValueError, match="invalid-direct-result-abi"):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)

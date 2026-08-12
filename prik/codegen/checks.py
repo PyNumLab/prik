@@ -1,4 +1,4 @@
-"""Static contracts for the isolated wrapper-plan generator package."""
+"""Static contracts for wrapper lowering, printing, and orchestration."""
 
 from __future__ import annotations
 
@@ -17,8 +17,8 @@ __all__ = (
 
 
 INFRASTRUCTURE_MODULES = frozenset({"__init__.py", "checks.py", "visitor.py"})
-SEMANTIC_PRINTER_MODULE = "pyi_printer.py"
-SEMANTIC_PRINTER_FUNCTIONS = frozenset({"emit_module", "emit_module_stubs", "opaque_dependency_modules"})
+SEMANTIC_PRINTER_MODULE = "pyi.py"
+SEMANTIC_PRINTER_FUNCTIONS = frozenset({"emit_module"})
 VISITOR_CLASS_SUFFIXES = ("Analyzer", "Emitter", "Generator", "Planner", "Validator")
 REGISTRY_SUFFIXES = ("_DISPATCHER", "_HANDLERS", "_REGISTRY")
 HANDLER_PREFIXES = ("_convert_", "_emit_", "_handle_", "_visit_")
@@ -35,7 +35,7 @@ ASSEMBLER_CLASS_NAMES = frozenset(
     {
         "CBindingGenerator",
         "FortranBridgeGenerator",
-        "WrapperCodeGenerator",
+        "WrapperGenerator",
     }
 )
 
@@ -76,9 +76,17 @@ def check_codegen_package(
     *,
     config: WrapperCodegenCheckConfig | None = None,
 ) -> tuple[WrapperCodegenViolation, ...]:
-    """Check every Python module in the isolated wrapper-codegen package."""
-    root = package_root or Path(__file__).resolve().parent
-    return check_codegen_paths(sorted(root.rglob("*.py")), config=config)
+    """Check the wrapper generation, printer, and orchestration modules."""
+    if package_root is not None:
+        paths = sorted(package_root.rglob("*.py"))
+    else:
+        source_root = Path(__file__).resolve().parents[1]
+        paths = [
+            *sorted((source_root / "codegen").rglob("*.py")),
+            *sorted((source_root / "printers").glob("*.py")),
+            source_root / "pipeline" / "wrapper.py",
+        ]
+    return check_codegen_paths(paths, config=config)
 
 
 def check_codegen_paths(
@@ -124,7 +132,7 @@ def _visitor_class_violations(path: Path, tree: ast.Module) -> list[WrapperCodeg
         for node in tree.body
         if isinstance(node, ast.ClassDef)
         and node.name.endswith(VISITOR_CLASS_SUFFIXES)
-        and node.name != "WrapperCodeGenerator"
+        and node.name != "WrapperGenerator"
         and not _inherits_class_visitor(node)
     ]
 

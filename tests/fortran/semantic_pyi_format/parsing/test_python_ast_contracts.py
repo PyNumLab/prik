@@ -6,7 +6,7 @@ import sys
 
 import ast
 import pytest
-from prik.codegen.printers import emit_module
+from prik.printers import emit_module
 from prik.contracts import CONTRACT_SYMBOLS
 from prik.semantics.models import (
     ProjectionMapping,

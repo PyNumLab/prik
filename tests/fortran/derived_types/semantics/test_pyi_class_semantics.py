@@ -1,6 +1,6 @@
 """Core `.pyi` class semantics retained by Derived Types."""
 
-from prik.codegen.printers import emit_module
+from prik.printers import emit_module
 from prik.semantics.metadata import (
     PROJECTED_OUTPUT_METADATA,
     SUPPRESS_DEFAULT_CONSTRUCTOR_METADATA,

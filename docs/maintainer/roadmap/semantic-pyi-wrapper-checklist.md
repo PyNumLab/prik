@@ -415,12 +415,13 @@ PRIK_C_DOCS_END -->
 - [x] Ownership, transfer, and destruction policy is completed after full
   signatures are known and before wrapper planning. The shared post-IR
   entrypoint is `complete_semantic_policies(...)` in
-  `prik/semantics/policy_completion.py`; direct ownership subpasses stay behind
+  `prik/policy/completion.py`; direct ownership subpasses stay behind
   that entrypoint. Planning and lowering consume completed policy metadata
   instead of recomputing policy from raw datatypes. Evidence:
-  `tests/semantics/policy/`,
-  `tests/codegen/`,
-  `tests/semantics/policy/`,
+  `tests/fortran/infrastructure/semantics/test_policy_completion.py`,
+  `tests/fortran/infrastructure/semantics/test_ownership.py`,
+  feature-local `tests/fortran/*/policy/`,
+  `tests/fortran/infrastructure/codegen/`,
   and `prik/semantics/README.md`.
 - [x] `.pyi` parsing and `.pyi` semantic conversion are separate stages:
   `prik/parsers/pyi/parser.py` parses text/files to Python AST, and
@@ -550,7 +551,7 @@ PRIK_C_DOCS_END -->
   implemented. Remaining rank, datatype, `is_alias`, and storage checks in
   bridge and binding code are local emitted-code, ABI, documentation, or
   object-model mechanics rather than semantic policy selection. Evidence:
-  `prik/semantics/ownership.py`,
+  `prik/policy/ownership.py`,
   `prik/codegen/fortran/bridge.py`,
   `prik/codegen/c/binding.py`,
   `tests/semantics/policy/`,

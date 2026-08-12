@@ -11,11 +11,11 @@ from prik.semantics.models import (
     RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA,
     RESOLVED_OWNERSHIP_POLICY_METADATA,
 )
-from prik.semantics.ownership import (
+from prik.policy.ownership import (
     NativeBarrierAction,
 )
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy_models import (
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import (
     FunctionWrapperPolicy,
     NativeArrayDescriptorKind,
     NativeDescriptorHandoffABI,

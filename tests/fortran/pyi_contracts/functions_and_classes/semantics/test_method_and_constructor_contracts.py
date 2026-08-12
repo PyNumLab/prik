@@ -3,7 +3,7 @@
 import pytest
 import re
 from dataclasses import asdict
-from prik.codegen.printers import emit_module
+from prik.printers import emit_module
 from prik.semantics.metadata import (
     BIND_TARGET_METADATA,
     SUPPRESS_DEFAULT_CONSTRUCTOR_METADATA,

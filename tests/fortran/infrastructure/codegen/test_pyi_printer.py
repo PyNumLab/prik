@@ -8,7 +8,7 @@ import sys
 def test_pyi_printer_direct_example_is_runnable():
     repository_root = Path(__file__).resolve().parents[4]
     result = subprocess.run(
-        [sys.executable, str(repository_root / "prik/codegen/printers/pyi_printer.py")],
+        [sys.executable, str(repository_root / "prik/printers/pyi.py")],
         cwd=repository_root,
         capture_output=True,
         check=True,

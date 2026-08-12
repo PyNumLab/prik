@@ -2,7 +2,8 @@
 
 from dataclasses import asdict
 
-from prik.codegen.printers import emit_module, emit_module_stubs
+from prik.pipeline.pyi import emit_module_stubs
+from prik.printers import emit_module
 from prik.parsers.c import parse_c_file, parse_c_project
 from prik.parsers.c.models import (
     CArray,

@@ -1,4 +1,4 @@
-"""Stable backend symbols whose spelling stays within native compiler limits."""
+"""Stable backend symbols shared by planning and native code generation."""
 
 from __future__ import annotations
 

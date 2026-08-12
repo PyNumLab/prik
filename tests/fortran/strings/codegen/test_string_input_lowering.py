@@ -5,11 +5,12 @@ from __future__ import annotations
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.ownership import CodegenAction, NativeBarrierAction, PythonBarrierAction
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy_models import ArgumentHandoffMode, BridgeDataAction
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
-from prik.codegen.plan import DatatypeFamily
+from prik.policy.ownership import CodegenAction, NativeBarrierAction, PythonBarrierAction
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import ArgumentHandoffMode, BridgeDataAction
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
+from prik.planning.models import DatatypeFamily
 
 
 def _string_input_module():
@@ -55,7 +56,7 @@ def test_required_string_values_reuse_argument_plan_with_character_handoff_facts
 
 
 def test_required_string_values_dispatch_to_named_binding_and_bridge_lowering():
-    artifacts = WrapperCodeGenerator().generate(_string_input_plan())
+    artifacts = WrapperGenerator().generate(_string_input_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
@@ -101,4 +102,4 @@ def test_string_handoff_plan_edits_fail_before_backend_lowering(edit: str, diagn
         argument.native_call_slot.bridge_copy_reason = None
 
     with pytest.raises(ValueError, match=diagnostic):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)

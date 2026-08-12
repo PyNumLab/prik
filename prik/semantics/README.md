@@ -1,7 +1,8 @@
 # Semantics Package
 
-This package owns the language-neutral contract between native parser facts,
-editable `.pyi` files, policy completion, and wrapper code generation.
+This package owns the language-neutral contract between native parser facts
+and editable `.pyi` files. Post-IR decisions live in `../policy/`; typed wrapper
+implementation plans live in `../planning/`.
 
 ## Entry Points
 
@@ -15,8 +16,10 @@ editable `.pyi` files, policy completion, and wrapper code generation.
 | `../pipeline/pyi.py` | Combined `.pyi` text/file/path-set conversion and external-type reconciliation. |
 | `pyi_metadata.py` | Semantic `.pyi` loader workflow metadata. |
 | `native_contract.py` | Source-free native ABI and placement validation. |
-| `policy_completion.py` | Complete ownership, transfer, destruction, mutability/writeback, projection, nullability, release, storage, Python-barrier, native-barrier, and accessor decisions after full signatures are known. |
-| `../codegen/planner.py` | Converts completed semantic policy into the typed wrapper plan consumed by code generation. |
+| `native_array_handles.py` | Semantic descriptor marking, normalized data facets, and native-array facts. |
+| `ownership_metadata.py` | Raw ownership and pointer-contract metadata keys and normalized semantic setters. |
+| `../policy/completion.py` | Complete ownership, transfer, destruction, mutability/writeback, projection, nullability, release, storage, Python-barrier, native-barrier, and accessor decisions after full signatures are known. |
+| `../planning/planner.py` | Converts completed semantic policy into the typed wrapper plan consumed by code generation. |
 
 ## Declaration Expressions
 
@@ -49,12 +52,12 @@ C parser facts, Fortran parser facts, or parsed .pyi AST
   -> typed wrapper planning
 ```
 
-`../codegen/planner.py` is the boundary where semantic contracts become typed
+`../planning/planner.py` is the boundary where semantic contracts become typed
 wrapper implementation plans. Object kind, ownership, transfer, destruction,
 mutability/writeback, result projection, nullability, release responsibility,
 contract/boundary storage modes, Python-barrier action, and native-barrier
-action must be completed before this boundary by `policy_completion.py` using
-`prik/semantics/ownership.py`. Getter result, native setter assignment, and Python
+action must be completed before this boundary by `../policy/completion.py`
+using `prik/policy/ownership.py`. Getter result, native setter assignment, and Python
 setter exposure policies are completed there as well.
 
 The Python barrier and native barrier are separate policy decisions. The Python

@@ -6,7 +6,7 @@ import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from tests.fortran._support.wrapper_build import wrapper_source
-from prik.codegen import WrapperPlanner
+from prik.planning import WrapperPlanner
 from prik.parsers.fortran.parser import parse_fortran_project
 from prik.pipeline.build import _apply_source_python_exports, _fortran_source_for_pipeline, _merge_wrapper_modules
 from prik.pipeline.preprocessing import PreprocessingConfig
@@ -18,15 +18,15 @@ from prik.semantics.models import (
     SemanticFunction,
     SemanticType,
 )
-from prik.semantics.ownership import (
+from prik.policy.ownership import (
     CodegenAction,
     NativeBarrierAction,
     ObjectKind,
     PythonBarrierAction,
     StorageMode,
 )
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy_models import (
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import (
     ArgumentConversionPhase,
     ArgumentHandoffMode,
     BridgeDataAction,
@@ -36,7 +36,7 @@ from prik.semantics.wrapper_policy_models import (
     OptionalMode,
     PythonExceptionKind,
 )
-from prik.semantics.wrapper_policy import build_function_wrapper_policy, completed_function_wrapper_policy
+from prik.policy.construction import build_function_wrapper_policy, completed_function_wrapper_policy
 
 FMATH_CONTRACT = Path("tests/fortran/data_types/end_to_end/fixtures/baseline/contracts/fmath/__init__.pyi")
 
@@ -626,7 +626,7 @@ def test_wrapper_policy_direct_example_is_runnable():
     repository_root = Path(__file__).resolve().parents[4]
 
     result = subprocess.run(
-        [sys.executable, "prik/semantics/wrapper_policy.py"],
+        [sys.executable, "prik/policy/construction.py"],
         cwd=repository_root,
         capture_output=True,
         check=True,

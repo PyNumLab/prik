@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from prik.codegen.c.naming import CBindingNames
-from prik.codegen.plan import (
+from prik.planning.models import (
     ArgumentTransferPlan,
     ClassMethodPlan,
     ClassSurfacePlan,
@@ -18,8 +18,8 @@ from prik.codegen.plan import (
     OverloadPlan,
 )
 from prik.codegen.visitor import ClassVisitor
-from prik.semantics.ownership import SetterAction
-from prik.semantics.wrapper_policy_models import (
+from prik.policy.ownership import SetterAction
+from prik.policy.models import (
     ClassConstructorKind,
     ClassMethodKind,
     ModuleObjectAccessMechanism,

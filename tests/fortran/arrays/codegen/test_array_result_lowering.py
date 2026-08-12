@@ -5,10 +5,11 @@ from __future__ import annotations
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.ownership import CodegenAction, NativeBarrierAction, ObjectKind, OwnershipOwner, TransferMode
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy_models import BridgeDataAction, ORDINARY_ARRAY_RESULT_COPY_REASON
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.policy.ownership import CodegenAction, NativeBarrierAction, ObjectKind, OwnershipOwner, TransferMode
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import BridgeDataAction, ORDINARY_ARRAY_RESULT_COPY_REASON
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 
 def _result_plan():
@@ -67,7 +68,7 @@ def test_array_results_record_producer_shape_copy_ownership_and_shared_hidden_sl
 
 
 def test_array_result_lowering_transfers_bridge_copy_to_capsule_owned_numpy_storage():
-    artifacts = WrapperCodeGenerator().generate(_result_plan())
+    artifacts = WrapperGenerator().generate(_result_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
@@ -106,7 +107,7 @@ def test_array_property_results_reuse_input_array_extent_roles_in_both_backends(
     assert flattened.results[0].array.shape == ("__prik_extent_values_0 * __prik_extent_values_1",)
     assert columns.results[0].array.shape == ("__prik_extent_values_1",)
 
-    artifacts = WrapperCodeGenerator().generate(plan)
+    artifacts = WrapperGenerator().generate(plan)
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
@@ -144,4 +145,4 @@ def test_array_result_plan_edits_fail_before_backend_lowering(edit: str, diagnos
         hidden.native_call_slot.array = direct.array
 
     with pytest.raises(ValueError, match=diagnostic):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)

@@ -1,7 +1,7 @@
 """Tests split by stable ownership concept from `test_python_ast_contracts.py`."""
 
 import pytest
-from prik.semantics.policy_completion import complete_semantic_policies
+from prik.policy.completion import complete_semantic_policies
 from tests.fortran._support.pyi_conversion import parse_pyi_text
 
 
@@ -142,7 +142,8 @@ def declared(value: Int32) -> Int32: ...
 
 def test_imported_prototype_resolves_as_module_interface_definition(tmp_path):
     from prik.pipeline.pyi import pyi_paths_to_semantic_modules
-    from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+    from prik.pipeline.wrapper import WrapperGenerator
+    from prik.planning import WrapperPlanner
 
     (tmp_path / "callback_shapes.pyi").write_text(
         """from prik.contracts import Float64, Int32, prototype
@@ -171,7 +172,7 @@ def apply(callback: transform, count: Int32, values: Float64[count]) -> None: ..
     }
 
     complete_semantic_policies(api)
-    artifacts = WrapperCodeGenerator().generate(WrapperPlanner().build(api))
+    artifacts = WrapperGenerator().generate(WrapperPlanner().build(api))
     bridge = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
     assert "abstract interface" in bridge
     assert "function prik_transform_" in bridge

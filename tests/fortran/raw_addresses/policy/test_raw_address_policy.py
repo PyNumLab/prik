@@ -10,7 +10,7 @@ from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.semantics.models import (
     RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA,
 )
-from prik.semantics.ownership import (
+from prik.policy.ownership import (
     CodegenAction,
     DestructionPolicy,
     NativeBarrierAction,
@@ -20,8 +20,8 @@ from prik.semantics.ownership import (
     StorageMode,
     TransferMode,
 )
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy_models import (
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import (
     RAW_STRING_ADDRESS_COPY_REASON,
     STRING_STORAGE_COPY_REASON,
     ArgumentHandoffMode,

@@ -50,30 +50,9 @@ from prik.semantics.metadata import (
     PROJECTED_OUTPUT_METADATA,
     SCALAR_STORAGE_CATEGORY,
 )
+from prik.semantics.models import PYTHON_VALUE_IMMUTABLE, PYTHON_VALUE_MUTABILITY_METADATA
+from prik.semantics.ownership_metadata import OWNERSHIP_POLICY_METADATA, POINTER_POLICY_METADATA
 from prik.types.numpy import BOOLEAN_SEMANTIC_TYPE_NAMES
-
-
-OWNERSHIP_POLICY_METADATA = "ownership_policy"
-POINTER_POLICY_METADATA = "pointer_policy"
-# PointerPolicy fields answer, in order: whether association may be absent,
-# boundary use, target owner, lifetime proof, permitted release, shape source,
-# layout guarantee, permitted association change, alias relationship, and
-# mutability. String values remain contract facts until policy completion
-# validates whether the current runtime implements the requested mechanism.
-POINTER_POLICY_FIELDS = (
-    "nullable",
-    "transfer",
-    "target_owner",
-    "lifetime",
-    "deallocation",
-    "shape_source",
-    "contiguity",
-    "reassociation",
-    "aliasing",
-    "mutability",
-)
-PYTHON_VALUE_MUTABILITY_METADATA = "python_value_mutability"
-PYTHON_VALUE_IMMUTABLE = "immutable"
 
 
 # Completed policy vocabulary
@@ -2482,59 +2461,6 @@ class OwnershipPolicyResolver:
                 )
             )
         return OwnershipContext(location="value")
-
-
-# Contract metadata and lowering gates
-
-
-def set_ownership_metadata(
-    metadata: dict[str, Any],
-    *,
-    owner: str | None = None,
-    transfer: str | None = None,
-    destruction: str | None = None,
-) -> None:
-    """Store validated owner, transfer, and destruction metadata on a semantic mapping.
-
-    Use this when constructing or editing a semantic contract.  Provided
-    values are normalized through their enums; an existing non-dictionary
-    ownership policy raises ``ValueError`` rather than being overwritten.
-    """
-    policy = metadata.setdefault(OWNERSHIP_POLICY_METADATA, {})
-    if not isinstance(policy, dict):
-        raise ValueError(f"{OWNERSHIP_POLICY_METADATA!r} metadata must be a dictionary")
-    if owner is not None:
-        policy["owner"] = OwnershipOwner(owner).value
-    if transfer is not None:
-        policy["transfer"] = TransferMode(transfer).value
-    if destruction is not None:
-        policy["destruction"] = DestructionPolicy(destruction).value
-
-
-def set_pointer_policy_metadata(metadata: dict[str, Any], **policy_values: Any) -> None:
-    """Store a complete semantic pointer policy after validating its shape.
-
-    Callers must provide exactly ``POINTER_POLICY_FIELDS``.  The helper mutates
-    ``metadata`` with the checked policy and its ``fortran_pointer`` marker;
-    malformed values raise ``ValueError`` before policy resolution.
-    """
-    missing = [name for name in POINTER_POLICY_FIELDS if name not in policy_values]
-    extra = [name for name in policy_values if name not in POINTER_POLICY_FIELDS]
-    if missing or extra:
-        details = []
-        if missing:
-            details.append(f"missing: {', '.join(missing)}")
-        if extra:
-            details.append(f"unexpected: {', '.join(extra)}")
-        raise ValueError(f"PointerPolicy requires exactly {', '.join(POINTER_POLICY_FIELDS)} ({'; '.join(details)})")
-    if not isinstance(policy_values["nullable"], bool):
-        raise ValueError("PointerPolicy nullable must be a boolean")
-    for name in POINTER_POLICY_FIELDS[1:]:
-        if not isinstance(policy_values[name], str) or not policy_values[name]:
-            raise ValueError(f"PointerPolicy {name} must be a non-empty string")
-    TransferMode(policy_values["transfer"])
-    metadata[POINTER_POLICY_METADATA] = dict(policy_values)
-    metadata["fortran_pointer"] = True
 
 
 default_ownership_policy = OwnershipPolicyResolver()

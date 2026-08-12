@@ -3,7 +3,7 @@
 from prik import (
     parse_fortran_project,
 )
-from prik.codegen.printers import emit_module
+from prik.printers import emit_module
 from prik.semantics.fortran2ir import FortranToIRConverter
 from prik.semantics.native_contract import native_contract_issues
 from tests.fortran._support.semantic_conversion import get_function

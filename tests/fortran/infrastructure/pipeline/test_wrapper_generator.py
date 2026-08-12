@@ -10,23 +10,22 @@ import sys
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.ownership import CodegenAction, NativeBarrierAction, ObjectKind
-from prik.semantics.wrapper_policy_models import ArgumentHandoffMode, BridgeDataAction
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.ownership import CodegenAction, NativeBarrierAction, ObjectKind
+from prik.policy.models import ArgumentHandoffMode, BridgeDataAction
 from prik.stage_values import FrozenStageRecordError
 from prik.codegen import (
     CBindingGenerator,
-    CSourcePrinter,
     FortranBridgeGenerator,
-    FortranSourcePrinter,
-    NamespacePlan,
-    WrapperCodeGenerator,
-    WrapperPlanner,
 )
+from prik.codegen.docstrings import WrapperDocstringBuilder
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import NamespacePlan, WrapperPlanner
+from prik.printers import CSourcePrinter, FortranSourcePrinter
 
 
-def _rendered_source(artifacts, suffix: str) -> str:
-    return next(source.text for source in artifacts.sources if source.path.name.endswith(suffix))
+def _rendered_source(generated_wrapper, suffix: str) -> str:
+    return next(source.text for source in generated_wrapper.sources if source.path.name.endswith(suffix))
 
 
 def _plan(source: str, *, module_name: str = "fmath"):
@@ -79,7 +78,7 @@ def hidden_storage_result() -> Float64[()]: ...
     return WrapperPlanner().build(module)
 
 
-def test_public_generator_directly_returns_complete_rendered_artifacts():
+def test_public_generator_directly_returns_one_complete_generated_wrapper():
     plan = _plan(
         """
 @nogil
@@ -91,18 +90,18 @@ def swap_args(x: Float64, y: Float64) -> Float64: ...
         module_name="render_demo",
     )
 
-    artifacts = WrapperCodeGenerator().generate(plan)
-    c_source = _rendered_source(artifacts, ".c")
-    c_header = _rendered_source(artifacts, ".h")
-    fortran_source = _rendered_source(artifacts, ".f90")
+    generated_wrapper = WrapperGenerator().generate(plan)
+    c_source = _rendered_source(generated_wrapper, ".c")
+    c_header = _rendered_source(generated_wrapper, ".h")
+    fortran_source = _rendered_source(generated_wrapper, ".f90")
 
-    assert artifacts.artifacts.module_name == "render_demo"
-    assert artifacts.source_paths == (
+    assert generated_wrapper.module_name == "render_demo"
+    assert generated_wrapper.source_paths == (
         Path("bind_c_render_demo_wrapper.f90"),
         Path("render_demo_wrapper.c"),
         Path("render_demo_wrapper.h"),
     )
-    assert artifacts.extension_init_name == "PyInit_render_demo"
+    assert generated_wrapper.extension_init_name == "PyInit_render_demo"
     assert "double bind_c_swap_args(double * y, double * x);" in c_source
     assert 'static char * kwlist[] = {"x", "y", NULL};' in c_source
     assert 'PyArg_ParseTupleAndKeywords(args, kwargs, "OO", kwlist, &bound_x_obj, &bound_y_obj)' in c_source
@@ -122,7 +121,7 @@ def test_public_generator_reports_each_rendering_operation_in_execution_order():
     plan = _plan("def value(x: Float64) -> Float64: ...", module_name="render_progress")
     progress = []
 
-    WrapperCodeGenerator().generate(plan, progress=lambda label, elapsed: progress.append((label, elapsed)))
+    WrapperGenerator().generate(plan, progress=lambda label, elapsed: progress.append((label, elapsed)))
 
     assert [label for label, _ in progress] == [
         "Generate binding source",
@@ -138,11 +137,13 @@ def test_public_generator_reports_each_rendering_operation_in_execution_order():
 
 def test_large_procedure_only_binding_is_split_into_balanced_compile_units():
     declarations = "\n".join(f"def value_{index:03d}(x: Float64) -> Float64: ..." for index in range(128))
-    artifacts = WrapperCodeGenerator().generate(_plan(declarations, module_name="large_binding"))
-    binding_sources = [source for source in artifacts.sources if source.path.name.startswith("large_binding_wrapper")]
+    generated_wrapper = WrapperGenerator().generate(_plan(declarations, module_name="large_binding"))
+    binding_sources = [
+        source for source in generated_wrapper.sources if source.path.name.startswith("large_binding_wrapper")
+    ]
     main_source, *worker_sources, header_source = binding_sources
 
-    assert artifacts.artifacts.binding_sources == (
+    assert generated_wrapper.binding_sources == (
         Path("large_binding_wrapper.c"),
         Path("large_binding_wrapper_001.c"),
         Path("large_binding_wrapper_002.c"),
@@ -162,9 +163,9 @@ def test_large_procedure_only_binding_is_split_into_balanced_compile_units():
 def test_procedure_only_binding_below_sharding_threshold_keeps_one_compile_unit():
     declarations = "\n".join(f"def value_{index:03d}(x: Float64) -> Float64: ..." for index in range(127))
 
-    artifacts = WrapperCodeGenerator().generate(_plan(declarations, module_name="unsharded_binding"))
+    generated_wrapper = WrapperGenerator().generate(_plan(declarations, module_name="unsharded_binding"))
 
-    assert artifacts.artifacts.binding_sources == (Path("unsharded_binding_wrapper.c"),)
+    assert generated_wrapper.binding_sources == (Path("unsharded_binding_wrapper.c"),)
 
 
 @pytest.mark.parametrize(
@@ -199,10 +200,10 @@ def hidden_value(x: Float64) -> Float64: ...
     ],
 )
 def test_supported_function_actions_select_their_backend_behavior(source, c_fragment, fortran_fragment):
-    artifacts = WrapperCodeGenerator().generate(_plan(source, module_name="action_dispatch"))
+    generated_wrapper = WrapperGenerator().generate(_plan(source, module_name="action_dispatch"))
 
-    assert c_fragment in _rendered_source(artifacts, ".c")
-    assert fortran_fragment in _rendered_source(artifacts, ".f90")
+    assert c_fragment in _rendered_source(generated_wrapper, ".c")
+    assert fortran_fragment in _rendered_source(generated_wrapper, ".f90")
 
 
 def test_direct_plan_edits_change_binding_and_bridge_generation_then_freeze_plan():
@@ -220,10 +221,10 @@ def calculate(x: Float64, y: Float64) -> Float64: ...
     function.owner_path = "editable_plan.subtract"
     function.bridge.native_name = "SUB_R8"
 
-    artifacts = WrapperCodeGenerator().generate(plan)
+    generated_wrapper = WrapperGenerator().generate(plan)
 
-    assert '"subtract", (PyCFunction)wrap_calculate' in _rendered_source(artifacts, ".c")
-    assert "result = SUB_R8(x, y)" in _rendered_source(artifacts, ".f90")
+    assert '"subtract", (PyCFunction)wrap_calculate' in _rendered_source(generated_wrapper, ".c")
+    assert "result = SUB_R8(x, y)" in _rendered_source(generated_wrapper, ".f90")
     with pytest.raises(FrozenStageRecordError):
         function.bridge.native_name = "ADD_R8"
 
@@ -239,6 +240,7 @@ def scale(x: Float64) -> Float64: ...
     )
     c_generator = CBindingGenerator()
     fortran_generator = FortranBridgeGenerator()
+    WrapperDocstringBuilder().render(plan)
     c_generator.require_supported(plan)
     fortran_generator.require_supported(plan)
 
@@ -276,7 +278,7 @@ def scale(x: Float64) -> Float64: ...
     )
 
     with pytest.raises(ValueError, match="Unsupported C argument optional mode"):
-        WrapperCodeGenerator().generate(invalid)
+        WrapperGenerator().generate(invalid)
 
 
 def test_generator_rejects_hidden_result_native_action_disagreement():
@@ -297,7 +299,7 @@ def test_generator_rejects_hidden_result_native_action_disagreement():
     )
 
     with pytest.raises(ValueError, match="inconsistent-result-native-action"):
-        WrapperCodeGenerator().generate(invalid)
+        WrapperGenerator().generate(invalid)
 
 
 def test_generator_rejects_hidden_result_slot_codegen_action_disagreement():
@@ -318,7 +320,7 @@ def test_generator_rejects_hidden_result_slot_codegen_action_disagreement():
     )
 
     with pytest.raises(ValueError, match="inconsistent-result-slot-codegen-action"):
-        WrapperCodeGenerator().generate(invalid)
+        WrapperGenerator().generate(invalid)
 
 
 def test_generator_rejects_argument_native_slot_object_kind_disagreement():
@@ -327,7 +329,7 @@ def test_generator_rejects_argument_native_slot_object_kind_disagreement():
     argument.native_call_slot.object_kind = ObjectKind.STRING
 
     with pytest.raises(ValueError, match="inconsistent-argument-object-kind"):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)
 
 
 def test_generator_rejects_result_native_slot_object_kind_disagreement():
@@ -336,7 +338,7 @@ def test_generator_rejects_result_native_slot_object_kind_disagreement():
     result.native_call_slot.object_kind = ObjectKind.STRING
 
     with pytest.raises(ValueError, match="inconsistent-result-object-kind"):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)
 
 
 def test_generator_rejects_advertised_role_without_a_plan_producer():
@@ -346,7 +348,7 @@ def test_generator_rejects_advertised_role_without_a_plan_producer():
     )
 
     with pytest.raises(ValueError, match="inconsistent-available-roles"):
-        WrapperCodeGenerator().generate(invalid)
+        WrapperGenerator().generate(invalid)
 
 
 def test_generator_rejects_duplicate_python_exports_before_lowering():
@@ -357,7 +359,7 @@ def test_generator_rejects_duplicate_python_exports_before_lowering():
     invalid = replace(plan, namespaces=(replace(root, functions=(function, duplicate)),))
 
     with pytest.raises(ValueError, match="duplicate-python-export"):
-        WrapperCodeGenerator().generate(invalid)
+        WrapperGenerator().generate(invalid)
 
 
 def test_generator_rejects_duplicate_generated_symbols_before_lowering():
@@ -372,7 +374,7 @@ def test_generator_rejects_duplicate_generated_symbols_before_lowering():
     invalid = replace(plan, namespaces=(replace(root, functions=(function, duplicate)),))
 
     with pytest.raises(ValueError, match="duplicate-generated-symbol"):
-        WrapperCodeGenerator().generate(invalid)
+        WrapperGenerator().generate(invalid)
 
 
 def test_generator_rejects_colliding_generated_namespace_symbols():
@@ -386,7 +388,7 @@ def test_generator_rejects_colliding_generated_namespace_symbols():
     )
 
     with pytest.raises(ValueError, match="duplicate-generated-namespace-symbol"):
-        WrapperCodeGenerator().generate(invalid)
+        WrapperGenerator().generate(invalid)
 
 
 @pytest.mark.parametrize(
@@ -437,7 +439,7 @@ def test_generator_revalidates_direct_plan_edits(mutate, expected_code):
     invalid = mutate(_scalar_plan())
 
     with pytest.raises(ValueError, match=expected_code):
-        WrapperCodeGenerator().generate(invalid)
+        WrapperGenerator().generate(invalid)
 
 
 @pytest.mark.parametrize(
@@ -468,7 +470,7 @@ def test_scalar_address_handoff_plan_edits_fail_before_lowering(edit, diagnostic
         storage.array.rank = 1
 
     with pytest.raises(ValueError, match=diagnostic):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)
 
 
 @pytest.mark.parametrize(
@@ -490,7 +492,7 @@ def test_bridge_data_action_invariant_rejects_unjustified_or_blocked_plans(actio
     assert function.native_call_slots[storage.native_position] is storage.native_call_slot
 
     with pytest.raises(ValueError, match=diagnostic):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)
 
 
 def test_scalar_copy_in_out_reuses_one_binding_local_without_bridge_copy():
@@ -504,9 +506,9 @@ def test_scalar_copy_in_out_reuses_one_binding_local_without_bridge_copy():
     assert value.bridge.data_action is BridgeDataAction.DIRECT_TRANSFER
     assert value.bridge.copy_reason is None
 
-    artifacts = WrapperCodeGenerator().generate(plan)
-    c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
-    bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
+    generated_wrapper = WrapperGenerator().generate(plan)
+    c_source = next(source.text for source in generated_wrapper.sources if source.path.suffix == ".c")
+    bridge_source = next(source.text for source in generated_wrapper.sources if source.path.suffix == ".f90")
 
     assert c_source.count("int32_t bound_value;") == 1
     assert "prik_int32_unpack_exact(bound_value_obj, &bound_value)" in c_source
@@ -522,7 +524,7 @@ def test_scalar_copy_in_out_reuses_one_binding_local_without_bridge_copy():
 def test_generator_direct_example_is_runnable():
     repository_root = Path(__file__).resolve().parents[4]
     result = subprocess.run(
-        [sys.executable, str(repository_root / "prik/codegen/generator.py")],
+        [sys.executable, str(repository_root / "prik/pipeline/wrapper.py")],
         cwd=repository_root,
         capture_output=True,
         check=True,

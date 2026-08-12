@@ -4,11 +4,11 @@ from prik.semantics.models import (
     RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA,
     RESOLVED_OWNERSHIP_POLICY_METADATA,
 )
-from prik.semantics.native_array_handles import (
+from prik.policy.native_array_handles import (
     NativeArrayBuildRequirement,
     native_array_handle_build_requirements,
 )
-from prik.semantics.ownership import (
+from prik.policy.ownership import (
     CodegenAction,
     DestructionPolicy,
     NativeBarrierAction,
@@ -18,7 +18,7 @@ from prik.semantics.ownership import (
     TransferMode,
     default_ownership_policy,
 )
-from prik.semantics.policy_completion import complete_semantic_policies
+from prik.policy.completion import complete_semantic_policies
 from tests.fortran._support.ownership_policy import (
     _array_type,
     parse_pyi_text,

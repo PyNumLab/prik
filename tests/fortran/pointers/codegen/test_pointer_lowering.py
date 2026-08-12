@@ -1,15 +1,16 @@
 """Pointer descriptor lowering from completed wrapper policy."""
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy_models import (
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import (
     NativeArrayDescriptorKind,
     NativeArrayDescriptorOwnership,
     NativeArrayOperation,
     NativeArrayResultAllocation,
     NativeDescriptorHandoffABI,
 )
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 
 def _pointer_plan():
@@ -102,7 +103,7 @@ def test_pointer_plans_complete_descriptor_ownership_and_operations_before_lower
 
 
 def test_pointer_lowering_assigns_descriptors_without_target_deallocation():
-    artifacts = WrapperCodeGenerator().generate(_pointer_plan())
+    artifacts = WrapperGenerator().generate(_pointer_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 

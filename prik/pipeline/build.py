@@ -24,7 +24,7 @@ from prik.probes.fortran_types import (
     resolve_fortran_logical_storage_types,
 )
 from prik.pipeline.preprocessing import PreprocessingConfig, preprocess_source
-from prik.pipeline.wrapper_artifacts import GeneratedSourceFile, RenderedGeneratedWrapperArtifacts
+from prik.pipeline.wrapper import GeneratedSource, GeneratedWrapper, WrapperGenerator
 from prik.semantics.fortran2ir import (
     collect_fortran_type_storage_requirements,
     collect_semantic_compile_time_requirements,
@@ -43,14 +43,14 @@ from prik.semantics.models import (
     _iter_module_semantic_types,
 )
 from prik.semantics.native_contract import NATIVE_CONTRACT_PREPARED_METADATA, validate_pyi_native_contract
-from prik.semantics.native_array_handles import (
+from prik.policy.native_array_handles import (
     NativeArrayBuildRequirements,
     native_array_handle_build_requirements,
 )
-from prik.semantics.policy_completion import complete_semantic_policies
+from prik.policy.completion import complete_semantic_policies
 from prik.pipeline.pyi import _PyiSemanticModuleCache
 from prik.semantics.pyi_metadata import PYI_LOADED_METADATA
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.planning import WrapperPlanner
 from prik.types.numpy import boolean_storage_bits, is_boolean_semantic_type_name
 
 
@@ -61,7 +61,7 @@ _FORTRAN_SOURCE_SUFFIXES = {".f", ".f03", ".f08", ".f77", ".f90", ".f95", ".for"
 _C_SOURCE_SUFFIXES = {".c"}
 _NATIVE_PATH_LINK_KINDS = frozenset({"object", "archive", "shared_library"})
 _NATIVE_LINK_KINDS = frozenset({*_NATIVE_PATH_LINK_KINDS, "named_library", "linker_argument"})
-_RENDERED_WRAPPER_SOURCE_LANGUAGES = {
+_GENERATED_WRAPPER_SOURCE_LANGUAGES = {
     ".c": "c",
     ".f": "fortran",
     ".f03": "fortran",
@@ -72,7 +72,7 @@ _RENDERED_WRAPPER_SOURCE_LANGUAGES = {
     ".for": "fortran",
     ".ftn": "fortran",
 }
-_RENDERED_WRAPPER_NATIVE_SUPPORT_IMPORTS = {
+_GENERATED_WRAPPER_NATIVE_SUPPORT_IMPORTS = {
     "binding_support": ("binding_support/prik_binding",),
 }
 
@@ -497,7 +497,7 @@ def _validated_wrapper_module_name(requested_name: str | None, default_name: str
     return module_name
 
 
-# Rendered wrapper artifacts and native compilation
+# Generated wrapper materialization and native compilation
 
 
 def _expected_generated_files(
@@ -530,80 +530,80 @@ def _expected_generated_files(
     return tuple(path for path in candidates if path.exists())
 
 
-def _rendered_artifact_output_path(output_dir: Path, path: Path) -> Path:
-    """Return the output path for one rendered wrapper artifact."""
+def _generated_source_output_path(output_dir: Path, path: Path) -> Path:
+    """Return the output path for one generated wrapper source."""
     if path.is_absolute() or ".." in path.parts:
-        raise ValueError(f"Rendered wrapper artifact path must stay inside the build directory: {path}")
+        raise ValueError(f"Generated wrapper source path must stay inside the build directory: {path}")
     return output_dir / path
 
 
-def _write_rendered_wrapper_sources(
-    rendered: RenderedGeneratedWrapperArtifacts,
+def _write_generated_wrapper_sources(
+    rendered: GeneratedWrapper,
     output_dir: Path,
     *,
     verbose: bool | int = False,
 ) -> tuple[Path, ...]:
-    """Write rendered wrapper-plan sources into one build directory."""
+    """Write one generated wrapper's sources into a build directory."""
     written = []
     for source in rendered.sources:
-        path = _rendered_artifact_output_path(output_dir, source.path)
-        _print_verbose_step(verbose, f"{_rendered_source_write_label(rendered, source.path)}: {path}")
+        path = _generated_source_output_path(output_dir, source.path)
+        _print_verbose_step(verbose, f"{_generated_source_write_label(rendered, source.path)}: {path}")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(source.text, encoding="utf-8")
         written.append(path)
     return tuple(written)
 
 
-def _rendered_source_payloads(
-    rendered: RenderedGeneratedWrapperArtifacts,
-) -> dict[Path, GeneratedSourceFile]:
-    """Return rendered payloads keyed by generated artifact path."""
+def _generated_source_payloads(
+    rendered: GeneratedWrapper,
+) -> dict[Path, GeneratedSource]:
+    """Return source payloads keyed by generated wrapper path."""
     return {Path(source.path): source for source in rendered.sources}
 
 
-def _rendered_source_write_label(rendered: RenderedGeneratedWrapperArtifacts, source_path: Path) -> str:
-    """Return the verbose write label for one generated artifact."""
-    if source_path in rendered.artifacts.bridge_sources:
+def _generated_source_write_label(rendered: GeneratedWrapper, source_path: Path) -> str:
+    """Return the verbose write label for one generated source."""
+    if source_path in rendered.bridge_sources:
         return "Write bridge source"
-    if source_path in rendered.artifacts.binding_sources:
+    if source_path in rendered.binding_sources:
         return "Write binding source"
-    if source_path in rendered.artifacts.header_files:
+    if source_path in rendered.headers:
         return "Write binding header"
-    return "Write wrapper artifact"
+    return "Write generated source"
 
 
-def _rendered_wrapper_compile_source_paths(
-    rendered: RenderedGeneratedWrapperArtifacts,
+def _generated_wrapper_compile_source_paths(
+    rendered: GeneratedWrapper,
 ) -> tuple[Path, ...]:
-    """Return rendered wrapper-plan source paths in compile order."""
-    source_paths = (*rendered.artifacts.bridge_sources, *rendered.artifacts.binding_sources)
-    payloads = _rendered_source_payloads(rendered)
+    """Return generated wrapper source paths in compile order."""
+    source_paths = rendered.compile_sources
+    payloads = _generated_source_payloads(rendered)
     missing = tuple(path for path in source_paths if path not in payloads)
     if missing:
-        raise ValueError(f"Rendered wrapper artifacts are missing source payloads: {missing!r}")
+        raise ValueError(f"Generated wrapper is missing source payloads: {missing!r}")
     return source_paths
 
 
-def _rendered_wrapper_source_language(path: Path) -> str:
-    """Return the compiler language for one rendered wrapper source."""
+def _generated_wrapper_source_language(path: Path) -> str:
+    """Return the compiler language for one generated wrapper source."""
     try:
-        return _RENDERED_WRAPPER_SOURCE_LANGUAGES[path.suffix.lower()]
+        return _GENERATED_WRAPPER_SOURCE_LANGUAGES[path.suffix.lower()]
     except KeyError:
-        raise ValueError(f"Unsupported rendered wrapper source suffix: {path}") from None
+        raise ValueError(f"Unsupported generated wrapper source suffix: {path}") from None
 
 
-def _rendered_wrapper_native_support_imports(native_support_keys: Iterable[str]) -> tuple[str, ...]:
+def _generated_wrapper_native_support_imports(native_support_keys: Iterable[str]) -> tuple[str, ...]:
     """Return native-support import keys consumed by the support installer."""
     imports: list[str] = []
     for key in native_support_keys:
         try:
-            imports.extend(_RENDERED_WRAPPER_NATIVE_SUPPORT_IMPORTS[key])
+            imports.extend(_GENERATED_WRAPPER_NATIVE_SUPPORT_IMPORTS[key])
         except KeyError:
             raise ValueError(f"Unsupported wrapper native support key: {key!r}") from None
     return tuple(imports)
 
 
-def _rendered_wrapper_object_file(
+def _generated_wrapper_object_file(
     source_path: Path,
     output_dir: Path,
     *,
@@ -611,8 +611,8 @@ def _rendered_wrapper_object_file(
     include_dirs: tuple[Path, ...],
     language: str,
 ) -> ObjectFile:
-    """Return one explicit object-file input for a rendered wrapper source."""
-    source = _rendered_artifact_output_path(output_dir, source_path)
+    """Return one explicit object-file input for a generated wrapper source."""
+    source = _generated_source_output_path(output_dir, source_path)
     return ObjectFile(
         source=source,
         object_path=source.with_suffix(".o"),
@@ -623,8 +623,8 @@ def _rendered_wrapper_object_file(
     )
 
 
-def _rendered_wrapper_object_stages(
-    rendered: RenderedGeneratedWrapperArtifacts,
+def _generated_wrapper_object_stages(
+    rendered: GeneratedWrapper,
     output_dir: Path,
     *,
     wrapper_fortran_flags: tuple[str, ...],
@@ -632,41 +632,41 @@ def _rendered_wrapper_object_stages(
     native_module_dirs: tuple[Path, ...],
 ) -> tuple[tuple[ObjectFile, ...], tuple[ObjectFile, ...]]:
     """Return bridge and binding objects in their required compile order."""
-    source_paths = _rendered_wrapper_compile_source_paths(rendered)
-    bridge_source_paths = source_paths[: len(rendered.artifacts.bridge_sources)]
+    source_paths = _generated_wrapper_compile_source_paths(rendered)
+    bridge_source_paths = source_paths[: len(rendered.bridge_sources)]
     binding_source_paths = source_paths[len(bridge_source_paths) :]
     bridge_objects = tuple(
-        _rendered_wrapper_object_file(
+        _generated_wrapper_object_file(
             source_path,
             output_dir,
             flags=wrapper_fortran_flags,
             include_dirs=native_module_dirs,
-            language=_rendered_wrapper_source_language(source_path),
+            language=_generated_wrapper_source_language(source_path),
         )
         for source_path in bridge_source_paths
     )
     binding_objects = tuple(
-        _rendered_wrapper_object_file(
+        _generated_wrapper_object_file(
             source_path,
             output_dir,
             flags=wrapper_c_flags,
             include_dirs=native_module_dirs,
-            language=_rendered_wrapper_source_language(source_path),
+            language=_generated_wrapper_source_language(source_path),
         )
         for source_path in binding_source_paths
     )
     return bridge_objects, binding_objects
 
 
-def _rendered_wrapper_link_language(
+def _generated_wrapper_link_language(
     bridge_objects: tuple[ObjectFile, ...],
     binding_objects: tuple[ObjectFile, ...],
 ) -> str:
-    """Return the linker language for rendered wrapper-plan sources."""
+    """Return the linker language for generated wrapper sources."""
     if bridge_objects:
         return "fortran"
     if not binding_objects:
-        raise ValueError("Rendered wrapper artifacts must include at least one binding source")
+        raise ValueError("Generated wrapper must include at least one binding source")
     return binding_objects[-1].language
 
 
@@ -788,8 +788,8 @@ def _compile_extension_objects(
         _finish_object_stage(binding_futures, label="Compile binding source", verbose=verbose)
 
 
-def _build_rendered_wrapper_extension(
-    rendered: RenderedGeneratedWrapperArtifacts,
+def _build_generated_wrapper_extension(
+    rendered: GeneratedWrapper,
     *,
     output_dir: str | Path,
     shared_library_output_dir: str | Path | None = None,
@@ -804,19 +804,19 @@ def _build_rendered_wrapper_extension(
     compile_jobs: int | None = None,
     verbose: bool | int = False,
 ) -> WrapperBuildResult:
-    """Build one extension from rendered wrapper-plan artifacts."""
+    """Write, compile, and link one complete generated wrapper."""
     # Materialize the canonical wrapper output before creating compiler inputs.
     rendered.freeze()
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     shared_output_path = Path(shared_library_output_dir) if shared_library_output_dir is not None else output_path
     shared_output_path.mkdir(parents=True, exist_ok=True)
-    _write_rendered_wrapper_sources(rendered, output_path, verbose=verbose)
+    _write_generated_wrapper_sources(rendered, output_path, verbose=verbose)
 
     # Prepare generated-object inputs and their native support files.
     compiler = compiler or _new_compiler()
     resolved_native_build_plan = native_build_plan or NativeBuildPlan()
-    bridge_objects, binding_objects = _rendered_wrapper_object_stages(
+    bridge_objects, binding_objects = _generated_wrapper_object_stages(
         rendered,
         output_path,
         wrapper_fortran_flags=_compiler_flags(wrapper_fortran_flags),
@@ -828,7 +828,7 @@ def _build_rendered_wrapper_extension(
             )
         ),
     )
-    native_support_imports = _rendered_wrapper_native_support_imports(rendered.artifacts.native_support_keys)
+    native_support_imports = _generated_wrapper_native_support_imports(rendered.native_support_keys)
     install_native_support(
         native_support_imports,
         prik_dirpath=str(output_path),
@@ -848,9 +848,9 @@ def _build_rendered_wrapper_extension(
     # Link the generated and caller-supplied objects into the extension.
     linking_started = time.perf_counter()
     shared_library = compiler.link_extension(
-        module_name=rendered.artifacts.module_name,
+        module_name=rendered.module_name,
         output_dir=shared_output_path,
-        language=_rendered_wrapper_link_language(bridge_objects, binding_objects),
+        language=_generated_wrapper_link_language(bridge_objects, binding_objects),
         objects=(*tuple(native_dependencies), *bridge_objects, *binding_objects),
         link_args=tuple(native_link_args),
         library_dirs=resolved_native_build_plan.library_dirs,
@@ -859,14 +859,12 @@ def _build_rendered_wrapper_extension(
     )
     _print_verbose_timing(verbose, time.perf_counter() - linking_started)
     generated_source_paths = tuple(
-        path
-        for path in rendered.artifacts.generated_files
-        if _rendered_artifact_output_path(output_path, path).exists()
+        path for path in rendered.generated_files if _generated_source_output_path(output_path, path).exists()
     )
-    generated_sources = tuple(_rendered_artifact_output_path(output_path, path) for path in generated_source_paths)
+    generated_sources = tuple(_generated_source_output_path(output_path, path) for path in generated_source_paths)
     return WrapperBuildResult(
         sources=tuple(Path(source) for source in sources),
-        module_name=rendered.artifacts.module_name,
+        module_name=rendered.module_name,
         output_dir=output_path,
         shared_library=shared_library,
         build_makefile=None,
@@ -875,7 +873,7 @@ def _build_rendered_wrapper_extension(
         generated_files=_expected_generated_files(
             source_objects=tuple(native_dependencies),
             output_dir=output_path,
-            module_name=rendered.artifacts.module_name,
+            module_name=rendered.module_name,
             shared_library=shared_library,
         ),
         native_build_plan=resolved_native_build_plan,
@@ -936,18 +934,18 @@ def _render_wrapper_plan(
     module: SemanticModule,
     *,
     progress: Callable[[str, float | None], None] | None = None,
-) -> RenderedGeneratedWrapperArtifacts:
+) -> GeneratedWrapper:
     """Render one policy-completed module through the canonical generator."""
     plan = WrapperPlanner().build(module)
-    return WrapperCodeGenerator().generate(plan, progress=progress)
+    return WrapperGenerator().generate(plan, progress=progress)
 
 
-def _generated_wrapper_plan_artifacts(
+def _generate_wrapper(
     module: SemanticModule,
     *,
     strict_wrapper_names: bool,
     verbose: bool | int = False,
-) -> RenderedGeneratedWrapperArtifacts:
+) -> GeneratedWrapper:
     """Complete policy and generate the one production wrapper representation."""
     _print_verbose_step(verbose, "Complete wrapper policies")
     policy_started = time.perf_counter()
@@ -1710,8 +1708,8 @@ def _native_link_args(link_items: Iterable[NativeLinkItem]) -> tuple[str, ...]:
     return tuple(args)
 
 
-def _rendered_wrapper_native_link_args(plan: NativeBuildPlan) -> tuple[str, ...]:
-    """Return link arguments not already supplied as rendered-wrapper dependencies."""
+def _generated_wrapper_native_link_args(plan: NativeBuildPlan) -> tuple[str, ...]:
+    """Return link arguments not already supplied as generated-wrapper dependencies."""
     produced_objects = {_path_key(path) for path in plan.produced_objects}
     return _native_link_args(
         item
@@ -2803,8 +2801,8 @@ def build_fortran_extension(
         refresh_fortran_type_probe=refresh_fortran_type_probe,
     )
 
-    # 3. Complete wrapper policy and render the canonical artifacts.
-    rendered_wrapper_plan = _generated_wrapper_plan_artifacts(
+    # 3. Complete wrapper policy and generate the canonical wrapper.
+    generated_wrapper = _generate_wrapper(
         module,
         strict_wrapper_names=strict_wrapper_names,
         verbose=verbose,
@@ -2822,15 +2820,15 @@ def build_fortran_extension(
     native_compile_batches = _project_compile_batches(parsed, native_source_objects)
 
     # 5. Build the extension, or retain the generated source/Makefile plan.
-    result = _build_rendered_wrapper_extension(
-        rendered_wrapper_plan,
+    result = _build_generated_wrapper_extension(
+        generated_wrapper,
         output_dir=output_path,
         shared_library_output_dir=shared_library_output_path,
         sources=source_paths,
         native_build_plan=native_build_plan,
         native_dependencies=native_source_objects,
         native_compile_batches=native_compile_batches,
-        native_link_args=_rendered_wrapper_native_link_args(native_build_plan),
+        native_link_args=_generated_wrapper_native_link_args(native_build_plan),
         wrapper_fortran_flags=wrapper_fortran_flags,
         wrapper_c_flags=wrapper_c_flags,
         compiler=compiler,
@@ -2963,7 +2961,7 @@ def build_pyi_extension(
     wrapper_fortran_flags = _compiler_flags(wrapper_fortran_flags)
     wrapper_c_flags = _compiler_flags(wrapper_c_flags)
 
-    # 2. Assemble semantic IR, complete policy, and render wrapper artifacts.
+    # 2. Assemble semantic IR, complete policy, and generate the wrapper.
     modules = list(bundle.modules)
     _complete_pyi_fortran_boolean_types(
         modules,
@@ -2972,7 +2970,7 @@ def build_pyi_extension(
     )
     module_name = _validated_wrapper_module_name(output_name, _bundle_output_name(bundle))
     module = _merge_wrapper_modules(modules, name=module_name)
-    rendered_wrapper_plan = _generated_wrapper_plan_artifacts(
+    generated_wrapper = _generate_wrapper(
         module,
         strict_wrapper_names=strict_wrapper_names,
         verbose=verbose,
@@ -2988,15 +2986,15 @@ def build_pyi_extension(
     native_array_build_requirements = native_array_handle_build_requirements(module)
 
     # 4. Build the extension and attach its replayable manifest data.
-    result = _build_rendered_wrapper_extension(
-        rendered_wrapper_plan,
+    result = _build_generated_wrapper_extension(
+        generated_wrapper,
         output_dir=output_path,
         shared_library_output_dir=shared_library_output_path,
         sources=bundle.paths,
         native_build_plan=native_build_plan,
         native_dependencies=native_source_objects,
         native_compile_batches=_serial_compile_batches(native_source_objects),
-        native_link_args=_rendered_wrapper_native_link_args(native_build_plan),
+        native_link_args=_generated_wrapper_native_link_args(native_build_plan),
         wrapper_fortran_flags=wrapper_fortran_flags,
         wrapper_c_flags=wrapper_c_flags,
         compiler=compiler,

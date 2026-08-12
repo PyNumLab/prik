@@ -1,15 +1,15 @@
 """Completed policy for editable module-variable initialization."""
 
-from prik.semantics.ownership import SetterAction
-from prik.semantics.policy_completion import complete_semantic_policies
+from prik.policy.ownership import SetterAction
+from prik.policy.completion import complete_semantic_policies
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.parsers.fortran.parser import parse_fortran_project
 from prik.pipeline.build import _apply_source_python_exports, _merge_wrapper_modules
-from prik.codegen.printers.pyi_printer import PyiPrinter
+from prik.printers.pyi import PyiPrinter
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.semantics.models import RESOLVED_MODULE_VARIABLE_POLICY_METADATA
-from prik.semantics.ownership import AssignmentMode
-from prik.semantics.wrapper_policy_models import ModuleGetterAction, ModuleVariablePolicy
+from prik.policy.ownership import AssignmentMode
+from prik.policy.models import ModuleGetterAction, ModuleVariablePolicy
 
 
 def test_scalar_module_variable_policy_completes_access_and_storage_before_planning():

@@ -10,13 +10,13 @@ from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.semantics.models import (
     RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA,
 )
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy_models import (
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import (
     CallbackABIKind,
     CallbackTransferAction,
     FunctionWrapperPolicy,
 )
-from prik.semantics.wrapper_policy import completed_function_wrapper_policy
+from prik.policy.construction import completed_function_wrapper_policy
 
 FIXTURES = Path(__file__).parents[1] / "end_to_end" / "fixtures"
 

@@ -14,13 +14,13 @@ import math
 import re
 
 from prik.utilities.declaration_expressions import declaration_extent_uses_power, render_declaration_extent
-from prik.semantics.ownership import (
+from prik.policy.ownership import (
     CodegenAction,
     ObjectKind,
     PythonBarrierAction,
     SetterAction,
 )
-from prik.semantics.wrapper_policy_models import (
+from prik.policy.models import (
     ArgumentHandoffMode,
     CallbackABIKind,
     CallbackResultAction,
@@ -79,9 +79,9 @@ from prik.codegen.nodes import (
     CSwitch,
     CodeExpression,
 )
-from prik.codegen.naming import NativeSymbolNames
+from prik.naming.native_symbols import NativeSymbolNames
 from prik.codegen.overloads import OverloadPlanQueries
-from prik.codegen.plan import (
+from prik.planning.models import (
     ArrayHandoffPlan,
     ArgumentTransferPlan,
     CallbackHandoffPlan,
@@ -11439,7 +11439,7 @@ class CBindingGenerator(ClassVisitor):
             return f"PyUnicode_Check({value})"
         if match.kind is OverloadMatchKind.NUMPY_SCALAR:
             predicate = f"PyArray_IsScalar({value}, {self._overload_numpy_scalar_kind(match.semantic_type_name)})"
-            if match.accept_builtin_scalar:
+            if match.builtin_scalar_family is not None:
                 predicate = f"({predicate} || {self._overload_builtin_scalar_condition(match, value)})"
             return predicate
         raise ValueError(f"Unsupported overload match kind: {match.kind.value}")
@@ -11467,15 +11467,15 @@ class CBindingGenerator(ClassVisitor):
     @staticmethod
     def _overload_builtin_scalar_condition(match: OverloadArgumentMatchPlan, value: str) -> str:
         """Return the exact builtin predicate allowed for reflected dispatch."""
-        if is_boolean_semantic_type_name(match.semantic_type_name):
+        if match.builtin_scalar_family == "bool":
             return f"PyBool_Check({value})"
-        if match.semantic_type_name.startswith("Int"):
+        if match.builtin_scalar_family == "int":
             return f"PyLong_CheckExact({value})"
-        if match.semantic_type_name.startswith("Float"):
+        if match.builtin_scalar_family == "float":
             return f"PyFloat_CheckExact({value})"
-        if match.semantic_type_name.startswith("Complex"):
+        if match.builtin_scalar_family == "complex":
             return f"PyComplex_CheckExact({value})"
-        raise ValueError(f"Unsupported reflected overload scalar {match.semantic_type_name!r}")
+        raise ValueError(f"Unsupported reflected overload scalar family {match.builtin_scalar_family!r}")
 
     def _overload_candidate_case(
         self,
@@ -11541,7 +11541,7 @@ class CBindingGenerator(ClassVisitor):
             )
         ]
         coerced_name = None
-        if match.accept_builtin_scalar:
+        if match.builtin_scalar_family is not None:
             coerced_name = f"candidate_coerced_{index}"
             nodes.append(CDeclaration(coerced_name, "PyObject *", CodeExpression("NULL")))
             nodes.append(self._overload_builtin_coercion_node(match, value_name, coerced_name))
@@ -12230,9 +12230,9 @@ class CBindingGenerator(ClassVisitor):
 
 
 if __name__ == "__main__":
-    from prik.codegen.planner import WrapperPlanner
+    from prik.planning.planner import WrapperPlanner
     from prik.semantics.models import SemanticArgument, SemanticFunction, SemanticModule, SemanticType
-    from prik.semantics.policy_completion import complete_semantic_policies
+    from prik.policy.completion import complete_semantic_policies
 
     module = SemanticModule(
         name="binding_demo",

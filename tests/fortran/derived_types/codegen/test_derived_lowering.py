@@ -8,8 +8,8 @@ import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.semantics.models import RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy_models import (
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import (
     BridgeDataAction,
     DerivedNativeHandoff,
     DerivedObjectOrigin,
@@ -17,7 +17,8 @@ from prik.semantics.wrapper_policy_models import (
     DerivedRelease,
     LifecycleOperation,
 )
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 
 def _value_module(*, attributes: tuple[str, ...] = ()):
@@ -44,7 +45,7 @@ def _value_plan():
 
 
 def _sources(plan):
-    artifacts = WrapperCodeGenerator().generate(plan)
+    artifacts = WrapperGenerator().generate(plan)
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
     return c_source, bridge_source
@@ -101,7 +102,7 @@ def test_derived_plan_edits_fail_central_validation(edit: str, diagnostic: str):
         argument.bridge = replace(argument.bridge, data_action=BridgeDataAction.ASSOCIATE_VIEW)
 
     with pytest.raises(ValueError, match=diagnostic):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)
 
 
 def test_owned_derived_result_has_explicit_failure_and_release_lifecycle():
@@ -127,7 +128,7 @@ def make_point() -> point: ...
 
     function.release_actions = ()
     with pytest.raises(ValueError, match="derived-wrapper-release-count"):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)
 
 
 def test_hidden_returns_derived_output_reuses_owned_result_storage_and_lifecycle():
@@ -210,7 +211,7 @@ current: Annotated[point, Aliased]
     variable.derived.handoff.release = DerivedRelease.WRAPPER_DESTROY
 
     with pytest.raises(ValueError, match="invalid-derived-module-release"):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)
 
 
 @pytest.mark.parametrize(
@@ -297,9 +298,7 @@ def update(value: point) -> tuple[Float64, Returns["value", point]]: ...
     assert function.results[0].result_position == 0
     assert function.writeback_actions[2].result_position == 1
 
-    c_source = next(
-        source.text for source in WrapperCodeGenerator().generate(plan).sources if source.path.suffix == ".c"
-    )
+    c_source = next(source.text for source in WrapperGenerator().generate(plan).sources if source.path.suffix == ".c")
     assert "PyTuple_New(2)" in c_source
     assert "Py_DECREF(result_0_obj);" in c_source
 

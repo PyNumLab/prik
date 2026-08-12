@@ -14,8 +14,6 @@ import pytest
 from tests.fortran._support.wrapper_build import REPO_ROOT
 from prik.codegen import (
     BackendScalarType,
-    BindingModulePlan,
-    BridgeModulePlan,
     CDeclaration,
     CExpressionStatement,
     CFunction,
@@ -25,7 +23,6 @@ from prik.codegen import (
     CModule,
     CParameter,
     CReturn,
-    CSourcePrinter,
     CodeExpression,
     FortranAssignment,
     FortranCall,
@@ -34,12 +31,11 @@ from prik.codegen import (
     FortranModule,
     FortranParameter,
     FortranPointerAssignment,
-    FortranSourcePrinter,
     FortranUse,
-    ModulePlan,
-    NamespacePlan,
     UnsupportedWrapperCodegenNodeError,
 )
+from prik.planning import BindingModulePlan, BridgeModulePlan, ModulePlan, NamespacePlan
+from prik.printers import CSourcePrinter, FortranSourcePrinter
 
 
 def test_source_printers_render_complete_c_header_and_fortran_modules():
@@ -211,20 +207,22 @@ def test_fortran_source_printer_rejects_an_overlong_token_without_a_safe_break()
 
 
 def test_source_printers_do_not_import_wrapper_plan_models():
-    path = REPO_ROOT / "prik" / "codegen" / "printers" / "source_printers.py"
-    imports = {
-        node.module
-        for node in ast.walk(ast.parse(Path(path).read_text(encoding="utf-8")))
-        if isinstance(node, ast.ImportFrom) and node.module is not None
-    }
+    imports = set()
+    for filename in ("c.py", "fortran.py"):
+        path = REPO_ROOT / "prik" / "printers" / filename
+        imports.update(
+            node.module
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+            if isinstance(node, ast.ImportFrom) and node.module is not None
+        )
 
-    assert "prik.codegen.plan" not in imports
+    assert "prik.planning.models" not in imports
 
 
-def test_source_printers_direct_example_is_runnable():
+def test_fortran_source_printer_direct_example_is_runnable():
     repository_root = Path(__file__).resolve().parents[4]
     result = subprocess.run(
-        [sys.executable, str(repository_root / "prik/codegen/printers/source_printers.py")],
+        [sys.executable, str(repository_root / "prik/printers/fortran.py")],
         cwd=repository_root,
         capture_output=True,
         check=True,

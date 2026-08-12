@@ -210,11 +210,11 @@ implementation files.
 | Fortran target type probing and cache | `prik/probes/fortran_types.py` | `tests/fortran/data_types/probes/test_fortran_type_probes.py` |
 | Generated target datatype mapping examples | `prik/probes/report.py` | `tests/fortran/infrastructure/types/test_mapping_report.py`, `tests/docs/test_examples.py` |
 | Fortran to semantic IR | `prik/semantics/fortran2ir.py`, `prik/semantics/models.py` | `tests/fortran/semantic_ir/semantics/` |
-| `.pyi` printing | `prik/codegen/printers/pyi_printer.py` | `tests/fortran/semantic_pyi_format/pipeline/`, `tests/fortran/semantic_pyi_format/pipeline/test_modern_example.py` |
+| `.pyi` printing | `prik/printers/pyi.py` | `tests/fortran/semantic_pyi_format/pipeline/`, `tests/fortran/semantic_pyi_format/pipeline/test_modern_example.py` |
 | `.pyi` parsing/loading/editing | `prik/parsers/pyi/parser.py`, `prik/pipeline/pyi.py`, `prik/semantics/pyi2ir.py` | `tests/fortran/semantic_pyi_format/` |
-| Semantic policy completion | `prik/semantics/policy_completion.py`, `prik/semantics/ownership.py` | `tests/fortran/infrastructure/semantics/` and feature-local `policy/` directories |
+| Semantic policy completion | `prik/policy/completion.py`, `prik/policy/ownership.py` | `tests/fortran/infrastructure/semantics/` and feature-local `policy/` directories |
 | Fortran wrapper orchestration | `prik/pipeline/build.py` | `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py`, `tests/fortran/building_shared_library/end_to_end/test_multi_source_builds.py` |
-| Wrapper planning, owner-local errors, and direct lowering | `prik/codegen/plan.py`, `prik/codegen/planner.py`, `prik/codegen/generator.py` | `tests/fortran/infrastructure/codegen/`, feature-local `codegen/` stages |
+| Wrapper planning, owner-local errors, and direct lowering | `prik/planning/models.py`, `prik/planning/planner.py`, `prik/pipeline/wrapper.py` | `tests/fortran/infrastructure/codegen/`, feature-local `codegen/` stages |
 | Native compilation and binding support | `prik/compiling/`, `prik/binding_support/` | `tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py`, `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py` |
 | Executable Markdown examples | `README.md`, `docs/*.md` | `tests/docs/test_examples.py` |
 
@@ -282,7 +282,7 @@ User-visible `.pyi` syntax is first parsed to Python AST by
 `prik/parsers/pyi/parser.py`, loaded from text/files by
 `prik/pipeline/pyi.py`, converted to semantic IR by
 `prik/semantics/pyi2ir.py`, and printed by
-`prik/codegen/printers/pyi_printer.py`. The converter and printer operate on
+`prik/printers/pyi.py`. The converter and printer operate on
 `prik/semantics/models.py`.
 
 Important implementation rules:
@@ -685,7 +685,7 @@ CLI `.pyi` wrapper build:
   -> prik/pipeline/pyi.py pyi_paths_to_semantic_modules(...)
   -> prik/semantics/pyi2ir.py
   -> SemanticModule list
-  -> prik/semantics/policy_completion.py
+  -> prik/policy/completion.py
   -> complete_semantic_policies(...)
   -> WrapperPlanner.build(...)
 ```
@@ -839,7 +839,7 @@ ordered source paths
   -> compile-time expression and storage probes
   -> fortran_project_to_semantic_modules(...)
   -> merge public semantic modules
-  -> WrapperPlanner and WrapperCodeGenerator
+  -> WrapperPlanner and WrapperGenerator
   -> create_shared_library(...)
   -> WrapperBuildResult
 ```
@@ -849,9 +849,9 @@ The main ownership boundaries are:
 - `prik/pipeline/build.py`: source order, preprocessing/probing, semantic merge,
   `.pyi` entry-contract loading, native build plan assembly, output placement,
   direct-versus-Makefile mode, and artifact reporting;
-- `prik/codegen/planner.py`: projection from completed semantic policy
+- `prik/planning/planner.py`: projection from completed semantic policy
   into validated typed plans;
-- `prik/codegen/generator.py`: direct bridge, binding, and source
+- `prik/pipeline/wrapper.py`: direct bridge, binding, and source
   artifact generation;
 - `prik/compiling/`: compiler commands and shared-library linking; and
 - `prik/binding_support/`: native binding support copied into each build.
@@ -860,7 +860,7 @@ The main ownership boundaries are:
 - `prik/codegen/fortran/bridge.py`: Fortran-to-C ABI adaptation;
 - `prik/codegen/c/binding.py`: Python argument/result conversion,
   reference handling, and CPython wrapper construction;
-- `prik/codegen/printers/source_printers.py`: source rendering only;
+- `prik/printers/c.py` and `prik/printers/fortran.py`: source rendering only;
 PRIK_C_DOCS_END -->
 
 Do not move semantic ownership or projection policy into printers. Do not infer
@@ -942,7 +942,7 @@ PRIK_C_DOCS_END -->
 - `prik/semantics/fortran2ir.py` maps Fortran procedures, derived types, module
   variables, kinds, shapes, storage contracts, visibility, imported references,
   and compile-time values.
-- `prik/codegen/printers/pyi_printer.py` emits editable user contracts.
+- `prik/printers/pyi.py` emits editable user contracts.
 - `prik/parsers/pyi/parser.py` parses edited contracts to Python AST.
 - `prik/pipeline/pyi.py` converts edited contract text, files, and path sets.
 - `prik/semantics/pyi2ir.py` converts parsed `.pyi` AST back into semantic IR.
@@ -951,7 +951,7 @@ PRIK_C_DOCS_END -->
 - Named data bindings keep role-specific semantic types: `SemanticVariable`
   for module variables and constants, `SemanticArgument` for callable
   parameters, and `SemanticField` for Fortran derived-type components.
-- `prik/semantics/policy_completion.py` completes semantic policies after
+- `prik/policy/completion.py` completes semantic policies after
   Fortran or `.pyi` conversion and before wrapper planning or lowering.
 
 <!-- PRIK_C_DOCS_START
@@ -972,7 +972,7 @@ PRIK_C_DOCS_END -->
   precision is stored on the semantic type. C and Fortran enums lower to
   unscoped module-level integer constants; enum names are metadata, not
   semantic datatypes.
-- `prik/semantics/policy_completion.py` completes semantic policies after
+- `prik/policy/completion.py` completes semantic policies after
   C/Fortran/`.pyi` conversion and before wrapper planning or lowering.
 PRIK_C_DOCS_END -->
 
@@ -1238,7 +1238,7 @@ Example target: add a new `Annotated[...]` metadata item or projection helper.
    `prik/parsers/pyi/parser.py` only when the raw Python AST parsing boundary
    changes.
 3. Add printer tests in `tests/fortran/semantic_pyi_format/pipeline/`.
-4. Update `prik/codegen/printers/pyi_printer.py`.
+4. Update `prik/printers/pyi.py`.
 5. Update semantic models in `prik/semantics/models.py` only if the IR needs a new
    field or constraint.
 6. Update policy completion or wrapper planning if the syntax changes a

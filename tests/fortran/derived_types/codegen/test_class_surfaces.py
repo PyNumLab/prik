@@ -5,8 +5,9 @@ from pathlib import Path
 import pytest
 
 from prik.pipeline.pyi import pyi_file_to_semantic_module
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.policy.completion import complete_semantic_policies
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 FIXTURES = Path(__file__).parents[1] / "end_to_end" / "fixtures"
 INHERITANCE = FIXTURES / "contracts" / "finheritance_f90" / "finheritance_f90.pyi"
@@ -55,4 +56,4 @@ def test_invalid_class_graph_fails_before_emission():
     _surface(plan, "circle").base_identities = (("missing", "base"),)
 
     with pytest.raises(ValueError, match="missing-or-late-class-base"):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)
