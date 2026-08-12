@@ -22,6 +22,7 @@ from prik.semantics.ownership import (
     StorageMode,
     TransferMode,
     default_ownership_policy,
+    set_ownership_metadata,
 )
 from tests.fortran._support.ownership_policy import (
     _address_type,
@@ -232,6 +233,57 @@ def test_policy_handler_dictionary_changes_one_object_kind():
     assert scalar.transfer is TransferMode.BORROWED_VIEW
     assert array.owner is OwnershipOwner.WRAPPER
     assert array.transfer is TransferMode.WRAPPER_INSTANCE
+
+
+def test_explicit_ownership_override_preserves_normalized_fields_and_storage_invariants():
+    metadata: dict[str, object] = {}
+    set_ownership_metadata(
+        metadata,
+        owner="python",
+        transfer="snapshot_copy",
+        destruction="python_refcount",
+    )
+    metadata["ownership_policy"].update(
+        nullable=True,
+        borrowed=True,
+        reason="test override",
+    )
+
+    decision = default_ownership_policy.decide_semantic_type(
+        _array_type(allocatable=True, metadata=metadata),
+        OwnershipContext.result(),
+    )
+
+    assert decision.owner is OwnershipOwner.PYTHON
+    assert decision.transfer is TransferMode.SNAPSHOT_COPY
+    assert decision.destruction is DestructionPolicy.PYTHON_REFCOUNT
+    assert decision.storage_mode is StorageMode.HEAP
+    assert decision.nullable is True
+    assert decision.borrowed is True
+    assert decision.reason == "test override"
+
+
+def test_borrowed_pointer_override_blocks_before_unrelated_destruction_validation():
+    metadata = {
+        "ownership_policy": {
+            "owner": "native",
+            "transfer": "borrowed_view",
+            "destruction": "not_a_destruction_policy",
+            "nullable": False,
+        }
+    }
+
+    decision = default_ownership_policy.decide_semantic_type(
+        _array_type(pointer=True, metadata=metadata),
+        OwnershipContext.result(),
+    )
+
+    assert decision.owner is OwnershipOwner.UNKNOWN
+    assert decision.transfer is TransferMode.BLOCKED
+    assert decision.destruction is DestructionPolicy.BLOCKED
+    assert decision.storage_mode is StorageMode.ALIAS
+    assert decision.nullable is False
+    assert decision.blocker == ("borrowed pointer views need native-owner retention and stale-view invalidation")
 
 
 def test_codegen_action_dispatcher_routes_policy_actions_to_named_methods():

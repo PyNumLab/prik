@@ -1,10 +1,38 @@
-"""Complete wrapper boundary and storage policy before codegen lowering.
+"""Complete lifetime and boundary policy before wrapper planning and lowering.
 
-This module decides ownership, transfer, destruction, writeback, projection,
-nullability, release responsibility, codegen action, and both contract-value
-and boundary ``stack``/``heap``/``alias`` storage modes. Bridge and binding
-generators consume these decisions through strict dispatch and do not
-reconstruct policy from codegen datatypes.
+Ownership is represented as several independent questions instead of one
+``owned`` or ``borrowed`` flag:
+
+* ``OwnershipOwner`` says who owns the represented storage.
+* ``TransferMode`` says how the value or storage relationship crosses the
+  Python/native boundary.
+* ``DestructionPolicy`` says who releases an owned resource.
+* ``StorageMode`` says whether PRIK keeps a direct value, heap-backed value, or
+  alias for both the contract and ABI boundary representations.
+* the action enums tell planning and lowering exactly which generated
+  mechanism to use.
+
+The separation matters because the Python object and its native storage can
+have different owners.  For example,
+``PYTHON + COPY_RETURN + PYTHON_REFCOUNT`` describes an independent Python
+copy, while ``NATIVE + BORROWED_VIEW + NATIVE_OWNER`` describes a live Python
+view whose storage remains owned and released by native code.  The resolver
+accepts only implemented combinations and fails closed when the owner,
+transfer, release responsibility, or required lifetime proof is missing.
+
+``OwnershipPolicyResolver`` first selects defaults from semantic storage and
+use context, then applies explicit contract metadata, validates the completed
+lifetime triple, and finally derives strict lowering actions.  Post-IR policy
+completion attaches the resulting immutable ``OwnershipDecision`` before
+wrapper planning begins.  Bridge and binding generators consume those
+decisions; they must not reconstruct semantic policy from datatypes, source
+``intent``, rank, alias flags, or local memory checks.
+
+For example, a normal scalar input commonly resolves to caller-owned,
+call-local use with no wrapper release action, while an array result commonly
+resolves to a Python-owned copy released by Python reference counting.  See
+``docs/maintainer/internal-architecture/ownership-tracking.md`` for the full
+stage map, supported triples, pointer-policy boundary, and change routes.
 """
 
 from __future__ import annotations
@@ -27,6 +55,11 @@ from prik.types.numpy import BOOLEAN_SEMANTIC_TYPE_NAMES
 
 OWNERSHIP_POLICY_METADATA = "ownership_policy"
 POINTER_POLICY_METADATA = "pointer_policy"
+# PointerPolicy fields answer, in order: whether association may be absent,
+# boundary use, target owner, lifetime proof, permitted release, shape source,
+# layout guarantee, permitted association change, alias relationship, and
+# mutability. String values remain contract facts until policy completion
+# validates whether the current runtime implements the requested mechanism.
 POINTER_POLICY_FIELDS = (
     "nullable",
     "transfer",
@@ -52,6 +85,13 @@ class ObjectKind(str, Enum):
     ``OwnershipPolicyResolver`` chooses a kind before selecting lifetime and
     ABI actions.  Strict lowering dispatchers consume this value as part of
     their completed-policy key.
+
+    Values:
+        ``SCALAR`` is an ordinary scalar value or addressable scalar cell.
+        ``STRING`` is a Python string value or native character storage.
+        ``NUMPY_ARRAY`` is NumPy-compatible array storage, including native
+        descriptor-backed arrays. ``DERIVED_TYPE`` is an opaque native object
+        represented through a generated wrapper.
     """
 
     SCALAR = "scalar"
@@ -61,7 +101,22 @@ class ObjectKind(str, Enum):
 
 
 class OwnershipOwner(str, Enum):
-    """Name the party responsible for the represented object's storage."""
+    """Name the party that owns the represented value or storage.
+
+    Values:
+        ``PYTHON`` means Python, NumPy, or a Python-owned capsule owns the
+        value or buffer. ``CALLER`` means the supplied caller object retains
+        ownership across the call. ``NATIVE`` means an independent Fortran or
+        external native owner retains the storage. ``WRAPPER`` means a
+        generated wrapper or handle owns or controls the native resource.
+        ``TEMPORARY`` means generated storage exists only for the current
+        call. ``UNKNOWN`` records that no safe owner is known and is used by
+        fail-closed decisions.
+
+    The owner does not by itself say whether a copy or view crosses the
+    boundary; read it together with ``TransferMode`` and
+    ``DestructionPolicy``.
+    """
 
     PYTHON = "python"
     CALLER = "caller"
@@ -72,7 +127,22 @@ class OwnershipOwner(str, Enum):
 
 
 class TransferMode(str, Enum):
-    """Describe how a value or storage reference crosses the wrapper boundary."""
+    """Describe how a value or storage relationship crosses the boundary.
+
+    Values:
+        ``BY_VALUE`` passes an independent scalar-like value. ``IN_PLACE``
+        lets native code use caller-visible storage without replacement.
+        ``COPY_RETURN`` copies or converts native output into a fresh Python
+        result. ``SNAPSHOT_COPY`` detaches a copy of current persistent native
+        state. ``BORROWED_VIEW`` exposes storage owned elsewhere without
+        transferring ownership. ``CALL_LOCAL`` keeps storage or association
+        valid only for one wrapped call. ``WRAPPER_INSTANCE`` returns a
+        generated object that owns or controls a native instance. ``BLOCKED``
+        states that no supported safe transfer exists.
+
+    A transfer is an observable relationship, not a cleanup instruction;
+    cleanup comes from ``DestructionPolicy``.
+    """
 
     BY_VALUE = "by_value"
     IN_PLACE = "in_place"
@@ -85,7 +155,22 @@ class TransferMode(str, Enum):
 
 
 class DestructionPolicy(str, Enum):
-    """Describe who, if anyone, releases native or Python-side resources."""
+    """Describe who releases any resource represented by the decision.
+
+    Values:
+        ``PYTHON_REFCOUNT`` delegates release to Python, NumPy, or a
+        Python-owned capsule. ``CALLER`` leaves release responsibility with
+        the caller that supplied the object. ``WRAPPER_DEALLOC`` uses a
+        generated wrapper or handle deallocator. ``NATIVE_OWNER`` leaves
+        release to an independent native owner. ``CALL_LOCAL`` runs generated
+        cleanup before the wrapped call finishes. ``NONE`` means this boundary
+        value creates no resource that PRIK must release. ``BLOCKED`` means
+        release responsibility is unsafe, contradictory, or unimplemented.
+
+    ``NONE`` does not claim that no storage exists.  For example, an existing
+    wrapper-owned object passed call-locally still has storage, but that call
+    creates nothing new to destroy.
+    """
 
     PYTHON_REFCOUNT = "python_refcount"
     CALLER = "caller"
@@ -97,7 +182,17 @@ class DestructionPolicy(str, Enum):
 
 
 class StorageMode(str, Enum):
-    """Select stable storage for a contract value or ABI boundary representation."""
+    """Select storage for a contract value or ABI boundary representation.
+
+    Values:
+        ``STACK`` is a direct or call-frame value with no persistent heap
+        allocation. ``HEAP`` is storage whose lifetime extends beyond a native
+        stack value. ``ALIAS`` refers to existing storage without owning an
+        independent value at this location.
+
+    ``OwnershipDecision.storage_mode`` describes the contract value;
+    ``boundary_storage_mode`` may separately describe the ABI-facing form.
+    """
 
     STACK = "stack"
     HEAP = "heap"
@@ -105,7 +200,22 @@ class StorageMode(str, Enum):
 
 
 class CodegenAction(str, Enum):
-    """Identify the completed lowering action for a supported ownership decision."""
+    """Identify the completed general lowering mechanism.
+
+    Values:
+        ``DIRECT_VALUE`` converts or returns an independent value.
+        ``CALL_LOCAL_INPUT`` prepares input storage valid for one call.
+        ``IN_PLACE_ARGUMENT`` passes caller-visible mutable storage.
+        ``IDENTITY_OUTPUT`` mutates and projects the same supplied object.
+        ``COPY_IN_OUT`` copies immutable Python input into mutable call storage
+        and returns its final value. ``COPY_OUT`` materializes native output as
+        a fresh Python result. ``SNAPSHOT_COPY`` materializes a detached copy
+        of persistent state. ``BORROWED_VIEW`` exposes owner-controlled
+        storage. ``WRAPPER_INSTANCE`` constructs or returns a generated native
+        object wrapper. ``BLOCKED`` rejects lowering.
+
+    This action is derived only after the lifetime triple is validated.
+    """
 
     DIRECT_VALUE = "direct_value"
     CALL_LOCAL_INPUT = "call_local_input"
@@ -120,7 +230,18 @@ class CodegenAction(str, Enum):
 
 
 class PythonBarrierAction(str, Enum):
-    """Identify how a Python-visible argument crosses into wrapper storage."""
+    """Identify how a Python-visible argument enters wrapper storage.
+
+    Values:
+        ``SCALAR_VALUE`` reads an ordinary Python scalar. ``SCALAR_STORAGE``
+        reads or creates addressable scalar storage. ``ARRAY_STORAGE``
+        validates and uses NumPy-compatible array storage. ``STRING_VALUE``
+        reads an immutable Python string. ``STRING_STORAGE`` uses mutable
+        character storage. ``RAW_ADDRESS`` accepts an explicit raw address.
+        ``WRAPPER_INSTANCE`` extracts an opaque instance or native descriptor
+        from a generated wrapper. ``NONE`` means there is no Python argument
+        for this value. ``BLOCKED`` rejects Python-boundary lowering.
+    """
 
     SCALAR_VALUE = "scalar_value"
     SCALAR_STORAGE = "scalar_storage"
@@ -134,7 +255,19 @@ class PythonBarrierAction(str, Enum):
 
 
 class NativeBarrierAction(str, Enum):
-    """Identify how wrapper storage crosses the native ABI boundary."""
+    """Identify how wrapper storage crosses the native ABI boundary.
+
+    Values:
+        ``PASS_VALUE`` passes a converted value directly.
+        ``PASS_CALL_LOCAL_ADDRESS`` passes wrapper-created call-local storage
+        by address. ``PASS_STORAGE_ADDRESS`` passes existing mutable storage by
+        address. ``PASS_RAW_ADDRESS`` forwards an explicit raw address.
+        ``PASS_ARRAY_BUFFER`` passes a validated array data buffer.
+        ``PASS_NATIVE_DESCRIPTOR`` passes an allocatable or pointer descriptor.
+        ``PASS_WRAPPER_ADDRESS`` passes an opaque address held by a generated
+        object wrapper. ``NONE`` means no native argument is required.
+        ``BLOCKED`` rejects native-boundary lowering.
+    """
 
     PASS_VALUE = "pass_value"
     PASS_CALL_LOCAL_ADDRESS = "pass_call_local_address"
@@ -148,7 +281,13 @@ class NativeBarrierAction(str, Enum):
 
 
 class AssignmentMode(str, Enum):
-    """Describe whether a setter copies a value, aliases storage, or is unavailable."""
+    """Describe the native assignment mechanism selected for a setter.
+
+    Values:
+        ``NONE`` emits no native assignment. ``VALUE_COPY`` copies the incoming
+        value into existing native storage. ``ALIAS`` associates the
+        destination with existing storage rather than copying it.
+    """
 
     NONE = "none"
     VALUE_COPY = "value_copy"
@@ -156,7 +295,13 @@ class AssignmentMode(str, Enum):
 
 
 class SetterAction(str, Enum):
-    """Describe the Python property setter behavior selected by policy completion."""
+    """Describe the Python property setter behavior selected by policy.
+
+    Values:
+        ``WRITE_THROUGH`` exposes a setter that updates native state.
+        ``REJECT_REPLACEMENT`` keeps the property readable but explicitly
+        rejects replacing its storage. ``OMIT`` exposes no Python setter.
+    """
 
     WRITE_THROUGH = "write_through"
     REJECT_REPLACEMENT = "reject_replacement"
@@ -395,6 +540,18 @@ class OwnershipContext:
     or module-variable cases.  The resolver combines these flags with storage
     facts to select an ownership decision; callers do not need to infer a
     codegen action themselves.
+
+    ``location`` is the diagnostic location label. ``reads_argument`` and
+    ``writes_argument`` describe native access to a supplied argument.
+    ``is_result``, ``is_argument``, ``is_field``, and ``is_module_variable``
+    identify the semantic owner. ``projects_result`` says the value occupies a
+    declared Python result position, while ``python_visible`` says the caller
+    supplies it as a Python argument.
+
+    For example, a hidden output dummy uses
+    ``OwnershipContext.argument(reads_argument=False, writes_argument=True,
+    projects_result=True, python_visible=False)``: native code writes it, the
+    wrapper returns it, and the Python caller does not supply it.
     """
 
     location: str = "value"
@@ -564,6 +721,24 @@ class OwnershipDecision:
     Policy completion stores this immutable record beside semantic values and
     wrapper planning projects it into backend-neutral records.  A blocked
     decision carries its diagnostic in ``blocker`` and must not be lowered.
+
+    ``kind`` selects the Python representation. ``owner``, ``transfer``, and
+    ``destruction`` form the validated lifetime triple. ``storage_mode`` and
+    ``boundary_storage_mode`` describe contract and ABI storage. The three
+    action fields select general, Python-barrier, and native-barrier lowering.
+
+    ``nullable`` permits an absent value or descriptor. ``borrowed`` records a
+    non-owning relationship. ``mutates_native`` records observable native
+    mutation. ``projects_result`` and ``python_visible`` describe the Python
+    signature, while ``descriptor_boundary`` selects native descriptor
+    transport. ``assignment_mode`` and ``setter_action`` complete property
+    write behavior. ``blocker`` explains a fail-closed decision and ``reason``
+    explains the selected supported policy.
+
+    For example, a live module array normally has kind ``NUMPY_ARRAY``, owner
+    ``NATIVE``, transfer ``BORROWED_VIEW``, destruction ``NATIVE_OWNER``, and
+    alias storage. The resulting actions expose native-controlled storage
+    without giving Python permission to destroy it.
     """
 
     kind: ObjectKind
@@ -618,6 +793,29 @@ class _StorageFacts:
     address_role: str | None = None
     scalar_storage: bool = False
     metadata: Mapping[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class _OwnershipOverride:
+    """Hold one normalized explicit lifetime override before it is applied.
+
+    The record contains the effective values selected from explicit metadata
+    and the resolver's default decision.  Keeping this intermediate immutable
+    separates metadata parsing from decision replacement and safety
+    validation.
+
+    For example, metadata requesting ``python/copy_return/python_refcount``
+    becomes one record whose ``owner``, ``transfer``, and ``destruction`` are
+    the corresponding enums; the later application step also derives its
+    storage mode and blocked diagnostic.
+    """
+
+    owner: OwnershipOwner
+    transfer: TransferMode
+    destruction: DestructionPolicy
+    nullable: bool
+    borrowed: bool
+    reason: str
 
 
 Handler = Callable[[_StorageFacts, OwnershipContext], OwnershipDecision]
@@ -1650,24 +1848,111 @@ class OwnershipPolicyResolver:
         """Apply declared ownership metadata without bypassing later safety validation.
 
         Pointer container metadata stays separate from general ownership
-        overrides.  Unsupported borrowed pointer views become blocked here so
+        overrides. Unsupported borrowed pointer views become blocked here so
         lower stages cannot fabricate target retention.
+
+        For example, an array result default can be overridden with
+        ``python/copy_return/python_refcount``. The method selects that metadata,
+        normalizes it into ``_OwnershipOverride``, applies storage invariants,
+        and returns a new decision. A pointer requesting ``borrowed_view`` is
+        instead returned as an explicit blocked decision.
+        """
+        # Select the applicable general or non-container pointer metadata.
+        raw = self._ownership_override_metadata(facts, context)
+        if raw is None:
+            return decision
+
+        # Normalize the owner before pointer rejection to preserve metadata diagnostics.
+        owner = self._enum_value(OwnershipOwner, raw.get("owner"), decision.owner)
+
+        # Normalize the transfer used to select the supported or blocked path.
+        transfer = self._enum_value(TransferMode, raw.get("transfer"), decision.transfer)
+
+        # Fail closed before parsing later fields when pointer borrowing has no lifetime proof.
+        blocked = self._blocked_borrowed_pointer_override(decision, facts, raw, transfer)
+        if blocked is not None:
+            return blocked
+
+        # Convert all remaining metadata into one immutable effective override.
+        override = self._ownership_override(decision, raw, owner, transfer)
+
+        # Apply the normalized values while preserving pointer and allocatable storage invariants.
+        return self._decision_with_ownership_override(decision, facts, override)
+
+    @staticmethod
+    def _ownership_override_metadata(
+        facts: _StorageFacts,
+        context: OwnershipContext,
+    ) -> Mapping[str, Any] | None:
+        """Select the explicit lifetime metadata that applies to one value.
+
+        ``facts`` supplies the type metadata and pointer/storage category;
+        ``context`` identifies whether a pointer is a descriptor container.
+        General ``ownership_policy`` metadata is returned as-is. For a
+        non-container pointer, ``pointer_policy`` values override matching
+        general keys. Pointer-array containers keep the two contracts separate
+        because their descriptor ownership is fixed by their native parent.
+
+        For example, a scalar pointer with general owner ``native`` and pointer
+        transfer ``call_local`` returns a merged mapping containing both
+        values. A pointer-array field returns only its general ownership mapping.
         """
         metadata = facts.metadata or {}
         raw = metadata.get(OWNERSHIP_POLICY_METADATA)
         pointer_policy = metadata.get(POINTER_POLICY_METADATA)
-        pointer_container = (
-            facts.pointer
-            and facts.rank > 0
-            and (context.is_argument or context.is_field or context.is_module_variable or context.is_result)
-        )
+
+        # Identify descriptor containers whose parent fixes their ownership.
+        pointer_container = OwnershipPolicyResolver._is_pointer_container(facts, context)
         if facts.pointer and isinstance(pointer_policy, Mapping) and not pointer_container:
             raw = {**(raw if isinstance(raw, Mapping) else {}), **pointer_policy}
         if not isinstance(raw, Mapping):
-            return decision
-        owner = self._enum_value(OwnershipOwner, raw.get("owner"), decision.owner)
-        transfer = self._enum_value(TransferMode, raw.get("transfer"), decision.transfer)
+            return None
+        return raw
+
+    @staticmethod
+    def _is_pointer_container(facts: _StorageFacts, context: OwnershipContext) -> bool:
+        """Return whether a pointer value is a native descriptor container.
+
+        ``facts`` supplies pointer and rank information, while ``context`` says
+        whether the value belongs to an argument, field, module variable, or
+        result. A rank-positive pointer in one of those locations has native
+        descriptor identity whose container ownership must not be replaced by
+        target-oriented ``PointerPolicy`` metadata.
+
+        For example, a pointer-array field returns ``True`` because its parent
+        wrapper owns the descriptor container. A scalar pointer or neutral
+        temporary returns ``False`` and may merge pointer-policy transfer facts
+        into the general override.
+        """
+        owner_contexts = (
+            context.is_argument,
+            context.is_field,
+            context.is_module_variable,
+            context.is_result,
+        )
+        return bool(facts.pointer and facts.rank > 0 and any(owner_contexts))
+
+    @staticmethod
+    def _blocked_borrowed_pointer_override(
+        decision: OwnershipDecision,
+        facts: _StorageFacts,
+        raw: Mapping[str, Any],
+        transfer: TransferMode,
+    ) -> OwnershipDecision | None:
+        """Return the fail-closed decision for unsupported pointer borrowing.
+
+        The default ``decision`` supplies unrelated completed fields, ``facts``
+        identifies whether storage is a pointer, ``raw`` supplies explicit
+        nullability, and ``transfer`` is the already-normalized requested mode.
+        Non-pointer and non-borrowed requests return ``None`` so normal override
+        application can continue.
+
+        For example, a pointer request with ``transfer='borrowed_view'`` returns
+        ``UNKNOWN/BLOCKED/BLOCKED`` and explains the missing owner retention and
+        stale-view invalidation mechanism.
+        """
         if facts.pointer and transfer is TransferMode.BORROWED_VIEW:
+            # Preserve unrelated fields while replacing every unsafe lifetime axis.
             return replace(
                 decision,
                 owner=OwnershipOwner.UNKNOWN,
@@ -1679,21 +1964,73 @@ class OwnershipPolicyResolver:
                 blocker="borrowed pointer views need native-owner retention and stale-view invalidation",
                 reason="borrowed pointer views are not implemented",
             )
+        return None
+
+    def _ownership_override(
+        self,
+        decision: OwnershipDecision,
+        raw: Mapping[str, Any],
+        owner: OwnershipOwner,
+        transfer: TransferMode,
+    ) -> _OwnershipOverride:
+        """Normalize explicit metadata against an existing default decision.
+
+        ``owner`` and ``transfer`` have already been validated because pointer
+        borrowing must be rejected before later metadata is interpreted. This
+        helper validates destruction, fills omitted Boolean and reason fields
+        from ``decision``, and returns an immutable value without applying it.
+
+        For example, ``{'destruction': 'python_refcount'}`` combined with a
+        preselected ``PYTHON`` owner and ``COPY_RETURN`` transfer produces an
+        override with ``DestructionPolicy.PYTHON_REFCOUNT`` while preserving the
+        decision's nullability.
+        """
+        # Normalize release responsibility only after pointer-specific rejection.
         destruction = self._enum_value(DestructionPolicy, raw.get("destruction"), decision.destruction)
-        storage_mode = self._storage_for_override(facts, transfer, decision.storage_mode)
-        nullable = bool(raw.get("nullable", decision.nullable))
-        borrowed = transfer is TransferMode.BORROWED_VIEW or bool(raw.get("borrowed", decision.borrowed))
-        blocker = None if transfer is not TransferMode.BLOCKED else decision.blocker or "blocked by ownership policy"
-        return replace(
-            decision,
+        # Package the effective fields without mutating the resolver's default decision.
+        return _OwnershipOverride(
             owner=owner,
             transfer=transfer,
             destruction=destruction,
-            storage_mode=storage_mode,
-            nullable=nullable,
-            borrowed=borrowed,
-            blocker=blocker,
+            nullable=bool(raw.get("nullable", decision.nullable)),
+            borrowed=transfer is TransferMode.BORROWED_VIEW or bool(raw.get("borrowed", decision.borrowed)),
             reason=str(raw.get("reason", "explicit ownership policy metadata")),
+        )
+
+    def _decision_with_ownership_override(
+        self,
+        decision: OwnershipDecision,
+        facts: _StorageFacts,
+        override: _OwnershipOverride,
+    ) -> OwnershipDecision:
+        """Apply one normalized override while preserving storage invariants.
+
+        ``decision`` is the resolver default, ``facts`` supplies pointer,
+        allocatable, and array storage constraints, and ``override`` supplies
+        the effective lifetime fields. The result is a new decision; later
+        resolver steps still validate the triple and derive lowering actions.
+
+        For example, an allocatable result overridden to ``snapshot_copy``
+        remains heap-backed, while a borrowed ordinary array is forced to alias
+        storage. An explicit ``blocked`` transfer also gains a stable blocker
+        when the default decision had none.
+        """
+        # Derive storage from the normalized transfer without violating native storage facts.
+        storage_mode = self._storage_for_override(facts, override.transfer, decision.storage_mode)
+        blocker = (
+            None if override.transfer is not TransferMode.BLOCKED else decision.blocker or "blocked by ownership policy"
+        )
+        # Return a new decision for the resolver's later validation and action derivation.
+        return replace(
+            decision,
+            owner=override.owner,
+            transfer=override.transfer,
+            destruction=override.destruction,
+            storage_mode=storage_mode,
+            nullable=override.nullable,
+            borrowed=override.borrowed,
+            blocker=blocker,
+            reason=override.reason,
         )
 
     @staticmethod
@@ -2045,6 +2382,10 @@ class OwnershipPolicyResolver:
 
         Invalid present values raise ``ValueError`` listing the accepted enum
         values so malformed contracts fail during policy completion.
+
+        For example, ``_enum_value(TransferMode, 'copy_return', default)``
+        returns ``TransferMode.COPY_RETURN``, while a ``None`` value returns the
+        supplied default unchanged.
         """
         if value is None:
             return default
@@ -2060,7 +2401,17 @@ class OwnershipPolicyResolver:
         transfer: TransferMode,
         default: StorageMode,
     ) -> StorageMode:
-        """Choose storage implied by an override while preserving pointer/allocatable invariants."""
+        """Choose override storage without violating native storage invariants.
+
+        ``facts`` identifies pointer, allocatable, and array storage;
+        ``transfer`` is the normalized override and ``default`` is the storage
+        chosen by the normal resolver branch. Pointers remain aliases,
+        allocatables remain heap-backed, borrowed ordinary arrays become
+        aliases, and all other values keep ``default``.
+
+        For example, an allocatable with ``transfer=SNAPSHOT_COPY`` returns
+        ``HEAP``, while an ordinary borrowed array returns ``ALIAS``.
+        """
         if facts.pointer:
             return StorageMode.ALIAS
         if facts.allocatable:

@@ -14,6 +14,9 @@ release tags add a leading `v` to the package version.
 
 ### Changed
 
+- Documented the completed ownership vocabulary, lifetime-policy philosophy,
+  pointer-policy boundary, and maintainer change routes in one maintained
+  architecture reference.
 - Moved exact overload selection from generated Python predicate chains to
   generated C dispatchers with planned candidate IDs and direct switch-based
   calls to the selected existing wrapper.

@@ -151,9 +151,6 @@ PRIK_C_DOCS_END -->
 - [ ] `docs/maintainer/internal-architecture/runtime-layer.md`: document native support
   installation, extension initialization, callbacks, cleanup, and shared native
   state.
-- [ ] `docs/maintainer/internal-architecture/ownership-tracking.md`: document ownership
-  facts, transfer, borrowing, alias storage, destruction, writeback, and setter
-  exposure.
 - [ ] `docs/maintainer/internal-architecture/dependency-analysis.md`: document current
   source ordering, preprocessing dependency facts, generated build plans, and
   future automatic dependency discovery.
@@ -347,6 +344,9 @@ primary placeholder queue.
   policy reference.
 - [x] `docs/maintainer/internal-architecture/pipeline-map.md`: maintained pipeline and
   concept-ownership map.
+- [x] `docs/maintainer/internal-architecture/ownership-tracking.md`: maintained
+  ownership philosophy, completed policy vocabulary, supported lifetime triples,
+  pointer-policy boundary, validation order, source routes, and safety boundary.
 - [x] `docs/maintainer/roadmap/semantic-pyi-wrapper-checklist.md`: active implementation
   roadmap for semantic `.pyi` wrapper parity.
 
