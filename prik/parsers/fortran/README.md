@@ -21,7 +21,7 @@ callers may also use the stable parser functions and models exported from the
 
 ## Tests And Docs
 
-- Public reference: `docs/developer/fortran-parser-reference.md`
+- Package reference: `docs/developer/packages/parsers.md`
 - User recipe: `docs/user/examples/recipes/inspect-fortran-api.md`
 - Source navigation: `docs/developer/source-map.md`, `docs/developer/feature-to-code-map.md`
 - Parser tests: `tests/fortran/source_parsing/parsing/`

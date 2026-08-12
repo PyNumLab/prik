@@ -9,9 +9,13 @@ release tags add a leading `v` to the package version.
 
 ### Added
 
-- Added a canonical contributor architecture guide with complete
-  folder-by-folder stage ownership, change routes, reproducible direct
-  examples, representative output, and focused evidence owners.
+- Reorganized contributor documentation around a concise architecture guide
+  and one canonical page per production package, with local structures,
+  important objects, runnable examples, expected outputs, test owners, change
+  routes, and invariants.
+- Consolidated cross-stage concepts and contributor workflows, retained future
+  and deferred designs explicitly, and removed TODO-only pages, duplicate
+  architecture maps, and completed migration ledgers.
 - Added Zenodo version and concept DOI links to the citation metadata, README,
   and About page.
 

@@ -199,6 +199,193 @@ def test_static_site_seed_configuration_exists() -> None:
     assert (ROOT / "mkdocs.yml").is_file()
 
 
+def test_contributor_architecture_stays_shallow_and_routes_to_package_guides() -> None:
+    architecture = (DOCS_ROOT / "developer/architecture.md").read_text(encoding="utf-8")
+    overview_start = architecture.index("## Repository Structure")
+    overview_end = architecture.index("## Package-Root Entry Points")
+    overview = architecture[overview_start:overview_end]
+
+    for direct_child in (
+        "├── prik/",
+        "├── tests/",
+        "├── docs/",
+        "├── examples/",
+        "├── tools/",
+        "├── compiler/",
+        "├── preprocessing/",
+        "├── parsers/",
+        "├── semantics/",
+        "├── policy/",
+        "├── planning/",
+        "├── codegen/",
+        "├── printers/",
+        "├── pipeline/",
+        "├── runtime/",
+        "├── naming/",
+        "└── utilities/",
+    ):
+        assert direct_child in overview
+    assert "│   ├──" not in overview
+    assert "    ├──" not in overview
+
+    for heading in (
+        "Package-Root Entry Points",
+        "End-To-End Workflow",
+        "Authority And Dependency Rules",
+        "Package Guide Map",
+        "Tests And Evidence",
+        "Where A Change Begins",
+        "Contributor Documentation Structure",
+    ):
+        assert f"## {heading}" in architecture
+
+    package_guides = (
+        "contracts",
+        "compiler",
+        "preprocessing",
+        "parsers",
+        "semantics",
+        "policy",
+        "planning",
+        "codegen",
+        "printers",
+        "pipeline",
+        "runtime",
+        "naming",
+        "utilities",
+    )
+    for package in package_guides:
+        assert f"packages/{package}.md" in architecture
+
+
+def test_every_top_level_source_package_has_one_canonical_guide() -> None:
+    expected_packages = {
+        "contracts",
+        "compiler",
+        "preprocessing",
+        "parsers",
+        "semantics",
+        "policy",
+        "planning",
+        "codegen",
+        "printers",
+        "pipeline",
+        "runtime",
+        "naming",
+        "utilities",
+    }
+    source_packages = {
+        path.name for path in (ROOT / "prik").iterdir() if path.is_dir() and not path.name.startswith("_")
+    }
+    guide_paths = {path.stem for path in (DOCS_ROOT / "developer/packages").glob("*.md") if path.name != "index.md"}
+
+    assert source_packages == expected_packages
+    assert guide_paths == expected_packages
+
+
+@pytest.mark.parametrize(
+    "package",
+    (
+        "contracts",
+        "compiler",
+        "preprocessing",
+        "parsers",
+        "semantics",
+        "policy",
+        "planning",
+        "codegen",
+        "printers",
+        "pipeline",
+        "runtime",
+        "naming",
+        "utilities",
+    ),
+)
+def test_package_guide_has_structure_examples_tests_and_change_routes(package: str) -> None:
+    path = DOCS_ROOT / f"developer/packages/{package}.md"
+    content = path.read_text(encoding="utf-8")
+
+    assert "../architecture.md" in content
+    assert "## Purpose And Boundaries" in content
+    assert "## Local Structure" in content
+    assert "## Important File" in content
+    assert "## Execution Example" in content
+    assert "## Tests" in content
+    assert "## Change Routes" in content
+    assert "../../../tests/" in content
+    assert "python3 prik/" in content
+
+    for target in MARKDOWN_LINK.findall(content):
+        if target.startswith(("http://", "https://")):
+            continue
+        assert (path.parent / target).resolve().exists(), f"{package}: missing linked owner {target}"
+
+
+def test_superseded_contributor_pages_and_completed_roadmaps_are_removed() -> None:
+    removed_paths = (
+        "adding-a-feature.md",
+        "adding-a-fortran-construct.md",
+        "adding-a-code-generation-backend.md",
+        "build-system.md",
+        "coding-standards.md",
+        "development-workflow.md",
+        "repository-structure.md",
+        "roadmap/native-array-handle-checklist.md",
+        "roadmap/wrapper-plan-migration-checklist.md",
+    )
+    for relative_path in removed_paths:
+        assert not (DOCS_ROOT / "developer" / relative_path).exists()
+
+
+def test_contributor_documentation_uses_only_canonical_areas_and_active_roadmaps() -> None:
+    contributor_root = DOCS_ROOT / "developer"
+    assert {path.name for path in contributor_root.iterdir() if path.is_dir()} == {
+        "concepts",
+        "deferred",
+        "design",
+        "packages",
+        "roadmap",
+        "workflows",
+    }
+    assert {path.name for path in contributor_root.glob("*.md")} == {
+        "architecture.md",
+        "feature-to-code-map.md",
+        "index.md",
+        "source-map.md",
+        "testing-strategy.md",
+    }
+
+    roadmap_root = contributor_root / "roadmap"
+    roadmap_paths = {path.name for path in roadmap_root.glob("*.md")}
+    assert roadmap_paths == {
+        "documentation-content-checklist.md",
+        "fortran-test-suite-cleanup-checklist.md",
+        "index.md",
+        "semantic-pyi-wrapper-checklist.md",
+    }
+    for path in roadmap_root.glob("*-checklist.md"):
+        assert re.search(r"^\s*- \[ \]", path.read_text(encoding="utf-8"), re.MULTILINE), (
+            f"{path.relative_to(ROOT)} is complete and belongs in Git history, not active roadmaps"
+        )
+
+
+def test_package_guide_execution_commands_have_centralized_contract_tests() -> None:
+    test_inventory = (ROOT / "tests/fortran/infrastructure/execution_examples/test_execution_examples.py").read_text(
+        encoding="utf-8"
+    )
+
+    for path in sorted((DOCS_ROOT / "developer/packages").glob("*.md")):
+        if path.name == "index.md":
+            continue
+        content = path.read_text(encoding="utf-8")
+        commands = re.findall(r"^python3 (prik/[A-Za-z0-9_/]+\.py)(?:\s.*)?$", content, re.MULTILINE)
+        assert commands, f"{path.name}: no direct production-file example"
+        for command_path in commands:
+            components = [component.removesuffix(".py").strip("_") for component in command_path.split("/")[1:]]
+            test_name = f"test_fortran_{'_'.join(components)}_execution_example"
+            assert f"def {test_name}(" in test_inventory, f"{path.name}: {command_path} lacks {test_name}"
+
+
 def test_generated_site_and_distribution_outputs_share_hidden_root() -> None:
     site_configuration = (ROOT / "mkdocs.yml").read_text(encoding="utf-8")
     release_workflow = (ROOT / ".github/workflows/publish-to-pypi.yml").read_text(encoding="utf-8")

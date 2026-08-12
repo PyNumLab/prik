@@ -16,4 +16,5 @@ generated-wrapper result. `../pipeline/build.py` writes or compiles that
 result.
 
 For cross-stage navigation, see `docs/developer/source-map.md` and
-`docs/developer/feature-to-code-map.md`.
+`docs/developer/feature-to-code-map.md`. The canonical package reference is
+`docs/developer/packages/printers.md`.

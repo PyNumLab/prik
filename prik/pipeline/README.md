@@ -22,4 +22,5 @@ Reusable compiler execution, compile objects, and linking live in
 complete workflow.
 
 For cross-stage navigation, see `docs/developer/source-map.md` and
-`docs/developer/feature-to-code-map.md`.
+`docs/developer/feature-to-code-map.md`. The canonical package reference is
+`docs/developer/packages/pipeline.md`.

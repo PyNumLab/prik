@@ -1,8 +1,8 @@
 ---
 title: Language-First Test Suite and Fortran Pipeline Cleanup Checklist
 audience: maintainers
-prerequisites: testing strategy, pipeline map, current test-suite organization record
-related: ../../developer/testing-strategy.md, ../../../tests/README.md, ../internal-architecture/pipeline-map.md
+prerequisites: testing strategy, contributor architecture guide, current test-suite organization record
+related: ../testing-strategy.md, ../../../tests/README.md, ../architecture.md
 status: active-roadmap
 publication: draft
 ---
@@ -109,6 +109,7 @@ tests/
     infrastructure/
       semantics/
       codegen/
+<!-- PRIK_C_DOCS_START
   c/
     README.md
     parsing/
@@ -118,6 +119,7 @@ tests/
       conversion/
     pipeline/
     fixtures/
+PRIK_C_DOCS_END -->
   docs/
   tools/
 ```
@@ -144,13 +146,17 @@ behavior and public cross-feature capabilities do not.
 - [x] `tests/fortran/` owns tests whose native input contract is Fortran,
   including generated Fortran bridge and C/CPython binding behavior for that
   Fortran contract.
+<!-- PRIK_C_DOCS_START
 - [x] `tests/c/` means C is the input language. It does not own generated C
   used to implement a Fortran wrapper.
+PRIK_C_DOCS_END -->
 - [x] Documentation and maintainer-tool tests have named top-level owners;
   internal language-neutral mechanics mirror their `prik/` package under
   `tests/fortran/infrastructure/`.
+<!-- PRIK_C_DOCS_START
 - [x] C receives a mechanical quarantine only. Its behavior is not redesigned
   in this project.
+PRIK_C_DOCS_END -->
 - [x] Fortran receives the documentation-led behavioral cleanup.
 - [x] Old imports, forwarding fixtures, collection shims, path aliases, and
   compatibility fallbacks are not retained.
@@ -246,9 +252,11 @@ Register a structural marker for cross-feature selection:
 ```
 
 - [x] A focused `tests/fortran/` command collects no C-input test.
+<!-- PRIK_C_DOCS_START
 - [x] A focused `tests/c/` command collects no Fortran-input test.
 - [x] Shared tests import no language-owned helpers.
 - [x] Fortran and C tests import neither each other's helpers nor fixtures.
+PRIK_C_DOCS_END -->
 - [x] Feature-local fixtures live with their owner. Minimized parser
   regressions live under `source_parsing/parsing/`; BLAS and LAPACK live only
   under `examples/blas/` and `examples/lapack/`.
@@ -556,6 +564,7 @@ state, datatype matrix, or public error remains covered.
 
 ### Mechanical C quarantine
 
+<!-- PRIK_C_DOCS_START
 - [x] Move C parsing, probe, preprocessing, semantic, pipeline, CLI-dispatch,
   property, and C-specific `.pyi` tests beneath `tests/c/`.
 - [x] Move their fixtures and helpers with their consumers.
@@ -567,6 +576,7 @@ Verified 2026-07-29: `tests/c/` collects 498 nodes and executes as 497 passed
 plus one intentionally parked benchmark. The migration ledger retires 511
 baseline nodes, records 88 moved artifacts and one moved support module, and
 resolves reviewed mixed-node splits to exact collected replacements.
+PRIK_C_DOCS_END -->
 
 ## 5. Migrate Fortran feature by feature
 
@@ -1254,7 +1264,10 @@ before changing compiler product behavior.
 - [x] BLAS, LAPACK, parser-regression, and contract content exists only beneath
   its final owner; no SciFortran snapshot remains.
 - [x] Every permanent contract row resolves to final collected nodes.
-- [x] Collect `tests/fortran/`, `tests/c/`, `tests/docs/`, and `tests/tools/` independently;
+- [x] Collect `tests/fortran/`, `tests/docs/`, and `tests/tools/` independently;
+<!-- PRIK_C_DOCS_START
+  collect `tests/c/` independently;
+PRIK_C_DOCS_END -->
   run the local Fortran verification with `-m "not real_library"`.
 - [x] Run the new suites alone under the same CI-equivalent line-and-branch
   coverage procedure used for the baseline.
@@ -1585,7 +1598,9 @@ Add time separately when:
 
 - [ ] The authoritative tree is language-first and feature-first within
   Fortran.
+<!-- PRIK_C_DOCS_START
 - [ ] C is isolated without behavioral redesign.
+PRIK_C_DOCS_END -->
 - [ ] Every Fortran test and fixture has a final Fortran owner.
 - [ ] Every maintained User Guide and `.pyi` feature page maps to one obvious
   feature directory and focused command.

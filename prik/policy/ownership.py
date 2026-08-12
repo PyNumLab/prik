@@ -31,7 +31,7 @@ decisions; they must not reconstruct semantic policy from datatypes, source
 For example, a normal scalar input commonly resolves to caller-owned,
 call-local use with no wrapper release action, while an array result commonly
 resolves to a Python-owned copy released by Python reference counting.  See
-``docs/developer/internal-architecture/ownership-tracking.md`` for the full
+``docs/developer/packages/policy.md`` for the full
 stage map, supported triples, pointer-policy boundary, and change routes.
 """
 

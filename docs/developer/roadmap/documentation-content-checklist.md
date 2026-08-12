@@ -2,7 +2,7 @@
 title: Documentation Content Checklist
 audience: maintainers
 prerequisites: documentation architecture
-related: ../documentation-architecture.md, index.md, semantic-pyi-wrapper-checklist.md
+related: ../workflows/documentation.md, index.md, semantic-pyi-wrapper-checklist.md
 status: active-roadmap
 publication: draft
 ---
@@ -40,7 +40,7 @@ these are true:
 - [ ] Documentation-only changes use focused docs checks and `git diff --check`;
   reserve the full static-analysis suite for code, tests, build/tooling changes,
   or explicit pre-merge verification.
-- [ ] User, Developer, and Maintainer lane entry points, `mkdocs.yml`, related
+- [ ] User and Contributor area entry points, `mkdocs.yml`, related
   front matter, and `tests/docs/test_navigation.py` stay
   synchronized.
 
@@ -83,93 +83,38 @@ more specialized pages.
   unsupported features, and where to report bugs.
 PRIK_C_DOCS_END -->
 
-### Developer And Contributor Guides
+### Contributor Architecture And Package Guides
 
-- [ ] `docs/developer/adding-a-feature.md`: document the feature workflow
-  from contract docs to implementation, tests, fixtures, support matrix, and
-  release notes.
-- [ ] `docs/developer/adding-a-fortran-construct.md`: document parser,
-  semantic, policy, wrapper, docs, and fixture updates for a new Fortran
-  construct.
-- [ ] `docs/developer/adding-a-code-generation-backend.md`: document
-  backend acceptance criteria, ownership boundaries, generated artifacts, tests,
-  and support claims.
-- [ ] `docs/developer/testing-strategy.md`: document test layers, focused
-  verification paths, fixture regeneration, documentation examples, wrapper
-  runtime tests, and static-analysis gates.
-- [ ] `docs/developer/build-system.md`: document native compile model,
-  generated Makefiles, build manifests, native support files, compiler probes,
-  and future packaging boundaries.
-- [ ] `docs/developer/coding-standards.md`: document Python style,
-  documentation front matter, no-compatibility-layer rule, parser/codegen
-  organization, public contributor rules, TODO markers, support-claim
-  discipline, and review expectations.
-- [ ] `docs/developer/ci-cd.md`: document current GitHub Actions gates,
-  coverage policy, static-analysis policy, docs checks, and local caveats for
-  CI-only environment values.
-- [ ] `docs/developer/release-process.md`: document versioning, changelog,
-  release verification, wheel/source distribution limits, and documentation
-  publication steps.
-- [ ] `docs/developer/contributing/contribution-guide.md`: document setup, issue scope,
-  expected docs updates, tests, static checks, and pull-request checklist.
-- [ ] `docs/developer/contributing/pull-request-workflow.md`: document branch workflow,
-  commit message policy, required evidence, review response, and CI handling.
-- [ ] `docs/developer/contributing/review-process.md`: document review focus, support
-  claims, docs completeness, fixture quality, and blocking versus advisory
-  comments.
-### Design And Internal Architecture
+- [x] `docs/developer/architecture.md`: shallow repository/package maps,
+  complete wrapper workflow, stage authority, root entrypoints, change routes,
+  and links to canonical package owners.
+- [x] `docs/developer/packages/`: one maintained guide per top-level production
+  package with local structure, essential objects, executable examples, expected
+  output, focused tests, change routes, and invariants.
+- [x] `docs/developer/concepts/datatype-lifecycle.md`: cross-stage datatype
+  authority from target probing through semantic identity, policy, backend
+  representation, and runtime validation.
+- [x] `docs/developer/workflows/contributing.md`: documentation-first changes,
+  ownership lookup, support evidence, test selection, pull requests, review,
+  and contribution licensing.
+- [x] `docs/developer/workflows/quality-assurance.md`: active blocking/advisory
+  tools, exact commands, coverage parity, compiler lanes, and local limits.
+- [x] `docs/developer/workflows/ci.md`: staged GitHub validation,
+  documentation deployment, benchmark evidence, and stable ruleset context.
+- [x] `docs/developer/workflows/release.md`: package identity, trusted
+  publishing, artifact review, publication, and clean-environment verification.
+- [x] `docs/developer/workflows/documentation.md`: documentation placement,
+  metadata, publication, navigation, and continuous quality.
+- [x] `docs/developer/design/multilanguage-runtime.md`: explicit long-term
+  architecture separated from current support claims.
+- [x] `docs/developer/design/wrapper-open-decisions.md`: unresolved or
+  revisitable design questions separated from implemented package contracts.
+- [x] `docs/developer/deferred/c-parser.md`: retained but unpublished C
+  parser/C-to-IR material, separate from the generated CPython C backend.
 
-- [x] `docs/developer/architecture.md`: document system components, pipeline
-  stages, data contracts, supported language routes, and deferred routes in
-  the canonical contributor entry page.
-- [ ] `docs/developer/design/parser-architecture.md`: document parser ownership,
-  preprocessing boundaries, model facts, diagnostics, and fixture strategy.
-- [ ] `docs/developer/design/semantic-analysis.md`: document source-to-IR lowering,
-  `.pyi`-to-IR loading, policy completion, wrapper-planning errors, and invariants.
-- [ ] `docs/developer/design/runtime-model.md`: document native support files, generated
-  wrappers, native state, callbacks, threading, and finalization.
-- [ ] `docs/developer/design/error-propagation-model.md`: document diagnostic categories,
-  Python exception projection, native failure handling, cleanup, and user-facing
-  message shape.
-- [ ] `docs/developer/design/memory-ownership-model.md`: finish the design page around
-  policy-completion ownership decisions, transfer actions, mutability, setter
-  exposure, and release responsibility.
-- [ ] `docs/developer/internal-architecture/ast-design.md`: document parser AST, semantic
-  IR, completed wrapper plans, generated source syntax, what each layer may
-  store, and what must not leak across
-  layers.
-- [ ] `docs/developer/internal-architecture/semantic-passes.md`: document semantic pass
-  ordering, completed policy decisions, planner validation, and handoff to
-  `ir2ast`.
-- [x] `docs/developer/internal-architecture/wrapper-generation-pipeline.md`: maintained
-  explanation of the current wrapper stages, semantic-policy boundary,
-  pass/planner/emitter distinctions, incremental decomposition criteria, and
-  acceptance criteria for bridge and binding refactoring.
-- [x] `docs/developer/internal-architecture/type-system.md`: maintained datatype
-  lifecycle from compiler probing through semantic normalization, policy,
-  planning, backend registries, generated NumPy boundaries, runtime validation,
-  and non-primitive storage families.
-- [ ] `docs/developer/internal-architecture/runtime-layer.md`: document native support
-  installation, extension initialization, callbacks, cleanup, and shared native
-  state.
-- [ ] `docs/developer/internal-architecture/dependency-analysis.md`: document current
-  source ordering, preprocessing dependency facts, generated build plans, and
-  future automatic dependency discovery.
-- [ ] `docs/developer/internal-architecture/error-handling-pipeline.md`: document
-  diagnostic creation, path-aware `.pyi` loader errors, wrapper-planning failures,
-  generated validation failures, and native runtime errors.
-- [ ] `docs/developer/internal-architecture/symbol-tables.md`: document public naming,
-  generated-symbol reservation, collision policy, imports, scopes, and package
-  names.
-
-<!-- PRIK_C_DOCS_START
-- [ ] `docs/developer/design/code-generation.md`: document wrapper-plan and generated-source boundaries, bridge
-  generation, CPython binding generation, printers, and forbidden semantic
-  inference in backends.
-- [ ] `docs/developer/design/cpython-integration.md`: document CPython API usage, NumPy
-  C API integration, extension module layout, reference ownership, and error
-  propagation.
-PRIK_C_DOCS_END -->
+The old TODO-only contributor pages, duplicate pipeline/source maps, completed
+wrapper-plan and native-array migration ledgers, and separate internal/design
+indexes were removed after their stable facts moved to these owners.
 
 ### Tutorials And Examples
 
@@ -211,12 +156,11 @@ PRIK_C_DOCS_END -->
   are planned, with expected prerequisites and runtime cost.
 - [ ] `docs/user/examples/index.md`: split verified cookbook recipes from
   planned larger examples and state the evidence required for each example.
-- [ ] `docs/developer/design/index.md`: explain which design documents are accepted
-  architecture and which are placeholders.
-- [ ] `docs/developer/internal-architecture/index.md`: route contributors to pipeline,
-  semantic pass, runtime, type-system, ownership, and symbol-table pages.
-- [ ] `docs/developer/contributing/index.md`: route contributors to contribution,
-  pull-request, review, and coding-standard pages.
+- [x] `docs/developer/packages/index.md`: route contributors from each production
+  package to its canonical guide.
+- [x] `docs/developer/index.md`: distinguish implemented package references,
+  cross-cutting concepts, workflows, design proposals, active roadmaps, and
+  deferred input-language material.
 - [ ] Public documentation site publication gate: deploy the existing MkDocs
   documentation as the project website only after all of the following are
   true; do not create a separate marketing-content system for this milestone.
@@ -255,7 +199,7 @@ primary placeholder queue.
   point for developers and maintainers.
 - [x] `docs/developer/architecture.md`: canonical contributor architecture
   orientation and folder-by-folder rollout plan.
-- [x] `docs/developer/documentation-architecture.md`: maintained two-area
+- [x] `docs/developer/workflows/documentation.md`: maintained two-area
   documentation and publication contract.
 - [x] `docs/user/getting-started/index.md`: maintained beginner route from
   installation through the normal rebuild workflow.
@@ -333,19 +277,20 @@ primary placeholder queue.
 - [x] `docs/user/examples/recipes/`: maintained recipe lane for checked
   command and API examples.
 - [x] `docs/user/language-support/feature-matrix.md`: maintained support matrix.
-- [x] `docs/developer/development-workflow.md`: maintained developer workflow.
+- [x] `docs/developer/workflows/contributing.md`: maintained contributor
+  development and review workflow.
 - [x] `docs/developer/source-map.md`: maintained source route map.
 - [x] `docs/developer/feature-to-code-map.md`: maintained feature route
   map.
-- [x] `docs/developer/repository-structure.md`: maintained repository tree
-  reference.
-- [x] `docs/developer/fortran-parser-reference.md`: maintained Fortran
+- [x] `docs/developer/architecture.md`: maintained shallow repository/package
+  structure and complete stage workflow.
+- [x] `docs/developer/packages/parsers.md`: maintained Fortran
   parser reference.
-- [x] `docs/developer/quality-assurance.md`: maintained quality and QA
+- [x] `docs/developer/workflows/quality-assurance.md`: maintained quality and QA
   policy reference.
-- [x] `docs/developer/internal-architecture/pipeline-map.md`: maintained pipeline and
-  concept-ownership map.
-- [x] `docs/developer/internal-architecture/ownership-tracking.md`: maintained
+- [x] `docs/developer/packages/index.md`: maintained package ownership map and
+  detailed package guide index.
+- [x] `docs/developer/packages/policy.md`: maintained
   ownership philosophy, completed policy vocabulary, supported lifetime triples,
   pointer-policy boundary, validation order, source routes, and safety boundary.
 - [x] `docs/developer/roadmap/semantic-pyi-wrapper-checklist.md`: active implementation
@@ -355,6 +300,6 @@ primary placeholder queue.
 When the C-input documentation phase resumes, extend the maintained user-guide
 index with a separate C-input route rather than mixing future behavior into the
 current Fortran workflow.
-- [x] `docs/developer/c-parser-reference.md`: maintained C parser
+- [x] `docs/developer/deferred/c-parser.md`: retained deferred C parser
   reference.
 PRIK_C_DOCS_END -->

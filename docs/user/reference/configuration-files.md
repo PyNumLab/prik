@@ -2,7 +2,7 @@
 title: Configuration Files Reference
 audience: users, developers
 prerequisites: packaging, CLI commands
-related: cli-commands.md, python-api.md, ../guide/building-shared-library.md, ../../developer/quality-assurance.md
+related: cli-commands.md, python-api.md, ../guide/building-shared-library.md, ../../developer/workflows/quality-assurance.md
 status: maintained
 publication: draft
 ---
@@ -107,7 +107,7 @@ The coverage contract is:
 When investigating coverage failures that involve subprocesses, run coverage
 with `COVERAGE_PROCESS_START=pyproject.toml`, combine parallel data, then
 report. The maintained workflow is documented in
-[Quality Assurance](../../developer/quality-assurance.md#pytest-and-coveragepy).
+[Quality Assurance](../../developer/workflows/quality-assurance.md#coverage-and-test-order-reproduction).
 
 ## `codecov.yml`
 

@@ -65,4 +65,28 @@ def test_deferred_c_pages_are_not_in_site_navigation() -> None:
     assert "Inspect a C API" not in active_navigation
     assert "C Parser Reference" not in active_navigation
     assert any("PRIK_C_DOCS" in line and "inspect-c-api.md" in line for line in lines)
-    assert any("PRIK_C_DOCS" in line and "c-parser-reference.md" in line for line in lines)
+    assert any("PRIK_C_DOCS" in line and "deferred/c-parser.md" in line for line in lines)
+
+
+def test_contributor_maps_defer_only_the_c_input_frontend() -> None:
+    source_map = _visible_documentation_source(ROOT / "docs/developer/source-map.md")
+    feature_map = _visible_documentation_source(ROOT / "docs/developer/feature-to-code-map.md")
+    visible = f"{source_map}\n{feature_map}"
+
+    for deferred_owner in (
+        "prik/parsers/c/",
+        "prik/semantics/c2ir.py",
+        "prik/preprocessing/c.py",
+        "prik/preprocessing/probes/c_types.py",
+        "tests/c/",
+    ):
+        assert deferred_owner not in visible
+
+    for generated_backend_owner in (
+        "prik/codegen/c/binding.py",
+        "prik/codegen/c/python_surface.py",
+        "prik/printers/c.py",
+        "prik/codegen/fortran/bridge.py",
+        "prik/printers/fortran.py",
+    ):
+        assert generated_backend_owner in visible

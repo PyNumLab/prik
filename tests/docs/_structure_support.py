@@ -22,8 +22,7 @@ WEBSITE_DOCUMENTATION_PATHS = [
     *sorted((DOCS_ROOT / "developer").rglob("*.md")),
 ]
 DEFERRED_C_PAGE_PATHS = [
-    ROOT / "docs/developer/design/cpython-integration.md",
-    ROOT / "docs/developer/c-parser-reference.md",
+    ROOT / "docs/developer/deferred/c-parser.md",
     ROOT / "docs/user/examples/recipes/inspect-c-api.md",
 ]
 MARKDOWN_LINK = re.compile(r"\[[^\]]+\]\(([^)#]+)(?:#[^)]+)?\)")
@@ -126,9 +125,7 @@ REQUIRED_AREA_INDEXES = [
     "user/troubleshooting/index.md",
     "developer/index.md",
     "developer/architecture.md",
-    "developer/contributing/index.md",
-    "developer/design/index.md",
-    "developer/internal-architecture/index.md",
+    "developer/packages/index.md",
     "developer/roadmap/index.md",
 ]
 REQUIRED_REFERENCE_PAGES = [
@@ -242,14 +239,25 @@ REQUIRED_SOURCE_NAVIGATION_PAGES = [
     "developer/architecture.md",
     "developer/source-map.md",
     "developer/feature-to-code-map.md",
-    "developer/repository-structure.md",
 ]
 SOURCE_NAVIGATION_CORPUS = [
     "docs/developer/architecture.md",
     "docs/developer/source-map.md",
     "docs/developer/feature-to-code-map.md",
-    "docs/developer/repository-structure.md",
-    "docs/developer/internal-architecture/pipeline-map.md",
+    "docs/developer/concepts/datatype-lifecycle.md",
+    "docs/developer/packages/contracts.md",
+    "docs/developer/packages/compiler.md",
+    "docs/developer/packages/preprocessing.md",
+    "docs/developer/packages/parsers.md",
+    "docs/developer/packages/semantics.md",
+    "docs/developer/packages/policy.md",
+    "docs/developer/packages/planning.md",
+    "docs/developer/packages/codegen.md",
+    "docs/developer/packages/printers.md",
+    "docs/developer/packages/pipeline.md",
+    "docs/developer/packages/runtime.md",
+    "docs/developer/packages/naming.md",
+    "docs/developer/packages/utilities.md",
     "prik/README.md",
     "prik/parsers/README.md",
     "prik/parsers/c/README.md",
@@ -322,11 +330,11 @@ SOURCE_NAVIGATION_PUBLIC_DOCS = [
     "docs/user/reference/python-api.md",
     "docs/user/reference/semantic-ir.md",
     "docs/user/reference/semantic-pyi-format.md",
-    "docs/developer/internal-architecture/type-system.md",
-    "docs/developer/build-system.md",
-    "docs/developer/c-parser-reference.md",
-    "docs/developer/fortran-parser-reference.md",
-    "docs/developer/quality-assurance.md",
+    "docs/developer/concepts/datatype-lifecycle.md",
+    "docs/developer/packages/compiler.md",
+    "docs/developer/deferred/c-parser.md",
+    "docs/developer/packages/parsers.md",
+    "docs/developer/workflows/quality-assurance.md",
     "docs/user/language-support/feature-matrix.md",
 ]
 SOURCE_NAVIGATION_TEST_TARGETS = [

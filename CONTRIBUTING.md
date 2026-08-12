@@ -33,8 +33,8 @@ Keep the pull request easy to review: explain the problem, the solution, and
 how you verified it. All required GitHub checks must pass before merge.
 
 For the complete workflow, see the
-[development guide](docs/developer/development-workflow.md) and
-[quality-assurance guide](docs/developer/quality-assurance.md).
+[contributing workflow](docs/developer/workflows/contributing.md) and
+[quality-assurance guide](docs/developer/workflows/quality-assurance.md).
 
 ## License
 

@@ -1,38 +1,25 @@
 ---
-title: Roadmap
-audience: maintainers
-prerequisites: user language support, developer documentation
-related: ../../user/language-support/feature-matrix.md, fortran-test-suite-cleanup-checklist.md, wrapper-plan-migration-checklist.md, semantic-pyi-wrapper-checklist.md, native-array-handle-checklist.md, documentation-content-checklist.md
+title: Active Roadmaps
+audience: developers, maintainers, contributors
+prerequisites: contributor architecture guide, current support matrix
+related: ../../user/language-support/feature-matrix.md, semantic-pyi-wrapper-checklist.md, fortran-test-suite-cleanup-checklist.md, documentation-content-checklist.md
 status: active-roadmap
 publication: draft
 ---
 
-# Roadmap
+# Active Roadmaps
 
-This repository-only roadmap tracks implementation and documentation work for
-contributors. Public support status remains in User documentation.
+Only incomplete work belongs here. Implemented behavior is documented in user
+and package guides; completed migration ledgers are removed after their stable
+decisions and evidence routes have moved to canonical documentation.
 
-## Planned Features
+## Active Work
 
-- [Wrapper plan migration checklist](wrapper-plan-migration-checklist.md)
-- [Semantic `.pyi` wrapper checklist](semantic-pyi-wrapper-checklist.md)
-- [Native array handle checklist](native-array-handle-checklist.md)
-- [Documentation content checklist](documentation-content-checklist.md)
-- TODO: Populate from accepted roadmap issues and maintained checklists.
+- [Semantic `.pyi` wrapper completion](semantic-pyi-wrapper-checklist.md)
+- [Language-first test suite and remaining compiler/CI work](fortran-test-suite-cleanup-checklist.md)
+- [Remaining documentation content](documentation-content-checklist.md)
 
-## In-Progress Features
-
-- [Language-first test suite and Fortran pipeline cleanup](fortran-test-suite-cleanup-checklist.md)
-
-## Future Ideas
-
-- TODO: Separate exploratory ideas from committed plans.
-
-## Long-Term Vision
-
-- TODO: Describe the long-term documentation and wrapper ecosystem goals.
-
-## TODO
-
-- TODO: Add tracking issue links when public issue tracking is available.
-- TODO: Keep language support status synchronized with the feature matrix.
+Public support status remains authoritative in the
+[feature matrix](../../user/language-support/feature-matrix.md). A checked
+roadmap item is evidence of completed work, not a replacement for current
+architecture, tests, or user documentation.

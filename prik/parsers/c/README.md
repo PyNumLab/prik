@@ -24,7 +24,7 @@ not own preprocessing.
 
 ## Tests And Docs
 
-- Public reference: `docs/developer/c-parser-reference.md`
+- Deferred reference: `docs/developer/deferred/c-parser.md`
 - User recipe: `docs/user/examples/recipes/inspect-c-api.md`
 - Source navigation: `docs/developer/source-map.md`, `docs/developer/feature-to-code-map.md`
 - Parser tests: `tests/c/fixtures/parser/`

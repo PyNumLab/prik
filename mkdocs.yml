@@ -121,55 +121,38 @@ nav:
   - Contributor Documentation:
       - Overview: developer/index.md
       - Architecture: developer/architecture.md
-      - Development Workflow: developer/development-workflow.md
       - Source Map: developer/source-map.md
       - Feature To Code Map: developer/feature-to-code-map.md
-      - Repository Structure: developer/repository-structure.md
-      - Compiler Preprocessing Reference: developer/compiler-preprocessing.md
-      # PRIK_C_DOCS: - C Parser Reference: developer/c-parser-reference.md
-      - Fortran Parser Reference: developer/fortran-parser-reference.md
-      - Quality Assurance: developer/quality-assurance.md
-      - Build System: developer/build-system.md
       - Testing Strategy: developer/testing-strategy.md
-      - Coding Standards: developer/coding-standards.md
-      - Adding A Feature: developer/adding-a-feature.md
-      - Adding A Fortran Construct: developer/adding-a-fortran-construct.md
-      - Adding A Code Generation Backend: developer/adding-a-code-generation-backend.md
-      - Contributing:
-          - Overview: developer/contributing/index.md
-          - Contribution Guide: developer/contributing/contribution-guide.md
-          - Pull Request Workflow: developer/contributing/pull-request-workflow.md
-          - Review Process: developer/contributing/review-process.md
-      - Documentation Architecture: developer/documentation-architecture.md
-      - CI/CD: developer/ci-cd.md
-      - Release Process: developer/release-process.md
+      - Source Packages:
+          - Overview: developer/packages/index.md
+          - Contracts: developer/packages/contracts.md
+          - Compiler: developer/packages/compiler.md
+          - Preprocessing: developer/packages/preprocessing.md
+          - Parsers: developer/packages/parsers.md
+          - Semantics: developer/packages/semantics.md
+          - Policy: developer/packages/policy.md
+          - Planning: developer/packages/planning.md
+          - Code Generation: developer/packages/codegen.md
+          - Printers: developer/packages/printers.md
+          - Pipeline: developer/packages/pipeline.md
+          - Runtime: developer/packages/runtime.md
+          - Naming: developer/packages/naming.md
+          - Utilities: developer/packages/utilities.md
+      - Concepts:
+          - Datatype Lifecycle: developer/concepts/datatype-lifecycle.md
+      - Workflows:
+          - Contributing: developer/workflows/contributing.md
+          - Quality Assurance: developer/workflows/quality-assurance.md
+          - Continuous Integration And Delivery: developer/workflows/ci.md
+          - Documentation Architecture: developer/workflows/documentation.md
+          - Release Process: developer/workflows/release.md
       - Design:
-          - Overview: developer/design/index.md
-          - Parser Architecture: developer/design/parser-architecture.md
-          - Semantic Analysis: developer/design/semantic-analysis.md
-          - Runtime Model: developer/design/runtime-model.md
-          - Error Propagation Model: developer/design/error-propagation-model.md
-          - Memory Ownership Model: developer/design/memory-ownership-model.md
-          - Code Generation: developer/design/code-generation.md
-          - CPython Integration: developer/design/cpython-integration.md
-          - Multilanguage Runtime Architecture: developer/design/semantic-multilanguage-wrapper-runtime-architecture.md
-          - Wrapper Design Notes: developer/design/wrapper-design-notes.md
-      - Internal Architecture:
-          - Overview: developer/internal-architecture/index.md
-          - Pipeline Map: developer/internal-architecture/pipeline-map.md
-          - Wrapper Generation Pipeline: developer/internal-architecture/wrapper-generation-pipeline.md
-          - AST Design: developer/internal-architecture/ast-design.md
-          - Semantic Passes: developer/internal-architecture/semantic-passes.md
-          - Datatype Lifecycle: developer/internal-architecture/type-system.md
-          - Runtime Layer: developer/internal-architecture/runtime-layer.md
-          - Ownership Tracking: developer/internal-architecture/ownership-tracking.md
-          - Dependency Analysis: developer/internal-architecture/dependency-analysis.md
-          - Error Handling Pipeline: developer/internal-architecture/error-handling-pipeline.md
-          - Symbol Tables: developer/internal-architecture/symbol-tables.md
+          - Multilanguage Runtime Architecture: developer/design/multilanguage-runtime.md
+          - Wrapper Open Decisions: developer/design/wrapper-open-decisions.md
+      # PRIK_C_DOCS: - Deferred C Parser Reference: developer/deferred/c-parser.md
       - Roadmaps:
           - Overview: developer/roadmap/index.md
           - Language-First Test Suite and Fortran Cleanup: developer/roadmap/fortran-test-suite-cleanup-checklist.md
           - Documentation Content: developer/roadmap/documentation-content-checklist.md
           - Semantic .pyi Wrapper: developer/roadmap/semantic-pyi-wrapper-checklist.md
-          - Native Array Handles: developer/roadmap/native-array-handle-checklist.md
-          - Wrapper Plan Migration: developer/roadmap/wrapper-plan-migration-checklist.md

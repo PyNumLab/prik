@@ -2,7 +2,7 @@
 title: Python API Reference
 audience: users, developers
 prerequisites: installation
-related: cli-commands.md, ../../developer/development-workflow.md
+related: cli-commands.md, ../../developer/workflows/contributing.md
 status: maintained
 publication: draft
 ---
