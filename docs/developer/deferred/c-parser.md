@@ -100,8 +100,7 @@ PRIK_C_DOCS_END &#45;&#45;>
 - `prik.parsers.c` package
 - typed C parser models for partial parse reports and raw metadata
 - `CParser`, `parse_c_file`, and `parse_c_project`
-- top-level `prik.parse_c_file` and `prik.parse_c_project` exports alongside
-  the `prik.parsers.c` package entrypoints
+- `prik.parsers.c` package entrypoints for C parser models and operations
 - `CParseError` with compiler-style diagnostic formatting
 - explicit `prik &#45;&#45;language c &#45;&#45;parse` output
 - explicit `prik &#45;&#45;language c &#45;&#45;semantics` output
@@ -457,21 +456,18 @@ PRIK_C_DOCS_END &#45;&#45;>
 
 <!&#45;&#45; PRIK_C_DOCS_START
 The C parser now lives under the main `prik` package. The legacy top-level
-`c_parser` package entrypoint was removed, so direct parser imports should use
-`prik.parsers.c` or the stable top-level `prik` exports. This keeps parser
-models, CLI wiring, semantic conversion, and wrapper-facing entrypoints in one
-package tree.
+`c_parser` package entrypoint was removed, so direct parser imports use
+`prik.parsers.c`. This keeps parser models, CLI wiring, semantic conversion,
+and wrapper-facing entrypoints in one package tree.
 PRIK_C_DOCS_END &#45;&#45;>
 
 ## Public API
 
-Implemented top-level and package entrypoints:
+Implemented package entrypoints:
 
 <!&#45;&#45; PRIK_C_DOCS_START
 ```python
-from prik import parse_c_file, parse_c_project
-# Equivalent parser-package imports remain available:
-# from prik.parsers.c import parse_c_file, parse_c_project
+from prik.parsers.c import parse_c_file, parse_c_project
 ```
 PRIK_C_DOCS_END &#45;&#45;>
 
@@ -594,15 +590,14 @@ declaration. Duplicate initialized variables, duplicate function definitions,
 duplicate complete tag definitions, and incompatible top-level redeclarations
 produce diagnostics. Local declarations inside function bodies are ignored
 because body contents are intentionally skipped.
-`prik` exports the C file/project entrypoints in the same style as the
-Fortran entrypoints. The typed C parser package remains importable directly.
+The typed C parser package owns its file and project entrypoints directly.
 PRIK_C_DOCS_END &#45;&#45;>
 
 Example: parse one header from Python.
 
 <!&#45;&#45; PRIK_C_DOCS_START
 ```python
-from prik import parse_c_file
+from prik.parsers.c import parse_c_file
 
 parsed = parse_c_file("include/api.h")
 print([function.name for function in parsed.functions])
@@ -614,7 +609,7 @@ Example: parse a small project with include directories.
 
 <!&#45;&#45; PRIK_C_DOCS_START
 ```python
-from prik import parse_c_project
+from prik.parsers.c import parse_c_project
 
 project = parse_c_project(["src/api.c", "include/api.h"], include_dirs=["include"])
 print(project.include_graph)

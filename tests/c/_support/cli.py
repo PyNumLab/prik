@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import types
 
-from prik import cli as prik_cli
+import prik.cli as prik_cli
 
 
 class _MainParserError(Exception):

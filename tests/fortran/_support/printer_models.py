@@ -3,7 +3,7 @@ from pathlib import Path
 
 from prik.contracts import CONTRACT_SYMBOLS
 
-from prik import parse_fortran_file as parse_fortran_source
+from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 
 
 from prik.semantics.fortran2ir import (

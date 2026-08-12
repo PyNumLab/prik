@@ -8,7 +8,7 @@ import types
 
 import pytest
 
-from prik import cli as prik_cli
+import prik.cli as prik_cli
 from prik.preprocessing import PreprocessingError
 from tests.fortran.command_line_interface.pipeline._support import (
     TEST_FILE,

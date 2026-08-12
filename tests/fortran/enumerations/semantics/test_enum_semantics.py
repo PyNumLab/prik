@@ -3,7 +3,7 @@
 from pathlib import Path
 
 
-from prik import parse_fortran_file as parse_fortran_source
+from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 from prik.printers import emit_module
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 

@@ -32,7 +32,7 @@ from prik.semantics.models import (
     SemanticType,
 )
 from tests.fortran._support.semantic_conversion import get_function
-from prik import parse_fortran_file as parse_fortran_source
+from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 from prik.semantics import models as semantic_models
 
 

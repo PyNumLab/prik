@@ -7,7 +7,7 @@ from prik.semantics.fortran2ir import (
 from prik.semantics.models import ProjectionMapping
 from tests.fortran._support.semantic_conversion import get_function
 from prik.semantics.metadata import PROJECTED_OUTPUT_METADATA
-from prik import parse_fortran_file as parse_fortran_source
+from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 
 
 def test_missing_intent_scalar_uses_conservative_replacement_projection():

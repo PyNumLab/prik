@@ -1,6 +1,6 @@
 """Callback declaration parsing."""
 
-from prik import parse_fortran_file
+from prik.parsers.fortran import parse_fortran_file
 
 
 def test_nested_interface_marks_dummy_as_procedure():

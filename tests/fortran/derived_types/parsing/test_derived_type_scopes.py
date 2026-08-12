@@ -1,4 +1,4 @@
-from prik import parse_fortran_file
+from prik.parsers.fortran import parse_fortran_file
 
 
 def test_module_symbol_tables_keep_derived_type_fields_scoped_to_type():

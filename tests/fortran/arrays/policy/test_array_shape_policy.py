@@ -12,7 +12,7 @@ from prik.semantics.models import (
 )
 from prik.policy.completion import complete_semantic_policies
 from prik.policy.models import DeclarationCallableAction
-from prik import parse_fortran_file as parse_fortran_source
+from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 
 
 def test_array_extent_reference_requires_a_visible_scalar_argument():

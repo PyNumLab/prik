@@ -518,7 +518,7 @@ libraries.
 ```python
 from pathlib import Path
 
-from prik import NativeBuildPlan, NativeLinkItem
+from prik.pipeline.build import NativeBuildPlan, NativeLinkItem
 
 plan = NativeBuildPlan(
     link_items=(

@@ -2,7 +2,7 @@
 
 import pytest
 
-from prik import FortranParseError, parse_fortran_file, parse_fortran_project
+from prik.parsers.fortran import FortranParseError, parse_fortran_file, parse_fortran_project
 from prik.parsers.fortran.parser import FortranParser
 
 

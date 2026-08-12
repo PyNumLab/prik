@@ -62,7 +62,7 @@ preprocessing probes and are resolved in semantic conversion, not here.
 | Module | Main entrypoints and contents | Change it when |
 | --- | --- | --- |
 | [`prik/parsers/__init__.py`](../../../prik/parsers/__init__.py) | Declares the parser frontend namespaces. | The package-level frontend layout changes. |
-| [`prik/parsers/fortran/__init__.py`](../../../prik/parsers/fortran/__init__.py) | Internal Fortran-parser package boundary. | Establishing a deliberate Fortran-parser import API. |
+| [`prik/parsers/fortran/__init__.py`](../../../prik/parsers/fortran/__init__.py) | Re-exports the supported Fortran parser API: parser functions, `FortranParser`, parser models, and `FortranParseError`. | The supported Fortran-parser import API changes. |
 | [`prik/parsers/fortran/__main__.py`](../../../prik/parsers/fortran/__main__.py) | Module launcher for `python3 -m prik.parsers.fortran`; delegates to the CLI. | Module-launch behavior changes, not parser semantics. |
 | [`prik/parsers/fortran/utils.py`](../../../prik/parsers/fortran/utils.py) | `detect_source_form()` and `split_csv()` are small, grammar-neutral lexical helpers. | Source-form detection or top-level comma splitting changes. |
 | [`prik/parsers/fortran/lexer.py`](../../../prik/parsers/fortran/lexer.py) | `strip_comment()` and `preprocess_lines()` remove comments, fold continuations, and retain logical-line locations. | Lexical normalization or source-coordinate retention changes. |

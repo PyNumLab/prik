@@ -71,30 +71,29 @@ stage package.
 
 | File | Read it when | It receives and produces |
 | --- | --- | --- |
-| `prik/__init__.py` | you need the supported Python API | Re-exports public parsing, probe, contract, and build operations without becoming their implementation owner. |
+| `prik/__init__.py` | you need the normal-user build API | Import-only facade for `__version__` and the three build entrypoints. Import parsing, contracts, probes, runtime handles, and semantic tools from their owning packages. |
 | `prik/__main__.py` | you are tracing `python3 -m prik` | Calls `prik.cli.main()` only when executed as a module. |
 | `prik/cli.py` | you are changing a command or option | Turns terminal arguments into validated stage requests and dispatches them to the owning parser or pipeline. |
 | `prik/stage_values.py` | a value crosses from a producing to a consuming stage | Provides `StageRecord` and recursive freezing so completed input cannot be mutated downstream. |
 
-Run the direct entrypoint demonstrations from the repository root:
+Run the direct command and stage-value demonstrations from the repository
+root:
 
 ```bash
-python3 prik/__init__.py
 python3 prik/cli.py --version
 python3 prik/stage_values.py
 ```
 
 ```text
-PRIK 0.2.1
-Public parser result: subroutine ping from ping.f90
 prik 0.2.1
 Editable parser output: geometry -> ['scale', 'norm']
 Frozen consumer input: geometry -> ('scale', 'norm')
 Mutation rejected: ParserOutput is frozen by its consuming stage
 ```
 
-The examples show the supported import surface, command dispatcher, and
-producer-to-consumer freeze boundary. Their exact output is checked by the
+The table identifies the supported import surface. The examples show the
+command dispatcher and producer-to-consumer freeze boundary. Their exact
+output is checked by the
 [central execution-example tests](../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py).
 
 ## End-To-End Workflow

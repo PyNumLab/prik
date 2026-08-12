@@ -2,9 +2,7 @@
 
 import pytest
 
-from prik.parsers.fortran.parser import FortranParser
-from prik import FortranParseError, parse_fortran_file, parse_fortran_project
-from prik.parsers.fortran.parser import FortranParser as PackageFortranParser
+from prik.parsers.fortran import FortranParseError, FortranParser, parse_fortran_file, parse_fortran_project
 from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
 
 
@@ -57,8 +55,8 @@ end module second_mod
         )
 
 
-def test_prik_package_contains_fortran_parser_and_semantics_subpackages():
-    parsed_fortran = PackageFortranParser().parse_file(
+def test_fortran_parser_package_exports_the_supported_parser_api():
+    parsed_fortran = FortranParser().parse_file(
         """
 subroutine work(n)
   integer, intent(in) :: n

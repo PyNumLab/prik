@@ -539,11 +539,9 @@ strings, focused tests, and already-preprocessed inputs.
 
 <!-- PRIK_C_DOCS_START
 ```python
-from prik import (
-    c_file_to_semantic_modules,
-    emit_module_stubs,
-    parse_c_file,
-)
+from prik.parsers.c import parse_c_file
+from prik.printers import emit_module_stubs
+from prik.semantics.c2ir import c_file_to_semantic_modules
 
 parsed = parse_c_file("int add(int a, int b);", filename="api.h")
 modules = c_file_to_semantic_modules(parsed)

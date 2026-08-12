@@ -14,7 +14,7 @@ import sys
 
 import pytest
 
-from prik import pyi_text_to_semantic_module
+from prik.pipeline.pyi import pyi_text_to_semantic_module
 
 
 ROOT = Path(__file__).parents[2]

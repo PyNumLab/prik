@@ -13,8 +13,8 @@ from prik.semantics.fortran2ir import (
     collect_semantic_compile_time_requirements,
     fortran_module_to_semantic_module,
 )
-from prik import parse_fortran_file as parse_fortran_source
-from prik import parse_fortran_project
+from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
+from prik.parsers.fortran import parse_fortran_project
 from prik.preprocessing.probes.fortran_types import (
     FortranTypeProbeRecipe,
     FortranTypeProbeReport,
@@ -84,15 +84,6 @@ def test_fortran_type_probe_wraps_long_intrinsic_import_lists():
     assert "    c_bool, &" in source
     assert "    c_size_t\n" in source
     assert all(len(line) <= 120 for line in source.splitlines())
-
-
-def test_prik_public_api_lazily_exposes_type_probe_symbols_and_rejects_unknown_names():
-    import prik
-
-    assert prik.FortranTypeProbeError is FortranTypeProbeError
-    assert prik.FortranTypeProbeReport is FortranTypeProbeReport
-    with pytest.raises(AttributeError, match="not_exported"):
-        _ = prik.not_exported
 
 
 def test_fortran_type_probe_rejects_statement_injection():

@@ -21,6 +21,12 @@ release tags add a leading `v` to the package version.
 
 ### Changed
 
+- Reduced the root `prik` API to its version and normal-user build entrypoints;
+  parser, semantic, probe, runtime, and planning tools now use their owning
+  package import paths.
+- Made `prik` an import-only package boundary by removing its direct-script
+  demonstration; command and stage-value examples remain available from their
+  owning modules.
 - Expanded the contributor architecture and package guides into a complete
   stage-by-stage tutorial, with every supported Python module, runnable example
   result, focused test purpose, and change route recorded and checked against

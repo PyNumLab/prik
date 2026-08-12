@@ -1,6 +1,6 @@
 """Minimized parser regressions extracted from former third-party sources."""
 
-from prik import parse_fortran_file
+from prik.parsers.fortran import parse_fortran_file
 from prik.parsers.fortran.lexer import preprocess_lines, strip_comment
 from prik.parsers.fortran.models import FortranProcedureSignature
 from prik.parsers.fortran.parser import FortranParser, _SourceUnitScanner

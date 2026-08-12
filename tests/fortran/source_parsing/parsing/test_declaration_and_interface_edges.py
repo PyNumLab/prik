@@ -4,7 +4,7 @@ import pytest
 
 from prik.parsers.fortran.models import FortranModule
 from prik.parsers.fortran.parser import FortranParser, _ParserScope
-from prik import FortranParseError, parse_fortran_file, parse_fortran_project
+from prik.parsers.fortran import FortranParseError, parse_fortran_file, parse_fortran_project
 
 
 def test_legacy_star_kind_and_declarations_without_double_colon_are_resolved():

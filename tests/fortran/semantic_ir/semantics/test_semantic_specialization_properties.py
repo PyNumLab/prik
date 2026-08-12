@@ -6,7 +6,7 @@ from hypothesis import (
     given,
     strategies as st,
 )
-from prik import parse_fortran_file
+from prik.parsers.fortran import parse_fortran_file
 from prik.semantics.fortran2ir import (
     fortran_file_to_semantic_modules,
     resolve_semantic_compile_time_values,

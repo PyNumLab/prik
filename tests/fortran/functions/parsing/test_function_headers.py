@@ -2,7 +2,7 @@
 
 import pytest
 
-from prik import FortranParseError, parse_fortran_file
+from prik.parsers.fortran import FortranParseError, parse_fortran_file
 
 
 def test_typed_function_result_headers_are_parsed_from_inline_fortran():

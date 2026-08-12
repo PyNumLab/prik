@@ -3,7 +3,7 @@
 import ast
 import pytest
 from dataclasses import asdict
-from prik import parse_fortran_file
+from prik.parsers.fortran import parse_fortran_file
 from prik.printers import emit_module
 from prik.contracts import CONTRACT_SYMBOLS
 from prik.semantics.fortran2ir import fortran_file_to_semantic_modules

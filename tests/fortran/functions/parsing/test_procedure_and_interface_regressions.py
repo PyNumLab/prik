@@ -1,6 +1,6 @@
 """Tests split by stable ownership concept from `test_source_form_and_diagnostics_regressions.py`."""
 
-from prik import parse_fortran_file
+from prik.parsers.fortran import parse_fortran_file
 from prik.parsers.fortran.models import (
     FortranArgument,
     FortranProcedureSignature,

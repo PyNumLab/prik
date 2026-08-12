@@ -2,7 +2,7 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from prik import parse_fortran_file
+from prik.parsers.fortran import parse_fortran_file
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 
 FORTRAN_ROOT = Path(__file__).resolve().parents[1]

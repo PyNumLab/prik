@@ -2,7 +2,7 @@
 
 import pytest
 from pathlib import Path
-from prik import FortranParseError
+from prik.parsers.fortran import FortranParseError
 from prik.parsers.fortran.models import (
     FortranArgument,
     FortranDerivedType,

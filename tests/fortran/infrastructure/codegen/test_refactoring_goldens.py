@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from prik import parse_fortran_project
+from prik.parsers.fortran import parse_fortran_project
 from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import WrapperPlanner
 from prik.pipeline.pyi import emit_module_stubs

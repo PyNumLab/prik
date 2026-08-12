@@ -19,7 +19,7 @@ the shared CLI compiler preprocessing pipeline.
 
 <!-- prik-doc-test: exact -->
 ```python
-from prik import parse_fortran_file
+from prik.parsers.fortran import parse_fortran_file
 
 parsed = parse_fortran_file(
     "subroutine ping(n)\n"
@@ -45,7 +45,7 @@ PRIK_C_DOCS_END -->
 <!-- PRIK_C_DOCS_DISABLED: prik-doc-test: exact -->
 <!-- PRIK_C_DOCS_START
 ```python
-from prik import parse_c_file
+from prik.parsers.c import parse_c_file
 
 parsed = parse_c_file("int add(int a, int b);", filename="inline.h")
 
@@ -71,11 +71,9 @@ PRIK_C_DOCS_END -->
 <!-- PRIK_C_DOCS_DISABLED: prik-doc-test: exact -->
 <!-- PRIK_C_DOCS_START
 ```python
-from prik import (
-    c_file_to_semantic_modules,
-    emit_module_stubs,
-    parse_c_file,
-)
+from prik.parsers.c import parse_c_file
+from prik.printers import emit_module
+from prik.semantics.c2ir import c_file_to_semantic_modules
 
 parsed = parse_c_file("int add(int a, int b);", filename="inline.h")
 modules = c_file_to_semantic_modules(parsed)

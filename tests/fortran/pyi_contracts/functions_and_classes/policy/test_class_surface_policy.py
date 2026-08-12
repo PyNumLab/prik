@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from prik import pyi_text_to_semantic_module
+from prik.pipeline.pyi import pyi_text_to_semantic_module
 from prik.pipeline.pyi import pyi_file_to_semantic_module
 from prik.policy.completion import complete_semantic_policies
 from prik.policy.models import ClassInvocationKind, OverloadMatchKind

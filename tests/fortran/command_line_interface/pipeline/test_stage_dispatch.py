@@ -10,8 +10,8 @@ import types
 
 import pytest
 
-from prik import FortranParseError
-from prik import cli as prik_cli
+from prik.parsers.fortran import FortranParseError
+import prik.cli as prik_cli
 from prik.parsers.fortran import cli as fortran_parser_cli
 from prik.preprocessing import (
     PreprocessingConfig,

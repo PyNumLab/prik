@@ -5,7 +5,7 @@ import types
 
 import pytest
 
-from prik import cli as prik_cli
+import prik.cli as prik_cli
 from tests.c._support.cli import (
     _MainParserError,
     _install_main_parser,

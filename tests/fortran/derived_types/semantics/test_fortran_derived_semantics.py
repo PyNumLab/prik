@@ -22,7 +22,7 @@ from prik.semantics.models import (
 )
 from prik.semantics.native_contract import native_contract_issues
 from tests.fortran._support.semantic_conversion import get_class
-from prik import parse_fortran_file as parse_fortran_source
+from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
 
 

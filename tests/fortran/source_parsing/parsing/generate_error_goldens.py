@@ -34,7 +34,7 @@ _DEFAULT_PARSER = "parse_fortran_procedures"
 
 
 def _parse_fortran_file(source, filename=None):
-    from prik import parse_fortran_file
+    from prik.parsers.fortran import parse_fortran_file
 
     return parse_fortran_file(source, filename=filename)
 
@@ -51,7 +51,7 @@ def _get_parser_for_fixture(fixture: Path) -> str:
 
 
 def _serialize_error_fixture(fixture: Path) -> dict:
-    from prik import FortranParseError
+    from prik.parsers.fortran import FortranParseError
 
     source = fixture.read_text(encoding="utf-8")
     parser_name = _get_parser_for_fixture(fixture)

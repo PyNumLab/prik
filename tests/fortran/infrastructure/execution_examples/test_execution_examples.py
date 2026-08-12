@@ -29,10 +29,6 @@ def _run_example(relative_path: str, *arguments: str) -> str:
     return completed.stdout
 
 
-def test_fortran_root_init_execution_example():
-    assert _run_example("prik/__init__.py") == ("PRIK 0.2.1\nPublic parser result: subroutine ping from ping.f90\n")
-
-
 def test_fortran_root_cli_execution_example():
     assert _run_example("prik/cli.py", "--version") == "prik 0.2.1\n"
 

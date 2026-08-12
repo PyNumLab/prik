@@ -1,6 +1,6 @@
 """Fortran pointer declaration parsing."""
 
-from prik import parse_fortran_file
+from prik.parsers.fortran import parse_fortran_file
 
 
 def test_scalar_array_and_optional_pointer_attributes_are_parsed():

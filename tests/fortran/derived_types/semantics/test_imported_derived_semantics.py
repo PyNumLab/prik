@@ -1,9 +1,7 @@
 """Tests split by stable ownership concept from `test_compile_time_values.py`."""
 
 from dataclasses import asdict
-from prik import (
-    parse_fortran_project,
-)
+from prik.parsers.fortran import parse_fortran_project
 from prik.parsers.fortran.models import (
     FortranArgument,
     FortranDerivedType,
@@ -25,7 +23,7 @@ from prik.semantics.models import (
     SemanticVariable,
 )
 from tests.fortran._support.semantic_conversion import get_function
-from prik import parse_fortran_file as parse_fortran_source
+from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 
 
 def test_converter_preserves_imported_derived_contexts_through_dispatch_paths():

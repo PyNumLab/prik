@@ -3087,7 +3087,7 @@ def collect_semantic_compile_time_requirements(
     wrappers below.
 
     Example:
-        >>> from prik import parse_fortran_file
+        >>> from prik.parsers.fortran import parse_fortran_file
         >>> parsed = parse_fortran_file("module m\\ninteger, parameter :: rk = selected_real_kind(12)\\nend module")
         >>> reqs = collect_semantic_compile_time_requirements(parsed)
         >>> reqs[0]["symbol"]

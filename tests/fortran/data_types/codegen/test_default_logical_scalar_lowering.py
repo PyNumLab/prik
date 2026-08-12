@@ -1,6 +1,6 @@
 """Default-logical scalar kind adaptation through completed wrapper plans."""
 
-from prik import parse_fortran_file
+from prik.parsers.fortran import parse_fortran_file
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 from prik.policy.completion import complete_semantic_policies
 from prik.policy.models import BridgeDataAction, ScalarLogicalABI

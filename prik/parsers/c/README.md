@@ -5,8 +5,8 @@ preserves declarations and diagnostics, and feeds semantic conversion. It does
 not own runtime wrapping of user-supplied C libraries.
 
 Its canonical import namespace is `prik.parsers.c`. The stable convenience
-functions `prik.parse_c_file` and `prik.parse_c_project` remain available from
-the package root.
+functions `parse_c_file` and `parse_c_project` are imported from that package,
+not from the root facade.
 
 ## Entry Points
 

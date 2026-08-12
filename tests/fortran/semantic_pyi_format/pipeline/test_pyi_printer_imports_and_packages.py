@@ -2,7 +2,7 @@
 
 import prik
 import pytest
-from prik import parse_fortran_file as parse_fortran_source
+from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 from prik.printers import (
     PyiPrinter,
     emit_module,

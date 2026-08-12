@@ -94,8 +94,8 @@ def test_parse_c_file_accepts_inline_source_and_returns_typed_model():
     assert [fn.name for fn in parsed.functions] == ["add"]
 
 
-def test_prik_exports_c_file_and_project_entrypoints_like_fortran():
-    from prik import CFile, CProject, parse_c_file, parse_c_project
+def test_c_package_exports_file_and_project_entrypoints():
+    from prik.parsers.c import CFile, CProject, parse_c_file, parse_c_project
 
     parsed = parse_c_file("int add(int left, int right);\n", filename="api.h")
     project = parse_c_project({"api.h": "int add(int left, int right);\n"})

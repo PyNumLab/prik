@@ -11,7 +11,7 @@ from prik.semantics.fortran2ir import (
     collect_fortran_type_storage_requirements,
     fortran_type_storage_expression,
 )
-from prik import parse_fortran_file as parse_fortran_source
+from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 
 
 def test_intrinsic_builtin_kinds_map_to_semantic_types():

@@ -5,7 +5,7 @@ from hypothesis import (
     given,
     strategies as st,
 )
-from prik import parse_fortran_file
+from prik.parsers.fortran import parse_fortran_file
 from tests.fortran._support.parser_properties import _FORTRAN_SCALAR_TYPES
 
 

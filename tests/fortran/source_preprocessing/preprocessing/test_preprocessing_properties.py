@@ -8,10 +8,7 @@ from hypothesis import (
     strategies as st,
 )
 from pathlib import Path
-from prik import (
-    FortranParseError,
-    parse_fortran_file,
-)
+from prik.parsers.fortran import FortranParseError, parse_fortran_file
 from prik.preprocessing import (
     PreprocessingConfig,
     preprocess_source,

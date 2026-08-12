@@ -3,11 +3,9 @@
 import ctypes
 import gc
 import numpy as np
-import prik
 import pytest
 from prik.runtime.handles import (
     AllocatableArray,
-    NativeArrayHandleBase,
     PointerArray,
     _native_array_descriptor_handoff_for_binding,
     _native_array_handle_from_generated_ops,
@@ -17,13 +15,6 @@ from tests.fortran._support.native_array_handles import (
     _common_ops,
     _required_handoff_ops,
 )
-
-
-def test_runtime_handle_classes_are_public_api_exports():
-    assert prik.AllocatableArray is AllocatableArray
-    assert prik.NativeArrayHandleBase is NativeArrayHandleBase
-    assert prik.PointerArray is PointerArray
-    assert {"AllocatableArray", "NativeArrayHandleBase", "PointerArray"} <= set(prik.__all__)
 
 
 def test_generated_handle_factory_adapts_private_operations_to_runtime_protocol():

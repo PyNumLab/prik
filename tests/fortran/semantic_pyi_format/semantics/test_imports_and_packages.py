@@ -2,7 +2,7 @@
 
 import pytest
 from pathlib import Path
-from prik import parse_fortran_file
+from prik.parsers.fortran import parse_fortran_file
 from prik.printers import emit_module
 from prik.pipeline.pyi import (
     pyi_file_to_semantic_module,
