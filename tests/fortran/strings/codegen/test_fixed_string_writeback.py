@@ -16,7 +16,7 @@ from prik.semantics.ownership import (
     TransferMode,
 )
 from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import (
+from prik.semantics.wrapper_policy_models import (
     BridgeDataAction,
     OptionalMode,
     PythonExceptionKind,

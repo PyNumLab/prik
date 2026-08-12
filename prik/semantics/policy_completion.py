@@ -37,7 +37,7 @@ from prik.semantics.metadata import (
 )
 from prik.semantics import models
 from prik.semantics.native_array_handles import NativeArrayHandlePolicy, native_array_descriptor_kind
-from prik.semantics.wrapper_policy import (
+from prik.semantics.wrapper_policy_models import (
     ArgumentPolicy,
     OverloadArgumentPolicy,
     OverloadMatchKind,
@@ -53,13 +53,15 @@ from prik.semantics.wrapper_policy import (
     NativeStatusOutputPolicy,
     OptionalMode,
     PythonExceptionKind,
-    build_class_surface_policy,
+)
+from prik.semantics.wrapper_policy import (
     build_callback_handoff_policy,
+    build_class_surface_policy,
     build_derived_field_policy,
     build_derived_type_policy,
-    build_module_variable_policy,
-    build_module_overload_policy,
     build_function_wrapper_policy,
+    build_module_overload_policy,
+    build_module_variable_policy,
     derived_member_path_policies,
     overload_builtin_scalar_family,
 )

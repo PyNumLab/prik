@@ -9,7 +9,7 @@ from prik.codegen.printers.pyi_printer import PyiPrinter
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.semantics.models import RESOLVED_MODULE_VARIABLE_POLICY_METADATA
 from prik.semantics.ownership import AssignmentMode
-from prik.semantics.wrapper_policy import ModuleGetterAction, ModuleVariablePolicy
+from prik.semantics.wrapper_policy_models import ModuleGetterAction, ModuleVariablePolicy
 
 
 def test_scalar_module_variable_policy_completes_access_and_storage_before_planning():

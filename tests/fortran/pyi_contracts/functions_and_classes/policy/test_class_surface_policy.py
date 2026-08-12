@@ -7,7 +7,7 @@ import pytest
 from prik import pyi_text_to_semantic_module
 from prik.pipeline.pyi import pyi_file_to_semantic_module
 from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import ClassInvocationKind, OverloadMatchKind
+from prik.semantics.wrapper_policy_models import ClassInvocationKind, OverloadMatchKind
 from prik.codegen import WrapperCodeGenerator, WrapperPlanner
 
 FIXTURES = Path(__file__).parents[1] / "end_to_end" / "fixtures" / "edited_contracts"

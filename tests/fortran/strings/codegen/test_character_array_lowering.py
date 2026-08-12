@@ -7,7 +7,7 @@ import pytest
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.semantics.ownership import CodegenAction, NativeBarrierAction, ObjectKind
 from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import BridgeDataAction
+from prik.semantics.wrapper_policy_models import BridgeDataAction
 from prik.codegen import WrapperCodeGenerator, WrapperPlanner
 from prik.codegen.plan import DatatypeFamily
 

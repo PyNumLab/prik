@@ -11,7 +11,7 @@ from prik.semantics.models import (
     RESOLVED_MODULE_VARIABLE_POLICY_METADATA,
 )
 from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import DeclarationCallableAction
+from prik.semantics.wrapper_policy_models import DeclarationCallableAction
 from prik import parse_fortran_file as parse_fortran_source
 
 

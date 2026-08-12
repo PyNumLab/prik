@@ -17,7 +17,7 @@ from types import MappingProxyType
 
 from prik.semantics import models
 from prik.semantics.native_array_handles import NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER
-from prik.semantics.wrapper_policy import (
+from prik.semantics.wrapper_policy_models import (
     ArgumentConversionPhase,
     ArgumentHandoffMode,
     ArrayHandoffPolicy,
@@ -57,10 +57,12 @@ from prik.semantics.wrapper_policy import (
     ScalarDescriptorResultPolicy,
     TransformationPolicy,
     WritebackPhase,
-    completed_module_variable_policy,
-    completed_function_wrapper_policy,
-    completed_derived_type_policy,
+)
+from prik.semantics.wrapper_policy import (
     completed_class_surface_policy,
+    completed_derived_type_policy,
+    completed_function_wrapper_policy,
+    completed_module_variable_policy,
 )
 from prik.semantics.wrapper_exports import PythonExportPolicy
 from prik.semantics.ownership import NativeBarrierAction, SetterAction

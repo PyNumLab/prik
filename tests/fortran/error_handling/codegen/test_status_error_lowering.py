@@ -9,7 +9,7 @@ import pytest
 
 from prik.pipeline.pyi import pyi_file_to_semantic_module
 from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import BridgeDataAction, PythonExceptionKind
+from prik.semantics.wrapper_policy_models import BridgeDataAction, PythonExceptionKind
 from prik.codegen import DatatypeFamily, WrapperCodeGenerator, WrapperPlanner
 
 

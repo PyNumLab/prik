@@ -19,7 +19,7 @@ from prik.codegen.plan import (
 )
 from prik.codegen.visitor import ClassVisitor
 from prik.semantics.ownership import SetterAction
-from prik.semantics.wrapper_policy import (
+from prik.semantics.wrapper_policy_models import (
     ClassConstructorKind,
     ClassMethodKind,
     ModuleObjectAccessMechanism,

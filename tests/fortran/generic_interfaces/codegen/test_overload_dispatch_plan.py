@@ -6,7 +6,7 @@ import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import OverloadMatchKind
+from prik.semantics.wrapper_policy_models import OverloadMatchKind
 from prik.codegen import CBindingGenerator, WrapperCodeGenerator, WrapperPlanner
 from prik.codegen.c.naming import CBindingNames
 

@@ -26,7 +26,7 @@ from prik.semantics.ownership import (
     StorageMode,
 )
 from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import (
+from prik.semantics.wrapper_policy_models import (
     ArgumentConversionPhase,
     ArgumentHandoffMode,
     BridgeDataAction,
@@ -35,9 +35,8 @@ from prik.semantics.wrapper_policy import (
     NativeStatusErrorPolicy,
     OptionalMode,
     PythonExceptionKind,
-    build_function_wrapper_policy,
-    completed_function_wrapper_policy,
 )
+from prik.semantics.wrapper_policy import build_function_wrapper_policy, completed_function_wrapper_policy
 
 FMATH_CONTRACT = Path("tests/fortran/data_types/end_to_end/fixtures/baseline/contracts/fmath/__init__.pyi")
 

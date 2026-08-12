@@ -30,7 +30,7 @@ from prik.semantics.ownership import (
     StorageMode,
     TransferMode,
 )
-from prik.semantics.wrapper_policy import (
+from prik.semantics.wrapper_policy_models import (
     ArgumentConversionPhase,
     ArgumentHandoffMode,
     ArrayLogicalABI,

@@ -21,7 +21,7 @@ from prik.semantics.ownership import (
     SetterAction,
 )
 from prik.semantics.metadata import SCALAR_STORAGE_CATEGORY
-from prik.semantics.wrapper_policy import (
+from prik.semantics.wrapper_policy_models import (
     ArgumentHandoffMode,
     ArrayLogicalABI,
     ArrayWritebackABI,

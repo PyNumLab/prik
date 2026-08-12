@@ -6,7 +6,7 @@ from __future__ import annotations
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.semantics.ownership import CodegenAction, NativeBarrierAction, ObjectKind, PythonBarrierAction
 from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import ArgumentHandoffMode, BridgeDataAction, DirectResultABI
+from prik.semantics.wrapper_policy_models import ArgumentHandoffMode, BridgeDataAction, DirectResultABI
 from prik.codegen import WrapperCodeGenerator, WrapperPlanner
 
 

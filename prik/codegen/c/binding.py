@@ -20,7 +20,7 @@ from prik.semantics.ownership import (
     PythonBarrierAction,
     SetterAction,
 )
-from prik.semantics.wrapper_policy import (
+from prik.semantics.wrapper_policy_models import (
     ArgumentHandoffMode,
     CallbackABIKind,
     CallbackResultAction,

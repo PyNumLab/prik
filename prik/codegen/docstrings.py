@@ -10,7 +10,7 @@ re-derived from native declarations or backend output.
 from __future__ import annotations
 
 from prik.semantics.ownership import OwnershipOwner, SetterAction, TransferMode
-from prik.semantics.wrapper_policy import (
+from prik.semantics.wrapper_policy_models import (
     ClassConstructorKind,
     ModuleGetterAction,
     NativeArrayDescriptorKind,

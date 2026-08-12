@@ -8,7 +8,7 @@ from prik.pipeline.pyi import pyi_file_to_semantic_module, pyi_text_to_semantic_
 from prik.semantics import models
 from prik.semantics.ownership import PythonBarrierAction
 from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import (
+from prik.semantics.wrapper_policy_models import (
     CallbackABIKind,
     CallbackGILAction,
     CallbackLifecycleAction,

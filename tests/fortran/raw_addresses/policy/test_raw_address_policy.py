@@ -21,7 +21,7 @@ from prik.semantics.ownership import (
     TransferMode,
 )
 from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import (
+from prik.semantics.wrapper_policy_models import (
     RAW_STRING_ADDRESS_COPY_REASON,
     STRING_STORAGE_COPY_REASON,
     ArgumentHandoffMode,

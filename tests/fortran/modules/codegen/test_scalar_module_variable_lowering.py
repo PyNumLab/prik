@@ -13,7 +13,7 @@ from prik.pipeline.build import _apply_source_python_exports, _merge_wrapper_mod
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.semantics.ownership import AssignmentMode, SetterAction
 from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import ModuleGetterAction
+from prik.semantics.wrapper_policy_models import ModuleGetterAction
 from prik.codegen import WrapperCodeGenerator, WrapperPlanner
 from prik.codegen.c.binding import CBindingGenerator
 from prik.codegen.fortran.bridge import FortranBridgeGenerator

@@ -33,7 +33,7 @@ from prik.semantics.models import (
     RESOLVED_DERIVED_TYPE_POLICY_METADATA,
     RESOLVED_MODULE_VARIABLE_POLICY_METADATA,
 )
-from prik.semantics.wrapper_policy import ModuleObjectAccessMechanism
+from prik.semantics.wrapper_policy_models import ModuleObjectAccessMechanism
 
 
 def test_abstract_type_and_deferred_binding_fail_in_completed_derived_policy():

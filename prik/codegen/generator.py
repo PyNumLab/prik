@@ -33,7 +33,7 @@ from prik.semantics.ownership import (
     TransferMode,
 )
 from prik.semantics.metadata import SCALAR_STORAGE_CATEGORY
-from prik.semantics.wrapper_policy import (
+from prik.semantics.wrapper_policy_models import (
     ArgumentHandoffMode,
     ArrayLogicalABI,
     ArrayWritebackABI,
@@ -62,7 +62,6 @@ from prik.semantics.wrapper_policy import (
     DirectResultABI,
     LifecycleOperation,
     FIXED_STRING_RESULT_COPY_REASON,
-    NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER,
     OWNED_NATIVE_ARRAY_HANDLE_COPY_REASON,
     ORDINARY_ARRAY_RESULT_COPY_REASON,
     ModuleGetterAction,
@@ -93,8 +92,9 @@ from prik.semantics.wrapper_policy import (
     TransformationAction,
     TransformationLayer,
     WritebackPhase,
-    overload_builtin_scalar_family,
 )
+from prik.semantics.native_array_handles import NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER
+from prik.semantics.wrapper_policy import overload_builtin_scalar_family
 from prik.codegen.c.binding import CBindingGenerator
 from prik.codegen.fortran.bridge import FortranBridgeGenerator
 from prik.codegen.plan import (

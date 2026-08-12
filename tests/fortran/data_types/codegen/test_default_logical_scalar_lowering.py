@@ -3,7 +3,7 @@
 from prik import parse_fortran_file
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import BridgeDataAction, ScalarLogicalABI
+from prik.semantics.wrapper_policy_models import BridgeDataAction, ScalarLogicalABI
 from prik.codegen import WrapperCodeGenerator, WrapperPlanner
 
 

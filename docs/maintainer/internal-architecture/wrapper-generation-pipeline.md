@@ -27,6 +27,14 @@ then dispatch only from completed selectors into small named lowering methods;
 they do not reconstruct policy from datatype, `intent`, shape, alias flags, or
 local memory checks.
 
+The immutable backend-neutral vocabulary consumed across this boundary lives
+in `prik/semantics/wrapper_policy_models.py`. It owns completed action enums,
+policy records, and stable cross-stage reason constants, but no construction
+rules. `prik/semantics/wrapper_policy.py` owns the semantic rules that build and
+validate those records. Planning and lowering import completed model types from
+the model module; only post-IR completion and planner accessors depend on the
+construction module.
+
 Native-source `intent` may be consumed while importing a source declaration to
 propose default Python argument/result positions. It is not retained in the
 semantic `.pyi` or post-IR ownership context. The editable Python signature,

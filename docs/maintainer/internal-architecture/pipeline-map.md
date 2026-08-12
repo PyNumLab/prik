@@ -76,7 +76,7 @@ cross-cutting infrastructure.
 | Concept family | Owner | What belongs there | What must stay out |
 | --- | --- | --- | --- |
 | Parser facts | parser packages | Source syntax, native declaration structure, source locations, and parser diagnostics | Wrapper policy, Python API projection, generated names, and compile/link decisions |
-| Semantic policy completion and ownership | `prik/semantics/policy_completion.py` and `prik/semantics/ownership.py` | Completed policy choices for ownership, lifetime, output projection, replacement, and ABI safety | Raw parser syntax, backend-specific statement trees, and hidden lowering-time policy decisions |
+| Semantic policy completion and ownership | `prik/semantics/policy_completion.py`, `prik/semantics/ownership.py`, `prik/semantics/wrapper_policy_models.py`, and `prik/semantics/wrapper_policy.py` | Completed policy choices for ownership, lifetime, output projection, replacement, and ABI safety; immutable wrapper-policy vocabulary is separate from its construction rules | Raw parser syntax, backend-specific statement trees, and hidden lowering-time policy decisions |
 | Typed wrapper plan | `prik/codegen/plan.py` and `prik/codegen/planner.py` | A validated, backend-neutral implementation plan projected from completed semantic decisions | Source-contract authority, policy inference, and target-language statement details |
 | Printers and compilation | `prik/codegen/printers/`, `prik/compiling/`, and wrapper orchestration | Text emission, generated artifact layout, compiler commands, native objects, libraries, include directories, and link inputs | Semantic support decisions and plan rewriting policy |
 
@@ -157,8 +157,8 @@ PRIK_C_DOCS_END -->
 | CLI and output routing | `prik/cli.py`, parser CLI helpers | `docs/developer/source-map.md`, `docs/developer/feature-to-code-map.md` |
 | Source loading and preprocessing | `prik/pipeline/preprocessing.py` | `docs/developer/source-map.md`, parser references |
 | Editable semantic contracts | `prik/parsers/pyi/parser.py`, `prik/pipeline/pyi.py`, `prik/semantics/pyi2ir.py`, `prik/codegen/printers/pyi_printer.py` | `docs/user/reference/semantic-pyi-format.md` |
-| Semantic and wrapper-planning errors | `prik/semantics/fortran2ir.py`, `prik/semantics/policy_completion.py`, `prik/semantics/wrapper_policy.py`, `prik/codegen/planner.py` | `docs/user/guide/error-handling.md` |
-| Wrapper policy and lowering | `prik/semantics/policy_completion.py`, `prik/semantics/ownership.py`, `prik/codegen/planner.py`, `prik/codegen/generator.py` | `docs/user/reference/fortran-wrapper.md`, ownership docs |
+| Semantic and wrapper-planning errors | `prik/semantics/fortran2ir.py`, `prik/semantics/policy_completion.py`, `prik/semantics/wrapper_policy_models.py`, `prik/semantics/wrapper_policy.py`, `prik/codegen/planner.py` | `docs/user/guide/error-handling.md` |
+| Wrapper policy and lowering | `prik/semantics/policy_completion.py`, `prik/semantics/ownership.py`, `prik/semantics/wrapper_policy_models.py`, `prik/semantics/wrapper_policy.py`, `prik/codegen/planner.py`, `prik/codegen/generator.py` | `docs/user/reference/fortran-wrapper.md`, ownership docs |
 | Native build | `prik/pipeline/build.py`, `prik/compiling/compilers.py`, `prik/compiling/native_support.py` | compiling package README and build-system docs |
 
 <!-- PRIK_C_DOCS_START
