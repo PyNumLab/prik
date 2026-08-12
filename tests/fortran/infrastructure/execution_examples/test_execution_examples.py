@@ -33,8 +33,8 @@ def test_fortran_root_cli_execution_example():
     assert _run_example("prik/cli.py", "--version") == "prik 0.2.1\n"
 
 
-def test_fortran_root_stage_values_execution_example():
-    assert _run_example("prik/stage_values.py") == (
+def test_fortran_utilities_stage_values_execution_example():
+    assert _run_example("prik/utilities/stage_values.py") == (
         "Editable parser output: geometry -> ['scale', 'norm']\n"
         "Frozen consumer input: geometry -> ('scale', 'norm')\n"
         "Mutation rejected: ParserOutput is frozen by its consuming stage\n"

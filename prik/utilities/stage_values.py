@@ -55,7 +55,7 @@ if __name__ == "__main__":
 
     @dataclass
     class ParserOutput(StageRecord):
-        """Small parser-stage value used by the direct architecture example."""
+        """Small parser-stage value used by the direct utilities example."""
 
         module: str
         procedures: list[str] = field(default_factory=list)

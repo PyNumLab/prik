@@ -43,7 +43,6 @@ prik/
 ├── __init__.py           # Supported public Python API
 ├── __main__.py           # python3 -m prik launcher
 ├── cli.py                # Command validation and stage dispatch
-├── stage_values.py       # Shared mutable-to-frozen stage records
 ├── contracts/            # Public semantic .pyi vocabulary
 ├── compiler/             # Native compiler and linker services
 ├── preprocessing/        # Source preparation and target probes
@@ -65,35 +64,30 @@ remain visible in the code-generation and printer guides.
 
 ## Package-Root Entry Points
 
-Only public entrypoints and values shared across stages live directly in
-`prik/`. These modules coordinate work; they do not take ownership from a
-stage package.
+Only user-facing entrypoint modules live directly in `prik/`. Shared
+mechanisms live in their owning subpackage, so the root does not take
+ownership from a stage package.
 
 | File | Read it when | It receives and produces |
 | --- | --- | --- |
 | `prik/__init__.py` | you need the normal-user build API | Import-only facade for `__version__` and the three build entrypoints. Import parsing, contracts, probes, runtime handles, and semantic tools from their owning packages. |
 | `prik/__main__.py` | you are tracing `python3 -m prik` | Calls `prik.cli.main()` only when executed as a module. |
 | `prik/cli.py` | you are changing a command or option | Turns terminal arguments into validated stage requests and dispatches them to the owning parser or pipeline. |
-| `prik/stage_values.py` | a value crosses from a producing to a consuming stage | Provides `StageRecord` and recursive freezing so completed input cannot be mutated downstream. |
 
-Run the direct command and stage-value demonstrations from the repository
-root:
+Run the direct command demonstration from the repository root:
 
 ```bash
 python3 prik/cli.py --version
-python3 prik/stage_values.py
 ```
 
 ```text
 prik 0.2.1
-Editable parser output: geometry -> ['scale', 'norm']
-Frozen consumer input: geometry -> ('scale', 'norm')
-Mutation rejected: ParserOutput is frozen by its consuming stage
 ```
 
-The table identifies the supported import surface. The examples show the
-command dispatcher and producer-to-consumer freeze boundary. Their exact
-output is checked by the
+The table identifies the supported import surface. The example shows the
+command dispatcher. The stage-record freeze demonstration belongs to the
+[Utilities package guide](packages/utilities.md). Their exact output is
+checked by the
 [central execution-example tests](../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py).
 
 ## End-To-End Workflow

@@ -9,7 +9,6 @@ jumping directly into generated-code internals.
 | File or package | Owns |
 | --- | --- |
 | `cli.py` | User CLI stages, output routing, diagnostics, and wrapper option validation. |
-| `stage_values.py` | Shared stage-result records used by public inspection workflows. |
 | `contracts/` | Public names used by semantic `.pyi` contracts. |
 | `compiler/` | Reusable compiler commands, compile objects, native support installation, and linking. |
 | `preprocessing/` | C/Fortran source preparation, provenance, native includes, and compiler-derived target facts. |
@@ -22,11 +21,10 @@ jumping directly into generated-code internals.
 | `codegen/` | Backend datatype projection, plan-driven documentation, and direct C/Fortran syntax-node lowering. |
 | `printers/` | C, Fortran, and semantic `.pyi` serialization. |
 | `naming/` | Shared public-name and generated-symbol policy. |
-| `utilities/` | Shared parsing, normalization, rendering, evaluation, and visitor helpers. |
+| `utilities/` | Shared parsing, normalization, rendering, evaluation, visitor, and stage-record freezing helpers. |
 
-The package root contains the public entrypoint modules plus the shared
-`stage_values.py` record support. Supported library symbols are flattened
-through `prik.__init__`; internal modules import their canonical owner.
+The package root exposes only the normal-user build API and version through
+`prik.__init__`; internal modules import their canonical owner.
 `prik.contracts` remains a deliberate public submodule because its import path
 is part of semantic `.pyi` syntax. Parser-specific imports use the public
 `prik.parsers.c`, `prik.parsers.fortran`, and `prik.parsers.pyi` namespaces.

@@ -1,7 +1,7 @@
 """Tests split by stable ownership concept from `test_imports_and_packages.py`."""
 
-import prik
 import pytest
+import prik.pipeline.pyi as pyi_pipeline
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 from prik.printers import (
     PyiPrinter,
@@ -30,9 +30,9 @@ from prik.semantics.models import (
 from tests.fortran._support.printer_models import generate_pyi
 
 
-def test_prik_public_api_exports_module_stub_emitter():
-    assert "emit_module_stubs" in prik.__all__
-    assert prik.emit_module_stubs is emit_module_stubs
+def test_pyi_pipeline_exports_module_stub_emitter():
+    assert "emit_module_stubs" in pyi_pipeline.__all__
+    assert pyi_pipeline.emit_module_stubs is emit_module_stubs
 
 
 def test_fortran_generated_contracts_reserve_colliding_public_names_by_namespace():

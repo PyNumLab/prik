@@ -27,7 +27,7 @@ from prik.codegen.nodes import (
     FortranTypeDefinition,
     FortranUse,
 )
-from prik.stage_values import StageRecord
+from prik.utilities.stage_values import StageRecord
 from prik.codegen.visitor import ClassVisitor
 
 

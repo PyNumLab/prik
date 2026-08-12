@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from prik.stage_values import StageRecord
+from prik.utilities.stage_values import StageRecord
 
 
 @dataclass

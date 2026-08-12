@@ -20,7 +20,7 @@ from prik.pipeline.wrapper import (
     WrapperGenerator,
 )
 from prik.policy.completion import complete_semantic_policies
-from prik.stage_values import FrozenStageRecordError
+from prik.utilities.stage_values import FrozenStageRecordError
 from prik.planning import ModulePlan, WrapperPlanner
 
 

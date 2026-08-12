@@ -72,7 +72,7 @@ PRIK_C_DOCS_END -->
 <!-- PRIK_C_DOCS_START
 ```python
 from prik.parsers.c import parse_c_file
-from prik.printers import emit_module
+from prik.pipeline.pyi import emit_module_stubs
 from prik.semantics.c2ir import c_file_to_semantic_modules
 
 parsed = parse_c_file("int add(int a, int b);", filename="inline.h")

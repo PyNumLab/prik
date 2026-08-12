@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import time
 
-from prik.stage_values import StageRecord
+from prik.utilities.stage_values import StageRecord
 from prik.policy.ownership import (
     AssignmentMode,
     CodegenAction,

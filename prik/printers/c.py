@@ -35,7 +35,7 @@ from prik.codegen.nodes import (
     CStructDefinition,
     CSwitch,
 )
-from prik.stage_values import StageRecord
+from prik.utilities.stage_values import StageRecord
 from prik.codegen.visitor import ClassVisitor
 
 

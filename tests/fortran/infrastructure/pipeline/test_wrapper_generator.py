@@ -11,7 +11,7 @@ from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.policy.completion import complete_semantic_policies
 from prik.policy.ownership import CodegenAction, NativeBarrierAction, ObjectKind
 from prik.policy.models import ArgumentHandoffMode, BridgeDataAction
-from prik.stage_values import FrozenStageRecordError
+from prik.utilities.stage_values import FrozenStageRecordError
 from prik.codegen import (
     CBindingGenerator,
     FortranBridgeGenerator,

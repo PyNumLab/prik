@@ -90,7 +90,7 @@ from prik.policy.models import (
     TransformationLayer,
     WritebackPhase,
 )
-from prik.stage_values import StageRecord
+from prik.utilities.stage_values import StageRecord
 
 
 # ============================================================================

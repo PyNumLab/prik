@@ -24,6 +24,8 @@ release tags add a leading `v` to the package version.
 - Reduced the root `prik` API to its version and normal-user build entrypoints;
   parser, semantic, probe, runtime, and planning tools now use their owning
   package import paths.
+- Moved stage-record freezing from `prik.stage_values` to
+  `prik.utilities.stage_values`; the root module path was removed.
 - Made `prik` an import-only package boundary by removing its direct-script
   demonstration; command and stage-value examples remain available from their
   owning modules.
