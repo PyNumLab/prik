@@ -9,8 +9,8 @@ from tests.fortran._support.semantic_conversion import (
     get_function,
 )
 from prik.semantics.models import SemanticExpressionCallable
-from prik.codegen.printers import PyiPrinter
-from prik import parse_fortran_file as parse_fortran_source
+from prik.printers import PyiPrinter
+from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 from prik.pipeline.pyi import pyi_text_to_semantic_module as parse_pyi_text
 
 

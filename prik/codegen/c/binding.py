@@ -14,20 +14,18 @@ import math
 import re
 
 from prik.utilities.declaration_expressions import declaration_extent_uses_power, render_declaration_extent
-from prik.semantics.ownership import (
+from prik.policy.ownership import (
     CodegenAction,
     ObjectKind,
     PythonBarrierAction,
     SetterAction,
 )
-from prik.semantics.wrapper_policy import (
+from prik.policy.models import (
     ArgumentHandoffMode,
     CallbackABIKind,
     CallbackResultAction,
     CallbackTransferAction,
     ClassConstructorKind,
-    ClassMethodKind,
-    OverloadMatchKind,
     DerivedActualAccess,
     DerivedCallAction,
     DerivedDummyCategory,
@@ -45,16 +43,19 @@ from prik.semantics.wrapper_policy import (
     NativeArrayOperation,
     NativeDescriptorHandoffABI,
     OptionalMode,
+    OverloadMatchKind,
     PythonExceptionKind,
     TransformationAction,
     WritebackPhase,
-    overload_builtin_scalar_family,
 )
-from prik.types.numpy import is_boolean_semantic_type_name
+from prik.codegen.c.naming import CBindingNames
+from prik.codegen.c.python_surface import PythonSurfaceContext, PythonSurfaceEmitter
+from prik.semantics.scalar_types import is_boolean_semantic_type_name
 from prik.codegen.nodes import (
     CAllowThreadsBegin,
     CAllowThreadsEnd,
     CBreak,
+    CCase,
     CComment,
     CDeclaration,
     CExpressionStatement,
@@ -75,17 +76,16 @@ from prik.codegen.nodes import (
     CParameter,
     CReturn,
     CStructDefinition,
+    CSwitch,
     CodeExpression,
 )
-from prik.codegen.naming import NativeSymbolNames
-from prik.codegen.plan import (
+from prik.naming.native_symbols import NativeSymbolNames
+from prik.codegen.overloads import OverloadPlanQueries
+from prik.planning.models import (
     ArrayHandoffPlan,
     ArgumentTransferPlan,
     CallbackHandoffPlan,
     CallbackTransferPlan,
-    ClassMethodPlan,
-    OverloadArgumentMatchPlan,
-    OverloadPlan,
     ClassSurfacePlan,
     DatatypeFamily,
     DerivedFieldPlan,
@@ -100,6 +100,8 @@ from prik.codegen.plan import (
     NativeArrayActualPlan,
     NativeArrayHandlePlan,
     NativeCallSlotPlan,
+    OverloadArgumentMatchPlan,
+    OverloadPlan,
     ResultPlan,
 )
 from prik.codegen.primitive_scalar_types import PrimitiveScalarTypeRegistry
@@ -143,6 +145,15 @@ class _CFunctionContext:
     python_result_name: str | None
     python_results: dict[str, str]
     role_values: dict[str, str]
+
+
+@dataclass(frozen=True)
+class _COverloadDispatch:
+    """Describe one namespace-installed C overload dispatcher."""
+
+    overload: OverloadPlan
+    receiver: bool
+    public: bool
 
 
 class CBindingGenerator(ClassVisitor):
@@ -237,8 +248,8 @@ class CBindingGenerator(ClassVisitor):
         then assembles module support, runtime helpers, wrappers, and module
         initialization in emitted dependency order.
         """
-        # Stage 1: cache names that the generated class-property surface shares.
-        self._class_python_names = {
+        # Stage 1: complete the immutable name index consumed by Python-surface emission.
+        class_python_names = {
             surface.type_identity: surface.python_names[0]
             for namespace in plan.namespaces
             for surface in namespace.classes
@@ -265,6 +276,7 @@ class CBindingGenerator(ClassVisitor):
                 *self._derived_handle_operation_functions(plan),
                 *self._native_array_operation_functions(plan),
                 *functions,
+                *self._overload_dispatch_functions(plan, class_python_names),
                 self._module_init(plan, needs_native_support),
             ),
         )
@@ -1965,7 +1977,7 @@ class CBindingGenerator(ClassVisitor):
     @staticmethod
     def _derived_origin_symbol(variable: ModuleVariablePlan) -> str:
         """Return the binding-local derived origin symbol derived from the supplied completed binding records; this helper preserves completed policy."""
-        return NativeSymbolNames.compact(variable.owner_path, variable.symbol_name)
+        return CBindingNames.derived_origin_symbol(variable)
 
     def _derived_origin_bridge_name(self, variable: ModuleVariablePlan, operation: str) -> str:
         """Return the binding-local derived origin bridge name derived from the supplied completed binding records; this helper preserves completed policy."""
@@ -1989,7 +2001,7 @@ class CBindingGenerator(ClassVisitor):
 
     def _derived_origin_capsule_method_name(self, variable: ModuleVariablePlan) -> str:
         """Return the binding-local derived origin capsule method name derived from the supplied completed binding records; this helper preserves completed policy."""
-        return f"_prik_origin_{self._derived_origin_symbol(variable)}_native_ops"
+        return CBindingNames.derived_origin_capsule_method(variable)
 
     def _module_declarations(
         self,
@@ -2031,11 +2043,25 @@ class CBindingGenerator(ClassVisitor):
             *self._default_native_array_bridge_prototypes(plan),
             *self._derived_field_bridge_prototypes(plan),
             *self._derived_private_method_prototypes(plan),
+            *self._overload_dispatch_prototypes(plan),
             *self._derived_handle_operation_declarations(plan),
             *self._derived_module_owner_declarations(plan),
             *self._module_variable_declarations(plan),
             *self._native_array_operation_declarations(plan),
             *self._namespace_declarations(plan),
+        )
+
+    def _overload_dispatch_prototypes(self, plan: ModulePlan) -> tuple[CFunctionPrototype, ...]:
+        """Declare namespace dispatchers before generated method tables use them."""
+        return tuple(
+            CFunctionPrototype(
+                CBindingNames.overload_dispatch_function(dispatch.overload),
+                "PyObject *",
+                self._binding_parameters(),
+                "static",
+            )
+            for namespace in plan.namespaces
+            for dispatch in self._namespace_overload_dispatches(namespace)
         )
 
     def _module_variable_declarations(self, plan: ModulePlan) -> tuple[CFunctionPrototype, ...]:
@@ -2222,9 +2248,9 @@ class CBindingGenerator(ClassVisitor):
             for surface in namespace.classes
             if surface.constructor.kind is not ClassConstructorKind.ABSENT
             for prototype in (
-                CFunctionPrototype(self._class_create_bridge_name(surface), "void *"),
+                CFunctionPrototype(CBindingNames.class_create_bridge(surface), "void *"),
                 CFunctionPrototype(
-                    self._class_create_method_name(surface),
+                    CBindingNames.class_create_method(surface),
                     "PyObject *",
                     (CParameter("self", "PyObject *"), CParameter("args", "PyObject *")),
                     "static",
@@ -2254,7 +2280,7 @@ class CBindingGenerator(ClassVisitor):
         result = "result"
         destroy = self._derived_destroy_bridge_name(derived.backend_symbol)
         return CFunction(
-            self._class_create_method_name(surface),
+            CBindingNames.class_create_method(surface),
             "PyObject *",
             parameters=(CParameter("self", "PyObject *"), CParameter("args", "PyObject *")),
             storage="static",
@@ -2263,7 +2289,7 @@ class CBindingGenerator(ClassVisitor):
                     CodeExpression('!PyArg_ParseTuple(args, "")'),
                     body=(CReturn(CodeExpression("NULL")),),
                 ),
-                CDeclaration(address, "void *", CodeExpression(f"{self._class_create_bridge_name(surface)}()")),
+                CDeclaration(address, "void *", CodeExpression(f"{CBindingNames.class_create_bridge(surface)}()")),
                 CIf(
                     CodeExpression(f"{address} == NULL"),
                     body=(
@@ -2289,7 +2315,7 @@ class CBindingGenerator(ClassVisitor):
                 CDeclaration(
                     helper,
                     "PyObject *",
-                    CodeExpression(f'PyObject_GetAttrString(self, "{self._class_wrap_helper_name(surface)}")'),
+                    CodeExpression(f'PyObject_GetAttrString(self, "{CBindingNames.class_wrap_helper(surface)}")'),
                 ),
                 CIf(
                     CodeExpression(f"{helper} == NULL"),
@@ -10933,21 +10959,21 @@ class CBindingGenerator(ClassVisitor):
     @staticmethod
     def _allocatable_holder_presence_method_name(type_name: str) -> str:
         """Return the binding-local allocatable holder presence method name derived from the supplied local lowering values; this helper preserves completed policy."""
-        return f"_prik_{type_name.casefold()}_allocatable_holder_require_present"
+        return CBindingNames.allocatable_holder_presence_method(type_name)
 
     @staticmethod
     def _pointer_holder_presence_method_name(type_name: str) -> str:
         """Return the binding-local pointer holder presence method name derived from the supplied local lowering values; this helper preserves completed policy."""
-        return f"_prik_{type_name.casefold()}_pointer_holder_require_present"
+        return CBindingNames.pointer_holder_presence_method(type_name)
 
     @staticmethod
     def _derived_field_symbol(derived: DerivedTypePlan, field: DerivedFieldPlan) -> str:
         """Return the binding-local derived field symbol derived from the supplied completed binding records; this helper preserves completed policy."""
-        return f"{derived.backend_symbol}_{field.name}".casefold()
+        return CBindingNames.derived_field_symbol(derived, field)
 
     def _derived_field_method_name(self, derived: DerivedTypePlan, field: DerivedFieldPlan, action: str) -> str:
         """Return the binding-local derived field method name derived from the supplied completed binding records; this helper preserves completed policy."""
-        return f"_prik_field_{self._derived_field_symbol(derived, field)}_{action}"
+        return CBindingNames.derived_field_method(derived, field, action)
 
     def _derived_field_bridge_name(self, derived: DerivedTypePlan, field: DerivedFieldPlan, action: str) -> str:
         """Return the binding-local derived field bridge name derived from the supplied completed binding records; this helper preserves completed policy."""
@@ -10969,7 +10995,7 @@ class CBindingGenerator(ClassVisitor):
         action: str,
     ) -> str:
         """Return the binding-local allocatable holder field method name derived from the supplied completed binding records; this helper preserves completed policy."""
-        return f"_prik_allocatable_holder_field_{self._derived_field_symbol(derived, field)}_{action}"
+        return CBindingNames.allocatable_holder_field_method(derived, field, action)
 
     def _pointer_holder_field_bridge_name(
         self,
@@ -10987,17 +11013,17 @@ class CBindingGenerator(ClassVisitor):
         action: str,
     ) -> str:
         """Return the binding-local pointer holder field method name derived from the supplied completed binding records; this helper preserves completed policy."""
-        return f"_prik_pointer_holder_field_{self._derived_field_symbol(derived, field)}_{action}"
+        return CBindingNames.pointer_holder_field_method(derived, field, action)
 
     @staticmethod
     def _allocatable_holder_ops_name(type_name: str) -> str:
         """Return the binding-local allocatable holder ops name derived from the supplied local lowering values; this helper preserves completed policy."""
-        return f"_prik_ops_{type_name.casefold()}_allocatable_holder"
+        return CBindingNames.allocatable_holder_ops(type_name)
 
     @staticmethod
     def _pointer_holder_ops_name(type_name: str) -> str:
         """Return the binding-local pointer holder ops name derived from the supplied local lowering values; this helper preserves completed policy."""
-        return f"_prik_ops_{type_name.casefold()}_pointer_holder"
+        return CBindingNames.pointer_holder_ops(type_name)
 
     def _derived_field_descriptor_callback_name(
         self,
@@ -11044,7 +11070,7 @@ class CBindingGenerator(ClassVisitor):
     @staticmethod
     def _module_member_symbol(variable: ModuleVariablePlan, member: DerivedMemberPathPlan) -> str:
         """Return the binding-local module member symbol derived from the supplied completed binding records; this helper preserves completed policy."""
-        return "_".join((variable.symbol_name, *member.path)).casefold()
+        return CBindingNames.module_member_symbol(variable, member)
 
     def _module_member_method_name(
         self,
@@ -11053,7 +11079,7 @@ class CBindingGenerator(ClassVisitor):
         action: str,
     ) -> str:
         """Return the binding-local module member method name derived from the supplied completed binding records; this helper preserves completed policy."""
-        return f"_prik_module_field_{self._module_member_symbol(variable, member)}_{action}"
+        return CBindingNames.module_member_method(variable, member, action)
 
     def _module_member_bridge_name(
         self,
@@ -11109,8 +11135,7 @@ class CBindingGenerator(ClassVisitor):
     @staticmethod
     def _module_member_ops_name(variable: ModuleVariablePlan, prefix: tuple[str, ...]) -> str:
         """Return the binding-local module member ops name derived from the supplied completed binding records; this helper preserves completed policy."""
-        suffix = "_".join((variable.symbol_name, *prefix)).casefold()
-        return f"_prik_ops_{suffix}"
+        return CBindingNames.module_member_ops(variable, prefix)
 
     def _derived_member_proxy_variables(self, plan: ModulePlan) -> tuple[ModuleVariablePlan, ...]:
         """Return plain derived module objects with typed member operations."""
@@ -11155,10 +11180,11 @@ class CBindingGenerator(ClassVisitor):
                     )
                     for function in namespace.functions
                 ),
+                *self._overload_method_entries(namespace),
                 *(
                     CMethodDefEntry(
-                        self._class_create_method_name(surface),
-                        self._class_create_method_name(surface),
+                        CBindingNames.class_create_method(surface),
+                        CBindingNames.class_create_method(surface),
                         "METH_VARARGS",
                         "",
                     )
@@ -11166,6 +11192,438 @@ class CBindingGenerator(ClassVisitor):
                     if surface.constructor.kind is not ClassConstructorKind.ABSENT
                 ),
                 *self._derived_private_method_entries(namespace),
+            ),
+        )
+
+    def _overload_method_entries(self, namespace: NamespacePlan) -> tuple[CMethodDefEntry, ...]:
+        """Install public module dispatchers and private class dispatchers."""
+        return tuple(
+            CMethodDefEntry(
+                dispatch.overload.python_name
+                if dispatch.public
+                else CBindingNames.overload_dispatch_method(dispatch.overload),
+                CBindingNames.overload_dispatch_function(dispatch.overload),
+                "METH_VARARGS | METH_KEYWORDS",
+                dispatch.overload.docstring if dispatch.public else "",
+            )
+            for dispatch in self._namespace_overload_dispatches(namespace)
+        )
+
+    @staticmethod
+    def _namespace_overload_dispatches(namespace: NamespacePlan) -> tuple[_COverloadDispatch, ...]:
+        """Return every distinct overload surface installed in one namespace."""
+        dispatches = [_COverloadDispatch(overload, receiver=False, public=True) for overload in namespace.overloads]
+        seen = {id(overload) for overload in namespace.overloads}
+        for surface in namespace.classes:
+            constructor = surface.constructor.overload
+            if constructor is not None and id(constructor) not in seen:
+                dispatches.append(_COverloadDispatch(constructor, receiver=True, public=False))
+                seen.add(id(constructor))
+            for overload in surface.overloads:
+                if id(overload) in seen:
+                    continue
+                receiver = bool(overload.candidate_passed_objects and overload.candidate_passed_objects[0])
+                dispatches.append(_COverloadDispatch(overload, receiver=receiver, public=False))
+                seen.add(id(overload))
+        return tuple(dispatches)
+
+    def _overload_dispatch_functions(
+        self,
+        plan: ModulePlan,
+        class_python_names: dict[tuple[str, str], str],
+    ) -> tuple[CFunction, ...]:
+        """Lower every completed overload surface into one C dispatcher."""
+        return tuple(
+            self._overload_dispatch_function(dispatch, class_python_names)
+            for namespace in plan.namespaces
+            for dispatch in self._namespace_overload_dispatches(namespace)
+        )
+
+    def _overload_dispatch_function(
+        self,
+        dispatch: _COverloadDispatch,
+        class_python_names: dict[tuple[str, str], str],
+    ) -> CFunction:
+        """Classify one call, assign a candidate ID, and switch to its wrapper."""
+        overload = dispatch.overload
+        positional_offset = 1 if dispatch.receiver else 0
+        body = [
+            CDeclaration("nargs", "Py_ssize_t", CodeExpression("PyTuple_GET_SIZE(args)")),
+        ]
+        if dispatch.receiver:
+            body.extend(self._overload_receiver_nodes(overload))
+        else:
+            body.append(CDeclaration("user_nargs", "Py_ssize_t", CodeExpression("nargs")))
+        body.append(CDeclaration("candidate_id", "int", CodeExpression("-1")))
+        body.extend(self._overload_special_case_nodes(overload, dispatch.receiver))
+        body.extend(
+            CIf(
+                CodeExpression(
+                    "candidate_id < 0 && ("
+                    + self._overload_candidate_condition(
+                        matches,
+                        positional_offset=positional_offset,
+                        class_python_names=class_python_names,
+                    )
+                    + ")"
+                ),
+                body=(CExpressionStatement(CodeExpression(f"candidate_id = {candidate_id}")),),
+            )
+            for candidate_id, matches in zip(
+                overload.candidate_ids,
+                overload.candidate_matches,
+                strict=True,
+            )
+        )
+        cases = tuple(
+            self._overload_candidate_case(
+                dispatch,
+                candidate_id,
+                candidate,
+                matches,
+                positional_offset=positional_offset,
+            )
+            for candidate_id, candidate, matches in zip(
+                overload.candidate_ids,
+                overload.candidates,
+                overload.candidate_matches,
+                strict=True,
+            )
+        )
+        body.append(
+            CSwitch(
+                CodeExpression("candidate_id"),
+                cases=(*cases, self._overload_default_case(overload)),
+            )
+        )
+        return CFunction(
+            CBindingNames.overload_dispatch_function(overload),
+            "PyObject *",
+            parameters=self._binding_parameters(),
+            body=tuple(body),
+            storage="static",
+        )
+
+    def _overload_receiver_nodes(self, overload: OverloadPlan) -> tuple[CIf | CDeclaration, ...]:
+        """Extract the class receiver inserted by the generated Python method."""
+        message = self._c_string_literal(f"no matching overload for {overload.python_name}")
+        return (
+            CIf(
+                CodeExpression("nargs < 1"),
+                body=(
+                    CExpressionStatement(CodeExpression(f"PyErr_SetString(PyExc_TypeError, {message})")),
+                    CReturn(CodeExpression("NULL")),
+                ),
+            ),
+            CDeclaration("receiver", "PyObject *", CodeExpression("PyTuple_GET_ITEM(args, 0)")),
+            CDeclaration("user_nargs", "Py_ssize_t", CodeExpression("nargs - 1")),
+        )
+
+    def _overload_special_case_nodes(
+        self,
+        overload: OverloadPlan,
+        has_receiver: bool,
+    ) -> tuple[CIf, ...]:
+        """Preserve planned early errors and reflected identity behavior."""
+        nodes = []
+        if overload.unsupported_extra_argument_message is not None:
+            message = self._c_string_literal(overload.unsupported_extra_argument_message)
+            nodes.append(
+                CIf(
+                    CodeExpression("user_nargs > 1"),
+                    body=(
+                        CExpressionStatement(CodeExpression(f"PyErr_SetString(PyExc_TypeError, {message})")),
+                        CReturn(CodeExpression("NULL")),
+                    ),
+                )
+            )
+        if overload.identity_receiver_shortcut and has_receiver:
+            nodes.append(
+                CIf(
+                    CodeExpression(
+                        "user_nargs == 1 && (kwargs == NULL || PyDict_Size(kwargs) == 0) "
+                        "&& PyTuple_GET_ITEM(args, 1) == receiver"
+                    ),
+                    body=(
+                        CExpressionStatement(CodeExpression("Py_INCREF(receiver)")),
+                        CReturn(CodeExpression("receiver")),
+                    ),
+                )
+            )
+        return tuple(nodes)
+
+    def _overload_candidate_condition(
+        self,
+        matches: tuple[OverloadArgumentMatchPlan, ...],
+        *,
+        positional_offset: int,
+        class_python_names: dict[tuple[str, str], str],
+    ) -> str:
+        """Return one ordered candidate predicate over borrowed call arguments."""
+        shape = self._overload_call_shape_condition(matches)
+        predicates = tuple(
+            self._overload_argument_condition(
+                match,
+                self._overload_argument_value_expression(match, index, positional_offset),
+                class_python_names,
+            )
+            for index, match in enumerate(matches)
+        )
+        return " && ".join((shape, *predicates))
+
+    def _overload_call_shape_condition(self, matches: tuple[OverloadArgumentMatchPlan, ...]) -> str:
+        """Validate keyword membership and positional-keyword exclusivity."""
+        keyword_hits = (
+            " + ".join(
+                f"(PyDict_GetItemString(kwargs, {self._c_string_literal(match.python_name)}) != NULL)"
+                for match in matches
+            )
+            or "0"
+        )
+        duplicates = (
+            " && ".join(
+                "(user_nargs <= "
+                f"{index} || PyDict_GetItemString(kwargs, {self._c_string_literal(match.python_name)}) == NULL)"
+                for index, match in enumerate(matches)
+            )
+            or "1"
+        )
+        keyword_shape = f"PyDict_Size(kwargs) == ({keyword_hits}) && {duplicates}"
+        return f"user_nargs <= {len(matches)} && (kwargs == NULL || ({keyword_shape}))"
+
+    def _overload_argument_value_expression(
+        self,
+        match: OverloadArgumentMatchPlan,
+        index: int,
+        positional_offset: int,
+    ) -> str:
+        """Return a borrowed value from its candidate-specific canonical position."""
+        name = self._c_string_literal(match.python_name)
+        return (
+            f"(user_nargs > {index} ? PyTuple_GET_ITEM(args, {index + positional_offset}) "
+            f": (kwargs != NULL ? PyDict_GetItemString(kwargs, {name}) : NULL))"
+        )
+
+    def _overload_argument_condition(
+        self,
+        match: OverloadArgumentMatchPlan,
+        value: str,
+        class_python_names: dict[tuple[str, str], str],
+    ) -> str:
+        """Wrap one exact C predicate with its required or optional presence rule."""
+        predicate = self._overload_required_argument_condition(match, value, class_python_names)
+        if match.optional:
+            return f"({value} == NULL || ({predicate}))"
+        return f"({value} != NULL && ({predicate}))"
+
+    def _overload_required_argument_condition(
+        self,
+        match: OverloadArgumentMatchPlan,
+        value: str,
+        class_python_names: dict[tuple[str, str], str],
+    ) -> str:
+        """Return the C-API predicate for one completed overload match kind."""
+        if match.kind is OverloadMatchKind.DERIVED:
+            if match.derived_type_identity is None:
+                raise ValueError(f"Derived overload argument {match.python_name!r} has no type identity")
+            class_name = self._c_string_literal(class_python_names[match.derived_type_identity])
+            expected = f"PyDict_GetItemString(PyModule_GetDict(self), {class_name})"
+            return f"{expected} != NULL && (PyObject *)Py_TYPE({value}) == {expected}"
+        if match.kind is OverloadMatchKind.NUMPY_ARRAY:
+            numpy_type = PrimitiveScalarTypeRegistry.type_for(match.semantic_type_name).numpy_type_macro
+            return (
+                f"PyArray_Check({value}) && PyArray_NDIM((PyArrayObject *){value}) == {match.rank} "
+                f"&& PyArray_TYPE((PyArrayObject *){value}) == {numpy_type}"
+            )
+        if match.kind is OverloadMatchKind.STRING:
+            return f"PyUnicode_Check({value})"
+        if match.kind is OverloadMatchKind.NUMPY_SCALAR:
+            predicate = f"PyArray_IsScalar({value}, {self._overload_numpy_scalar_kind(match.semantic_type_name)})"
+            if match.builtin_scalar_family is not None:
+                predicate = f"({predicate} || {self._overload_builtin_scalar_condition(match, value)})"
+            return predicate
+        raise ValueError(f"Unsupported overload match kind: {match.kind.value}")
+
+    @staticmethod
+    def _overload_numpy_scalar_kind(semantic_type_name: str) -> str:
+        """Return the NumPy scalar macro suffix used by exact C dispatch."""
+        if is_boolean_semantic_type_name(semantic_type_name):
+            return "Bool"
+        kinds = {
+            "Int8": "Int8",
+            "Int16": "Int16",
+            "Int32": "Int",
+            "Int64": "Int64",
+            "Float32": "Float",
+            "Float64": "Double",
+            "Complex64": "CFloat",
+            "Complex128": "CDouble",
+        }
+        try:
+            return kinds[semantic_type_name]
+        except KeyError as exc:
+            raise ValueError(f"Unsupported NumPy overload scalar {semantic_type_name!r}") from exc
+
+    @staticmethod
+    def _overload_builtin_scalar_condition(match: OverloadArgumentMatchPlan, value: str) -> str:
+        """Return the exact builtin predicate allowed for reflected dispatch."""
+        if match.builtin_scalar_family == "bool":
+            return f"PyBool_Check({value})"
+        if match.builtin_scalar_family == "int":
+            return f"PyLong_CheckExact({value})"
+        if match.builtin_scalar_family == "float":
+            return f"PyFloat_CheckExact({value})"
+        if match.builtin_scalar_family == "complex":
+            return f"PyComplex_CheckExact({value})"
+        raise ValueError(f"Unsupported reflected overload scalar family {match.builtin_scalar_family!r}")
+
+    def _overload_candidate_case(
+        self,
+        dispatch: _COverloadDispatch,
+        candidate_id: int,
+        candidate: FunctionPlan,
+        matches: tuple[OverloadArgumentMatchPlan, ...],
+        *,
+        positional_offset: int,
+    ) -> CCase:
+        """Build one switch leaf that calls the selected existing C wrapper."""
+        body = [
+            CDeclaration("candidate_kwargs", "PyObject *", CodeExpression("PyDict_New()")),
+            CIf(CodeExpression("candidate_kwargs == NULL"), body=(CReturn(CodeExpression("NULL")),)),
+        ]
+        for index, match in enumerate(matches):
+            body.extend(
+                self._overload_candidate_keyword_nodes(
+                    match,
+                    index,
+                    positional_offset=positional_offset,
+                )
+            )
+        if dispatch.receiver:
+            receiver_name = OverloadPlanQueries.receiver_name(candidate)
+            body.extend(self._overload_set_keyword_nodes(receiver_name, "receiver"))
+        body.extend(
+            (
+                CDeclaration("candidate_args", "PyObject *", CodeExpression("PyTuple_New(0)")),
+                CIf(
+                    CodeExpression("candidate_args == NULL"),
+                    body=(
+                        CExpressionStatement(CodeExpression("Py_DECREF(candidate_kwargs)")),
+                        CReturn(CodeExpression("NULL")),
+                    ),
+                ),
+                CDeclaration(
+                    "candidate_result",
+                    "PyObject *",
+                    CodeExpression(f"{self._binding_function_name(candidate)}(self, candidate_args, candidate_kwargs)"),
+                ),
+                CExpressionStatement(CodeExpression("Py_DECREF(candidate_args)")),
+                CExpressionStatement(CodeExpression("Py_DECREF(candidate_kwargs)")),
+                CReturn(CodeExpression("candidate_result")),
+            )
+        )
+        return CCase(CodeExpression(str(candidate_id)), body=tuple(body))
+
+    def _overload_candidate_keyword_nodes(
+        self,
+        match: OverloadArgumentMatchPlan,
+        index: int,
+        *,
+        positional_offset: int,
+    ) -> tuple[CDeclaration | CIf | CExpressionStatement, ...]:
+        """Copy one matched borrowed argument into the selected candidate call."""
+        value_name = f"candidate_value_{index}"
+        nodes = [
+            CDeclaration(
+                value_name,
+                "PyObject *",
+                CodeExpression(self._overload_argument_value_expression(match, index, positional_offset)),
+            )
+        ]
+        coerced_name = None
+        if match.builtin_scalar_family is not None:
+            coerced_name = f"candidate_coerced_{index}"
+            nodes.append(CDeclaration(coerced_name, "PyObject *", CodeExpression("NULL")))
+            nodes.append(self._overload_builtin_coercion_node(match, value_name, coerced_name))
+        set_nodes = self._overload_set_keyword_nodes(match.python_name, value_name, coerced_name=coerced_name)
+        if match.optional:
+            nodes.append(CIf(CodeExpression(f"{value_name} != NULL"), body=set_nodes))
+        else:
+            nodes.extend(set_nodes)
+        return tuple(nodes)
+
+    def _overload_builtin_coercion_node(
+        self,
+        match: OverloadArgumentMatchPlan,
+        value_name: str,
+        coerced_name: str,
+    ) -> CIf:
+        """Convert one accepted builtin to the exact NumPy scalar expected downstream."""
+        builtin = self._overload_builtin_scalar_condition(match, value_name)
+        numpy_type = PrimitiveScalarTypeRegistry.type_for(match.semantic_type_name).numpy_type_macro
+        type_name = f"candidate_scalar_type_{coerced_name.rsplit('_', 1)[-1]}"
+        return CIf(
+            CodeExpression(f"{value_name} != NULL && {builtin}"),
+            body=(
+                CDeclaration(
+                    type_name,
+                    "PyObject *",
+                    CodeExpression(f"(PyObject *)PyArray_TypeObjectFromType({numpy_type})"),
+                ),
+                CIf(
+                    CodeExpression(f"{type_name} == NULL"),
+                    body=(
+                        CExpressionStatement(CodeExpression("Py_DECREF(candidate_kwargs)")),
+                        CReturn(CodeExpression("NULL")),
+                    ),
+                ),
+                CExpressionStatement(
+                    CodeExpression(f"{coerced_name} = PyObject_CallOneArg({type_name}, {value_name})")
+                ),
+                CIf(
+                    CodeExpression(f"{coerced_name} == NULL"),
+                    body=(
+                        CExpressionStatement(CodeExpression("Py_DECREF(candidate_kwargs)")),
+                        CReturn(CodeExpression("NULL")),
+                    ),
+                ),
+                CExpressionStatement(CodeExpression(f"{value_name} = {coerced_name}")),
+            ),
+        )
+
+    def _overload_set_keyword_nodes(
+        self,
+        name: str,
+        value_name: str,
+        *,
+        coerced_name: str | None = None,
+    ) -> tuple[CIf | CExpressionStatement, ...]:
+        """Set one candidate keyword and release any temporary scalar conversion."""
+        cleanup = (
+            *((CExpressionStatement(CodeExpression(f"Py_XDECREF({coerced_name})")),) if coerced_name else ()),
+            CExpressionStatement(CodeExpression("Py_DECREF(candidate_kwargs)")),
+            CReturn(CodeExpression("NULL")),
+        )
+        nodes = [
+            CIf(
+                CodeExpression(
+                    f"PyDict_SetItemString(candidate_kwargs, {self._c_string_literal(name)}, {value_name}) < 0"
+                ),
+                body=cleanup,
+            )
+        ]
+        if coerced_name is not None:
+            nodes.append(CExpressionStatement(CodeExpression(f"Py_XDECREF({coerced_name})")))
+        return tuple(nodes)
+
+    def _overload_default_case(self, overload: OverloadPlan) -> CCase:
+        """Raise the stable public error when no planned candidate matches."""
+        message = self._c_string_literal(f"no matching overload for {overload.python_name}")
+        return CCase(
+            None,
+            body=(
+                CExpressionStatement(CodeExpression(f"PyErr_SetString(PyExc_TypeError, {message})")),
+                CReturn(CodeExpression("NULL")),
             ),
         )
 
@@ -11328,7 +11786,11 @@ class CBindingGenerator(ClassVisitor):
             f"{owner}_{symbol}_methods",
         )
 
-    def _module_init(self, plan: ModulePlan, needs_native_support: bool) -> CFunction:
+    def _module_init(
+        self,
+        plan: ModulePlan,
+        needs_native_support: bool,
+    ) -> CFunction:
         """Return module init from the supplied completed binding records; this helper preserves the selected binding behavior."""
         module_name = plan.binding.owner_path
         root_namespace = self._namespace(plan, ())
@@ -11344,7 +11806,11 @@ class CBindingGenerator(ClassVisitor):
                     CodeExpression(f"PyModule_Create(&{module_name}_{self._namespace_symbol(root_namespace)}_module)"),
                 ),
                 CExpressionStatement(CodeExpression("if (mod == NULL) return NULL")),
-                *self._namespace_configuration_nodes(plan, root_namespace, "mod"),
+                *self._namespace_configuration_nodes(
+                    plan,
+                    root_namespace,
+                    "mod",
+                ),
                 *(node for namespace in child_namespaces for node in self._child_namespace_nodes(plan, namespace)),
                 *(
                     node
@@ -11383,7 +11849,11 @@ class CBindingGenerator(ClassVisitor):
                     f"{{ Py_DECREF({object_name}); Py_DECREF(mod); return NULL; }}"
                 )
             ),
-            *self._namespace_configuration_nodes(module, namespace, object_name),
+            *self._namespace_configuration_nodes(
+                module,
+                namespace,
+                object_name,
+            ),
         )
 
     def _child_namespace_import_registration_nodes(
@@ -11424,7 +11894,10 @@ class CBindingGenerator(ClassVisitor):
         )
         return (
             *property_nodes,
-            *self._namespace_python_initializer_nodes(namespace, object_name),
+            *self._namespace_python_initializer_nodes(
+                namespace,
+                object_name,
+            ),
             *self._module_native_array_owner_nodes(namespace, object_name),
             *self._derived_module_owner_nodes(namespace, object_name),
             *self._module_initializer_nodes(namespace),
@@ -11438,9 +11911,16 @@ class CBindingGenerator(ClassVisitor):
     ) -> tuple[CDeclaration | CExpressionStatement | CIf, ...]:
         """Install exact overload dispatch plus generated opaque wrapper types."""
         has_proxy = any(variable.derived is not None for variable in namespace.variables)
-        if not namespace.derived_types and not has_proxy and not namespace.overloads:
+        if not namespace.derived_types and not has_proxy:
             return ()
-        source = self._namespace_python_source(namespace)
+        context = PythonSurfaceContext(
+            allocatable_holder_identities=self._namespace_allocatable_holder_identities(namespace),
+            pointer_holder_identities=self._namespace_pointer_holder_identities(namespace),
+            nullable_module_proxy_owner_paths=frozenset(
+                variable.owner_path for variable in namespace.variables if self._nullable_derived_module_proxy(variable)
+            ),
+        )
+        source = PythonSurfaceEmitter(context).emit(namespace)
         literal = self._c_string_literal(source)
         result_name = f"{self._namespace_symbol(namespace)}_python_setup"
         dictionary = f"{self._namespace_symbol(namespace)}_python_dict"
@@ -11455,655 +11935,6 @@ class CBindingGenerator(ClassVisitor):
             CIf(CodeExpression(f"{result_name} == NULL"), body=(CReturn(CodeExpression("NULL")),)),
             CExpressionStatement(CodeExpression(f"Py_DECREF({result_name})")),
         )
-
-    def _namespace_python_source(self, namespace: NamespacePlan) -> str:
-        """Return overloads, opaque classes, and typed member operation maps."""
-        surfaces = {surface.type_identity: surface for surface in namespace.classes}
-        class_names = {
-            surface.type_identity: surface.python_names[0] for surface in namespace.classes if surface.python_names
-        }
-        ops_names = {derived.type_identity: self._direct_type_ops_name(derived) for derived in namespace.derived_types}
-        sections = [
-            "_prik_unset = object()",
-            "import numpy as _prik_numpy",
-            *(self._module_overload_python_source(overload) for overload in namespace.overloads),
-            *(
-                self._derived_type_python_source(
-                    derived,
-                    surfaces.get(derived.type_identity),
-                    class_names,
-                    ops_names,
-                )
-                for derived in namespace.derived_types
-            ),
-        ]
-        sections.extend(self._holder_ops_python_sources(namespace))
-        sections.extend(self._module_proxy_ops_python_sources(namespace))
-        return "\n\n".join(section for section in sections if section)
-
-    def _holder_ops_python_sources(self, namespace: NamespacePlan) -> tuple[str, ...]:
-        """Render allocatable and pointer holder operation maps by completed identity."""
-        allocatable = self._namespace_allocatable_holder_identities(namespace)
-        pointer = self._namespace_pointer_holder_identities(namespace)
-        return (
-            *(
-                self._allocatable_holder_ops_python_source(derived)
-                for derived in namespace.derived_types
-                if derived.type_identity in allocatable
-            ),
-            *(
-                self._pointer_holder_ops_python_source(derived)
-                for derived in namespace.derived_types
-                if derived.type_identity in pointer
-            ),
-        )
-
-    def _module_proxy_ops_python_sources(self, namespace: NamespacePlan) -> tuple[str, ...]:
-        """Render persistent module-derived operation maps in declaration order."""
-        return tuple(
-            self._module_proxy_ops_python_source(variable)
-            for variable in namespace.variables
-            if variable.derived is not None
-        )
-
-    def _derived_type_python_source(
-        self,
-        derived: DerivedTypePlan,
-        surface: ClassSurfacePlan | None,
-        class_names: dict[tuple[str, str], str],
-        ops_names: dict[tuple[str, str], str],
-    ) -> str:
-        """Return one opaque wrapper assembled from its completed class surface."""
-        name = derived.python_names[0]
-        ops_name = self._direct_type_ops_name(derived)
-        base = self._class_base_name(surface, class_names)
-        base_ops = ops_names[surface.base_identities[0]] if surface is not None and surface.base_identities else None
-        slots = "()" if base else "('_prik_capsule', '_prik_owner', '_prik_ops', '_prik_origin')"
-        own_ops = self._direct_type_ops_literal(derived)
-        combined_ops = f"{{**{base_ops}, **{own_ops}}}" if base_ops is not None else own_ops
-        lines = [
-            f"{ops_name} = {combined_ops}",
-            f"class {name}{f'({base})' if base else ''}:",
-            f"    {surface.docstring!r}" if surface is not None else f"    {name!r}",
-            f"    __slots__ = {slots}",
-        ]
-        lines.extend(self._class_constructor_python_lines(surface))
-        lines.extend(self._derived_class_member_python_lines(derived, surface))
-        lines.extend(self._class_wrap_helper_python_lines(surface, name, ops_name))
-        return "\n".join(lines)
-
-    def _derived_class_member_python_lines(
-        self,
-        derived: DerivedTypePlan,
-        surface: ClassSurfacePlan | None,
-    ) -> tuple[str, ...]:
-        """Render fields, public methods, and overload descriptors for one class."""
-        methods = () if surface is None else tuple(method for method in surface.methods if method.public)
-        overloads = () if surface is None else surface.overloads
-        return (
-            *self._derived_property_python_source_lines(derived.fields),
-            *self._class_method_python_source_lines(methods),
-            *self._class_overload_python_source_lines(overloads),
-        )
-
-    def _derived_property_python_source_lines(self, fields: tuple[DerivedFieldPlan, ...]) -> tuple[str, ...]:
-        """Flatten field descriptors while preserving declaration order."""
-        return tuple(line for field in fields for line in self._derived_property_python_lines(field))
-
-    def _class_method_python_source_lines(self, methods: tuple[ClassMethodPlan, ...]) -> tuple[str, ...]:
-        """Flatten public method descriptors while preserving plan order."""
-        return tuple(line for method in methods for line in self._class_method_python_lines(method))
-
-    def _class_overload_python_source_lines(self, overloads: tuple[OverloadPlan, ...]) -> tuple[str, ...]:
-        """Flatten overload descriptors while preserving plan order."""
-        return tuple(line for overload in overloads for line in self._class_overload_python_lines(overload))
-
-    def _class_wrap_helper_python_lines(
-        self,
-        surface: ClassSurfacePlan | None,
-        name: str,
-        ops_name: str,
-    ) -> tuple[str, ...]:
-        """Render the sole helper that attaches existing opaque native storage."""
-        return (
-            f"def {self._class_wrap_helper_name(surface, fallback=name)}(capsule, owner=None, ops=None, origin='direct'):",
-            f"    value = object.__new__({name})",
-            "    value._prik_capsule = capsule",
-            "    value._prik_owner = owner",
-            f"    value._prik_ops = {ops_name} if ops is None else ops",
-            "    value._prik_origin = origin",
-            "    return value",
-        )
-
-    def _class_constructor_python_lines(self, surface: ClassSurfacePlan | None) -> tuple[str, ...]:
-        """Render one constructor selected entirely by the class plan."""
-        if surface is None or surface.constructor.kind is ClassConstructorKind.ABSENT:
-            return self._absent_constructor_python_lines(surface)
-        handlers = {
-            ClassConstructorKind.DEFAULT_FIELDS: self._default_constructor_python_lines,
-            ClassConstructorKind.BOUND_PROCEDURE: self._bound_constructor_python_lines,
-            ClassConstructorKind.OVERLOAD_SET: self._overloaded_constructor_python_lines,
-        }
-        handler = handlers.get(surface.constructor.kind)
-        if handler is None:
-            raise ValueError(f"Unsupported completed constructor kind: {surface.constructor.kind.value}")
-        return handler(surface)
-
-    @staticmethod
-    def _absent_constructor_python_lines(surface: ClassSurfacePlan | None) -> tuple[str, ...]:
-        """Render one explicit rejection for a nonconstructible wrapper class."""
-        message = (
-            surface.constructor.rejection_message
-            if surface is not None and surface.constructor.rejection_message
-            else "native wrapper construction is disabled"
-        )
-        return (
-            "    def __new__(cls, *args, **kwargs):",
-            f"        {surface.constructor.docstring!r}" if surface is not None else "        'Construction disabled.'",
-            f"        raise TypeError({message!r})",
-        )
-
-    def _default_constructor_python_lines(self, surface: ClassSurfacePlan) -> tuple[str, ...]:
-        """Allocate one owner, then apply only explicitly supplied field values."""
-        fields = surface.constructor.fields
-        parameters = ", ".join(f"{field.name}=_prik_unset" for field in fields)
-        signature = f", *, {parameters}" if parameters else ""
-        lines = [
-            "    def __new__(cls, *args, **kwargs):",
-            f"        return {self._class_create_method_name(surface)}()",
-            f"    def __init__(self{signature}):",
-            f"        {surface.constructor.docstring!r}",
-        ]
-        if not fields:
-            lines.append("        pass")
-        for field in fields:
-            lines.extend(
-                (
-                    f"        if {field.name} is not _prik_unset:",
-                    f"            self.{field.name} = {field.name}",
-                )
-            )
-        return tuple(lines)
-
-    def _bound_constructor_python_lines(self, surface: ClassSurfacePlan) -> tuple[str, ...]:
-        """Call one validated target after allocating the persistent owner."""
-        target = surface.constructor.target
-        if target is None:
-            raise ValueError(f"Bound constructor {surface.owner_path!r} has no target function")
-        parameters = self._callable_public_arguments(target)
-        lines = [
-            "    def __new__(cls, *args, **kwargs):",
-            f"        return {self._class_create_method_name(surface)}()",
-            f"    def __init__(self{self._python_parameter_suffix(parameters)}):",
-            f"        {surface.constructor.docstring!r}",
-            "        _prik_arguments = {'self': self}",
-        ]
-        lines.extend(self._optional_keyword_collection_lines(parameters, indent="        "))
-        lines.append(f"        {target.binding.python_name}(**_prik_arguments)")
-        return tuple(lines)
-
-    def _overloaded_constructor_python_lines(self, surface: ClassSurfacePlan) -> tuple[str, ...]:
-        """Dispatch one completed constructor overload after owner allocation."""
-        overload = surface.constructor.overload
-        if overload is None:
-            raise ValueError(f"Overloaded constructor {surface.owner_path!r} has no overload plan")
-        return (
-            "    def __new__(cls, *args, **kwargs):",
-            f"        return {self._class_create_method_name(surface)}()",
-            *self._class_overload_python_lines(
-                overload,
-                constructor=True,
-                docstring=surface.constructor.docstring,
-            ),
-        )
-
-    def _class_method_python_lines(self, method: ClassMethodPlan) -> tuple[str, ...]:
-        """Render a readable Python descriptor over one ordinary function plan."""
-        arguments = tuple(sorted(method.function.arguments, key=lambda argument: argument.python_position))
-        passed = next(
-            (argument for argument in arguments if argument.native_position == method.passed_object_position),
-            None,
-        )
-        public = tuple(argument for argument in arguments if argument is not passed)
-        parameter_names = tuple(argument.binding.python_name for argument in public)
-        call_names = tuple("self" if argument is passed else argument.binding.python_name for argument in arguments)
-        lines = []
-        if method.kind is ClassMethodKind.STATIC:
-            lines.append("    @staticmethod")
-            signature = ", ".join(parameter_names)
-        else:
-            signature = ", ".join(("self", *parameter_names))
-        lines.extend(
-            (
-                f"    def {method.python_name}({signature}):",
-                f"        {method.docstring!r}",
-                f"        return {method.function.binding.python_name}({', '.join(call_names)})",
-            )
-        )
-        return tuple(lines)
-
-    def _class_overload_python_lines(
-        self,
-        overload: OverloadPlan,
-        *,
-        constructor: bool = False,
-        docstring: str | None = None,
-    ) -> tuple[str, ...]:
-        """Render deterministic exact-type selection without trial candidate calls."""
-        passed_object = True if constructor else overload.candidate_passed_objects[0]
-        method_name = "__init__" if constructor else overload.python_name
-        signature = "self, *args, **kwargs" if passed_object else "*args, **kwargs"
-        return self._overload_python_lines(
-            overload,
-            method_name=method_name,
-            signature=signature,
-            indent="    ",
-            receiver_object="self" if passed_object or constructor else None,
-            static=not passed_object,
-            docstring=docstring or overload.docstring,
-        )
-
-    def _module_overload_python_source(self, overload: OverloadPlan) -> str:
-        """Render one namespace generic through the shared exact-match path."""
-        return "\n".join(
-            self._overload_python_lines(
-                overload,
-                method_name=overload.python_name,
-                signature="*args, **kwargs",
-                indent="",
-                receiver_object=None,
-                static=False,
-                docstring=overload.docstring,
-            )
-        )
-
-    def _overload_python_lines(
-        self,
-        overload: OverloadPlan,
-        *,
-        method_name: str,
-        signature: str,
-        indent: str,
-        receiver_object: str | None,
-        static: bool,
-        docstring: str,
-    ) -> tuple[str, ...]:
-        """Render one deterministic overload dispatcher at any namespace depth."""
-        self._require_overload_complete(overload)
-        body_indent = f"{indent}    "
-        lines = [
-            *((f"{indent}@staticmethod",) if static else ()),
-            f"{indent}def {method_name}({signature}):",
-            f"{body_indent}{docstring!r}",
-        ]
-        if overload.unsupported_extra_argument_message is not None:
-            lines.extend(
-                (
-                    f"{body_indent}if len(args) > 1:",
-                    f"{body_indent}    raise TypeError({overload.unsupported_extra_argument_message!r})",
-                )
-            )
-        if overload.identity_receiver_shortcut and receiver_object is not None:
-            lines.extend(
-                (
-                    f"{body_indent}if len(args) == 1 and not kwargs and args[0] is {receiver_object}:",
-                    f"{body_indent}    return {receiver_object}",
-                )
-            )
-        for candidate, matches, candidate_passed in zip(
-            overload.candidates,
-            overload.candidate_matches,
-            overload.candidate_passed_objects,
-            strict=True,
-        ):
-            candidate_receiver = (
-                self._overload_receiver_name(candidate) if candidate_passed or receiver_object is not None else None
-            )
-            lines.extend(
-                self._overload_candidate_python_lines(
-                    candidate,
-                    matches,
-                    receiver_name=candidate_receiver,
-                    receiver_object=receiver_object,
-                    indent=body_indent,
-                )
-            )
-        lines.append(f"{body_indent}raise TypeError('no matching overload for {overload.python_name}')")
-        return tuple(lines)
-
-    @staticmethod
-    def _require_overload_complete(overload: OverloadPlan) -> None:
-        """Reject incomplete editable overload plans before Python source assembly."""
-        if not overload.candidates:
-            raise ValueError(f"Overload {overload.owner_path!r} has no candidates")
-        if not (len(overload.candidates) == len(overload.candidate_matches) == len(overload.candidate_passed_objects)):
-            raise ValueError(f"Overload {overload.owner_path!r} has incomplete candidate metadata")
-
-    def _overload_candidate_python_lines(
-        self,
-        candidate: FunctionPlan,
-        matches: tuple,
-        *,
-        receiver_name: str | None,
-        receiver_object: str | None,
-        indent: str,
-    ) -> tuple[str, ...]:
-        """Render one exact predicate and its single non-speculative call leaf."""
-        names = tuple(match.python_name for match in matches)
-        condition = " and ".join(self._overload_dictionary_argument_predicate(item) for item in matches) or "True"
-        receiver_line = (
-            (f"{indent}        _prik_arguments[{receiver_name!r}] = {receiver_object}",)
-            if receiver_name is not None and receiver_object is not None
-            else ()
-        )
-        coercion_lines = tuple(
-            line
-            for match in matches
-            if match.accept_builtin_scalar
-            for line in self._overload_builtin_coercion_lines(match, f"{indent}        ")
-        )
-        return (
-            f"{indent}_prik_names = {names!r}",
-            f"{indent}if (",
-            f"{indent}    len(args) <= len(_prik_names)",
-            f"{indent}    and all(_prik_name in _prik_names for _prik_name in kwargs)",
-            f"{indent}    and not any(_prik_name in kwargs for _prik_name in _prik_names[:len(args)])",
-            f"{indent}):",
-            f"{indent}    _prik_arguments = dict(zip(_prik_names, args))",
-            f"{indent}    _prik_arguments.update(kwargs)",
-            f"{indent}    if {condition}:",
-            *coercion_lines,
-            *receiver_line,
-            f"{indent}        return {candidate.binding.python_name}(**_prik_arguments)",
-        )
-
-    def _overload_builtin_coercion_lines(
-        self,
-        match: OverloadArgumentMatchPlan,
-        indent: str,
-    ) -> tuple[str, ...]:
-        """Restore the NumPy scalar type lost before reflected dispatch."""
-        name = match.python_name
-        assignment = (
-            f"_prik_arguments[{name!r}] = _prik_numpy.{self._numpy_scalar_type_name(match.semantic_type_name)}("
-            f"_prik_arguments[{name!r}])"
-        )
-        if match.optional:
-            return (f"{indent}if {name!r} in _prik_arguments:", f"{indent}    {assignment}")
-        return (f"{indent}{assignment}",)
-
-    @staticmethod
-    def _overload_receiver_name(candidate: FunctionPlan) -> str:
-        """Return the completed Python argument that receives the class instance."""
-        call = candidate.class_call
-        if call is None or call.passed_object_position is None:
-            raise ValueError(f"Overload candidate {candidate.owner_path!r} has no completed receiver position")
-        receiver = next(
-            (
-                argument
-                for argument in candidate.arguments
-                if argument.native_position == call.passed_object_position and argument.python_visible
-            ),
-            None,
-        )
-        if receiver is None:
-            raise ValueError(f"Overload candidate {candidate.owner_path!r} has no visible receiver argument")
-        return receiver.binding.python_name
-
-    @staticmethod
-    def _callable_public_arguments(function: FunctionPlan) -> tuple[ArgumentTransferPlan, ...]:
-        """Return ordered user parameters, excluding the class passed object."""
-        return tuple(
-            argument
-            for argument in sorted(function.arguments, key=lambda item: item.python_position)
-            if argument.binding.python_name != "self"
-        )
-
-    @staticmethod
-    def _python_parameter_suffix(arguments: tuple[ArgumentTransferPlan, ...]) -> str:
-        """Return the binding-local python parameter suffix derived from the supplied local lowering values; this helper preserves completed policy."""
-        if not arguments:
-            return ""
-        rendered = ", ".join(
-            argument.binding.python_name
-            + (
-                "=_prik_unset"
-                if argument.binding.optional_mode not in {OptionalMode.REQUIRED, OptionalMode.REQUIRED_DESCRIPTOR}
-                else ""
-            )
-            for argument in arguments
-        )
-        return f", {rendered}"
-
-    @staticmethod
-    def _optional_keyword_collection_lines(
-        arguments: tuple[ArgumentTransferPlan, ...],
-        *,
-        indent: str,
-    ) -> tuple[str, ...]:
-        """Build optional keyword collection lines from the supplied local lowering values; emitted nodes only project completed binding actions."""
-        lines = []
-        for argument in arguments:
-            name = argument.binding.python_name
-            if argument.binding.optional_mode in {OptionalMode.REQUIRED, OptionalMode.REQUIRED_DESCRIPTOR}:
-                lines.append(f"{indent}_prik_arguments['{name}'] = {name}")
-            else:
-                lines.extend(
-                    (
-                        f"{indent}if {name} is not _prik_unset:",
-                        f"{indent}    _prik_arguments['{name}'] = {name}",
-                    )
-                )
-        return tuple(lines)
-
-    def _overload_dictionary_argument_predicate(
-        self,
-        argument: OverloadArgumentMatchPlan,
-    ) -> str:
-        """Match one normalized candidate argument without invoking its target."""
-        name = argument.python_name
-        predicate = self._required_overload_argument_predicate(
-            argument,
-            f"_prik_arguments[{name!r}]",
-        )
-        if argument.optional:
-            return f"({name!r} not in _prik_arguments or ({predicate}))"
-        return f"({name!r} in _prik_arguments and ({predicate}))"
-
-    def _required_overload_argument_predicate(
-        self,
-        argument: OverloadArgumentMatchPlan,
-        name: str,
-    ) -> str:
-        """Dispatch one typed match record into a small source leaf."""
-        if argument.kind is OverloadMatchKind.DERIVED:
-            if argument.derived_type_identity is None:
-                raise ValueError(f"Derived overload argument {name!r} has no type identity")
-            return f"type({name}) is {self._class_python_names[argument.derived_type_identity]}"
-        if argument.kind is OverloadMatchKind.NUMPY_ARRAY:
-            return self._numpy_array_overload_predicate(argument, name)
-        if argument.kind is OverloadMatchKind.STRING:
-            return f"isinstance({name}, str)"
-        if argument.kind is OverloadMatchKind.NUMPY_SCALAR:
-            numpy_type = self._numpy_scalar_type_name(argument.semantic_type_name)
-            predicate = f"type({name}) is _prik_numpy.{numpy_type}"
-            if argument.accept_builtin_scalar:
-                builtin = self._builtin_scalar_type_name(argument.semantic_type_name)
-                predicate = f"({predicate} or type({name}) is {builtin})"
-            return predicate
-        raise ValueError(f"Unsupported class overload match kind: {argument.kind.value}")
-
-    def _numpy_array_overload_predicate(
-        self,
-        argument: OverloadArgumentMatchPlan,
-        name: str,
-    ) -> str:
-        """Render one exact NumPy array rank and dtype predicate."""
-        dtype = self._numpy_scalar_type_name(argument.semantic_type_name)
-        return (
-            f"isinstance({name}, _prik_numpy.ndarray) and {name}.ndim == {argument.rank} "
-            f"and {name}.dtype == _prik_numpy.dtype(_prik_numpy.{dtype})"
-        )
-
-    @staticmethod
-    def _numpy_scalar_type_name(semantic_type_name: str) -> str:
-        """Map a completed semantic scalar to its NumPy runtime spelling."""
-        if is_boolean_semantic_type_name(semantic_type_name):
-            return "bool_"
-        numpy_types = {
-            "Int8": "int8",
-            "Int16": "int16",
-            "Int32": "int32",
-            "Int64": "int64",
-            "Float32": "float32",
-            "Float64": "float64",
-            "Complex64": "complex64",
-            "Complex128": "complex128",
-        }
-        try:
-            return numpy_types[semantic_type_name]
-        except KeyError as exc:
-            raise ValueError(f"Unsupported NumPy overload scalar {semantic_type_name!r}") from exc
-
-    @staticmethod
-    def _builtin_scalar_type_name(semantic_type_name: str) -> str:
-        """Return the Python scalar produced before reflected NumPy dispatch."""
-        return overload_builtin_scalar_family(semantic_type_name)
-
-    @staticmethod
-    def _class_base_name(
-        surface: ClassSurfacePlan | None,
-        class_names: dict[tuple[str, str], str],
-    ) -> str | None:
-        """Return the binding-local class base name derived from the supplied local lowering values; this helper preserves completed policy."""
-        if surface is None or not surface.base_identities:
-            return None
-        return class_names[surface.base_identities[0]]
-
-    @staticmethod
-    def _class_create_bridge_name(surface: ClassSurfacePlan) -> str:
-        """Return the binding-local class create bridge name derived from the supplied local lowering values; this helper preserves completed policy."""
-        return f"bind_c_prik_create_{surface.type_identity[1].casefold()}"
-
-    @staticmethod
-    def _class_create_method_name(surface: ClassSurfacePlan) -> str:
-        """Return the binding-local class create method name derived from the supplied local lowering values; this helper preserves completed policy."""
-        return f"_prik_create_{surface.type_identity[1].casefold()}"
-
-    @staticmethod
-    def _class_wrap_helper_name(
-        surface: ClassSurfacePlan | None,
-        *,
-        fallback: str | None = None,
-    ) -> str:
-        """Return the binding-local class wrap helper name derived from the supplied local lowering values; this helper preserves completed policy."""
-        name = surface.python_names[0] if surface is not None else fallback
-        if name is None:
-            raise ValueError("Class wrapper helper requires a Python type name")
-        return f"_prik_wrap_{name}"
-
-    @staticmethod
-    def _derived_property_python_lines(field: DerivedFieldPlan) -> tuple[str, ...]:
-        """Build derived property python lines from the supplied completed binding records; emitted nodes only project completed binding actions."""
-        lines = [
-            "    @property",
-            f"    def {field.name}(self):",
-            f"        {field.docstring!r}",
-            "        present = self._prik_ops.get('_present')",
-            "        if present is not None:",
-            "            present(self)",
-            f"        return self._prik_ops['{field.name}_get'](self)",
-        ]
-        if field.setter_action is SetterAction.WRITE_THROUGH:
-            lines.extend(
-                (
-                    f"    @{field.name}.setter",
-                    f"    def {field.name}(self, value):",
-                    "        present = self._prik_ops.get('_present')",
-                    "        if present is not None:",
-                    "            present(self)",
-                    f"        self._prik_ops['{field.name}_set'](self, value)",
-                )
-            )
-        elif field.setter_action is SetterAction.REJECT_REPLACEMENT:
-            lines.extend(
-                (
-                    f"    @{field.name}.setter",
-                    f"    def {field.name}(self, value):",
-                    f"        raise AttributeError('field {field.name} does not support replacement assignment')",
-                )
-            )
-        return tuple(lines)
-
-    def _direct_type_ops_literal(self, derived: DerivedTypePlan) -> str:
-        """Return the binding-local direct type ops literal derived from the supplied local lowering values; this helper preserves completed policy."""
-        entries = []
-        for field in derived.fields:
-            entries.append(f"'{field.name}_get': {self._derived_field_method_name(derived, field, 'get')}")
-            if field.setter_action is SetterAction.WRITE_THROUGH:
-                entries.append(f"'{field.name}_set': {self._derived_field_method_name(derived, field, 'set')}")
-        return "{" + ", ".join(entries) + "}"
-
-    def _allocatable_holder_ops_python_source(self, derived: DerivedTypePlan) -> str:
-        """Build allocatable holder ops python source from the supplied local lowering values; emitted nodes only project completed binding actions."""
-        entries = [f"'_present': {self._allocatable_holder_presence_method_name(derived.backend_symbol)}"]
-        for field in derived.fields:
-            entries.append(f"'{field.name}_get': {self._allocatable_holder_field_method_name(derived, field, 'get')}")
-            if field.setter_action is SetterAction.WRITE_THROUGH:
-                entries.append(
-                    f"'{field.name}_set': {self._allocatable_holder_field_method_name(derived, field, 'set')}"
-                )
-        return f"{self._allocatable_holder_ops_name(derived.backend_symbol)} = {{{', '.join(entries)}}}"
-
-    def _pointer_holder_ops_python_source(self, derived: DerivedTypePlan) -> str:
-        """Return pointer holder ops python source from the supplied local lowering values; this helper preserves the selected binding behavior."""
-        entries = [f"'_present': {self._pointer_holder_presence_method_name(derived.backend_symbol)}"]
-        for field in derived.fields:
-            entries.append(f"'{field.name}_get': {self._pointer_holder_field_method_name(derived, field, 'get')}")
-            if field.setter_action is SetterAction.WRITE_THROUGH:
-                entries.append(f"'{field.name}_set': {self._pointer_holder_field_method_name(derived, field, 'set')}")
-        return f"{self._pointer_holder_ops_name(derived.backend_symbol)} = {{{', '.join(entries)}}}"
-
-    @staticmethod
-    def _direct_type_ops_name(derived: DerivedTypePlan) -> str:
-        """Return the binding-local direct type ops name derived from the supplied local lowering values; this helper preserves completed policy."""
-        return f"_prik_ops_{derived.type_name.casefold()}"
-
-    def _module_proxy_ops_python_source(self, variable: ModuleVariablePlan) -> str:
-        """Return one operation dictionary per reachable plain-module object path."""
-        if variable.derived is None:
-            return ""
-        if variable.derived.access is ModuleObjectAccessMechanism.DIRECT_ADDRESS:
-            direct = f"_prik_ops_{variable.derived.handoff.type_name.casefold()}"
-            native_ops = self._derived_origin_capsule_method_name(variable)
-            return f"{self._module_member_ops_name(variable, ())} = dict({direct}, _native_ops={native_ops}())"
-        grouped: dict[tuple[str, ...], list[DerivedMemberPathPlan]] = {}
-        for member in variable.derived.member_paths:
-            grouped.setdefault(member.path[:-1], []).append(member)
-        return "\n".join(
-            f"{self._module_member_ops_name(variable, prefix)} = "
-            f"{self._module_proxy_ops_literal(variable, prefix, members)}"
-            for prefix, members in grouped.items()
-        )
-
-    def _module_proxy_ops_literal(
-        self,
-        variable: ModuleVariablePlan,
-        prefix: tuple[str, ...],
-        members: list[DerivedMemberPathPlan],
-    ) -> str:
-        """Return module proxy ops literal from the supplied completed binding records; this helper preserves the selected binding behavior."""
-        entries = []
-        if not prefix:
-            entries.append(f"'_native_ops': {self._derived_origin_capsule_method_name(variable)}()")
-        if self._nullable_derived_module_proxy(variable):
-            entries.append(f"'_present': {self._module_derived_presence_method_name(variable)}")
-        for member in members:
-            field = member.field
-            entries.append(f"'{field.name}_get': {self._module_member_method_name(variable, member, 'get')}")
-            if field.setter_action is SetterAction.WRITE_THROUGH:
-                entries.append(f"'{field.name}_set': {self._module_member_method_name(variable, member, 'set')}")
-        return "{" + ", ".join(entries) + "}"
 
     @staticmethod
     def _c_string_literal(value: str) -> str:
@@ -12368,7 +12199,7 @@ class CBindingGenerator(ClassVisitor):
     @staticmethod
     def _module_derived_presence_method_name(plan: ModuleVariablePlan) -> str:
         """Return the binding-local module derived presence method name derived from the supplied completed binding records; this helper preserves completed policy."""
-        return f"_prik_module_{plan.symbol_name.casefold()}_require_present"
+        return CBindingNames.module_derived_presence_method(plan)
 
     def _functions(self, plan: ModulePlan) -> tuple[FunctionPlan, ...]:
         """Build functions from the supplied completed binding records; emitted nodes only project completed binding actions."""
@@ -12399,9 +12230,9 @@ class CBindingGenerator(ClassVisitor):
 
 
 if __name__ == "__main__":
-    from prik.codegen.planner import WrapperPlanner
+    from prik.planning.planner import WrapperPlanner
     from prik.semantics.models import SemanticArgument, SemanticFunction, SemanticModule, SemanticType
-    from prik.semantics.policy_completion import complete_semantic_policies
+    from prik.policy.completion import complete_semantic_policies
 
     module = SemanticModule(
         name="binding_demo",

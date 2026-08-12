@@ -5,13 +5,14 @@ from __future__ import annotations
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import (
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import (
     TransformationAction,
     TransformationLayer,
     WritebackPhase,
 )
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 
 def _dense_plan():
@@ -152,7 +153,7 @@ def test_dense_array_plan_records_extent_dependencies_flat_storage_and_order():
 
 
 def test_dense_array_lowering_uses_planned_shape_checks_and_bridge_orientation():
-    artifacts = WrapperCodeGenerator().generate(_dense_plan())
+    artifacts = WrapperGenerator().generate(_dense_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
@@ -183,7 +184,7 @@ def test_dense_array_lowering_uses_planned_shape_checks_and_bridge_orientation()
 def test_external_interface_declares_late_extent_before_dependent_array():
     plan = _late_extent_external_plan()
     function = plan.namespaces[0].functions[0]
-    artifacts = WrapperCodeGenerator().generate(plan)
+    artifacts = WrapperGenerator().generate(plan)
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
@@ -207,7 +208,7 @@ def test_edited_binding_conversion_order_cannot_read_an_extent_late():
     function.binding.argument_conversion_order = tuple(reversed(function.binding.argument_conversion_order))
 
     with pytest.raises(ValueError, match="late-binding-extent-conversion"):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)
 
 
 def test_unavailable_dense_extent_role_fails_before_backend_lowering():
@@ -217,7 +218,7 @@ def test_unavailable_dense_extent_role_fails_before_backend_lowering():
     array.extent_reference_roles = (("edited.missing:value",), array.extent_reference_roles[1])
 
     with pytest.raises(ValueError, match="unavailable-array-extent-reference"):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)
 
 
 def test_copy_f_is_one_binding_owned_transformation_lifecycle():
@@ -240,7 +241,7 @@ def test_copy_f_is_one_binding_owned_transformation_lifecycle():
 
 
 def test_copy_f_lowering_keeps_numpy_copy_in_and_copy_out_out_of_the_bridge():
-    artifacts = WrapperCodeGenerator().generate(_copy_f_plan())
+    artifacts = WrapperGenerator().generate(_copy_f_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
@@ -277,7 +278,7 @@ def test_copy_f_native_input_and_projected_identity_share_the_same_lifecycle_alg
     )
     assert projected.projects_result is True
 
-    artifacts = WrapperCodeGenerator().generate(_copy_f_lifecycle_plan())
+    artifacts = WrapperGenerator().generate(_copy_f_lifecycle_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
@@ -296,4 +297,4 @@ def test_copy_f_layer_edit_fails_central_validation():
     argument.transformations[0].layer = TransformationLayer.BRIDGE
 
     with pytest.raises(ValueError, match="invalid-transformation-layer"):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)

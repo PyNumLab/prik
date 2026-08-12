@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
-from prik.codegen.printers import emit_module
+from prik.printers import emit_module
 
 from tests.fortran._support.fixture_outputs import (
     PARSER_FIXTURE_ROOT as TESTS_DIR,

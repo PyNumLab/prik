@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from prik.compiling.objects import ObjectFile
+from prik.compiler.objects import ObjectFile
 from prik.parsers.fortran.parser import parse_fortran_project
 from prik.pipeline.build import (
     _compile_extension_objects,

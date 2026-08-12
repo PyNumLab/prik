@@ -1,15 +1,17 @@
 """Tests split by stable ownership concept from `test_imports_and_packages.py`."""
 
-import prik
 import pytest
-from prik import parse_fortran_file as parse_fortran_source
-from prik.codegen.printers import (
+import prik.pipeline.pyi as pyi_pipeline
+from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
+from prik.printers import (
     PyiPrinter,
     emit_module,
+)
+from prik.pipeline.pyi import (
     emit_module_stubs,
     opaque_dependency_modules,
+    pyi_text_to_semantic_module as _parse_pyi_text,
 )
-from prik.pipeline.pyi import pyi_text_to_semantic_module as _parse_pyi_text
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 from prik.semantics.models import (
     SemanticArgument,
@@ -28,9 +30,9 @@ from prik.semantics.models import (
 from tests.fortran._support.printer_models import generate_pyi
 
 
-def test_prik_public_api_exports_module_stub_emitter():
-    assert "emit_module_stubs" in prik.__all__
-    assert prik.emit_module_stubs is emit_module_stubs
+def test_pyi_pipeline_exports_module_stub_emitter():
+    assert "emit_module_stubs" in pyi_pipeline.__all__
+    assert pyi_pipeline.emit_module_stubs is emit_module_stubs
 
 
 def test_fortran_generated_contracts_reserve_colliding_public_names_by_namespace():
@@ -64,6 +66,22 @@ def test_fortran_generated_contracts_reserve_colliding_public_names_by_namespace
     assert "def lambda__3" not in code
 
 
+def test_pyi_emission_context_isolates_modules_and_shares_nested_imports():
+    printer = PyiPrinter(normalize_fortran_public_names=True)
+    first = printer._emission_context(SemanticModule(name="first"))
+    second = printer._emission_context(SemanticModule(name="second"))
+    nested = first.inside_class("record_t")
+
+    first.contract("Addr")
+    nested.contract("Pointer")
+
+    assert first.contract_import() == "from prik.contracts import Addr, Pointer"
+    assert nested.contract_import() == first.contract_import()
+    assert nested.public_namespace == ("record_t",)
+    assert first.public_namespace == ()
+    assert second.contract_import() == ""
+
+
 def test_printer_validation_and_opaque_dependency_edge_cases():
     printer = PyiPrinter()
 
@@ -71,7 +89,8 @@ def test_printer_validation_and_opaque_dependency_edge_cases():
         printer.emit(SemanticConstraint("Shape"))
 
     plain_type = SemanticType("Float64", dtype="Float64")
-    assert printer._emit_storage_type(plain_type) == "Float64"
+    context = printer._emission_context(SemanticModule(name="edge_cases"))
+    assert printer._emit_storage_type(plain_type, context) == "Float64"
 
     malformed_import = SemanticType(
         "external_type",

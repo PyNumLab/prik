@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.policy.completion import complete_semantic_policies
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 
 def test_hidden_scalar_result_is_one_bridge_output_and_one_python_result():
@@ -24,7 +25,7 @@ def scale(x: Float64) -> Float64: ...
 
     assert result.native_call_slot is function.native_call_slots[result.bridge.abi_position]
 
-    artifacts = WrapperCodeGenerator().generate(plan)
+    artifacts = WrapperGenerator().generate(plan)
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     fortran_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
@@ -53,7 +54,7 @@ def scale(
         module_name="hidden_result_explicit_interface",
     )
     complete_semantic_policies(module)
-    artifacts = WrapperCodeGenerator().generate(WrapperPlanner().build(module))
+    artifacts = WrapperGenerator().generate(WrapperPlanner().build(module))
     fortran_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
     native_interface = fortran_source.split("subroutine SCALE_OUT(x, result, mode)", maxsplit=1)[1].split(

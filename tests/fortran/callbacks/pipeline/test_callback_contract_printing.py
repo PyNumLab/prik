@@ -1,6 +1,6 @@
 """Semantic callback prototype contract printing."""
 
-from prik.codegen.printers import emit_module
+from prik.printers import emit_module
 from prik.semantics.models import (
     SemanticArgument,
     SemanticArrayContract,

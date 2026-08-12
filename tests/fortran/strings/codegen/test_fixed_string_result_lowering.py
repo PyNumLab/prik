@@ -6,7 +6,7 @@ import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.semantics.models import RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA
-from prik.semantics.ownership import (
+from prik.policy.ownership import (
     CodegenAction,
     DestructionPolicy,
     NativeBarrierAction,
@@ -16,10 +16,11 @@ from prik.semantics.ownership import (
     StorageMode,
     TransferMode,
 )
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import BridgeDataAction
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
-from prik.codegen.plan import DatatypeFamily
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import BridgeDataAction
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
+from prik.planning.models import DatatypeFamily
 
 
 _COPY_REASON = "copy fixed-length Fortran character output into C-owned null-terminated storage"
@@ -78,7 +79,7 @@ def test_fixed_strings_reuse_ordered_result_plans_with_completed_length_and_copy
 
 
 def test_fixed_string_results_dispatch_to_named_binding_and_bridge_copy_lowering():
-    artifacts = WrapperCodeGenerator().generate(_fixed_string_plan())
+    artifacts = WrapperGenerator().generate(_fixed_string_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
@@ -153,7 +154,7 @@ def test_fixed_string_result_plan_edits_fail_before_backend_lowering(edit: str, 
         hidden.native_call_slot.character_length = 7
 
     with pytest.raises(ValueError, match=diagnostic):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)
 
 
 def test_fixed_string_result_policy_uses_ordered_mixed_result_cleanup():
@@ -174,9 +175,7 @@ def mixed() -> tuple[String[8], Int32]: ...
     function = plan.namespaces[0].functions[0]
     assert tuple(result.result_position for result in function.results) == (0, 1)
 
-    c_source = next(
-        source.text for source in WrapperCodeGenerator().generate(plan).sources if source.path.suffix == ".c"
-    )
+    c_source = next(source.text for source in WrapperGenerator().generate(plan).sources if source.path.suffix == ".c")
     assert "free(result);" in c_source
     assert "PyTuple_New(2)" in c_source
     assert "Py_DECREF(result_0_obj);" in c_source

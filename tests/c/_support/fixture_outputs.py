@@ -8,9 +8,9 @@ from tempfile import TemporaryDirectory
 
 from prik.parsers.c import CParser
 from prik.parsers.c.cli import attach_preprocessing_recipe
-from prik.pipeline.preprocessing import PreprocessingConfig, preprocess_source
+from prik.preprocessing import PreprocessingConfig, preprocess_source
 from prik.semantics.c2ir import c_project_to_semantic_module
-from prik.codegen.printers import emit_module
+from prik.printers import emit_module
 
 
 C_ROOT = Path(__file__).resolve().parents[1]

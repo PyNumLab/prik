@@ -6,14 +6,15 @@ from dataclasses import replace
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import WritebackPhase
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import WritebackPhase
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 
 def _artifacts(module):
     complete_semantic_policies(module)
-    return WrapperCodeGenerator().generate(WrapperPlanner().build(module))
+    return WrapperGenerator().generate(WrapperPlanner().build(module))
 
 
 def _source(artifacts, suffix: str) -> str:
@@ -39,7 +40,7 @@ def test_generator_rejects_incomplete_writeback_phase_group():
     )
 
     with pytest.raises(ValueError, match="missing-writeback-phase"):
-        WrapperCodeGenerator().generate(invalid)
+        WrapperGenerator().generate(invalid)
 
 
 def test_generator_rejects_writeback_without_python_result_target():
@@ -59,7 +60,7 @@ def test_generator_rejects_writeback_without_python_result_target():
     invalid = _replace_root_function(plan, replace(function, writeback_actions=actions))
 
     with pytest.raises(ValueError, match="missing-python-writeback-target"):
-        WrapperCodeGenerator().generate(invalid)
+        WrapperGenerator().generate(invalid)
 
 
 def test_generator_rejects_writeback_from_an_unavailable_handoff():
@@ -82,4 +83,4 @@ def test_generator_rejects_writeback_from_an_unavailable_handoff():
     invalid = _replace_root_function(plan, replace(function, writeback_actions=actions))
 
     with pytest.raises(ValueError, match=r"unavailable-.*-role"):
-        WrapperCodeGenerator().generate(invalid)
+        WrapperGenerator().generate(invalid)

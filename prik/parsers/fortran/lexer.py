@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .utils import detect_source_form
+from prik.parsers.fortran.utils import detect_source_form
 
 
 def strip_comment(line: str, form: str) -> str:
@@ -120,3 +120,16 @@ def preprocess_lines(code: str, filename: str | None = None) -> list[tuple[str, 
     if pending:
         folded.append((pending, pending_lineno, pending_raw))
     return folded
+
+
+if __name__ == "__main__":
+    example_source = """\
+subroutine shift(value, &
+                  & offset) ! folded into one parser record
+  real, intent(inout) :: value
+  real, intent(in) :: offset
+end subroutine shift
+"""
+    print("Detected source form:", detect_source_form(example_source, "shift.f90"))
+    for logical_line, source_line, _original_line in preprocess_lines(example_source, "shift.f90"):
+        print(f"line {source_line}: {logical_line}")

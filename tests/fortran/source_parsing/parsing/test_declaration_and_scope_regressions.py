@@ -2,7 +2,7 @@
 
 import pytest
 from pathlib import Path
-from prik import FortranParseError
+from prik.parsers.fortran import FortranParseError
 from prik.parsers.fortran.models import (
     FortranArgument,
     FortranDerivedType,
@@ -10,6 +10,7 @@ from prik.parsers.fortran.models import (
     FortranProcedureSignature,
 )
 from prik.parsers.fortran.parser import (
+    _Declaration,
     FortranParser,
     _ParserScope,
     parse_fortran_project,
@@ -33,11 +34,15 @@ def test_compile_time_resolution_helpers_preserve_kind_shape_values_and_literal_
         is_parameter=True,
     )
 
-    parser._resolve_signature_kinds(
-        signature,
+    symbols = parser._resolve_compile_time_symbols(
         {
             "api_mod": {"rk": "4 + 4", "rk_alias": "rk", "n": "3"},
-        },
+        }
+    )
+    parser._resolve_procedure_compile_time_facts(
+        signature,
+        symbols,
+        resolve_shapes=True,
     )
 
     assert signature.arguments[0].kind == "8"
@@ -58,7 +63,7 @@ def test_compile_time_resolution_helpers_preserve_kind_shape_values_and_literal_
             is_parameter=True,
         )
     )
-    parser._resolve_module_variable_kinds(module, {"api_mod": {"rk": "8", "rk_alias": "rk", "n": "3"}})
+    parser._resolve_module_like_compile_time_facts(module, symbols)
 
     assert module.variables[0].kind == "8"
     assert module.variables[0].shape == ["0:3"]
@@ -68,9 +73,15 @@ def test_compile_time_resolution_helpers_preserve_kind_shape_values_and_literal_
 
     assert parser._resolve_kind_expression("len=n + 1", {"n": "3"}) == "len=4"
     assert parser._resolve_symbol_reference("alias", {"alias": "target", "target": "8"}) == "8"
-    assert parser._resolve_module_parameter_values(
+    resolved = parser._resolve_compile_time_symbols(
         {"M": {"a": "4", "b": "a + 2", "rk": "selected_real_kind(12)", "dp": "rk"}}
-    ) == {"m": {"a": "4", "b": "6", "rk": "selected_real_kind(12)", "dp": "selected_real_kind(12)"}}
+    )
+    assert dict(resolved.in_module("m")) == {
+        "a": "4",
+        "b": "6",
+        "rk": "selected_real_kind(12)",
+        "dp": "selected_real_kind(12)",
+    }
     assert parser._collect_relevant_local_params(
         FortranProcedureSignature(
             "shape",
@@ -88,16 +99,19 @@ def test_compile_time_resolution_helpers_preserve_kind_shape_values_and_literal_
     assert parser._infer_implicit_base_type("alpha") == "real"
 
 
-def test_declaration_push_preserves_module_variables_parameters_and_bounds():
+def test_declaration_storage_preserves_module_variables_parameters_visibility_and_bounds():
     parser = FortranParser()
     module = FortranModule("owner_mod")
     scope = _ParserScope(kind="module", name=module.name, model=module, module_owner=module.name)
-    meta = parser._new_decl_meta("real", "rk")
-    meta.update({"parameter": True, "shape": ["0:n"], "rank": 1})
+    declaration = parser._new_declaration("real", "rk")
+    parser._apply_declaration_attributes(
+        declaration,
+        ["parameter", "private", "dimension(0:n)"],
+    )
 
-    parser._helper_push_declaration_to_scope(
+    parser._store_declaration(
         scope,
-        meta=meta,
+        declaration=declaration,
         right="weights = 1.0_rk",
         role="module_variable",
         filename="declarations.f90",
@@ -112,9 +126,10 @@ def test_declaration_push_preserves_module_variables_parameters_and_bounds():
     assert module.variables[0].value == "1"
     assert module.variables[0].symbolic_value == "1.0_rk"
     assert module.variables[0].value_type == "expression"
+    assert module.private_symbols == ["weights"]
 
 
-def test_procedure_declaration_push_updates_dummy_or_records_local_type_and_duplicate_metadata():
+def test_procedure_declaration_storage_updates_dummy_or_records_local_type_and_duplicate_metadata():
     parser = FortranParser()
     signature = FortranProcedureSignature(
         "apply",
@@ -126,22 +141,22 @@ def test_procedure_declaration_push_updates_dummy_or_records_local_type_and_dupl
         symbols={argument.name.lower(): argument for argument in signature.arguments},
     )
     scope = _ParserScope(kind="procedure", name=signature.name, model=signature, state=state)
-    proc_meta = parser._new_decl_meta("procedure", "callback_iface")
-    proc_meta["external"] = True
+    procedure_declaration = parser._new_declaration("procedure", "callback_iface")
+    procedure_declaration.external = True
 
-    parser._helper_push_declaration_to_scope(
+    parser._store_declaration(
         scope,
-        meta=proc_meta,
+        declaration=procedure_declaration,
         right="callback",
         role="procedure_symbol",
         filename="declarations.f90",
         lineno=9,
         source_line="procedure(callback_iface), external :: callback",
     )
-    local_meta = parser._new_decl_meta("real", "rk")
-    parser._helper_push_declaration_to_scope(
+    local_declaration = parser._new_declaration("real", "rk")
+    parser._store_declaration(
         scope,
-        meta=local_meta,
+        declaration=local_declaration,
         right="scratch",
         role="procedure_symbol",
         filename="declarations.f90",
@@ -151,13 +166,13 @@ def test_procedure_declaration_push_updates_dummy_or_records_local_type_and_dupl
 
     assert signature.arguments[0].base_type == "procedure"
     assert signature.arguments[0].kind == "callback_iface"
-    assert state["external_symbols"] == {"callback"}
-    assert state["declared_local_types"] == {"scratch": {"base_type": "real", "kind": "rk"}}
+    assert state.external_symbols == {"callback"}
+    assert state.declared_local_types == {"scratch": _Declaration(base_type="real", kind="rk")}
 
     with pytest.raises(FortranParseError) as error:
-        parser._helper_push_declaration_to_scope(
+        parser._store_declaration(
             scope,
-            meta=parser._new_decl_meta("integer", ""),
+            declaration=parser._new_declaration("integer", ""),
             right="callback",
             role="procedure_symbol",
             filename="declarations.f90",
@@ -170,6 +185,52 @@ def test_procedure_declaration_push_updates_dummy_or_records_local_type_and_dupl
     assert error.value.line_number == 11
     assert error.value.source_line == "integer :: callback"
     assert error.value.code == "PARSE_DUPLICATE_DECLARATION"
+
+
+def test_entity_character_length_uses_an_independent_typed_declaration():
+    parser = FortranParser()
+    declaration = parser._new_declaration("character", "default_len")
+
+    entity_declaration = parser._entity_declaration("label*(name_len)", declaration)
+
+    assert entity_declaration is not declaration
+    assert entity_declaration.kind == "name_len"
+    assert entity_declaration.character_length_syntax is True
+    assert declaration.kind == "default_len"
+    assert declaration.character_length_syntax is False
+
+
+def test_procedure_finalization_consumes_typed_local_declarations():
+    parser = FortranParser()
+    signature = FortranProcedureSignature(
+        "consume",
+        "subroutine",
+        arguments=[FortranArgument("value")],
+    )
+    state = parser._new_procedure_scope_state(
+        signature,
+        symbols={"value": signature.arguments[0]},
+    )
+    state.declared_local_types["value"] = _Declaration(
+        base_type="real",
+        kind="rk",
+        declared_storage_bits=64,
+    )
+    state.declared_local_types["n"] = _Declaration(
+        base_type="integer",
+        kind="i4",
+        target_kind_expression="kind(1)",
+    )
+
+    parser._reconcile_procedure_local_declarations(signature, state)
+    parser._materialize_procedure_parameters(signature, state, {"n": "4"})
+
+    assert signature.arguments[0].base_type == "real"
+    assert signature.arguments[0].kind == "rk"
+    assert signature.arguments[0].declared_storage_bits == 64
+    assert signature.variables["n"].base_type == "integer"
+    assert signature.variables["n"].kind == "i4"
+    assert signature.variables["n"].target_kind_expression == "kind(1)"
 
 
 def test_procedure_parameter_lines_preserve_local_parameter_state_and_duplicate_metadata():
@@ -187,9 +248,9 @@ def test_procedure_parameter_lines_preserve_local_parameter_state_and_duplicate_
         lineno=5,
         source_line="integer, parameter :: n = 4, m = n + 2",
     )
-    assert state["local_params"] == {"n": "4", "m": "n + 2"}
-    assert state["legacy_local_params"] == set()
-    assert state["implicit_typed_symbols"] == {}
+    assert state.local_params == {"n": "4", "m": "n + 2"}
+    assert state.legacy_local_params == set()
+    assert state.implicit_typed_symbols == {}
 
     with pytest.raises(FortranParseError) as error:
         parser._handle_proc_parameter_line(
@@ -211,7 +272,7 @@ def test_legacy_parameter_lines_respect_implicit_none_and_implicit_typing_contra
     parser = FortranParser()
     strict_signature = FortranProcedureSignature("strict", "subroutine")
     strict_state = parser._new_procedure_scope_state(strict_signature, symbols={})
-    strict_state["implicit_none"] = True
+    strict_state.implicit_none = True
 
     with pytest.raises(FortranParseError) as error:
         parser._handle_proc_parameter_line(
@@ -237,12 +298,12 @@ def test_legacy_parameter_lines_respect_implicit_none_and_implicit_typing_contra
         lineno=9,
         source_line="parameter (ival = 2, alpha = 1.0)",
     )
-    assert loose_state["local_params"] == {"ival": "2", "alpha": "1.0"}
-    assert loose_state["implicit_typed_symbols"] == {"ival": "integer", "alpha": "real"}
-    assert loose_state["legacy_local_params"] == set()
+    assert loose_state.local_params == {"ival": "2", "alpha": "1.0"}
+    assert loose_state.implicit_typed_symbols == {"ival": "integer", "alpha": "real"}
+    assert loose_state.legacy_local_params == set()
 
 
-def test_namespace_collection_preserves_case_insensitive_dependencies_and_exact_payload(tmp_path: Path, monkeypatch):
+def test_directory_project_parses_once_and_assembles_dependency_ordered_models(tmp_path: Path, monkeypatch):
     sources = {
         "ancestor.f90": "module Ancestor_Mod\nend module Ancestor_Mod\n",
         "parent.f90": "module Parent_Mod\n  use Ancestor_Mod\n  type :: Parent_State\n  end type Parent_State\nend module Parent_Mod\n",
@@ -269,16 +330,18 @@ def test_namespace_collection_preserves_case_insensitive_dependencies_and_exact_
     for filename, source in sources.items():
         (tmp_path / filename).write_text(source, encoding="utf-8")
 
-    encodings = []
+    read_paths: list[Path] = []
+    encodings: list[str | None] = []
     original_read_text = Path.read_text
 
     def read_text(path, *args, **kwargs):
+        read_paths.append(path)
         encodings.append(kwargs.get("encoding"))
         return original_read_text(path, *args, **kwargs)
 
     monkeypatch.setattr(Path, "read_text", read_text)
 
-    namespace = FortranParser()._helper_collect_namespace(tmp_path)
+    project = parse_fortran_project(tmp_path)
 
     ancestor = str(tmp_path / "ancestor.f90")
     parent = str(tmp_path / "parent.f90")
@@ -287,42 +350,45 @@ def test_namespace_collection_preserves_case_insensitive_dependencies_and_exact_
     grandchild = str(tmp_path / "grandchild.f90")
     units = str(tmp_path / "units.f90")
 
-    assert encodings and set(encodings) == {"utf-8"}
-    assert namespace["module_to_file"] == {
-        "ancestor_mod": ancestor,
-        "helper_mod": helper,
-        "parent_mod": parent,
+    assert len(read_paths) == len(sources)
+    assert set(read_paths) == {tmp_path / filename for filename in sources}
+    assert set(encodings) == {"utf-8"}
+
+    ordered_files = [parsed_file.filename for parsed_file in project.files]
+    assert ordered_files.index(ancestor) < ordered_files.index(parent)
+    assert ordered_files.index(parent) < ordered_files.index(child)
+    assert ordered_files.index(helper) < ordered_files.index(child)
+    assert ordered_files.index(child) < ordered_files.index(grandchild)
+    assert units in ordered_files
+
+    assert {module.name for module in project.modules.values()} == {
+        "Ancestor_Mod",
+        "Helper_Mod",
+        "Parent_Mod",
     }
-    assert namespace["submodule_to_file"] == {
-        "child_mod": child,
-        "grandchild_mod": grandchild,
+    assert {submodule.name for submodule in project.submodules.values()} == {
+        "Child_Mod",
+        "Grandchild_Mod",
     }
-    assert namespace["file_dependencies"] == {
-        ancestor: [],
-        child: [ancestor, helper, parent],
-        grandchild: [child],
-        helper: [],
-        parent: [ancestor],
-        units: [],
+    assert [program.name for program in project.programs.values()] == ["Driver"]
+    assert [block.name for parsed_file in project.files for block in parsed_file.block_data_units] == ["Init_Data"]
+    assert {dtype.name for dtype in project.derived_types.values()} == {
+        "Parent_State",
+        "Child_State",
+        "File_State",
     }
-    assert namespace["files"].index(ancestor) < namespace["files"].index(parent)
-    assert namespace["files"].index(parent) < namespace["files"].index(child)
-    assert namespace["files"].index(helper) < namespace["files"].index(child)
-    assert namespace["files"].index(child) < namespace["files"].index(grandchild)
-    assert {module.name for module in namespace["modules"]} == {"Ancestor_Mod", "Helper_Mod", "Parent_Mod"}
-    assert {submodule.name for submodule in namespace["submodules"]} == {"Child_Mod", "Grandchild_Mod"}
-    assert [program.name for program in namespace["programs"]] == ["Driver"]
-    assert [block.name for block in namespace["block_data"]] == ["Init_Data"]
-    assert {dtype.name for dtype in namespace["types"]} == {"Parent_State", "Child_State", "File_State"}
-    assert {module.name: module.filename for module in namespace["modules"]} == {
+    assert {module.name: module.filename for module in project.modules.values()} == {
         "Ancestor_Mod": ancestor,
         "Helper_Mod": helper,
         "Parent_Mod": parent,
     }
-    assert {submodule.name: submodule.filename for submodule in namespace["submodules"]} == {
+    assert {submodule.name: submodule.filename for submodule in project.submodules.values()} == {
         "Child_Mod": child,
         "Grandchild_Mod": grandchild,
     }
+    assert project.dependencies["parent_mod"] == {"ancestor_mod"}
+    assert project.dependencies["child_mod"] == {"ancestor_mod", "parent_mod", "helper_mod"}
+    assert project.dependencies["grandchild_mod"] == {"child_mod"}
 
 
 def test_project_registries_preserve_qualified_aliases_values_and_dependencies():
@@ -534,7 +600,7 @@ def test_project_encoding_is_forwarded_to_explicit_path_inputs(tmp_path: Path):
     assert project.files[0].source.startswith("! caf\xe9")
 
 
-def test_project_encoding_is_forwarded_to_directory_namespace_collection(tmp_path: Path):
+def test_project_encoding_is_forwarded_to_directory_file_parsing(tmp_path: Path):
     source = tmp_path / "latin1.f90"
     source.write_bytes("! caf\xe9\nmodule encoded_mod\nend module encoded_mod\n".encode("latin-1"))
 
@@ -547,14 +613,15 @@ def test_project_encoding_is_forwarded_to_directory_namespace_collection(tmp_pat
 
 def test_scope_include_import_and_derived_type_binding_contracts():
     parser = FortranParser()
-    state = {}
+    state = parser._new_procedure_scope_state(
+        FortranProcedureSignature("scope_contract", "subroutine"),
+        symbols={},
+    )
     parser._proc_scope_add_include(state, "shared.inc")
     parser._proc_scope_add_imports(state, ["State_T", " ", "Callback"])
 
-    assert state == {
-        "includes": ["shared.inc"],
-        "imports": {"state_t", "callback"},
-    }
+    assert state.includes == ["shared.inc"]
+    assert state.imports == {"state_t", "callback"}
 
     dtype = parser._init_derived_type(
         "type, extends(parent(kind)), public :: child",
@@ -593,7 +660,10 @@ def test_scope_include_import_and_derived_type_binding_contracts():
 
 def test_unknown_procedure_declaration_kind_preserves_declaration_and_invalid_syntax_split():
     parser = FortranParser()
-    state = {"signature": FortranProcedureSignature(name="work", kind="subroutine")}
+    state = parser._new_procedure_scope_state(
+        FortranProcedureSignature(name="work", kind="subroutine"),
+        symbols={},
+    )
 
     with pytest.raises(FortranParseError) as declaration_error:
         parser._handle_unknown_proc_declaration(

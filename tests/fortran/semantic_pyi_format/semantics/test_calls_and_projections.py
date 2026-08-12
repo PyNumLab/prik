@@ -3,8 +3,8 @@
 import ast
 import pytest
 from dataclasses import asdict
-from prik import parse_fortran_file
-from prik.codegen.printers import emit_module
+from prik.parsers.fortran import parse_fortran_file
+from prik.printers import emit_module
 from prik.contracts import CONTRACT_SYMBOLS
 from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
 from prik.semantics.metadata import (
@@ -20,7 +20,7 @@ from prik.semantics.models import (
     SemanticModule,
     SemanticType,
 )
-from prik.semantics.policy_completion import complete_semantic_policies
+from prik.policy.completion import complete_semantic_policies
 from prik.semantics.pyi2ir import _PyiAstParser
 from tests.fortran._support.pyi_conversion import parse_pyi_text
 

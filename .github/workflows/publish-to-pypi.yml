@@ -44,17 +44,17 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install build twine
       - name: Build source and wheel distributions
-        run: python -m build
+        run: python -m build --outdir .artifacts/dist
       - name: Check distribution metadata
-        run: python -m twine check dist/*
+        run: python -m twine check .artifacts/dist/*
       - name: Verify and install the wheel
         shell: bash
         run: |
-          mapfile -t wheels < <(compgen -G "dist/prik-*-py3-none-any.whl")
-          mapfile -t sdists < <(compgen -G "dist/prik-*.tar.gz")
+          mapfile -t wheels < <(compgen -G ".artifacts/dist/prik-*-py3-none-any.whl")
+          mapfile -t sdists < <(compgen -G ".artifacts/dist/prik-*.tar.gz")
           if (( ${#wheels[@]} != 1 || ${#sdists[@]} != 1 )); then
             echo "expected one universal wheel and one source distribution" >&2
-            ls -la dist
+            ls -la .artifacts/dist
             exit 1
           fi
           python -m venv "$RUNNER_TEMP/prik-release-check"
@@ -68,7 +68,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: python-package-distributions
-          path: dist/
+          path: .artifacts/dist/
           if-no-files-found: error
           retention-days: 7
 
@@ -86,6 +86,8 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: python-package-distributions
-          path: dist/
+          path: .artifacts/dist/
       - name: Publish distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: .artifacts/dist/

@@ -11,10 +11,11 @@ from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.parsers.fortran.parser import parse_fortran_project
 from prik.pipeline.build import _apply_source_python_exports, _merge_wrapper_modules
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
-from prik.semantics.ownership import AssignmentMode, SetterAction
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import ModuleGetterAction
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.policy.ownership import AssignmentMode, SetterAction
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import ModuleGetterAction
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 from prik.codegen.c.binding import CBindingGenerator
 from prik.codegen.fortran.bridge import FortranBridgeGenerator
 
@@ -114,7 +115,7 @@ def test_symbolic_source_parameter_reuses_scalar_bridge_getter_for_module_initia
     assert computed.bridge.getter_role == "computed_constants.computed:getter"
     assert computed.binding.setter_action is SetterAction.OMIT
 
-    artifacts = WrapperCodeGenerator().generate(plan)
+    artifacts = WrapperGenerator().generate(plan)
     c_source = _source(artifacts, ".c")
     fortran_source = _source(artifacts, ".f90")
     assert "int32_t bind_c_get_computed(void);" in c_source
@@ -141,7 +142,7 @@ def test_parameter_array_uses_one_immutable_python_owned_import_snapshot():
     assert variable.array is not None
     assert variable.array.shape == ("3",)
 
-    artifacts = WrapperCodeGenerator().generate(plan)
+    artifacts = WrapperGenerator().generate(plan)
     c_source = _source(artifacts, ".c")
     fortran_source = _source(artifacts, ".f90")
     assert "void * bind_c_get_dpmpar(int64_t * extent_0);" in c_source
@@ -217,7 +218,7 @@ def test_module_setter_assignment_mismatch_fails_before_backend_preflight_or_low
     fortran_generator = Mock(spec=FortranBridgeGenerator)
     c_printer = Mock()
     fortran_printer = Mock()
-    generator = WrapperCodeGenerator(
+    generator = WrapperGenerator(
         c_generator=c_generator,
         fortran_generator=fortran_generator,
         c_printer=c_printer,
@@ -238,7 +239,7 @@ def test_module_setter_assignment_mismatch_fails_before_backend_preflight_or_low
 
 
 def test_module_variable_generators_dispatch_get_set_and_rejection_from_plan():
-    artifacts = WrapperCodeGenerator().generate(_plan())
+    artifacts = WrapperGenerator().generate(_plan())
     c_source = _source(artifacts, ".c")
     fortran_source = _source(artifacts, ".f90")
 
@@ -279,7 +280,7 @@ def test_generator_rejects_python_module_setter_without_bridge_handoff():
     )
 
     with pytest.raises(ValueError, match="missing-module-setter-role"):
-        WrapperCodeGenerator().generate(invalid)
+        WrapperGenerator().generate(invalid)
 
 
 def test_generator_rejects_binding_bridge_module_getter_disagreement():
@@ -304,4 +305,4 @@ def test_generator_rejects_binding_bridge_module_getter_disagreement():
     )
 
     with pytest.raises(ValueError, match="inconsistent-module-getter-action"):
-        WrapperCodeGenerator().generate(invalid)
+        WrapperGenerator().generate(invalid)

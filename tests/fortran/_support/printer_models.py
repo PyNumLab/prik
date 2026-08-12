@@ -3,7 +3,7 @@ from pathlib import Path
 
 from prik.contracts import CONTRACT_SYMBOLS
 
-from prik import parse_fortran_file as parse_fortran_source
+from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 
 
 from prik.semantics.fortran2ir import (
@@ -12,16 +12,17 @@ from prik.semantics.fortran2ir import (
 
 from prik.pipeline.pyi import pyi_text_to_semantic_module as _parse_pyi_text
 
-from prik.codegen.printers import (
+from prik.printers import (
     emit_module,
 )
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 from prik.semantics.models import (
     SemanticModule,
 )
 
-from prik.semantics.policy_completion import complete_semantic_policies
+from prik.policy.completion import complete_semantic_policies
 
 OPERATOR_F90_SOURCE = (
     Path(__file__).parents[1] / "generic_interfaces" / "end_to_end" / "fixtures" / "foperators_f90.f90"
@@ -44,10 +45,10 @@ def generate_pyi(source: str) -> str:
     return emit_module(smod)
 
 
-def generate_wrapper_artifacts(module: SemanticModule):
-    """Generate wrapper sources through the canonical plan implementation."""
+def generate_wrapper(module: SemanticModule):
+    """Generate one rendered wrapper through the canonical pipeline."""
     complete_semantic_policies(module)
-    return WrapperCodeGenerator().generate(WrapperPlanner().build(module))
+    return WrapperGenerator().generate(WrapperPlanner().build(module))
 
 
 def rendered_source(artifacts, suffix: str) -> str:

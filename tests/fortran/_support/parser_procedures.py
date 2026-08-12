@@ -1,4 +1,4 @@
-from prik import parse_fortran_file, parse_fortran_project
+from prik.parsers.fortran import parse_fortran_file, parse_fortran_project
 
 
 def collect_project_procedure_signatures(files):

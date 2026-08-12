@@ -2,7 +2,8 @@
 
 import pytest
 
-from prik import FortranParseError, parse_fortran_file, parse_fortran_project
+from prik.parsers.fortran import FortranParseError, parse_fortran_file, parse_fortran_project
+from prik.parsers.fortran.parser import FortranParser
 
 
 def test_module_visibility_public_and_private_spec_lines_are_applied():
@@ -129,7 +130,7 @@ def test_duplicate_project_scope_names_raise_public_parse_errors():
         )
 
 
-def test_project_directory_namespace_orders_ancestor_submodule_dependencies(tmp_path):
+def test_project_directory_orders_ancestor_submodule_dependencies(tmp_path):
     (tmp_path / "ancestor.f90").write_text(
         """
 module ancestor_mod
@@ -327,6 +328,47 @@ end module solver_mod
     assert project.dependencies["solver_mod"] == {"precision_mod"}
 
 
+def test_project_compile_time_resolution_uses_models_is_idempotent_and_preserves_symbolic_shapes():
+    parser = FortranParser()
+    kinds_file = parser.parse_file(
+        """
+module kinds
+  integer, parameter :: word = 4
+  integer, parameter :: rk = word * 2
+  integer, parameter :: n = 3
+end module kinds
+""",
+        filename="kinds.f90",
+    )
+    consumer_file = parser.parse_file(
+        """
+module records
+  use kinds, only: wp => rk, n
+  type :: sample
+    real(kind=wp) :: values(0:n)
+  end type sample
+contains
+  subroutine consume(values)
+    real(kind=wp), intent(in) :: values(1:n)
+  end subroutine consume
+end module records
+""",
+        filename="records.f90",
+    )
+    kinds_file.source = None
+    consumer_file.source = None
+
+    parser._resolve_project_compile_time_facts([kinds_file, consumer_file])
+    field = consumer_file.modules[0].derived_types[0].fields[0]
+    argument = consumer_file.modules[0].procedures[0].arguments[0]
+    first_result = (field.kind, list(field.shape), argument.kind, list(argument.shape))
+
+    parser._resolve_project_compile_time_facts([kinds_file, consumer_file])
+
+    assert first_result == ("8", ["0:3"], "8", ["1:n"])
+    assert (field.kind, field.shape, argument.kind, argument.shape) == first_result
+
+
 def test_project_resolves_reexported_intrinsic_kind_renames():
     project = parse_fortran_project(
         {
@@ -409,7 +451,7 @@ end module precision
     assert prototype.result.kind == "real64"
 
 
-def test_directory_namespace_records_missing_and_parent_only_submodule_dependencies(tmp_path):
+def test_directory_project_records_missing_and_parent_only_submodule_dependencies(tmp_path):
     (tmp_path / "parent.f90").write_text(
         """
 module parent_mod

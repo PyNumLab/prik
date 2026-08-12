@@ -2,7 +2,7 @@
 title: Testing Strategy
 audience: developers, contributors
 prerequisites: repository structure
-related: quality-assurance.md, development-workflow.md
+related: workflows/quality-assurance.md, workflows/contributing.md
 status: maintained
 publication: draft
 ---
@@ -13,7 +13,7 @@ The canonical ownership and command map is
 [`../../tests/README.md`](../../tests/README.md). The Fortran feature index is
 [`../../tests/fortran/README.md`](../../tests/fortran/README.md). Maintainers
 record the active migration gates in
-`docs/maintainer/roadmap/fortran-test-suite-cleanup-checklist.md`.
+`docs/developer/roadmap/fortran-test-suite-cleanup-checklist.md`.
 
 ## Choose tests by language, feature, and stage
 
@@ -23,7 +23,9 @@ Tests first answer which native input contract they exercise:
 - `tests/tools/` owns maintainer commands and CI support scripts;
 - `tests/workflows/` owns exceptional automation-safety checks;
 - `tests/fortran/` owns Fortran input and semantic `.pyi` wrapper behavior;
+<!-- PRIK_C_DOCS_START
 - `tests/c/` owns C input-language inspection behavior.
+PRIK_C_DOCS_END -->
 
 Within Fortran, user-visible behavior is feature first and pipeline stage
 second:
@@ -125,7 +127,10 @@ Keep fixtures beside their final behavioral owner:
   integration.
 
 Generate build products and temporary contracts in temporary directories.
-Check in generated `.pyi` only where exact generation text,
+Compiler capability probes must also run with a temporary working directory so
+side products such as Fortran `.mod` files cannot escape into the repository
+root merely because the primary object or executable has an explicit output
+path. Check in generated `.pyi` only where exact generation text,
 imports, placement, or package shape is the invariant.
 
 For BLAS behavior, source `examples/blas/build_all.sh`, then run
@@ -188,7 +193,7 @@ For example, semantic-policy internals use
 `infrastructure/semantics/test_ownership.py` and
 `test_policy_completion.py`; wrapper internals use
 `infrastructure/codegen/test_plan.py`, `test_planner.py`, and
-`test_generator.py`. Other internal owners mirror `prik/compiling/`,
+`tests/fortran/infrastructure/pipeline/test_wrapper_generator.py`. Other internal owners mirror `prik/compiler/`,
 `prik/contracts/`, `prik/pipeline/`, `prik/runtime/`, and the remaining source
 packages when they have real internal tests. Do not create empty mirror
 directories or combine multiple production owners in generic backend or policy
@@ -231,3 +236,20 @@ Both use `COVERAGE_PROCESS_START=pyproject.toml`, combine subprocess data with
 `python3 -m coverage combine`, and retain per-file executed line and branch
 data. LAPACK remains CI-only unless a maintainer explicitly requests a local
 run.
+
+## Fixture Regeneration
+
+Regenerate broad fixture sets only after a focused test explains the intended
+change. Update the narrowest affected owner:
+
+```bash
+python3 tests/fortran/source_parsing/parsing/generate_parser_goldens.py \
+  tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
+python3 tests/fortran/semantic_ir/semantics/generate_semantic_fixtures.py
+WRAPPER_UPDATE_PYI_FIXTURES=1 python3 -m pytest -q \
+  tests/fortran/semantic_pyi_format/pipeline/test_contract_package_generation.py
+```
+
+Include regenerated artifacts only when the parser, semantic IR, or public
+contract representation intentionally changed. Never regenerate a broad set to
+hide uncertainty or unrelated drift.

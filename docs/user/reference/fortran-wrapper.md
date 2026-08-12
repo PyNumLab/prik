@@ -518,7 +518,7 @@ libraries.
 ```python
 from pathlib import Path
 
-from prik import NativeBuildPlan, NativeLinkItem
+from prik.pipeline.build import NativeBuildPlan, NativeLinkItem
 
 plan = NativeBuildPlan(
     link_items=(
@@ -663,7 +663,7 @@ an independent lifetime.
 
 ### Policy Overrides In Semantic `.pyi` Files
 
-Ownership decisions are centralized in `prik.semantics.ownership`. Semantic
+Ownership decisions are centralized in `prik.policy.ownership`. Semantic
 lowering and both bridge layers consume that resolved decision; low-level
 printers do not invent ownership behavior.
 

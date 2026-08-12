@@ -5,20 +5,20 @@ from tests.fortran._support.ownership_policy import parse_pyi_text
 from tests.fortran._support.wrapper_build import wrapper_source
 from prik.parsers.fortran.parser import parse_fortran_project
 from prik.pipeline.build import _apply_source_python_exports, _fortran_source_for_pipeline, _merge_wrapper_modules
-from prik.pipeline.preprocessing import PreprocessingConfig
+from prik.preprocessing import PreprocessingConfig
 from prik.pipeline.pyi import pyi_file_to_semantic_module
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.semantics.models import (
     RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA,
 )
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import (
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import (
     ArgumentHandoffMode,
     BridgeDataAction,
     FunctionWrapperPolicy,
     OptionalMode,
-    completed_function_wrapper_policy,
 )
+from prik.policy.construction import completed_function_wrapper_policy
 
 FMATH_CONTRACT = Path("tests/fortran/data_types/end_to_end/fixtures/baseline/contracts/fmath/__init__.pyi")
 

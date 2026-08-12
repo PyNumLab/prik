@@ -16,7 +16,6 @@ _MARKDOWN_SUFFIXES = {".md", ".markdown", ".mdown", ".mkdn", ".mkd"}
 _LANE_INDEXES = {
     "user": "user/index.md",
     "developer": "developer/index.md",
-    "maintainer": "maintainer/README.md",
 }
 _MARKDOWN_LINK = re.compile(r"(?<!!)\[([^]]+)]\(([^)]+)\)")
 

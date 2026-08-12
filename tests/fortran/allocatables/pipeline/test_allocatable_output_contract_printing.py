@@ -1,8 +1,8 @@
 """Generated contract surface for optional allocatable outputs."""
 
-from prik.codegen.printers import emit_module
+from prik.printers import emit_module
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
-from prik import parse_fortran_file as parse_fortran_source
+from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 
 
 def _generate_pyi(source: str) -> str:

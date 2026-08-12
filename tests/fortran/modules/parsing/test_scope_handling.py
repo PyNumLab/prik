@@ -1,7 +1,7 @@
 import pytest
 
 from prik.parsers.fortran.models import FortranParseError
-from prik import parse_fortran_file
+from prik.parsers.fortran import parse_fortran_file
 
 
 def test_same_argument_name_in_different_procedures_is_allowed():

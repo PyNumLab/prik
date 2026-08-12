@@ -8,8 +8,8 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
-from .models import CFile, CMacro, CParseError, CSourceLocation, c_model_to_dict
-from .parser import CParser
+from prik.parsers.c.models import CFile, CMacro, CParseError, CSourceLocation, c_model_to_dict
+from prik.parsers.c.parser import CParser
 
 
 _C_SOURCE_SUFFIXES = {".c", ".h", ".i"}
@@ -230,3 +230,20 @@ __all__ = (
     "main",
     "parse_c_report",
 )
+
+
+def _direct_example() -> None:
+    """Show the parser report boundary without reading a source file."""
+
+    parsed = CParser().parse_file(
+        "struct point { double x; double y; };\ndouble norm(struct point value);\n",
+        filename="geometry.h",
+    )
+    print(format_c_report({"geometry.h": c_model_to_dict(parsed)}, print_limit=2))
+
+
+if __name__ == "__main__":
+    if len(sys.argv) == 1:
+        _direct_example()
+    else:
+        raise SystemExit(main())

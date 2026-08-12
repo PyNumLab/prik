@@ -39,9 +39,13 @@ from prik.utilities.declaration_expressions import (
     split_dimension_bounds,
     split_top_level_expression,
 )
-from prik.semantics.ownership import set_ownership_metadata
+from prik.semantics.ownership_metadata import set_ownership_metadata
 from prik.semantics.metadata import BIND_TARGET_METADATA, PROJECTED_OUTPUT_METADATA, SCALAR_STORAGE_CATEGORY
-from prik.types.numpy import BOOLEAN_STORAGE_BITS, SEMANTIC_SCALAR_TYPE_NAMES, is_boolean_semantic_type_name
+from prik.semantics.scalar_types import (
+    BOOLEAN_STORAGE_BITS,
+    SEMANTIC_SCALAR_TYPE_NAMES,
+    is_boolean_semantic_type_name,
+)
 from prik.utilities.visitor import ClassVisitor
 
 from prik.semantics.models import (
@@ -3083,7 +3087,7 @@ def collect_semantic_compile_time_requirements(
     wrappers below.
 
     Example:
-        >>> from prik import parse_fortran_file
+        >>> from prik.parsers.fortran import parse_fortran_file
         >>> parsed = parse_fortran_file("module m\\ninteger, parameter :: rk = selected_real_kind(12)\\nend module")
         >>> reqs = collect_semantic_compile_time_requirements(parsed)
         >>> reqs[0]["symbol"]

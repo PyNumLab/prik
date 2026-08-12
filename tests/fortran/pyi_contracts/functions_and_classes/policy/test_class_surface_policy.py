@@ -4,11 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from prik import pyi_text_to_semantic_module
+from prik.pipeline.pyi import pyi_text_to_semantic_module
 from prik.pipeline.pyi import pyi_file_to_semantic_module
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import ClassInvocationKind, OverloadMatchKind
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import ClassInvocationKind, OverloadMatchKind
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 FIXTURES = Path(__file__).parents[1] / "end_to_end" / "fixtures" / "edited_contracts"
 METHOD_AND_CONSTRUCTOR = FIXTURES / "method_and_constructor" / "fclasses_f90.pyi"
@@ -72,8 +73,8 @@ def move(item: point, dx: Float64) -> None: ...
     assert private_method.class_call is not None
     assert private_method.class_call.invocation is ClassInvocationKind.MODULE_PROCEDURE
     assert all(function.binding.python_name != "move" for function in private_plan.namespaces[0].functions)
-    WrapperCodeGenerator().generate(public_plan)
-    WrapperCodeGenerator().generate(private_plan)
+    WrapperGenerator().generate(public_plan)
+    WrapperGenerator().generate(private_plan)
 
 
 def test_bound_constructor_and_method_reuse_completed_direct_function_plans():
@@ -93,6 +94,7 @@ def test_bound_constructor_and_method_reuse_completed_direct_function_plans():
     assert method.class_call.passed_object_position == 1
     assert method.class_call.invocation is ClassInvocationKind.MODULE_PROCEDURE
     assert constructor.bridge.native_name == method.bridge.native_name == "shift_vector"
+    WrapperGenerator().generate(plan)
     assert "Constructor\n-----------\nvector(dx, dy) -> vector" in surface.docstring
     assert "shift(dx, dy) -> None" in surface.methods[0].docstring
 
@@ -123,7 +125,7 @@ def initialize_point(left: point, owner: point, right: point) -> None: ...
     )
     assert module_initializer.binding.public is True
     assert module_initializer is not target
-    WrapperCodeGenerator().generate(plan)
+    WrapperGenerator().generate(plan)
 
 
 def test_edited_overloads_complete_exact_dispatch_and_reject_ambiguous_plan():
@@ -147,11 +149,15 @@ def test_edited_overloads_complete_exact_dispatch_and_reject_ambiguous_plan():
         )
         assert {candidate.bridge.native_name for candidate in overload.candidates} == {"add"}
 
+    WrapperGenerator().generate(plan)
     assert "add(value: int32) -> None" in method.docstring
     assert "add(value: float64) -> None" in method.docstring
     assert "accumulator(value: int32) -> accumulator" in surface.constructor.docstring
     assert "accumulator(value: float64) -> accumulator" in surface.constructor.docstring
 
+    plan = _plan(OVERLOADED_API)
+    surface = _surface(plan, "accumulator")
+    method = next(overload for overload in surface.overloads if overload.python_name == "add")
     method.candidate_matches = (method.candidate_matches[0], method.candidate_matches[0])
     with pytest.raises(ValueError, match="ambiguous-overload"):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)

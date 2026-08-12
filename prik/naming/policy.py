@@ -407,3 +407,21 @@ _SYMBOL_RULES = {
         max_length=96,
     ),
 }
+
+
+if __name__ == "__main__":
+    policy = NamingPolicy()
+    first = policy.reserve_public_name(("geometry",), "Render-Value", category="function")
+    second = policy.reserve_public_name(("geometry",), "render value", category="variable")
+    destructor = policy.generated_symbol(
+        "__del__",
+        set(),
+        language="c",
+        prefix="state_",
+        context="function",
+        parent_context="class",
+    )
+
+    print(f"Normalized public name: {first}")
+    print(f"Collision-safe public name: {second}")
+    print(f"C destructor symbol: {destructor}")

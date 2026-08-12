@@ -8,9 +8,10 @@ from pathlib import Path
 import pytest
 
 from prik.pipeline.pyi import pyi_file_to_semantic_module
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import BridgeDataAction, PythonExceptionKind
-from prik.codegen import DatatypeFamily, WrapperCodeGenerator, WrapperPlanner
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import BridgeDataAction, PythonExceptionKind
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import DatatypeFamily, WrapperPlanner
 
 
 RUNTIME_POLICY_CONTRACT = (
@@ -56,6 +57,7 @@ def test_planner_records_editable_native_runtime_and_status_error_facts():
     assert solve.binding.status_error.exception_kind is PythonExceptionKind.RUNTIME_ERROR
     assert solve.binding.status_error.status_role == solve.native_call_slots[1].symbolic_role
     assert solve.binding.status_error.message_role == solve.native_call_slots[2].symbolic_role
+    WrapperGenerator().generate(plan)
     assert "Raises\n------" in solve.binding.docstring
     assert solve.binding.docstring.count("RuntimeError\n") == 1
     assert "If native status differs from the success value 0." in solve.binding.docstring
@@ -73,7 +75,7 @@ def test_planner_records_editable_native_runtime_and_status_error_facts():
 
 
 def test_direct_binding_lowering_places_only_opted_in_native_call_outside_the_gil():
-    artifacts = WrapperCodeGenerator().generate(_runtime_plan())
+    artifacts = WrapperGenerator().generate(_runtime_plan())
     c_source = _rendered_source(artifacts, ".c")
     released = _function_source(c_source, "pause_for_one_second", "pause_with_gil")
     held = _function_source(c_source, "pause_with_gil", "solve")
@@ -92,7 +94,7 @@ def test_direct_binding_lowering_places_only_opted_in_native_call_outside_the_gi
 
 
 def test_direct_bridge_lowering_projects_status_and_copies_fixed_message():
-    artifacts = WrapperCodeGenerator().generate(_runtime_plan())
+    artifacts = WrapperGenerator().generate(_runtime_plan())
     fortran_source = _rendered_source(artifacts, ".f90")
 
     assert "subroutine bind_c_solve(value, status, message)" in fortran_source
@@ -119,7 +121,7 @@ def test_fixed_message_bridge_copy_requires_its_completed_reason():
     )
 
     with pytest.raises(ValueError, match="missing-bridge-copy-reason"):
-        WrapperCodeGenerator().generate(invalid)
+        WrapperGenerator().generate(invalid)
 
 
 def test_runtime_plan_edits_dispatch_to_named_lowering_and_validate_roles():
@@ -129,7 +131,7 @@ def test_runtime_plan_edits_dispatch_to_named_lowering_and_validate_roles():
         "pause_for_one_second",
         lambda function: replace(function, binding=replace(function.binding, release_gil=False)),
     )
-    c_source = _rendered_source(WrapperCodeGenerator().generate(held), ".c")
+    c_source = _rendered_source(WrapperGenerator().generate(held), ".c")
     released = _function_source(c_source, "pause_for_one_second", "pause_with_gil")
     assert "Py_BEGIN_ALLOW_THREADS" not in released
     assert "Py_END_ALLOW_THREADS" not in released
@@ -146,4 +148,4 @@ def test_runtime_plan_edits_dispatch_to_named_lowering_and_validate_roles():
         ),
     )
     with pytest.raises(ValueError, match="missing-status-result-role"):
-        WrapperCodeGenerator().generate(invalid)
+        WrapperGenerator().generate(invalid)

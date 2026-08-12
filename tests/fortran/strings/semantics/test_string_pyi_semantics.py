@@ -1,7 +1,7 @@
 """Tests split by stable ownership concept from `test_python_ast_contracts.py`."""
 
 import pytest
-from prik.codegen.printers import emit_module
+from prik.printers import emit_module
 from tests.fortran._support.pyi_conversion import parse_pyi_text
 
 

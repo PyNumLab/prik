@@ -3,7 +3,7 @@
 import pytest
 from dataclasses import asdict
 from hypothesis import given
-from prik import parse_fortran_file
+from prik.parsers.fortran import parse_fortran_file
 from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
 from tests.fortran._support.semantic_properties import fortran_scalar_subroutines
 

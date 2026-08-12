@@ -14,21 +14,15 @@ DOCS_ROOT = ROOT / "docs"
 FEATURE_MATRIX_PATH = DOCS_ROOT / "user/language-support/feature-matrix.md"
 CLI_REFERENCE_PATH = DOCS_ROOT / "user/reference/cli-commands.md"
 PYTHON_API_REFERENCE_PATH = DOCS_ROOT / "user/reference/python-api.md"
-DOCUMENTATION_CHECKLIST_PATH = DOCS_ROOT / "maintainer/roadmap/documentation-content-checklist.md"
+DOCUMENTATION_CHECKLIST_PATH = DOCS_ROOT / "developer/roadmap/documentation-content-checklist.md"
 DOC_PATHS = sorted(path for path in DOCS_ROOT.rglob("*.md") if "old_docs" not in path.parts)
 WEBSITE_DOCUMENTATION_PATHS = [
     DOCS_ROOT / "index.md",
     *sorted((DOCS_ROOT / "user").rglob("*.md")),
     *sorted((DOCS_ROOT / "developer").rglob("*.md")),
-    *sorted((DOCS_ROOT / "maintainer").rglob("*.md")),
-]
-LEARNING_DOCUMENTATION_PATHS = [
-    *sorted((DOCS_ROOT / "user").rglob("*.md")),
-    *sorted((DOCS_ROOT / "developer").rglob("*.md")),
 ]
 DEFERRED_C_PAGE_PATHS = [
-    ROOT / "docs/maintainer/design/cpython-integration.md",
-    ROOT / "docs/developer/c-parser-reference.md",
+    ROOT / "docs/developer/deferred/c-parser.md",
     ROOT / "docs/user/examples/recipes/inspect-c-api.md",
 ]
 MARKDOWN_LINK = re.compile(r"\[[^\]]+\]\(([^)#]+)(?:#[^)]+)?\)")
@@ -130,11 +124,9 @@ REQUIRED_AREA_INDEXES = [
     "user/faq/index.md",
     "user/troubleshooting/index.md",
     "developer/index.md",
-    "developer/contributing/index.md",
-    "maintainer/README.md",
-    "maintainer/design/index.md",
-    "maintainer/internal-architecture/index.md",
-    "maintainer/roadmap/index.md",
+    "developer/architecture.md",
+    "developer/packages/index.md",
+    "developer/roadmap/index.md",
 ]
 REQUIRED_REFERENCE_PAGES = [
     "user/reference/index.md",
@@ -150,9 +142,9 @@ REQUIRED_REFERENCE_PAGES = [
     "user/reference/diagnostic-codes.md",
 ]
 REQUIRED_ROADMAP_PAGES = [
-    "maintainer/roadmap/index.md",
-    "maintainer/roadmap/semantic-pyi-wrapper-checklist.md",
-    "maintainer/roadmap/documentation-content-checklist.md",
+    "developer/roadmap/index.md",
+    "developer/roadmap/semantic-pyi-wrapper-checklist.md",
+    "developer/roadmap/documentation-content-checklist.md",
 ]
 REQUIRED_GETTING_STARTED_PAGES = [
     "user/getting-started/index.md",
@@ -244,54 +236,86 @@ CLI_REFERENCE_OPTIONS = [
 ]
 CLI_VISIBLE_HELP_OPTIONS = CLI_REFERENCE_OPTIONS
 REQUIRED_SOURCE_NAVIGATION_PAGES = [
+    "developer/architecture.md",
     "developer/source-map.md",
     "developer/feature-to-code-map.md",
-    "developer/repository-structure.md",
 ]
 SOURCE_NAVIGATION_CORPUS = [
+    "docs/developer/architecture.md",
     "docs/developer/source-map.md",
     "docs/developer/feature-to-code-map.md",
-    "docs/developer/repository-structure.md",
-    "docs/maintainer/internal-architecture/pipeline-map.md",
+    "docs/developer/concepts/datatype-lifecycle.md",
+    "docs/developer/packages/contracts.md",
+    "docs/developer/packages/compiler.md",
+    "docs/developer/packages/preprocessing.md",
+    "docs/developer/packages/parsers.md",
+    "docs/developer/packages/semantics.md",
+    "docs/developer/packages/policy.md",
+    "docs/developer/packages/planning.md",
+    "docs/developer/packages/codegen.md",
+    "docs/developer/packages/printers.md",
+    "docs/developer/packages/pipeline.md",
+    "docs/developer/packages/runtime.md",
+    "docs/developer/packages/naming.md",
+    "docs/developer/packages/utilities.md",
     "prik/README.md",
     "prik/parsers/README.md",
     "prik/parsers/c/README.md",
     "prik/parsers/fortran/README.md",
     "prik/parsers/pyi/README.md",
     "prik/semantics/README.md",
-    "prik/compiling/README.md",
+    "prik/policy/README.md",
+    "prik/planning/README.md",
+    "prik/printers/README.md",
+    "prik/pipeline/README.md",
+    "prik/preprocessing/README.md",
+    "prik/compiler/README.md",
 ]
 SOURCE_NAVIGATION_HOTSPOTS = [
     "prik/__init__.py",
     "prik/cli.py",
     "prik/pipeline/build.py",
-    "prik/pipeline/preprocessing.py",
-    "prik/probes/c_types.py",
-    "prik/probes/fortran_types.py",
-    "prik/semantics/ownership.py",
+    "prik/preprocessing/source.py",
+    "prik/preprocessing/c.py",
+    "prik/preprocessing/fortran.py",
+    "prik/pipeline/type_mapping_report.py",
+    "prik/preprocessing/probes/c_types.py",
+    "prik/preprocessing/probes/fortran_types.py",
+    "prik/semantics/ownership_metadata.py",
+    "prik/semantics/native_array_handles.py",
+    "prik/policy/ownership.py",
     "prik/parsers/c/parser.py",
     "prik/parsers/c/cli.py",
     "prik/parsers/fortran/parser.py",
     "prik/parsers/fortran/cli.py",
     "prik/parsers/pyi/parser.py",
     "prik/semantics/models.py",
+    "prik/semantics/scalar_types.py",
     "prik/semantics/fortran2ir.py",
     "prik/semantics/c2ir.py",
     "prik/semantics/pyi2ir.py",
     "prik/pipeline/pyi.py",
-    "prik/semantics/policy_completion.py",
-    "prik/codegen/plan.py",
-    "prik/codegen/planner.py",
-    "prik/codegen/generator.py",
+    "prik/policy/models.py",
+    "prik/policy/construction.py",
+    "prik/policy/exports.py",
+    "prik/policy/native_array_handles.py",
+    "prik/policy/completion.py",
+    "prik/planning/models.py",
+    "prik/planning/planner.py",
+    "prik/naming/native_symbols.py",
+    "prik/codegen/docstrings.py",
+    "prik/codegen/primitive_scalar_types.py",
+    "prik/pipeline/wrapper.py",
     "prik/codegen/c/binding.py",
     "prik/codegen/fortran/bridge.py",
-    "prik/codegen/printers/pyi_printer.py",
-    "prik/codegen/printers/source_printers.py",
-    "prik/compiling/objects.py",
-    "prik/compiling/compilers.py",
-    "prik/compiling/native_support.py",
+    "prik/printers/pyi.py",
+    "prik/printers/c.py",
+    "prik/printers/fortran.py",
+    "prik/compiler/objects.py",
+    "prik/compiler/compilers.py",
+    "prik/compiler/native_support.py",
     "prik/naming/policy.py",
-    "prik/binding_support/",
+    "prik/runtime/native_support/",
 ]
 SOURCE_NAVIGATION_PUBLIC_DOCS = [
     "README.md",
@@ -306,10 +330,11 @@ SOURCE_NAVIGATION_PUBLIC_DOCS = [
     "docs/user/reference/python-api.md",
     "docs/user/reference/semantic-ir.md",
     "docs/user/reference/semantic-pyi-format.md",
-    "docs/developer/build-system.md",
-    "docs/developer/c-parser-reference.md",
-    "docs/developer/fortran-parser-reference.md",
-    "docs/developer/quality-assurance.md",
+    "docs/developer/concepts/datatype-lifecycle.md",
+    "docs/developer/packages/compiler.md",
+    "docs/developer/deferred/c-parser.md",
+    "docs/developer/packages/parsers.md",
+    "docs/developer/workflows/quality-assurance.md",
     "docs/user/language-support/feature-matrix.md",
 ]
 SOURCE_NAVIGATION_TEST_TARGETS = [
@@ -416,16 +441,26 @@ REAL_LIBRARY_EXAMPLE_PAGES = [
     "user/examples/minpack-wrapper.md",
 ]
 MAJOR_SOURCE_PACKAGES = [
+    "prik/compiler/",
+    "prik/preprocessing/",
     "prik/parsers/",
     "prik/semantics/",
+    "prik/policy/",
+    "prik/planning/",
     "prik/codegen/",
-    "prik/compiling/",
+    "prik/printers/",
+    "prik/pipeline/",
 ]
 PACKAGE_READMES = [
     "prik/README.md",
+    "prik/compiler/README.md",
+    "prik/preprocessing/README.md",
     "prik/parsers/README.md",
     "prik/semantics/README.md",
-    "prik/compiling/README.md",
+    "prik/policy/README.md",
+    "prik/planning/README.md",
+    "prik/printers/README.md",
+    "prik/pipeline/README.md",
 ]
 ARCHIVED_OLD_DOCS = [
     "old_docs/tutorial.md",

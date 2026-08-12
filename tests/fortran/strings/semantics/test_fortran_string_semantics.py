@@ -2,7 +2,7 @@
 
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 from tests.fortran._support.semantic_conversion import get_function
-from prik import parse_fortran_file as parse_fortran_source
+from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 
 
 def test_scalar_character_inout_is_projected_as_replacement_return():

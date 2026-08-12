@@ -84,13 +84,14 @@ def test_fortran_generic_interfaces_dispatch_in_generated_c_extension(
 
     assert module.convert(np.int32(4)) == np.int32(14)
     assert module.convert(np.float64(4.0)) == np.float64(4.5)
+    assert module.convert(value=np.int32(5)) == np.int32(15)
     assert module.convert(np.complex128(2.0 + 3.0j)) == np.complex128(3.0 + 2.0j)
     assert module.summarize(np.float64(2.5)) == np.float64(2.5)
     assert module.summarize(np.array([1.0, 2.0, 3.0], dtype=np.float64)) == np.float64(6.0)
 
     value = module.accumulator()
     value.add(np.int32(2))
-    value.add(np.float64(0.5))
+    value.add(value=np.float64(0.5))
     assert value.total == np.float64(2.5)
     assert module.inspect(value) == np.float64(2.5)
 
@@ -100,6 +101,8 @@ def test_fortran_generic_interfaces_dispatch_in_generated_c_extension(
 
     with pytest.raises(TypeError):
         module.convert("not numeric")
+    with pytest.raises(TypeError, match="no matching overload for convert"):
+        module.convert(np.int32(1), value=np.int32(2))
     with pytest.raises(TypeError):
         value.add(np.complex128(1.0 + 0.0j))
 

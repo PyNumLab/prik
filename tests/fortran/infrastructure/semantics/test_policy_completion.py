@@ -19,7 +19,7 @@ from prik.semantics.models import (
     SemanticVariable,
 )
 from prik.semantics.native_array_handles import native_array_descriptor_kind
-from prik.semantics.ownership import (
+from prik.policy.ownership import (
     AssignmentMode,
     CodegenAction,
     NativeBarrierAction,
@@ -28,7 +28,7 @@ from prik.semantics.ownership import (
     StorageMode,
     TransferMode,
 )
-from prik.semantics.policy_completion import complete_semantic_policies
+from prik.policy.completion import complete_semantic_policies
 from tests.fortran._support.ownership_policy import (
     _scalar_type,
     parse_pyi_text,
@@ -38,16 +38,13 @@ from prik.semantics.models import (
     RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA,
     SemanticCoercion,
 )
-from pathlib import Path
-import subprocess
-import sys
 
 from prik.semantics.metadata import PROJECTED_OUTPUT_METADATA
 from prik.semantics.models import (
     POLICY_COMPLETION_PREPARED_METADATA,
     ProjectionMapping,
 )
-from prik.semantics.ownership import OwnershipOwner
+from prik.policy.ownership import OwnershipOwner
 from tests.fortran._support.ownership_policy import _array_type
 
 
@@ -275,19 +272,3 @@ def test_policy_completion_attaches_decisions_before_ir_lowering():
         module.functions[0].arguments[0].metadata[RESOLVED_OWNERSHIP_POLICY_METADATA].transfer is TransferMode.IN_PLACE
     )
     assert RESOLVED_RETURN_OWNERSHIP_POLICY_METADATA not in module.functions[0].metadata
-
-
-def test_policy_completion_direct_example_is_runnable():
-    repository_root = Path(__file__).resolve().parents[4]
-
-    result = subprocess.run(
-        [sys.executable, "prik/semantics/policy_completion.py"],
-        cwd=repository_root,
-        capture_output=True,
-        check=True,
-        text=True,
-    )
-
-    assert result.stdout == (
-        "before: math.scale(value): Float64 semantic IR\nafter: math.scale(value): scalar_value -> pass_value\n"
-    )

@@ -10,7 +10,7 @@ from prik.semantics.models import (
     SemanticModule,
     SemanticVariable,
 )
-from prik.semantics.ownership import (
+from prik.policy.ownership import (
     AssignmentMode,
     CodegenAction,
     DestructionPolicy,
@@ -19,9 +19,9 @@ from prik.semantics.ownership import (
     SetterAction,
     StorageMode,
     TransferMode,
-    set_ownership_metadata,
 )
-from prik.semantics.policy_completion import complete_semantic_policies
+from prik.semantics.ownership_metadata import set_ownership_metadata
+from prik.policy.completion import complete_semantic_policies
 from tests.fortran._support.ownership_policy import (
     _array_type,
     _derived_type,
@@ -33,7 +33,7 @@ from prik.semantics.models import (
     RESOLVED_DERIVED_TYPE_POLICY_METADATA,
     RESOLVED_MODULE_VARIABLE_POLICY_METADATA,
 )
-from prik.semantics.wrapper_policy import ModuleObjectAccessMechanism
+from prik.policy.models import ModuleObjectAccessMechanism
 
 
 def test_abstract_type_and_deferred_binding_fail_in_completed_derived_policy():

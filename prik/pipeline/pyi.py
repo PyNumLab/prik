@@ -3,15 +3,132 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from prik.parsers.pyi import parse_pyi_text
-from prik.semantics.models import SemanticModule
+from prik.policy.completion import complete_semantic_policies
+from prik.printers.pyi import emit_module
+from prik.semantics.models import EXTERNAL_TYPE_REF_METADATA, SemanticClass, SemanticModule, _iter_module_semantic_types
 from prik.semantics.pyi_metadata import PYI_LOADED_METADATA
 from prik.semantics.pyi2ir import convert_pyi_to_ir, reconcile_external_type_refs
 
-__all__ = ("pyi_file_to_semantic_module", "pyi_paths_to_semantic_modules", "pyi_text_to_semantic_module")
+__all__ = (
+    "emit_module_stubs",
+    "opaque_dependency_modules",
+    "pyi_file_to_semantic_module",
+    "pyi_paths_to_semantic_modules",
+    "pyi_text_to_semantic_module",
+)
+
+
+def _module_list(modules: SemanticModule | Iterable[SemanticModule] | None) -> list[SemanticModule]:
+    """Normalize one semantic module or an iterable to a list."""
+    if modules is None:
+        return []
+    if isinstance(modules, SemanticModule):
+        return [modules]
+    return list(modules)
+
+
+def _opaque_dependency_class(type_name: str, c_kind: str | None) -> SemanticClass:
+    """Build the semantic placeholder for one missing opaque dependency."""
+    base_classes: list[str] = []
+    metadata: dict[str, object] = {"representation": "opaque"}
+    if c_kind == "struct":
+        base_classes.append("CStruct")
+        metadata["c_kind"] = "struct"
+    elif c_kind == "union":
+        base_classes.append("CUnion")
+        metadata["c_kind"] = "union"
+    base_classes.append("Opaque")
+    return SemanticClass(
+        name=type_name,
+        native_name=type_name,
+        base_classes=base_classes,
+        metadata=metadata,
+    )
+
+
+def opaque_dependency_modules(
+    modules: SemanticModule | Iterable[SemanticModule],
+    *,
+    available_modules: Iterable[SemanticModule] | None = None,
+) -> list[SemanticModule]:
+    """Build semantic modules for opaque types referenced but not supplied.
+
+    Use this before package emission when a contract refers to C opaque types
+    from absent modules. The input modules are inspected but not mutated; the
+    returned list is ordered deterministically by module and type name.
+    """
+    source_modules = _module_list(modules)
+    known_modules = _module_list(available_modules) if available_modules is not None else source_modules
+    known_classes = {
+        (module.name, cls.name) for module in known_modules for cls in module.classes if isinstance(cls, SemanticClass)
+    }
+    dependencies: dict[str, dict[str, str | None]] = {}
+    for module in source_modules:
+        for semantic_type in _iter_module_semantic_types(module):
+            ref = semantic_type.metadata.get(EXTERNAL_TYPE_REF_METADATA)
+            if not isinstance(ref, dict) or ref.get("representation") != "opaque":
+                continue
+            origin_module = ref.get("origin_module")
+            type_name = ref.get("name")
+            if not isinstance(origin_module, str) or not isinstance(type_name, str):
+                continue
+            if (origin_module, type_name) in known_classes:
+                continue
+            c_kind = semantic_type.metadata.get("c_kind")
+            dependencies.setdefault(origin_module, {}).setdefault(
+                type_name,
+                c_kind if c_kind in {"struct", "union"} else None,
+            )
+    return [
+        SemanticModule(
+            name=module_name,
+            classes=[_opaque_dependency_class(type_name, c_kind) for type_name, c_kind in sorted(type_kinds.items())],
+        )
+        for module_name, type_kinds in sorted(dependencies.items())
+    ]
+
+
+def emit_module_stubs(
+    modules: SemanticModule | Iterable[SemanticModule],
+    *,
+    available_modules: Iterable[SemanticModule] | None = None,
+    normalize_fortran_public_names: bool = False,
+) -> dict[str, str]:
+    """Complete and render semantic modules plus opaque dependencies.
+
+    Inputs are deep-copied before dependency insertion and policy completion,
+    so callers retain their original semantic modules. The returned mapping is
+    keyed by module name and is normally written into a generated contract
+    package by a pipeline stage.
+    """
+    source_modules = _module_list(modules)
+    emitted_modules: dict[str, SemanticModule] = {}
+    for module in source_modules:
+        if module.name in emitted_modules:
+            raise ValueError(f"Cannot emit duplicate semantic module '{module.name}'")
+        emitted_modules[module.name] = deepcopy(module)
+
+    for dependency in opaque_dependency_modules(
+        source_modules,
+        available_modules=available_modules,
+    ):
+        target = emitted_modules.setdefault(dependency.name, SemanticModule(name=dependency.name))
+        existing = {cls.name for cls in target.classes}
+        target.classes.extend(cls for cls in dependency.classes if cls.name not in existing)
+
+    complete_semantic_policies(emitted_modules.values())
+    return {
+        module_name: emit_module(
+            module,
+            normalize_fortran_public_names=normalize_fortran_public_names,
+        ).strip()
+        for module_name, module in emitted_modules.items()
+    }
 
 
 @dataclass
@@ -128,3 +245,23 @@ def pyi_paths_to_semantic_modules(
         encoding=encoding,
         native_language=native_language,
     )
+
+
+if __name__ == "__main__":
+    example_source = """\
+from prik.contracts import Float64
+
+def scale(value: Float64) -> Float64: ...
+"""
+    example_module = pyi_text_to_semantic_module(
+        example_source,
+        module_name="math",
+        filename="math.pyi",
+    )
+    example_stubs = emit_module_stubs(example_module)
+
+    print(f"Loaded semantic module: {example_module.name}")
+    print(f"Loaded contract marker: {example_module.metadata[PYI_LOADED_METADATA]}")
+    print("Functions:", ", ".join(function.name for function in example_module.functions))
+    print("Re-emitted module:")
+    print(example_stubs["math"])

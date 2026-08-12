@@ -2,7 +2,7 @@
 title: Use Compiler Preprocessing Options
 audience: users, developers
 prerequisites: installation, native project compiler flags
-related: ../../../developer/compiler-preprocessing.md, ../../../developer/c-parser-reference.md, ../../../developer/fortran-parser-reference.md
+related: ../../../developer/packages/preprocessing.md, ../../../developer/deferred/c-parser.md, ../../../developer/packages/parsers.md
 status: maintained
 publication: draft
 ---
@@ -49,5 +49,5 @@ PRIK_C_DOCS_END -->
 
 ## Next
 
-- Read the [compiler preprocessing reference](../../../developer/compiler-preprocessing.md)
+- Read the [preprocessing package guide](../../../developer/packages/preprocessing.md)
   for the pipeline model, adapters, diagnostics, and include-exposure policy.

@@ -19,16 +19,16 @@ from prik.parsers.fortran.models import FortranParseError
 from prik.parsers.fortran.parser import FortranParser
 from prik.semantics.c2ir import c_project_to_semantic_modules
 from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
-from prik.probes.c_types import (
+from prik.preprocessing.probes.c_types import (
     CStandardTypeProbeError,
     probe_c_standard_types_cached,
 )
-from prik.probes.fortran_types import (
+from prik.preprocessing.probes.fortran_types import (
     FortranTypeProbeReport,
     probe_fortran_type_expressions_cached,
 )
-from prik.probes.report import c_type_mapping_markdown, fortran_type_mapping_markdown
-from prik.pipeline.preprocessing import (
+from prik.pipeline.type_mapping_report import c_type_mapping_markdown, fortran_type_mapping_markdown
+from prik.preprocessing import (
     PreprocessingConfig,
     PreprocessingError,
     run_compiler_preprocessor_with_recipe,
@@ -489,35 +489,23 @@ def _parse_fortran_source_files(
     paths: list[Path],
     preprocessing: PreprocessingConfig,
 ):
-    """Parse Fortran sources and resolve cross-file module parameters."""
+    """Parse Fortran sources and apply the parser's shared project resolution.
+
+    Each path is preprocessed and parsed once while retaining its path/model
+    pair. The completed models are then passed together to the parser's project
+    compile-time coordinator. For example, a kind parameter from the first file
+    can resolve a procedure or derived field in the second file without the CLI
+    owning a second resolution algorithm. The ordered ``(path, file)`` pairs
+    are returned for stage reporting.
+    """
     parser = FortranParser()
     parsed_files = []
     for path in paths:
         code, _preprocessing_recipe = _fortran_source_for_path(path, preprocessing)
         parsed_files.append((path, parser.parse_file(code, filename=str(path))))
 
-    _resolve_fortran_project_parameters(parser, [parsed for _path, parsed in parsed_files])
+    parser._resolve_project_compile_time_facts([parsed for _path, parsed in parsed_files])
     return parsed_files
-
-
-def _resolve_fortran_project_parameters(parser: FortranParser, parsed_files) -> None:
-    """Apply project-wide parameter facts without enforcing global symbols."""
-    module_params = parser._helper_project_module_symbols(parsed_files)
-
-    seen_procedures: set[int] = set()
-    for parsed_file in parsed_files:
-        for proc in parser._helper_project_file_procedures(parsed_file):
-            if id(proc) not in seen_procedures:
-                parser._resolve_signature_kinds(proc, module_params, resolve_shapes=False)
-                seen_procedures.add(id(proc))
-        for module in parsed_file.modules:
-            parser._resolve_module_variable_kinds(module, module_params)
-        for submodule in parsed_file.submodules:
-            parser._resolve_module_variable_kinds(submodule, module_params)
-        for program in parsed_file.programs:
-            parser._resolve_module_variable_kinds(program, module_params)
-        for block_data in parsed_file.block_data_units:
-            parser._resolve_module_variable_kinds(block_data, module_params)
 
 
 def _parse_c_semantic_sources(context: _SemanticPipelineContext) -> _ParsedSemanticSources:
@@ -598,7 +586,7 @@ _SOURCE_SEMANTIC_PIPELINES = {
 
 
 def _semantic_payload_for_converted_files(converted_files) -> dict[str, dict]:
-    from prik.codegen.printers import emit_module_stubs
+    from prik.pipeline.pyi import emit_module_stubs
 
     out: dict[str, dict] = {}
     available_modules = [module for _p, modules in converted_files for module in modules]
@@ -625,7 +613,7 @@ def _is_fortran_semantic_file(modules) -> bool:
 
 
 def _fortran_contract_payload(path: Path, modules, available_modules) -> dict[str, object]:
-    from prik.codegen.printers import emit_module_stubs
+    from prik.pipeline.pyi import emit_module_stubs
 
     native_modules = [module for module in modules if module.origin.source_kind == "module"]
     external_modules = [module for module in modules if module.origin.source_kind != "module"]
@@ -771,7 +759,7 @@ def _fortran_compile_time_values(
         return None
 
     from prik.semantics.fortran2ir import collect_semantic_compile_time_requirements
-    from prik.probes.fortran_types import evaluate_fortran_type_requirements
+    from prik.preprocessing.probes.fortran_types import evaluate_fortran_type_requirements
 
     requirements = collect_semantic_compile_time_requirements(parsed)
     if not requirements:
@@ -799,7 +787,7 @@ def _fortran_type_facts(
         return None
 
     from prik.semantics.fortran2ir import collect_fortran_type_storage_requirements
-    from prik.probes.fortran_types import evaluate_fortran_type_facts
+    from prik.preprocessing.probes.fortran_types import evaluate_fortran_type_facts
 
     requirements = collect_fortran_type_storage_requirements(parsed, compile_time_values=compile_time_values)
     if not requirements:
@@ -2446,3 +2434,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     _print_main_output(args, payload, parse_payload, semantic_payload, print_limit)
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

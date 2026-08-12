@@ -204,10 +204,10 @@ implementation files.
 | Generated target datatype mapping examples | `prik/type_mapping_report.py` | `tests/tools/test_type_mapping_report.py`, `tests/tools/test_documentation_examples.py` |
 | Fortran to semantic IR | `prik/semantics/fortran2ir.py`, `prik/semantics/models.py` | `tests/semantics/test_fortran2ir.py` |
 | C to semantic IR | `prik/semantics/c2ir.py`, `prik/semantics/models.py` | `tests/semantics/test_c2ir.py` |
-| `.pyi` printing | `prik/codegen/printers/pyi_printer.py` | `tests/semantics/test_pyi_printer.py`, `tests/semantics/test_pyi_printer_modern_example.py` |
+| `.pyi` printing | `prik/printers/pyi.py` | `tests/semantics/test_pyi_printer.py`, `tests/semantics/test_pyi_printer_modern_example.py` |
 | `.pyi` loading/editing | `prik/pyi_parser/parser.py` | `tests/pyi/test_pyi_to_ir.py`, `tests/pyi/test_pyi_fixture_suite.py` |
 | Fortran wrapper orchestration | `prik/wrapping.py` | `tests/wrapper/fortran/native_build/test_build_modes.py`, `tests/wrapper/fortran/multi_source/test_multi_source_builds.py` |
-| Wrapper planning and owner-local errors | `prik/codegen/planner.py` | `tests/codegen/` |
+| Wrapper planning and owner-local errors | `prik/planning/planner.py` | `tests/codegen/` |
 | Semantic IR to codegen AST | `prik/semantics/ir2ast.py` | `tests/semantics/test_ir2ast.py`, `tests/wrapper/` |
 | Fortran-to-C bridge and CPython binding | `prik/codegen/bridges/fortran_to_c.py`, `prik/codegen/bindings/c_to_python.py` | `tests/wrapper/` subject suites |
 | Native compilation and binding support | `prik/compiling/`, `prik/binding_support/` | `tests/wrapper/fortran/native_build/test_runtime_abi.py`, `tests/wrapper/fortran/native_build/test_build_modes.py` |
@@ -258,7 +258,7 @@ module-level function only to preserve an old internal call path.
 ### `.pyi` Contract Internals
 
 User-visible `.pyi` syntax is parsed by `prik/pyi_parser/parser.py` and printed
-by `prik/codegen/printers/pyi_printer.py`. Both operate on `prik/semantics/models.py`.
+by `prik/printers/pyi.py`. Both operate on `prik/semantics/models.py`.
 
 Important implementation rules:
 
@@ -715,7 +715,7 @@ The main ownership boundaries are:
 - `prik/codegen/bridges/fortran_to_c.py`: Fortran-to-C ABI adaptation;
 - `prik/codegen/bindings/c_to_python.py`: Python argument/result conversion,
   reference handling, and CPython wrapper construction;
-- `prik/codegen/printers/{fcode,ccode,cpythoncode}.py`: source rendering only;
+- `prik/printers/{c,fortran,pyi}.py`: language source rendering only;
 - `prik/compiling/`: compiler commands and shared-library linking; and
 - `prik/binding_support/`: native binding support copied into each build.
 
@@ -784,9 +784,9 @@ from `prik/semantics/models.py`.
   reserved home for local variables or local constants if a frontend later
   promotes them into semantic IR; local bindings are not emitted into `.pyi` or
   treated as wrapper interface items by default.
-- `prik/codegen/printers/pyi_printer.py` emits editable user contracts.
+- `prik/printers/pyi.py` emits editable user contracts.
 - `prik/pyi_parser/parser.py` loads edited contracts back into semantic IR.
-- `prik/semantics/policy_completion.py` completes the decisions required for
+- `prik/policy/completion.py` completes the decisions required for
   wrapping.
 
 Keep semantic IR stable where possible. If a parser change does not affect the
@@ -990,7 +990,7 @@ Example target: add a new `Annotated[...]` metadata item or projection helper.
 1. Add loader tests in `tests/pyi/test_pyi_to_ir.py`.
 2. Update `prik/pyi_parser/parser.py`.
 3. Add printer tests in `tests/semantics/test_pyi_printer.py`.
-4. Update `prik/codegen/printers/pyi_printer.py`.
+4. Update `prik/printers/pyi.py`.
 5. Update semantic models in `prik/semantics/models.py` only if the IR needs a new
    field or constraint.
 6. Update policy completion or wrapper planning if the syntax changes a

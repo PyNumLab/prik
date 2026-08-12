@@ -1,7 +1,5 @@
 """Documentation lane and navigation contracts."""
 
-from pathlib import Path
-
 import pytest
 
 from tests.docs._structure_support import (
@@ -10,7 +8,6 @@ from tests.docs._structure_support import (
     DOCS_ROOT,
     DOCUMENTATION_CHECKLIST_PATH,
     EXAMPLE_DOCUMENTATION_PAGES,
-    LEARNING_DOCUMENTATION_PATHS,
     MARKDOWN_LINK,
     REAL_LIBRARY_EXAMPLE_PAGES,
     REQUIRED_AREA_INDEXES,
@@ -140,13 +137,12 @@ def test_required_documentation_area_exists(relative_path: str) -> None:
     assert (DOCS_ROOT / relative_path).is_file()
 
 
-def test_documentation_root_uses_three_audience_lanes() -> None:
+def test_documentation_root_uses_user_and_contributor_areas() -> None:
     directories = {path.name for path in DOCS_ROOT.iterdir() if path.is_dir()}
     root_pages = {path.name for path in DOCS_ROOT.glob("*.md")}
     assert directories == {
         "user",
         "developer",
-        "maintainer",
         "javascripts",
         "stylesheets",
         "old_docs",
@@ -158,30 +154,15 @@ def test_documentation_root_uses_three_audience_lanes() -> None:
     ("lane", "audience_terms"),
     [
         ("user", ("users",)),
-        ("developer", ("developers", "contributors")),
-        ("maintainer", ("maintainers",)),
+        ("developer", ("developers", "maintainers", "contributors")),
     ],
 )
 def test_documentation_lane_has_consistent_audience(lane: str, audience_terms: tuple[str, ...]) -> None:
     for path in (DOCS_ROOT / lane).rglob("*.md"):
         metadata, _ = _front_matter(path)
         assert any(term in metadata["audience"] for term in audience_terms)
-        if lane != "maintainer":
+        if lane == "user":
             assert "maintainers" not in metadata["audience"]
-        else:
-            assert metadata["audience"] == "maintainers"
-
-
-@pytest.mark.parametrize("path", LEARNING_DOCUMENTATION_PATHS, ids=lambda path: str(path.relative_to(ROOT)))
-def test_website_documentation_does_not_link_to_maintainer_lane(path: Path) -> None:
-    maintainer_root = (DOCS_ROOT / "maintainer").resolve()
-    for target in MARKDOWN_LINK.findall(_visible_documentation_source(path)):
-        if target.startswith(("http://", "https://", "mailto:")):
-            continue
-        resolved = (path.parent / target).resolve()
-        assert not resolved.is_relative_to(maintainer_root), (
-            f"{path.relative_to(ROOT)}: website link enters maintainer lane: {target}"
-        )
 
 
 def test_readme_documentation_links_follow_site_navigation_order() -> None:
@@ -221,7 +202,7 @@ def test_site_navigation_includes_all_publishable_lanes_and_excludes_archive() -
     positions = _site_navigation_positions()
     assert "user/index.md" in positions
     assert "developer/index.md" in positions
-    assert "maintainer/README.md" in positions
+    assert "developer/architecture.md" in positions
 
 
 def test_user_guide_navigation_follows_index_reading_order() -> None:

@@ -6,8 +6,8 @@ import sys
 
 import pytest
 
-import prik.pipeline.preprocessing as preprocessing
-from prik.pipeline.preprocessing import (
+import prik.preprocessing.source as preprocessing
+from prik.preprocessing import (
     PreprocessingConfig,
     PreprocessingError,
 )

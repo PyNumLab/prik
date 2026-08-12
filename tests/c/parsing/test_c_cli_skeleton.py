@@ -12,8 +12,8 @@ import pytest
 
 from prik.parsers.c import CParseError
 from prik.parsers.c import cli as c_parser_cli
-from prik import cli as prik_cli
-from prik.pipeline.preprocessing import PreprocessingConfig
+import prik.cli as prik_cli
+from prik.preprocessing import PreprocessingConfig
 
 CONTRACT_IMPORT = "from prik.contracts import Int32\n\n"
 

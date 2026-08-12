@@ -268,7 +268,7 @@ extern int consume_wire(struct wire_value *value)
 
 def test_gcc_preprocessed_standard_headers_remain_parseable(tmp_path: Path):
     from prik.parsers.c import parse_c_file
-    from prik.pipeline.preprocessing import PreprocessingConfig, preprocess_source
+    from prik.preprocessing import PreprocessingConfig, preprocess_source
 
     compiler = shutil.which("cc")
     if compiler is None:

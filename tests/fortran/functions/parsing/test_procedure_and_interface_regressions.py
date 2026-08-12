@@ -1,14 +1,11 @@
 """Tests split by stable ownership concept from `test_source_form_and_diagnostics_regressions.py`."""
 
-from prik import parse_fortran_file
+from prik.parsers.fortran import parse_fortran_file
 from prik.parsers.fortran.models import (
     FortranArgument,
     FortranProcedureSignature,
 )
-from prik.parsers.fortran.parser import (
-    FortranParser,
-    _ParserScope,
-)
+from prik.parsers.fortran.parser import FortranParser
 from tests.fortran._support.parser_regressions import _unit
 
 
@@ -49,8 +46,7 @@ end module c_api
     assert proc.arguments[0].pass_by_value is True
 
 
-def test_nonexecution_child_units_keep_specification_and_contains_children_only():
-    parser = FortranParser()
+def test_procedure_children_exclude_execution_text_and_internal_procedures():
     unit = _unit(
         "procedure",
         "work",
@@ -68,15 +64,15 @@ def test_nonexecution_child_units_keep_specification_and_contains_children_only(
         "end subroutine work",
     )
 
-    children = parser._helper_nonexecution_child_units(
-        unit,
-        parent_scope=_ParserScope(kind="procedure", name="work"),
-        filename="children.f90",
-    )
-
-    assert [(child.kind, child.name, child.start_line, child.end_line) for child in children] == [
+    assert [(child.kind, child.name, child.start_line, child.end_line) for child in unit.children] == [
         ("derived_type", "local_state", 2, 3),
-        ("procedure", "inner", 10, 11),
+    ]
+    assert [line.strip() for line, _lineno, _source in unit.execution] == [
+        "call setup()",
+        "interface",
+        "subroutine hidden()",
+        "end subroutine hidden",
+        "end interface",
     ]
 
 
@@ -91,16 +87,16 @@ def test_finalize_proc_resolves_signature_arguments_imports_and_uses_without_exp
         ],
     )
 
-    finalized = parser._finalize_proc(
-        {
-            "signature": signature,
-            "symbols": {argument.name.lower(): argument for argument in signature.arguments},
-            "uses": {"precision_mod": []},
-            "local_params": {"rk": "8", "count": "4"},
-            "imports": {"state_t", "callback"},
-            "filename": "finalize_contract.f90",
-        }
+    state = parser._new_procedure_scope_state(
+        signature,
+        symbols={argument.name.lower(): argument for argument in signature.arguments},
     )
+    state.uses = {"precision_mod": []}
+    state.local_params = {"rk": "8", "count": "4"}
+    state.imports = {"state_t", "callback"}
+    state.filename = "finalize_contract.f90"
+
+    finalized = parser._finalize_proc(state)
 
     assert finalized is not signature
     assert [(argument.name, argument.base_type, argument.kind, argument.shape) for argument in finalized.arguments] == [

@@ -31,7 +31,7 @@ def _parser_filename_for_fixture(fixture: Path) -> str:
 
 
 def _serialize_fixture(fixture: Path) -> dict:
-    from prik import parse_fortran_file
+    from prik.parsers.fortran import parse_fortran_file
 
     source = fixture.read_text(encoding="utf-8")
     parsed = parse_fortran_file(source, filename=_parser_filename_for_fixture(fixture))

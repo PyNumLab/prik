@@ -37,3 +37,24 @@ class ClassVisitor:
     def _visit_not_supported(node):
         """Raise when no class visitor handles ``node``."""
         raise TypeError(f"Unsupported model for class visitor: {type(node)!r}")
+
+
+if __name__ == "__main__":
+
+    class Expression:
+        """Example base model handled through MRO fallback."""
+
+    class Literal(Expression):
+        def __init__(self, value):
+            self.value = value
+
+    class ExpressionVisitor(ClassVisitor):
+        def _visit_Literal(self, node):
+            return f"literal:{node.value}"
+
+        def _visit_Expression(self, node):
+            return f"expression:{type(node).__name__}"
+
+    visitor = ExpressionVisitor()
+    print(f"Exact handler: {visitor._visit(Literal(42))}")
+    print(f"MRO fallback: {visitor._visit(Expression())}")

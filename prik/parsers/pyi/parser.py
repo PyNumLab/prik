@@ -24,3 +24,16 @@ def parse_pyi_file(path: str | Path, *, encoding: str = "utf-8") -> ast.Module:
 
     pyi_path = Path(path)
     return parse_pyi_text(pyi_path.read_text(encoding=encoding), filename=str(pyi_path))
+
+
+if __name__ == "__main__":
+    example_tree = parse_pyi_text(
+        "from prik.contracts import Float64\n\ndef scale(value: Float64) -> Float64: ...\n",
+        filename="scale.pyi",
+    )
+    example_function = next(node for node in example_tree.body if isinstance(node, ast.FunctionDef))
+
+    print(f"Parsed AST: {type(example_tree).__name__}")
+    print(f"Function node: {example_function.name}")
+    print(f"Argument annotation: {ast.unparse(example_function.args.args[0].annotation)}")
+    print("Semantic conversion performed: False")

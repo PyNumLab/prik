@@ -33,7 +33,7 @@ GitHub Actions runs the checks again as the shared enforcement boundary.
 The Fortran feature index maps each maintained User Guide and semantic `.pyi`
 page to its final directory and focused command. The cleanup contract and
 progress gates live in
-[`../docs/maintainer/roadmap/fortran-test-suite-cleanup-checklist.md`](../docs/maintainer/roadmap/fortran-test-suite-cleanup-checklist.md).
+[`../docs/developer/roadmap/fortran-test-suite-cleanup-checklist.md`](../docs/developer/roadmap/fortran-test-suite-cleanup-checklist.md).
 
 ## Ownership contract
 
@@ -54,9 +54,10 @@ Within one Fortran feature, use only the stages that own real evidence:
 | `preprocessing/` | Source processing, dependencies, and mappings are correct |
 | `semantics/` | Parser or `.pyi` facts become the intended semantic IR |
 | `policy/` | Ownership, lifetime, projection, mutation, nullability, storage, and accessor decisions are complete |
-| `codegen/` | Completed policy selects a typed plan and named bridge/binding mechanisms |
+| `codegen/` | Completed policy selects a typed plan and named bridge/binding node mechanisms |
+| `printers/` | C, Fortran, and semantic `.pyi` representations serialize to exact text |
 | `compiling/` | Commands, objects, libraries, and link inputs are correct |
-| `pipeline/` | Build stages and generated artifacts transition correctly |
+| `pipeline/` | Wrapper orchestration, build stages, and generated results transition correctly |
 | `runtime/` | Runtime support mechanisms behave correctly without owning a complete feature journey |
 | `end_to_end/` | Source or intentional `.pyi` input produces an imported extension whose public behavior is called and verified |
 
@@ -157,12 +158,19 @@ production package and module:
 tests/fortran/infrastructure/<production-package>/test_<production-module>.py
 ```
 
-Thus `prik/semantics/ownership.py` uses
+Thus `prik/policy/ownership.py` uses
 `infrastructure/semantics/test_ownership.py`, while
-`prik/codegen/planner.py` uses `infrastructure/codegen/test_planner.py`.
+`prik/planning/planner.py` uses `infrastructure/codegen/test_planner.py`;
+language source printers use `infrastructure/printers/` and the wrapper
+orchestrator uses `infrastructure/pipeline/test_wrapper_generator.py`.
 User-visible behavior does not move to infrastructure merely because it reaches
 those modules. Retained production `if __name__ == "__main__"` demonstrations
-are smoke-tested by the same dedicated module owner.
+are cross-stage executable architecture contracts. Their output assertions are
+grouped in
+`tests/fortran/infrastructure/execution_examples/test_execution_examples.py`, with one
+explicitly named test per demonstrated production file; feature-local modules
+continue to prove the underlying parser, policy, generation, or runtime
+behavior.
 
 Shared support modules provide builders and assertions only. They do not
 re-export `pytest`, standard-library modules, or production symbols.

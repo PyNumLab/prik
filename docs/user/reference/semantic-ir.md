@@ -296,7 +296,7 @@ PRIK_C_DOCS_END -->
 - `void` return -> `None`.
 - `_Bool` -> `Bool`.
 - All modeled primitive integer, real, and complex spellings consume supplied
-  `prik.probes.c_types` facts. Plain `char` signedness, integer widths, real
+  `prik.preprocessing.probes.c_types` facts. Plain `char` signedness, integer widths, real
   storage widths and precision metadata, and complex storage widths come from
   the selected compiler target.
 - `int` keeps semantic name `Int` while its concrete dtype follows the target.
@@ -308,7 +308,7 @@ PRIK_C_DOCS_END -->
 - Local typedef chains are resolved when their parser model definitions are
   available.
 - `size_t` maps to `SizeT` without a target probe; supplied
-  `prik.probes.c_types` facts override standard typedefs with width-specific
+  `prik.preprocessing.probes.c_types` facts override standard typedefs with width-specific
   `Int*`, `UInt*`, or `Float*` semantic names.
 - Opaque standard-type probe facts such as `FILE` create named opaque semantic
   classes when referenced by converted declarations.
@@ -533,7 +533,7 @@ The proposed target is Python wrappers for C libraries on a selected Linux ABI.
 Its primary design requirement is that a semantic `.pyi` file plus a compiled
 library be sufficient to generate a wrapper, with C header parsing used only as
 optional input generation. Related deferred policy is tracked in
-[wrapper design notes](../../maintainer/design/wrapper-design-notes.md).
+[wrapper design notes](../../developer/design/wrapper-design-notes.md).
 PRIK_C_DOCS_END -->
 
 <!-- PRIK_C_DOCS_START

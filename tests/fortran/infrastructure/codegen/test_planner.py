@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-import subprocess
-import sys
 
 from dataclasses import replace
 
@@ -12,11 +9,10 @@ import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.semantics.models import PYTHON_EXPORTS_METADATA
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.codegen import (
-    WrapperCodeGenerator,
-    WrapperPlanner,
-)
+from prik.policy.completion import complete_semantic_policies
+from prik.planning.planner import _ClassPolicyCatalog
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 
 def _plan(source: str, *, module_name: str = "fmath"):
@@ -87,7 +83,7 @@ def right_value(x: Int32) -> Int32: ...
     module.functions[0].metadata[PYTHON_EXPORTS_METADATA] = [{"namespace": ("left",), "name": "shared_value"}]
     module.functions[1].metadata[PYTHON_EXPORTS_METADATA] = [{"namespace": ("right",), "name": "shared_value"}]
     complete_semantic_policies(module)
-    artifacts = WrapperCodeGenerator().generate(WrapperPlanner().build(module))
+    artifacts = WrapperGenerator().generate(WrapperPlanner().build(module))
     c_source = next(source.text for source in artifacts.sources if source.path.name.endswith(".c"))
 
     assert "PyModule_Create(&namespaced_left_module)" in c_source
@@ -136,6 +132,33 @@ def hidden(x: Int32) -> Int32: ...
     assert [function.binding.python_name for function in plan.namespaces[0].functions] == ["visible"]
 
 
+def test_class_policy_catalog_organizes_nested_classes_and_callable_owner_paths():
+    module = parse_pyi_text(
+        """
+class outer:
+    class inner:
+        @native_call([Pass(), Addr(Arg(0))])
+        def shift(self, dx: Float64) -> None: ...
+
+        @overload("shift")
+        def move(self, dx: Float64) -> None: ...
+""",
+        module_name="nested_catalog",
+    )
+    complete_semantic_policies(module)
+
+    catalog = _ClassPolicyCatalog.from_module(module)
+    outer, inner = catalog.entries
+
+    assert tuple(entry.semantic_class.name for entry in catalog.entries) == ("outer", "inner")
+    assert inner.methods_by_owner_path["nested_catalog.outer.inner.shift"].name == "shift"
+    assert inner.method_policies_by_owner_path["nested_catalog.outer.inner.shift"].python_name == "shift"
+    assert inner.overload_functions_by_owner_path["nested_catalog.outer.inner.move.shift"].name == "shift"
+
+    with pytest.raises(TypeError):
+        inner.methods_by_owner_path["nested_catalog.outer.inner.shift"] = outer.semantic_class
+
+
 def test_planner_projects_required_array_buffer_policy():
     module = parse_pyi_text(
         """
@@ -182,16 +205,3 @@ label: String = "ready"
         match=r"Semantic variable 'labels\.label'.*module variable initializer requires a write-through native setter",
     ):
         WrapperPlanner().build(module)
-
-
-def test_planner_direct_example_is_runnable():
-    repository_root = Path(__file__).resolve().parents[4]
-    result = subprocess.run(
-        [sys.executable, str(repository_root / "prik/codegen/planner.py")],
-        cwd=repository_root,
-        capture_output=True,
-        check=True,
-        text=True,
-    )
-
-    assert "Native target: DOUBLE_VALUE" in result.stdout

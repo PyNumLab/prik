@@ -1,7 +1,7 @@
 import shlex
 import sys
 
-from prik.compiling.compilers import Compiler
+from prik.compiler.compilers import Compiler
 
 
 def test_run_command_verbose_prints_replayable_command(capsys):

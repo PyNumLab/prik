@@ -2,7 +2,7 @@
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.semantics.models import RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA
-from prik.semantics.policy_completion import complete_semantic_policies
+from prik.policy.completion import complete_semantic_policies
 
 
 def test_scalar_storage_rejects_incompatible_explicit_ownership_metadata():

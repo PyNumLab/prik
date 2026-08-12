@@ -8,7 +8,7 @@ from tests.fortran._support.semantic_conversion import (
     get_function,
 )
 from prik.semantics.metadata import PROJECTED_OUTPUT_METADATA
-from prik import parse_fortran_file as parse_fortran_source
+from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 
 
 def test_optional_argument():

@@ -5,8 +5,9 @@ from __future__ import annotations
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.policy.completion import complete_semantic_policies
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 
 @pytest.mark.parametrize(
@@ -28,7 +29,7 @@ def test_scalar_input_registry_lowers_completed_type_into_the_native_support_api
     complete_semantic_policies(module)
     plan = WrapperPlanner().build(module)
 
-    artifacts = WrapperCodeGenerator().generate(plan)
+    artifacts = WrapperGenerator().generate(plan)
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
 
     assert f"{c_type} bound_x;" in c_source
@@ -44,7 +45,7 @@ def test_binding_locals_are_isolated_from_identifiers_imported_by_c_headers():
 
     c_source = next(
         source.text
-        for source in WrapperCodeGenerator().generate(WrapperPlanner().build(module)).sources
+        for source in WrapperGenerator().generate(WrapperPlanner().build(module)).sources
         if source.path.suffix == ".c"
     )
 

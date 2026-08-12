@@ -21,7 +21,7 @@ from tests.fortran._support.semantic_conversion import (
     get_function,
     has_constraint,
 )
-from prik import parse_fortran_file as parse_fortran_source
+from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 
 
 def test_converter_visitor_and_compatibility_methods_cover_public_paths():

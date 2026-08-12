@@ -136,34 +136,59 @@ def _decorator(*args: object, **kwargs: object):
     return apply
 
 
-Bool = _contract_type("Bool", np.bool_)
-Bool8 = _contract_type("Bool8", np.bool_)
-Bool16 = _contract_type("Bool16", np.bool_)
-Bool32 = _contract_type("Bool32", np.bool_)
-Bool64 = _contract_type("Bool64", np.bool_)
+_CONTRACT_NUMPY_FACTORIES: Final[dict[str, object]] = {
+    "Bool": np.bool_,
+    "Bool8": np.bool_,
+    "Bool16": np.bool_,
+    "Bool32": np.bool_,
+    "Bool64": np.bool_,
+    "Complex64": np.complex64,
+    "Complex128": np.complex128,
+    "Complex256": np.clongdouble,
+    "Float16": np.float16,
+    "Float32": np.float32,
+    "Float64": np.float64,
+    "Float128": np.longdouble,
+    "Int8": np.int8,
+    "Int16": np.int16,
+    "Int32": np.int32,
+    "Int64": np.int64,
+    "SizeT": np.uintp,
+    "UInt8": np.uint8,
+    "UInt16": np.uint16,
+    "UInt32": np.uint32,
+    "UInt64": np.uint64,
+}
+
+
+Bool = _contract_type("Bool", _CONTRACT_NUMPY_FACTORIES["Bool"])
+Bool8 = _contract_type("Bool8", _CONTRACT_NUMPY_FACTORIES["Bool8"])
+Bool16 = _contract_type("Bool16", _CONTRACT_NUMPY_FACTORIES["Bool16"])
+Bool32 = _contract_type("Bool32", _CONTRACT_NUMPY_FACTORIES["Bool32"])
+Bool64 = _contract_type("Bool64", _CONTRACT_NUMPY_FACTORIES["Bool64"])
 Byte = _contract_type("Byte", constructor_error="Byte has no portable NumPy scalar default")
 CEnum = _contract_type("CEnum", constructor_error="CEnum requires a resolved native underlying type")
 Char = _contract_type("Char", constructor_error="Char has no portable NumPy scalar default")
-Complex64 = _contract_type("Complex64", np.complex64)
-Complex128 = _contract_type("Complex128", np.complex128)
-Complex256 = _contract_type("Complex256", np.clongdouble)
-Float16 = _contract_type("Float16", np.float16)
-Float32 = _contract_type("Float32", np.float32)
-Float64 = _contract_type("Float64", np.float64)
-Float128 = _contract_type("Float128", np.longdouble)
+Complex64 = _contract_type("Complex64", _CONTRACT_NUMPY_FACTORIES["Complex64"])
+Complex128 = _contract_type("Complex128", _CONTRACT_NUMPY_FACTORIES["Complex128"])
+Complex256 = _contract_type("Complex256", _CONTRACT_NUMPY_FACTORIES["Complex256"])
+Float16 = _contract_type("Float16", _CONTRACT_NUMPY_FACTORIES["Float16"])
+Float32 = _contract_type("Float32", _CONTRACT_NUMPY_FACTORIES["Float32"])
+Float64 = _contract_type("Float64", _CONTRACT_NUMPY_FACTORIES["Float64"])
+Float128 = _contract_type("Float128", _CONTRACT_NUMPY_FACTORIES["Float128"])
 Int = _contract_type("Int", constructor_error="Int requires a resolved native width")
-Int8 = _contract_type("Int8", np.int8)
-Int16 = _contract_type("Int16", np.int16)
-Int32 = _contract_type("Int32", np.int32)
-Int64 = _contract_type("Int64", np.int64)
+Int8 = _contract_type("Int8", _CONTRACT_NUMPY_FACTORIES["Int8"])
+Int16 = _contract_type("Int16", _CONTRACT_NUMPY_FACTORIES["Int16"])
+Int32 = _contract_type("Int32", _CONTRACT_NUMPY_FACTORIES["Int32"])
+Int64 = _contract_type("Int64", _CONTRACT_NUMPY_FACTORIES["Int64"])
 Matrix = _contract_type("Matrix")
-SizeT = _contract_type("SizeT", np.uintp)
+SizeT = _contract_type("SizeT", _CONTRACT_NUMPY_FACTORIES["SizeT"])
 String = _contract_type("String", constructor_error="String requires an explicit native length and encoding contract")
 UInt = _contract_type("UInt", constructor_error="UInt requires a resolved native width")
-UInt8 = _contract_type("UInt8", np.uint8)
-UInt16 = _contract_type("UInt16", np.uint16)
-UInt32 = _contract_type("UInt32", np.uint32)
-UInt64 = _contract_type("UInt64", np.uint64)
+UInt8 = _contract_type("UInt8", _CONTRACT_NUMPY_FACTORIES["UInt8"])
+UInt16 = _contract_type("UInt16", _CONTRACT_NUMPY_FACTORIES["UInt16"])
+UInt32 = _contract_type("UInt32", _CONTRACT_NUMPY_FACTORIES["UInt32"])
+UInt64 = _contract_type("UInt64", _CONTRACT_NUMPY_FACTORIES["UInt64"])
 Vector = _contract_type("Vector")
 Void = _contract_type("Void", constructor_error="Void is not a runtime value")
 
@@ -370,3 +395,14 @@ CONTRACT_TYPE_NAMES = frozenset(
 )
 
 __all__ = tuple(sorted(CONTRACT_SYMBOLS))
+
+
+if __name__ == "__main__":
+    scalar = Float64()
+    matrix_contract = Float64[:, :]
+
+    print(f"Float64() -> {scalar!r} ({type(scalar).__name__})")
+    print(
+        "Float64[:, :] -> "
+        f"element={matrix_contract.element_type.__name__}, rank={matrix_contract.rank}, shape={matrix_contract.shape}"
+    )

@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 from tests.fortran._support.wrapper_build import _sole_native_module
-from prik.pipeline.preprocessing import PreprocessingConfig
+from prik.preprocessing import PreprocessingConfig
 from prik.pipeline.build import NativeBuildPlan, NativeLinkItem, build_fortran_extension
 
 NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
@@ -23,18 +23,6 @@ SCALAR_SOURCE = SCALE_SOURCE
 HOME_POINTS_SOURCE = NATIVE_FIXTURES / "home_points.f90"
 BUILD_MODULE = Path(__file__).resolve().parents[4] / "prik" / "pipeline" / "build.py"
 pytestmark = pytest.mark.fortran_end_to_end
-
-
-def test_build_module_direct_execution_runs_the_public_api_example():
-    result = subprocess.run(
-        [sys.executable, str(BUILD_MODULE)],
-        capture_output=True,
-        text=True,
-        check=True,
-        cwd=BUILD_MODULE.parents[2],
-    )
-
-    assert result.stdout == "scale(3.0, 2.5) = 7.5\n"
 
 
 def test_verbose_mode_prints_full_direct_build_commands(tmp_path: Path):

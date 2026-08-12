@@ -4,10 +4,11 @@ from __future__ import annotations
 
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.ownership import CodegenAction, NativeBarrierAction, ObjectKind, PythonBarrierAction
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import ArgumentHandoffMode, BridgeDataAction, DirectResultABI
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.policy.ownership import CodegenAction, NativeBarrierAction, ObjectKind, PythonBarrierAction
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import ArgumentHandoffMode, BridgeDataAction, DirectResultABI
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 
 def _scalar_boundary_plan():
@@ -69,7 +70,7 @@ def test_scalar_storage_and_raw_address_plans_keep_explicit_boundary_facts():
 
 
 def test_scalar_storage_and_raw_address_lower_to_direct_named_paths():
-    artifacts = WrapperCodeGenerator().generate(_scalar_boundary_plan())
+    artifacts = WrapperGenerator().generate(_scalar_boundary_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 

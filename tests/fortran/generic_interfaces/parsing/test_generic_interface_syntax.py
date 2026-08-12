@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from prik import parse_fortran_file
+from prik.parsers.fortran import parse_fortran_file
 from tests.fortran._support.parser_procedures import (
     parse_fortran_interfaces,
     parse_fortran_module,

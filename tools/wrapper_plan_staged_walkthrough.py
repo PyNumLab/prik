@@ -13,15 +13,15 @@ import numpy as np
 
 from prik.parsers.fortran.parser import parse_fortran_project
 from prik.pipeline import build as pipeline
-from prik.pipeline.preprocessing import PreprocessingConfig
+from prik.preprocessing import PreprocessingConfig
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
-from prik.semantics.policy_completion import complete_semantic_policies
+from prik.policy.completion import complete_semantic_policies
 from prik.codegen import (
     CBindingGenerator,
     FortranBridgeGenerator,
-    WrapperCodeGenerator,
-    WrapperPlanner,
 )
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 
 # Choose one starting point. Both paths then use the same plan, generator, and build steps.
@@ -125,7 +125,7 @@ print("result plans:", function.results)
 
 # 3. Editable plan -> generated C binding and Fortran bridge sources.
 print("\n== GENERATED ARTIFACTS ==")
-artifacts = WrapperCodeGenerator(
+artifacts = WrapperGenerator(
     c_generator=binding_generator,
     fortran_generator=bridge_generator,
 ).generate(plan)
@@ -146,13 +146,13 @@ native_build_plan = pipeline.NativeBuildPlan(
     module_dirs=(build_dir,),
     include_dirs=(build_dir,),
 )
-build = pipeline._build_rendered_wrapper_extension(
+build = pipeline._build_generated_wrapper_extension(
     artifacts,
     output_dir=build_dir,
     sources=(source,) if ENTRY == "fortran" else (contract,),
     native_build_plan=native_build_plan,
     native_dependencies=(native_object,),
-    native_link_args=pipeline._rendered_wrapper_native_link_args(native_build_plan),
+    native_link_args=pipeline._generated_wrapper_native_link_args(native_build_plan),
     compiler=compiler,
 )
 sys.path.insert(0, str(build.output_dir))

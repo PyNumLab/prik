@@ -20,22 +20,23 @@ import pytest
 from tests.fortran._support.pyi_fixtures import assert_generated_pyi_package_matches_fixture
 from tests.fortran._support.fmath_cases import fmath_cases
 from prik import build_pyi_extension
-from prik.compiling.objects import ObjectFile
+from prik.compiler.objects import ObjectFile
 from prik.parsers.fortran.parser import parse_fortran_project
 from prik.pipeline.build import (
     NativeBuildPlan,
     _apply_source_python_exports,
-    _build_rendered_wrapper_extension,
+    _build_generated_wrapper_extension,
     _fortran_source_for_pipeline,
     _merge_wrapper_modules,
     _new_compiler,
 )
-from prik.pipeline.preprocessing import PreprocessingConfig
+from prik.preprocessing import PreprocessingConfig
 from prik.pipeline.build import build_fortran_extension
 from prik.runtime.handles import AllocatableArray
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.policy.completion import complete_semantic_policies
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 WRAPPER_TEST_ROOT = Path(__file__).resolve().parent
@@ -185,6 +186,7 @@ end module probe
             capture_output=True,
             text=True,
             check=False,
+            cwd=directory,
         )
     return result.returncode == 0
 
@@ -349,13 +351,13 @@ def _build_source_wrapper_plan_and_import(
     complete_semantic_policies(module)
 
     plan = WrapperPlanner().build(module)
-    rendered = WrapperCodeGenerator().generate(plan)
+    rendered = WrapperGenerator().generate(plan)
     native_build_plan = NativeBuildPlan(
         produced_objects=(native_object,),
         module_dirs=(native_object.parent,),
         include_dirs=(native_object.parent,),
     )
-    result = _build_rendered_wrapper_extension(
+    result = _build_generated_wrapper_extension(
         rendered,
         output_dir=workdir / "wrapper_plan_build",
         sources=(source,),

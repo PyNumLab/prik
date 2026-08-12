@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.ownership import (
+from prik.policy.ownership import (
     CodegenAction,
     DestructionPolicy,
     NativeBarrierAction,
@@ -15,14 +15,15 @@ from prik.semantics.ownership import (
     StorageMode,
     TransferMode,
 )
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import (
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import (
     ArgumentHandoffMode,
     BridgeDataAction,
     RAW_STRING_ADDRESS_COPY_REASON,
     STRING_STORAGE_COPY_REASON,
 )
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 
 def _string_address_module():
@@ -78,7 +79,7 @@ def test_string_address_plans_keep_completed_ownership_length_and_copy_facts():
 
 
 def test_string_addresses_dispatch_to_named_binding_and_bridge_lowering():
-    artifacts = WrapperCodeGenerator().generate(_string_address_plan())
+    artifacts = WrapperGenerator().generate(_string_address_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
@@ -147,4 +148,4 @@ def test_string_address_plan_edits_fail_before_backend_lowering(edit: str, diagn
         raw.result_position = 0
 
     with pytest.raises(ValueError, match=diagnostic):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)

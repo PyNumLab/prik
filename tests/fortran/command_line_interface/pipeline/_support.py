@@ -1,7 +1,7 @@
 import types
 from pathlib import Path
 
-from prik import cli as prik_cli
+import prik.cli as prik_cli
 
 TEST_FILE = Path(__file__).parents[2] / "source_parsing" / "parsing" / "fixtures" / "general" / "basic_subroutine.f90"
 

@@ -3,7 +3,7 @@
 title: Deferred Native API Inspection
 audience: users, developers
 prerequisites: installation
-related: ../../../developer/c-parser-reference.md
+related: ../../../developer/deferred/c-parser.md
 status: maintained
 publication: draft
 ---

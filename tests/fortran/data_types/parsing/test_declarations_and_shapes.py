@@ -1,14 +1,7 @@
 """Tests split by stable ownership concept from `test_procedures_and_interfaces.py`."""
 
-import subprocess
-import sys
-from pathlib import Path
-
 import pytest
-from prik import (
-    parse_fortran_file,
-    parse_fortran_project,
-)
+from prik.parsers.fortran import parse_fortran_file, parse_fortran_project
 from tests.fortran._support.parser_procedures import (
     COMPILE_TIME_EXPRESSION_SOURCE,
     collect_project_procedure_signatures,
@@ -102,10 +95,10 @@ def test_legacy_character_star_kind_sets_length_metadata_when_character_prefix_i
     parsed = FortranParser()._parse_declaration_left("character*8", parse_character_star=False)
 
     assert parsed is not None
-    metadata, attributes = parsed
-    assert metadata["base_type"] == "character"
-    assert metadata["kind"] == "8"
-    assert metadata["character_length_syntax"] is True
+    declaration, attributes = parsed
+    assert declaration.base_type == "character"
+    assert declaration.kind == "8"
+    assert declaration.character_length_syntax is True
     assert attributes == []
 
 
@@ -304,24 +297,6 @@ def test_extract_kind_from_type_spec_contract(base_type, type_spec, expected):
     from prik.parsers.fortran.type_resolver import extract_kind_from_type_spec
 
     assert extract_kind_from_type_spec(base_type, type_spec) == expected
-
-
-def test_type_resolver_module_direct_execution_example():
-    repository_root = Path(__file__).parents[4]
-
-    result = subprocess.run(
-        [sys.executable, "prik/parsers/fortran/type_resolver.py"],
-        cwd=repository_root,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-
-    assert result.stdout == (
-        "integer(4) -> 4\n"
-        "real(kind=selected_real_kind(15, 307)) -> selected_real_kind(15, 307)\n"
-        "character(len=16, kind=c_char) -> len=16, kind=c_char\n"
-    )
 
 
 def test_compiler_dependent_parameter_expressions_remain_symbolic_with_value_at_module_level():

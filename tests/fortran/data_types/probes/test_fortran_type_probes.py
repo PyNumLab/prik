@@ -4,19 +4,18 @@ import json
 import shutil
 import subprocess
 import sys
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-import prik.probes.fortran_types as fortran_type_probe
+import prik.preprocessing.probes.fortran_types as fortran_type_probe
 from prik.semantics.fortran2ir import (
     collect_semantic_compile_time_requirements,
     fortran_module_to_semantic_module,
 )
-from prik import parse_fortran_file as parse_fortran_source
-from prik import parse_fortran_project
-from prik.probes.fortran_types import (
+from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
+from prik.parsers.fortran import parse_fortran_project
+from prik.preprocessing.probes.fortran_types import (
     FortranTypeProbeRecipe,
     FortranTypeProbeReport,
     FortranTypeProbeError,
@@ -31,7 +30,7 @@ from prik.probes.fortran_types import (
     probe_fortran_type_expressions_cached,
     resolve_fortran_logical_storage_types,
 )
-from prik.pipeline.preprocessing import PreprocessingConfig
+from prik.preprocessing import PreprocessingConfig
 
 
 _FC = shutil.which("gfortran") or shutil.which("f95")
@@ -85,15 +84,6 @@ def test_fortran_type_probe_wraps_long_intrinsic_import_lists():
     assert "    c_bool, &" in source
     assert "    c_size_t\n" in source
     assert all(len(line) <= 120 for line in source.splitlines())
-
-
-def test_prik_public_api_lazily_exposes_type_probe_symbols_and_rejects_unknown_names():
-    import prik
-
-    assert prik.FortranTypeProbeError is FortranTypeProbeError
-    assert prik.FortranTypeProbeReport is FortranTypeProbeReport
-    with pytest.raises(AttributeError, match="not_exported"):
-        _ = prik.not_exported
 
 
 def test_fortran_type_probe_rejects_statement_injection():
@@ -486,7 +476,7 @@ def test_fortran_type_probe_module_cli_emits_json_for_semantic_input(tmp_path):
         [
             sys.executable,
             "-m",
-            "prik.probes.fortran_types",
+            "prik.preprocessing.probes.fortran_types",
             "--compiler",
             compiler,
             "--expr",
@@ -507,21 +497,6 @@ def test_fortran_type_probe_module_cli_emits_json_for_semantic_input(tmp_path):
     assert payload["values"]["selected_real_kind(12)"] > 0
     assert payload["recipe"]["compiler"] == compiler
     assert payload["source_text"].startswith("program prik_fortran_type_probe")
-
-
-def test_fortran_type_probe_direct_script_runs_its_no_argument_example():
-    completed = subprocess.run(
-        [sys.executable, "prik/probes/fortran_types.py"],
-        cwd=Path(__file__).resolve().parents[4],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-
-    label, separator, raw_value = completed.stdout.strip().partition(" = ")
-    assert label == "selected_int_kind(9)"
-    assert separator == " = "
-    assert int(raw_value) > 0
 
 
 def test_prik_semantics_cli_evaluates_collected_fortran_type_requirements(tmp_path):

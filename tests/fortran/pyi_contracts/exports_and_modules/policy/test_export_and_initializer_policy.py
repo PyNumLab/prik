@@ -11,8 +11,8 @@ from prik.semantics.models import (
     SemanticType,
     SemanticVariable,
 )
-from prik.semantics.ownership import SetterAction
-from prik.semantics.policy_completion import complete_semantic_policies
+from prik.policy.ownership import SetterAction
+from prik.policy.completion import complete_semantic_policies
 from tests.fortran._support.ownership_policy import _scalar_type
 from prik.semantics.models import RESOLVED_MODULE_VARIABLE_POLICY_METADATA
 

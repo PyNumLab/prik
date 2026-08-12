@@ -11,6 +11,7 @@ Cross-language semantic interpretation belongs to `prik.semantics`, while
 preprocessing and build orchestration belong to `prik.pipeline`. Stable parser
 convenience functions remain exported from the `prik` package root.
 
-See `docs/developer/source-map.md`, `docs/developer/feature-to-code-map.md`,
-`docs/developer/c-parser-reference.md`, `docs/developer/fortran-parser-reference.md`, and
+See `docs/developer/packages/parsers.md`, `docs/developer/source-map.md`,
+`docs/developer/feature-to-code-map.md`,
+`docs/developer/deferred/c-parser.md`, and
 `docs/user/reference/semantic-pyi-format.md` for maintained behavior.

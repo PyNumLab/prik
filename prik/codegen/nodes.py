@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from prik.stage_values import StageRecord
+from prik.utilities.stage_values import StageRecord
 
 
 @dataclass
@@ -187,6 +187,22 @@ class CBreak(StageRecord):
 
 
 @dataclass
+class CCase(StageRecord):
+    """One value or default branch in a generated C switch."""
+
+    value: CodeExpression | None
+    body: tuple[CDeclaration | CExpressionStatement | CIf | CFor | CBreak | CReturn, ...] = ()
+
+
+@dataclass
+class CSwitch(StageRecord):
+    """C switch statement used for planned integer dispatch keys."""
+
+    expression: CodeExpression
+    cases: tuple[CCase, ...] = ()
+
+
+@dataclass
 class CReturn(StageRecord):
     """C return statement."""
 
@@ -201,7 +217,15 @@ class CFunction(StageRecord):
     return_type: str
     parameters: tuple[CParameter, ...] = ()
     body: tuple[
-        CDeclaration | CExpressionStatement | CAllowThreadsBegin | CAllowThreadsEnd | CIf | CFor | CBreak | CReturn,
+        CDeclaration
+        | CExpressionStatement
+        | CAllowThreadsBegin
+        | CAllowThreadsEnd
+        | CIf
+        | CFor
+        | CBreak
+        | CSwitch
+        | CReturn,
         ...,
     ] = ()
     storage: str | None = None
@@ -428,3 +452,31 @@ class FortranModule(StageRecord):
     declarations: tuple[FortranDeclaration, ...] = ()
     procedures: tuple[FortranFunction, ...] = ()
     standalone_procedures: tuple[FortranFunction, ...] = ()
+
+
+if __name__ == "__main__":
+    example_c_function = CFunction(
+        "wrap_ping",
+        "PyObject *",
+        parameters=(CParameter("self", "PyObject *"),),
+        body=(CReturn(CodeExpression("Py_None")),),
+    )
+    example_c_module = CModule("demo_wrapper", functions=(example_c_function,))
+    example_fortran_function = FortranFunction(
+        "bind_c_ping",
+        bind_name="PING",
+        bind_c=True,
+        body=(FortranCall("native_ping"),),
+        is_subroutine=True,
+    )
+    example_fortran_module = FortranModule("bind_c_demo_wrapper", procedures=(example_fortran_function,))
+
+    print(
+        f"C node tree: {type(example_c_module).__name__} -> "
+        f"{example_c_function.name} -> {type(example_c_function.body[0]).__name__}"
+    )
+    print(
+        f"Fortran node tree: {type(example_fortran_module).__name__} -> "
+        f"{example_fortran_function.name} -> {type(example_fortran_function.body[0]).__name__}"
+    )
+    print("Source text rendered: False")

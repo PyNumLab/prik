@@ -1,15 +1,13 @@
 from pathlib import Path
-import subprocess
-import sys
 
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from tests.fortran._support.wrapper_build import wrapper_source
-from prik.codegen import WrapperPlanner
+from prik.planning import WrapperPlanner
 from prik.parsers.fortran.parser import parse_fortran_project
 from prik.pipeline.build import _apply_source_python_exports, _fortran_source_for_pipeline, _merge_wrapper_modules
-from prik.pipeline.preprocessing import PreprocessingConfig
+from prik.preprocessing import PreprocessingConfig
 from prik.pipeline.pyi import pyi_file_to_semantic_module
 from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
 from prik.semantics.models import (
@@ -18,15 +16,15 @@ from prik.semantics.models import (
     SemanticFunction,
     SemanticType,
 )
-from prik.semantics.ownership import (
+from prik.policy.ownership import (
     CodegenAction,
     NativeBarrierAction,
     ObjectKind,
     PythonBarrierAction,
     StorageMode,
 )
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import (
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import (
     ArgumentConversionPhase,
     ArgumentHandoffMode,
     BridgeDataAction,
@@ -35,8 +33,8 @@ from prik.semantics.wrapper_policy import (
     NativeStatusErrorPolicy,
     OptionalMode,
     PythonExceptionKind,
-    completed_function_wrapper_policy,
 )
+from prik.policy.construction import build_function_wrapper_policy, completed_function_wrapper_policy
 
 FMATH_CONTRACT = Path("tests/fortran/data_types/end_to_end/fixtures/baseline/contracts/fmath/__init__.pyi")
 
@@ -105,6 +103,45 @@ def hidden_storage_result() -> Float64[()]: ...
     assert hidden.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION
     assert hidden_policy.native_call_slots[0].result_position == hidden.result_position
     assert hidden_policy.native_call_slots[0].native_barrier_action is hidden.native_barrier_action
+
+
+def test_hidden_result_policy_reports_a_missing_return_projection_after_selection():
+    module = parse_pyi_text(
+        """
+@native_call([Return("status", 0)])
+def hidden_status() -> Int32: ...
+""",
+        module_name="missing_hidden_projection",
+    )
+    complete_semantic_policies(module)
+    function = module.functions[0]
+
+    # Preserve the completed hidden-output ownership decision while removing
+    # its result mapping to characterize the candidate builder's fail-closed path.
+    function.projection = []
+    policy = build_function_wrapper_policy(
+        function,
+        owner_path="missing_hidden_projection.hidden_status",
+    )
+
+    assert policy.results == ()
+    assert "hidden result 'status' has no completed return projection" in policy.blockers
+
+
+def test_hidden_result_policy_keeps_blocked_bridge_action_on_the_candidate():
+    module = parse_pyi_text(
+        """
+@native_call([Return("message", 0)])
+def hidden_message() -> String: ...
+""",
+        module_name="blocked_hidden_bridge",
+    )
+    complete_semantic_policies(module)
+
+    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
+
+    assert policy.results[0].bridge_data_action is BridgeDataAction.BLOCKED
+    assert "hidden result 'message' has no completed bridge data action" in policy.blockers
 
 
 def test_external_declaration_mode_is_completed_from_native_abi_requirements():
@@ -581,23 +618,6 @@ def test_missing_wrapper_policy_fails_before_planning():
 
     with pytest.raises(ValueError, match="missing completed wrapper policy"):
         completed_function_wrapper_policy(function)
-
-
-def test_wrapper_policy_direct_example_is_runnable():
-    repository_root = Path(__file__).resolve().parents[4]
-
-    result = subprocess.run(
-        [sys.executable, "prik/semantics/wrapper_policy.py"],
-        cwd=repository_root,
-        capture_output=True,
-        check=True,
-        text=True,
-    )
-
-    assert result.stdout == (
-        "before: math.scale(value): Float64 semantic IR\n"
-        "after: direct_transfer; result=native_scalar; native=pass_value\n"
-    )
 
 
 def test_completed_function_policy_rejects_unimplemented_runtime_constraints():

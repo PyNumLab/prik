@@ -2,7 +2,7 @@
 
 import types
 
-from prik import cli as prik_cli
+import prik.cli as prik_cli
 from tests.c._support.cli import (
     _install_main_parser,
     _main_args,

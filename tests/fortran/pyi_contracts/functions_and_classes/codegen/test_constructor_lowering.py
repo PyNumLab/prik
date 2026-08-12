@@ -1,8 +1,9 @@
 """Lowering selected for an edited direct native constructor."""
 
 from prik.pipeline.pyi import pyi_text_to_semantic_module
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.policy.completion import complete_semantic_policies
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 
 def test_bound_constructor_generates_one_initializer_without_keyword_default():
@@ -21,7 +22,7 @@ class state:
     )
     complete_semantic_policies(module)
 
-    artifacts = WrapperCodeGenerator().generate(WrapperPlanner().build(module))
+    artifacts = WrapperGenerator().generate(WrapperPlanner().build(module))
     sources = {source.path.suffix: source.text for source in artifacts.sources}
 
     assert {path.name for path in artifacts.source_paths} == {

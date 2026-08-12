@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from prik.pipeline.preprocessing import PreprocessingError
+from prik.preprocessing import PreprocessingError
 
 
 def _fake_compiler(tmp_path: Path, output: str) -> tuple[Path, Path, dict[str, str]]:

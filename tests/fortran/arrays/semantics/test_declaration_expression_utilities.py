@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-import subprocess
-import sys
 
 import pytest
 
@@ -323,17 +320,3 @@ def test_backend_renderer_rejects_invalid_target_and_unrenderable_syntax() -> No
         render_declaration_extent("not valid (", {}, target="c")
     with pytest.raises(ValueError, match="unsupported completed declaration-expression node"):
         render_declaration_extent("[n]", {}, target="c")
-
-
-def test_declaration_expressions_direct_example_is_runnable() -> None:
-    repository_root = Path(__file__).resolve().parents[4]
-    result = subprocess.run(
-        [sys.executable, str(repository_root / "prik/utilities/declaration_expressions.py")],
-        cwd=repository_root,
-        capture_output=True,
-        check=True,
-        text=True,
-    )
-
-    assert "Public expression: source.shape[0]" in result.stdout
-    assert "Compile-time product: 6" in result.stdout

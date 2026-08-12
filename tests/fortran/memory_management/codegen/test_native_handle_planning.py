@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.ownership import CodegenAction, ObjectKind, PythonBarrierAction
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import (
+from prik.policy.ownership import CodegenAction, ObjectKind, PythonBarrierAction
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import (
     ArgumentHandoffMode,
     NativeArrayDescriptorInterop,
     NativeArrayDescriptorKind,
@@ -21,7 +21,8 @@ from prik.semantics.wrapper_policy import (
     NativeArraySourceKind,
     NativeDescriptorHandoffABI,
 )
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 
 def _native_handle_plan():
@@ -328,7 +329,7 @@ def test_module_variables_use_borrowed_handle_plans_and_operation_sets():
 
 
 def test_deferred_character_module_handles_use_runtime_element_length():
-    artifacts = WrapperCodeGenerator().generate(_module_handle_plan())
+    artifacts = WrapperGenerator().generate(_module_handle_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
@@ -339,11 +340,11 @@ def test_deferred_character_module_handles_use_runtime_element_length():
 
 
 def test_generated_native_handle_artifacts_follow_one_typed_action_vocabulary():
-    artifacts = WrapperCodeGenerator().generate(_native_handle_plan())
+    artifacts = WrapperGenerator().generate(_native_handle_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
-    assert artifacts.artifacts.required_headers == ("ISO_Fortran_binding.h",)
+    assert artifacts.required_headers == ("ISO_Fortran_binding.h",)
     assert "prik_array_actual_unpack(" in c_source
     assert '"_native_array_descriptor_argument_for_binding_positional"' in c_source
     assert '"_native_array_descriptor_handoff_for_binding_positional"' in c_source
@@ -397,7 +398,7 @@ def test_generated_native_handle_artifacts_follow_one_typed_action_vocabulary():
 
 
 def test_constant_owned_handle_operations_do_not_emit_unused_descriptor_locals():
-    artifacts = WrapperCodeGenerator().generate(_native_handle_plan())
+    artifacts = WrapperGenerator().generate(_native_handle_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
 
     for operation in ("aligned", "descriptor", "destroy", "layout", "native_byte_order", "writeable"):
@@ -469,7 +470,7 @@ def test_native_handle_plan_edits_fail_central_validation(edit: str, diagnostic:
         plan.required_headers = ()
 
     with pytest.raises(ValueError, match=diagnostic):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)
 
 
 def test_plain_module_descriptor_view_requires_matching_completed_interop():
@@ -480,4 +481,4 @@ def test_plain_module_descriptor_view_requires_matching_completed_interop():
     plain.native_array_handle.required_headers = ()
 
     with pytest.raises(ValueError, match="missing-module-allocatable-descriptor-interop"):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)

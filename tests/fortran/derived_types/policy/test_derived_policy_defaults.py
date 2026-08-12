@@ -8,7 +8,7 @@ from prik.semantics.models import (
     SemanticModule,
     SemanticVariable,
 )
-from prik.semantics.ownership import (
+from prik.policy.ownership import (
     CodegenAction,
     DestructionPolicy,
     OwnershipOwner,

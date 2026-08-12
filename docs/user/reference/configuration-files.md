@@ -2,7 +2,7 @@
 title: Configuration Files Reference
 audience: users, developers
 prerequisites: packaging, CLI commands
-related: cli-commands.md, python-api.md, ../guide/building-shared-library.md, ../../developer/quality-assurance.md
+related: cli-commands.md, python-api.md, ../guide/building-shared-library.md, ../../developer/workflows/quality-assurance.md
 status: maintained
 publication: draft
 ---
@@ -107,7 +107,7 @@ The coverage contract is:
 When investigating coverage failures that involve subprocesses, run coverage
 with `COVERAGE_PROCESS_START=pyproject.toml`, combine parallel data, then
 report. The maintained workflow is documented in
-[Quality Assurance](../../developer/quality-assurance.md#pytest-and-coveragepy).
+[Quality Assurance](../../developer/workflows/quality-assurance.md#coverage-and-test-order-reproduction).
 
 ## `codecov.yml`
 
@@ -121,11 +121,26 @@ Do not treat `pyproject.toml` as a user wrapper-build configuration file.
 Wrapper users select inputs through CLI flags, Python API arguments, semantic
 `.pyi` contracts, and generated manifests.
 
+## `setup.cfg`
+
+`setup.cfg` contains only setuptools command-output placement. Its `egg_info`
+section sends temporary package metadata to `.artifacts/` instead of creating
+a visible `prik.egg-info/` directory in the repository root. Project metadata,
+dependencies, package discovery, and tool configuration remain exclusively in
+`pyproject.toml`; do not duplicate them here.
+
+The tracked `.artifacts/.gitignore` file makes the hidden output root available
+in clean checkouts and source distributions while ignoring everything generated
+beneath it.
+
 ## `mkdocs.yml`
 
 `mkdocs.yml` is the documentation-site configuration. It sets `docs_dir: docs`,
+sets the generated site output to the hidden `.artifacts/site/` directory,
 selects MkDocs' built-in Read the Docs theme, owns the complete intended
-navigation tree, and loads the publication hook. The theme configuration keeps
+navigation tree, and loads the publication hook. Generated documentation is
+therefore kept out of the visible repository root while remaining available
+for local inspection. The theme configuration keeps
 the sidebar expanded through four navigation levels. A local stylesheet keeps
 its scrollbar visible and draggable when the navigation is longer than the
 screen. The same stylesheet keeps the page body adjacent to the sidebar with a

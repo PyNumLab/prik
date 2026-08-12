@@ -20,8 +20,12 @@ from prik.utilities.declaration_expressions import (
     is_declaration_expression_helper,
     is_public_declaration_expression,
 )
-from prik.types.numpy import SEMANTIC_SCALAR_TYPE_NAMES
-from prik.semantics.ownership import OWNERSHIP_POLICY_METADATA, set_ownership_metadata, set_pointer_policy_metadata
+from prik.semantics.scalar_types import SEMANTIC_SCALAR_TYPE_NAMES
+from prik.semantics.ownership_metadata import (
+    OWNERSHIP_POLICY_METADATA,
+    set_ownership_metadata,
+    set_pointer_policy_metadata,
+)
 from prik.semantics.metadata import (
     ADDRESS_ROLE_METADATA,
     ADDRESS_ROLE_PROJECTION,

@@ -6,9 +6,9 @@ import pytest
 
 from prik.pipeline.pyi import pyi_file_to_semantic_module, pyi_text_to_semantic_module
 from prik.semantics import models
-from prik.semantics.ownership import PythonBarrierAction
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import (
+from prik.policy.ownership import PythonBarrierAction
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import (
     CallbackABIKind,
     CallbackGILAction,
     CallbackLifecycleAction,
@@ -16,8 +16,9 @@ from prik.semantics.wrapper_policy import (
     CallbackThreadAction,
     CallbackTransferAction,
 )
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
-from prik.codegen.plan import DatatypeFamily
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
+from prik.planning.models import DatatypeFamily
 
 CONTRACT_ROOT = Path(__file__).parents[1] / "end_to_end" / "fixtures" / "contracts"
 CONTRACT = CONTRACT_ROOT / "fcallback_all_f90" / "fcallback_all_f90.pyi"
@@ -45,7 +46,7 @@ def _callback_argument(plan, function_name: str):
 
 
 def _sources(plan):
-    artifacts = WrapperCodeGenerator().generate(plan)
+    artifacts = WrapperGenerator().generate(plan)
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
     return c_source, bridge
@@ -150,7 +151,7 @@ def test_callback_plan_edits_fail_central_validation_before_backend_emission(edi
         callback.trampoline_symbol = callback.adapter_symbol
 
     with pytest.raises(ValueError, match=diagnostic):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)
 
 
 def test_callback_artifacts_use_linear_context_adapter_and_trampoline_paths():

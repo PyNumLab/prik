@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.ownership import (
+from prik.policy.ownership import (
     CodegenAction,
     DestructionPolicy,
     NativeBarrierAction,
@@ -15,10 +15,11 @@ from prik.semantics.ownership import (
     StorageMode,
     TransferMode,
 )
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.semantics.wrapper_policy import ArgumentHandoffMode, BridgeDataAction
-from prik.codegen import ArrayHandoffPlan, WrapperCodeGenerator, WrapperPlanner
-from prik.codegen.plan import DatatypeFamily
+from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import ArgumentHandoffMode, BridgeDataAction
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import ArrayHandoffPlan, WrapperPlanner
+from prik.planning.models import DatatypeFamily
 
 
 def _array_module():
@@ -68,7 +69,7 @@ def test_required_array_buffer_has_one_printable_editable_handoff_plan():
 
 
 def test_required_array_buffer_dispatches_through_named_binding_and_bridge_methods():
-    artifacts = WrapperCodeGenerator().generate(_array_plan())
+    artifacts = WrapperGenerator().generate(_array_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
@@ -117,4 +118,4 @@ def test_array_handoff_plan_edits_fail_before_backend_lowering(edit: str, diagno
         argument.bridge.data_action = BridgeDataAction.DIRECT_TRANSFER
 
     with pytest.raises(ValueError, match=diagnostic):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)

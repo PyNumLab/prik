@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from prik.codegen.checks import check_codegen_package
 
 
 def main() -> int:
     """Print checker violations and return a process status for automation."""
-    package_root = Path(__file__).resolve().parents[1] / "prik" / "codegen"
-    violations = check_codegen_package(package_root)
+    violations = check_codegen_package()
     for violation in violations:
         print(violation.label)
     return int(bool(violations))

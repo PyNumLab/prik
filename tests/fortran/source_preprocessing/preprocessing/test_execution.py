@@ -4,8 +4,9 @@ from pathlib import Path
 
 import pytest
 
-import prik.pipeline.preprocessing as preprocessing
-from prik.pipeline.preprocessing import (
+import prik.preprocessing.fortran as fortran_preprocessing
+import prik.preprocessing.source as preprocessing
+from prik.preprocessing import (
     PreprocessingConfig,
     PreprocessingError,
 )
@@ -20,7 +21,7 @@ def test_preprocess_source_reparses_fortran_mapping_when_native_expansion_return
         lambda *_args, **_kwargs: type("Done", (), {"returncode": 0, "stdout": "ignored\n", "stderr": ""})(),
     )
     monkeypatch.setattr(
-        preprocessing,
+        fortran_preprocessing,
         "expand_native_fortran_includes",
         lambda *_args, **_kwargs: ("integer :: value\n", [], [], []),
     )

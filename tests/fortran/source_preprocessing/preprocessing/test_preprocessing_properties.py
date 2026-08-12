@@ -1,6 +1,6 @@
 """Tests split by stable ownership concept from `test_properties.py`."""
 
-import prik.pipeline.preprocessing as preprocessing
+import prik.preprocessing.source as preprocessing
 import pytest
 import sys
 from hypothesis import (
@@ -8,11 +8,8 @@ from hypothesis import (
     strategies as st,
 )
 from pathlib import Path
-from prik import (
-    FortranParseError,
-    parse_fortran_file,
-)
-from prik.pipeline.preprocessing import (
+from prik.parsers.fortran import FortranParseError, parse_fortran_file
+from prik.preprocessing import (
     PreprocessingConfig,
     preprocess_source,
 )

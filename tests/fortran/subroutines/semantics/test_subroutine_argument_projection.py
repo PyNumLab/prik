@@ -4,7 +4,7 @@ from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 from prik.semantics.models import ProjectionMapping
 from tests.fortran._support.semantic_conversion import get_function
 from prik.semantics.metadata import PROJECTED_OUTPUT_METADATA
-from prik import parse_fortran_file as parse_fortran_source
+from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 
 
 def test_primitive_scalar_inout_stays_visible_and_projects_replacement_return():

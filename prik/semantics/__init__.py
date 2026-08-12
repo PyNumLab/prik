@@ -17,7 +17,6 @@ from .c2ir import (
     c_type_to_semantic_type,
 )
 from .pyi2ir import convert_pyi_to_ir
-from .policy_completion import complete_semantic_policies
 
 __all__ = (
     "CToIRConverter",
@@ -30,7 +29,6 @@ __all__ = (
     "c_struct_to_semantic_class",
     "c_type_to_semantic_type",
     "collect_semantic_compile_time_requirements",
-    "complete_semantic_policies",
     "convert_pyi_to_ir",
     "fortran_file_to_semantic_modules",
     "fortran_module_to_semantic_module",

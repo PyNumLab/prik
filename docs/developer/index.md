@@ -1,37 +1,56 @@
 ---
-title: Developer Documentation
-audience: developers, contributors
+title: Contributor Documentation
+audience: developers, maintainers, contributors
 prerequisites: repository checkout
-related: development-workflow.md, source-map.md, contributing/index.md
+related: architecture.md, packages/index.md, workflows/contributing.md
 status: maintained
 publication: draft
 ---
 
-# Developer Documentation
+# Contributor Documentation
 
-This lane is for changing prik. It maps public behavior to implementation and
-tests, then provides focused contribution workflows.
+This is the single documentation area for changing, testing, governing, and
+releasing PRIK. Start with the architecture guide, then open the detailed
+package, workflow, concept, design, or active-roadmap page needed for the task.
 
 ## Orientation
 
-- [Development workflow](development-workflow.md)
-- [Repository structure](repository-structure.md)
-- [Source map](source-map.md)
-- [Feature-to-code map](feature-to-code-map.md)
-- [Compiler preprocessing reference](compiler-preprocessing.md)
-- [Fortran parser reference](fortran-parser-reference.md)
-- [Quality assurance](quality-assurance.md)
-- [Build system](build-system.md)
-- [Testing strategy](testing-strategy.md)
-- [Coding standards](coding-standards.md)
+- [Contributor architecture](architecture.md): shallow repository/package
+  structure, complete workflow, authority rules, CLI/root files, and package
+  routes.
+- [Source package guides](packages/index.md): one detailed page per production
+  package, with local structure, important objects, runnable examples, tests,
+  change routes, and invariants.
+- [Source map](source-map.md): exact file and hotspot lookup.
+- [Feature-to-code map](feature-to-code-map.md): user-visible capability to
+  source, tests, and documentation.
+- [Testing strategy](testing-strategy.md): language/feature/stage ownership and
+  verification selection.
 
-<!-- PRIK_C_DOCS_START
-- [C parser reference](c-parser-reference.md)
-PRIK_C_DOCS_END -->
+## Cross-Cutting Concepts
 
-## Change Workflows
+- [Datatype lifecycle](concepts/datatype-lifecycle.md): compiler measurement,
+  semantic identity, policy, backend representation, and runtime validation.
 
-- [Adding a feature](adding-a-feature.md)
-- [Adding a Fortran construct](adding-a-fortran-construct.md)
-- [Adding a code-generation backend](adding-a-code-generation-backend.md)
-- [Contributing](contributing/index.md)
+## Contributor Workflows
+
+- [Contributing](workflows/contributing.md)
+- [Quality assurance](workflows/quality-assurance.md)
+- [Continuous integration and delivery](workflows/ci.md)
+- [Documentation architecture](workflows/documentation.md)
+- [Release process](workflows/release.md)
+
+## Design And Planning
+
+- [Multilanguage runtime architecture](design/multilanguage-runtime.md) is an
+  explicit long-term design, not a support claim.
+- [Wrapper open decisions](design/wrapper-open-decisions.md) records unresolved
+  or revisitable design questions.
+- [Active roadmaps](roadmap/index.md) contain incomplete work only.
+
+## Deferred Input-Language Material
+
+The C parser/C-to-IR reference is retained under `deferred/` and excluded from
+the published Fortran contributor workflow until that input path is mature.
+This does not hide the generated CPython C binding backend used by Fortran
+wrappers.

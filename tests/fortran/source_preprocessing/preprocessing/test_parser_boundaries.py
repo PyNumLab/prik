@@ -6,7 +6,7 @@ import re
 
 import pytest
 
-from prik import FortranParseError, parse_fortran_file
+from prik.parsers.fortran import FortranParseError, parse_fortran_file
 
 
 def test_fortran_lexer_strip_comment_preserves_directives_and_quoted_bangs():

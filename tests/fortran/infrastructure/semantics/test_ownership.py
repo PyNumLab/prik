@@ -1,12 +1,8 @@
 """Internal ownership defaults, dispatch, and validation contracts."""
 
-from pathlib import Path
-import subprocess
-import sys
-
 import pytest
 from prik.semantics.metadata import ADDRESS_ROLE_PROJECTION
-from prik.semantics.ownership import (
+from prik.policy.ownership import (
     CodegenAction,
     DestructionPolicy,
     NativeBarrierAction,
@@ -23,6 +19,7 @@ from prik.semantics.ownership import (
     TransferMode,
     default_ownership_policy,
 )
+from prik.semantics.ownership_metadata import set_ownership_metadata
 from tests.fortran._support.ownership_policy import (
     _address_type,
     _array_type,
@@ -234,6 +231,57 @@ def test_policy_handler_dictionary_changes_one_object_kind():
     assert array.transfer is TransferMode.WRAPPER_INSTANCE
 
 
+def test_explicit_ownership_override_preserves_normalized_fields_and_storage_invariants():
+    metadata: dict[str, object] = {}
+    set_ownership_metadata(
+        metadata,
+        owner="python",
+        transfer="snapshot_copy",
+        destruction="python_refcount",
+    )
+    metadata["ownership_policy"].update(
+        nullable=True,
+        borrowed=True,
+        reason="test override",
+    )
+
+    decision = default_ownership_policy.decide_semantic_type(
+        _array_type(allocatable=True, metadata=metadata),
+        OwnershipContext.result(),
+    )
+
+    assert decision.owner is OwnershipOwner.PYTHON
+    assert decision.transfer is TransferMode.SNAPSHOT_COPY
+    assert decision.destruction is DestructionPolicy.PYTHON_REFCOUNT
+    assert decision.storage_mode is StorageMode.HEAP
+    assert decision.nullable is True
+    assert decision.borrowed is True
+    assert decision.reason == "test override"
+
+
+def test_borrowed_pointer_override_blocks_before_unrelated_destruction_validation():
+    metadata = {
+        "ownership_policy": {
+            "owner": "native",
+            "transfer": "borrowed_view",
+            "destruction": "not_a_destruction_policy",
+            "nullable": False,
+        }
+    }
+
+    decision = default_ownership_policy.decide_semantic_type(
+        _array_type(pointer=True, metadata=metadata),
+        OwnershipContext.result(),
+    )
+
+    assert decision.owner is OwnershipOwner.UNKNOWN
+    assert decision.transfer is TransferMode.BLOCKED
+    assert decision.destruction is DestructionPolicy.BLOCKED
+    assert decision.storage_mode is StorageMode.ALIAS
+    assert decision.nullable is False
+    assert decision.blocker == ("borrowed pointer views need native-owner retention and stale-view invalidation")
+
+
 def test_codegen_action_dispatcher_routes_policy_actions_to_named_methods():
     class FakeVar:
         rank = 1
@@ -326,19 +374,3 @@ def test_barrier_dispatchers_reject_missing_completed_actions():
         PythonBarrierDispatcher({}).handler_name_for_decision(decision, "x")
     with pytest.raises(ValueError, match="native-barrier handler"):
         NativeBarrierDispatcher({}).handler_name_for_decision(decision, "x")
-
-
-def test_ownership_policy_direct_example_is_runnable():
-    repository_root = Path(__file__).resolve().parents[4]
-
-    result = subprocess.run(
-        [sys.executable, "prik/semantics/ownership.py"],
-        cwd=repository_root,
-        capture_output=True,
-        check=True,
-        text=True,
-    )
-
-    assert result.stdout == (
-        "before: math.scale(value): Float64 semantic IR\nafter: scalar/caller/call_local; scalar_value -> pass_value\n"
-    )

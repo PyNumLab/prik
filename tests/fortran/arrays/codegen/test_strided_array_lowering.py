@@ -5,8 +5,9 @@ from __future__ import annotations
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.policy.completion import complete_semantic_policies
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 
 def _strided_plan(rank: int = 2):
@@ -43,7 +44,7 @@ def test_strided_array_plan_names_bounds_and_element_strides_explicitly():
 
 
 def test_strided_array_lowering_validates_and_passes_one_explicit_bridge_slice():
-    artifacts = WrapperCodeGenerator().generate(_strided_plan())
+    artifacts = WrapperGenerator().generate(_strided_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
@@ -73,7 +74,7 @@ def test_strided_array_lowering_validates_and_passes_one_explicit_bridge_slice()
 
 
 def test_rank3_strided_array_pointer_sections_respect_free_form_line_limit():
-    artifacts = WrapperCodeGenerator().generate(_strided_plan(rank=3))
+    artifacts = WrapperGenerator().generate(_strided_plan(rank=3))
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
     assert "values => values_base(&" in bridge_source
@@ -88,7 +89,7 @@ def test_strided_role_edit_fails_before_backend_lowering():
     array.stride_roles = array.stride_roles[:1]
 
     with pytest.raises(ValueError, match="invalid-array-stride-roles"):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)
 
 
 def test_strided_dense_actual_role_edit_fails_before_backend_lowering():
@@ -98,4 +99,4 @@ def test_strided_dense_actual_role_edit_fails_before_backend_lowering():
     array.dense_actual_role = None
 
     with pytest.raises(ValueError, match="invalid-array-dense-actual-role"):
-        WrapperCodeGenerator().generate(plan)
+        WrapperGenerator().generate(plan)

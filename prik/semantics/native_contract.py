@@ -5,8 +5,8 @@ from dataclasses import dataclass
 
 from prik.semantics.metadata import BIND_TARGET_METADATA
 
-from .pyi_metadata import PYI_LOADED_METADATA
-from .models import (
+from prik.semantics.pyi_metadata import PYI_LOADED_METADATA
+from prik.semantics.models import (
     OVERLOAD_TARGET_METADATA,
     ProjectionMapping,
     SemanticClass,
@@ -270,3 +270,39 @@ def _type_issues(semantic_type: SemanticType, owner: str) -> list[NativeContract
     if isinstance(callback_return, SemanticType) and callback_return.name != "None":
         issues.extend(_type_issues(callback_return, f"{owner}.callback_return"))
     return issues
+
+
+if __name__ == "__main__":
+    from prik.semantics.models import SemanticArgument
+
+    valid_module = SemanticModule(
+        "math",
+        functions=[
+            SemanticFunction(
+                "scale",
+                arguments=[SemanticArgument("value", SemanticType("Float64", dtype="float64"))],
+            )
+        ],
+        metadata={PYI_LOADED_METADATA: True},
+    )
+    prepare_pyi_native_contract([valid_module])
+    valid_issues = native_contract_issues(valid_module)
+
+    invalid_module = SemanticModule(
+        "math",
+        functions=[
+            SemanticFunction(
+                "broken",
+                arguments=[SemanticArgument("value", SemanticType("Float64"))],
+            )
+        ],
+        metadata={PYI_LOADED_METADATA: True},
+    )
+    invalid_issue = native_contract_issues(invalid_module)[0]
+
+    print(
+        f"Prepared origin: {valid_module.origin.source_language} "
+        f"{valid_module.origin.source_kind} {valid_module.origin.native_name}"
+    )
+    print(f"Valid contract issues: {len(valid_issues)}")
+    print(f"Invalid contract issue: {invalid_issue.code} at {invalid_issue.owner}")

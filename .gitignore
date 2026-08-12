@@ -10,13 +10,11 @@ mutants/
 .ruff_cache/
 .benchmarks/
 htmlcov/
-site/
 build/
 
 *.pyc
 *.pyo
 *egg*
-dist/*
 
 *.mod
 *.out

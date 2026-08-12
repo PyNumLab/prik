@@ -2,7 +2,7 @@
 
 import pytest
 
-from prik import FortranParseError, parse_fortran_file
+from prik.parsers.fortran import FortranParseError, parse_fortran_file
 
 
 def test_derived_type_field_default_initializers_are_preserved():

@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 
 from prik.utilities.declaration_expressions import render_declaration_extent
-from prik.semantics.ownership import (
+from prik.policy.ownership import (
     AssignmentMode,
     CodegenAction,
     NativeBarrierAction,
@@ -21,7 +21,7 @@ from prik.semantics.ownership import (
     SetterAction,
 )
 from prik.semantics.metadata import SCALAR_STORAGE_CATEGORY
-from prik.semantics.wrapper_policy import (
+from prik.policy.models import (
     ArgumentHandoffMode,
     ArrayLogicalABI,
     ArrayWritebackABI,
@@ -53,7 +53,7 @@ from prik.semantics.wrapper_policy import (
     OptionalMode,
     ScalarLogicalABI,
 )
-from prik.types.numpy import is_boolean_semantic_type_name
+from prik.semantics.scalar_types import is_boolean_semantic_type_name
 from prik.codegen.nodes import (
     CodeExpression,
     FortranAllocate,
@@ -74,8 +74,8 @@ from prik.codegen.nodes import (
     FortranTypeDefinition,
     FortranUse,
 )
-from prik.codegen.naming import NativeSymbolNames
-from prik.codegen.plan import (
+from prik.naming.native_symbols import NativeSymbolNames
+from prik.planning.models import (
     ArrayHandoffPlan,
     ArgumentTransferPlan,
     CallbackHandoffPlan,
@@ -111,16 +111,6 @@ class FortranBridgeGenerator(ClassVisitor):
     Completed policy stays outside this class; unmatched lowering actions fail
     defensively instead of being reinterpreted here.
     """
-
-    def __init__(self, *, method_prefix: str | None = None):
-        """Initialize the visitor and clear the per-module scoped-type cache.
-
-        The optional prefix is forwarded unchanged to :class:`ClassVisitor`.
-        Scoped identities are temporary visitor state and are restored after
-        each module visit.
-        """
-        super().__init__(method_prefix=method_prefix)
-        self._active_scoped_type_identities: frozenset[tuple[str, str]] = frozenset()
 
     def require_supported(self, plan: ModulePlan) -> None:
         """Preflight primitive spellings required by an already-validated plan.
@@ -182,59 +172,55 @@ class FortranBridgeGenerator(ClassVisitor):
         PrimitiveScalarTypeRegistry.type_for(semantic_type_name)
 
     def _visit_ModulePlan(self, plan: ModulePlan) -> FortranModule:
-        """Build one complete bridge module from one validated module plan.
-
-        The temporary scoped-origin identity cache is installed only while this
-        visit runs and is restored even when a lowering helper fails.
-        """
+        """Build one complete bridge module from one validated module plan."""
         # Scoped origins are module-wide facts needed by derived-call lowering.
-        previous_scoped = self._active_scoped_type_identities
-        self._active_scoped_type_identities = self._scoped_origin_type_identities(plan)
-        try:
-            # Assemble imports, declarations, and procedures from plan projections.
-            return FortranModule(
-                name=f"bind_c_{plan.bridge.owner_path}_wrapper",
-                uses=(
-                    FortranUse("iso_c_binding", self._iso_c_symbols(plan)),
-                    *self._native_module_uses(plan),
+        scoped_origin_type_identities = self._scoped_origin_type_identities(plan)
+        # Assemble imports, declarations, and procedures from plan projections.
+        return FortranModule(
+            name=f"bind_c_{plan.bridge.owner_path}_wrapper",
+            uses=(
+                FortranUse("iso_c_binding", self._iso_c_symbols(plan)),
+                *self._native_module_uses(plan),
+            ),
+            type_definitions=self._derived_holder_definitions(plan),
+            interfaces=(
+                *self._derived_call_interfaces(plan),
+                *self._prototype_interfaces(plan),
+                *self._external_interfaces(plan),
+                *self._module_descriptor_callback_interfaces(plan),
+                *self._derived_array_callback_interfaces(plan),
+                *self._allocator_interfaces(plan),
+            ),
+            declarations=self._prototype_entity_declarations(plan),
+            procedures=(
+                *(
+                    procedure
+                    for namespace in plan.namespaces
+                    for procedure in self.visit(namespace, scoped_origin_type_identities)
                 ),
-                type_definitions=self._derived_holder_definitions(plan),
-                interfaces=(
-                    *self._derived_call_interfaces(plan),
-                    *self._prototype_interfaces(plan),
-                    *self._external_interfaces(plan),
-                    *self._module_descriptor_callback_interfaces(plan),
-                    *self._derived_array_callback_interfaces(plan),
-                    *self._allocator_interfaces(plan),
+                # Typed derived-field access remains separate from class orchestration.
+                *self._derived_field_procedures(plan),
+                # Native-aware opaque-owner destruction is Phase 8 substrate, not class orchestration.
+                *self._class_constructor_procedures(plan),
+                *(self._derived_destroy_procedure(derived) for derived in self._owned_derived_types(plan)),
+                *(
+                    self._allocatable_holder_destroy_procedure(derived)
+                    for derived in self._allocatable_holder_types(plan)
                 ),
-                declarations=self._prototype_entity_declarations(plan),
-                procedures=(
-                    *(procedure for namespace in plan.namespaces for procedure in self.visit(namespace)),
-                    # Typed derived-field access remains separate from class orchestration.
-                    *self._derived_field_procedures(plan),
-                    # Native-aware opaque-owner destruction is Phase 8 substrate, not class orchestration.
-                    *self._class_constructor_procedures(plan),
-                    *(self._derived_destroy_procedure(derived) for derived in self._owned_derived_types(plan)),
-                    *(
-                        self._allocatable_holder_destroy_procedure(derived)
-                        for derived in self._allocatable_holder_types(plan)
-                    ),
-                    *(
-                        self._allocatable_holder_presence_procedure(derived)
-                        for derived in self._allocatable_holder_types(plan)
-                    ),
-                    *(self._pointer_holder_destroy_procedure(derived) for derived in self._pointer_holder_types(plan)),
-                    *(self._pointer_holder_presence_procedure(derived) for derived in self._pointer_holder_types(plan)),
-                    *(
-                        procedure
-                        for variable in self._derived_origin_variables(plan)
-                        for procedure in self._derived_origin_procedures(variable)
-                    ),
+                *(
+                    self._allocatable_holder_presence_procedure(derived)
+                    for derived in self._allocatable_holder_types(plan)
                 ),
-                standalone_procedures=self._callback_standalone_adapter_procedures(plan),
-            )
-        finally:
-            self._active_scoped_type_identities = previous_scoped
+                *(self._pointer_holder_destroy_procedure(derived) for derived in self._pointer_holder_types(plan)),
+                *(self._pointer_holder_presence_procedure(derived) for derived in self._pointer_holder_types(plan)),
+                *(
+                    procedure
+                    for variable in self._derived_origin_variables(plan)
+                    for procedure in self._derived_origin_procedures(variable)
+                ),
+            ),
+            standalone_procedures=self._callback_standalone_adapter_procedures(plan),
+        )
 
     def _callback_standalone_adapter_procedures(self, plan: ModulePlan) -> tuple[FortranFunction, ...]:
         """Return separately linked callback adapters in stable site order."""
@@ -272,14 +258,18 @@ class FortranBridgeGenerator(ClassVisitor):
         )
         return (*allocatable, *pointers)
 
-    def _visit_NamespacePlan(self, plan: NamespacePlan) -> tuple[FortranFunction, ...]:
+    def _visit_NamespacePlan(
+        self,
+        plan: NamespacePlan,
+        scoped_origin_type_identities: frozenset[tuple[str, str]] = frozenset(),
+    ) -> tuple[FortranFunction, ...]:
         """Return bridge procedures directly owned by one Python namespace."""
         return (
             *(
                 procedure
                 for function in plan.functions
                 for procedure in (
-                    self.visit(function),
+                    self.visit(function, scoped_origin_type_identities),
                     *self._owned_native_array_result_operations(function),
                     *self._default_native_array_argument_operations(function),
                 )
@@ -287,7 +277,11 @@ class FortranBridgeGenerator(ClassVisitor):
             *(procedure for variable in plan.variables for procedure in self.visit(variable)),
         )
 
-    def _visit_FunctionPlan(self, plan: FunctionPlan) -> FortranFunction:
+    def _visit_FunctionPlan(
+        self,
+        plan: FunctionPlan,
+        scoped_origin_type_identities: frozenset[tuple[str, str]] = frozenset(),
+    ) -> FortranFunction:
         """Build one bridge procedure through ABI, call, and cleanup stages.
 
         All declarations and nodes come from completed function-plan actions;
@@ -327,7 +321,11 @@ class FortranBridgeGenerator(ClassVisitor):
         )
         # Stage 3: wrap native execution in derived-result and carrier lifecycles.
         call_body = self._derived_result_execution(plan, result_name, native_body)
-        derived_body, internal_procedures = self._derived_call_execution(plan, call_body)
+        derived_body, internal_procedures = self._derived_call_execution(
+            plan,
+            call_body,
+            scoped_origin_type_identities,
+        )
         return FortranFunction(
             name=bridge_name,
             parameters=parameters,
@@ -807,38 +805,44 @@ class FortranBridgeGenerator(ClassVisitor):
         self,
         plan: FunctionPlan,
         call_body: tuple,
+        scoped_origin_type_identities: frozenset[tuple[str, str]],
     ) -> tuple[tuple, tuple[FortranFunction, ...]]:
         """Prepare all carriers, invoke once, then restore in reverse order."""
         arguments = self._derived_arguments(plan)
         if not arguments:
             return call_body, ()
-        body = list(self._derived_call_preparation_nodes(arguments))
-        scoped = self._scoped_derived_arguments(arguments)
+        body = list(self._derived_call_preparation_nodes(arguments, scoped_origin_type_identities))
+        scoped = self._scoped_derived_arguments(arguments, scoped_origin_type_identities)
         invocation, internal = self._derived_call_invocation(arguments, scoped, call_body)
         body.append(invocation)
         body.extend(self._derived_transaction_restoration(argument) for argument in reversed(arguments))
         body.extend(node for argument in arguments for node in self._derived_argument_output_and_cleanup(argument))
         return tuple(body), internal
 
-    def _derived_call_preparation_nodes(self, arguments: tuple[ArgumentTransferPlan, ...]) -> tuple:
+    def _derived_call_preparation_nodes(
+        self,
+        arguments: tuple[ArgumentTransferPlan, ...],
+        scoped_origin_type_identities: frozenset[tuple[str, str]],
+    ) -> tuple:
         """Build carrier initialization, preparation, and transaction-acquisition nodes for derived arguments. Acquisition remains in argument order."""
         return (
             *(node for argument in arguments for node in self._derived_argument_initializers(argument)),
             FortranAssignment("prik_derived_ready", CodeExpression(".true.")),
-            *(self._derived_argument_preparation(argument) for argument in arguments),
+            *(self._derived_argument_preparation(argument, scoped_origin_type_identities) for argument in arguments),
             *(self._derived_transaction_acquisition(arguments, index) for index in range(len(arguments))),
         )
 
     def _scoped_derived_arguments(
         self,
         arguments: tuple[ArgumentTransferPlan, ...],
+        scoped_origin_type_identities: frozenset[tuple[str, str]],
     ) -> tuple[ArgumentTransferPlan, ...]:
-        """Select derived arguments that need scoped-origin invocation and whose producer exists in the active module."""
+        """Select derived arguments whose scoped-origin producer exists in this module."""
         return tuple(
             argument
             for argument in arguments
             if self._derived_argument_uses_access(argument, DerivedActualAccess.SCOPED_ADDRESS)
-            and self._has_scoped_origin_for_argument(argument)
+            and self._has_scoped_origin_for_argument(argument, scoped_origin_type_identities)
         )
 
     @staticmethod
@@ -888,7 +892,11 @@ class FortranBridgeGenerator(ClassVisitor):
             )
         return tuple(nodes)
 
-    def _derived_argument_preparation(self, argument: ArgumentTransferPlan) -> FortranSelectCase:
+    def _derived_argument_preparation(
+        self,
+        argument: ArgumentTransferPlan,
+        scoped_origin_type_identities: frozenset[tuple[str, str]],
+    ) -> FortranSelectCase:
         """Dispatch one carrier only by its completed ABI code."""
         compatible = {
             case.abi_code for case in argument.derived_call.cases if case.action is not DerivedCallAction.INCOMPATIBLE
@@ -905,7 +913,8 @@ class FortranBridgeGenerator(ClassVisitor):
         cases.extend(
             FortranCase(code, builders[code](argument))
             for code in sorted(compatible)
-            if code in builders and (code != 2 or self._has_scoped_origin_for_argument(argument))
+            if code in builders
+            and (code != 2 or self._has_scoped_origin_for_argument(argument, scoped_origin_type_identities))
         )
         cases.append(
             FortranCase(
@@ -1819,9 +1828,13 @@ class FortranBridgeGenerator(ClassVisitor):
             if self._derived_origin_supports(variable, "scoped")
         )
 
-    def _has_scoped_origin_for_argument(self, argument: ArgumentTransferPlan) -> bool:
+    @staticmethod
+    def _has_scoped_origin_for_argument(
+        argument: ArgumentTransferPlan,
+        scoped_origin_type_identities: frozenset[tuple[str, str]],
+    ) -> bool:
         """Return whether this bridge module can produce a scoped origin for the argument type."""
-        return argument.derived is not None and argument.derived.type_identity in self._active_scoped_type_identities
+        return argument.derived is not None and argument.derived.type_identity in scoped_origin_type_identities
 
     def _derived_origin_procedures(self, variable: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
         """Emit only the typed leaves supported by one completed module storage."""
@@ -7959,9 +7972,9 @@ class FortranBridgeGenerator(ClassVisitor):
 
 
 if __name__ == "__main__":
-    from prik.codegen.planner import WrapperPlanner
+    from prik.planning.planner import WrapperPlanner
     from prik.semantics.models import SemanticArgument, SemanticFunction, SemanticModule, SemanticType
-    from prik.semantics.policy_completion import complete_semantic_policies
+    from prik.policy.completion import complete_semantic_policies
 
     module = SemanticModule(
         name="bridge_demo",

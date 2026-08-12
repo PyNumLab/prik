@@ -3,8 +3,9 @@
 import pytest
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.policy.completion import complete_semantic_policies
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 
 def _allocatable_plan():
@@ -38,7 +39,7 @@ plain_allocatable: Allocatable[Float64[:]]
 
 
 def test_plain_module_allocatable_uses_standard_descriptor_callback_without_copy():
-    artifacts = WrapperCodeGenerator().generate(_module_allocatable_plan())
+    artifacts = WrapperGenerator().generate(_module_allocatable_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
 
@@ -56,7 +57,7 @@ def test_plain_module_allocatable_uses_standard_descriptor_callback_without_copy
 def test_allocated_direct_result_assigns_then_moves_into_owned_descriptor():
     bridge_source = next(
         source.text
-        for source in WrapperCodeGenerator().generate(_allocatable_plan()).sources
+        for source in WrapperGenerator().generate(_allocatable_plan()).sources
         if source.path.suffix == ".f90"
     )
     start = bridge_source.index("subroutine bind_c_make(")
@@ -84,7 +85,7 @@ def test_allocated_direct_result_assigns_then_moves_into_owned_descriptor():
 def test_maybe_unallocated_direct_result_uses_collector_without_assignment():
     bridge_source = next(
         source.text
-        for source in WrapperCodeGenerator().generate(_allocatable_plan()).sources
+        for source in WrapperGenerator().generate(_allocatable_plan()).sources
         if source.path.suffix == ".f90"
     )
     start = bridge_source.index("subroutine bind_c_maybe_make(")

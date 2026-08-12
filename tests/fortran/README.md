@@ -68,11 +68,12 @@ evidence, not the ownership rule.
 
 | Final directory | Owner |
 | --- | --- |
-| `infrastructure/binding_support/` | Native binding-support package contracts that have no public feature owner |
+| `infrastructure/execution_examples/` | Direct execution and exact-output contracts for the contributor architecture guide's selected production-file examples |
+| `infrastructure/runtime/` | Native runtime-support package contracts that have no public feature owner |
 | `infrastructure/semantics/` | Internal semantic ownership, policy completion, and completed wrapper-policy mechanics, with one test module per production module |
 | `infrastructure/codegen/` | Internal plan, planner, generator, binding, bridge, printer, docstring, check, and visitor mechanics, with one test module per production module |
 | `infrastructure/naming/` | Internal generated-name and public-name policy owned by `prik/naming/` |
-| `infrastructure/pipeline/` | Internal wrapper-artifact transport owned by `prik/pipeline/` |
+| `infrastructure/pipeline/` | Generated-wrapper orchestration and transport owned by `prik/pipeline/` |
 | `infrastructure/types/` | Internal NumPy type mapping and target mapping-report mechanics |
 | `infrastructure/utilities/` | Internal string and class-visitor helpers owned by `prik/utilities/` |
 

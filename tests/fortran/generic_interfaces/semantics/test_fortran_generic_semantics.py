@@ -8,7 +8,7 @@ from prik.semantics.fortran2ir import (
     fortran_module_to_semantic_module,
 )
 from prik.semantics.metadata import BIND_TARGET_METADATA
-from prik import parse_fortran_file as parse_fortran_source
+from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 
 OPERATOR_F90_SOURCE = Path(__file__).parents[1] / "end_to_end" / "fixtures" / "foperators_f90.f90"
 

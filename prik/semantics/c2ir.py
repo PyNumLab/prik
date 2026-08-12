@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from prik.types.numpy import BOOLEAN_STORAGE_BITS
+from prik.semantics.scalar_types import BOOLEAN_STORAGE_BITS
 
 from prik.parsers.c.models import (
     CArray,

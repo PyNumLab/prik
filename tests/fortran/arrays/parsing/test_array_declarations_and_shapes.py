@@ -1,6 +1,6 @@
 """Tests split by stable ownership concept from `test_procedures_and_interfaces.py`."""
 
-from prik import parse_fortran_file
+from prik.parsers.fortran import parse_fortran_file
 from prik.parsers.fortran.models import (
     FortranUseMapping,
     FortranVariable,

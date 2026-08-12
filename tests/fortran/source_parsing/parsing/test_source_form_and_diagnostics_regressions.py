@@ -2,10 +2,7 @@
 
 import pytest
 from pathlib import Path
-from prik import (
-    FortranParseError,
-    parse_fortran_file,
-)
+from prik.parsers.fortran import FortranParseError, parse_fortran_file
 from prik.parsers.fortran.models import (
     FortranArgument,
     FortranDerivedType,
@@ -15,74 +12,103 @@ from prik.parsers.fortran.models import (
 from prik.parsers.fortran.parser import (
     FortranParser,
     _ParserScope,
-    _UnitParts,
+    _SourceUnitScanner,
 )
 from tests.fortran._support.parser_regressions import (
-    _empty_unit,
     _lines,
     _unit,
 )
 
 
-def test_unit_region_helpers_preserve_specification_execution_and_contains_boundaries():
-    parser = FortranParser()
-    unit = _unit(
-        "procedure",
-        "work",
+def test_source_unit_classification_preserves_child_regions_and_direct_ownership():
+    scanner = _SourceUnitScanner()
+    unit = scanner.scan_file_units(
+        _lines(
+            "module owner",
+            "integer :: value",
+            "interface callbacks",
+            "  subroutine callback()",
+            "  end subroutine callback",
+            "end interface callbacks",
+            "interface generic_work",
+            "  module procedure work",
+            "end interface generic_work",
+            "contains",
+            "# generated marker",
+            "subroutine work()",
+            "end subroutine work",
+            "end module owner",
+        ),
+        filename="regions.f90",
+    )[0]
+
+    assert unit.header == unit.lines[0]
+    assert unit.footer == unit.lines[-1]
+    assert [line for line, _lineno, _source in unit.specification] == ["integer :: value"]
+    assert unit.execution == []
+    assert [line.strip() for line, _lineno, _source in unit.contains] == ["# generated marker"]
+    assert [(child.kind, child.name, child.parent_region) for child in unit.children] == [
+        ("interface", "callbacks", "specification"),
+        ("interface", "generic_work", "specification"),
+        ("procedure", "work", "contains"),
+    ]
+    assert [(child.kind, child.name, child.parent_region) for child in unit.children[0].children] == [
+        ("procedure", "callback", "specification")
+    ]
+    assert [line.strip() for line, _lineno, _source in unit.children[1].specification] == ["module procedure work"]
+
+
+def test_procedure_classification_keeps_local_interfaces_and_omits_internal_procedures():
+    scanner = _SourceUnitScanner()
+    unit = scanner.scan_file_units(
+        _lines(
+            "subroutine work(callback)",
+            "integer :: value",
+            "interface",
+            "  subroutine callback()",
+            "  end subroutine callback",
+            "end interface",
+            "value = 1",
+            "contains",
+            "subroutine inner()",
+            "end subroutine inner",
+            "end subroutine work",
+        ),
+        filename="regions.f90",
+    )[0]
+
+    assert [line for line, _lineno, _source in unit.specification] == ["integer :: value"]
+    assert [line for line, _lineno, _source in unit.execution] == ["value = 1"]
+    assert unit.contains == []
+    assert [(child.kind, child.name, child.parent_region) for child in unit.children] == [
+        ("interface", None, "specification")
+    ]
+
+    assert scanner.has_preferred_unit_end_ahead(unit.lines, 0, "procedure", "work") is True
+    assert scanner.has_preferred_unit_end_ahead(unit.lines, 0, "procedure", "missing") is False
+    assert scanner.has_preferred_unit_end_ahead(unit.lines[:-1], 0, "procedure", "work") is False
+    immediate_type = _lines("type :: immediate", "end type immediate")
+    assert scanner.has_preferred_unit_end_ahead(immediate_type, 0, "derived_type", "immediate") is True
+    assert scanner.has_unit_end_ahead(immediate_type, 0, "derived_type") is True
+    assert scanner.has_unit_end_ahead(unit.lines, 0, "procedure") is True
+
+
+def test_unit_end_search_tracks_nested_specification_and_contains_units():
+    scanner = _SourceUnitScanner()
+    lines = _lines(
         "subroutine work()",
-        "integer :: value",
         "type :: local_state",
         "end type local_state",
-        "value = 1",
         "contains",
         "subroutine inner()",
         "end subroutine inner",
         "end subroutine work",
     )
-    parts = _UnitParts(
-        header=unit.lines[0],
-        specification=[unit.lines[1]],
-        execution=[unit.lines[4]],
-        contains=[unit.lines[6], unit.lines[7]],
-        footer=unit.lines[-1],
-    )
 
-    assert parser._helper_direct_contains_line(unit, filename="regions.f90") == 6
-    assert parser._helper_child_unit_region(unit, parts, _empty_unit("derived_type", "unknown", None, None)) == (
-        "specification"
-    )
-    assert parser._helper_child_unit_region(
-        unit, parts, _unit("derived_type", "local_state", "type :: local_state")
-    ) == ("specification")
-    assert (
-        parser._helper_child_unit_region(
-            unit,
-            parts,
-            _empty_unit("interface", None, 5, 5),
-        )
-        == "execution"
-    )
-    assert (
-        parser._helper_child_unit_region(
-            unit,
-            parts,
-            _empty_unit("procedure", "inner", 7, 8),
-        )
-        == "contains"
-    )
-
-    assert parser._helper_has_preferred_unit_end_ahead(unit.lines, 0, "procedure", "work") is True
-    assert parser._helper_has_preferred_unit_end_ahead(unit.lines, 0, "procedure", "missing") is False
-    assert parser._helper_has_preferred_unit_end_ahead(unit.lines[:-1], 0, "procedure", "work") is False
-    immediate_type = _lines("type :: immediate", "end type immediate")
-    assert parser._helper_has_preferred_unit_end_ahead(immediate_type, 0, "derived_type", "immediate") is True
-    assert parser._helper_has_unit_end_ahead(immediate_type, 0, "derived_type") is True
-    assert parser._helper_has_unit_end_ahead(unit.lines, 2, "derived_type") is True
-    assert parser._helper_has_unit_end_ahead(unit.lines, 6, "procedure") is True
-    assert parser._helper_has_unit_end_ahead(unit.lines[:-1], 0, "procedure") is True
-
-    immediate_contains = _unit("module", "owner", "module owner", "contains", "end module owner")
-    assert parser._helper_direct_contains_line(immediate_contains, filename="regions.f90") == 2
+    assert scanner.find_unit_end(lines, 0, "procedure", filename="regions.f90") == 6
+    assert scanner.has_unit_end_ahead(lines, 1, "derived_type") is True
+    assert scanner.has_unit_end_ahead(lines, 4, "procedure") is True
+    assert scanner.has_unit_end_ahead(lines[:-1], 0, "procedure") is True
 
 
 def test_source_preparation_rejects_raw_cpp_and_preserves_root_units_and_source_form(tmp_path: Path):
@@ -128,8 +154,8 @@ end subroutine global_step
     assert error.value.code == "PARSE_PREPROCESSING_REQUIRED"
 
 
-def test_child_unit_slicing_skips_preprocessed_linemarkers_and_blank_unit_starts():
-    parser = FortranParser()
+def test_file_unit_scanning_skips_preprocessed_linemarkers_and_blank_unit_starts():
+    scanner = _SourceUnitScanner()
     lines = _lines(
         '# 4 "generated.f90"',
         "",
@@ -137,31 +163,31 @@ def test_child_unit_slicing_skips_preprocessed_linemarkers_and_blank_unit_starts
         "end module owner",
     )
 
-    units = parser._helper_slice_child_units(
+    units = scanner.scan_file_units(
         lines,
-        parent_scope=_ParserScope(kind="file", name=None),
         filename="generated.f90",
     )
 
     assert [(unit.kind, unit.name) for unit in units] == [("module", "owner")]
-    assert parser._helper_classify_unit_start("   ") is None
+    assert scanner.classify_unit_start("   ") is None
 
 
 def test_unit_end_and_header_validation_preserve_public_diagnostics():
     parser = FortranParser()
+    scanner = _SourceUnitScanner()
 
-    assert parser._helper_parse_unit_end("module", "end module owner_mod") == (True, "owner_mod")
-    assert parser._helper_parse_unit_end("block_data", "end") == (True, None)
-    assert parser._helper_parse_unit_end("procedure", "end function value") == (True, "value")
-    assert parser._helper_unit_end_matches("enum", "end enum") is True
-    assert parser._helper_unit_label("block_data") == "block data"
+    assert scanner.parse_unit_end("module", "end module owner_mod") == (True, "owner_mod")
+    assert scanner.parse_unit_end("block_data", "end") == (True, None)
+    assert scanner.parse_unit_end("procedure", "end function value") == (True, "value")
+    assert scanner.unit_end_matches("enum", "end enum") is True
+    assert scanner.unit_label("block_data") == "block data"
     assert parser._parse_submodule_header("submodule (ancestor_mod:parent_mod) child_mod", "headers.f90").parent == (
         "parent_mod"
     )
     assert parser._split_submodule_parent("ancestor_mod:parent_mod") == ("parent_mod", "ancestor_mod")
     assert parser._split_submodule_parent("parent_mod") == ("parent_mod", None)
-    assert parser._parse_interface_header("abstract interface") == (True, None)
-    assert parser._parse_interface_header("interface callbacks") == (True, "callbacks")
+    assert scanner.parse_interface_header("abstract interface") == (True, None)
+    assert scanner.parse_interface_header("interface callbacks") == (True, "callbacks")
 
     with pytest.raises(FortranParseError) as module_error:
         parser._parse_module_header(
@@ -193,8 +219,7 @@ def test_unit_end_and_header_validation_preserve_public_diagnostics():
     assert procedure_error.value.code == "PARSE_MALFORMED_HEADER"
 
 
-def test_unit_part_splitting_skips_nested_units_and_preserves_executable_boundary():
-    parser = FortranParser()
+def test_classified_unit_regions_skip_nested_units_and_preserve_executable_boundary():
     unit = _unit(
         "procedure",
         "work",
@@ -212,13 +237,11 @@ def test_unit_part_splitting_skips_nested_units_and_preserves_executable_boundar
         "end subroutine work",
     )
 
-    parts = parser._helper_split_unit_parts(unit, parser._helper_unit_grammar("procedure"), filename="parts.f90")
-
-    assert [line for line, _lineno, _source in parts.specification] == ["integer :: counter"]
-    assert [line for line, _lineno, _source in parts.execution] == ["counter = counter + 1"]
-    assert parts.contains == []
-    assert parts.header == unit.lines[0]
-    assert parts.footer == unit.lines[-1]
+    assert [line for line, _lineno, _source in unit.specification] == ["integer :: counter"]
+    assert [line for line, _lineno, _source in unit.execution] == ["counter = counter + 1"]
+    assert unit.contains == []
+    assert unit.header == unit.lines[0]
+    assert unit.footer == unit.lines[-1]
 
 
 def test_sibling_unit_validation_ignores_unnamed_units_and_preserves_duplicate_diagnostics():
@@ -273,17 +296,13 @@ def test_finalize_proc_duplicate_argument_diagnostic_preserves_header_metadata()
         arguments=[FortranArgument("value"), FortranArgument("VALUE")],
     )
 
+    state = parser._new_procedure_scope_state(signature, symbols={})
+    state.filename = "finalize_contract.f90"
+    state.header_lineno = 12
+    state.header_source_line = "subroutine step(value, VALUE)"
+
     with pytest.raises(FortranParseError) as error:
-        parser._finalize_proc(
-            {
-                "signature": signature,
-                "symbols": {},
-                "uses": {},
-                "filename": "finalize_contract.f90",
-                "header_lineno": 12,
-                "header_source_line": "subroutine step(value, VALUE)",
-            }
-        )
+        parser._finalize_proc(state)
 
     assert error.value.base_message == "Duplicate argument name 'VALUE' in procedure 'step'."
     assert error.value.filename == "finalize_contract.f90"
@@ -292,16 +311,16 @@ def test_finalize_proc_duplicate_argument_diagnostic_preserves_header_metadata()
     assert error.value.code == "PARSE_DUPLICATE_ARGUMENT"
 
 
-def test_declaration_push_preserves_type_field_metadata_and_duplicate_field_diagnostic():
+def test_declaration_storage_preserves_type_field_metadata_and_duplicate_field_diagnostic():
     parser = FortranParser()
     dtype = FortranDerivedType("state_t")
     scope = _ParserScope(kind="derived_type", name=dtype.name, model=dtype)
-    meta = parser._new_decl_meta("integer", "i4")
-    meta.update({"pointer": True, "shape": [":"], "rank": 1})
+    declaration = parser._new_declaration("integer", "i4")
+    parser._apply_declaration_attributes(declaration, ["pointer", "dimension(:)"])
 
-    parser._helper_push_declaration_to_scope(
+    parser._store_declaration(
         scope,
-        meta=meta,
+        declaration=declaration,
         right="ids, IDs",
         role="type_field",
         filename="declarations.f90",
@@ -323,7 +342,10 @@ def test_declaration_push_preserves_type_field_metadata_and_duplicate_field_diag
 
 def test_unknown_procedure_declaration_diagnostic_preserves_public_metadata():
     parser = FortranParser()
-    state = {"signature": FortranProcedureSignature(name="work", kind="subroutine")}
+    state = parser._new_procedure_scope_state(
+        FortranProcedureSignature(name="work", kind="subroutine"),
+        symbols={},
+    )
 
     with pytest.raises(FortranParseError) as error:
         parser._handle_unknown_proc_declaration(
@@ -563,7 +585,6 @@ def test_singular_parser_entrypoint_diagnostics_preserve_names_entities_and_file
         ("_parse_program_header", None, "program", "program"),
         ("_parse_block_data_header", None, "block_data", "block data"),
         ("_init_derived_type", None, "derived_type", "derived-type"),
-        ("_parse_interface_header", (False, None), "interface", "interface"),
     ],
 )
 def test_source_unit_visitor_defensive_diagnostics_preserve_public_metadata(
@@ -584,6 +605,24 @@ def test_source_unit_visitor_defensive_diagnostics_preserve_public_metadata(
         )
 
     assert error.value.base_message == f"Expected {entity_name} unit."
+    assert error.value.filename == "visitor_contract.f90"
+    assert error.value.line_number == 1
+    assert error.value.source_line == "broken header"
+    assert error.value.code == "PARSE_EXPECTED_UNIT"
+
+
+def test_interface_unit_defensive_diagnostic_uses_scanner_header_recognition(monkeypatch):
+    parser = FortranParser()
+    monkeypatch.setattr(parser._source_unit_scanner, "parse_interface_header", lambda _line: (False, None))
+
+    with pytest.raises(FortranParseError) as error:
+        parser._visit(
+            _unit("interface", "broken", "broken header", "broken footer"),
+            parent_scope=_ParserScope(kind="file", name=None),
+            filename="visitor_contract.f90",
+        )
+
+    assert error.value.base_message == "Expected interface unit."
     assert error.value.filename == "visitor_contract.f90"
     assert error.value.line_number == 1
     assert error.value.source_line == "broken header"

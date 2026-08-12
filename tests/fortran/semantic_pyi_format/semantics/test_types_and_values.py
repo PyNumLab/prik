@@ -2,8 +2,8 @@
 
 import ast
 import pytest
-from prik import parse_fortran_file
-from prik.codegen.printers import emit_module
+from prik.parsers.fortran import parse_fortran_file
+from prik.printers import emit_module
 from prik.pipeline.pyi import pyi_text_to_semantic_module
 from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
 from prik.semantics.metadata import (

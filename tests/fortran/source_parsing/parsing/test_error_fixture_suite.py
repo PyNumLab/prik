@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from prik import FortranParseError, parse_fortran_file
+from prik.parsers.fortran import FortranParseError, parse_fortran_file
 
 
 def parse_fortran_procedures(source, filename=None):

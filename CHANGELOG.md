@@ -9,8 +9,74 @@ release tags add a leading `v` to the package version.
 
 ### Added
 
+- Reorganized contributor documentation around a concise architecture guide
+  and one canonical page per production package, with local structures,
+  important objects, runnable examples, expected outputs, test owners, change
+  routes, and invariants.
+- Consolidated cross-stage concepts and contributor workflows, retained future
+  and deferred designs explicitly, and removed TODO-only pages, duplicate
+  architecture maps, and completed migration ledgers.
 - Added Zenodo version and concept DOI links to the citation metadata, README,
   and About page.
+
+### Changed
+
+- Reduced the root `prik` API to its version and normal-user build entrypoints;
+  parser, semantic, probe, runtime, and planning tools now use their owning
+  package import paths.
+- Moved stage-record freezing from `prik.stage_values` to
+  `prik.utilities.stage_values`; the root module path was removed.
+- Made `prik` an import-only package boundary by removing its direct-script
+  demonstration; command and stage-value examples remain available from their
+  owning modules.
+- Expanded the contributor architecture and package guides into a complete
+  stage-by-stage tutorial, with every supported Python module, runnable example
+  result, focused test purpose, and change route recorded and checked against
+  the source tree.
+- Moved generated documentation and distribution output under the hidden
+  `.artifacts/` directory in local commands and CI workflows.
+- Centralized every production-file execution-example output contract in one
+  contributor-architecture test inventory with one named test per file.
+- Renamed the central infrastructure owner to `execution_examples/` so its
+  responsibility is explicit in the test tree.
+- Consolidated developer and maintainer material under one Contributor
+  Documentation tree and removed the separate maintainer documentation lane.
+- Moved the bundled header-only binding runtime from the package root into
+  `prik.runtime.native_support`; generated builds continue to receive it under
+  their internal `binding_support/` include directory.
+- Deferred the contributor architecture sections for the immature C input
+  parser and C-to-IR path while retaining the generated CPython C binding
+  backend documentation required by Fortran wrappers.
+- Reorganized compiler and pre-parse infrastructure into `prik.compiler` and
+  `prik.preprocessing`, including C/Fortran preprocessing and target probes;
+  the former `prik.compiling`, `prik.probes`, parser-local C preprocessor, and
+  pipeline-local preprocessing import paths were removed.
+- Replaced the public semantic-to-NumPy helper API with stage-owned semantic,
+  contract-runtime, and code-generation datatype catalogues, and documented the
+  complete internal datatype lifecycle from compiler probing to runtime
+  validation.
+- Separated post-IR policy and wrapper planning into `prik.policy` and
+  `prik.planning`; code generation now renders plan-driven docstrings, and the
+  former maintainer import paths were removed.
+- Added a top-level language-printer package for C, Fortran, and semantic
+  `.pyi` output, and made `pipeline.wrapper.WrapperGenerator` the single
+  plan-to-rendered-wrapper orchestration boundary.
+- Documented the completed ownership vocabulary, lifetime-policy philosophy,
+  pointer-policy boundary, and maintainer change routes in one maintained
+  architecture reference.
+- Moved exact overload selection from generated Python predicate chains to
+  generated C dispatchers with planned candidate IDs and direct switch-based
+  calls to the selected existing wrapper.
+- Stopped standalone Fortran parser discovery from descending into inaccessible
+  procedure-internal subprograms; procedure-local callback interfaces remain
+  classified and discoverable.
+- Made directory project parsing read and parse each discovered Fortran file
+  once before dependency ordering and project assembly.
+
+### Fixed
+
+- Unified source-level compile-time resolution across project and CLI parsing
+  so imported and host-associated kind facts also reach derived-type fields.
 
 ## 0.2.1 — 2026-08-11
 

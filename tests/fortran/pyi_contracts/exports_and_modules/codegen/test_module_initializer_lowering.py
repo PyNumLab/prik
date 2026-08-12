@@ -1,8 +1,9 @@
 """Wrapper lowering selected by completed module initializer policy."""
 
 from tests.fortran._support.ownership_policy import parse_pyi_text
-from prik.semantics.policy_completion import complete_semantic_policies
-from prik.codegen import WrapperCodeGenerator, WrapperPlanner
+from prik.policy.completion import complete_semantic_policies
+from prik.pipeline.wrapper import WrapperGenerator
+from prik.planning import WrapperPlanner
 
 
 def test_module_variable_literal_families_select_their_c_spelling():
@@ -17,7 +18,7 @@ phase: Complex128 = 1 + 2j
     )
     complete_semantic_policies(module)
 
-    artifacts = WrapperCodeGenerator().generate(WrapperPlanner().build(module))
+    artifacts = WrapperGenerator().generate(WrapperPlanner().build(module))
     c_source = next(item.text for item in artifacts.sources if item.path.name.endswith(".c"))
 
     assert "bind_c_set_enabled(true);" in c_source
