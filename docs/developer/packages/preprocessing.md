@@ -22,16 +22,18 @@ complete wrapper policy.
 
 ```text
 prik/preprocessing/
+├── __init__.py
 ├── source.py
 ├── fortran.py
 └── probes/
+    ├── __init__.py
     └── fortran_types.py
 ```
 
 The C preprocessing and target-probe modules remain deferred from the
 published Fortran contributor workflow.
 
-## Internal Workflow
+## What This Stage Receives And Produces
 
 ```text
 original Fortran path + PreprocessingConfig
@@ -51,13 +53,15 @@ included files, source mappings, and diagnostics so a build can explain or
 replay its parser input. Probe cache identity includes the compiler and target
 configuration; measured facts must not cross targets silently.
 
-## Important Files And Essential Objects
+## Directory Tour
 
-| File | Important objects | Responsibility |
+| Module | Main entrypoints and contents | Change it when |
 | --- | --- | --- |
-| `source.py` | `PreprocessingConfig`, `PreprocessingRecipe`, `PreprocessResult`, `SourceMapping`, `IncludedFile` | Runs compiler preprocessing, collects provenance and dependencies, and coordinates native include expansion. |
-| `fortran.py` | `expand_native_fortran_includes()` | Recursively expands native `INCLUDE` statements while preserving original locations and diagnostics. |
-| `probes/fortran_types.py` | `FortranTypeProbeRecipe`, `FortranTypeProbeReport` | Compiles and runs target programs for kind expressions, storage widths, logical representations, and compile-time values. |
+| [`prik/preprocessing/__init__.py`](../../../prik/preprocessing/__init__.py) | Re-exports the supported source-preparation records, adapters, and entrypoints, including `expand_native_fortran_includes()`. | The supported preprocessing import API changes. |
+| [`prik/preprocessing/source.py`](../../../prik/preprocessing/source.py) | `PreprocessingConfig`, `PreprocessingPlan`, `PreprocessingRecipe`, `PreprocessResult`, `SourceMapping`, and `IncludedFile`; builds compiler invocations, runs them, recovers mappings, and retains diagnostics/provenance. | Compiler-preprocessor adapters, recipes, line-marker handling, source provenance, or diagnostics change. |
+| [`prik/preprocessing/fortran.py`](../../../prik/preprocessing/fortran.py) | `expand_native_fortran_includes()` expands native `INCLUDE` directives recursively while preserving locations and diagnostics. | Native Fortran include discovery or expansion changes. |
+| [`prik/preprocessing/probes/__init__.py`](../../../prik/preprocessing/probes/__init__.py) | Namespace marker for compiler-derived target facts. | A probe-level public import surface is deliberately introduced. |
+| [`prik/preprocessing/probes/fortran_types.py`](../../../prik/preprocessing/probes/fortran_types.py) | `FortranTypeProbeRecipe` and `FortranTypeProbeReport` compile and run small target programs for kind expressions, storage widths, logical representations, and compile-time values. | Measured fact generation, validation, cache identity, or probe execution changes. |
 
 ## Execution Examples
 
@@ -110,12 +114,12 @@ mapping facts. The probe output is a native kind value, not yet a stable
 semantic scalar or NumPy dtype. The probe example requires `gfortran` or
 `f95`.
 
-## Tests
+## Tests And What They Prove
 
-- [Fortran preprocessing](../../../tests/fortran/source_preprocessing/preprocessing/)
-- [Parser boundary tests](../../../tests/fortran/source_preprocessing/preprocessing/test_parser_boundaries.py)
-- [Fortran target probes](../../../tests/fortran/data_types/probes/test_fortran_type_probes.py)
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py)
+- [Fortran preprocessing](../../../tests/fortran/source_preprocessing/preprocessing/) covers adapters, recipes, mappings, dependencies, and diagnostics.
+- [Parser boundary tests](../../../tests/fortran/source_preprocessing/preprocessing/test_parser_boundaries.py) prove that prepared source reaches parsing with preserved facts.
+- [Fortran target probes](../../../tests/fortran/data_types/probes/test_fortran_type_probes.py) cover measured type facts and cache separation.
+- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes the three demonstrations above.
 
 ## Change Routes
 

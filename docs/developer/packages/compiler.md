@@ -21,13 +21,14 @@ or decide wrapper policy.
 
 ```text
 prik/compiler/
+├── __init__.py
 ├── compiler_profiles.py
 ├── objects.py
 ├── compilers.py
 └── native_support.py
 ```
 
-## Internal Workflow
+## What This Stage Receives And Produces
 
 ```text
 explicit ObjectFile and link inputs from prik.pipeline
@@ -41,14 +42,15 @@ The selected Fortran compiler family supplies its matching C driver and
 family-specific switches. The pipeline owns dependency-ready batches; the
 compiler executes one request at a time.
 
-## Important Files And Essential Objects
+## Directory Tour
 
-| File | Important objects | Responsibility |
+| Module | Main entrypoints and contents | Change it when |
 | --- | --- | --- |
-| `compiler_profiles.py` | compiler profile records, `fortran_compiler_family()` | Resolves GNU, Intel, LLVM, NVIDIA, or PGI language families and matching drivers. |
-| `objects.py` | `ObjectFile` | Immutable input for one source-to-object command. |
-| `compilers.py` | `Compiler` | Constructs, records, executes, and reports native compile/link commands. |
-| `native_support.py` | `install_native_support()` | Installs the bundled header runtime and NumPy API-version header into a generated wrapper directory. |
+| [`prik/compiler/__init__.py`](../../../prik/compiler/__init__.py) | Deliberately empty package boundary; callers use the owning modules or pipeline APIs. | Establishing a small compiler-package public import surface. |
+| [`prik/compiler/compiler_profiles.py`](../../../prik/compiler/compiler_profiles.py) | Profile data and `fortran_compiler_family()` map a Fortran executable to its compatible C driver and flags. | Supporting a compiler family or changing family-specific build settings. |
+| [`prik/compiler/objects.py`](../../../prik/compiler/objects.py) | `ObjectFile` is the immutable description of one source-to-object request. | A compilation input needs another explicit field or validation rule. |
+| [`prik/compiler/compilers.py`](../../../prik/compiler/compilers.py) | `Compiler` builds, records, runs, and reports compile/link commands; `get_condaless_search_path()` isolates environment lookup. | Command spelling, subprocess execution, or command reporting changes. |
+| [`prik/compiler/native_support.py`](../../../prik/compiler/native_support.py) | `install_native_support()` copies the bundled support payload and creates the NumPy API-version header. | The pipeline needs a different support-installation result; edit the payload itself under `runtime/native_support/`. |
 
 ## Execution Examples
 
@@ -108,13 +110,13 @@ NumPy version header present: True
 Together these outputs prove that profile selection, request construction,
 native command mechanics, and support installation remain separate operations.
 
-## Tests
+## Tests And What They Prove
 
-- [Compiler construction tests](../../../tests/fortran/building_shared_library/compiling/)
-- [Build pipeline tests](../../../tests/fortran/building_shared_library/pipeline/)
-- [Source build modes](../../../tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py)
-- [Runtime ABI compatibility](../../../tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py)
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py)
+- [Compiler construction tests](../../../tests/fortran/building_shared_library/compiling/) cover profile selection and compile/link argv.
+- [Build pipeline tests](../../../tests/fortran/building_shared_library/pipeline/) cover compiler handoff from a build plan.
+- [Source build modes](../../../tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py) covers real source-build outcomes.
+- [Runtime ABI compatibility](../../../tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py) covers installed support used by a compiled extension.
+- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes the four demonstrations above.
 
 ## Change Routes
 

@@ -21,6 +21,7 @@ completed behavior; they do not decide ownership or invent missing operations.
 
 ```text
 prik/runtime/
+├── __init__.py
 ├── handles.py
 └── native_support/
     ├── __init__.py
@@ -28,7 +29,7 @@ prik/runtime/
     └── LICENSE
 ```
 
-## Internal Workflow
+## What This Stage Receives And Produces
 
 ```text
 generated extension operation dictionary
@@ -40,13 +41,15 @@ generated extension operation dictionary
 The native-support initializer only makes the payload locatable. The compiler
 installs it into a generated `binding_support/` include directory.
 
-## Important Files And Essential Objects
+## Directory Tour
 
-| File | Important objects | Responsibility |
+| Path | Main entrypoints and contents | Change it when |
 | --- | --- | --- |
-| `handles.py` | `NativeArrayHandleBase`, `AllocatableArray`, `PointerArray` | Adapts generated descriptor operations into stable Python APIs and live NumPy views. |
-| `native_support/prik_binding.h` | capsule, descriptor, validation, conversion, and release helpers | Supplies the header-only native runtime used by generated bindings. |
-| `native_support/__init__.py` | package marker | Makes the payload discoverable without creating another runtime API. |
+| [`prik/runtime/__init__.py`](../../../prik/runtime/__init__.py) | Package boundary for Python runtime support. | A small supported runtime import surface is deliberately introduced. |
+| [`prik/runtime/handles.py`](../../../prik/runtime/handles.py) | `NativeArrayHandleBase`, `AllocatableArray`, and `PointerArray` validate generated operations, retain owners, and produce policy-permitted live NumPy views. | Handle protocol, validation, retention, descriptor conversion, or Python operation behavior changes. |
+| [`prik/runtime/native_support/__init__.py`](../../../prik/runtime/native_support/__init__.py) | Locates the bundled native-support payload without creating another Python runtime API. | Payload discovery changes. |
+| `runtime/native_support/prik_binding.h` | Bundled native capsule, descriptor, validation, conversion, and release support compiled into generated bindings. | A generated binding requires changed native support; also inspect `compiler/native_support.py` installation. |
+| `runtime/native_support/LICENSE` | License text distributed with the native payload. | The payload licensing changes. |
 
 ## Execution Example
 
@@ -70,14 +73,14 @@ storage is live, not a detached snapshot.
 The native payload intentionally has no standalone Python example: it is
 compiled only as part of a generated binding.
 
-## Tests
+## Tests And What They Prove
 
-- [Allocatable runtime tests](../../../tests/fortran/allocatables/runtime/)
-- [Pointer runtime tests](../../../tests/fortran/pointers/runtime/)
-- [Memory-management runtime tests](../../../tests/fortran/memory_management/runtime/)
-- [Runtime infrastructure](../../../tests/fortran/infrastructure/runtime/)
-- [Compiled runtime compatibility](../../../tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py)
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py)
+- [Allocatable runtime tests](../../../tests/fortran/allocatables/runtime/) cover allocatable operations and NumPy views.
+- [Pointer runtime tests](../../../tests/fortran/pointers/runtime/) cover pointer association and views.
+- [Memory-management runtime tests](../../../tests/fortran/memory_management/runtime/) cover release and ownership enforcement.
+- [Runtime infrastructure](../../../tests/fortran/infrastructure/runtime/) covers generated-operation protocols.
+- [Compiled runtime compatibility](../../../tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py) covers the payload in a real extension.
+- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes the handle demonstration above.
 
 ## Change Routes
 

@@ -9,27 +9,25 @@ publication: draft
 
 # Contributor Architecture Guide
 
-This is the first internal document to read before changing PRIK. It explains
-the repository at a shallow level, the complete Fortran wrapper workflow, the
-authority of every stage, the package-root entrypoints, and where to find the
-detailed package and test documentation.
+Read this page before changing PRIK. It gives the complete wrapper path, the
+handoff at every stage, and the owner of each top-level directory. Then read
+the linked package guide for the file you intend to change. Package guides
+explain local modules, runnable examples, and focused tests; this page stays
+at the workflow level.
 
 ## Repository Structure
 
-The first tree is intentionally shallow. Detailed contents belong in the guide
-for the owning folder.
-
 ```text
 prik/
-├── prik/                 # Production Python package
-├── tests/                # Feature-first, stage-owned verification
+├── prik/                 # Production Python package and wrapper stages
+├── tests/                # Feature-first and stage-owned verification
 ├── docs/                 # User and contributor documentation sources
 ├── docs_theme/           # Maintained MkDocs template customizations
 ├── examples/             # Complete wrapper projects and real libraries
 ├── benchmarks/           # Performance workloads and publication tooling
 ├── tools/                # Repository maintenance and quality scripts
 ├── .github/              # Continuous integration and release workflows
-├── .artifacts/           # Hidden generated documentation/distributions
+├── .artifacts/           # Hidden generated documentation and distributions
 ├── pyproject.toml        # Package and Python-tool configuration
 ├── mkdocs.yml            # Documentation navigation and site configuration
 ├── CHANGELOG.md          # Visible unreleased and released changes
@@ -38,8 +36,7 @@ prik/
 └── AGENTS.md             # Repository implementation and verification rules
 ```
 
-The production package follows the implemented workflow rather than
-alphabetical order:
+The production package is arranged by stage ownership, not alphabetically:
 
 ```text
 prik/
@@ -62,23 +59,24 @@ prik/
 └── utilities/            # Genuinely stage-neutral mechanisms
 ```
 
+The deferred C-input frontend is deliberately not part of this published
+Fortran workflow. Generated C bindings are part of the supported backend and
+remain visible in the code-generation and printer guides.
+
 ## Package-Root Entry Points
 
-Only public entrypoints and genuinely shared stage values live directly in
-`prik/`.
+Only public entrypoints and values shared across stages live directly in
+`prik/`. These modules coordinate work; they do not take ownership from a
+stage package.
 
-| File | Essential objects | Role |
+| File | Read it when | It receives and produces |
 | --- | --- | --- |
-| `prik/__init__.py` | public exports and `__version__` | Flattens the supported Python API and lazily exposes heavyweight parse, probe, CLI, and build functions. It is not an implementation owner. |
-| `prik/__main__.py` | guarded launcher | Delegates `python3 -m prik` to `prik.cli.main()`. Importing it does not run the CLI. |
-| `prik/cli.py` | `main()` and stage request handlers | Parses commands, validates cross-option combinations, formats diagnostics, and dispatches to parser or pipeline owners. |
-| `prik/stage_values.py` | `StageRecord`, `FrozenStageRecordError` | Supports mutable construction followed by recursive freezing at a consuming-stage boundary. |
+| `prik/__init__.py` | you need the supported Python API | Re-exports public parsing, probe, contract, and build operations without becoming their implementation owner. |
+| `prik/__main__.py` | you are tracing `python3 -m prik` | Calls `prik.cli.main()` only when executed as a module. |
+| `prik/cli.py` | you are changing a command or option | Turns terminal arguments into validated stage requests and dispatches them to the owning parser or pipeline. |
+| `prik/stage_values.py` | a value crosses from a producing to a consuming stage | Provides `StageRecord` and recursive freezing so completed input cannot be mutated downstream. |
 
-The CLI is an orchestrator, not a semantic authority. A new option may select
-or configure a stage, but parser grammar, semantic rules, policy, codegen, and
-compiler mechanics remain in their owning packages.
-
-Run the public entrypoints directly:
+Run the direct entrypoint demonstrations from the repository root:
 
 ```bash
 python3 prik/__init__.py
@@ -95,125 +93,141 @@ Frozen consumer input: geometry -> ('scale', 'norm')
 Mutation rejected: ParserOutput is frozen by its consuming stage
 ```
 
-The output shows the stable root API, the real CLI dispatcher, and the explicit
-producer-to-consumer freeze boundary. Exact output is maintained by the
+The examples show the supported import surface, command dispatcher, and
+producer-to-consumer freeze boundary. Their exact output is checked by the
 [central execution-example tests](../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py).
 
 ## End-To-End Workflow
 
-The implemented source-driven Fortran path is:
+The normal source-driven Fortran route is a one-way sequence:
 
 ```text
 CLI or Python build request
-  -> compiler-backed preprocessing and target probing
+  -> preprocessing and target probes
   -> Fortran parser facts
   -> language-neutral semantic IR
-  -> complete post-IR interoperability policy
+  -> complete interoperability policy
   -> backend-neutral wrapper plan
-  -> C and Fortran syntax-node generation
-  -> language printers
-  -> GeneratedWrapper
-  -> compiler and linker services
+  -> C and Fortran nodes plus Python facade text
+  -> C and Fortran source text
+  -> in-memory generated wrapper
+  -> native compilation and linking
   -> importable extension and runtime objects
 ```
 
-Semantic `.pyi` input joins at semantic IR construction. It is an editable
-contract input, not a second backend or a parser for Fortran source.
+Semantic `.pyi` input enters at semantic-IR construction. It is an editable
+contract input that uses the same policy, planning, code-generation, and build
+path; it is not a second backend. A type-mapping report follows the same
+facts for inspection but does not create a wrapper.
 
-The C parser and C-to-IR frontend are intentionally deferred from the
-published contributor workflow until the C input path is mature. Generated C
-for the CPython/NumPy binding remains an essential, fully documented part of
-the Fortran wrapper backend.
+## Stage Handoffs
+
+Read the rows top to bottom. Each output is the next row's authoritative
+input; a later row may organize or lower it, but may not silently change its
+meaning.
+
+| Stage owner | Receives | Produces | Next owner |
+| --- | --- | --- | --- |
+| `preprocessing/` | source paths, compiler configuration, target requests | prepared source, provenance, dependency facts, measured target facts | `parsers/`, `semantics/` |
+| `parsers/` | prepared Fortran text or `.pyi` text | source parser models or a Python AST, with locations and diagnostics | `semantics/` |
+| `semantics/` | frontend facts and measured type facts | `SemanticModule`: stable identities, shapes, provenance, and raw metadata | `policy/` |
+| `policy/` | semantic IR plus raw requests | complete immutable choices for ownership, transport, projection, lifecycle, setters, and support | `planning/` |
+| `planning/` | policy-complete semantic IR | `ModulePlan` with binding and bridge views, ordering, names, and build requirements | `codegen/` |
+| `codegen/` | a validated plan | typed C/Fortran nodes and planned Python facade source | `printers/`, `pipeline/` |
+| `printers/` | formed native nodes or semantic IR | C, Fortran, or `.pyi` text | `pipeline/` or caller |
+| `pipeline/` | completed stage inputs | generated artifacts, written files, native build requests, and public result records | `compiler/`, `runtime/` |
+| `compiler/` | explicit source, object, include, library, and link inputs | recorded or executed native commands and a shared extension | `runtime/` |
+| `runtime/` | generated extension operations and completed handle contracts | validated Python handle objects and live NumPy views | Python caller |
+
+`naming/` supplies deterministic public and native names where planning or
+generation needs them. `utilities/` supplies small stage-neutral mechanisms;
+neither is a hidden policy stage. `contracts/` supplies the public `.pyi`
+vocabulary before parsing begins.
 
 ## Authority And Dependency Rules
 
-Each stage may depend on completed output from the stage above it. Authority
-does not flow backward.
+The handoff table describes data flow. This table describes decision-making.
 
 | Stage | May decide | Must not decide |
 | --- | --- | --- |
-| Preprocessing/probes | prepared source, provenance, dependencies, measured target facts | declaration meaning, semantic dtypes, wrapper support |
+| Preprocessing and probes | prepared source, provenance, dependencies, measured target facts | declaration meaning, semantic types, wrapper support |
 | Parsers | syntax facts, source structure, source-located diagnostics | ownership, Python API, lowering |
-| Semantic IR | language-neutral identities, shapes, origins, raw contract metadata | completed ownership or emitted mechanisms |
-| Policy | exports, object kind, owner, transfer, destruction, storage, writeback, nullability, projections, lifecycle, setters, support | source syntax or backend text |
-| Planning | typed projection and organization of completed facts | new semantic decisions or presentation text |
-| Codegen | backend-local mechanisms and syntax nodes selected by the plan | fallback policy inference |
-| Printers | formatting and serialization | orchestration, filenames, semantic decisions |
-| Pipeline | workflow order, artifacts, manifests, compilation scheduling | stage-local grammar or rules |
-| Compiler/runtime | native command mechanics and enforcement of completed runtime contracts | wrapper API or lifetime policy selection |
+| Semantic IR | language-neutral identities, shapes, origins, raw contract metadata | completed lifetime, projections, or emitted mechanisms |
+| Policy | exports, object kind, owner, transfer, destruction, storage, writeback, nullability, projections, setters, support | source grammar or backend text |
+| Planning | a typed projection and ordering of completed facts | a new semantic decision or presentation text |
+| Code generation | plan-selected backend mechanisms and syntax nodes | fallback policy inferred from datatype, `intent`, aliases, or local memory checks |
+| Printers | formatting and serialization | orchestration, filenames, or semantic decisions |
+| Pipeline | stage order, artifact assembly, manifests, and compilation scheduling | grammar, policy, lowering, or command mechanics |
+| Compiler and runtime | native command execution and enforcement of completed runtime contracts | wrapper API or lifetime-policy selection |
 
-The most important rule is the policy boundary: before
-`WrapperPlanner.build()` begins, every semantic choice needed by binding and
-bridge generation must already be explicit. Lower stages dispatch from those
-choices and fail closed when a required decision is missing.
+The critical boundary is before `WrapperPlanner.build()`: all semantic choices
+needed by binding and bridge generation must be explicit. If a required choice
+is absent, downstream code must fail with the owning diagnostic rather than
+guess a default.
 
 ## Package Guide Map
 
-Each package has one canonical detailed guide containing its local structure,
-important files and objects, direct examples with output, focused test links,
-change routes, and invariants.
+Use one guide at a time after this page. Every guide has the same reading
+order: purpose, input/output handoff, complete Python-module tour, runnable
+examples, focused tests, change routes, and invariants.
 
-| Package | Brief role | Detailed guide |
+| Package | Use it for | Guide |
 | --- | --- | --- |
-| `contracts/` | Public semantic `.pyi` vocabulary | [Contracts](packages/contracts.md) |
-| `compiler/` | Native command construction and execution | [Compiler](packages/compiler.md) |
-| `preprocessing/` | Source preparation, provenance, includes, and target probes | [Preprocessing](packages/preprocessing.md) |
-| `parsers/` | Fortran source and semantic `.pyi` syntax facts | [Parsers](packages/parsers.md) |
-| `semantics/` | Language-neutral semantic IR construction | [Semantics](packages/semantics.md) |
-| `policy/` | Complete post-IR interoperability decisions | [Policy](packages/policy.md) |
-| `planning/` | Mechanical typed wrapper-plan projection | [Planning](packages/planning.md) |
-| `codegen/` | Plan-driven backend nodes and Python facade | [Code generation](packages/codegen.md) |
-| `printers/` | Serialization of formed representations | [Printers](packages/printers.md) |
-| `pipeline/` | Cross-stage wrapper/build workflows and artifacts | [Pipeline](packages/pipeline.md) |
-| `runtime/` | Imported-extension handles and bundled native support | [Runtime](packages/runtime.md) |
-| `naming/` | Shared public and generated symbol rules | [Naming](packages/naming.md) |
-| `utilities/` | Stage-neutral expressions, strings, and visitor dispatch | [Utilities](packages/utilities.md) |
+| `contracts/` | public semantic `.pyi` names | [Contracts](packages/contracts.md) |
+| `compiler/` | native commands, profiles, and support installation | [Compiler](packages/compiler.md) |
+| `preprocessing/` | parser input, provenance, includes, and target facts | [Preprocessing](packages/preprocessing.md) |
+| `parsers/` | Fortran syntax facts and raw `.pyi` AST | [Parsers](packages/parsers.md) |
+| `semantics/` | language-neutral IR and raw metadata | [Semantics](packages/semantics.md) |
+| `policy/` | completed interoperability decisions | [Policy](packages/policy.md) |
+| `planning/` | deterministic plan projection and ordering | [Planning](packages/planning.md) |
+| `codegen/` | binding, bridge, nodes, and Python facade mechanisms | [Code generation](packages/codegen.md) |
+| `printers/` | C, Fortran, and `.pyi` serialization | [Printers](packages/printers.md) |
+| `pipeline/` | whole-wrapper, contract, report, and build workflows | [Pipeline](packages/pipeline.md) |
+| `runtime/` | imported handle behavior and native payload | [Runtime](packages/runtime.md) |
+| `naming/` | stable public and generated symbols | [Naming](packages/naming.md) |
+| `utilities/` | stage-neutral expression, string, and visitor helpers | [Utilities](packages/utilities.md) |
 
-The [datatype lifecycle](concepts/datatype-lifecycle.md) remains a separate
-cross-cutting concept because one native datatype passes through probing,
-semantic normalization, policy, codegen mapping, and runtime validation.
+The [datatype lifecycle](concepts/datatype-lifecycle.md) follows one datatype
+across these owners. It is deliberately separate from the package tours.
 
 ## Tests And Evidence
 
-Choose tests by native language, public feature, and owning stage. The
-[testing strategy](testing-strategy.md) is canonical for placement and command
-selection. Package guides link directly to their focused suites.
+Feature tests own behavior; documentation tests own navigation and guide
+coverage. Start with the package guide's **Tests And What They Prove** section,
+then use the [testing strategy](testing-strategy.md) to choose the narrowest
+command for the changed stage.
 
-Direct source-file examples are production-owned `if __name__ == "__main__"`
-flows, run from the repository root as:
+Direct source-file examples are real production-owned
+`if __name__ == "__main__"` flows. Run them from the repository root as:
 
 ```bash
 python3 <folder>/<file>.py
 ```
 
-Their exact results are grouped in
-[`tests/fortran/infrastructure/execution_examples/test_execution_examples.py`](../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py).
-Documentation tests own links, navigation, metadata, publication, and package
-guide structure; feature and stage tests own the demonstrated behavior.
+The central execution inventory checks their stable output. Documentation
+tests check guide structure, source coverage, links, metadata, and navigation;
+they do not replace feature tests for the behavior the example demonstrates.
 
 ## Where A Change Begins
 
-| Change | Start here | Continue only when needed |
+| You need to change | Start with | Then inspect |
 | --- | --- | --- |
-| CLI option or dispatch | `prik/cli.py` | selected package and CLI/user documentation |
-| Source expansion or provenance | `prik/preprocessing/source.py` | parser boundary tests |
-| Fortran syntax fact | `prik/parsers/fortran/` | semantic converter if the IR changes |
-| Semantic `.pyi` syntax | `prik/parsers/pyi/parser.py` or `prik/semantics/pyi2ir.py` | printer, policy, and user reference according to meaning |
-| Stable semantic model/type | `prik/semantics/` | policy and downstream projections |
-| Ownership, projection, setters, or support | `prik/policy/` | planning only to project the completed result |
-| Plan representation | `prik/planning/` | binding/bridge generation consumers |
-| Emitted native mechanism | narrow `prik/codegen/` owner | matching printer only if representation changes |
-| Formatting | matching `prik/printers/` file | golden output tests |
-| Build artifact or compilation workflow | `prik/pipeline/build.py` | compiler service when argv mechanics change |
-| Runtime handle enforcement | `prik/runtime/handles.py` | policy first if permission/ownership is undecided |
+| CLI option or dispatch | `prik/cli.py` | selected owner and CLI/user documentation |
+| Source expansion or provenance | `prik/preprocessing/source.py` | parser-boundary tests |
+| Fortran syntax fact | `prik/parsers/fortran/` | semantic converter if IR changes |
+| Semantic `.pyi` syntax | `prik/parsers/pyi/parser.py` | `semantics/pyi2ir.py`, printer, and contract reference according to meaning |
+| Stable IR/type fact | `prik/semantics/` | policy and downstream projections |
+| Ownership, projection, setters, or support | `prik/policy/` | planning only to project a completed result |
+| Plan representation or ordering | `prik/planning/` | binding/bridge consumers |
+| Emitted native mechanism | narrow `prik/codegen/` owner | matching printer only if node representation changes |
+| Formatting | matching `prik/printers/` module | golden-output tests |
+| Artifact or compilation workflow | `prik/pipeline/build.py` | compiler service for argv mechanics |
+| Runtime handle enforcement | `prik/runtime/handles.py` | policy first if permission or ownership is undecided |
 
-For exact file ownership use the [source map](source-map.md). When starting
-from a documented capability use the [feature-to-code map](feature-to-code-map.md).
+For exact file ownership use the [source map](source-map.md). For a documented
+feature's supported scope and evidence use the [feature-to-code map](feature-to-code-map.md).
 
 ## Contributor Documentation Structure
-
-All developer, maintainer, design, testing, release, and roadmap material lives
-in one contributor area:
 
 ```text
 docs/developer/
@@ -231,5 +245,4 @@ docs/developer/
 ```
 
 There is no separate maintainer tree. Completed migration logs and placeholder
-pages are not maintained architecture; Git history retains them after their
-still-valid decisions have moved to canonical guides.
+pages belong in Git history after their durable decisions have moved here.

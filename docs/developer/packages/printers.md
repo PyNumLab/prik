@@ -21,25 +21,27 @@ complete policy, or compile output.
 
 ```text
 prik/printers/
+├── __init__.py
 ├── c.py
 ├── fortran.py
 └── pyi.py
 ```
 
-## Internal Workflow
+## What This Stage Receives And Produces
 
 ```text
 formed C or Fortran node tree -> matching source printer -> native text
 SemanticModule graph          -> PyiPrinter             -> editable .pyi
 ```
 
-## Important Files And Essential Objects
+## Directory Tour
 
-| File | Important objects | Responsibility |
+| Module | Main entrypoints and contents | Change it when |
 | --- | --- | --- |
-| `c.py` | `CSourcePrinter` | Serializes C translation units, headers, declarations, functions, tables, and statements. |
-| `fortran.py` | `FortranSourcePrinter` | Serializes bridge modules, interfaces, declarations, procedures, and statements with free-form line wrapping. |
-| `pyi.py` | `PyiPrinter`, `emit_module()`, `_PyiEmissionContext` | Serializes semantic modules and scopes imports, aliases, class names, namespaces, and default order for one emission. |
+| [`prik/printers/__init__.py`](../../../prik/printers/__init__.py) | Re-exports `CSourcePrinter`, `FortranSourcePrinter`, `PyiPrinter`, and `emit_module()`. | The supported printer import surface changes. |
+| [`prik/printers/c.py`](../../../prik/printers/c.py) | `CSourcePrinter` serializes C translation units, headers, declarations, functions, tables, and statements. | C syntax layout, escaping, or formatting changes. |
+| [`prik/printers/fortran.py`](../../../prik/printers/fortran.py) | `FortranSourcePrinter` serializes bridge modules, interfaces, declarations, procedures, and free-form wrapped statements. | Fortran source layout or line-wrapping changes. |
+| [`prik/printers/pyi.py`](../../../prik/printers/pyi.py) | `PyiPrinter`, `emit_module()`, and `_PyiEmissionContext` serialize semantic modules and scope imports, aliases, namespaces, and defaults for one emission. | Editable contract spelling or emission-context behavior changes. |
 
 The fact that code generation calls a printer at the end of wrapper rendering
 does not make printing part of codegen ownership. `pipeline/wrapper.py`
@@ -98,11 +100,11 @@ The native examples prove that punctuation and layout are added to already
 formed nodes. The `.pyi` example proves that required contract imports and
 native identity are derived without attaching wrapper policy.
 
-## Tests
+## Tests And What They Prove
 
-- [Printer infrastructure](../../../tests/fortran/infrastructure/printers/)
-- [Semantic `.pyi` round trips](../../../tests/fortran/semantic_pyi_format/)
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py)
+- [Printer infrastructure](../../../tests/fortran/infrastructure/printers/) covers native syntax serialization and formatting.
+- [Semantic `.pyi` round trips](../../../tests/fortran/semantic_pyi_format/) cover contract emission and re-parsing.
+- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes the three rendered examples above.
 
 ## Change Routes
 

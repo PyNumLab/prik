@@ -21,6 +21,10 @@ release tags add a leading `v` to the package version.
 
 ### Changed
 
+- Expanded the contributor architecture and package guides into a complete
+  stage-by-stage tutorial, with every supported Python module, runnable example
+  result, focused test purpose, and change route recorded and checked against
+  the source tree.
 - Moved generated documentation and distribution output under the hidden
   `.artifacts/` directory in local commands and CI workflows.
 - Centralized every production-file execution-example output contract in one

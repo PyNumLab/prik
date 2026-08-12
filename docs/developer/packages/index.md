@@ -9,27 +9,38 @@ publication: draft
 
 # Source Package Guides
 
-These pages explain the production package one ownership boundary at a time.
-Read the [architecture guide](../architecture.md) first for the complete flow,
-then open the package that owns the change.
+These pages are the file-level companion to the
+[architecture guide](../architecture.md). Read the architecture guide once for
+the whole flow, then use this table to enter the owner of a change. Do not read
+the guides as thirteen alternative pipelines: each describes one handoff in
+the same pipeline.
 
-| Package | Canonical guide | Boundary |
+| Package | Read it when you need to change | Canonical guide |
 | --- | --- | --- |
-| `prik.contracts` | [Contracts](contracts.md) | Public semantic `.pyi` vocabulary |
-| `prik.compiler` | [Compiler](compiler.md) | Native command construction and execution |
-| `prik.preprocessing` | [Preprocessing](preprocessing.md) | Source preparation, provenance, and target probes |
-| `prik.parsers` | [Parsers](parsers.md) | Fortran and semantic `.pyi` syntax facts |
-| `prik.semantics` | [Semantics](semantics.md) | Language-neutral semantic IR |
-| `prik.policy` | [Policy](policy.md) | Completed post-IR interoperability decisions |
-| `prik.planning` | [Planning](planning.md) | Mechanical projection into wrapper plans |
-| `prik.codegen` | [Code generation](codegen.md) | Plan-driven backend nodes and Python facade source |
-| `prik.printers` | [Printers](printers.md) | Serialization of formed representations |
-| `prik.pipeline` | [Pipeline](pipeline.md) | Cross-stage workflow and artifact orchestration |
-| `prik.runtime` | [Runtime](runtime.md) | Imported-extension handle behavior and native payload |
-| `prik.naming` | [Naming](naming.md) | Shared public and generated symbol rules |
-| `prik.utilities` | [Utilities](utilities.md) | Genuinely stage-neutral mechanisms |
+| `prik.contracts` | public semantic `.pyi` syntax | [Contracts](contracts.md) |
+| `prik.compiler` | compiler profiles, command argv, or native-support installation | [Compiler](compiler.md) |
+| `prik.preprocessing` | parser input, provenance, includes, or target probes | [Preprocessing](preprocessing.md) |
+| `prik.parsers` | Fortran syntax facts or raw `.pyi` syntax | [Parsers](parsers.md) |
+| `prik.semantics` | the shared semantic graph, types, or raw metadata | [Semantics](semantics.md) |
+| `prik.policy` | completed ownership, projection, lifecycle, or support choices | [Policy](policy.md) |
+| `prik.planning` | plan representation, ordering, or backend views | [Planning](planning.md) |
+| `prik.codegen` | generated binding, bridge, node, or Python-facade mechanism | [Code generation](codegen.md) |
+| `prik.printers` | C, Fortran, or `.pyi` text serialization | [Printers](printers.md) |
+| `prik.pipeline` | wrapper, contract, report, artifact, or build orchestration | [Pipeline](pipeline.md) |
+| `prik.runtime` | imported native handles or bundled native support | [Runtime](runtime.md) |
+| `prik.naming` | public-name normalization or generated symbols | [Naming](naming.md) |
+| `prik.utilities` | a genuinely stage-neutral helper | [Utilities](utilities.md) |
 
-Each guide uses the same order: purpose and boundaries, local structure,
-workflow, important files and objects, direct execution examples with expected
-output, test owners, change routes, and invariants. Source-tree `README.md`
-files remain short orientation notes and link back to these canonical guides.
+Each guide answers the same practical questions:
+
+1. What does this stage receive and produce?
+2. Which module owns the behavior I need to change?
+3. Which classes and functions are the important entrypoints?
+4. What does each direct-execution example prove?
+5. Which tests protect that behavior?
+
+The directory tour covers every supported Python module under that package,
+including package initializers and nested backend packages. The deferred
+C-input frontend is intentionally excluded from the published Fortran route.
+Source-tree `README.md` files remain short orientation notes and link back to
+these canonical guides.

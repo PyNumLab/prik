@@ -231,6 +231,7 @@ def test_contributor_architecture_stays_shallow_and_routes_to_package_guides() -
     for heading in (
         "Package-Root Entry Points",
         "End-To-End Workflow",
+        "Stage Handoffs",
         "Authority And Dependency Rules",
         "Package Guide Map",
         "Tests And Evidence",
@@ -308,9 +309,10 @@ def test_package_guide_has_structure_examples_tests_and_change_routes(package: s
     assert "../architecture.md" in content
     assert "## Purpose And Boundaries" in content
     assert "## Local Structure" in content
-    assert "## Important File" in content
+    assert "## What This Stage Receives And Produces" in content
+    assert "## Directory Tour" in content
     assert "## Execution Example" in content
-    assert "## Tests" in content
+    assert "## Tests And What They Prove" in content
     assert "## Change Routes" in content
     assert "../../../tests/" in content
     assert "python3 prik/" in content
@@ -319,6 +321,32 @@ def test_package_guide_has_structure_examples_tests_and_change_routes(package: s
         if target.startswith(("http://", "https://")):
             continue
         assert (path.parent / target).resolve().exists(), f"{package}: missing linked owner {target}"
+
+
+def test_package_guides_cover_every_supported_python_module() -> None:
+    deferred_c_input_modules = {
+        path.relative_to(ROOT).as_posix()
+        for root in (
+            ROOT / "prik/parsers/c",
+            ROOT / "prik/preprocessing/c.py",
+            ROOT / "prik/preprocessing/probes/c_types.py",
+            ROOT / "prik/semantics/c2ir.py",
+        )
+        for path in (root.rglob("*.py") if root.is_dir() else (root,))
+    }
+
+    package_guides = {
+        path.stem: path for path in (DOCS_ROOT / "developer/packages").glob("*.md") if path.name != "index.md"
+    }
+    for package, guide_path in package_guides.items():
+        documented = guide_path.read_text(encoding="utf-8")
+        source_modules = {
+            path.relative_to(ROOT).as_posix()
+            for path in (ROOT / "prik" / package).rglob("*.py")
+            if path.relative_to(ROOT).as_posix() not in deferred_c_input_modules
+        }
+        missing = sorted(path for path in source_modules if path not in documented)
+        assert not missing, f"{guide_path.name}: undocumented supported modules: {missing}"
 
 
 def test_superseded_contributor_pages_and_completed_roadmaps_are_removed() -> None:

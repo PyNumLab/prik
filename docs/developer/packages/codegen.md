@@ -21,6 +21,7 @@ ownership, change wrapper support, print final native source, or compile it.
 
 ```text
 prik/codegen/
+├── __init__.py
 ├── nodes.py
 ├── primitive_scalar_types.py
 ├── docstrings.py
@@ -28,14 +29,16 @@ prik/codegen/
 ├── checks.py
 ├── visitor.py
 ├── c/
+│   ├── __init__.py
 │   ├── binding.py
 │   ├── python_surface.py
 │   └── naming.py
 └── fortran/
+    ├── __init__.py
     └── bridge.py
 ```
 
-## Internal Workflow
+## What This Stage Receives And Produces
 
 ```text
 validated ModulePlan
@@ -46,21 +49,27 @@ validated ModulePlan
   -> language printers
 ```
 
-## Important Files And Essential Objects
+## Directory Tour
 
-| File | Important objects | Responsibility |
+| Module | Main entrypoints and contents | Change it when |
 | --- | --- | --- |
-| `nodes.py` | typed C and Fortran node families | Represents generated native syntax before serialization. |
-| `primitive_scalar_types.py` | `PrimitiveScalarTypeRegistry`, `NumpyDtypeRegistry` | Maps resolved semantic scalar identities to explicit C, Fortran, NumPy, CFI, and CPython spellings. |
-| `docstrings.py` | `WrapperDocstringBuilder` | Renders Python-facing documentation from the completed plan. |
-| `c/binding.py` | `CBindingGenerator` | Lowers binding plan views into CPython/NumPy C nodes. |
-| `c/python_surface.py` | `PythonSurfaceContext`, `PythonSurfaceEmitter` | Produces the planned derived-class, holder, and module-proxy Python facade. |
-| `fortran/bridge.py` | `FortranBridgeGenerator` | Lowers bridge plan views into `bind(C)` modules, accessors, descriptors, and native calls. |
+| [`prik/codegen/__init__.py`](../../../prik/codegen/__init__.py) | Re-exports generators, selected node records, scalar lowering, and generic codegen visitor support. | The supported backend API changes. |
+| [`prik/codegen/nodes.py`](../../../prik/codegen/nodes.py) | `StageRecord`-based C and Fortran node families represent source before text serialization. | Existing nodes cannot express a plan-selected native construct. |
+| [`prik/codegen/primitive_scalar_types.py`](../../../prik/codegen/primitive_scalar_types.py) | `PrimitiveScalarTypeRegistry` and `NumpyDtypeRegistry` map resolved semantic scalars to C, Fortran, NumPy, CFI, and CPython spellings. | An established semantic scalar needs a backend spelling or dtype projection. |
+| [`prik/codegen/docstrings.py`](../../../prik/codegen/docstrings.py) | `WrapperDocstringBuilder` renders public Python documentation from a completed plan. | Plan-derived wrapper documentation changes. |
+| [`prik/codegen/overloads.py`](../../../prik/codegen/overloads.py) | `OverloadPlanQueries` answers structural questions about completed overload plans. | Shared overload-plan inspection is needed without re-deciding overload policy. |
+| [`prik/codegen/checks.py`](../../../prik/codegen/checks.py) | Shared code-generation validation and complexity-check support. | A codegen invariant or its repository gate changes. |
+| [`prik/codegen/visitor.py`](../../../prik/codegen/visitor.py) | `ClassVisitor` and `UnsupportedWrapperCodegenNodeError` provide backend-node dispatch and explicit unsupported-node failure. | Generic codegen visitor behavior changes. |
+| [`prik/codegen/c/__init__.py`](../../../prik/codegen/c/__init__.py) | Boundary for C/CPython binding mechanics. | Establishing a deliberate C-backend import API. |
+| [`prik/codegen/c/binding.py`](../../../prik/codegen/c/binding.py) | `CBindingGenerator` lowers completed binding-plan views into CPython/NumPy C nodes. | A plan-selected Python boundary, lifecycle, error, or module mechanism changes. |
+| [`prik/codegen/c/naming.py`](../../../prik/codegen/c/naming.py) | Binding-local generated names that should not become global naming policy. | A C-binding private symbol convention changes. |
+| [`prik/codegen/c/python_surface.py`](../../../prik/codegen/c/python_surface.py) | `PythonSurfaceContext` and `PythonSurfaceEmitter` produce planned classes, holders, and module proxies embedded in the extension. | Generated Python facade behavior changes. |
+| [`prik/codegen/fortran/__init__.py`](../../../prik/codegen/fortran/__init__.py) | Boundary for Fortran bridge mechanics. | Establishing a deliberate bridge-backend import API. |
+| [`prik/codegen/fortran/bridge.py`](../../../prik/codegen/fortran/bridge.py) | `FortranBridgeGenerator` lowers bridge-plan views into `bind(C)` modules, accessors, descriptors, and native calls. | A plan-selected ABI declaration, conversion, call slot, or native bridge mechanism changes. |
 
-`overloads.py` answers structural questions over completed overload plans;
-`c/naming.py` owns binding-local generated names; `checks.py` powers the
-codegen ownership and complexity gate. Specialized emitter methods are kept
-local because they make the selected mechanism auditable.
+Specialized emitter methods remain local because each makes the selected
+mechanism auditable. Shared code must never reconstruct policy from datatype,
+source `intent`, dotted shape, aliases, or local memory checks.
 
 ## Execution Examples
 
@@ -178,12 +187,12 @@ Internal procedures: (none)
 Together the outputs demonstrate that both backends lower one shared plan
 without asking the other backend to decide policy.
 
-## Tests
+## Tests And What They Prove
 
-- [Codegen infrastructure](../../../tests/fortran/infrastructure/codegen/)
-- [Feature-local codegen suites](../../../tests/fortran/)
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py)
-- `python3 tools/check_codegen_complexity.py`
+- [Codegen infrastructure](../../../tests/fortran/infrastructure/codegen/) covers nodes, generators, planning handoffs, and validation.
+- [Feature-local codegen suites](../../../tests/fortran/) cover emitted mechanisms for each supported feature.
+- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes every direct module demonstration on this page.
+- `python3 tools/check_codegen_complexity.py` protects the generator-complexity policy.
 
 ## Change Routes
 

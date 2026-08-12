@@ -19,16 +19,26 @@ policy or emitted source syntax.
 
 ```text
 prik/naming/
+├── __init__.py
 ├── policy.py
 └── native_symbols.py
 ```
 
-## Important Files And Essential Objects
+## What This Stage Receives And Produces
 
-| File | Important objects | Responsibility |
+```text
+raw public or generated identity + occupied namespace
+  -> normalized public name or bounded native symbol
+  -> planning and code generation
+```
+
+## Directory Tour
+
+| Module | Main entrypoints and contents | Change it when |
 | --- | --- | --- |
-| `policy.py` | `NamingPolicy`, `NormalizedPublicName`, `PublicNameRecord`, `GeneratedSymbolRules` | Normalizes Python names, reserves namespaces, and applies target-language symbol rules. |
-| `native_symbols.py` | `NativeSymbolNames` | Compacts long owner identities into deterministic compiler-safe fragments. |
+| [`prik/naming/__init__.py`](../../../prik/naming/__init__.py) | Re-exports the supported normalization and generated-symbol policy objects. | Changing the package-level naming API. |
+| [`prik/naming/policy.py`](../../../prik/naming/policy.py) | `NamingPolicy`, `NormalizedPublicName`, `PublicNameRecord`, and `GeneratedSymbolRules` normalize Python names, reserve namespaces, and apply language rules. | Public-name normalization, collision handling, keyword escaping, or target language symbol rules. |
+| [`prik/naming/native_symbols.py`](../../../prik/naming/native_symbols.py) | `NativeSymbolNames` retains owner identity and creates compact, deterministic compiler-safe fragments. | Bounded native-symbol spelling or hash/prefix rules. |
 
 ## Execution Examples
 
@@ -56,10 +66,10 @@ The first example distinguishes public namespace allocation from generated
 target naming. The second preserves a readable prefix while hashing the full
 owner identity under a compiler symbol limit.
 
-## Tests
+## Tests And What They Prove
 
-- [Naming infrastructure](../../../tests/fortran/infrastructure/naming/)
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py)
+- [Naming infrastructure](../../../tests/fortran/infrastructure/naming/) covers normalization, collisions, and stable generated names.
+- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes the two demonstrations above.
 
 ## Change Routes
 

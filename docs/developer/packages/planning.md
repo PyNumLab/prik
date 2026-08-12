@@ -21,11 +21,12 @@ may not reinterpret source declarations, choose policy, or render text.
 
 ```text
 prik/planning/
+├── __init__.py
 ├── models.py
 └── planner.py
 ```
 
-## Internal Workflow
+## What This Stage Receives And Produces
 
 ```text
 policy-completed SemanticModule
@@ -35,12 +36,13 @@ policy-completed SemanticModule
   -> backend node generation
 ```
 
-## Important Files And Essential Objects
+## Directory Tour
 
-| File | Important objects | Responsibility |
+| Module | Main entrypoints and contents | Change it when |
 | --- | --- | --- |
-| `models.py` | `ModulePlan`, function, argument, result, slot, lifecycle, class, overload, binding, and bridge plan records | Defines the typed editable plan tree. |
-| `planner.py` | `WrapperPlanner`, `_ClassPolicyCatalog` | Validates completed policy, creates indexes and symbols, and projects the plan deterministically. |
+| [`prik/planning/__init__.py`](../../../prik/planning/__init__.py) | Re-exports `WrapperPlanner` and the supported plan records. | A supported planning type or import path changes. |
+| [`prik/planning/models.py`](../../../prik/planning/models.py) | `ModulePlan` and typed function, argument, result, slot, lifecycle, class, overload, binding, and bridge records form the editable plan tree. | Lowering needs a new *already completed* fact represented explicitly. |
+| [`prik/planning/planner.py`](../../../prik/planning/planner.py) | `WrapperPlanner` validates policy, indexes declarations, allocates names, and projects deterministic binding and bridge views; `_ClassPolicyCatalog` is a validated lookup. | A completed policy fact is projected or ordered incorrectly. |
 
 The private class-policy catalogue is a validated lookup, not another semantic
 authority. The planner does not generate docstrings or source.
@@ -99,12 +101,12 @@ The model example demonstrates representation. The planner example follows
 the real sequence—semantic IR, policy completion, then planning—and shows the
 stable role connecting binding conversion to the native call slot.
 
-## Tests
+## Tests And What They Prove
 
-- [Plan model tests](../../../tests/fortran/infrastructure/codegen/test_plan.py)
-- [Planner tests](../../../tests/fortran/infrastructure/codegen/test_planner.py)
-- [Feature-local codegen stages](../../../tests/fortran/)
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py)
+- [Plan model tests](../../../tests/fortran/infrastructure/codegen/test_plan.py) protect plan-record shape and freeze behavior.
+- [Planner tests](../../../tests/fortran/infrastructure/codegen/test_planner.py) protect validation, projection, symbols, and order.
+- [Feature-local codegen stages](../../../tests/fortran/) protect plan use for each supported feature.
+- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes the model and planner outputs above.
 
 ## Change Routes
 

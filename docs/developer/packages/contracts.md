@@ -27,7 +27,7 @@ prik/contracts/
 The single module is intentional. A semantic contract imports one stable
 public namespace instead of depending on internal stage packages.
 
-## Internal Workflow
+## What This Stage Receives And Produces
 
 ```text
 semantic .pyi text
@@ -41,11 +41,11 @@ Some primitive symbols also construct exact NumPy scalar values at runtime.
 Subscriptions such as `Float64[:, :]` construct declarative contract objects;
 they do not create semantic IR objects.
 
-## Important File And Essential Objects
+## Directory Tour
 
-| File | Important objects | Responsibility |
+| Module | Main entrypoints and contents | Change it when |
 | --- | --- | --- |
-| `prik/contracts/__init__.py` | `Float64`, `Int32`, `String`, `Addr`, `Allocatable`, `Pointer`, `Returns`, `Arg`, `bind`, `native_call` | Publishes the complete supported semantic `.pyi` vocabulary and the small runtime constructors required by that vocabulary. |
+| [`prik/contracts/__init__.py`](../../../prik/contracts/__init__.py) | The complete public vocabulary: scalar and array markers, descriptor markers (`Allocatable`, `Pointer`), metadata expressions, decorators, and the small runtime constructors behind concrete scalar and descriptor contracts. | Adding, removing, or documenting public `.pyi` syntax. This one file is intentionally the stable import namespace; private `_Contract*` classes preserve annotation syntax at runtime. |
 
 The canonical public import path is part of the file format. Internal code may
 interpret these names, but must not replace them with imports from semantics,
@@ -68,12 +68,12 @@ The first line proves that a primitive contract scalar has exact NumPy runtime
 behavior. The second proves that array subscription produces declarative rank
 and shape syntax for later semantic interpretation.
 
-## Tests
+## Tests And What They Prove
 
-- [Contract runtime tests](../../../tests/fortran/data_types/runtime/)
-- [Semantic `.pyi` parser tests](../../../tests/fortran/semantic_pyi_format/parsing/)
-- [Semantic `.pyi` round-trip tests](../../../tests/fortran/semantic_pyi_format/pipeline/)
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py)
+- [Contract runtime tests](../../../tests/fortran/data_types/runtime/) protect scalar and descriptor-constructor behavior.
+- [Semantic `.pyi` parser tests](../../../tests/fortran/semantic_pyi_format/parsing/) protect recognition of the public vocabulary.
+- [Semantic `.pyi` round-trip tests](../../../tests/fortran/semantic_pyi_format/pipeline/) protect loading and re-emission through the shared contract path.
+- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes the example output above.
 
 ## Change Routes
 

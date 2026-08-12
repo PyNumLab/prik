@@ -19,18 +19,28 @@ semantic policy, syntax grammar, and workflow orchestration.
 
 ```text
 prik/utilities/
+├── __init__.py
 ├── declaration_expressions.py
 ├── strings.py
 └── visitor.py
 ```
 
-## Important Files And Essential Objects
+## What This Stage Receives And Produces
 
-| File | Important objects | Responsibility |
+```text
+stage-owned caller facts
+  -> reusable expression, local-name, or visitor mechanism
+  -> requesting stage
+```
+
+## Directory Tour
+
+| Module | Main entrypoints and contents | Change it when |
 | --- | --- | --- |
-| `declaration_expressions.py` | `ResolvedDeclarationExtent`, `DeclarationExpressionCall`, `ArrayExpressionSource` | Translates, validates, resolves, evaluates, and renders declaration extents across explicit stage boundaries. |
-| `strings.py` | collision-safe local-name helpers | Allocates deterministic local names without owning a public naming policy. |
-| `visitor.py` | `ClassVisitor` | Provides exact-class and intentional MRO fallback dispatch shared by independent visitors. |
+| [`prik/utilities/__init__.py`](../../../prik/utilities/__init__.py) | Package boundary for small stage-neutral mechanisms. | Establishing a deliberate package-level utility API. |
+| [`prik/utilities/declaration_expressions.py`](../../../prik/utilities/declaration_expressions.py) | `ResolvedDeclarationExtent`, `DeclarationExpressionCall`, and `ArrayExpressionSource` translate, validate, resolve, evaluate, and render declaration extents at explicit handoffs. | An extent representation or its stage-owned translation changes. |
+| [`prik/utilities/strings.py`](../../../prik/utilities/strings.py) | Collision-safe local-name helpers allocate deterministic temporary identifiers. | Generic local name allocation changes; public name policy belongs in `naming/`. |
+| [`prik/utilities/visitor.py`](../../../prik/utilities/visitor.py) | `ClassVisitor` provides exact-class dispatch with intentional MRO fallback. | Shared generic dispatch changes, not a stage's visitor methods. |
 
 ## Execution Examples
 
@@ -67,11 +77,11 @@ Exact handler: literal:42
 MRO fallback: expression:Expression
 ```
 
-## Tests
+## Tests And What They Prove
 
-- [Utility infrastructure](../../../tests/fortran/infrastructure/utilities/)
-- [Declaration-expression semantics](../../../tests/fortran/arrays/semantics/test_declaration_expression_utilities.py)
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py)
+- [Utility infrastructure](../../../tests/fortran/infrastructure/utilities/) covers local-name and visitor behavior.
+- [Declaration-expression semantics](../../../tests/fortran/arrays/semantics/test_declaration_expression_utilities.py) covers role resolution and expression rendering.
+- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes the three demonstrations above.
 
 ## Change Routes
 

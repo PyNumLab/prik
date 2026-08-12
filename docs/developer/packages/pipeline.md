@@ -21,13 +21,14 @@ policy, backend lowering, printer formatting, or compiler command mechanics.
 
 ```text
 prik/pipeline/
+├── __init__.py
 ├── pyi.py
 ├── type_mapping_report.py
 ├── wrapper.py
 └── build.py
 ```
 
-## Internal Workflow
+## What This Stage Receives And Produces
 
 ```text
 semantic modules or source-build request
@@ -41,14 +42,15 @@ semantic modules or source-build request
   -> WrapperBuildResult
 ```
 
-## Important Files And Essential Objects
+## Directory Tour
 
-| File | Important objects | Responsibility |
+| Module | Main entrypoints and contents | Change it when |
 | --- | --- | --- |
-| `pyi.py` | `pyi_*_to_semantic_module()` workflows, `emit_module_stubs()` | Loads text/files/path sets, caches conversion per operation, reconciles external types, and emits stub packages. |
-| `type_mapping_report.py` | report builders | Connects target probes, semantic conversion, and codegen dtype projection into an auditable report. |
-| `wrapper.py` | `GeneratedSource`, `GeneratedWrapper`, `WrapperGenerator` | Validates/freezes a plan, invokes docstring and backend generation, prints sources, assigns names, and returns one in-memory wrapper artifact. |
-| `build.py` | `NativeCompilationUnit`, `NativePrebuiltArtifact`, `NativeLinkItem`, `NativeBuildPlan`, `WrapperBuildResult` | Owns public source/`.pyi` build APIs, file output, native input plans, dependency-ready compilation, linking, manifests, and extension import. |
+| [`prik/pipeline/__init__.py`](../../../prik/pipeline/__init__.py) | Package boundary for high-level workflows. | Establishing a deliberate pipeline-level import API. |
+| [`prik/pipeline/pyi.py`](../../../prik/pipeline/pyi.py) | `pyi_*_to_semantic_module()` workflows and `emit_module_stubs()` load text, files, and path sets; cache one operation; reconcile external types; and emit stub packages. | `.pyi` batch loading, external-type reconciliation, per-operation cache behavior, or stub-package output changes. |
+| [`prik/pipeline/type_mapping_report.py`](../../../prik/pipeline/type_mapping_report.py) | Report builders connect target probes, semantic conversion, and backend dtype projection into an auditable table. | Cross-stage datatype-report content or evidence changes. |
+| [`prik/pipeline/wrapper.py`](../../../prik/pipeline/wrapper.py) | `GeneratedSource`, `GeneratedWrapper`, and `WrapperGenerator` validate/freeze a plan, invoke docstring and backend generation, print sources, name artifacts, and return one in-memory wrapper. | Plan-to-rendered-wrapper orchestration changes. |
+| [`prik/pipeline/build.py`](../../../prik/pipeline/build.py) | `NativeCompilationUnit`, `NativePrebuiltArtifact`, `NativeLinkItem`, `NativeBuildPlan`, and `WrapperBuildResult` own public build APIs, output, manifests, dependency-ready compilation, linking, and extension import. | Artifact layout, native input plans, build scheduling, manifests, linking, or imported-result behavior changes. |
 
 ## Execution Examples
 
@@ -104,14 +106,14 @@ The final example requires configured C and Fortran compilers. It follows the
 entire public source-build path, imports the resulting extension, and calls its
 generated Python API.
 
-## Tests
+## Tests And What They Prove
 
-- [Pipeline infrastructure](../../../tests/fortran/infrastructure/pipeline/)
-- [Semantic `.pyi` pipeline](../../../tests/fortran/semantic_pyi_format/pipeline/)
-- [Build pipeline](../../../tests/fortran/building_shared_library/pipeline/)
-- [Compilation integration](../../../tests/fortran/building_shared_library/compiling/)
-- [End-to-end builds](../../../tests/fortran/building_shared_library/end_to_end/)
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py)
+- [Pipeline infrastructure](../../../tests/fortran/infrastructure/pipeline/) covers wrapper assembly and cross-stage records.
+- [Semantic `.pyi` pipeline](../../../tests/fortran/semantic_pyi_format/pipeline/) covers contract loading, reconciliation, and stub emission.
+- [Build pipeline](../../../tests/fortran/building_shared_library/pipeline/) covers files, manifests, and build-plan handoffs.
+- [Compilation integration](../../../tests/fortran/building_shared_library/compiling/) covers native command integration.
+- [End-to-end builds](../../../tests/fortran/building_shared_library/end_to_end/) covers produced extension behavior.
+- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes the four demonstrations above.
 
 ## Change Routes
 

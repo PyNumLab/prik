@@ -21,6 +21,7 @@ wrappers, or emit source.
 
 ```text
 prik/semantics/
+├── __init__.py
 ├── models.py
 ├── scalar_types.py
 ├── fortran2ir.py
@@ -35,7 +36,7 @@ prik/semantics/
 The deferred C-to-IR path is intentionally excluded from the published
 Fortran contributor workflow.
 
-## Internal Workflow
+## What This Stage Receives And Produces
 
 ```text
 Fortran parser models + measured target facts ─┐
@@ -45,20 +46,23 @@ semantic .pyi AST ────────────────────�
   -> prik.policy completion
 ```
 
-## Important Files And Essential Objects
+## Directory Tour
 
-| File | Important objects | Responsibility |
+| Module | Main entrypoints and contents | Change it when |
 | --- | --- | --- |
-| `models.py` | `SemanticModule`, `SemanticFunction`, `SemanticClass`, `SemanticArgument`, `SemanticType`, array/storage contracts, `SemanticOrigin` | Defines the language-neutral graph. |
-| `scalar_types.py` | `SemanticScalarSpec` and scalar catalogue | Defines stable scalar identities and intrinsic family/storage facts without backend spellings. |
-| `fortran2ir.py` | `FortranToIRConverter` | Resolves Fortran models and probed facts into semantic IR. |
-| `pyi2ir.py` | `convert_pyi_to_ir()` | Interprets parsed Python AST as an editable semantic contract. |
-| `ownership_metadata.py` | normalized ownership and pointer request setters | Stores unresolved frontend requests for later policy completion. |
-| `native_array_handles.py` | `NativeArrayHandleFacts` | Separates descriptor, array-data, and element facets. |
-| `native_contract.py` | `NativeContractIssue` and validation helpers | Prepares and validates source-free native placement and ABI facts. |
+| [`prik/semantics/__init__.py`](../../../prik/semantics/__init__.py) | Re-exports supported Fortran conversion and `.pyi` conversion entrypoints. | The supported semantic-conversion import API changes. |
+| [`prik/semantics/models.py`](../../../prik/semantics/models.py) | `SemanticModule`, `SemanticFunction`, `SemanticClass`, `SemanticArgument`, `SemanticType`, storage/array contracts, and `SemanticOrigin` form the shared language-neutral graph. | A downstream consumer needs a new language-neutral fact. |
+| [`prik/semantics/scalar_types.py`](../../../prik/semantics/scalar_types.py) | `SemanticScalarSpec` and the scalar catalogue give stable identities and intrinsic family/storage facts without backend spelling. | Stable scalar vocabulary or intrinsic facts change. |
+| [`prik/semantics/fortran2ir.py`](../../../prik/semantics/fortran2ir.py) | `FortranToIRConverter` combines parser models and measured facts into semantic IR; public helpers handle files, modules, and projects. | A Fortran source fact needs a different semantic interpretation. |
+| [`prik/semantics/pyi2ir.py`](../../../prik/semantics/pyi2ir.py) | `convert_pyi_to_ir()` interprets parsed Python AST as an editable semantic contract and reconciles external type references. | A supported `.pyi` construct needs semantic meaning. |
+| [`prik/semantics/metadata.py`](../../../prik/semantics/metadata.py) | Passive keys shared by semantic owners. | A generic semantic metadata key or its canonical spelling changes. |
+| [`prik/semantics/pyi_metadata.py`](../../../prik/semantics/pyi_metadata.py) | Passive keys specific to `.pyi` interpretation. | Parsed `.pyi` metadata needs a canonical key. |
+| [`prik/semantics/ownership_metadata.py`](../../../prik/semantics/ownership_metadata.py) | Normalizes raw ownership and pointer requests without resolving them. | A frontend request needs preservation before policy completion. |
+| [`prik/semantics/native_array_handles.py`](../../../prik/semantics/native_array_handles.py) | `NativeArrayHandleFacts` keeps descriptor, data, and element facets separate. | Semantic description of a native descriptor-backed array changes. |
+| [`prik/semantics/native_contract.py`](../../../prik/semantics/native_contract.py) | `NativeContractIssue` and helpers prepare and validate source-free native placement and ABI facts. | Native contract validation or diagnostics change. |
 
-`metadata.py` and `pyi_metadata.py` are passive shared-key registries. Combined
-multi-file `.pyi` loading belongs to `prik/pipeline/pyi.py`.
+Combined multi-file `.pyi` loading belongs to `prik/pipeline/pyi.py`. Completed
+ownership, projection, and lowering actions belong to `policy/`, never here.
 
 ## Execution Examples
 
@@ -133,13 +137,13 @@ Invalid contract issue: pyi_native_type_missing at math.broken.value
 These examples show stable semantic representation and raw contract facts.
 None contains a completed binding or bridge action.
 
-## Tests
+## Tests And What They Prove
 
-- [Semantic IR conversion](../../../tests/fortran/semantic_ir/semantics/)
-- [Semantic `.pyi` behavior](../../../tests/fortran/semantic_pyi_format/)
-- [Datatype semantics](../../../tests/fortran/data_types/semantics/)
-- [Native handle semantics](../../../tests/fortran/infrastructure/semantics/test_native_array_handles.py)
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py)
+- [Semantic IR conversion](../../../tests/fortran/semantic_ir/semantics/) covers Fortran-model conversion and graph shape.
+- [Semantic `.pyi` behavior](../../../tests/fortran/semantic_pyi_format/) covers contract interpretation and external references.
+- [Datatype semantics](../../../tests/fortran/data_types/semantics/) covers stable type and storage facts.
+- [Native handle semantics](../../../tests/fortran/infrastructure/semantics/test_native_array_handles.py) covers descriptor/data/element separation.
+- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes the seven stage demonstrations above.
 
 ## Change Routes
 
