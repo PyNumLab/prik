@@ -11,9 +11,12 @@ policy from a datatype or native declaration.
 from __future__ import annotations
 
 import ast
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Any
+
+from immutabledict import immutabledict
 
 from prik.naming import NamingPolicy
 from prik.semantics import models
@@ -1301,6 +1304,42 @@ class FunctionWrapperPolicy:
     release_actions: tuple[LifecyclePolicy, ...] = ()
 
 
+@dataclass(frozen=True)
+class _FunctionPolicyContext:
+    """Keep the facts shared by every policy step for one function.
+
+    ``function`` and ``owner_path`` identify the callable being completed.
+    The two mappings contain already-completed derived-type and polymorphic
+    facts, while ``class_call`` identifies an optional class-surface call.
+    For example, all argument, result, and native-slot builders for
+    ``math.scale`` receive the same context instead of separately threading
+    those five values through each helper.
+
+    Step-local products such as native positions and call slots deliberately
+    remain ordinary helper arguments; they are not fixed function context.
+    """
+
+    function: models.SemanticFunction
+    owner_path: str
+    derived_types: Mapping[tuple[str, str], DerivedTypePolicy]
+    polymorphic_variants: Mapping[tuple[str, str], tuple[tuple[str, str], ...]]
+    class_call: ClassMethodPolicy | None
+
+
+@dataclass(frozen=True)
+class _ResultPolicyCandidate:
+    """Store one result policy candidate together with its support blockers.
+
+    ``policy`` is ``None`` when completion cannot construct a usable result,
+    such as a direct return without completed ownership.  Keeping blockers on
+    the same record prevents callers from coordinating parallel policy and
+    diagnostic tuples by position.
+    """
+
+    policy: ResultPolicy | None
+    blockers: tuple[str, ...]
+
+
 def completed_derived_type_policy(semantic_class: models.SemanticClass) -> DerivedTypePolicy:
     """Return one fully completed derived-type policy or fail closed."""
     policy = semantic_class.metadata.get(models.RESOLVED_DERIVED_TYPE_POLICY_METADATA)
@@ -1908,7 +1947,7 @@ def build_module_variable_policy(
     variable: models.SemanticVariable,
     *,
     module_name: str,
-    derived_types: dict[tuple[str, str], DerivedTypePolicy] | None = None,
+    derived_types: Mapping[tuple[str, str], DerivedTypePolicy] | None = None,
 ) -> ModuleVariablePolicy:
     """Build one module-variable access policy from completed semantic decisions.
 
@@ -2067,7 +2106,7 @@ def _derived_module_variable_policy(
     getter: OwnershipDecision,
     setter: OwnershipDecision | None,
     constant: bool,
-    derived_types: dict[tuple[str, str], DerivedTypePolicy],
+    derived_types: Mapping[tuple[str, str], DerivedTypePolicy],
 ) -> ModuleVariablePolicy:
     """Build one constant-copy or live derived module-object policy."""
     builder = _derived_module_constant_policy if constant else _derived_module_object_policy
@@ -2594,10 +2633,10 @@ def build_function_wrapper_policy(
     function: models.SemanticFunction,
     *,
     owner_path: str,
-    derived_types: dict[tuple[str, str], DerivedTypePolicy] | None = None,
+    derived_types: Mapping[tuple[str, str], DerivedTypePolicy] | None = None,
     class_call: ClassMethodPolicy | None = None,
     module_export: bool | None = None,
-    polymorphic_variants: dict[tuple[str, str], tuple[tuple[str, str], ...]] | None = None,
+    polymorphic_variants: Mapping[tuple[str, str], tuple[tuple[str, str], ...]] | None = None,
     native_dispatch_name: str | None = None,
 ) -> FunctionWrapperPolicy:
     """Build a complete wrapper-facing function policy from post-IR decisions.
@@ -2609,25 +2648,25 @@ def build_function_wrapper_policy(
     store the returned record in its resolved-policy metadata.
     """
 
-    completed_derived_types = derived_types or {}
-    # Establish native ABI order before projecting Python-visible arguments.
-    argument_native_positions, native_call_slots, slot_blockers = _native_call_slot_policies(
-        function,
-        owner_path,
-        completed_derived_types,
+    # Freeze the facts shared by every function-policy step so native-slot,
+    # argument, and result completion cannot receive different ambient inputs.
+    context = _FunctionPolicyContext(
+        function=function,
+        owner_path=owner_path,
+        derived_types=immutabledict(derived_types or {}),
+        polymorphic_variants=immutabledict(polymorphic_variants or {}),
+        class_call=class_call,
     )
+    # Establish native ABI order before projecting Python-visible arguments.
+    argument_native_positions, native_call_slots, slot_blockers = _native_call_slot_policies(context)
     arguments, argument_blockers = _argument_policies(
-        function,
-        owner_path,
+        context,
         argument_native_positions,
         native_call_slots,
-        completed_derived_types,
-        polymorphic_variants or {},
-        class_call,
     )
     # Complete result representation and declaration call targets, then bind
     # every array-extent producer to its immutable role.
-    results, result_blockers = _result_policies(function, owner_path, completed_derived_types)
+    results, result_blockers = _result_policies(context)
     declaration_callables = _function_declaration_callable_policies(function, owner_path)
     arguments, results, native_call_slots = _complete_function_array_extent_policies(
         function,
@@ -2762,19 +2801,21 @@ def _array_requires_explicit_interface(array: ArrayHandoffPolicy | None) -> bool
 
 
 def _argument_policies(
-    function: models.SemanticFunction,
-    owner_path: str,
+    context: _FunctionPolicyContext,
     argument_native_positions: dict[int, int],
     native_call_slots: tuple[NativeCallSlotPolicy, ...],
-    derived_types: dict[tuple[str, str], DerivedTypePolicy],
-    polymorphic_variants: dict[tuple[str, str], tuple[tuple[str, str], ...]],
-    class_call: ClassMethodPolicy | None,
 ) -> tuple[list[ArgumentPolicy], tuple[str, ...]]:
-    """Complete visible arguments through one uniform per-argument leaf."""
+    """Complete visible arguments using fixed context and native-slot products.
+
+    ``context`` supplies the function-wide owner, type indexes, and optional
+    class call.  ``argument_native_positions`` and ``native_call_slots`` are
+    products of the preceding native-slot step and therefore remain explicit.
+    The result contains ordered argument policies plus every support blocker.
+    """
     policies: list[ArgumentPolicy] = []
     blockers: list[str] = []
     python_position = 0
-    for argument in function.arguments:
+    for argument in context.function.arguments:
         decision = _ownership_decision(argument, models.RESOLVED_OWNERSHIP_POLICY_METADATA)
         if decision is None:
             blockers.append(f"argument {argument.name!r} is missing completed ownership policy")
@@ -2788,16 +2829,12 @@ def _argument_policies(
             blockers.append(f"argument {argument.name!r} has no completed native-call slot")
             native_position = -1
         policy, argument_blockers = _argument_policy(
-            function,
+            context,
             argument,
             decision,
-            owner_path,
             current_python_position,
             native_position,
             _native_call_slot_for_python_position(native_call_slots, current_python_position),
-            derived_types,
-            polymorphic_variants,
-            class_call,
         )
         policies.append(policy)
         blockers.extend(argument_blockers)
@@ -2813,19 +2850,22 @@ def _native_call_slot_for_python_position(
 
 
 def _argument_policy(
-    function: models.SemanticFunction,
+    context: _FunctionPolicyContext,
     argument: models.SemanticArgument,
     decision: OwnershipDecision,
-    owner_path: str,
     python_position: int,
     native_position: int,
     native_slot: NativeCallSlotPolicy | None,
-    derived_types: dict[tuple[str, str], DerivedTypePolicy],
-    polymorphic_variants: dict[tuple[str, str], tuple[tuple[str, str], ...]],
-    class_call: ClassMethodPolicy | None,
 ) -> tuple[ArgumentPolicy, tuple[str, ...]]:
-    """Complete one visible argument without mixing it with list traversal."""
-    argument_path = f"{owner_path}.{argument.name}"
+    """Complete one visible argument from fixed and position-specific facts.
+
+    ``context`` provides the callable-wide policy environment.  The remaining
+    inputs identify this argument's completed ownership and its Python/native
+    positions.  The returned pair contains the immutable argument policy and
+    any blockers found while constructing it.
+    """
+    function = context.function
+    argument_path = f"{context.owner_path}.{argument.name}"
     scalar_logical_abi, scalar_native_type = _scalar_logical_argument_abi(argument)
     array_logical_abi, array_native_type, array_copy_in, array_copy_out = _array_logical_argument_abi(
         argument,
@@ -2839,15 +2879,21 @@ def _argument_policy(
         decision,
         array_policy,
     )
-    derived = _argument_derived_handoff(argument, decision, callback, argument_path, derived_types)
+    derived = _argument_derived_handoff(
+        argument,
+        decision,
+        callback,
+        argument_path,
+        context.derived_types,
+    )
     derived_call = _argument_derived_call(argument, decision, callback, native_position)
     polymorphic = _polymorphic_dispatch_policy(
         argument,
         decision,
         derived,
-        polymorphic_variants,
+        context.polymorphic_variants,
         owner_path=argument_path,
-        force=_is_passed_object_argument(class_call, native_position)
+        force=_is_passed_object_argument(context.class_call, native_position)
         or _is_exported_passed_object_argument(function, native_position),
     )
     bridge_data_action, bridge_copy_reason = _completed_argument_bridge_action(
@@ -2869,7 +2915,7 @@ def _argument_policy(
         bridge_data_action,
         bridge_copy_reason,
         transformation_blockers,
-        derived_types,
+        context.derived_types,
     )
     return (
         ArgumentPolicy(
@@ -2941,7 +2987,7 @@ def _argument_derived_handoff(
     decision: OwnershipDecision,
     callback: CallbackHandoffPolicy | None,
     owner_path: str,
-    derived_types: dict[tuple[str, str], DerivedTypePolicy],
+    derived_types: Mapping[tuple[str, str], DerivedTypePolicy],
 ) -> DerivedHandoffPolicy | None:
     """Complete the ordinary derived handoff, or leave callback transfer opaque."""
     if callback is not None:
@@ -3068,7 +3114,7 @@ def _completed_argument_blockers(
     bridge_data_action: BridgeDataAction,
     bridge_copy_reason: str | None,
     transformation_blockers: tuple[str, ...],
-    derived_types: dict[tuple[str, str], DerivedTypePolicy],
+    derived_types: Mapping[tuple[str, str], DerivedTypePolicy],
 ) -> tuple[str, ...]:
     """Collect blockers after all semantic selectors have been completed."""
     blockers = [
@@ -3108,7 +3154,7 @@ def _completed_argument_blockers(
 
 def _callback_derived_type_blockers(
     callback: CallbackHandoffPolicy,
-    derived_types: dict[tuple[str, str], DerivedTypePolicy],
+    derived_types: Mapping[tuple[str, str], DerivedTypePolicy],
 ) -> tuple[str, ...]:
     """Require every callback-derived transfer to use a local exact wrapper type."""
     transfers = (
@@ -3123,94 +3169,108 @@ def _callback_derived_type_blockers(
     )
 
 
-def _result_policies(
-    function: models.SemanticFunction,
-    owner_path: str,
-    derived_types: dict[tuple[str, str], DerivedTypePolicy],
-) -> tuple[tuple[ResultPolicy, ...], tuple[str, ...]]:
-    """Return every ordered binding result consumer for one function."""
-    hidden_candidates = _hidden_result_policies(function, owner_path, derived_types)
-    hidden_results = tuple(policy for policy, _blockers in hidden_candidates if policy is not None)
-    hidden_blockers = tuple(reason for _policy, blockers in hidden_candidates for reason in blockers)
-    if function.return_type is None:
-        projected_arguments = _visible_projected_arguments(function)
-        if hidden_results and not projected_arguments:
-            return hidden_results, hidden_blockers
-        if projected_arguments and not hidden_results:
-            return (), hidden_blockers
-        if not hidden_results and not projected_arguments:
-            return (), hidden_blockers
+def _result_policies(context: _FunctionPolicyContext) -> tuple[tuple[ResultPolicy, ...], tuple[str, ...]]:
+    """Combine direct and hidden results in their established diagnostic order.
+
+    Hidden-output candidates are collected for every callable.  Subroutines
+    return those candidates directly.  Functions prepend one direct-result
+    candidate; if that candidate cannot be built, the existing fail-closed
+    behavior discards all results while retaining hidden diagnostics first.
+    """
+    hidden_candidates = _hidden_result_policies(context)
+    hidden_results = tuple(candidate.policy for candidate in hidden_candidates if candidate.policy is not None)
+    hidden_blockers = tuple(reason for candidate in hidden_candidates for reason in candidate.blockers)
+    if context.function.return_type is None:
         return hidden_results, hidden_blockers
 
+    direct = _direct_result_policy(context)
+    if direct.policy is None:
+        return (), (*hidden_blockers, *direct.blockers)
+    return (direct.policy, *hidden_results), (*direct.blockers, *hidden_blockers)
+
+
+def _direct_result_policy(context: _FunctionPolicyContext) -> _ResultPolicyCandidate:
+    """Build one function's direct return from completed ownership facts.
+
+    ``context.function`` must have a return type.  The method validates its
+    descriptor, bridge action, and derived-type handoff, then returns either a
+    completed ``ResultPolicy`` with blockers or a blocked empty candidate when
+    ownership completion is missing.
+    """
+    function = context.function
+    return_type = function.return_type
+    if return_type is None:
+        raise ValueError("Direct result policy requires a function return type")
     decision = function.metadata.get(models.RESOLVED_RETURN_OWNERSHIP_POLICY_METADATA)
     if not isinstance(decision, OwnershipDecision):
-        return (), (*hidden_blockers, "function result is missing completed ownership policy")
+        return _ResultPolicyCandidate(None, ("function result is missing completed ownership policy",))
+    result_path = f"{context.owner_path}.return"
     direct_handle = _native_array_handle_wrapper_policy(
-        function.return_type,
+        return_type,
         function.metadata.get(models.RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA),
-        f"{owner_path}.return",
+        result_path,
     )
-    scalar_descriptor = _scalar_descriptor_result_policy(function.return_type, decision)
-    blockers = list(_result_blockers(function.return_type, decision))
+    scalar_descriptor = _scalar_descriptor_result_policy(return_type, decision)
+    blockers = list(_result_blockers(return_type, decision))
     if scalar_descriptor is not None and scalar_descriptor.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE:
         blockers.append(
             "direct allocatable scalar function results cannot preserve unallocated state; "
             "use an allocatable hidden output projection"
         )
-    bridge_data_action, bridge_copy_reason = _result_bridge_data_action(function.return_type)
+    bridge_data_action, bridge_copy_reason = _result_bridge_data_action(return_type)
     if bridge_data_action is BridgeDataAction.BLOCKED and decision.kind is not ObjectKind.SCALAR:
         blockers.append("result has no completed bridge data action")
     derived = _derived_handoff_policy(
-        function.return_type,
+        return_type,
         decision,
-        owner_path=f"{owner_path}.return",
+        owner_path=result_path,
         origin=DerivedObjectOrigin.WRAPPER_RESULT,
-        derived_types=derived_types,
+        derived_types=context.derived_types,
     )
-    blockers.extend(_derived_type_definition_blockers("result", derived, derived_types))
+    blockers.extend(_derived_type_definition_blockers("result", derived, context.derived_types))
     blockers.extend(
         _allocatable_holder_field_blockers(
             "result",
             derived,
-            derived_types,
+            context.derived_types,
             required=bool(derived is not None and derived.storage is DerivedObjectStorage.ALLOCATABLE_HOLDER),
         )
     )
-    direct_result = ResultPolicy(
-        owner_path=f"{owner_path}.return",
-        semantic_type_name=function.return_type.name,
-        rank=int(function.return_type.rank or 0),
-        direct_result_abi=_direct_result_abi(function.return_type, decision, scalar_descriptor),
-        ownership=decision,
-        codegen_action=decision.codegen_action,
-        python_barrier_action=decision.python_barrier_action,
-        native_barrier_action=decision.native_barrier_action,
-        storage_mode=decision.storage_mode,
-        boundary_storage_mode=decision.boundary_storage_mode or decision.storage_mode,
-        bridge_data_action=bridge_data_action,
-        bridge_copy_reason=bridge_copy_reason,
-        character_length=_character_length(function.return_type),
-        array=_array_handoff_policy(function.return_type),
-        native_array_handle=direct_handle,
-        scalar_descriptor=scalar_descriptor,
-        derived=derived,
-    )
-    results = (direct_result, *hidden_results)
-    return (
-        results,
-        (
-            *blockers,
-            *hidden_blockers,
+    return _ResultPolicyCandidate(
+        ResultPolicy(
+            owner_path=result_path,
+            semantic_type_name=return_type.name,
+            rank=int(return_type.rank or 0),
+            direct_result_abi=_direct_result_abi(return_type, decision, scalar_descriptor),
+            ownership=decision,
+            codegen_action=decision.codegen_action,
+            python_barrier_action=decision.python_barrier_action,
+            native_barrier_action=decision.native_barrier_action,
+            storage_mode=decision.storage_mode,
+            boundary_storage_mode=decision.boundary_storage_mode or decision.storage_mode,
+            bridge_data_action=bridge_data_action,
+            bridge_copy_reason=bridge_copy_reason,
+            character_length=_character_length(return_type),
+            array=_array_handoff_policy(return_type),
+            native_array_handle=direct_handle,
+            scalar_descriptor=scalar_descriptor,
+            derived=derived,
         ),
+        tuple(blockers),
     )
 
 
-def _hidden_result_policies(
-    function: models.SemanticFunction,
-    owner_path: str,
-    derived_types: dict[tuple[str, str], DerivedTypePolicy],
-) -> tuple[tuple[ResultPolicy | None, tuple[str, ...]], ...]:
-    """Return completed policy candidates for hidden scalar output projections."""
+def _hidden_result_policies(context: _FunctionPolicyContext) -> tuple[_ResultPolicyCandidate, ...]:
+    """Return hidden-output candidates using one function-wide policy context.
+
+    Each hidden projected argument produces a candidate containing either its
+    completed result policy or ``None`` plus the blockers that prevented it.
+    Runtime-status outputs are omitted because their completed status policy
+    consumes them instead of exposing them as ordinary Python results.
+    """
+    function = context.function
+    owner_path = context.owner_path
+    derived_types = context.derived_types
     policies = []
     suppressed_outputs = _runtime_status_output_owner_paths(function)
     for argument in function.arguments:
@@ -3228,7 +3288,12 @@ def _hidden_result_policies(
             None,
         )
         if mapping is None:
-            policies.append((None, (f"hidden result {argument.name!r} has no completed return projection",)))
+            policies.append(
+                _ResultPolicyCandidate(
+                    None,
+                    (f"hidden result {argument.name!r} has no completed return projection",),
+                )
+            )
             continue
         blockers = _hidden_result_blockers(argument, decision, mapping)
         native_array_handle = _native_array_handle_wrapper_policy(
@@ -3275,7 +3340,7 @@ def _hidden_result_policies(
             ),
         )
         policies.append(
-            (
+            _ResultPolicyCandidate(
                 ResultPolicy(
                     owner_path=f"{owner_path}.{argument.name}",
                     semantic_type_name=argument.semantic_type.name,
@@ -3306,25 +3371,32 @@ def _hidden_result_policies(
 
 
 def _native_call_slot_policies(
-    function: models.SemanticFunction,
-    owner_path: str,
-    derived_types: dict[tuple[str, str], DerivedTypePolicy],
+    context: _FunctionPolicyContext,
 ) -> tuple[dict[int, int], tuple[NativeCallSlotPolicy, ...], tuple[str, ...]]:
-    """Complete ordered native call slots from explicit projections or declaration order.
+    """Complete ordered native call slots from one fixed function context.
 
     The returned mapping connects visible Python argument positions to native
     positions; slot records preserve native ABI order and blockers diagnose
-    missing completed decisions without mutating ``function``.
+    missing completed decisions without mutating ``context.function``.  The
+    projected and implicit leaves still receive their exact dependencies.
     """
-    if function.projection:
-        return _projected_native_call_slot_policies(function, owner_path, derived_types)
-    return _implicit_native_call_slot_policies(function, owner_path, derived_types)
+    if context.function.projection:
+        return _projected_native_call_slot_policies(
+            context.function,
+            context.owner_path,
+            context.derived_types,
+        )
+    return _implicit_native_call_slot_policies(
+        context.function,
+        context.owner_path,
+        context.derived_types,
+    )
 
 
 def _projected_native_call_slot_policies(
     function: models.SemanticFunction,
     owner_path: str,
-    derived_types: dict[tuple[str, str], DerivedTypePolicy],
+    derived_types: Mapping[tuple[str, str], DerivedTypePolicy],
 ) -> tuple[dict[int, int], tuple[NativeCallSlotPolicy, ...], tuple[str, ...]]:
     """Complete projected slots through one small mapping-dispatch leaf."""
     slots: list[NativeCallSlotPolicy] = []
@@ -3368,7 +3440,7 @@ def _projected_native_call_slot_policy(
     mapping: models.ProjectionMapping,
     owner_path: str,
     visible_arguments: tuple[models.SemanticArgument, ...],
-    derived_types: dict[tuple[str, str], DerivedTypePolicy],
+    derived_types: Mapping[tuple[str, str], DerivedTypePolicy],
 ) -> tuple[NativeCallSlotPolicy | None, int | None, tuple[str, ...]]:
     """Dispatch one projection mapping to its literal, result, or argument leaf."""
     native_position = mapping.native_position
@@ -3403,7 +3475,7 @@ def _projected_argument_native_call_slot_policy(
     native_position: int,
     python_position: int | None,
     visible_arguments: tuple[models.SemanticArgument, ...],
-    derived_types: dict[tuple[str, str], DerivedTypePolicy],
+    derived_types: Mapping[tuple[str, str], DerivedTypePolicy],
 ) -> tuple[NativeCallSlotPolicy | None, int | None, tuple[str, ...]]:
     """Complete one Python argument projection after checking its position."""
     if python_position is None:
@@ -3436,7 +3508,7 @@ def _projected_argument_slot(
     owner_path: str,
     native_position: int,
     python_position: int,
-    derived_types: dict[tuple[str, str], DerivedTypePolicy],
+    derived_types: Mapping[tuple[str, str], DerivedTypePolicy],
 ) -> tuple[NativeCallSlotPolicy, tuple[str, ...]]:
     """Construct one completed native slot for a visible projected argument."""
     argument_path = f"{owner_path}.{argument.name}"
@@ -3543,7 +3615,7 @@ def _hidden_result_native_call_slot_policy(
     mapping: models.ProjectionMapping,
     owner_path: str,
     native_position: int,
-    derived_types: dict[tuple[str, str], DerivedTypePolicy],
+    derived_types: Mapping[tuple[str, str], DerivedTypePolicy],
 ) -> tuple[NativeCallSlotPolicy, tuple[str, ...]]:
     """Return one native slot for a hidden scalar `Return(...)` projection."""
     argument = next((item for item in function.arguments if item.name == mapping.python_name), None)
@@ -3712,7 +3784,7 @@ def _literal_projection_value(
 def _implicit_native_call_slot_policies(
     function: models.SemanticFunction,
     owner_path: str,
-    derived_types: dict[tuple[str, str], DerivedTypePolicy],
+    derived_types: Mapping[tuple[str, str], DerivedTypePolicy],
 ) -> tuple[dict[int, int], tuple[NativeCallSlotPolicy, ...], tuple[str, ...]]:
     """Build declaration-ordered slots when no explicit native projection exists.
 
@@ -3833,7 +3905,7 @@ def _derived_argument_bridge_data_action(
 def _derived_argument_handoff_blockers(
     argument: models.SemanticArgument,
     derived: DerivedHandoffPolicy | None,
-    derived_types: dict[tuple[str, str], DerivedTypePolicy],
+    derived_types: Mapping[tuple[str, str], DerivedTypePolicy],
 ) -> tuple[str, ...]:
     """Require the exact native type definition for a typed value call."""
     if derived is None:
@@ -3844,7 +3916,7 @@ def _derived_argument_handoff_blockers(
 def _derived_type_definition_blockers(
     label: str,
     derived: DerivedHandoffPolicy | None,
-    derived_types: dict[tuple[str, str], DerivedTypePolicy],
+    derived_types: Mapping[tuple[str, str], DerivedTypePolicy],
 ) -> tuple[str, ...]:
     """Require an exported local wrapper definition for every derived handoff."""
     if derived is None or derived.type_identity in derived_types:
@@ -3855,7 +3927,7 @@ def _derived_type_definition_blockers(
 def _allocatable_holder_field_blockers(
     label: str,
     derived: DerivedHandoffPolicy | None,
-    derived_types: dict[tuple[str, str], DerivedTypePolicy],
+    derived_types: Mapping[tuple[str, str], DerivedTypePolicy],
     *,
     required: bool,
 ) -> tuple[str, ...]:
@@ -3879,7 +3951,7 @@ def _derived_handoff_policy(
     owner_path: str,
     origin: DerivedObjectOrigin,
     native_value: bool = False,
-    derived_types: dict[tuple[str, str], DerivedTypePolicy] | None = None,
+    derived_types: Mapping[tuple[str, str], DerivedTypePolicy] | None = None,
 ) -> DerivedHandoffPolicy | None:
     """Complete one scalar-derived origin and lifetime before planning."""
     if decision.kind is not ObjectKind.DERIVED_TYPE:
@@ -4203,7 +4275,7 @@ def _resolve_derived_type_policy(
     semantic_type: models.SemanticType,
     *,
     requested_identity: tuple[str, str],
-    derived_types: dict[tuple[str, str], DerivedTypePolicy],
+    derived_types: Mapping[tuple[str, str], DerivedTypePolicy],
 ) -> DerivedTypePolicy | None:
     """Resolve one reference to a completed canonical native type identity."""
     exact = derived_types.get(requested_identity)
@@ -5920,7 +5992,7 @@ def _derived_module_object_policy(
     setter: OwnershipDecision | None,
     *,
     owner_path: str,
-    derived_types: dict[tuple[str, str], DerivedTypePolicy],
+    derived_types: Mapping[tuple[str, str], DerivedTypePolicy],
 ) -> DerivedModuleObjectPolicy:
     """Complete direct-address versus typed-member module access."""
     handoff = _derived_handoff_policy(
@@ -5960,7 +6032,7 @@ def _derived_module_constant_policy(
     setter: OwnershipDecision | None,
     *,
     owner_path: str,
-    derived_types: dict[tuple[str, str], DerivedTypePolicy],
+    derived_types: Mapping[tuple[str, str], DerivedTypePolicy],
 ) -> DerivedModuleObjectPolicy:
     """Complete an explicit native constant as a fresh wrapper-owned value copy."""
     handoff = _derived_handoff_policy(
@@ -7180,19 +7252,6 @@ def _argument_result_position(function: models.SemanticFunction, python_position
         if mapping.python_position == python_position and mapping.result_position is not None:
             return int(mapping.result_position)
     return None
-
-
-def _visible_projected_arguments(function: models.SemanticFunction) -> tuple[models.SemanticArgument, ...]:
-    """Return Python-visible arguments whose completed policy projects results."""
-    return tuple(
-        argument
-        for argument in function.arguments
-        if (
-            (decision := _ownership_decision(argument, models.RESOLVED_OWNERSHIP_POLICY_METADATA)) is not None
-            and decision.projects_result
-            and decision.python_visible
-        )
-    )
 
 
 def _native_name(function: models.SemanticFunction) -> str:
