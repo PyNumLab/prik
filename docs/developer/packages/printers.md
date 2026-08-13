@@ -104,7 +104,6 @@ native identity are derived without attaching wrapper policy.
 
 - [Printer infrastructure](../../../tests/fortran/infrastructure/printers/) covers native syntax serialization and formatting.
 - [Semantic `.pyi` round trips](../../../tests/fortran/semantic_pyi_format/) cover contract emission and re-parsing.
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes the three rendered examples above.
 
 ## Change Routes
 

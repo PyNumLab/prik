@@ -169,7 +169,7 @@ docs/
   developer/
     index.md
     architecture.md
-    source-map.md
+    codebase-map.md
     feature-to-code-map.md
     testing-strategy.md
     packages/

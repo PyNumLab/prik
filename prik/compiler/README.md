@@ -88,6 +88,6 @@ policy completion. Those decisions happen before generated sources reach this pa
 - Compiler package guide: `docs/developer/packages/compiler.md`
 - Pipeline package guide: `docs/developer/packages/pipeline.md`
 - Quality and static checks: `docs/developer/workflows/quality-assurance.md`
-- Source navigation: `docs/developer/source-map.md`, `docs/developer/feature-to-code-map.md`
+- Source navigation: `docs/developer/codebase-map.md`, `docs/developer/feature-to-code-map.md`
 - Build-mode tests: `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py`
 - Runtime ABI tests: `tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py`

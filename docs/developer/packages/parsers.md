@@ -2,7 +2,7 @@
 title: Parsers Package
 audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide, prepared source
-related: ../architecture.md, index.md, preprocessing.md, semantics.md, ../source-map.md
+related: ../architecture.md, index.md, preprocessing.md, semantics.md, ../codebase-map.md
 status: maintained
 publication: draft
 ---
@@ -154,7 +154,6 @@ not a completed `SemanticModule`, wrapper plan, or generated source.
 - [Fortran parser CLI tests](../../../tests/fortran/command_line_interface/pipeline/) cover parser command dispatch and report output.
 - [Semantic `.pyi` parsing tests](../../../tests/fortran/semantic_pyi_format/parsing/) cover raw `.pyi` AST parsing and diagnostics.
 - [Semantic IR conversion tests](../../../tests/fortran/semantic_ir/semantics/) prove the downstream Fortran-model handoff.
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes the five demonstrations above.
 
 ## Change Routes
 

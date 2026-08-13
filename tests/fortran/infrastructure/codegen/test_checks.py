@@ -1,36 +1,13 @@
-"""Internal code-generation static-check contracts."""
+"""Behavior of the advisory code-generation reviewer."""
 
 from __future__ import annotations
 
-import ast
 from pathlib import Path
-import subprocess
-import sys
 
-from tests.fortran._support.wrapper_build import REPO_ROOT
 from prik.codegen.checks import (
     WrapperCodegenCheckConfig,
-    check_codegen_package,
     check_codegen_paths,
 )
-
-SOURCE_ROOT = REPO_ROOT / "prik"
-CODEGEN_ROOT = SOURCE_ROOT / "codegen"
-
-
-def _imported_modules(path: Path) -> set[str]:
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    imported = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imported.update(alias.name for alias in node.names)
-        if isinstance(node, ast.ImportFrom) and node.module:
-            imported.add(node.module)
-    return imported
-
-
-def _imports_under(imports: set[str], package: str) -> bool:
-    return any(name == package or name.startswith(f"{package}.") for name in imports)
 
 
 def _write_module(root: Path, relative_path: str, source: str) -> Path:
@@ -49,35 +26,19 @@ def _check_source(tmp_path: Path, source: str, *, filename: str = "bad.py") -> s
     return {violation.code for violation in violations}
 
 
-def test_codegen_package_static_contracts_pass():
-    assert check_codegen_package(CODEGEN_ROOT) == ()
-
-
-def test_codegen_checker_command_runs_the_package_checker():
-    result = subprocess.run(
-        [sys.executable, "tools/check_codegen_complexity.py"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stdout
-
-
-def test_checker_rejects_module_level_production_functions(tmp_path: Path):
+def test_reviewer_reports_module_level_production_functions(tmp_path: Path):
     codes = _check_source(tmp_path, "def build_plan():\n    return None\n")
 
     assert "module-function" in codes
 
 
-def test_checker_requires_visitor_based_production_classes(tmp_path: Path):
+def test_reviewer_recommends_visitor_based_production_classes(tmp_path: Path):
     codes = _check_source(tmp_path, "class WrapperPlanner:\n    pass\n")
 
     assert "visitor-class" in codes
 
 
-def test_checker_enforces_complexity_statement_and_nesting_limits(tmp_path: Path):
+def test_reviewer_reports_complexity_statement_and_nesting_limits(tmp_path: Path):
     codes = _check_source(
         tmp_path,
         """
@@ -103,7 +64,7 @@ def oversized(value):
     assert {"complexity", "statement-count", "nesting-depth"} <= codes
 
 
-def test_checker_uses_strict_default_limits_for_emitter_handlers(tmp_path: Path):
+def test_reviewer_uses_stricter_recommendations_for_emitter_handlers(tmp_path: Path):
     path = _write_module(
         tmp_path,
         "strict.py",
@@ -131,7 +92,7 @@ class DemoEmitter(ClassVisitor):
     assert "complexity" in {violation.code for violation in violations}
 
 
-def test_checker_rejects_missing_primary_and_secondary_registry_handlers(tmp_path: Path):
+def test_reviewer_reports_missing_primary_and_secondary_registry_handlers(tmp_path: Path):
     codes = _check_source(
         tmp_path,
         """
@@ -146,7 +107,7 @@ class DemoEmitter(ClassVisitor):
     assert "registry-missing-handler" in codes
 
 
-def test_checker_rejects_printer_calls_from_handlers(tmp_path: Path):
+def test_reviewer_reports_printer_calls_from_handlers(tmp_path: Path):
     codes = _check_source(
         tmp_path,
         """

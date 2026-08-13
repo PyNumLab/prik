@@ -2,7 +2,7 @@
 title: Planning Package
 audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide, completed policy
-related: ../architecture.md, index.md, policy.md, codegen.md, ../source-map.md
+related: ../architecture.md, index.md, policy.md, codegen.md, ../codebase-map.md
 status: maintained
 publication: draft
 ---
@@ -106,7 +106,6 @@ stable role connecting binding conversion to the native call slot.
 - [Plan model tests](../../../tests/fortran/infrastructure/codegen/test_plan.py) protect plan-record shape and freeze behavior.
 - [Planner tests](../../../tests/fortran/infrastructure/codegen/test_planner.py) protect validation, projection, symbols, and order.
 - [Feature-local codegen stages](../../../tests/fortran/) protect plan use for each supported feature.
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes the model and planner outputs above.
 
 ## Change Routes
 

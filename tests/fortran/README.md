@@ -68,10 +68,9 @@ evidence, not the ownership rule.
 
 | Final directory | Owner |
 | --- | --- |
-| `infrastructure/execution_examples/` | Direct execution and exact-output contracts for the contributor architecture guide's selected production-file examples |
 | `infrastructure/runtime/` | Native runtime-support package contracts that have no public feature owner |
-| `infrastructure/semantics/` | Internal semantic ownership, policy completion, and completed wrapper-policy mechanics, with one test module per production module |
-| `infrastructure/codegen/` | Internal plan, planner, generator, binding, bridge, printer, docstring, check, and visitor mechanics, with one test module per production module |
+| `infrastructure/semantics/` | Internal semantic ownership, policy completion, and completed wrapper-policy mechanics |
+| `infrastructure/codegen/` | Internal plan, planner, generator, binding, bridge, printer, docstring, advisory review, and visitor mechanics |
 | `infrastructure/naming/` | Internal generated-name and public-name policy owned by `prik/naming/` |
 | `infrastructure/pipeline/` | Generated-wrapper orchestration and transport owned by `prik/pipeline/` |
 | `infrastructure/types/` | Internal NumPy type mapping and target mapping-report mechanics |
@@ -79,7 +78,11 @@ evidence, not the ownership rule.
 
 Each infrastructure test module has an explicit production owner. New internal
 coverage goes in the matching `prik/` package directory; it must not recreate a
-generic policy, stage, or internals catch-all.
+generic policy, stage, or internals catch-all. Do not create empty mirror
+modules or assert a complete module inventory. Internal representations may be
+checked when they are the completed handoff between stages; private names,
+inheritance choices, field inventories, and incidental call structure remain
+review recommendations.
 
 Minimized real-source parser regressions live in
 `source_parsing/parsing/test_real_world_interaction_regressions.py`. A

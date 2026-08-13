@@ -116,7 +116,6 @@ native command mechanics, and support installation remain separate operations.
 - [Build pipeline tests](../../../tests/fortran/building_shared_library/pipeline/) cover compiler handoff from a build plan.
 - [Source build modes](../../../tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py) covers real source-build outcomes.
 - [Runtime ABI compatibility](../../../tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py) covers installed support used by a compiled extension.
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes the four demonstrations above.
 
 ## Change Routes
 

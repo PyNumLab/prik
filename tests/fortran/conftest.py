@@ -143,17 +143,12 @@ def _relative_test_path(item: pytest.Item) -> Path:
 
 def _is_fortran_feature_end_to_end(item: pytest.Item) -> bool:
     parts = _relative_test_path(item).parts
-    feature_owner = (
+    return (
         len(parts) >= 5
         and parts[:2] == ("tests", "fortran")
         and parts[2] not in {"_support", "infrastructure"}
         and "end_to_end" in parts[3:-1]
     )
-    architecture_example_owner = item.nodeid == (
-        "tests/fortran/infrastructure/execution_examples/test_execution_examples.py::"
-        "test_fortran_pipeline_build_execution_example"
-    )
-    return feature_owner or architecture_example_owner
 
 
 def _is_platform_mark(name: str) -> bool:

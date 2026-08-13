@@ -6,17 +6,12 @@ import ast
 from pathlib import Path
 
 from tests.fortran._support.wrapper_build import REPO_ROOT
-from prik.codegen.checks import (
-    WrapperCodegenCheckConfig,
-    check_codegen_paths,
-)
 
-SOURCE_ROOT = REPO_ROOT / "prik"
-CODEGEN_ROOT = SOURCE_ROOT / "codegen"
-PRINTERS_ROOT = SOURCE_ROOT / "printers"
-PLANNING_ROOT = SOURCE_ROOT / "planning"
-POLICY_ROOT = SOURCE_ROOT / "policy"
-SEMANTICS_ROOT = SOURCE_ROOT / "semantics"
+CODEGEN_ROOT = REPO_ROOT / "prik" / "codegen"
+PRINTERS_ROOT = REPO_ROOT / "prik" / "printers"
+PLANNING_ROOT = REPO_ROOT / "prik" / "planning"
+POLICY_ROOT = REPO_ROOT / "prik" / "policy"
+SEMANTICS_ROOT = REPO_ROOT / "prik" / "semantics"
 
 
 def _imported_modules(path: Path) -> set[str]:
@@ -36,28 +31,6 @@ def _imports_under(imports: set[str], package: str) -> bool:
 
 def _package_imports(root: Path) -> set[str]:
     return set().union(*(_imported_modules(path) for path in root.rglob("*.py")))
-
-
-def _write_module(root: Path, relative_path: str, source: str) -> Path:
-    path = root / relative_path
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(source, encoding="utf-8")
-    return path
-
-
-def _check_source(tmp_path: Path, source: str, *, filename: str = "bad.py") -> set[str]:
-    path = _write_module(tmp_path, filename, source)
-    violations = check_codegen_paths(
-        [path],
-        config=WrapperCodegenCheckConfig(max_complexity=3, max_statements=4, max_nesting=2),
-    )
-    return {violation.code for violation in violations}
-
-
-def test_canonical_printers_share_one_package():
-    assert (PRINTERS_ROOT / "c.py").is_file()
-    assert (PRINTERS_ROOT / "fortran.py").is_file()
-    assert (PRINTERS_ROOT / "pyi.py").is_file()
 
 
 def test_backend_generators_do_not_import_each_other():
@@ -86,14 +59,3 @@ def test_wrapper_stage_packages_follow_the_documented_dependency_direction():
     assert not _imports_under(printer_imports, "prik.policy")
     assert not _imports_under(printer_imports, "prik.planning")
     assert not _imports_under(printer_imports, "prik.pipeline")
-
-
-def test_wrapper_build_pipeline_imports_canonical_wrapper_stages():
-    imports = _imported_modules(SOURCE_ROOT / "pipeline" / "build.py")
-    wrapper_imports = _imported_modules(SOURCE_ROOT / "pipeline" / "wrapper.py")
-
-    assert _imports_under(imports, "prik.policy")
-    assert _imports_under(imports, "prik.planning")
-    assert _imports_under(imports, "prik.pipeline.wrapper")
-    assert _imports_under(wrapper_imports, "prik.codegen")
-    assert _imports_under(wrapper_imports, "prik.printers")

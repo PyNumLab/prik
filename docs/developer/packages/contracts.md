@@ -73,7 +73,6 @@ and shape syntax for later semantic interpretation.
 - [Contract runtime tests](../../../tests/fortran/data_types/runtime/) protect scalar and descriptor-constructor behavior.
 - [Semantic `.pyi` parser tests](../../../tests/fortran/semantic_pyi_format/parsing/) protect recognition of the public vocabulary.
 - [Semantic `.pyi` round-trip tests](../../../tests/fortran/semantic_pyi_format/pipeline/) protect loading and re-emission through the shared contract path.
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes the example output above.
 
 ## Change Routes
 

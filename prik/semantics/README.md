@@ -103,7 +103,7 @@ completion remains the next shared stage after those converters produce
 - Semantic reference: `docs/user/reference/semantic-ir.md`
 - `.pyi` reference: `docs/user/reference/semantic-pyi-format.md`
 - `.pyi` wrapper checklist: `docs/developer/roadmap/semantic-pyi-wrapper-checklist.md`
-- Source navigation: `docs/developer/source-map.md`, `docs/developer/feature-to-code-map.md`
+- Source navigation: `docs/developer/codebase-map.md`, `docs/developer/feature-to-code-map.md`
 - Architecture: `docs/developer/architecture.md`
 - Semantics package guide: `docs/developer/packages/semantics.md`
 - Datatype lifecycle: `docs/developer/concepts/datatype-lifecycle.md`

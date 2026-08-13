@@ -99,7 +99,6 @@ MRO fallback: expression:Expression
 - [Utility infrastructure](../../../tests/fortran/infrastructure/utilities/) covers local-name and visitor behavior.
 - [Pipeline freeze-boundary tests](../../../tests/fortran/infrastructure/pipeline/test_wrapper_generator.py) cover plan and generated-node mutation rejection after consumption.
 - [Declaration-expression semantics](../../../tests/fortran/arrays/semantics/test_declaration_expression_utilities.py) covers role resolution and expression rendering.
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes the four demonstrations above.
 
 ## Change Routes
 

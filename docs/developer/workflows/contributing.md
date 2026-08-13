@@ -28,7 +28,7 @@ behavior. Do not start with the full suite while discovering the change.
 
 1. Identify the public behavior, limitation, or internal invariant.
 2. Use the [architecture guide](../architecture.md),
-   [source map](../source-map.md), or
+   [codebase map](../codebase-map.md), or
    [feature-to-code map](../feature-to-code-map.md) to find its owner.
 3. Read the owning package guide and relevant user contract before editing.
 4. Update the documentation contract first when public behavior, ownership,
@@ -61,9 +61,13 @@ the earliest stage with enough facts to report a stable diagnostic.
 ## Documentation Examples
 
 Important production files expose small public-API examples under
-`if __name__ == "__main__"`; package guides document their exact commands and
-outputs. Their centralized execution owner is
-[`test_execution_examples.py`](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py).
+`if __name__ == "__main__"`; package guides document their commands and
+representative results. The documentation example checks discover those pairs
+from the package guides, run them, and use the page as the expected-output
+source. When changing one, preserve its behavior and wording unless the
+requested change requires otherwise. Focused feature and stage tests still
+protect the underlying behavior; presentation outside the displayed result
+remains a contributor-review responsibility.
 
 Markdown snippets use the repository's checked markers:
 

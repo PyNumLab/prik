@@ -18,7 +18,7 @@ language.
 
 | Owner | Contract | Focused command |
 | --- | --- | --- |
-| [`tests/docs/`](docs/README.md) | Documentation metadata, navigation, executable examples, publication, content journeys, and source-map synchronization | `python3 -m pytest -q tests/docs` |
+| [`tests/docs/`](docs/README.md) | Documentation publication, link integrity, executable examples, and public reference synchronization | `python3 -m pytest -q tests/docs` |
 | [`tests/fortran/`](fortran/README.md) | Fortran input, semantic `.pyi` wrapper contracts, generated bridge/binding behavior, and Fortran runtime features | `python3 -m pytest -q tests/fortran` |
 | [`tests/c/`](c/README.md) | C input-language inspection behavior | `python3 -m pytest -q tests/c` |
 | [`tests/tools/`](tools/README.md) | Maintainer commands and CI support scripts | `python3 -m pytest -q tests/tools` |
@@ -42,6 +42,12 @@ Every pytest module and checked fixture has a behavioral owner below
 not behavior frozen by recursive layout tests. No legacy stage-first root,
 shared fixture corpus, forwarding fixture, collection shim, import alias, or
 path fallback is part of the maintained suite.
+
+Tests protect observable behavior or an explicit durable invariant. They do
+not freeze documentation prose, heading order, private symbol names, complete
+source inventories, or incidental implementation structure. A structural
+check requires a concrete risk that cannot be protected more directly through
+behavior.
 
 ## Final Fortran stage ownership
 
@@ -151,26 +157,26 @@ CLI/API diagnostic test only when propagation is itself public behavior.
 Feature-local fixtures live below their feature; cross-feature helpers require
 an explicit infrastructure owner.
 
-After choosing feature ownership, mirror genuinely internal mechanisms by
-production package and module:
+After choosing feature ownership, place genuinely internal mechanisms under
+their owning production package when that makes the invariant easier to find:
 
 ```text
 tests/fortran/infrastructure/<production-package>/test_<production-module>.py
 ```
 
-Thus `prik/policy/ownership.py` uses
+For example, `prik/policy/ownership.py` uses
 `infrastructure/semantics/test_ownership.py`, while
 `prik/planning/planner.py` uses `infrastructure/codegen/test_planner.py`;
 language source printers use `infrastructure/printers/` and the wrapper
 orchestrator uses `infrastructure/pipeline/test_wrapper_generator.py`.
+This is navigation guidance, not a requirement to create one test file per
+production module.
 User-visible behavior does not move to infrastructure merely because it reaches
-those modules. Retained production `if __name__ == "__main__"` demonstrations
-are cross-stage executable architecture contracts. Their output assertions are
-grouped in
-`tests/fortran/infrastructure/execution_examples/test_execution_examples.py`, with one
-explicitly named test per demonstrated production file; feature-local modules
-continue to prove the underlying parser, policy, generation, or runtime
-behavior.
+those modules. Production `if __name__ == "__main__"` demonstrations are
+maintained examples rather than a fixed cross-stage inventory. Package-guide
+command/result pairs are executed by `tests/docs/test_examples.py`, using the
+documentation itself as the expected-output source. Feature-local tests prove
+the underlying parser, policy, generation, or runtime behavior.
 
 Shared support modules provide builders and assertions only. They do not
 re-export `pytest`, standard-library modules, or production symbols.

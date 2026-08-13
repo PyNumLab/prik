@@ -113,7 +113,6 @@ generated Python API.
 - [Build pipeline](../../../tests/fortran/building_shared_library/pipeline/) covers files, manifests, and build-plan handoffs.
 - [Compilation integration](../../../tests/fortran/building_shared_library/compiling/) covers native command integration.
 - [End-to-end builds](../../../tests/fortran/building_shared_library/end_to_end/) covers produced extension behavior.
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes the four demonstrations above.
 
 ## Change Routes
 

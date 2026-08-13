@@ -192,7 +192,7 @@ source-build Makefile behavior by
 [`test_build_modes.py`](../../../tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py).
 
 Tooling configuration is covered by
-[`test_reference_and_source_map.py`](../../../tests/docs/test_reference_and_source_map.py),
+[`test_reference_and_codebase_map.py`](../../../tests/docs/test_reference_and_codebase_map.py),
 [`test_examples.py`](../../../tests/docs/test_examples.py), and
 [`test_check_static_analysis_versions.py`](../../../tests/tools/test_check_static_analysis_versions.py).
 

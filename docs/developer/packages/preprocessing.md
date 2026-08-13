@@ -119,7 +119,6 @@ semantic scalar or NumPy dtype. The probe example requires `gfortran` or
 - [Fortran preprocessing](../../../tests/fortran/source_preprocessing/preprocessing/) covers adapters, recipes, mappings, dependencies, and diagnostics.
 - [Parser boundary tests](../../../tests/fortran/source_preprocessing/preprocessing/test_parser_boundaries.py) prove that prepared source reaches parsing with preserved facts.
 - [Fortran target probes](../../../tests/fortran/data_types/probes/test_fortran_type_probes.py) cover measured type facts and cache separation.
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes the three demonstrations above.
 
 ## Change Routes
 

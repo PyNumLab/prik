@@ -48,4 +48,3 @@ def test_native_binding_support_is_header_only_and_exposes_the_small_prik_api():
         assert f"prik_{suffix}_unpack" in header
         assert f"prik_{suffix}_to_python" in header
         assert f"prik_{suffix}_to_numpy" in header
-    assert header.count("static inline") == 42

@@ -21,6 +21,44 @@ Do not spend context window or analysis on those files unless explicitly request
 When asked to change or move an API, import path, command, feature, or behavior, do not add or keep compatibility layers, aliases, shims, fallback paths, or legacy entrypoints unless explicitly requested. A requested change means the old behavior should be removed.
 When updating tests, remove obsolete tests that only assert removed/old implementation behavior does not exist. Do not preserve rejection or absence checks for API/features that were intentionally removed unless explicitly requested.
 
+Treat tests as evidence for a named invariant, not as specifications merely
+because they already exist. Add or retain automated tests when they protect at
+least one of the following:
+
+- externally observable behavior or a public API;
+- a documented diagnostic or serialized/generated format;
+- ABI, ownership, lifetime, memory-safety, build, or release behavior;
+- a stage handoff or architectural boundary whose violation would allow a
+  downstream stage to make an upstream decision; or
+- repository structure that is directly consumed by tooling.
+
+Do not add tests whose only purpose is to freeze prose, wording, heading or
+section order, private class or function names, complete file inventories,
+dataclass field inventories, exact internal call order, preferred inheritance,
+or incidental directory/module layout. Those are recommendations for
+contributor review unless the user explicitly promotes one to a maintained
+contract. Unit tests may construct internal models when their behavior or
+completed state is the invariant, but they should not assert implementation
+shape just to prevent refactoring.
+
+When an existing test fails after an intentional change, identify the behavior
+or risk it was meant to protect before changing production code. Keep or
+rewrite the test when that invariant remains a contract; remove it when it only
+records the previous implementation or a recommendation. Do not change correct
+behavior solely to satisfy a brittle test.
+
+The agent owns the review work that is not delegated to rigid tests. Before and
+after a refactor, compare the affected public behavior and stage outputs. When
+editing documentation, examples, diagnostics, or generated text, preserve the
+existing meaning, behavior, and wording as much as the request permits; inspect
+the diff and run the affected example or focused command when practical. Treat
+illustrative wording and demonstration output as review recommendations unless
+they are explicitly documented as stable formats. A command/result pair shown
+in a package guide must remain factual: run the command and compare stable
+output with the page, or validate only the displayed invariant when the output
+is an excerpt or depends on the active target. Do not duplicate that expected
+output in a separate test inventory.
+
 Before wrapper planning begins in `prik/planning/planner.py`, the
 post-IR policy stage must have completed every semantic decision needed by
 wrapper generation, including object kind, ownership, transfer, destruction,
@@ -85,4 +123,8 @@ pull-request verification:
 - `python3 -m radon cc prik -n C -s --total-average`
 - `python3 -m radon mi prik -s`
 Treat Ruff, Bandit, Vulture, and the Radon policy as blocking. The full Radon complexity and maintainability reports are advisory but must still be run. If a command cannot run because a dependency, network service, or CI-only environment value is unavailable, state that explicitly in the final response.
+
+The codegen complexity checker is also advisory: review and report its findings,
+but do not change correct behavior or fail the task solely to satisfy its
+structural recommendations.
 When you create a commit add this prefix to the message to know that you did push the commit "codex: ..."

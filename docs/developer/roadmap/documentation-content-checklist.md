@@ -112,7 +112,7 @@ PRIK_C_DOCS_END -->
 - [x] `docs/developer/deferred/c-parser.md`: retained but unpublished C
   parser/C-to-IR material, separate from the generated CPython C backend.
 
-The old TODO-only contributor pages, duplicate pipeline/source maps, completed
+The old TODO-only contributor pages, duplicate pipeline/codebase maps, completed
 wrapper-plan and native-array migration ledgers, and separate internal/design
 indexes were removed after their stable facts moved to these owners.
 
@@ -279,7 +279,7 @@ primary placeholder queue.
 - [x] `docs/user/language-support/feature-matrix.md`: maintained support matrix.
 - [x] `docs/developer/workflows/contributing.md`: maintained contributor
   development and review workflow.
-- [x] `docs/developer/source-map.md`: maintained source route map.
+- [x] `docs/developer/codebase-map.md`: maintained package and module ownership map.
 - [x] `docs/developer/feature-to-code-map.md`: maintained feature route
   map.
 - [x] `docs/developer/architecture.md`: maintained shallow repository/package

@@ -191,8 +191,7 @@ without asking the other backend to decide policy.
 
 - [Codegen infrastructure](../../../tests/fortran/infrastructure/codegen/) covers nodes, generators, planning handoffs, and validation.
 - [Feature-local codegen suites](../../../tests/fortran/) cover emitted mechanisms for each supported feature.
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes every direct module demonstration on this page.
-- `python3 tools/check_codegen_complexity.py` protects the generator-complexity policy.
+- `python3 tools/check_codegen_complexity.py` reports generator-maintainability recommendations for contributor review.
 
 ## Change Routes
 

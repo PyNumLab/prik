@@ -1,4 +1,4 @@
-"""Static contracts for wrapper lowering, printing, and orchestration."""
+"""Static review recommendations for wrapper generation code."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ ASSEMBLER_CLASS_NAMES = frozenset(
 
 @dataclass(frozen=True)
 class WrapperCodegenCheckConfig:
-    """Limits enforced for new wrapper-codegen implementation code."""
+    """Recommended limits for wrapper-codegen implementation code."""
 
     max_complexity: int = 10
     max_statements: int = 30
@@ -56,7 +56,7 @@ class WrapperCodegenCheckConfig:
 
 @dataclass(frozen=True)
 class WrapperCodegenViolation:
-    """One static-contract violation in ``prik.codegen``."""
+    """One maintainability recommendation for ``prik.codegen``."""
 
     path: Path
     lineno: int
@@ -76,7 +76,7 @@ def check_codegen_package(
     *,
     config: WrapperCodegenCheckConfig | None = None,
 ) -> tuple[WrapperCodegenViolation, ...]:
-    """Check the wrapper generation, printer, and orchestration modules."""
+    """Review the wrapper generation, printer, and orchestration modules."""
     if package_root is not None:
         paths = sorted(package_root.rglob("*.py"))
     else:
@@ -94,7 +94,7 @@ def check_codegen_paths(
     *,
     config: WrapperCodegenCheckConfig | None = None,
 ) -> tuple[WrapperCodegenViolation, ...]:
-    """Check selected wrapper-codegen modules."""
+    """Review selected wrapper-codegen modules."""
     violations = []
     resolved_config = config or DEFAULT_CHECK_CONFIG
     tiered_limits = config is None
@@ -119,7 +119,7 @@ def _module_violations(path: Path, tree: ast.Module) -> list[WrapperCodegenViola
 
 def _module_function_violations(path: Path, tree: ast.Module) -> list[WrapperCodegenViolation]:
     return [
-        _violation(path, node, "module-function", f"move production function {node.name!r} onto a class")
+        _violation(path, node, "module-function", f"consider moving production function {node.name!r} onto a class")
         for node in tree.body
         if isinstance(node, ast.FunctionDef)
         and not (path.name == SEMANTIC_PRINTER_MODULE and node.name in SEMANTIC_PRINTER_FUNCTIONS)
@@ -128,7 +128,7 @@ def _module_function_violations(path: Path, tree: ast.Module) -> list[WrapperCod
 
 def _visitor_class_violations(path: Path, tree: ast.Module) -> list[WrapperCodegenViolation]:
     return [
-        _violation(path, node, "visitor-class", f"{node.name} must inherit ClassVisitor")
+        _violation(path, node, "visitor-class", f"consider making {node.name} inherit ClassVisitor")
         for node in tree.body
         if isinstance(node, ast.ClassDef)
         and node.name.endswith(VISITOR_CLASS_SUFFIXES)

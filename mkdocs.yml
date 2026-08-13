@@ -121,8 +121,8 @@ nav:
   - Contributor Documentation:
       - Overview: developer/index.md
       - Architecture: developer/architecture.md
-      - Source Map: developer/source-map.md
-      - Feature To Code Map: developer/feature-to-code-map.md
+      - Codebase Map: developer/codebase-map.md
+      - Feature-to-Code Map: developer/feature-to-code-map.md
       - Testing Strategy: developer/testing-strategy.md
       - Source Packages:
           - Overview: developer/packages/index.md

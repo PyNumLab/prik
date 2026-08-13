@@ -2,7 +2,7 @@
 title: Source Package Guides
 audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide
-related: ../architecture.md, ../source-map.md, ../feature-to-code-map.md
+related: ../architecture.md, ../codebase-map.md, ../feature-to-code-map.md
 status: maintained
 publication: draft
 ---

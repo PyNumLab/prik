@@ -15,13 +15,12 @@ package, workflow, concept, design, or active-roadmap page needed for the task.
 
 ## Orientation
 
-- [Contributor architecture](architecture.md): shallow repository/package
-  structure, complete workflow, authority rules, CLI/root files, and package
-  routes.
+- [PRIK architecture](architecture.md): build architecture, input routes,
+  stage handoffs, concrete representations, and authority boundaries.
 - [Source package guides](packages/index.md): one detailed page per production
   package, with local structure, important objects, runnable examples, tests,
   change routes, and invariants.
-- [Source map](source-map.md): exact file and hotspot lookup.
+- [Codebase map](codebase-map.md): package, module, and hotspot ownership.
 - [Feature-to-code map](feature-to-code-map.md): user-visible capability to
   source, tests, and documentation.
 - [Testing strategy](testing-strategy.md): language/feature/stage ownership and

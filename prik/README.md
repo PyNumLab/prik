@@ -40,7 +40,7 @@ printers, bridges, and bindings must not infer missing expression semantics.
 
 - `docs/developer/architecture.md`
 - `docs/developer/packages/index.md`
-- `docs/developer/source-map.md`
+- `docs/developer/codebase-map.md`
 - `docs/developer/feature-to-code-map.md`
 
 Keep user-facing support claims in the docs backed by focused tests and, for

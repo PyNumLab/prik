@@ -70,10 +70,11 @@ python3 -m radon cc prik -n C -s --total-average
 python3 -m radon mi prik -s
 ```
 
-Ruff, Bandit, Vulture, codegen complexity, version checks, and the changed-code
-Radon policy are blocking. Full Radon reports are advisory. If automatic Radon
-base detection lacks CI SHA metadata locally, rerun with `--base-ref main` and
-report that fact.
+Ruff, Bandit, Vulture, version checks, and the changed-code Radon policy are
+blocking. The codegen complexity checker and full Radon reports are advisory;
+review their findings instead of changing correct behavior solely to satisfy a
+structural preference. If automatic Radon base detection lacks CI SHA metadata
+locally, rerun with `--base-ref main` and report that fact.
 
 ## Coverage And Test-Order Reproduction
 

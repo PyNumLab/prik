@@ -80,7 +80,6 @@ compiled only as part of a generated binding.
 - [Memory-management runtime tests](../../../tests/fortran/memory_management/runtime/) cover release and ownership enforcement.
 - [Runtime infrastructure](../../../tests/fortran/infrastructure/runtime/) covers generated-operation protocols.
 - [Compiled runtime compatibility](../../../tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py) covers the payload in a real extension.
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes the handle demonstration above.
 
 ## Change Routes
 

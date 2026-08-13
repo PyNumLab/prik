@@ -21,6 +21,24 @@ release tags add a leading `v` to the package version.
 
 ### Changed
 
+- Marked the contributor Architecture and Codebase Map as reviewed for
+  publication; the renamed map now focuses on package and cross-stage module
+  ownership.
+- Clarified the Feature-to-Code Map as the capability-to-owner and evidence
+  index, linking reviewed user documentation and retaining only planned
+  contributor-documentation paths before their review.
+- Condensed the contributor Testing Strategy around test ownership, stage
+  evidence, stable contracts, end-to-end evidence, fixture placement, and
+  verification scope.
+- Reduced documentation tests to enforce publication, link integrity,
+  executable examples, and public-reference contracts without freezing prose,
+  headings, page inventories, private names, or source-tree layout.
+- Reclassified implementation-structure and codegen-complexity checks as
+  contributor recommendations, while retaining hard behavioral, safety, ABI,
+  publication, and architectural-boundary contracts.
+- Moved contributor package-guide execution checks into the documentation
+  suite, using each guide's displayed result instead of a duplicate exact-
+  output inventory.
 - Reduced the root `prik` API to its version and normal-user build entrypoints;
   parser, semantic, probe, runtime, and planning tools now use their owning
   package import paths.
@@ -29,16 +47,10 @@ release tags add a leading `v` to the package version.
 - Made `prik` an import-only package boundary by removing its direct-script
   demonstration; command and stage-value examples remain available from their
   owning modules.
-- Expanded the contributor architecture and package guides into a complete
-  stage-by-stage tutorial, with every supported Python module, runnable example
-  result, focused test purpose, and change route recorded and checked against
-  the source tree.
+- Expanded the contributor architecture and package guides with concrete stage
+  handoffs, runnable example results, focused test purposes, and change routes.
 - Moved generated documentation and distribution output under the hidden
   `.artifacts/` directory in local commands and CI workflows.
-- Centralized every production-file execution-example output contract in one
-  contributor-architecture test inventory with one named test per file.
-- Renamed the central infrastructure owner to `execution_examples/` so its
-  responsibility is explicit in the test tree.
 - Consolidated developer and maintainer material under one Contributor
   Documentation tree and removed the separate maintainer documentation lane.
 - Moved the bundled header-only binding runtime from the package root into

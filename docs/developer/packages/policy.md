@@ -184,7 +184,6 @@ generate source; that begins only after planning.
 - [Native handle policy](../../../tests/fortran/infrastructure/semantics/test_native_array_handles.py) covers descriptor policy, allowed operations, and ABI requirements.
 - [Feature-local policy suites](../../../tests/fortran/) cover ownership and projection decisions for the supported wrapper features.
 - [Planner tests](../../../tests/fortran/infrastructure/codegen/test_planner.py) prove that planning rejects incomplete policy instead of filling it in.
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes the six demonstrations above.
 
 ## Change Routes
 

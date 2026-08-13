@@ -143,7 +143,6 @@ None contains a completed binding or bridge action.
 - [Semantic `.pyi` behavior](../../../tests/fortran/semantic_pyi_format/) covers contract interpretation and external references.
 - [Datatype semantics](../../../tests/fortran/data_types/semantics/) covers stable type and storage facts.
 - [Native handle semantics](../../../tests/fortran/infrastructure/semantics/test_native_array_handles.py) covers descriptor/data/element separation.
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes the seven stage demonstrations above.
 
 ## Change Routes
 

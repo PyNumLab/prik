@@ -21,6 +21,6 @@ Reusable compiler execution, compile objects, and linking live in
 `../compiler/`. This package imports those services only while coordinating a
 complete workflow.
 
-For cross-stage navigation, see `docs/developer/source-map.md` and
+For cross-stage navigation, see `docs/developer/codebase-map.md` and
 `docs/developer/feature-to-code-map.md`. The canonical package reference is
 `docs/developer/packages/pipeline.md`.

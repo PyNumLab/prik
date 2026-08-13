@@ -2,7 +2,7 @@
 title: Naming Package
 audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide
-related: ../architecture.md, index.md, planning.md, codegen.md, ../source-map.md
+related: ../architecture.md, index.md, planning.md, codegen.md, ../codebase-map.md
 status: maintained
 publication: draft
 ---
@@ -69,7 +69,6 @@ owner identity under a compiler symbol limit.
 ## Tests And What They Prove
 
 - [Naming infrastructure](../../../tests/fortran/infrastructure/naming/) covers normalization, collisions, and stable generated names.
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes the two demonstrations above.
 
 ## Change Routes
 
