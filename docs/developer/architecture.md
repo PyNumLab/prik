@@ -17,8 +17,8 @@ at semantic-IR construction.
 
 This document describes the system-level model: the stages, their handoffs,
 their authority boundaries, and the representations they produce. The linked
-[source package guides](packages/index.md) describe the implementation inside
-each package.
+[package guides](packages/index.md) describe the implementation inside each
+package.
 
 ## Build Architecture
 
@@ -38,47 +38,10 @@ CLI enters through `python3 -m prik` and dispatches to the same stage owners.
 Its parser, semantic, and report commands intentionally stop before a complete
 wrapper build.
 
-The build path is:
+The two input routes converge in semantic IR construction, then share policy,
+planning, generation, and native compilation:
 
-```text
-                         validated build request
-                                      │
-                                      ▼
-                      pipeline / build orchestration
-                                      │
-                                      ▼
-              Fortran source                    semantic .pyi
-                     │                                  │
-                     ▼                                  ▼
-             preprocessing                       .pyi parser
-                     │                                  │
-                     ▼                                  ▼
-             Fortran parser                 .pyi-to-IR conversion
-                     │                                  │
-                     ▼                                  │
-          Fortran-to-IR conversion ──────────────────────┘
-                                      │
-                                      ▼
-                     semantics / IR construction
-                                      │
-                                      ▼
-                         post-IR policy completion
-                                      │
-                                      ▼
-                              wrapper planning
-                                      │
-                                      ▼
-                              code generation
-                                      │
-                                      ▼
-                                  printers
-                                      │
-                                      ▼
-                                  compiler
-                                      │
-                                      ▼
-                  Python extension and runtime support
-```
+![PRIK build path: Fortran source and semantic .pyi inputs converge in semantic IR construction before policy, planning, generation, printing, and compilation.](assets/build-path.svg){ .prik-build-path }
 
 Pipeline orchestration spans the complete build: it coordinates source facts,
 shared meaning, completed interoperability policy, a wrapper plan, emitted
@@ -184,6 +147,6 @@ Focused tests prove an invariant at its earliest owner. Public support claims
 also require end-to-end build, import, call, and behavior evidence. The
 [testing strategy](testing-strategy.md) records the complete evidence model;
 the [codebase map](codebase-map.md), [feature-to-code map](feature-to-code-map.md),
-and [source package guides](packages/index.md) record the detailed ownership.
+and [package guides](packages/index.md) record the detailed ownership.
 For package and module ownership, continue with the
 [Codebase Map](codebase-map.md).

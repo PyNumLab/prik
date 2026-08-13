@@ -3,7 +3,7 @@ title: PRIK — Python Runtime Interop Kit
 description: PRIK generates native Python bindings from Fortran projects, producing importable extensions and editable .pyi contracts for Pythonic APIs.
 audience: users
 prerequisites: none
-related: user/getting-started/index.md, user/getting-started/installation.md, user/performance.md
+related: user/getting-started/index.md, user/getting-started/installation.md, user/performance.md, developer/architecture.md
 status: maintained
 publication: reviewed
 ---
@@ -110,3 +110,7 @@ values below `1.0×` favor f2py.
 
 [Install PRIK →](user/getting-started/installation.md){ .prik-primary-cta }
 [Read Getting Started →](user/getting-started/index.md){ .prik-primary-cta }
+
+**Working on PRIK itself?**
+
+[Read Developer Documentation →](developer/index.md){ .prik-primary-cta }

@@ -22,9 +22,8 @@ relying on private conversation or implied project knowledge.
 Move an item from the open queue to completed content evidence only when all of
 these are true:
 
-- [ ] The page status is accurate: `maintained` for current public behavior,
-  `design` for accepted architecture, or `not-yet-implemented` for explicit
-  future behavior.
+- [ ] The page status is accurate: `maintained` for current public behavior or
+  `not-yet-implemented` for explicit future behavior.
 - [ ] The page explains what is supported now and what is unsupported without
   exposing internal test-evidence ledgers in public user-facing prose.
 - [ ] User-facing pages include a task-oriented workflow, expected output or API
@@ -91,9 +90,6 @@ PRIK_C_DOCS_END -->
 - [x] `docs/developer/packages/`: one maintained guide per top-level production
   package with local structure, essential objects, executable examples, expected
   output, focused tests, change routes, and invariants.
-- [x] `docs/developer/concepts/datatype-lifecycle.md`: cross-stage datatype
-  authority from target probing through semantic identity, policy, backend
-  representation, and runtime validation.
 - [x] `docs/developer/workflows/contributing.md`: documentation-first changes,
   ownership lookup, support evidence, test selection, pull requests, review,
   and contribution licensing.
@@ -103,16 +99,12 @@ PRIK_C_DOCS_END -->
   evidence that follows local verification.
 - [x] `docs/developer/workflows/documentation.md`: documentation placement,
   local verification, and draft review.
-- [x] `docs/developer/design/multilanguage-runtime.md`: explicit long-term
-  architecture separated from current support claims.
-- [x] `docs/developer/design/wrapper-open-decisions.md`: unresolved or
-  revisitable design questions separated from implemented package contracts.
 - [x] `docs/developer/deferred/c-parser.md`: retained but unpublished C
   parser/C-to-IR material, separate from the generated CPython C backend.
 
 The old TODO-only contributor pages, duplicate pipeline/codebase maps, completed
-wrapper-plan and native-array migration ledgers, and separate internal/design
-indexes were removed after their stable facts moved to these owners.
+wrapper-plan and native-array migration ledgers, and separate internal indexes
+were removed after their stable facts moved to these owners.
 
 ### Tutorials And Examples
 
@@ -157,8 +149,7 @@ indexes were removed after their stable facts moved to these owners.
 - [x] `docs/developer/packages/index.md`: route contributors from each production
   package to its canonical guide.
 - [x] `docs/developer/index.md`: distinguish implemented package references,
-  cross-cutting concepts, workflows, design proposals, active roadmaps, and
-  deferred input-language material.
+  workflows, active roadmaps, and deferred input-language material.
 - [ ] Public documentation site publication gate: deploy the existing MkDocs
   documentation as the project website only after all of the following are
   true; do not create a separate marketing-content system for this milestone.

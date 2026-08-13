@@ -1,5 +1,5 @@
 ---
-title: Contributor Documentation
+title: Developer Documentation
 audience: developers, maintainers, contributors
 prerequisites: repository checkout
 related: architecture.md, packages/index.md, workflows/contributing.md
@@ -7,52 +7,20 @@ status: maintained
 publication: reviewed
 ---
 
-# Contributor Documentation
+# Developer Documentation
 
-This is the single documentation area for changing, testing, and governing
-PRIK. Start with the architecture guide, then open the detailed
-package, workflow, concept, design, or active-roadmap page needed for the task.
+Read these pages in order when you are new to PRIK:
 
-## Orientation
+1. [PRIK Architecture](architecture.md) explains the build flow, the
+   representations passed between stages, and the boundary at which each
+   decision becomes fixed.
+2. [Package Guides](packages/index.md) explain each stage owner's local
+   modules, entrypoints, examples, and tests.
 
-- [PRIK architecture](architecture.md): build architecture, input routes,
-  stage handoffs, concrete representations, and authority boundaries.
-- [Package guides](packages/index.md): one detailed page per production
-  package, with local structure, important objects, runnable examples, tests,
-  change routes, and invariants.
-- [Codebase map](codebase-map.md): package, module, and hotspot ownership.
-- [Feature-to-code map](feature-to-code-map.md): user-visible capability to
-  source, tests, and documentation.
-- [Testing strategy](testing-strategy.md): language/feature/stage ownership and
-  verification selection.
+For a specific change, use the matching reference:
 
-## Workflows
-
-- [Contributing](workflows/contributing.md): find an owner, change the
-  contract, and prepare a focused pull request.
-- [Quality assurance](workflows/quality-assurance.md): choose and run the
-  required local evidence.
-- [Pull request checks](workflows/ci.md): understand the hosted checks that
-  follow local verification.
-- [Documentation maintenance](workflows/documentation.md): write, verify, and
-  preview documentation locally.
-
-## Cross-Cutting Concepts
-
-- [Datatype lifecycle](concepts/datatype-lifecycle.md): compiler measurement,
-  semantic identity, policy, backend representation, and runtime validation.
-
-## Design And Planning
-
-- [Multilanguage runtime architecture](design/multilanguage-runtime.md) is an
-  explicit long-term design, not a support claim.
-- [Wrapper open decisions](design/wrapper-open-decisions.md) records unresolved
-  or revisitable design questions.
-- [Active roadmaps](roadmap/index.md) contain incomplete work only.
-
-## Deferred Input-Language Material
-
-The C parser/C-to-IR reference is retained under `deferred/` and excluded from
-the published Fortran contributor workflow until that input path is mature.
-This does not hide the generated CPython C binding backend used by Fortran
-wrappers.
+- [Codebase Map](codebase-map.md) locates packages, modules, and hotspots.
+- [Feature-to-Code Map](feature-to-code-map.md) and
+  [Testing Strategy](testing-strategy.md) locate capability and test ownership.
+- [Workflows](workflows/contributing.md) cover contributing, local
+  verification, pull-request checks, and documentation maintenance.

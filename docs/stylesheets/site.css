@@ -259,6 +259,14 @@
   margin: 0;
 }
 
+.prik-build-path {
+  display: block;
+  width: 100%;
+  max-width: 60rem;
+  height: auto;
+  margin: 1.5rem 0;
+}
+
 @media screen and (max-width: 768px) {
   .wy-breadcrumbs-aside {
     display: block;

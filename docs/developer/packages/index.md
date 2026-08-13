@@ -1,46 +1,41 @@
 ---
-title: Source Package Guides
+title: Package Guides
 audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide
 related: ../architecture.md, ../codebase-map.md, ../feature-to-code-map.md
 status: maintained
-publication: draft
+publication: reviewed
 ---
 
-# Source Package Guides
+# Package Guides
 
-These pages are the file-level companion to the
-[architecture guide](../architecture.md). Read the architecture guide once for
-the whole flow, then use this table to enter the owner of a change. Do not read
-the guides as thirteen alternative pipelines: each describes one handoff in
-the same pipeline.
+The [architecture](../architecture.md) shows how PRIK moves from inputs to an
+importable extension. These guides describe the packages that own each stage,
+its local modules, and its tests. The [codebase map](../codebase-map.md)
+provides the complementary module and hotspot inventory.
 
-| Package | Read it when you need to change | Canonical guide |
+| Package | Responsibility | Relevant changes |
 | --- | --- | --- |
-| `prik.contracts` | public semantic `.pyi` syntax | [Contracts](contracts.md) |
-| `prik.compiler` | compiler profiles, command argv, or native-support installation | [Compiler](compiler.md) |
-| `prik.preprocessing` | parser input, provenance, includes, or target probes | [Preprocessing](preprocessing.md) |
-| `prik.parsers` | Fortran syntax facts or raw `.pyi` syntax | [Parsers](parsers.md) |
-| `prik.semantics` | the shared semantic graph, types, or raw metadata | [Semantics](semantics.md) |
-| `prik.policy` | completed ownership, projection, lifecycle, or support choices | [Policy](policy.md) |
-| `prik.planning` | plan representation, ordering, or backend views | [Planning](planning.md) |
-| `prik.codegen` | generated binding, bridge, node, or Python-facade mechanism | [Code generation](codegen.md) |
-| `prik.printers` | C, Fortran, or `.pyi` text serialization | [Printers](printers.md) |
-| `prik.pipeline` | wrapper, contract, report, artifact, or build orchestration | [Pipeline](pipeline.md) |
-| `prik.runtime` | imported native handles or bundled native support | [Runtime](runtime.md) |
-| `prik.naming` | public-name normalization or generated symbols | [Naming](naming.md) |
-| `prik.utilities` | a genuinely stage-neutral helper | [Utilities](utilities.md) |
+| [`prik.pipeline`](pipeline.md) | Composes wrapper, contract, report, artifact, and build workflows. | Public build workflows, artifact layout, or cross-stage orchestration. |
+| [`prik.preprocessing`](preprocessing.md) | Prepares Fortran input and measures target facts. | Includes, provenance, parser input, or target probes. |
+| [`prik.parsers`](parsers.md) | Records Fortran and semantic-`.pyi` syntax facts. | Declarations, locations, parser diagnostics, or raw `.pyi` AST. |
+| [`prik.semantics`](semantics.md) | Builds the shared language-neutral semantic model. | Semantic types, shapes, origins, or raw contract metadata. |
+| [`prik.policy`](policy.md) | Completes interoperability and support decisions. | Ownership, projection, lifecycle, exports, or support choices. |
+| [`prik.planning`](planning.md) | Projects completed policy into backend-neutral wrapper plans. | Planned operations, ordering, namespaces, or backend views. |
+| [`prik.codegen`](codegen.md) | Lowers plans into C and Fortran nodes and Python facades. | Binding, bridge, node, or facade mechanisms. |
+| [`prik.printers`](printers.md) | Serializes C, Fortran, and semantic `.pyi` representations. | Generated text, formatting, escaping, or line wrapping. |
+| [`prik.compiler`](compiler.md) | Constructs and executes native compilation and linking commands. | Compiler profiles, command arguments, linking, or native-support installation. |
+| [`prik.contracts`](contracts.md) | Defines the public semantic `.pyi` vocabulary. | Contract syntax or its public imported names. |
+| [`prik.naming`](naming.md) | Normalizes public names and constructs generated symbols. | Public-name normalization, collisions, or generated symbols. |
+| [`prik.runtime`](runtime.md) | Provides imported native handles and bundled native support. | Runtime handle behavior or native-support payloads. |
+| [`prik.utilities`](utilities.md) | Holds mechanisms with no stage-specific owner. | A genuinely stage-neutral helper. |
 
-Each guide answers the same practical questions:
+Each guide records the same local contract:
 
-1. What does this stage receive and produce?
-2. Which module owns the behavior I need to change?
-3. Which classes and functions are the important entrypoints?
-4. What does each direct-execution example prove?
-5. Which tests protect that behavior?
+1. Its responsibility and boundaries.
+2. Its inputs, outputs, modules, and important entrypoints.
+3. Direct-execution examples and the behavior they demonstrate.
+4. Focused tests, change routes, and invariants.
 
-The directory tour covers every supported Python module under that package,
-including package initializers and nested backend packages. The deferred
-C-input frontend is intentionally excluded from the published Fortran route.
-Source-tree `README.md` files remain short orientation notes and link back to
-these canonical guides.
+The guides cover the current Fortran-wrapper route. The C-input frontend is
+deferred material and does not change the generated CPython C binding backend.

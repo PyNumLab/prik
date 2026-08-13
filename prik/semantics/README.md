@@ -106,7 +106,6 @@ completion remains the next shared stage after those converters produce
 - Source navigation: `docs/developer/codebase-map.md`, `docs/developer/feature-to-code-map.md`
 - Architecture: `docs/developer/architecture.md`
 - Semantics package guide: `docs/developer/packages/semantics.md`
-- Datatype lifecycle: `docs/developer/concepts/datatype-lifecycle.md`
 - Semantic tests: `tests/fortran/semantic_ir/semantics/`
 - `.pyi` tests: `tests/fortran/semantic_pyi_format/`
 - Wrapper behavior that reaches the typed plan: `tests/fortran/`

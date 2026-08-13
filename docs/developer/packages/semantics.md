@@ -2,7 +2,7 @@
 title: Semantics Package
 audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide, parser package guide
-related: ../architecture.md, index.md, parsers.md, policy.md, ../concepts/datatype-lifecycle.md
+related: ../architecture.md, index.md, parsers.md, policy.md
 status: maintained
 publication: draft
 ---

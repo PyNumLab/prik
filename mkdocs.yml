@@ -118,13 +118,10 @@ nav:
       - Language Support:
           - Overview: user/language-support/index.md
           - Feature Matrix: user/language-support/feature-matrix.md
-  - Contributor Documentation:
+  - Developer Documentation:
       - Overview: developer/index.md
       - Architecture: developer/architecture.md
-      - Codebase Map: developer/codebase-map.md
-      - Feature-to-Code Map: developer/feature-to-code-map.md
-      - Testing Strategy: developer/testing-strategy.md
-      - Source Packages:
+      - Package Guides:
           - Overview: developer/packages/index.md
           - Contracts: developer/packages/contracts.md
           - Compiler: developer/packages/compiler.md
@@ -139,16 +136,14 @@ nav:
           - Runtime: developer/packages/runtime.md
           - Naming: developer/packages/naming.md
           - Utilities: developer/packages/utilities.md
-      - Concepts:
-          - Datatype Lifecycle: developer/concepts/datatype-lifecycle.md
+      - Codebase Map: developer/codebase-map.md
+      - Feature-to-Code Map: developer/feature-to-code-map.md
+      - Testing Strategy: developer/testing-strategy.md
       - Workflows:
           - Contributing: developer/workflows/contributing.md
           - Quality Assurance: developer/workflows/quality-assurance.md
           - Pull Request Checks: developer/workflows/ci.md
           - Documentation Maintenance: developer/workflows/documentation.md
-      - Design:
-          - Multilanguage Runtime Architecture: developer/design/multilanguage-runtime.md
-          - Wrapper Open Decisions: developer/design/wrapper-open-decisions.md
       # PRIK_C_DOCS: - Deferred C Parser Reference: developer/deferred/c-parser.md
       - Roadmaps:
           - Overview: developer/roadmap/index.md

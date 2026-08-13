@@ -2,7 +2,7 @@
 title: Preprocessing Package
 audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide, native project compiler flags
-related: ../architecture.md, index.md, parsers.md, semantics.md, ../concepts/datatype-lifecycle.md
+related: ../architecture.md, index.md, parsers.md, semantics.md
 status: maintained
 publication: draft
 ---

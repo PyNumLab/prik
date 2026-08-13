@@ -13,9 +13,9 @@ release tags add a leading `v` to the package version.
   and one canonical page per production package, with local structures,
   important objects, runnable examples, expected outputs, test owners, change
   routes, and invariants.
-- Consolidated cross-stage concepts and contributor workflows, retained future
-  and deferred designs explicitly, and removed TODO-only pages, duplicate
-  architecture maps, and completed migration ledgers.
+- Consolidated contributor workflows and removed nonessential concept and
+  design drafts, TODO-only pages, duplicate architecture maps, and completed
+  migration ledgers.
 - Added Zenodo version and concept DOI links to the citation metadata, README,
   and About page.
 
@@ -32,6 +32,12 @@ release tags add a leading `v` to the package version.
   verification scope.
 - Clarified contributor workflows for changing PRIK, local verification, pull
   request checks, and documentation maintenance.
+- Clarified the Package Guides index as the ordered ownership route from build
+  orchestration through transformation stages and shared support packages.
+- Added a brief Developer Documentation overview that routes readers to
+  Architecture, then Package Guides, and linked it from the website home page.
+- Replaced the contributor architecture's text-only build path with a rendered
+  diagram of its two input routes and shared pipeline.
 - Reduced documentation tests to enforce publication, link integrity,
   executable examples, and public-reference contracts without freezing prose,
   headings, page inventories, private names, or source-tree layout.
@@ -66,9 +72,7 @@ release tags add a leading `v` to the package version.
   the former `prik.compiling`, `prik.probes`, parser-local C preprocessor, and
   pipeline-local preprocessing import paths were removed.
 - Replaced the public semantic-to-NumPy helper API with stage-owned semantic,
-  contract-runtime, and code-generation datatype catalogues, and documented the
-  complete internal datatype lifecycle from compiler probing to runtime
-  validation.
+  contract-runtime, and code-generation datatype catalogues.
 - Separated post-IR policy and wrapper planning into `prik.policy` and
   `prik.planning`; code generation now renders plan-driven docstrings, and the
   former maintainer import paths were removed.
