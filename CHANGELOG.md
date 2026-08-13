@@ -30,6 +30,8 @@ release tags add a leading `v` to the package version.
 - Condensed the contributor Testing Strategy around test ownership, stage
   evidence, stable contracts, end-to-end evidence, fixture placement, and
   verification scope.
+- Clarified contributor workflows for changing PRIK, local verification, pull
+  request checks, and documentation maintenance.
 - Reduced documentation tests to enforce publication, link integrity,
   executable examples, and public-reference contracts without freezing prose,
   headings, page inventories, private names, or source-tree layout.

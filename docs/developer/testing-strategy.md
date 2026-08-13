@@ -37,34 +37,21 @@ public-capability owner.
 
 ## Stable Contracts
 
-A test should protect observable behavior, a public interface, a serialized
-format, a safety property, or an explicitly documented architectural boundary.
-A refactor that preserves those contracts should not require unrelated test
-changes.
+Tests protect observable behavior, public interfaces, serialized or generated
+formats, safety properties, and explicit architectural boundaries. A refactor
+that preserves those contracts should not require unrelated test changes.
 
-Do not test exact prose, heading order, private class or function names,
-complete file inventories, or incidental directory and call structure. Test a
-repository structure only when the structure is itself consumed by tooling or
-protects a named, costly failure. Documentation tests therefore enforce
-publication metadata, valid links, reviewed/draft boundaries, public reference
-synchronization, marked user examples, and package-guide command/result pairs.
-Editorial review owns wording and page organization.
+Do not freeze prose, heading order, private names, complete inventories, or
+incidental code and directory layout. Test structure only when tooling consumes
+it or it prevents a named, costly failure. When an intentional change breaks a
+test, identify its invariant: keep or rewrite a durable contract; remove a test
+that records only the old implementation or a review preference.
 
-Existing tests are evidence, not specifications by themselves. When a test
-fails after an intentional refactor, identify the underlying invariant before
-changing production code. Keep or rewrite the test when it protects a stable
-contract; remove it when it only encodes a recommendation or the previous
-implementation.
-
-The contributor making a change owns the review that brittle structural tests
-cannot perform. Compare behavior before and after the change, inspect generated
-artifacts at the affected boundary, and preserve existing documentation and
-example wording as far as the requested change allows. Production-file
-demonstrations do not require a fixed inventory or duplicate expected strings
-in Python tests. When a package guide shows a command and its result, however,
-the documentation suite runs the command and verifies the displayed result
-from the page itself. Stable output is compared exactly; excerpts and target-
-dependent results are checked only for the facts they claim.
+Documentation tests verify publication metadata, links, public references,
+marked user examples, and package-guide command/result pairs. The page is the
+expected-output source: stable output is exact; excerpts and target-dependent
+output are checked only for the facts shown. Editorial wording and organization
+remain contributor-review responsibilities.
 
 ## Evidence By Stage
 

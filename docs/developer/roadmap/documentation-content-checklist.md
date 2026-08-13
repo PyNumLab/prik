@@ -99,12 +99,10 @@ PRIK_C_DOCS_END -->
   and contribution licensing.
 - [x] `docs/developer/workflows/quality-assurance.md`: active blocking/advisory
   tools, exact commands, coverage parity, compiler lanes, and local limits.
-- [x] `docs/developer/workflows/ci.md`: staged GitHub validation,
-  documentation deployment, benchmark evidence, and stable ruleset context.
-- [x] `docs/developer/workflows/release.md`: package identity, trusted
-  publishing, artifact review, publication, and clean-environment verification.
+- [x] `docs/developer/workflows/ci.md`: pull-request validation and the hosted
+  evidence that follows local verification.
 - [x] `docs/developer/workflows/documentation.md`: documentation placement,
-  metadata, publication, navigation, and continuous quality.
+  local verification, and draft review.
 - [x] `docs/developer/design/multilanguage-runtime.md`: explicit long-term
   architecture separated from current support claims.
 - [x] `docs/developer/design/wrapper-open-decisions.md`: unresolved or
@@ -200,7 +198,7 @@ primary placeholder queue.
 - [x] `docs/developer/architecture.md`: canonical contributor architecture
   orientation and folder-by-folder rollout plan.
 - [x] `docs/developer/workflows/documentation.md`: maintained two-area
-  documentation and publication contract.
+  documentation and local-verification workflow.
 - [x] `docs/user/getting-started/index.md`: maintained beginner route from
   installation through the normal rebuild workflow.
 - [x] `docs/user/getting-started/installation.md`: maintained user and contributor

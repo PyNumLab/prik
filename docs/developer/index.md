@@ -4,20 +4,20 @@ audience: developers, maintainers, contributors
 prerequisites: repository checkout
 related: architecture.md, packages/index.md, workflows/contributing.md
 status: maintained
-publication: draft
+publication: reviewed
 ---
 
 # Contributor Documentation
 
-This is the single documentation area for changing, testing, governing, and
-releasing PRIK. Start with the architecture guide, then open the detailed
+This is the single documentation area for changing, testing, and governing
+PRIK. Start with the architecture guide, then open the detailed
 package, workflow, concept, design, or active-roadmap page needed for the task.
 
 ## Orientation
 
 - [PRIK architecture](architecture.md): build architecture, input routes,
   stage handoffs, concrete representations, and authority boundaries.
-- [Source package guides](packages/index.md): one detailed page per production
+- [Package guides](packages/index.md): one detailed page per production
   package, with local structure, important objects, runnable examples, tests,
   change routes, and invariants.
 - [Codebase map](codebase-map.md): package, module, and hotspot ownership.
@@ -26,18 +26,21 @@ package, workflow, concept, design, or active-roadmap page needed for the task.
 - [Testing strategy](testing-strategy.md): language/feature/stage ownership and
   verification selection.
 
+## Workflows
+
+- [Contributing](workflows/contributing.md): find an owner, change the
+  contract, and prepare a focused pull request.
+- [Quality assurance](workflows/quality-assurance.md): choose and run the
+  required local evidence.
+- [Pull request checks](workflows/ci.md): understand the hosted checks that
+  follow local verification.
+- [Documentation maintenance](workflows/documentation.md): write, verify, and
+  preview documentation locally.
+
 ## Cross-Cutting Concepts
 
 - [Datatype lifecycle](concepts/datatype-lifecycle.md): compiler measurement,
   semantic identity, policy, backend representation, and runtime validation.
-
-## Contributor Workflows
-
-- [Contributing](workflows/contributing.md)
-- [Quality assurance](workflows/quality-assurance.md)
-- [Continuous integration and delivery](workflows/ci.md)
-- [Documentation architecture](workflows/documentation.md)
-- [Release process](workflows/release.md)
 
 ## Design And Planning
 

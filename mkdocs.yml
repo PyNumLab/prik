@@ -144,9 +144,8 @@ nav:
       - Workflows:
           - Contributing: developer/workflows/contributing.md
           - Quality Assurance: developer/workflows/quality-assurance.md
-          - Continuous Integration And Delivery: developer/workflows/ci.md
-          - Documentation Architecture: developer/workflows/documentation.md
-          - Release Process: developer/workflows/release.md
+          - Pull Request Checks: developer/workflows/ci.md
+          - Documentation Maintenance: developer/workflows/documentation.md
       - Design:
           - Multilanguage Runtime Architecture: developer/design/multilanguage-runtime.md
           - Wrapper Open Decisions: developer/design/wrapper-open-decisions.md
