@@ -2,7 +2,7 @@
 title: Contributing Workflow
 audience: developers, maintainers, contributors
 prerequisites: repository checkout, Python 3.10 or newer
-related: ../architecture.md, ../codebase-map.md, ../testing-strategy.md, quality-assurance.md, documentation.md
+related: ../architecture.md, ../codebase-map.md, ../feature-to-code-map.md, ../testing-strategy.md, quality-assurance.md, documentation.md
 status: maintained
 publication: reviewed
 ---
@@ -19,6 +19,8 @@ python3 -m pip install -e ".[qa]"
 git config core.hooksPath .githooks
 ```
 
+This enables PRIK's repository pre-push checks for this checkout.
+
 Create a focused branch. Start with the smallest test owner for the behavior,
 not the full suite.
 
@@ -27,12 +29,12 @@ not the full suite.
 1. Define the behavior, limitation, diagnostic, or internal invariant.
 2. Find its owner through the [architecture guide](../architecture.md),
    [codebase map](../codebase-map.md), or
-   [feature-to-code map](../feature-to-code-map.md). Read the owning package
-   guide and any relevant user contract.
+   [feature-to-code map](../feature-to-code-map.md). Read the owning
+   architecture component guide and any relevant user contract.
 3. Update the documentation contract first when public behavior, ownership, or
    limitations change.
-4. Add or update focused evidence at the earliest stage that can prove the
-   behavior.
+4. Use the [testing strategy](../testing-strategy.md) to add or update focused
+   evidence at the earliest stage that can prove the behavior.
 5. Change the owning stage. Extend later stages only when their representation
    or mechanism must change.
 6. Run focused verification, then the checks required by

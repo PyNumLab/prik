@@ -13,7 +13,7 @@ python3 -m pip install -e ".[qa]"
 Run the smallest relevant test while you work:
 
 ```bash
-PYTHONPATH=. python3 -m pytest -q path/to/tests
+python3 -m pytest -q path/to/tests
 ```
 
 ## Before opening a pull request
@@ -26,7 +26,7 @@ PYTHONPATH=. python3 -m pytest -q path/to/tests
 ```bash
 python3 -m ruff check .
 python3 -m ruff format --check .
-PYTHONPATH=. python3 -m pytest -q path/to/tests
+python3 -m pytest -q path/to/tests
 ```
 
 Keep the pull request easy to review: explain the problem, the solution, and

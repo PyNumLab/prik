@@ -18,7 +18,7 @@ contributors need to administer.
 | Static analysis | Linting, formatting, security, dead code, and changed-code complexity policy. |
 | Compiler and platform tests | Supported Python versions, Linux and macOS, GNU Fortran, IFX, and Flang. |
 | Real libraries | BLAS, LAPACK, FFTPACK, and MINPACK wrappers. |
-| Documentation | Performance inputs, documentation tests, and a strict site build. |
+| Documentation and benchmarks | Required performance benchmark and generated snapshot, documentation tests, and a strict site build. |
 
 Run the applicable local checks from [Quality Assurance](quality-assurance.md)
 before opening a pull request. If CI fails, start with the named failing test
@@ -27,4 +27,4 @@ unless the task specifically concerns automation.
 
 `Pull Request / Validation · all required checks` is the aggregate required
 status before merge. The exact CI implementation lives in
-`.github/workflows/`.
+`.github/workflows/merge-validation.yml`.

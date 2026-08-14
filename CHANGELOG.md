@@ -27,11 +27,19 @@ release tags add a leading `v` to the package version.
 - Clarified the Feature-to-Code Map as the capability-to-owner and evidence
   index, linking reviewed user documentation and retaining only planned
   contributor-documentation paths before their review.
+- Revised the Feature-to-Code Map with visible draft documentation markers,
+  stage-ordered change routes, narrower focused evidence, and separate array,
+  callback, and error routes.
 - Condensed the contributor Testing Strategy around test ownership, stage
   evidence, stable contracts, end-to-end evidence, fixture placement, and
   verification scope.
 - Clarified contributor workflows for changing PRIK, local verification, pull
   request checks, and documentation maintenance.
+- Linked the Contributing workflow to the Feature-to-Code Map and Testing
+  Strategy, explained its pre-push hook setup, and normalized its editable
+  checkout test commands.
+- Clarified that pull-request validation requires the performance benchmark and
+  identified its workflow implementation.
 - Renamed the Package Guides section to Architecture Components and grouped its
   build stages separately from its supporting components.
 - Reviewed the Pipeline Component guide around the source-build handoff,
