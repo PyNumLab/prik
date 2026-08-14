@@ -2,7 +2,7 @@
 title: Architecture Components
 audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide
-related: ../architecture.md, ../codebase-map.md, ../feature-to-code-map.md
+related: ../architecture.md, ../codebase-map.md, ../feature-to-code-map.md, ../testing-strategy.md
 status: maintained
 publication: reviewed
 ---
@@ -16,9 +16,12 @@ architecture component to its `prik` source package, local modules, and tests.
 The [codebase map](../codebase-map.md) provides the complementary module and
 hotspot inventory.
 
-## Build Stages
+## Build Workflow and Stages
 
-| Stage | Responsibility | Relevant changes |
+`pipeline/` spans the complete build and is listed first because it composes
+the stages below.
+
+| Component | Responsibility | Relevant changes |
 | --- | --- | --- |
 | [`prik.pipeline`](pipeline.md) | Composes wrapper, contract, report, artifact, and build workflows. | Public build workflows, artifact layout, or cross-stage orchestration. |
 | [`prik.preprocessing`](preprocessing.md) | Prepares Fortran input and measures target facts. | Includes, provenance, parser input, or target probes. |

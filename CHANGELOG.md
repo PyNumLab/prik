@@ -41,7 +41,8 @@ release tags add a leading `v` to the package version.
 - Clarified that pull-request validation requires the performance benchmark and
   identified its workflow implementation.
 - Renamed the Package Guides section to Architecture Components and grouped its
-  build stages separately from its supporting components.
+  build stages separately from its supporting components, distinguishing
+  cross-build pipeline orchestration from sequential stages.
 - Reviewed the Pipeline Component guide around the source-build handoff,
   independent contract and inspection workflows, and build-result ownership.
 - Removed empty package-marker entries from the Pipeline Component and Compiler
