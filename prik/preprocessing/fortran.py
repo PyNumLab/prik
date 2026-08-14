@@ -5,6 +5,11 @@ Compiler preprocessing and provenance collection live in
 expands native ``INCLUDE`` statements left in the compiler-expanded stream.
 It preserves generated-to-original line mappings and reports missing files or
 cycles without making parser or semantic decisions.
+
+The sole public operation, :func:`expand_native_fortran_includes`, returns
+parser input together with dependency, mapping, and diagnostic records. Read
+that function first; the private helpers resolve paths and maintain the
+generated-line provenance it returns.
 """
 
 from __future__ import annotations

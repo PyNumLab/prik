@@ -7,6 +7,14 @@ dependency metadata. The Fortran-specific textual ``INCLUDE`` pass lives in
 declarations or makes semantic policy decisions; callers pass
 :class:`PreprocessResult.source` to the appropriate parser after this stage
 completes.
+
+The public route is :func:`preprocess_source`. ``PreprocessingConfig`` selects
+a direct compiler, compile database, or command template; ``PreprocessResult``
+returns the prepared stream with its recipe, mappings, dependencies, macros,
+and diagnostics. ``PreprocessingPlan`` and ``Invocation`` describe a request
+before execution. Read the module in its phase order: configuration and
+validation, adapter facades, command construction, provenance recovery, then
+execution and result assembly.
 """
 
 from __future__ import annotations

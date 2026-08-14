@@ -193,15 +193,16 @@ measured fact, semantic identity, and NumPy projection separate.
   Python API; it does not reparse native source to reconstruct that API.
 - Path-set `.pyi` caches are operation-local. They must not become process-wide
   because later stages attach and freeze data.
-- The sole generation route is:
 
-  ```python
-  complete_semantic_policies(module)
-  plan = WrapperPlanner().build(module)
-  generated = WrapperGenerator().generate(plan)
-  ```
+The sole generation route is:
 
-  Unsupported policy fails at its owner before either backend emits source.
+```python
+complete_semantic_policies(module)
+plan = WrapperPlanner().build(module)
+generated = WrapperGenerator().generate(plan)
+```
+
+Unsupported policy fails at its owner before either backend emits source.
 
 ## Failure Boundary
 

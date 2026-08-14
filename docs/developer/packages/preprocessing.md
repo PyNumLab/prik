@@ -4,19 +4,47 @@ audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide, native project compiler flags
 related: ../architecture.md, index.md, parsers.md, semantics.md
 status: maintained
-publication: draft
+publication: reviewed
 ---
 
 # Preprocessing Stage
 
 ## Purpose And Boundaries
 
-`prik/preprocessing/` turns original Fortran source into authoritative parser
-input and measures compiler-dependent target facts needed by semantic
-conversion. Compiler expansion, native Fortran includes, and executable probes
-are separate mechanisms with separate results. The package does not parse
-declarations, assign semantic scalar identities, choose NumPy dtypes, or
-complete wrapper policy.
+`prik/preprocessing/` turns original Fortran source into parser input and
+measures the compiler-dependent facts that semantic conversion needs. It owns
+compiler invocation, source provenance, native `INCLUDE` expansion, and
+target probes. It does not parse declarations, construct semantic IR, choose
+semantic scalar identities, or complete wrapper policy.
+
+The package contains early C-frontend modules: `c.py` collects raw directive
+metadata and `probes/c_types.py` measures C ABI facts. C support is not yet
+complete; a future C frontend may build on them. They do not participate in
+the current Fortran wrapper path.
+
+## A Fortran Source Through This Stage
+
+The primary route is `preprocess_source()` in `source.py`. It retains the
+prepared source and the facts that explain how it was produced:
+
+```text
+Fortran source path + PreprocessingConfig
+  -> select compiler command: direct compiler, compile database, or template
+  -> compiler-expanded source
+  -> source mappings, dependencies, optional macros, diagnostics, and recipe
+  -> native Fortran INCLUDE expansion
+  -> PreprocessResult.source
+  -> Fortran parser
+
+semantic requirements + compiler and target configuration
+  -> Fortran type probe: generate, compile, and run a small program
+  -> FortranTypeProbeReport(values, recipe, source_text)
+  -> Fortran-to-IR conversion
+```
+
+`PreprocessResult` is prepared parser input plus provenance; it is not parsed
+syntax or semantic meaning. `FortranTypeProbeReport` is a compiler measurement
+plus its recipe; it is not a stable semantic scalar or NumPy dtype.
 
 ## Local Structure
 
@@ -25,47 +53,72 @@ prik/preprocessing/
 ├── __init__.py
 ├── source.py
 ├── fortran.py
+├── c.py                         deferred C inspection support
 └── probes/
-    ├── __init__.py
-    └── fortran_types.py
+    ├── fortran_types.py
+    └── c_types.py               deferred C inspection support
 ```
-
-The C preprocessing and target-probe modules remain deferred from the
-published Fortran contributor workflow.
-
-## What This Stage Receives And Produces
-
-```text
-original Fortran path + PreprocessingConfig
-  -> compiler expansion and line-marker recovery
-  -> native Fortran INCLUDE expansion
-  -> PreprocessResult(source, provenance, dependencies, recipe, diagnostics)
-  -> Fortran parser
-
-compiler identity + target flags + kind/storage requirements
-  -> executable target probe
-  -> FortranTypeProbeReport
-  -> Fortran-to-IR conversion
-```
-
-Recipes retain compiler, adapter, argv, include directories, macro flags,
-included files, source mappings, and diagnostics so a build can explain or
-replay its parser input. Probe cache identity includes the compiler and target
-configuration; measured facts must not cross targets silently.
 
 ## Directory Tour
 
-| Module | Main entrypoints and contents | Change it when |
+| Module | Public boundary and result | Change it when |
 | --- | --- | --- |
-| [`prik/preprocessing/__init__.py`](../../../prik/preprocessing/__init__.py) | Re-exports the supported source-preparation records, adapters, and entrypoints, including `expand_native_fortran_includes()`. | The supported preprocessing import API changes. |
-| [`prik/preprocessing/source.py`](../../../prik/preprocessing/source.py) | `PreprocessingConfig`, `PreprocessingPlan`, `PreprocessingRecipe`, `PreprocessResult`, `SourceMapping`, and `IncludedFile`; builds compiler invocations, runs them, recovers mappings, and retains diagnostics/provenance. | Compiler-preprocessor adapters, recipes, line-marker handling, source provenance, or diagnostics change. |
-| [`prik/preprocessing/fortran.py`](../../../prik/preprocessing/fortran.py) | `expand_native_fortran_includes()` expands native `INCLUDE` directives recursively while preserving locations and diagnostics. | Native Fortran include discovery or expansion changes. |
-| [`prik/preprocessing/probes/__init__.py`](../../../prik/preprocessing/probes/__init__.py) | Namespace marker for compiler-derived target facts. | A probe-level public import surface is deliberately introduced. |
-| [`prik/preprocessing/probes/fortran_types.py`](../../../prik/preprocessing/probes/fortran_types.py) | `FortranTypeProbeRecipe` and `FortranTypeProbeReport` compile and run small target programs for kind expressions, storage widths, logical representations, and compile-time values. | Measured fact generation, validation, cache identity, or probe execution changes. |
+| [`prik/preprocessing/__init__.py`](../../../prik/preprocessing/__init__.py) | Re-exports the supported shared source-preparation records, adapters, and entrypoints. | The shared preprocessing import surface changes. |
+| [`prik/preprocessing/source.py`](../../../prik/preprocessing/source.py) | `preprocess_source()` is the compiler-backed route. `PreprocessingConfig` selects its command; `PreprocessResult` returns expanded text, provenance, and diagnostics. | Compiler adapters, invocations, recipes, mappings, dependencies, macros, or diagnostics change. |
+| [`prik/preprocessing/fortran.py`](../../../prik/preprocessing/fortran.py) | `expand_native_fortran_includes()` turns remaining textual `INCLUDE` statements into parser input while retaining mappings and diagnostics. | Native Fortran include discovery or expansion changes. |
+| [`prik/preprocessing/probes/fortran_types.py`](../../../prik/preprocessing/probes/fortran_types.py) | `evaluate_fortran_type_requirements()` and `evaluate_fortran_type_facts()` turn semantic requirements into cached compiler measurements; `FortranTypeProbeReport` retains values and recipe. | Fortran fact generation, validation, cache identity, or semantic-facing probe results change. |
 
-## Execution Examples
+## Module Workflows
 
-Coordinated preprocessing:
+### `source.py`: compiler-backed parser input
+
+`preprocess_source()` is the normal boundary. Start with it when changing the
+prepared-source path. It validates `PreprocessingConfig`, then
+`build_preprocess_invocation()` selects a command-template, compile-database,
+or direct-compiler invocation. It executes that invocation, collects compiler
+line markers, dependencies, optional macros, and diagnostics, then delegates
+remaining native Fortran `INCLUDE` statements to `fortran.py`.
+
+The public records divide the work: `PreprocessingPlan` and `Invocation`
+describe a request and command before execution; `PreprocessingRecipe` and
+`PreprocessResult` record the completed operation; `SourceMapping`,
+`IncludedFile`, `MacroDefinition`, and `PreprocessingDiagnostic` retain its
+side facts. The convenience runners return only source or source plus a typed
+recipe; use `preprocess_source()` when the next stage needs the complete
+result.
+
+The source is organized in the same order: configuration and validation,
+adapter facades, invocation construction, provenance recovery, then execution
+and result assembly. Private helpers belong to one of those phases.
+
+### `fortran.py`: native includes after compiler expansion
+
+`expand_native_fortran_includes()` receives an already compiler-expanded
+Fortran stream. It resolves an `INCLUDE` beside its including source before the
+configured directories, expands it recursively, and returns parser text,
+dependency edges, source mappings, and diagnostics. It records a missing file
+or cycle rather than making parser decisions; `source.py` promotes error
+diagnostics after assembling the complete result.
+
+### `probes/fortran_types.py`: target facts for semantic conversion
+
+The module generates a small Fortran program, compiles and runs it for the
+configured target, validates its result, and caches the report by compiler,
+flags, runner, environment, and generated source.
+
+`evaluate_fortran_type_requirements()` and
+`evaluate_fortran_type_facts()` receive semantic requirement records. They
+reuse a supplied or cached `FortranTypeProbeReport` and return the values that
+the Fortran semantic converter needs. `probe_fortran_type_expressions()` is
+the uncached measurement boundary; `probe_fortran_type_expressions_cached()`
+is the normal repeated-use boundary. A report is valid only for the target
+identity encoded in its recipe and cache key.
+
+## Run The Workflows
+
+`source.py` demonstrates the source-preparation handoff. Its complete direct
+example also prints a small C source-preparation demonstration; C frontend
+support remains future work.
 
 ```bash
 python3 prik/preprocessing/source.py
@@ -75,15 +128,25 @@ python3 prik/preprocessing/source.py
 Before Fortran include expansion:
 module greeting
 include 'constants.inc'
-...
+contains
+subroutine show_answer()
+print *, answer
+end subroutine show_answer
+end module greeting
+
 After Fortran include expansion:
 module greeting
 integer, parameter :: answer = 42
-...
+contains
+subroutine show_answer()
+print *, answer
+end subroutine show_answer
+end module greeting
 Native includes: 1; diagnostics: 0
+...
 ```
 
-Native include expansion in isolation:
+The Fortran-specific module shows the parser input and provenance it returns:
 
 ```bash
 python3 prik/preprocessing/fortran.py
@@ -99,7 +162,8 @@ Generated source mappings: 5
 Diagnostics: 0
 ```
 
-Compiler-measured Fortran type facts:
+The target-probe example shows a compiler measurement, not a fixed semantic
+type. It requires `gfortran` or `f95`.
 
 ```bash
 python3 prik/preprocessing/probes/fortran_types.py
@@ -109,30 +173,42 @@ python3 prik/preprocessing/probes/fortran_types.py
 selected_int_kind(9) = 4
 ```
 
-The first two outputs prove that prepared source retains dependency and source
-mapping facts. The probe output is a native kind value, not yet a stable
-semantic scalar or NumPy dtype. The probe example requires `gfortran` or
-`f95`.
+The reported number is target-dependent. The example establishes that the
+compiler, rather than PRIK, supplied the fact.
 
-## Tests And What They Prove
+## Tests And Evidence
 
-- [Fortran preprocessing](../../../tests/fortran/source_preprocessing/preprocessing/) covers adapters, recipes, mappings, dependencies, and diagnostics.
-- [Parser boundary tests](../../../tests/fortran/source_preprocessing/preprocessing/test_parser_boundaries.py) prove that prepared source reaches parsing with preserved facts.
-- [Fortran target probes](../../../tests/fortran/data_types/probes/test_fortran_type_probes.py) cover measured type facts and cache separation.
+| Evidence | What it establishes |
+| --- | --- |
+| [Fortran preprocessing](../../../tests/fortran/source_preprocessing/preprocessing/) | Adapters, recipes, mappings, native includes, diagnostics, and parser handoffs. |
+| [Parser boundaries](../../../tests/fortran/source_preprocessing/preprocessing/test_parser_boundaries.py) | Prepared source reaches parsing with preserved facts and unsupported raw constructs stop at the correct boundary. |
+| [Fortran type probes](../../../tests/fortran/data_types/probes/test_fortran_type_probes.py) | Compiler facts, requirement evaluation, cache separation, and report validation. |
 
 ## Change Routes
 
-- Change compiler expansion, provenance, recipes, or diagnostics in
+- Change compiler expansion, commands, provenance, recipes, or diagnostics in
   `source.py`.
-- Change native `INCLUDE` behavior in `fortran.py`.
-- Change target measurement or cache identity in `probes/fortran_types.py`.
-- Change parser grammar downstream; change stable scalar identity or backend
-  mapping in the owning semantic/codegen package.
+- Change native Fortran `INCLUDE` behavior in `fortran.py`.
+- Change compiler-measured Fortran facts or cache identity in
+  `probes/fortran_types.py`.
+- Change stable scalar identity in `semantics/`, backend dtype projection in
+  `codegen/`, and wrapper behavior in the later owning stage.
 
-## Invariants And Common Mistakes
+## Boundaries And Invariants
 
-- Preserve original source coordinates through every source transformation.
-- Run native probes in temporary working directories so `.mod` and other
-  compiler products cannot pollute the repository.
-- Do not combine textual preprocessing and target measurement into one generic
-  operation simply because both run before parsing.
+- Preserve original coordinates through every source transformation.
+- Keep compiler expansion, native include expansion, and target measurement
+  as separate operations.
+- Run probes in temporary directories so compiler products cannot enter the
+  repository.
+- Do not reuse source provenance or a probe report across a materially
+  different compiler target.
+
+## Failure Boundary
+
+This stage reports invalid preprocessing configuration, compiler execution
+failures, missing native includes, include cycles, and invalid probe results.
+It delegates declaration syntax to `parsers/`, stable meaning to `semantics/`,
+and wrapper support to later stages. Start with the first incorrect prepared
+source, provenance record, or compiler fact—not the later parser or build
+failure.

@@ -43,8 +43,12 @@ release tags add a leading `v` to the package version.
 - Renamed the Package Guides section to Architecture Components and grouped its
   build stages separately from its supporting components, distinguishing
   cross-build pipeline orchestration from sequential stages.
+- Ordered the Developer Documentation sidebar by the architecture reading path,
+  with build stages before supporting components.
 - Reviewed the Pipeline Component guide around the source-build handoff,
   independent contract and inspection workflows, and build-result ownership.
+- Reviewed the Preprocessing Stage guide around its Fortran source route,
+  compiler-derived target probes, module navigation, and executable examples.
 - Added Pipeline Component and source-level navigation for contract loading,
   wrapper generation, build-manifest replay, and `build.py` orchestration.
 - Removed empty package-marker entries from the Pipeline Component and Compiler

@@ -123,8 +123,7 @@ nav:
       - Architecture: developer/architecture.md
       - Architecture Components:
           - Overview: developer/packages/index.md
-          - Contracts: developer/packages/contracts.md
-          - Compiler: developer/packages/compiler.md
+          - Pipeline: developer/packages/pipeline.md
           - Preprocessing: developer/packages/preprocessing.md
           - Parsers: developer/packages/parsers.md
           - Semantics: developer/packages/semantics.md
@@ -132,9 +131,10 @@ nav:
           - Planning: developer/packages/planning.md
           - Code Generation: developer/packages/codegen.md
           - Printers: developer/packages/printers.md
-          - Pipeline: developer/packages/pipeline.md
-          - Runtime: developer/packages/runtime.md
+          - Compiler: developer/packages/compiler.md
+          - Contracts: developer/packages/contracts.md
           - Naming: developer/packages/naming.md
+          - Runtime: developer/packages/runtime.md
           - Utilities: developer/packages/utilities.md
       - Codebase Map: developer/codebase-map.md
       - Feature-to-Code Map: developer/feature-to-code-map.md
