@@ -138,7 +138,9 @@ beneath it.
 `mkdocs.yml` is the documentation-site configuration. It sets `docs_dir: docs`,
 sets the generated site output to the hidden `.artifacts/site/` directory,
 selects MkDocs' built-in Read the Docs theme, owns the complete intended
-navigation tree, and loads the publication hook. Generated documentation is
+navigation tree, and loads the publication hook. Its local navigation template
+makes a sidebar section label open its first child page; the adjacent **+**
+control expands or collapses that section. Generated documentation is
 therefore kept out of the visible repository root while remaining available
 for local inspection. The theme configuration keeps
 the sidebar expanded through four navigation levels. A local stylesheet keeps
@@ -148,7 +150,9 @@ screen. The same stylesheet keeps the page body adjacent to the sidebar with a
 Code and result blocks use the available page width up to a consistent `56rem`
 cap; long lines scroll inside the block. Local JavaScript and CSS add an
 accessible copy control to every rendered code, command-output, and result
-block, with separate space reserved beside the text. The production hook
+block, with separate space reserved beside the text. The same local assets
+provide keyboard-accessible example tabs for two or more matching source,
+contract, or Python views; the result remains outside the tabs. The production hook
 includes only pages whose front matter says `publication: reviewed`. A draft
 lane index suppresses its complete User, Developer, or Maintainer lane. Links
 from documentation pages to existing source, tests, configuration, and other
@@ -192,7 +196,7 @@ source-build Makefile behavior by
 [`test_build_modes.py`](../../../tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py).
 
 Tooling configuration is covered by
-[`test_reference_and_source_map.py`](../../../tests/docs/test_reference_and_source_map.py),
+[`test_reference_and_codebase_map.py`](../../../tests/docs/test_reference_and_codebase_map.py),
 [`test_examples.py`](../../../tests/docs/test_examples.py), and
 [`test_check_static_analysis_versions.py`](../../../tests/tools/test_check_static_analysis_versions.py).
 

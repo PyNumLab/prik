@@ -50,9 +50,10 @@ def scale(
 ```
 
 `Float64` means the function requires `numpy.float64` scalar arguments and
-returns the same scalar type. `@standalone` identifies a procedure outside a
-Fortran module. `@native_call(...)` maps the two Python arguments to the native
-call and passes each scalar by address.
+returns a `numpy.float64` result.
+`@standalone` identifies a procedure outside a Fortran module.
+`@native_call(...)` maps the two Python arguments to the native call and passes
+each scalar by address.
 
 This file is both the wrapper contract and an editable description of the
 Python interface. You can leave it unchanged for this example; later pages
@@ -101,7 +102,8 @@ result : float64
 
 `help(scale.scale)` shows the same signature, parameter types, result, and
 documented exceptions. Generated modules, classes, methods, and properties
-also provide docstrings.
+also provide docstrings. The displayed `float64` records the exact NumPy scalar
+type accepted and returned by this function.
 
 ---
 

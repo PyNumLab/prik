@@ -1,4 +1,15 @@
-"""Backend syntax nodes for direct wrapper-plan source generation."""
+"""Editable C and Fortran syntax nodes produced by wrapper-plan lowering.
+
+The C node family represents translation units, headers, declarations,
+functions, control flow, and CPython module machinery. The Fortran family
+represents modules, uses, interfaces, declarations, procedures, control flow,
+and native calls. Generators select and assemble these nodes from a completed
+plan; printers alone serialize them into source text.
+
+Every node is a ``StageRecord`` so it can be assembled before a printer freezes
+it. ``CodeExpression`` is a deliberate leaf for
+backend-owned syntax fragments, not a route for policy decisions.
+"""
 
 from __future__ import annotations
 

@@ -39,6 +39,20 @@ any dummy declaration without `intent`.
 
 ## Complete Example
 
+The source, generated contract, and Python call describe the same output
+rules. The result stays visible below the three views.
+
+<div class="prik-example-tabs" data-prik-example-tabs markdown="1">
+<div class="prik-example-tablist" role="tablist" aria-label="Subroutine example">
+<button class="prik-example-tab" id="subroutines-source-tab" type="button" role="tab" aria-controls="subroutines-source" aria-selected="true">Fortran source</button>
+<button class="prik-example-tab" id="subroutines-contract-tab" type="button" role="tab" aria-controls="subroutines-contract" aria-selected="false" tabindex="-1">Generated contract</button>
+<button class="prik-example-tab" id="subroutines-python-tab" type="button" role="tab" aria-controls="subroutines-python" aria-selected="false" tabindex="-1">Python usage</button>
+</div>
+
+<div class="prik-example-panel" id="subroutines-source" role="tabpanel" aria-labelledby="subroutines-source-tab" tabindex="0" markdown="1">
+
+### Fortran source
+
 Create `outputs.f90`:
 
 ```fortran
@@ -79,7 +93,48 @@ Build it:
 python3 -m prik outputs.f90 --out-dir build/outputs
 ```
 
----
+</div>
+
+<div class="prik-example-panel" id="subroutines-contract" role="tabpanel" aria-labelledby="subroutines-contract-tab" tabindex="0" markdown="1">
+
+## Generated Contract
+
+The generated `outputs.pyi` is:
+
+```python
+from prik.contracts import Addr, Arg, Float64, Return, Returns, native_call
+
+@native_call([Arg(0), Return('smallest', 0), Return('largest', 1)])
+def bounds(
+    values: Float64[::]
+) -> tuple[Float64, Float64]: ...
+
+@native_call([Arg(0), Addr(Arg(1))])
+def scale_in_place(
+    values: Float64[::],
+    factor: Float64
+) -> None: ...
+
+@native_call([Addr(Arg(0)), Addr(Arg(1))])
+def scale_scalar(
+    value: Float64,
+    factor: Float64
+) -> Returns["value", Float64]: ...
+
+def fill(
+    values: Float64[::]
+) -> None: ...
+```
+
+Generate it:
+
+```bash
+python3 -m prik generate --pyi outputs.f90
+```
+
+</div>
+
+<div class="prik-example-panel" id="subroutines-python" role="tabpanel" aria-labelledby="subroutines-python-tab" tabindex="0" markdown="1">
 
 ## Python Usage
 
@@ -111,7 +166,17 @@ fill(target)
 print(target)              # [1. 1. 1. 1.]
 ```
 
----
+</div>
+</div>
+
+Result:
+
+```text
+-2.0 7.0
+10.0
+[3. 6. 9.]
+[1. 1. 1. 1.]
+```
 
 ## Key Rules
 

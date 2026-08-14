@@ -1,4 +1,10 @@
-"""Install bundled native binding support for generated CPython wrappers."""
+"""Conditionally install native support for generated CPython wrappers.
+
+The pipeline supplies generated imports and an output directory. When those
+imports request ``binding_support``, this module replaces the header-only
+payload under that directory and writes its NumPy API-version header. It does
+not choose imports, artefact locations, or compilation order.
+"""
 
 from pathlib import Path
 import shutil

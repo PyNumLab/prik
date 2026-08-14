@@ -5,6 +5,13 @@ are compiler facts, not parser or semantic-policy decisions. This module
 evaluates the exact expressions requested by the semantic layer with the
 selected compiler and flags, caches the resulting facts, and returns values
 suitable for ``FortranToIRConverter(..., compile_time_values=...)``.
+
+``FortranTypeProbeReport`` is the reusable measurement record.
+``evaluate_fortran_type_requirements`` and ``evaluate_fortran_type_facts`` are
+the semantic-facing routes; ``probe_fortran_type_expressions_cached`` is the
+general cached measurement route. The module proceeds from generated source
+and validation through execution, report loading and caching, then semantic
+consumer helpers.
 """
 
 from __future__ import annotations

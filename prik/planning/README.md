@@ -12,6 +12,6 @@ Planning must not infer semantic policy or render output text. Python-facing
 docstrings, C, Fortran, headers, and the generated Python class facade are
 rendered by `../codegen/` from the completed plan.
 
-For cross-stage navigation, see `docs/developer/source-map.md` and
+For cross-stage navigation, see `docs/developer/codebase-map.md` and
 `docs/developer/feature-to-code-map.md`. The canonical package reference is
 `docs/developer/packages/planning.md`.

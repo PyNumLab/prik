@@ -15,14 +15,21 @@ from prik.planning import WrapperPlanner
     ("type_name", "numpy_type", "result_kind"),
     [
         ("Bool", "NPY_BOOL", "python"),
-        ("Int32", "NPY_INT32", "python"),
+        ("Int8", "NPY_INT8", "numpy"),
+        ("Int16", "NPY_INT16", "numpy"),
+        ("Int32", "NPY_INT32", "numpy"),
+        ("Int64", "NPY_INT64", "numpy"),
         ("Float32", "NPY_FLOAT32", "numpy"),
-        ("Float64", "NPY_FLOAT64", "python"),
+        ("Float64", "NPY_FLOAT64", "numpy"),
         ("Complex64", "NPY_COMPLEX64", "numpy"),
-        ("Complex128", "NPY_COMPLEX128", "python"),
+        ("Complex128", "NPY_COMPLEX128", "numpy"),
     ],
 )
-def test_direct_scalar_result_registry_projects_supported_type_facts(type_name, numpy_type, result_kind):
+def test_direct_scalar_results_preserve_numpy_types_with_python_bool_as_the_exception(
+    type_name,
+    numpy_type,
+    result_kind,
+):
     module = parse_pyi_text(f"def identity(x: {type_name}) -> {type_name}: ...", module_name="scalar_result")
     complete_semantic_policies(module)
     artifacts = WrapperGenerator().generate(WrapperPlanner().build(module))

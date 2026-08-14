@@ -1,4 +1,19 @@
-"""End-to-end Fortran-to-Python extension build pipeline."""
+"""Orchestrate source-first and contract-first extension builds.
+
+The public boundary is the build records plus ``build_fortran_extension()``,
+``build_pyi_extension()``, and ``build_pyi_extension_from_manifest()``. Each
+entrypoint prepares semantic input, completes policy, plans and renders a
+wrapper, materializes its sources, prepares native inputs, then returns a
+``WrapperBuildResult`` after compilation, source-only output, or Makefile
+generation.
+
+Private helpers are grouped by configuration, generated-wrapper materialization,
+native scheduling, source and contract inputs, `.pyi` loading and export
+projection, native planning, manifest handling, wrapper assembly, Makefile
+output, type probing, and semantic preparation. Read from a public entrypoint
+to the phase it calls; this module delegates language meaning, policy, lowering,
+printing, and compiler command construction to their owning stages.
+"""
 
 from __future__ import annotations
 

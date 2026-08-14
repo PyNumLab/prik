@@ -1,3 +1,12 @@
+"""Convenience imports for semantic frontend conversion.
+
+The supported wrapper route converts Fortran parser models and semantic
+``.pyi`` AST through this package. C conversion exports remain available for
+incomplete future frontend work; they do not make C wrapping a supported path.
+Import the model vocabulary and specialized helpers from their defining
+semantic modules when their local contract matters.
+"""
+
 from .fortran2ir import (
     collect_semantic_compile_time_requirements,
     fortran_file_to_semantic_modules,

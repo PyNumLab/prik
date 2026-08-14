@@ -809,7 +809,8 @@ PRIK_C_DOCS_END -->
 | Prototype primitive reference | `Addr(T)` inside an intent wrapper |
 | Prototype non-primitive value override | `Value(T)` inside an intent wrapper |
 
-All Boolean names accept and return Python/NumPy Boolean values. `Bool` is the
+All Boolean names accept `bool` or `numpy.bool_` scalar inputs and return Python
+`bool` scalar results. Boolean arrays use `dtype=numpy.bool_`. `Bool` is the
 portable one-byte boundary contract and is equivalent to `Bool8` at that
 boundary. A numbered name additionally records native Boolean storage bits so
 language-specific lowering can preserve the native declaration without

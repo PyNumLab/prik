@@ -45,6 +45,22 @@ use storage addresses, so their `Arg(i)` entry does not need another
 
 ## Complete Example
 
+The source, generated contract, edited contract, and Python calls below
+describe the same raw-address boundary. The results remain visible below the
+four views.
+
+<div class="prik-example-tabs" data-prik-example-tabs markdown="1">
+<div class="prik-example-tablist" role="tablist" aria-label="Raw addresses example">
+<button class="prik-example-tab" id="raw-addresses-source-tab" type="button" role="tab" aria-controls="raw-addresses-source" aria-selected="true">Fortran source</button>
+<button class="prik-example-tab" id="raw-addresses-generated-contract-tab" type="button" role="tab" aria-controls="raw-addresses-generated-contract" aria-selected="false" tabindex="-1">Generated contract</button>
+<button class="prik-example-tab" id="raw-addresses-edited-contract-tab" type="button" role="tab" aria-controls="raw-addresses-edited-contract" aria-selected="false" tabindex="-1">Edited contract</button>
+<button class="prik-example-tab" id="raw-addresses-python-tab" type="button" role="tab" aria-controls="raw-addresses-python" aria-selected="false" tabindex="-1">Python usage</button>
+</div>
+
+<div class="prik-example-panel" id="raw-addresses-source" role="tabpanel" aria-labelledby="raw-addresses-source-tab" tabindex="0" markdown="1">
+
+### Fortran source
+
 Create `raw_api.f90`:
 
 ```fortran
@@ -71,13 +87,49 @@ contains
 end module raw_api
 ```
 
-Generate a starter contract:
+</div>
+
+<div class="prik-example-panel" id="raw-addresses-generated-contract" role="tabpanel" aria-labelledby="raw-addresses-generated-contract-tab" tabindex="0" markdown="1">
+
+## Generated Contract
+
+The generated `contracts/raw/raw_api.pyi` preserves the checked storage and
+projects mutable scalar and string arguments as results:
+
+```python
+from prik.contracts import Addr, Arg, Float64, Int32, Returns, String, native_call
+
+@native_call([Addr(Arg(0))])
+def increment(
+    value: Int32
+) -> Returns["value", Int32]: ...
+
+@native_call([Addr(Arg(0)), Addr(Arg(1)), Arg(2)])
+def scale(
+    rows: Int32,
+    columns: Int32,
+    values: Float64[rows, columns]
+) -> None: ...
+
+def edit_label(
+    label: String[8]
+) -> Returns["label", String[8]]: ...
+```
+
+Generate it:
 
 ```bash
 python3 -m prik generate --pyi raw_api.f90 --out contracts/raw
 ```
 
-Edit `contracts/raw/raw_api.pyi`:
+</div>
+
+<div class="prik-example-panel" id="raw-addresses-edited-contract" role="tabpanel" aria-labelledby="raw-addresses-edited-contract-tab" tabindex="0" markdown="1">
+
+## Edited Contract
+
+Change the storage boundary so Python callers provide raw addresses. The final
+`contracts/raw/raw_api.pyi` is:
 
 ```python
 from prik.contracts import Addr, Arg, Float64, Int32, String, native_call
@@ -104,6 +156,10 @@ python3 -m prik contracts/raw/__init__.pyi \
 
 For other argument-order and result mappings, see
 [Reorder Arguments and Project Outputs](../reference/pyi-contracts/calls-and-results.md#reorder-arguments-and-project-outputs).
+
+</div>
+
+<div class="prik-example-panel" id="raw-addresses-python" role="tabpanel" aria-labelledby="raw-addresses-python-tab" tabindex="0" markdown="1">
 
 ## Primitive Address
 
@@ -178,6 +234,18 @@ print(label[()])  # b'Xlpha   '
 This mutates bytes storage. It does not return a Python `str`.
 Use `String[8]` with `Returns[...]` when the result should be immutable text.
 Use `String[8][()]` when the wrapper should validate mutable storage.
+
+</div>
+</div>
+
+Result:
+
+```text
+4
+[[2. 4.]
+ [6. 8.]]
+b'Xlpha   '
+```
 
 ## Safety Rules
 

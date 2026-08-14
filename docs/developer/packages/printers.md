@@ -1,13 +1,13 @@
 ---
-title: Printers Package
+title: Printing Stage
 audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide, formed source representations
 related: ../architecture.md, index.md, codegen.md, pipeline.md, parsers.md
 status: maintained
-publication: draft
+publication: reviewed
 ---
 
-# Printers Package
+# Printing Stage
 
 ## Purpose And Boundaries
 
@@ -47,7 +47,52 @@ The fact that code generation calls a printer at the end of wrapper rendering
 does not make printing part of codegen ownership. `pipeline/wrapper.py`
 coordinates both distinct stages.
 
-## Execution Examples
+## Module Algorithms
+
+### `c.py`: C nodes to C text
+
+`CSourcePrinter.doprint()` is the public entrypoint. It freezes a supplied
+`StageRecord`, dispatches it through the C node visitor, and returns text. A
+`CModule` is rendered in compiler order: macro definitions, includes,
+declarations, then functions. A `CHeader` adds its guard around includes and
+prototypes.
+
+The remaining visitors add C punctuation, indentation, signatures, and string
+escaping to node-selected values. CPython method tables and module-property
+support are serialized from their C nodes; no semantic model or wrapper plan is
+consulted.
+
+### `fortran.py`: Fortran nodes to free-form text
+
+`FortranSourcePrinter.doprint()` likewise freezes a supplied node and renders
+it through the Fortran visitor. A module is emitted in Fortran specification
+and body order: uses, type definitions, interfaces, declarations, then
+procedures and standalone procedures.
+
+After rendering, the printer wraps overlong free-form lines at safe whitespace
+or comma boundaries. It can continue string literals without changing their
+value, never splits comments or doubled-quote escapes, and rejects an
+unsplittable line that remains above the 132-column compiler-safe limit.
+
+### `pyi.py`: semantic IR to an editable contract
+
+`PyiPrinter.emit()` creates a fresh `_PyiEmissionContext` for every call. The
+context records contract imports, aliases, public-name reservations, source
+array defaults, and nested namespaces without mutating a reusable printer or
+the semantic IR.
+
+For a module, the printer first renders public classes, prototypes, variables,
+functions, and overload sets into body sections. As visitors use contract
+symbols, the shared context records imports; final import sections are then
+placed before the body. Visitors preserve semantic native identity,
+projections, storage, imports, and contract annotations, but do not complete
+wrapper policy. `emit_module()` is the normal one-module convenience entrypoint
+and still creates a fresh context.
+
+## Run The Workflows
+
+`c.py` constructs one small C module containing a `wrap_ping` function and
+passes that already formed node tree to `CSourcePrinter`.
 
 ```bash
 python3 prik/printers/c.py
@@ -62,6 +107,12 @@ static PyObject * wrap_ping(PyObject * self) {
     return Py_None;
 }
 ```
+
+The include, C signature, indentation, and semicolons are printer work. The
+example contains no semantic model or wrapper plan for the printer to inspect.
+
+`fortran.py` constructs one bridge module with explicit `iso_c_binding` and
+native-module uses, then prints its one bridge function.
 
 ```bash
 python3 prik/printers/fortran.py
@@ -82,6 +133,12 @@ contains
 end module bind_c_printer_demo_wrapper
 ```
 
+The result preserves the declared use order and native alias, then applies
+Fortran declaration, procedure, and indentation syntax to the supplied nodes.
+
+`pyi.py` constructs one semantic `double_value` function with `Float64` types
+and a native `DOUBLE_VALUE` identity, then emits one contract module.
+
 ```bash
 python3 prik/printers/pyi.py
 ```
@@ -97,14 +154,17 @@ def double_value(
 ```
 
 The native examples prove that punctuation and layout are added to already
-formed nodes. The `.pyi` example proves that required contract imports and
-native identity are derived without attaching wrapper policy.
+formed nodes. The `.pyi` import and `@bind` line show that required contract
+imports and native identity are derived from semantic IR without attaching
+wrapper policy.
 
-## Tests And What They Prove
+## Tests And Evidence
 
-- [Printer infrastructure](../../../tests/fortran/infrastructure/printers/) covers native syntax serialization and formatting.
-- [Semantic `.pyi` round trips](../../../tests/fortran/semantic_pyi_format/) cover contract emission and re-parsing.
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes the three rendered examples above.
+| Evidence | What it establishes |
+| --- | --- |
+| [Native source printers](../../../tests/fortran/infrastructure/printers/test_source_printers.py) | C and Fortran serialization, rejection of wrapper plans, line wrapping, literal preservation, and unsplittable-line diagnostics. |
+| [Semantic `.pyi` conversion smoke](../../../tests/fortran/semantic_pyi_format/pipeline/test_pyi_printer_conversion_smoke.py) | Emitted contract fixtures can be parsed and converted through the normal semantic-`.pyi` route. |
+| [`.pyi` imports and packages](../../../tests/fortran/semantic_pyi_format/pipeline/test_pyi_printer_imports_and_packages.py) | Isolated emission state, imports, aliases, packages, name collisions, and opaque dependencies. |
 
 ## Change Routes
 
@@ -113,8 +173,18 @@ native identity are derived without attaching wrapper policy.
   plan rather than consulting semantic IR from the printer.
 - Change filenames or multi-source artifact order in the pipeline.
 
-## Invariants And Common Mistakes
+## Boundaries And Invariants
 
 - Native source printers accept backend nodes, not semantic models.
 - The `.pyi` printer accepts semantic IR, not wrapper plans.
-- Emission contexts are per-operation and restored safely after failures.
+- Each `.pyi` emission owns fresh context, so one failure cannot leak imports
+  or reserved names into the next emission.
+
+## Failure Boundary
+
+Native printers report unsupported node types and, for Fortran, a line that
+cannot be safely wrapped. The `.pyi` printer reports unsupported semantic
+models or invalid contract-emission facts. Printers delegate missing node facts
+to `codegen/` and missing semantic facts to earlier stages; they delegate file
+names and writing to `pipeline/`. Start with the first invalid node or semantic
+record, not the rendered text that exposes it.

@@ -19,7 +19,9 @@ extra_css:
   - stylesheets/code-copy.css
 extra_javascript:
   - javascripts/code-copy.js
+  - javascripts/example-tabs.js
   - javascripts/faq.js
+  - javascripts/term-tooltips.js
 plugins:
   - search
 hooks:
@@ -118,38 +120,35 @@ nav:
       - Language Support:
           - Overview: user/language-support/index.md
           - Feature Matrix: user/language-support/feature-matrix.md
-  - Contributor Documentation:
+  - Developer Documentation:
       - Overview: developer/index.md
       - Architecture: developer/architecture.md
-      - Source Map: developer/source-map.md
-      - Feature To Code Map: developer/feature-to-code-map.md
-      - Testing Strategy: developer/testing-strategy.md
-      - Source Packages:
+      - Architecture Components:
           - Overview: developer/packages/index.md
-          - Contracts: developer/packages/contracts.md
-          - Compiler: developer/packages/compiler.md
+          - Pipeline: developer/packages/pipeline.md
           - Preprocessing: developer/packages/preprocessing.md
           - Parsers: developer/packages/parsers.md
           - Semantics: developer/packages/semantics.md
           - Policy: developer/packages/policy.md
           - Planning: developer/packages/planning.md
-          - Code Generation: developer/packages/codegen.md
+          - Code Generation:
+              - Overview: developer/packages/codegen.md
+              - C Binding: developer/packages/codegen/c-binding.md
+              - Fortran Bridge: developer/packages/codegen/fortran-bridge.md
           - Printers: developer/packages/printers.md
-          - Pipeline: developer/packages/pipeline.md
-          - Runtime: developer/packages/runtime.md
+          - Compiler: developer/packages/compiler.md
+          - Contracts: developer/packages/contracts.md
           - Naming: developer/packages/naming.md
+          - Runtime: developer/packages/runtime.md
           - Utilities: developer/packages/utilities.md
-      - Concepts:
-          - Datatype Lifecycle: developer/concepts/datatype-lifecycle.md
+      - Codebase Map: developer/codebase-map.md
+      - Feature-to-Code Map: developer/feature-to-code-map.md
+      - Testing Strategy: developer/testing-strategy.md
       - Workflows:
           - Contributing: developer/workflows/contributing.md
           - Quality Assurance: developer/workflows/quality-assurance.md
-          - Continuous Integration And Delivery: developer/workflows/ci.md
-          - Documentation Architecture: developer/workflows/documentation.md
-          - Release Process: developer/workflows/release.md
-      - Design:
-          - Multilanguage Runtime Architecture: developer/design/multilanguage-runtime.md
-          - Wrapper Open Decisions: developer/design/wrapper-open-decisions.md
+          - Pull Request Checks: developer/workflows/ci.md
+          - Documentation Maintenance: developer/workflows/documentation.md
       # PRIK_C_DOCS: - Deferred C Parser Reference: developer/deferred/c-parser.md
       - Roadmaps:
           - Overview: developer/roadmap/index.md

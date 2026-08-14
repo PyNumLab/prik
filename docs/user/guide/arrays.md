@@ -36,6 +36,20 @@ The page uses one module throughout. Its routines cover:
 - `scale_visible_rows`: stride-aware assumed-shape arrays
 - `automatic_vector`: an array function result
 
+The source, generated contract, and Python call describe this module. The
+result stays visible below the three views.
+
+<div class="prik-example-tabs" data-prik-example-tabs markdown="1">
+<div class="prik-example-tablist" role="tablist" aria-label="Arrays example">
+<button class="prik-example-tab" id="arrays-source-tab" type="button" role="tab" aria-controls="arrays-source" aria-selected="true">Fortran source</button>
+<button class="prik-example-tab" id="arrays-contract-tab" type="button" role="tab" aria-controls="arrays-contract" aria-selected="false" tabindex="-1">Generated contract</button>
+<button class="prik-example-tab" id="arrays-python-tab" type="button" role="tab" aria-controls="arrays-python" aria-selected="false" tabindex="-1">Python usage</button>
+</div>
+
+<div class="prik-example-panel" id="arrays-source" role="tabpanel" aria-labelledby="arrays-source-tab" tabindex="0" markdown="1">
+
+### Fortran source
+
 Create `arrays.f90`:
 
 ```fortran
@@ -116,7 +130,70 @@ Build:
 python3 -m prik arrays.f90 --out-dir build/arrays
 ```
 
----
+</div>
+
+<div class="prik-example-panel" id="arrays-contract" role="tabpanel" aria-labelledby="arrays-contract-tab" tabindex="0" markdown="1">
+
+## Generated Contract
+
+The generated `array_ops.pyi` is:
+
+```python
+from prik.contracts import Addr, Arg, Flat, Float64, Int32, native_call
+
+@native_call([Addr(Arg(0)), Addr(Arg(1)), Arg(2)])
+def scale_matrix(
+    rows: Int32,
+    columns: Int32,
+    values: Float64[rows, columns]
+) -> None: ...
+
+@native_call([Addr(Arg(0)), Arg(1)])
+def shift(
+    size: Int32,
+    values: Float64[size]
+) -> None: ...
+
+@native_call([Addr(Arg(0)), Arg(1), Arg(2)])
+def sum_columns(
+    size: Int32,
+    values: Float64[size, size],
+    result: Float64[size]
+) -> None: ...
+
+@native_call([Addr(Arg(0)), Arg(1)])
+def sum_flat(
+    count: Int32,
+    values: Float64[Flat]
+) -> Float64: ...
+
+@native_call([Addr(Arg(0)), Addr(Arg(1)), Arg(2)])
+def sum_flat_columns(
+    rows: Int32,
+    columns: Int32,
+    values: Float64[rows, Flat]
+) -> Float64: ...
+
+def scale_visible_rows(
+    values: Float64[::, ::],
+    out: Float64[::, ::]
+) -> None: ...
+
+@native_call([Addr(Arg(0))])
+def automatic_vector(
+    count: Int32
+) -> Float64[count]: ...
+```
+
+Generate it:
+
+```bash
+python3 -m prik generate --pyi arrays.f90
+```
+
+</div>
+
+<div class="prik-example-panel" id="arrays-python" role="tabpanel" aria-labelledby="arrays-python-tab" tabindex="0" markdown="1">
 
 ## Python Usage
 
@@ -163,7 +240,19 @@ vec = automatic_vector(np.int32(4))
 print(vec)  # [2. 4. 6. 8.]
 ```
 
----
+</div>
+</div>
+
+Result:
+
+```text
+[[2. 2. 2.]
+ [2. 2. 2.]]
+[1. 1. 1. 1.]
+66.0
+300.0
+[2. 4. 6. 8.]
+```
 
 ## What prik Validates
 

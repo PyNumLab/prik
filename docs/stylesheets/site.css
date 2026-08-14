@@ -3,6 +3,15 @@
   margin: 0;
 }
 
+.rst-content .wy-table-responsive table td,
+.rst-content .wy-table-responsive table th {
+  white-space: normal;
+}
+
+.rst-content .wy-table-responsive table code {
+  overflow-wrap: anywhere;
+}
+
 .wy-nav-side {
   padding-bottom: 0;
 }
@@ -259,6 +268,163 @@
   margin: 0;
 }
 
+.prik-build-path {
+  display: block;
+  width: 100%;
+  max-width: 60rem;
+  aspect-ratio: 960 / 515;
+  height: auto;
+  margin: 1.5rem 0;
+}
+
+.prik-example-tabs {
+  max-width: 56rem;
+  margin: 1.5rem 0;
+  border: 1px solid #cfdde5;
+  border-radius: 0.55rem;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
+}
+
+.prik-example-tablist {
+  display: flex;
+  overflow-x: auto;
+  border-bottom: 1px solid #cfdde5;
+  background: #f5fbfa;
+}
+
+.prik-example-tab {
+  flex: 0 0 auto;
+  padding: 0.75rem 1rem;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: #43515d;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+.prik-example-tab:hover {
+  background: rgb(23 107 100 / 8%);
+  color: #0f514c;
+}
+
+.prik-example-tab[aria-selected="true"] {
+  border-bottom-color: #176b64;
+  background: #fff;
+  color: #0f514c;
+}
+
+.prik-example-tab:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid #f5b041;
+  outline-offset: -2px;
+}
+
+.prik-example-panel {
+  padding: 0 1rem;
+}
+
+.prik-example-panel > :first-child {
+  margin-top: 1rem;
+}
+
+.prik-example-panel > :last-child {
+  margin-bottom: 1rem;
+}
+
+.prik-term-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  vertical-align: baseline;
+}
+
+.prik-term-trigger {
+  padding: 0;
+  border: 0;
+  border-radius: 0.2rem;
+  background: transparent;
+  color: inherit;
+  cursor: help;
+  font: inherit;
+  line-height: inherit;
+}
+
+.prik-term-trigger > code,
+.prik-term-trigger > .prik-term-label {
+  border-bottom: 1px dashed #176b64;
+  border-radius: 0.2rem;
+  background: #e7f4f2;
+  color: #0f514c;
+}
+
+.prik-term-trigger:hover > code,
+.prik-term-trigger:hover > .prik-term-label,
+.prik-term-wrap.is-open .prik-term-trigger > code,
+.prik-term-wrap.is-open .prik-term-trigger > .prik-term-label {
+  background: #d9eeea;
+}
+
+.prik-term-trigger:focus-visible {
+  outline: 2px solid #f5b041;
+  outline-offset: 2px;
+}
+
+.prik-term-tooltip {
+  position: fixed;
+  z-index: 20;
+  top: 0;
+  left: 50%;
+  width: min(19rem, calc(100vw - 2rem));
+  padding: 0.7rem 0.8rem;
+  border: 1px solid #0f514c;
+  border-radius: 0.45rem;
+  background: #253746;
+  box-shadow: 0 5px 14px rgb(0 0 0 / 22%);
+  color: #fff;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: break-word;
+  transform: translate(-50%, 0.25rem);
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease,
+    visibility 120ms ease;
+}
+
+.prik-term-tooltip::after {
+  position: absolute;
+  bottom: -0.38rem;
+  left: 50%;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-right: 1px solid #0f514c;
+  border-bottom: 1px solid #0f514c;
+  background: #253746;
+  content: "";
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.prik-term-tooltip.prik-term-tooltip-below::after {
+  top: -0.38rem;
+  bottom: auto;
+  transform: translateX(-50%) rotate(225deg);
+}
+
+.prik-term-wrap.is-open .prik-term-tooltip {
+  transform: translate(-50%, 0);
+  visibility: visible;
+  opacity: 1;
+}
+
 @media screen and (max-width: 768px) {
   .wy-breadcrumbs-aside {
     display: block;
@@ -266,13 +432,31 @@
     margin-top: 0.75rem;
   }
 
+  .rst-content .wy-table-responsive table td,
+  .rst-content .wy-table-responsive table th {
+    padding: 0.45rem 0.5rem;
+    font-size: 0.82rem;
+  }
+
   .prik-performance-summary {
     grid-template-columns: 1fr;
   }
+
+  .prik-example-tab {
+    padding: 0.7rem 0.85rem;
+    font-size: 0.9rem;
+  }
+
 }
 
 .rst-content pre {
   width: 100%;
   max-width: 56rem;
   padding-right: 3.25rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prik-term-tooltip {
+    transition: none;
+  }
 }

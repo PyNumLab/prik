@@ -4,9 +4,8 @@ This package owns Fortran source facts before semantic conversion. It preserves
 modules, procedures, declarations, derived types, visibility, and diagnostics
 needed by wrapper and inspection workflows.
 
-Its canonical implementation namespace is `prik.parsers.fortran`. Public
-callers may also use the stable parser functions and models exported from the
-`prik` package root.
+Its public API is `prik.parsers.fortran`; the `prik` root facade does not
+re-export parser functions or models.
 
 ## Entry Points
 
@@ -23,7 +22,7 @@ callers may also use the stable parser functions and models exported from the
 
 - Package reference: `docs/developer/packages/parsers.md`
 - User recipe: `docs/user/examples/recipes/inspect-fortran-api.md`
-- Source navigation: `docs/developer/source-map.md`, `docs/developer/feature-to-code-map.md`
+- Source navigation: `docs/developer/codebase-map.md`, `docs/developer/feature-to-code-map.md`
 - Parser tests: `tests/fortran/source_parsing/parsing/`
 - Fixture suite: `tests/fortran/source_parsing/parsing/test_fortran_fixture_suite.py`
 - Semantic handoff tests: `tests/fortran/semantic_ir/semantics/`

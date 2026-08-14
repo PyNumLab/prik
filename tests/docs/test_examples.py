@@ -1,4 +1,4 @@
-"""Execute explicitly marked examples embedded in Markdown documentation."""
+"""Execute verified examples embedded in Markdown documentation."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import platform
 from pathlib import Path
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 
@@ -31,10 +32,12 @@ AUDITED_PYTHON_DOC_PATHS = [
     *sorted((ROOT / "docs/user/getting-started").glob("*.md")),
     *sorted((ROOT / "docs/user/guide").glob("*.md")),
 ]
+DEVELOPER_PACKAGE_DOC_PATHS = sorted((ROOT / "docs/developer/packages").rglob("*.md"))
 TEST_MARKER = re.compile(r"^\s*<!--\s*prik-doc-test:\s*(run|exact)(?:\s+([a-z0-9_-]+))?\s*-->\s*$")
 OUTPUT_MARKER = re.compile(r"^\s*<!--\s*prik-doc-test-output\s*-->\s*$")
 SOURCE_MARKER = re.compile(r"^\s*<!--\s*prik-doc-source:\s*(.+?)\s*-->\s*$")
 FENCE_MARKER = re.compile(r"^\s*(`{3,}|~{3,})")
+DIRECT_PRODUCTION_COMMAND = re.compile(r"^python3 (?P<path>prik/(?:[A-Za-z0-9_]+/)*[A-Za-z0-9_]+\.py)$")
 SHELL_OPERATORS = {"&&", "||", ";", "|", ">", ">>", "<", "2>", "2>>"}
 DISALLOWED_OPTIONS = {
     "--compile-commands",
@@ -46,6 +49,16 @@ DISALLOWED_OPTIONS = {
 C_DOCS_START = "<!-- PRIK_C_DOCS_START"
 C_DOCS_END = "PRIK_C_DOCS_END -->"
 C_DOCS_DISABLED = "<!-- PRIK_C_DOCS_DISABLED:"
+TARGET_DEPENDENT_EXAMPLES = {
+    "prik/pipeline/type_mapping_report.py",
+    "prik/preprocessing/probes/fortran_types.py",
+}
+EXAMPLE_TOOL_REQUIREMENTS = {
+    "prik/pipeline/build.py": (("gfortran",), ("gcc",)),
+    "prik/pipeline/type_mapping_report.py": (("cc",),),
+    "prik/preprocessing/probes/fortran_types.py": (("gfortran", "f95"),),
+    "prik/preprocessing/source.py": (("cc",),),
+}
 
 
 @dataclass(frozen=True)
@@ -220,8 +233,72 @@ def _documented_content_from_path(path: Path) -> tuple[list[DocumentationExample
     return examples, sources
 
 
+def _developer_package_examples(path: Path) -> list[DocumentationExample]:
+    """Discover production-file command/result pairs from one package guide."""
+    lines = _visible_documentation_lines(path)
+    examples: list[DocumentationExample] = []
+    index = 0
+
+    while index < len(lines):
+        if lines[index].strip() != "```bash":
+            index += 1
+            continue
+
+        command_block, after_command, _language = _fenced_block(lines, index, language="bash")
+        command = _logical_command(command_block, location=f"{path.relative_to(ROOT)}:{index + 1}")
+        command_match = DIRECT_PRODUCTION_COMMAND.fullmatch(command)
+        if command_match is None:
+            index = after_command
+            continue
+
+        result_index = after_command
+        while result_index < len(lines):
+            stripped = lines[result_index].strip()
+            if stripped == "```text":
+                break
+            if stripped == "```bash" or stripped.startswith("## "):
+                raise AssertionError(
+                    f"{path.relative_to(ROOT)}:{index + 1}: production command is missing a displayed result"
+                )
+            result_index += 1
+        if result_index >= len(lines):
+            raise AssertionError(
+                f"{path.relative_to(ROOT)}:{index + 1}: production command is missing a displayed result"
+            )
+
+        expected_output, after_result, _output_language = _fenced_block(
+            lines,
+            result_index,
+            language="text",
+        )
+        script_path = command_match.group("path")
+        if script_path in TARGET_DEPENDENT_EXAMPLES:
+            mode = "invariant"
+        elif any(line.strip() == "..." for line in expected_output.splitlines()):
+            mode = "excerpt"
+        else:
+            mode = "exact"
+        examples.append(
+            DocumentationExample(
+                path=path,
+                line=index + 2,
+                mode=mode,
+                language="bash",
+                command=command,
+                expected_output=expected_output,
+            )
+        )
+        index = after_result
+
+    return examples
+
+
 DOCUMENTATION_CONTENT = [_documented_content_from_path(path) for path in DOC_PATHS]
-DOCUMENTATION_EXAMPLES = [example for examples, _sources in DOCUMENTATION_CONTENT for example in examples]
+MARKED_DOCUMENTATION_EXAMPLES = [example for examples, _sources in DOCUMENTATION_CONTENT for example in examples]
+DEVELOPER_PACKAGE_EXAMPLES = [
+    example for path in DEVELOPER_PACKAGE_DOC_PATHS for example in _developer_package_examples(path)
+]
+DOCUMENTATION_EXAMPLES = [*MARKED_DOCUMENTATION_EXAMPLES, *DEVELOPER_PACKAGE_EXAMPLES]
 DOCUMENTED_SOURCES = [source for _examples, sources in DOCUMENTATION_CONTENT for source in sources]
 
 
@@ -250,7 +327,8 @@ def _command_argv(example: DocumentationExample) -> list[str]:
     argv = shlex.split(example.command)
     allowed_modules = {("python", "-m", "prik")}
     normalized_command = ("python", *argv[1:3]) if argv and argv[0] in {"python", "python3"} else ()
-    if normalized_command not in allowed_modules:
+    direct_command = DIRECT_PRODUCTION_COMMAND.fullmatch(example.command)
+    if normalized_command not in allowed_modules and direct_command is None:
         raise AssertionError(f"{example.test_id}: unsupported documentation command")
     if any(argument in SHELL_OPERATORS for argument in argv):
         raise AssertionError(f"{example.test_id}: shell operators are not supported")
@@ -258,13 +336,73 @@ def _command_argv(example: DocumentationExample) -> list[str]:
         argument == option or argument.startswith(f"{option}=") for argument in argv for option in DISALLOWED_OPTIONS
     ):
         raise AssertionError(f"{example.test_id}: output-writing and custom-executable options are not supported")
+    if direct_command is not None:
+        script_path = (ROOT / direct_command.group("path")).resolve()
+        try:
+            script_path.relative_to((ROOT / "prik").resolve())
+        except ValueError as exc:
+            raise AssertionError(f"{example.test_id}: production command escapes the prik package") from exc
+        if not script_path.is_file():
+            raise AssertionError(f"{example.test_id}: production command target does not exist")
     argv[0] = sys.executable
     return argv
+
+
+def _direct_script_path(example: DocumentationExample) -> str | None:
+    command_match = DIRECT_PRODUCTION_COMMAND.fullmatch(example.command)
+    return command_match.group("path") if command_match is not None else None
+
+
+def _missing_example_tool(example: DocumentationExample) -> str | None:
+    script_path = _direct_script_path(example)
+    for alternatives in EXAMPLE_TOOL_REQUIREMENTS.get(script_path or "", ()):
+        if not any(shutil.which(executable) for executable in alternatives):
+            return " or ".join(alternatives)
+    return None
+
+
+def _assert_excerpt_output(actual: str, expected: str, *, test_id: str) -> None:
+    """Match documented chunks in order, treating a line containing ``...`` as omitted output."""
+    chunks: list[str] = []
+    current_lines: list[str] = []
+    for line in expected.splitlines():
+        if line.strip() == "...":
+            if current_lines:
+                chunks.append("\n".join(current_lines))
+                current_lines = []
+        else:
+            current_lines.append(line)
+    if current_lines:
+        chunks.append("\n".join(current_lines))
+
+    cursor = 0
+    for chunk in chunks:
+        position = actual.find(chunk, cursor)
+        assert position >= 0, f"{test_id}: documented output excerpt was not found in order:\n{chunk}"
+        cursor = position + len(chunk)
+
+
+def _assert_target_dependent_output(example: DocumentationExample, output: str) -> None:
+    script_path = _direct_script_path(example)
+    if script_path == "prik/pipeline/type_mapping_report.py":
+        row = output.strip()
+        assert row.startswith("| `int` | ")
+        assert "signed" in row
+        assert "numpy." in row
+        return
+    if script_path == "prik/preprocessing/probes/fortran_types.py":
+        label, separator, raw_value = output.strip().partition(" = ")
+        assert label == "selected_int_kind(9)"
+        assert separator == " = "
+        assert int(raw_value) > 0
+        return
+    raise AssertionError(f"{example.test_id}: no invariant validator exists for {script_path}")
 
 
 def test_documentation_has_automatically_verified_examples():
     assert DOCUMENTATION_EXAMPLES, "mark at least one Markdown example with prik-doc-test"
     assert any(example.mode == "exact" for example in DOCUMENTATION_EXAMPLES)
+    assert DEVELOPER_PACKAGE_EXAMPLES, "document at least one package-guide production example"
     assert DOCUMENTED_SOURCES, "mark displayed fixture inputs with prik-doc-source"
 
 
@@ -305,6 +443,9 @@ def test_documented_expected_output_labels_are_automatically_verified(path: Path
 def test_documentation_example(example: DocumentationExample):
     if example.platform is not None and example.platform != _platform_id():
         pytest.skip(f"example targets {example.platform}, running on {_platform_id()}")
+    missing_tool = _missing_example_tool(example)
+    if missing_tool is not None:
+        pytest.skip(f"{missing_tool} is required for {example.command}")
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join(filter(None, [str(ROOT), env.get("PYTHONPATH")]))
     result = subprocess.run(
@@ -324,3 +465,7 @@ def test_documentation_example(example: DocumentationExample):
     assert result.stderr == "", f"{example.test_id}: command wrote to stderr:\n{result.stderr}"
     if example.mode == "exact":
         assert result.stdout.rstrip("\n") == (example.expected_output or "").rstrip("\n")
+    elif example.mode == "excerpt":
+        _assert_excerpt_output(result.stdout.rstrip("\n"), example.expected_output or "", test_id=example.test_id)
+    elif example.mode == "invariant":
+        _assert_target_dependent_output(example, result.stdout)

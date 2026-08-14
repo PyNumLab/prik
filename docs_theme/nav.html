@@ -1,0 +1,31 @@
+{# Section labels open their first published page; the adjacent + control expands them. #}
+{%- macro first_page_url(item) -%}
+    {%- if item.is_page or item.is_link -%}
+        {{- item.url|url -}}
+    {%- elif item.children -%}
+        {{- first_page_url(item.children[0]) -}}
+    {%- endif -%}
+{%- endmacro %}
+{%- set section_landing_url = first_page_url(nav_item) if nav_item.is_section else "" %}
+<a class="{% if not nav_item.is_link %}reference internal{% endif %}{% if nav_item.active%} current{%endif%}" {% if nav_item == page %}href="#"{% elif nav_item.is_page or nav_item.is_link %}href="{{ nav_item.url|url }}"{% elif section_landing_url %}href="{{ section_landing_url }}"{% endif %}>{{ nav_item.title }}</a>
+{%- set navlevel = navlevel + 1 %}
+{%- if navlevel <= config.theme.navigation_depth
+    and ((nav_item.is_page and nav_item.toc.items
+    and (not config.theme.titles_only
+    and (nav_item == page or not config.theme.collapse_navigation)))
+    or (nav_item.is_section and nav_item.children)) %}
+    <ul{% if nav_item.active %} class="current"{% endif %}>
+        {%- if nav_item.is_section %}
+            {%- for nav_item in nav_item.children %}
+                <li class="toctree-l{{ navlevel }}{% if nav_item.active%} current{%endif%}">
+                    {%- include 'nav.html' %}
+                </li>
+            {%- endfor %}
+        {%- elif nav_item.is_page %}
+            {#- Skip first level of toc which is page title. #}
+            {%- set toc_item = nav_item.toc.items and nav_item.toc.items[0] %}
+            {%- include 'toc.html' %}
+        {%- endif %}
+    </ul>
+{%- endif %}
+{%- set navlevel = navlevel - 1 %}

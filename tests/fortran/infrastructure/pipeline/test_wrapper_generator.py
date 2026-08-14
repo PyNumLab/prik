@@ -105,7 +105,7 @@ def swap_args(x: Float64, y: Float64) -> Float64: ...
     assert 'PyArg_ParseTupleAndKeywords(args, kwargs, "OO", kwlist, &bound_x_obj, &bound_y_obj)' in c_source
     assert "prik_float64_unpack_exact(bound_x_obj, &bound_x)" in c_source
     assert "result = bind_c_swap_args(&bound_y, &bound_x);" in c_source
-    assert "PyObject * result_obj = prik_float64_to_python(&result);" in c_source
+    assert "PyObject * result_obj = prik_float64_to_numpy(&result);" in c_source
     assert "PyMODINIT_FUNC PyInit_render_demo(void)" in c_source
     assert "static PyObject * wrap_swap_args" in c_header
     assert "module bind_c_render_demo_wrapper" in fortran_source
@@ -512,7 +512,7 @@ def test_scalar_copy_in_out_reuses_one_binding_local_without_bridge_copy():
     assert "prik_int32_unpack_exact(bound_value_obj, &bound_value)" in c_source
     assert "bind_c_bump(&bound_value);" in c_source
     assert "PyObject * result_obj = NULL;" in c_source
-    assert "result_obj = prik_int32_to_python(&bound_value);" in c_source
+    assert "result_obj = prik_int32_to_numpy(&bound_value);" in c_source
     assert "integer(c_int32_t) :: value" in bridge_source
     assert "call native_bump(value)" in bridge_source
     assert "value =" not in bridge_source

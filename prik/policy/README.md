@@ -17,6 +17,6 @@ Raw ownership and pointer-contract metadata belongs to
 `../semantics/ownership_metadata.py`. Planning consumes completed records from
 this package through `../planning/planner.py`.
 
-For cross-stage navigation, see `docs/developer/source-map.md` and
+For cross-stage navigation, see `docs/developer/codebase-map.md` and
 `docs/developer/feature-to-code-map.md`. The canonical package reference is
 `docs/developer/packages/policy.md`.

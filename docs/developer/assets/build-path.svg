@@ -1,0 +1,158 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 515" role="img" aria-labelledby="title description">
+  <title id="title">PRIK build path</title>
+  <desc id="description">A build request enters pipeline orchestration. The Fortran source route passes through preprocessing, Fortran parsing, and Fortran-to-IR conversion. The semantic pyi route passes through pyi parsing and pyi-to-IR conversion. Both routes converge in semantic IR construction, then continue through policy, planning, code generation, printers, compiler, and an importable extension with runtime support.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#607080"/>
+    </marker>
+    <style>
+      .label { fill: #1f2d3a; font: 700 17px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .stage { fill: #1f2d3a; font: 700 13px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .central { fill: #1f2d3a; font: 700 14px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .detail { fill: #52616f; font: 14px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .route { fill: #52616f; font: 700 12px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; letter-spacing: .08em; }
+      .route-flow { fill: #1f2d3a; font: 700 15px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .connector { fill: none; stroke: #607080; stroke-width: 2.5; marker-end: url(#arrow); }
+      .join { fill: none; stroke: #607080; stroke-width: 2.5; }
+      .link { cursor: pointer; }
+      .link > rect { transition: fill 120ms ease, stroke 120ms ease, stroke-width 120ms ease; }
+      .link:hover > rect, .link:focus > rect { fill: #d9eeea; stroke: #0f514c; stroke-width: 3; }
+      .link:focus { outline: none; }
+      .detail-panel { opacity: 0; pointer-events: none; transition: opacity 120ms ease; }
+      .link:hover .detail-panel, .link:focus .detail-panel { opacity: 1; }
+      .detail-title { fill: #d9eeea; font: 700 14px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .detail-copy { fill: #ffffff; font: 14px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      @media (prefers-reduced-motion: reduce) { .link > rect, .detail-panel { transition: none; } }
+    </style>
+  </defs>
+
+  <rect x="1" y="1" width="958" height="513" rx="16" fill="#fbfcfd" stroke="#d8e1e8" stroke-width="2"/>
+  <g aria-hidden="true">
+    <rect x="40" y="424" width="880" height="74" rx="10" fill="#f5fbfa" stroke="#b8d9d5" stroke-width="1.5"/>
+    <text x="62" y="452" class="detail-title" style="fill: #176b64">Stage details</text>
+    <text x="62" y="478" class="detail" style="font-size: 14px">Hover or focus a box to read its role. Select it to open its component guide.</text>
+  </g>
+
+  <a href="../packages/pipeline/" target="_top" class="link" aria-label="Open the Pipeline Component guide. A public source-first or contract-first build request enters pipeline orchestration with output and native-build configuration.">
+    <rect x="210" y="30" width="190" height="48" rx="10" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
+    <text x="305" y="60" text-anchor="middle" class="label">Build request</text>
+    <g class="detail-panel" aria-hidden="true">
+      <rect x="40" y="424" width="880" height="74" rx="10" fill="#253746" stroke="#0f514c" stroke-width="1.5"/>
+      <text x="62" y="452" class="detail-title">Build request</text>
+      <text x="62" y="478" class="detail-copy">A public source-first or contract-first request enters pipeline orchestration with output and native-build configuration.</text>
+    </g>
+  </a>
+  <line x1="400" y1="54" x2="454" y2="54" class="connector"/>
+  <a href="../packages/pipeline/" target="_top" class="link" aria-label="Open the Pipeline Component guide. It coordinates stages, artifacts, native commands, and the final result without deciding policy.">
+    <rect x="460" y="30" width="290" height="48" rx="10" fill="#e7f4f2" stroke="#176b64" stroke-width="2.5"/>
+    <text x="605" y="60" text-anchor="middle" class="label">Pipeline orchestration</text>
+    <g class="detail-panel" aria-hidden="true">
+      <rect x="40" y="424" width="880" height="74" rx="10" fill="#253746" stroke="#0f514c" stroke-width="1.5"/>
+      <text x="62" y="452" class="detail-title">Pipeline orchestration</text>
+      <text x="62" y="478" class="detail-copy">Coordinates stages, artifacts, native commands, and the final result without deciding semantic policy.</text>
+    </g>
+  </a>
+  <line x1="605" y1="78" x2="605" y2="110" class="connector"/>
+
+  <path d="M605 110 V122 H255 V145" class="connector"/>
+  <path d="M605 110 V122 H705 V145" class="connector"/>
+  <a href="../packages/preprocessing/" target="_top" class="link" aria-label="Open the Preprocessing Stage guide. Fortran source is prepared, parsed, and converted into shared semantic IR.">
+    <rect x="40" y="145" width="430" height="72" rx="10" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
+    <text x="62" y="169" class="route">SOURCE-FIRST ROUTE</text>
+    <text x="255" y="190" text-anchor="middle" class="route-flow">Fortran source → preprocessing</text>
+    <text x="255" y="209" text-anchor="middle" class="route-flow">Fortran parser → Fortran-to-IR</text>
+    <g class="detail-panel" aria-hidden="true">
+      <rect x="40" y="424" width="880" height="74" rx="10" fill="#253746" stroke="#0f514c" stroke-width="1.5"/>
+      <text x="62" y="452" class="detail-title">Source-first route</text>
+      <text x="62" y="478" class="detail-copy">Fortran source is prepared, parsed, and converted into shared semantic IR. This route begins at preprocessing.</text>
+    </g>
+  </a>
+  <a href="../packages/parsers/" target="_top" class="link" aria-label="Open the Parsers Stage guide. An editable semantic pyi contract is parsed and converted into shared semantic IR.">
+    <rect x="490" y="145" width="430" height="72" rx="10" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
+    <text x="512" y="169" class="route">CONTRACT-FIRST ROUTE</text>
+    <text x="705" y="190" text-anchor="middle" class="route-flow">Semantic .pyi → .pyi parser</text>
+    <text x="705" y="209" text-anchor="middle" class="route-flow">.pyi-to-IR conversion</text>
+    <g class="detail-panel" aria-hidden="true">
+      <rect x="40" y="424" width="880" height="74" rx="10" fill="#253746" stroke="#0f514c" stroke-width="1.5"/>
+      <text x="62" y="452" class="detail-title">Contract-first route</text>
+      <text x="62" y="478" class="detail-copy">An editable semantic .pyi contract is parsed and converted into shared semantic IR. This route begins in parsers.</text>
+    </g>
+  </a>
+
+  <path d="M255 217 V244 H155" class="join"/>
+  <path d="M705 217 V244 H155" class="join"/>
+  <line x1="155" y1="244" x2="155" y2="264" class="connector"/>
+  <a href="../packages/semantics/" target="_top" class="link" aria-label="Open the Semantics Stage guide. It creates the shared language-neutral semantic model before interoperability policy.">
+    <rect x="40" y="264" width="230" height="56" rx="12" fill="#e7f4f2" stroke="#176b64" stroke-width="2.5"/>
+    <text x="155" y="287" text-anchor="middle" class="detail">one shared semantic model</text>
+    <text x="155" y="309" text-anchor="middle" class="central">Semantic IR construction</text>
+    <g class="detail-panel" aria-hidden="true">
+      <rect x="40" y="424" width="880" height="74" rx="10" fill="#253746" stroke="#0f514c" stroke-width="1.5"/>
+      <text x="62" y="452" class="detail-title">Semantic IR construction</text>
+      <text x="62" y="478" class="detail-copy">Creates a shared, language-neutral semantic model before any Python interoperability decision is made.</text>
+    </g>
+  </a>
+
+  <line x1="155" y1="320" x2="155" y2="350" class="connector"/>
+  <a href="../packages/policy/" target="_top" class="link" aria-label="Open the Policy Stage guide. It completes all interoperability decisions required by planning.">
+    <rect x="96" y="350" width="118" height="52" rx="9" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
+    <text x="155" y="382" text-anchor="middle" class="stage">Policy</text>
+    <g class="detail-panel" aria-hidden="true">
+      <rect x="40" y="424" width="880" height="74" rx="10" fill="#253746" stroke="#0f514c" stroke-width="1.5"/>
+      <text x="62" y="452" class="detail-title">Policy</text>
+      <text x="62" y="478" class="detail-copy">Completes export, ownership, transport, projection, lifetime, and support decisions required by planning.</text>
+    </g>
+  </a>
+  <line x1="214" y1="376" x2="236" y2="376" class="connector"/>
+  <a href="../packages/planning/" target="_top" class="link" aria-label="Open the Planning Stage guide. It projects completed policy into a deterministic plan without inventing policy.">
+    <rect x="242" y="350" width="118" height="52" rx="9" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
+    <text x="301" y="382" text-anchor="middle" class="stage">Planning</text>
+    <g class="detail-panel" aria-hidden="true">
+      <rect x="40" y="424" width="880" height="74" rx="10" fill="#253746" stroke="#0f514c" stroke-width="1.5"/>
+      <text x="62" y="452" class="detail-title">Planning</text>
+      <text x="62" y="478" class="detail-copy">Projects completed policy into a deterministic plan, validating and ordering operations without inventing policy.</text>
+    </g>
+  </a>
+  <line x1="360" y1="376" x2="382" y2="376" class="connector"/>
+  <a href="../packages/codegen/" target="_top" class="link" aria-label="Open the Code Generation Stage guide. It lowers plan-selected binding, bridge, and Python-facade mechanisms into generated representations.">
+    <rect x="388" y="350" width="130" height="52" rx="9" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
+    <text x="453" y="382" text-anchor="middle" class="stage">Code generation</text>
+    <g class="detail-panel" aria-hidden="true">
+      <rect x="40" y="424" width="880" height="74" rx="10" fill="#253746" stroke="#0f514c" stroke-width="1.5"/>
+      <text x="62" y="452" class="detail-title">Code generation</text>
+      <text x="62" y="478" class="detail-copy">Lowers plan-selected binding, bridge, and Python-facade mechanisms into structured generated representations.</text>
+    </g>
+  </a>
+  <line x1="518" y1="376" x2="540" y2="376" class="connector"/>
+  <a href="../packages/printers/" target="_top" class="link" aria-label="Open the Printers Stage guide. It serializes generated representations into source text without changing behavior.">
+    <rect x="546" y="350" width="108" height="52" rx="9" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
+    <text x="600" y="382" text-anchor="middle" class="stage">Printers</text>
+    <g class="detail-panel" aria-hidden="true">
+      <rect x="40" y="424" width="880" height="74" rx="10" fill="#253746" stroke="#0f514c" stroke-width="1.5"/>
+      <text x="62" y="452" class="detail-title">Printers</text>
+      <text x="62" y="478" class="detail-copy">Serializes generated representations into C, Fortran, and Python-facing source text without changing behavior.</text>
+    </g>
+  </a>
+  <line x1="654" y1="376" x2="676" y2="376" class="connector"/>
+  <a href="../packages/compiler/" target="_top" class="link" aria-label="Open the Compiler Stage guide. It records or runs native compile and link commands for generated and user-provided sources.">
+    <rect x="682" y="350" width="108" height="52" rx="9" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
+    <text x="736" y="382" text-anchor="middle" class="stage">Compiler</text>
+    <g class="detail-panel" aria-hidden="true">
+      <rect x="40" y="424" width="880" height="74" rx="10" fill="#253746" stroke="#0f514c" stroke-width="1.5"/>
+      <text x="62" y="452" class="detail-title">Compiler</text>
+      <text x="62" y="478" class="detail-copy">Records or runs native compile and link commands for generated and user-provided sources.</text>
+    </g>
+  </a>
+  <line x1="790" y1="376" x2="806" y2="376" class="connector"/>
+  <a href="../packages/runtime/" target="_top" class="link" aria-label="Open the Runtime Component guide. The linked extension and runtime support expose the planned public Python API.">
+    <rect x="812" y="350" width="118" height="52" rx="9" fill="#e7f4f2" stroke="#176b64" stroke-width="2"/>
+    <text x="871" y="374" text-anchor="middle" class="stage">Extension</text>
+    <text x="871" y="391" text-anchor="middle" class="detail" style="font-size: 12px">+ runtime support</text>
+    <g class="detail-panel" aria-hidden="true">
+      <rect x="40" y="424" width="880" height="74" rx="10" fill="#253746" stroke="#0f514c" stroke-width="1.5"/>
+      <text x="62" y="452" class="detail-title">Extension and runtime support</text>
+      <text x="62" y="478" class="detail-copy">The linked extension and runtime support are imported by Python and expose the planned public API.</text>
+    </g>
+  </a>
+
+</svg>

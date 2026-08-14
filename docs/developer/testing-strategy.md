@@ -1,255 +1,107 @@
 ---
 title: Testing Strategy
 audience: developers, contributors
-prerequisites: repository structure
-related: workflows/quality-assurance.md, workflows/contributing.md
+prerequisites: PRIK Architecture, Feature-to-Code Map
+related: architecture.md, feature-to-code-map.md, workflows/quality-assurance.md
 status: maintained
-publication: draft
+publication: reviewed
 ---
 
 # Testing Strategy
 
-The canonical ownership and command map is
-[`../../tests/README.md`](../../tests/README.md). The Fortran feature index is
-[`../../tests/fortran/README.md`](../../tests/fortran/README.md). Maintainers
-record the active migration gates in
-`docs/developer/roadmap/fortran-test-suite-cleanup-checklist.md`.
+This page explains how PRIK assigns test ownership and how to choose the
+smallest evidence that can prove a change. `tests/README.md` is the canonical
+test-suite directory map; `tests/fortran/README.md` is the Fortran feature
+index and command map.
 
-## Choose tests by language, feature, and stage
+## Test Ownership
 
-Tests first answer which native input contract they exercise:
+| Change or behavior | Test owner | What it proves |
+| --- | --- | --- |
+| Documentation content, metadata, navigation, or examples | `tests/docs/` | Published documentation and its repository contracts. |
+| Maintainer command or CI-support behavior | `tests/tools/` | Repository tooling behavior. |
+| Release or automation safety | `tests/workflows/` | Workflow safety properties. |
+| User-visible Fortran or semantic `.pyi` wrapper behavior | `tests/fortran/<feature>/<stage>/` | The documented capability at its owning stage. |
+| Internal cross-feature mechanism | `tests/fortran/infrastructure/<owner>/` | A mechanism with no honest user-visible feature owner. |
 
-- `tests/docs/` owns documentation metadata, navigation, examples, and content;
-- `tests/tools/` owns maintainer commands and CI support scripts;
-- `tests/workflows/` owns exceptional automation-safety checks;
-- `tests/fortran/` owns Fortran input and semantic `.pyi` wrapper behavior;
-<!-- PRIK_C_DOCS_START
-- `tests/c/` owns C input-language inspection behavior.
-PRIK_C_DOCS_END -->
-
-Within Fortran, user-visible behavior is feature first and pipeline stage
-second:
+For user-visible behavior, choose the feature before the stage:
 
 ```text
 tests/fortran/<documented-feature>/<owning-stage>/
 ```
 
-This makes a documentation feature independently navigable:
+`infrastructure/` is not a fallback for tests that touch many packages. A
+feature remains feature-owned when it crosses parsing, policy, planning, and
+lowering. Infrastructure is only for reusable internal mechanisms that have no
+public-capability owner.
+
+## Stable Contracts
+
+Tests protect observable behavior, public interfaces, serialized or generated
+formats, safety properties, and explicit architectural boundaries. A refactor
+that preserves those contracts should not require unrelated test changes.
+
+Do not freeze prose, heading order, private names, complete inventories, or
+incidental code and directory layout. Test structure only when tooling consumes
+it or it prevents a named, costly failure. When an intentional change breaks a
+test, identify its invariant: keep or rewrite a durable contract; remove a test
+that records only the old implementation or a review preference.
+
+Documentation tests verify publication metadata, links, public references,
+marked user examples, and package-guide command/result pairs. The page is the
+expected-output source: stable output is exact; excerpts and target-dependent
+output are checked only for the facts shown. Editorial wording and organization
+remain contributor-review responsibilities.
+
+## Evidence By Stage
+
+Run the earliest stage that can prove the invariant.
+
+| Stage | Evidence |
+| --- | --- |
+| `parsing/` | Source facts and source-located diagnostics. |
+| `probes/` or `preprocessing/` | Compiler-derived target facts and prepared source. |
+| `semantics/` | Language facts become the intended semantic IR. |
+| `policy/` | Ownership, lifetime, projection, mutability, storage, and support choices are complete. |
+| `codegen/` or `printers/` | Completed policy selects the intended plan, mechanism, or generated text. |
+| `compiling/` or `pipeline/` | Commands, inputs, artifacts, and build transitions are correct. |
+| `runtime/` | Shared runtime mechanisms behave correctly outside a complete feature journey. |
+| `end_to_end/` | Input produces an imported extension whose public Python behavior is called and verified. |
+
+An unsupported form belongs at its first decisive stage. Assert the owning
+PRIK diagnostic there; do not force a known policy rejection through native
+compilation only to observe a later failure.
+
+## End-To-End Evidence
+
+End-to-end tests establish a public wrapper journey: source or intentional
+`.pyi` input, generated wrapper, compilation and link, imported extension, and
+a call to the public Python surface. Successful compilation or import alone is
+not end-to-end evidence.
+
+Full-library BLAS and LAPACK evidence is a separate real-library lane. Do not
+run LAPACK locally unless explicitly requested.
+
+## Test And Fixture Placement
+
+Keep a test and its checked fixtures with their final behavioral owner. Use
+feature-local `end_to_end/fixtures/` for complete native projects; keep
+parser, semantic, and policy setup with the corresponding stage. Generate
+build products and temporary contracts in pytest temporary directories.
+
+Check in generated `.pyi` only when its exact text, imports, placement, or
+package shape is the invariant. Shared test support may provide builders and
+assertions, but it must not become an alternate import surface for production
+code.
+
+## Selecting And Expanding Verification
+
+Run the narrowest owner first:
 
 ```bash
-python3 -m pytest -q tests/fortran/arrays
-python3 -m pytest -q tests/fortran/derived_types
-python3 -m pytest -q tests/fortran/source_parsing
-python3 -m pytest -q tests/fortran/command_line_interface
-python3 -m pytest -q tests/fortran/pyi_contracts/calls_and_results
+python3 -m pytest -q tests/fortran/<feature>/<stage>
 ```
 
-Use `tests/fortran/infrastructure/` only for a cross-feature mechanism with no
-honest public-capability owner. Public Fortran parsing, preprocessing,
-command-line behavior, and semantic-IR conversion have the explicit
-`source_parsing/`, `source_preprocessing/`, `command_line_interface/`, and
-`semantic_ir/` owners. Generic internal policy dispatch, typed-plan mechanics,
-compiler construction, and runtime-handle plumbing may remain infrastructure.
-Ordinary regressions stay with their feature and stage. Minimized,
-cross-feature parser interactions discovered in real-world sources belong in
-`tests/fortran/source_parsing/parsing/`.
-
-Treat a full third-party parser corpus as temporary evidence. Use contextual
-line/branch coverage and named model assertions to identify what it uniquely
-proves, replace those facts with minimized regressions, and delete the upstream
-snapshot once the focused suite subsumes it. Aggregate coverage alone is not a
-reason to keep hundreds of sources. A temporary corpus may be staged outside
-the authoritative test tree while it is being reduced.
-
-## Stage tests and end-to-end tests
-
-Stage tests answer where a fact, policy decision, mechanism, or diagnostic is
-owned. Use the earliest stage that can prove the invariant:
-
-- parsing for source-model facts and parser diagnostics;
-- probes or preprocessing for compiler facts and source processing;
-- semantics for IR construction;
-- policy for ownership, transfer, destruction, writeback, nullability,
-  projection, storage, getter/setter, and Python-exposure decisions;
-- wrapper code generation for typed-plan dispatch and emitted mechanisms;
-- compiling or pipeline for commands, native inputs, artifacts, and build
-  transitions; and
-- runtime for shared execution mechanisms that are not complete feature
-  journeys.
-
-End-to-end tests answer whether a supported public feature survives the whole
-journey. They start from user-owned Fortran source or an intentional `.pyi`,
-generate wrappers, compile and link an extension, import it from an isolated
-build directory, call the public Python surface, and verify visible behavior.
-Successful compilation or import without a public call is insufficient.
-
-Feature end-to-end tests live below the owning feature's `end_to_end/`
-directory and carry `fortran_end_to_end`. Full-library integration nodes carry
-`real_library`. The complete correctness examples under `examples/blas/` and
-`examples/lapack/` use both markers and run only in the dedicated BLAS/LAPACK
-lane.
-
-The opt-in numerical showcases under
-`tests/fortran/building_shared_library/end_to_end/real_libraries/` locate a
-sibling checkout or an explicitly configured source directory, build the real
-library sources, call representative generated routines, and compare against
-independently known numerical answers. `PRIK_FFTPACK_SOURCE_DIR` and
-`PRIK_MINPACK_SOURCE_DIR` override the default sibling `fftpack/src` and
-`minpack/src` locations. The tests skip when the corresponding checkout is
-absent.
-
-## Diagnostics and unsupported behavior
-
-Put an unsupported case at its first decisive stage and assert a stable prik
-diagnostic. Do not force a known policy rejection through compilation merely
-to observe a compiler failure.
-
-Error cases stay with their owning feature. The Error Handling feature owns
-only behavior that is itself an error-handling contract, such as native-status
-projection, exception type/message behavior, cleanup on failure, and public
-diagnostic routing. `tests/fortran/CONTRACT_COVERAGE.md` indexes negative
-evidence and terminal stages across all features.
-
-## Fixture ownership
-
-Keep fixtures beside their final behavioral owner:
-
-- parser-only sources with parsing;
-- semantic/policy setup with that stage;
-- complete native projects below feature-local `end_to_end/fixtures/`;
-- edited `.pyi` below the edit family it proves;
-- minimized real-world parser interactions with source parsing; and
-- the authoritative full BLAS source set below `examples/blas/native/`, shared
-  by the correctness example, full-library integration, LAPACK CI build, and
-  build comparison tooling;
-- the authoritative Reference LAPACK implementation corpus below
-  `examples/lapack/native/`, shared by its correctness example and full-library
-  integration.
-
-Generate build products and temporary contracts in temporary directories.
-Compiler capability probes must also run with a temporary working directory so
-side products such as Fortran `.mod` files cannot escape into the repository
-root merely because the primary object or executable has an explicit output
-path. Check in generated `.pyi` only where exact generation text,
-imports, placement, or package shape is the invariant.
-
-For BLAS behavior, source `examples/blas/build_all.sh`, then run
-`python3 -m pytest -q examples/blas/tests` or one of its named test functions.
-The aggregate script sources the exact documented `build_prik.sh` and
-`build_f2py.sh` sequences. This compiles the sorted 155-source implementation
-once and builds each wrapper once; the direct f2py script compiles the
-committed reviewed `blas.pyf` and links the native artifact produced by the
-PRIK script.
-Documentation source markers require the displayed commands to remain
-byte-for-byte equal to the executed scripts. `test_routine_coverage.py` audits
-the parsed source inventory, f2py signature drift, both export sets, visible
-named tests, and terminal outcomes. The dedicated CI lane explicitly adds
-`examples/blas/ci/full_surface.py` to the same pytest invocation and does not
-rebuild its wrappers afterward. User-run correctness tests and maintainer-only
-audits therefore have separate directories.
-
-For LAPACK behavior, the dedicated lane sources `examples/lapack/build_all.sh`
-and then runs `python3 -m pytest -q examples/lapack/tests`. The aggregate
-script sources the exact documented `build_prik.sh` and `build_f2py.sh`
-sequences. The complete native corpus is compiled once, each wrapper is built
-once, and the direct f2py script compiles the committed reviewed `lapack.pyf`
-against the native artifact produced by the PRIK script while testing the
-127-routine SciPy 1.18.0 `float64` inventory. Documentation source markers keep
-the displayed commands equal to the executed scripts. The inventory audit
-fails on SciPy drift, signature drift, missing sources or exports, missing
-explicitly named tests, and divergent documentation claims. CI explicitly
-adds `examples/lapack/ci/full_surface.py`
-to the same pytest invocation, reusing the complete PRIK extension to require
-all 2,066 procedure exports, including module namespaces, and run a
-non-inventory runtime smoke call. User-run
-correctness tests and maintainer-only audits have separate directories.
-
-The complete `examples/` tree is a copyable execution boundary. Example code
-may depend on an installed `prik` and its documented external toolchain, but it
-must not import repository-only helpers from `tests/`. The workflow must source
-the documented build scripts through `build_all.sh` before starting pytest,
-rather than run a second build test that repeats native compilation or wrapper
-construction.
-
-## Ownership discipline
-
-Every maintained test and checked fixture has one behavioral owner. Directory
-layout, exact file inventories, and the current organization of the tests are
-maintainer conventions rather than executable product contracts. Do not add
-tests whose only purpose is to make an intentional reorganization fail. Add a
-structural check only for a concrete, unusually costly risk that cannot be
-protected by a behavior test. Cross-feature product mechanics require an
-explicit infrastructure owner; documentation and maintainer tools use their
-named top-level feature owners.
-
-A test has one of two navigation shapes after language ownership is known:
-
-- user-visible behavior lives under
-  `tests/fortran/<documented-feature>/<owning-stage>/`; or
-- a genuinely internal mechanism lives under
-  `tests/fortran/infrastructure/<production-package>/test_<production-module>.py`.
-
-For example, semantic-policy internals use
-`infrastructure/semantics/test_ownership.py` and
-`test_policy_completion.py`; wrapper internals use
-`infrastructure/codegen/test_plan.py`, `test_planner.py`, and
-`tests/fortran/infrastructure/pipeline/test_wrapper_generator.py`. Other internal owners mirror `prik/compiler/`,
-`prik/contracts/`, `prik/pipeline/`, `prik/runtime/`, and the remaining source
-packages when they have real internal tests. Do not create empty mirror
-directories or combine multiple production owners in generic backend or policy
-collection modules. A retained direct-execution example
-under `if __name__ == "__main__"` is maintained by the same dedicated test
-module.
-
-Documentation tests are grouped by invariant rather than by Markdown page.
-Generic metadata, navigation, source-marker, link, and executable-example
-validators stay parameterized over applicable pages. Page-specific content
-contracts live in a module named for the documentation area they protect.
-Workflow checks belong under `tests/workflows/` only when they
-protect concrete behavior or release safety; they should not duplicate or
-freeze the current CI organization. Tests for maintainer tools and workflow
-safety and all blocking static-analysis checks run through the tracked pre-push
-hook for early feedback, together with the fast publication and user-content
-documentation checks and one compiled scalar-wrapper test that exercises the
-public source-build path through a native call. They remain in GitHub Actions
-for shared enforcement. Enable the hook once per clone with
-`git config core.hooksPath .githooks`.
-
-Test support contains reusable construction or assertion behavior, not an
-alternate import surface for production code. Tests import `pytest`, Python
-standard-library names, and production symbols from their real owners; support
-modules do not re-export them merely to shorten imports.
-
-## Required verification
-
-Run the narrowest owning directory first. After moving or splitting tests, run
-collection before execution and compare node IDs, parametrized suffixes,
-markers, skips, and xfails. Then run every destination touched by the move.
-
-For code or test changes, run the complete static-analysis suite documented in
-`AGENTS.md`. Documentation-only changes use the focused documentation checks
-and whitespace check.
-
-Do not run the complete coverage workflow after each feature. The migration
-records one CI-equivalent baseline and one final new-suite-only comparison.
-Both use `COVERAGE_PROCESS_START=pyproject.toml`, combine subprocess data with
-`python3 -m coverage combine`, and retain per-file executed line and branch
-data. LAPACK remains CI-only unless a maintainer explicitly requests a local
-run.
-
-## Fixture Regeneration
-
-Regenerate broad fixture sets only after a focused test explains the intended
-change. Update the narrowest affected owner:
-
-```bash
-python3 tests/fortran/source_parsing/parsing/generate_parser_goldens.py \
-  tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
-python3 tests/fortran/semantic_ir/semantics/generate_semantic_fixtures.py
-WRAPPER_UPDATE_PYI_FIXTURES=1 python3 -m pytest -q \
-  tests/fortran/semantic_pyi_format/pipeline/test_contract_package_generation.py
-```
-
-Include regenerated artifacts only when the parser, semantic IR, or public
-contract representation intentionally changed. Never regenerate a broad set to
-hide uncertainty or unrelated drift.
+After moving or splitting tests, collect first, then run every destination
+touched by the move. The [quality-assurance workflow](workflows/quality-assurance.md)
+defines the required static analysis and broader verification.

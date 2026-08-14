@@ -1,3 +1,16 @@
+"""Carry completed native-array handle policy into planning and build setup.
+
+``completion`` attaches ``NativeArrayHandlePolicy`` records to descriptor-backed
+array declarations. This module does not infer their ownership, lifetime, or
+operations. It provides immutable ABI selectors and dispatchers for lower
+stages, plus ``native_array_handle_build_requirements`` to collect generated
+header requirements from completed semantic modules.
+
+Ordinary arrays select the data-buffer ABI; native allocatable and pointer
+handles select the descriptor ABI. Missing completed policy is an error rather
+than a reason to choose a fallback.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping

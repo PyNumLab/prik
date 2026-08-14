@@ -22,9 +22,8 @@ relying on private conversation or implied project knowledge.
 Move an item from the open queue to completed content evidence only when all of
 these are true:
 
-- [ ] The page status is accurate: `maintained` for current public behavior,
-  `design` for accepted architecture, or `not-yet-implemented` for explicit
-  future behavior.
+- [ ] The page status is accurate: `maintained` for current public behavior or
+  `not-yet-implemented` for explicit future behavior.
 - [ ] The page explains what is supported now and what is unsupported without
   exposing internal test-evidence ledgers in public user-facing prose.
 - [ ] User-facing pages include a task-oriented workflow, expected output or API
@@ -83,7 +82,7 @@ more specialized pages.
   unsupported features, and where to report bugs.
 PRIK_C_DOCS_END -->
 
-### Contributor Architecture And Package Guides
+### Contributor Architecture And Component Guides
 
 - [x] `docs/developer/architecture.md`: shallow repository/package maps,
   complete wrapper workflow, stage authority, root entrypoints, change routes,
@@ -91,30 +90,21 @@ PRIK_C_DOCS_END -->
 - [x] `docs/developer/packages/`: one maintained guide per top-level production
   package with local structure, essential objects, executable examples, expected
   output, focused tests, change routes, and invariants.
-- [x] `docs/developer/concepts/datatype-lifecycle.md`: cross-stage datatype
-  authority from target probing through semantic identity, policy, backend
-  representation, and runtime validation.
 - [x] `docs/developer/workflows/contributing.md`: documentation-first changes,
   ownership lookup, support evidence, test selection, pull requests, review,
   and contribution licensing.
 - [x] `docs/developer/workflows/quality-assurance.md`: active blocking/advisory
   tools, exact commands, coverage parity, compiler lanes, and local limits.
-- [x] `docs/developer/workflows/ci.md`: staged GitHub validation,
-  documentation deployment, benchmark evidence, and stable ruleset context.
-- [x] `docs/developer/workflows/release.md`: package identity, trusted
-  publishing, artifact review, publication, and clean-environment verification.
+- [x] `docs/developer/workflows/ci.md`: pull-request validation and the hosted
+  evidence that follows local verification.
 - [x] `docs/developer/workflows/documentation.md`: documentation placement,
-  metadata, publication, navigation, and continuous quality.
-- [x] `docs/developer/design/multilanguage-runtime.md`: explicit long-term
-  architecture separated from current support claims.
-- [x] `docs/developer/design/wrapper-open-decisions.md`: unresolved or
-  revisitable design questions separated from implemented package contracts.
+  local verification, and draft review.
 - [x] `docs/developer/deferred/c-parser.md`: retained but unpublished C
   parser/C-to-IR material, separate from the generated CPython C backend.
 
-The old TODO-only contributor pages, duplicate pipeline/source maps, completed
-wrapper-plan and native-array migration ledgers, and separate internal/design
-indexes were removed after their stable facts moved to these owners.
+The old TODO-only contributor pages, duplicate pipeline/codebase maps, completed
+wrapper-plan and native-array migration ledgers, and separate internal indexes
+were removed after their stable facts moved to these owners.
 
 ### Tutorials And Examples
 
@@ -159,8 +149,7 @@ indexes were removed after their stable facts moved to these owners.
 - [x] `docs/developer/packages/index.md`: route contributors from each production
   package to its canonical guide.
 - [x] `docs/developer/index.md`: distinguish implemented package references,
-  cross-cutting concepts, workflows, design proposals, active roadmaps, and
-  deferred input-language material.
+  workflows, active roadmaps, and deferred input-language material.
 - [ ] Public documentation site publication gate: deploy the existing MkDocs
   documentation as the project website only after all of the following are
   true; do not create a separate marketing-content system for this milestone.
@@ -200,7 +189,7 @@ primary placeholder queue.
 - [x] `docs/developer/architecture.md`: canonical contributor architecture
   orientation and folder-by-folder rollout plan.
 - [x] `docs/developer/workflows/documentation.md`: maintained two-area
-  documentation and publication contract.
+  documentation and local-verification workflow.
 - [x] `docs/user/getting-started/index.md`: maintained beginner route from
   installation through the normal rebuild workflow.
 - [x] `docs/user/getting-started/installation.md`: maintained user and contributor
@@ -279,7 +268,7 @@ primary placeholder queue.
 - [x] `docs/user/language-support/feature-matrix.md`: maintained support matrix.
 - [x] `docs/developer/workflows/contributing.md`: maintained contributor
   development and review workflow.
-- [x] `docs/developer/source-map.md`: maintained source route map.
+- [x] `docs/developer/codebase-map.md`: maintained package and module ownership map.
 - [x] `docs/developer/feature-to-code-map.md`: maintained feature route
   map.
 - [x] `docs/developer/architecture.md`: maintained shallow repository/package
@@ -289,7 +278,7 @@ primary placeholder queue.
 - [x] `docs/developer/workflows/quality-assurance.md`: maintained quality and QA
   policy reference.
 - [x] `docs/developer/packages/index.md`: maintained package ownership map and
-  detailed package guide index.
+  detailed architecture component guide index.
 - [x] `docs/developer/packages/policy.md`: maintained
   ownership philosophy, completed policy vocabulary, supported lifetime triples,
   pointer-policy boundary, validation order, source routes, and safety boundary.

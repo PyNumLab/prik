@@ -2,17 +2,15 @@
 title: Contributing Workflow
 audience: developers, maintainers, contributors
 prerequisites: repository checkout, Python 3.10 or newer
-related: ../architecture.md, quality-assurance.md, ../testing-strategy.md, documentation.md
+related: ../architecture.md, ../codebase-map.md, ../feature-to-code-map.md, ../testing-strategy.md, quality-assurance.md, documentation.md
 status: maintained
 publication: reviewed
 ---
 
 # Contributing Workflow
 
-This is the practical workflow for changing PRIK. The root
-[`CONTRIBUTING.md`](../../../CONTRIBUTING.md) is the short public entrypoint;
-this page supplies the complete contributor sequence without duplicating
-package architecture.
+This page is the practical path for changing PRIK. The root
+[`CONTRIBUTING.md`](../../../CONTRIBUTING.md) is the short public entrypoint.
 
 ## Prepare The Checkout
 
@@ -21,170 +19,67 @@ python3 -m pip install -e ".[qa]"
 git config core.hooksPath .githooks
 ```
 
-Create a focused branch and begin with the smallest test owner for the
-behavior. Do not start with the full suite while discovering the change.
+This enables PRIK's repository pre-push checks for this checkout.
+
+Create a focused branch. Start with the smallest test owner for the behavior,
+not the full suite.
 
 ## Change Workflow
 
-1. Identify the public behavior, limitation, or internal invariant.
-2. Use the [architecture guide](../architecture.md),
-   [source map](../source-map.md), or
-   [feature-to-code map](../feature-to-code-map.md) to find its owner.
-3. Read the owning package guide and relevant user contract before editing.
-4. Update the documentation contract first when public behavior, ownership,
-   or limitations change.
-5. Add or update focused tests at the earliest stage that proves the behavior.
-6. Implement the change in the owning stage and extend downstream stages only
-   when their representation or mechanism genuinely changes.
-7. Run focused verification, then the required static and broader checks.
-8. Add a concise **Unreleased** changelog entry for visible behavior,
-   workflows, examples, supported features, or limitations.
+1. Define the behavior, limitation, diagnostic, or internal invariant.
+2. Find its owner through the [architecture guide](../architecture.md),
+   [codebase map](../codebase-map.md), or
+   [feature-to-code map](../feature-to-code-map.md). Read the owning
+   architecture component guide and any relevant user contract.
+3. Update the documentation contract first when public behavior, ownership, or
+   limitations change.
+4. Use the [testing strategy](../testing-strategy.md) to add or update focused
+   evidence at the earliest stage that can prove the behavior.
+5. Change the owning stage. Extend later stages only when their representation
+   or mechanism must change.
+6. Run focused verification, then the checks required by
+   [Quality Assurance](quality-assurance.md).
+7. Add an **Unreleased** changelog entry for visible behavior, supported
+   features, examples, workflows, or limitations.
 
-For policy-sensitive wrapper work, semantic decisions must be complete before
-planning. A binding or bridge change should implement a newly selected plan
-mechanism, not infer a new policy from datatype, intent, aliases, or storage.
+For wrapper work, policy must complete every semantic decision before planning.
+Binding and bridge code implement the selected plan; they do not infer policy
+from datatype, intent, aliases, or storage.
 
-## Support Evidence Rule
+## Evidence And Documentation
 
-Documentation may claim support only when current implementation and evidence
-prove it. Acceptable evidence includes:
+Documentation may claim support only when implementation and evidence prove it.
+Parser evidence does not establish semantic or wrapper support, and compilation
+does not establish runtime behavior. A public wrapper claim needs a build,
+import, call, and observable result. Unsupported input should fail at the first
+stage with enough facts for a stable diagnostic.
 
-- a focused test for the contract;
-- a maintained golden that proves exact generated representation;
-- a checked repository command using a maintained fixture; or
-- a compiled/imported/called runtime test for wrapper behavior.
+Architecture component guides may show a production-file command and
+representative result.
+The documentation suite runs those pairs and uses the page as the expected
+output. Stable output is exact; excerpts and target-dependent output are
+checked only for the facts shown. See
+[Documentation maintenance](documentation.md) when adding executable Markdown
+examples.
 
-Parser support does not establish semantic or wrapper support. Compilation
-alone does not establish runtime behavior. Unsupported cases should fail at
-the earliest stage with enough facts to report a stable diagnostic.
+Use the [testing strategy](../testing-strategy.md) for test ownership. Keep
+user-visible behavior in its feature owner, not `infrastructure/`. A compiled
+test must import and call the generated API; build success alone is not enough.
 
-## Documentation Examples
+## Stage Boundaries
 
-Important production files expose small public-API examples under
-`if __name__ == "__main__"`; package guides document their exact commands and
-outputs. Their centralized execution owner is
-[`test_execution_examples.py`](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py).
+Add a source fact in parsing, its language-neutral meaning in semantics, and
+ownership or support decisions in policy. Planning projects completed policy;
+code generation, printing, and compilation implement that projection. Put a
+new diagnostic at the first stage that can explain it. The architecture and
+architecture component guides describe these boundaries in detail.
 
-Markdown snippets use the repository's checked markers:
+## Pull Request
 
-````markdown
-<!-- prik-doc-test: exact -->
-```bash
-python3 -m prik parse path/to/example.f90
-```
-
-<!-- prik-doc-test-output -->
-```text
-File: path/to/example.f90
-...
-```
-````
-
-Use `prik-doc-test: run` when only successful execution is stable. Use
-`prik-doc-source` for fixture-backed source blocks. Do not mark placeholder,
-checkout-modifying, compiler-environment-dependent, or intentionally failing
-commands as executable documentation.
-
-Run the example documentation checks with:
-
-```bash
-python3 -m pytest -q tests/docs/test_examples.py
-```
-
-## Selecting Tests
-
-Use the [testing strategy](../testing-strategy.md) for the authoritative
-placement rules. Common starting points are:
-
-```bash
-python3 -m pytest -q tests/fortran/source_parsing/parsing/
-python3 -m pytest -q tests/fortran/semantic_ir/semantics/
-python3 -m pytest -q tests/fortran/infrastructure/semantics/
-python3 -m pytest -q tests/fortran/infrastructure/codegen/
-python3 -m pytest -q tests/fortran/command_line_interface/pipeline/
-python3 -m pytest -q tests/docs
-```
-
-Use a feature-local `policy/`, `codegen/`, `runtime/`, or `end_to_end/` owner
-when the behavior belongs to a documented feature. Compiled tests must import
-and call the generated API; build success alone is insufficient.
-
-## Common Change Routes
-
-### Add A Fortran Construct
-
-1. Add the smallest parser example under
-   `tests/fortran/source_parsing/parsing/` or the feature's parsing owner.
-2. Preserve the new source fact in `prik/parsers/fortran/`; add model fields
-   only when downstream consumers need them.
-3. Extend `prik/semantics/fortran2ir.py` and semantic tests only if the
-   language-neutral contract changes.
-4. Complete any new ownership, projection, setter, or support decision in
-   `prik/policy/` before planning.
-5. Extend the plan and named binding/bridge lowering mechanisms only when the
-   completed behavior needs a new representation.
-6. Add feature-local codegen and end-to-end evidence, then update the user
-   guide and feature matrix.
-
-Regenerate only an intentionally changed Fortran parser fixture:
-
-```bash
-python3 tests/fortran/source_parsing/parsing/generate_parser_goldens.py \
-  tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
-```
-
-### Add Semantic `.pyi` Syntax Or Projection
-
-1. Add syntax tests under `tests/fortran/semantic_pyi_format/parsing/`.
-2. Change `prik/parsers/pyi/parser.py` only if raw Python AST parsing changes;
-   otherwise interpret the syntax in `prik/semantics/pyi2ir.py`.
-3. Update `prik/printers/pyi.py` and round-trip tests for emitted syntax.
-4. Update semantic models only when the IR needs a new contract fact.
-5. Complete new behavior in policy, project it through planning, and add
-   runtime evidence when the edit affects wrappers.
-6. Update the semantic `.pyi` user reference.
-
-### Add A Code-Generation Backend Or Mechanism
-
-A new backend is not accepted merely because it prints source. It must consume
-the completed shared plan without importing construction rules, define its own
-typed representation and printer boundary, fail closed on unsupported action
-combinations, preserve shared native slots and lifecycle ordering, and provide
-focused generation plus compiled/runtime evidence. Add a backend only after
-the shared plan can express its requirements without backend-specific semantic
-policy.
-
-For a mechanism inside an existing backend, start in the narrow specialized
-emitter named by the package guide. Do not replace specialized methods with a
-flag-driven generic emitter or move semantic decisions down to make the
-mechanism easier to generate.
-
-### Add A Stage-Owned Error
-
-Report a failure at the first stage with enough facts to explain it. Syntax and
-source-processing failures belong to preprocessing/parsing; invalid contracts
-belong to semantic conversion; unsafe ownership, ABI, projection, or support
-belongs to completed policy; inconsistent plan projection belongs to planning;
-an unavailable emitted mechanism belongs to backend preflight. Assert the
-stable owner path and reason at that stage rather than forcing a known failure
-through native compilation.
-
-## Pull Request And Review
-
-Before opening a pull request:
-
-- keep the change focused and remove superseded implementation/tests/docs;
-- explain the problem, stage ownership, solution, and verification;
-- identify user-visible behavior and limitations;
-- run the applicable focused tests and the required checks from
-  [Quality Assurance](quality-assurance.md); and
-- ensure all required GitHub checks pass before merge.
-
-Review should verify dependency direction, completed-policy authority,
-diagnostic ownership, focused and end-to-end evidence, generated ABI stability,
-documentation consistency, and removal of obsolete paths. Reviewers should not
-accept a compatibility alias for an intentionally moved internal API unless
-the change explicitly requires one.
+Keep the pull request focused. Describe the problem, owner, behavior change,
+and verification; identify user-visible limitations. Remove superseded code,
+tests, and documentation. The hosted checks are summarized in
+[Pull request checks](ci.md).
 
 ## Contribution License
 

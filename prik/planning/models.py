@@ -1102,7 +1102,7 @@ class WrapperPlanDiagnostic(StageRecord):
 
 
 if __name__ == "__main__":
-    # ``plan.py`` owns the typed representation rather than semantic-policy
+    # This module owns the typed representation rather than semantic-policy
     # completion or source generation. Constructing the smallest procedure
     # plan is therefore its nearest deterministic stage-local demonstration.
     binding_function = BindingFunctionPlan(

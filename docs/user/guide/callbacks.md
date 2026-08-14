@@ -10,7 +10,7 @@ publication: reviewed
 
 # Callbacks
 
-Callbacks let wrapped Fortran call a Python function while an prik call is
+Callbacks let wrapped Fortran call a Python function while a PRIK call is
 running. They are useful for objective functions, progress hooks, custom
 transforms, and small pieces of user-defined numerical logic.
 
@@ -83,6 +83,20 @@ The lambda receives converted Python objects, not `Addr(...)` markers.
 
 ## Small Example
 
+The source, generated contract, and Python call describe the same immediate
+callback. The result stays visible below the three views.
+
+<div class="prik-example-tabs" data-prik-example-tabs markdown="1">
+<div class="prik-example-tablist" role="tablist" aria-label="Callback example">
+<button class="prik-example-tab" id="callbacks-source-tab" type="button" role="tab" aria-controls="callbacks-source" aria-selected="true">Fortran source</button>
+<button class="prik-example-tab" id="callbacks-contract-tab" type="button" role="tab" aria-controls="callbacks-contract" aria-selected="false" tabindex="-1">Generated contract</button>
+<button class="prik-example-tab" id="callbacks-python-tab" type="button" role="tab" aria-controls="callbacks-python" aria-selected="false" tabindex="-1">Python usage</button>
+</div>
+
+<div class="prik-example-panel" id="callbacks-source" role="tabpanel" aria-labelledby="callbacks-source-tab" tabindex="0" markdown="1">
+
+### Fortran source
+
 Create `callbacks.f90`:
 
 ```fortran
@@ -112,7 +126,40 @@ Build it:
 python3 -m prik callbacks.f90 --out-dir build/callbacks
 ```
 
-**Python usage:**
+</div>
+
+<div class="prik-example-panel" id="callbacks-contract" role="tabpanel" aria-labelledby="callbacks-contract-tab" tabindex="0" markdown="1">
+
+## Generated Contract
+
+The generated `callbacks_api.pyi` is:
+
+```python
+from prik.contracts import Addr, Arg, Float64, In, native_call, prototype
+
+@prototype
+def scalar_callback(
+    value: In(Addr(Float64))
+) -> Float64: ...
+
+@native_call([Arg(0), Addr(Arg(1))])
+def apply(
+    callback: scalar_callback,
+    value: Float64
+) -> Float64: ...
+```
+
+Generate it:
+
+```bash
+python3 -m prik generate --pyi callbacks.f90
+```
+
+</div>
+
+<div class="prik-example-panel" id="callbacks-python" role="tabpanel" aria-labelledby="callbacks-python-tab" tabindex="0" markdown="1">
+
+## Python Usage
 
 ```python
 import sys
@@ -129,7 +176,14 @@ result = apply(
 print(result)  # 7.5
 ```
 
----
+</div>
+</div>
+
+Result:
+
+```text
+7.5
+```
 
 ## Choosing The Prototype Spelling
 

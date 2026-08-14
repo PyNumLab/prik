@@ -18,6 +18,20 @@ wrapper because kind numbers are compiler-dependent.
 
 ## Example
 
+The source, generated contract, and Python call describe the same API. The
+observable values remain below the three views.
+
+<div class="prik-example-tabs" data-prik-example-tabs markdown="1">
+<div class="prik-example-tablist" role="tablist" aria-label="Data types example">
+<button class="prik-example-tab" id="data-types-source-tab" type="button" role="tab" aria-controls="data-types-source" aria-selected="true">Fortran source</button>
+<button class="prik-example-tab" id="data-types-contract-tab" type="button" role="tab" aria-controls="data-types-contract" aria-selected="false" tabindex="-1">Generated contract</button>
+<button class="prik-example-tab" id="data-types-python-tab" type="button" role="tab" aria-controls="data-types-python" aria-selected="false" tabindex="-1">Python usage</button>
+</div>
+
+<div class="prik-example-panel" id="data-types-source" role="tabpanel" aria-labelledby="data-types-source-tab" tabindex="0" markdown="1">
+
+### Fortran source
+
 Create `numeric_types.f90`:
 
 ```fortran
@@ -49,19 +63,55 @@ contains
 end module numeric_types
 ```
 
-Generate the contract:
-
-```bash
-python3 -m prik generate --pyi numeric_types.f90
-```
-
 Build it:
 
 ```bash
 python3 -m prik numeric_types.f90 --out-dir build/numeric-types
 ```
 
----
+</div>
+
+<div class="prik-example-panel" id="data-types-contract" role="tabpanel" aria-labelledby="data-types-contract-tab" tabindex="0" markdown="1">
+
+## Generated Contract
+
+The generated `numeric_types.pyi` is:
+
+```python
+from prik.contracts import Addr, Arg, Bool8, Complex128, Float64, Int32, native_call
+
+@native_call([Addr(Arg(0))])
+def add_one(
+    value: Int32
+) -> Int32: ...
+
+@native_call([Addr(Arg(0))])
+def double(
+    value: Float64
+) -> Float64: ...
+
+@native_call([Addr(Arg(0))])
+def conjugate_value(
+    value: Complex128
+) -> Complex128: ...
+
+@native_call([Addr(Arg(0))])
+def invert(
+    flag: Bool8
+) -> Bool8: ...
+```
+
+Generate it:
+
+```bash
+python3 -m prik generate --pyi numeric_types.f90
+```
+
+`Bool8` is the result of probing `logical(kind=1)` with the selected compiler.
+
+</div>
+
+<div class="prik-example-panel" id="data-types-python" role="tabpanel" aria-labelledby="data-types-python-tab" tabindex="0" markdown="1">
 
 ## Calling from Python
 
@@ -76,36 +126,46 @@ from numeric_types.numeric_types import add_one, conjugate_value, double, invert
 print(add_one(np.int32(4)))                        # 5
 print(double(np.float64(1.5)))                     # 3.0
 print(conjugate_value(np.complex128(1.0 + 2.0j)))  # (1-2j)
-print(bool(invert(True)))                          # False
+print(invert(True))                                # False
 ```
 
----
+</div>
+</div>
+
+Result:
+
+```text
+5
+3.0
+(1-2j)
+False
+```
 
 ## Scalar Type Mapping
 
-| Fortran Type                  | Semantic Type   | Preferred Python / NumPy Type      |
-|-------------------------------|-----------------|------------------------------------|
-| `integer(1)`                  | `Int8`          | `np.int8`                          |
-| `integer(2)`                  | `Int16`         | `np.int16`                         |
-| `integer(4)` / `int32`        | `Int32`         | `np.int32`                         |
-| `integer(8)` / `int64`        | `Int64`         | `np.int64`                         |
-| `real(4)`                     | `Float32`       | `np.float32`                       |
-| `real(8)` / `real64`          | `Float64`       | `np.float64`                       |
-| `complex(4)`                  | `Complex64`     | `np.complex64`                     |
-| `complex(8)`                  | `Complex128`    | `np.complex128`                    |
-| `logical`                     | `Bool8`-`Bool64` | `bool` or `np.bool_`              |
-| `character`                   | `String` / `String[n]` | `str` or fixed `np.bytes_`     |
-| Derived Type                  | Generated Class | Instance of that class             |
+| Fortran Type | Semantic Type | Scalar Input | Direct Scalar Result |
+| --- | --- | --- | --- |
+| `integer(1)` | `Int8` | `np.int8` | `np.int8` |
+| `integer(2)` | `Int16` | `np.int16` | `np.int16` |
+| `integer(4)` / `int32` | `Int32` | `np.int32` | `np.int32` |
+| `integer(8)` / `int64` | `Int64` | `np.int64` | `np.int64` |
+| `real(4)` | `Float32` | `np.float32` | `np.float32` |
+| `real(8)` / `real64` | `Float64` | `np.float64` | `np.float64` |
+| `complex(4)` | `Complex64` | `np.complex64` | `np.complex64` |
+| `complex(8)` | `Complex128` | `np.complex128` | `np.complex128` |
+| `logical` | `Bool8`-`Bool64` | `bool` or `np.bool_` | `bool` |
+| `character` | `String` / `String[n]` | Depends on the string boundary | Depends on the string boundary |
+| Derived Type | Generated Class | Instance of that class | Instance of that class |
 
 Boolean contract names describe native storage, not different Python dtypes:
 
-| Semantic Contract | Native Logical Storage Represented | Scalar Input / Result | Array Input / Output Storage |
-|-------------------|------------------------------------|-----------------------|------------------------------|
-| `Bool`            | 8 bits; portable default, equivalent to `Bool8` | `bool` or `np.bool_` | NumPy array with `dtype=np.bool_` |
-| `Bool8`           | 8 bits                             | `bool` or `np.bool_` | NumPy array with `dtype=np.bool_` |
-| `Bool16`          | 16 bits                            | `bool` or `np.bool_` | NumPy array with `dtype=np.bool_` |
-| `Bool32`          | 32 bits                            | `bool` or `np.bool_` | NumPy array with `dtype=np.bool_` |
-| `Bool64`          | 64 bits                            | `bool` or `np.bool_` | NumPy array with `dtype=np.bool_` |
+| Semantic Contract | Native Logical Storage Represented | Scalar Input | Direct Result | Array Storage |
+| --- | --- | --- | --- | --- |
+| `Bool` | 8 bits; portable default, equivalent to `Bool8` | `bool` or `np.bool_` | `bool` | `dtype=np.bool_` |
+| `Bool8` | 8 bits | `bool` or `np.bool_` | `bool` | `dtype=np.bool_` |
+| `Bool16` | 16 bits | `bool` or `np.bool_` | `bool` | `dtype=np.bool_` |
+| `Bool32` | 32 bits | `bool` or `np.bool_` | `bool` | `dtype=np.bool_` |
+| `Bool64` | 64 bits | `bool` or `np.bool_` | `bool` | `dtype=np.bool_` |
 
 Generated contracts select a numbered name after probing the chosen compiler.
 Callers never pass integer arrays for wider logical storage: the wrapper adapts
@@ -139,8 +199,12 @@ their own default constructors, described in their later user-guide pages.
 
 ## Important Rules
 
-- Always use **exact NumPy scalar dtypes** (`np.float64`, `np.int32`, etc.).
-- Plain Python `float` / `int` will raise `TypeError` for scalar arguments.
+- Use **exact NumPy scalar dtypes** (`np.float64`, `np.int32`, etc.) for
+  numeric scalar arguments and expect the matching NumPy scalar result.
+  Boolean arguments accept `bool` or `np.bool_`, and Boolean scalar results
+  are Python `bool` values.
+- Plain Python `float` and `int` values raise `TypeError` for numeric scalar
+  arguments.
 - prik resolves kinds using the selected compiler (`gfortran` by default).
 - Inspect the contract with `generate --pyi` whenever you change compiler flags or architecture.
 
@@ -154,13 +218,14 @@ A bare primitive type represents a Python-visible scalar:
 def double(value: Float64) -> Float64: ...
 ```
 
-The wrapper handles the native call details. Python still passes and receives
-`numpy.float64` values.
+The wrapper requires a `numpy.float64` input and returns a `numpy.float64`.
+Other primitive result types follow the mapping table above.
 
 `T[()]` represents rank-zero NumPy storage: arguments accept a 0-D NumPy
 array, and results return a 0-D NumPy array. Raw integer addresses are an
-advanced boundary covered later in the guide. A `T[()]` result is a 0-D NumPy
-array, while a bare `T` result is a NumPy scalar.
+advanced boundary covered later in the guide. A bare numeric `T` result is the
+NumPy scalar listed in the mapping table; Boolean scalar results are Python
+`bool` values.
 
 ## Unsupported Widths And Forms
 

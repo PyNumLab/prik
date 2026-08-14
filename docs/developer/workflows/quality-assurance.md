@@ -4,14 +4,13 @@ audience: developers, maintainers, contributors
 prerequisites: repository checkout, QA dependencies
 related: contributing.md, ../testing-strategy.md, ci.md
 status: maintained
-publication: draft
+publication: reviewed
 ---
 
 # Quality Assurance
 
-This page records the active quality stack and commands. Historical rollout
-logs and completed tool-adoption checklists belong in Git history, not in the
-current contributor workflow.
+This page defines the local evidence expected before a pull request. Start
+with the smallest owner; CI provides broader platform and library evidence.
 
 ## Install
 
@@ -20,26 +19,7 @@ python3 -m pip install -e ".[qa]"
 python3 tools/check_static_analysis_versions.py
 ```
 
-## Active Cadence
-
-| Cadence | Evidence |
-| --- | --- |
-| Inner loop | Smallest owning pytest target and Ruff on changed code |
-| Local pre-push | Blocking static analysis, focused documentation smoke, one compiled scalar-wrapper smoke, `tests/tools/`, and `tests/workflows/` |
-| Pull request | Static analysis, compiler smoke, Python matrix, project coverage, real libraries, performance/docs, aggregate required check |
-| Manual discovery | Deep Hypothesis fuzz profile and advisory complexity reports |
-| Dependency change or annual review | Dependency vulnerability review |
-
-The one stable required ruleset context is:
-
-```text
-Pull Request / Validation · all required checks
-```
-
-If the workflow or job display name changes, update the repository ruleset;
-do not keep an alias job for the old name.
-
-## Focused And Documentation Checks
+## Routine Verification
 
 Run the narrowest behavioral owner first:
 
@@ -47,16 +27,15 @@ Run the narrowest behavioral owner first:
 python3 -m pytest -q path/to/owning/tests
 ```
 
-Documentation-only changes that do not alter Python, tests, build
-configuration, or tooling use:
+For documentation-only changes:
 
 ```bash
 python3 -m pytest -q tests/docs
 git diff --check
 ```
 
-When Python code, test logic, build behavior, or tools change, run the complete
-blocking and advisory static suite:
+For Python, test, build, or tool changes, run focused tests and the static
+suite:
 
 ```bash
 python3 -m ruff check .
@@ -70,15 +49,14 @@ python3 -m radon cc prik -n C -s --total-average
 python3 -m radon mi prik -s
 ```
 
-Ruff, Bandit, Vulture, codegen complexity, version checks, and the changed-code
-Radon policy are blocking. Full Radon reports are advisory. If automatic Radon
-base detection lacks CI SHA metadata locally, rerun with `--base-ref main` and
-report that fact.
+Ruff, Bandit, Vulture, version checks, and the changed-code Radon policy are
+blocking. The codegen review and full Radon reports are advisory. If automatic
+Radon base detection lacks CI SHA metadata, rerun with `--base-ref main`.
 
-## Coverage And Test-Order Reproduction
+## Broader Evidence
 
-Do not run the complete coverage workflow for routine changes. When
-investigating a CI coverage failure, mirror subprocess collection exactly:
+Do not run complete coverage for routine changes. When investigating a CI
+coverage failure, mirror CI collection:
 
 ```bash
 COVERAGE_PROCESS_START=pyproject.toml \
@@ -88,61 +66,35 @@ python3 -m coverage combine
 python3 -m coverage report
 ```
 
-The blocking project coverage target is 90%. Codecov patch status is
-informational, but new reachable behavior still needs focused tests.
-
-Reproduce an order-dependent failure with the seed from CI:
+The project coverage target is 90%. Reproduce an order-dependent failure with
+the seed from CI:
 
 ```bash
 python3 -m pytest -q --randomly-seed=<seed-from-failing-run>
 ```
 
-## Compiler And Property Evidence
-
-Run a configured alternate-compiler lane with:
+Run an alternate compiler lane when changing compiler portability or native
+generation:
 
 ```bash
 python3 tools/run_fortran_toolchain_lane.py --compiler=/path/to/ifx
 python3 tools/run_fortran_toolchain_lane.py --compiler=/path/to/flang
 ```
 
-`--plan` prints the selected tests without running them. CI currently pins
-IFX/ICX 2026.1.1 and Flang/Clang 22.1.8 as evidence versions, not declared
-minimum versions.
-
-Run property and deep fuzz profiles with:
+Run property or fuzz profiles when changing generated invariants or
+investigating a failure:
 
 ```bash
 python3 -m pytest -q -m property --hypothesis-profile=ci
 HYPOTHESIS_PROFILE=fuzz python3 -m pytest -q -m fuzz --hypothesis-show-statistics
 ```
 
-Minimize an actionable fuzz failure and preserve it as a focused regression in
-the owning feature/stage suite.
+Minimize an actionable fuzz failure and retain it as a focused regression.
 
-## Tool Responsibilities
+## Limits
 
-| Tool | Role |
-| --- | --- |
-| pytest and coverage.py | Behavioral regression and project coverage |
-| pytest-randomly | Stable-seed order-coupling detection |
-| Hypothesis | Generated parser, semantic, and codegen invariants |
-| Ruff | Linting, formatting, modernization, and bounded McCabe checks |
-| Bandit | Medium-confidence/severity security boundary review |
-| Vulture | Dead-code detection with narrow exclusions |
-| Radon | Blocking changed-hotspot policy plus advisory project reports |
-| GitHub Actions | Reproducible shared compiler, platform, library, benchmark, docs, and release evidence |
-
-Mutation testing and pre-commit are not part of the active stack. The tracked
-`.githooks` pre-push hook is the supported local automation boundary.
-
-## Real Libraries And Verification Limits
-
-Ordinary local suites exclude `real_library`. BLAS, FFTPACK, and MINPACK may be
-run through their documented example workflows. LAPACK wrapper tests remain a
-GitHub Actions responsibility unless explicitly requested locally.
-
-GitHub Actions writes path-aware JUnit reports and prints failed pytest node
-IDs at the end of failed matrix logs. The real-library lane builds and tests
-the complete maintained BLAS, LAPACK, FFTPACK, and MINPACK examples using their
-documented entrypoints.
+Native changes need focused codegen evidence and relevant end-to-end coverage.
+Ordinary local runs exclude `real_library`. BLAS, FFTPACK, and MINPACK have
+their own example workflows; leave LAPACK wrapper tests to GitHub Actions
+unless explicitly requested. See [Pull request checks](ci.md) for hosted
+coverage, compiler, real-library, benchmark, and documentation evidence.

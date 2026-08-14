@@ -18,6 +18,19 @@ class. It does not apply implicit numeric coercion.
 
 ## Complete Example
 
+The three views below describe the same `convert` interface. Select a tab to
+inspect the source, generated contract, or Python call. The result stays
+visible below the example.
+
+<div class="prik-example-tabs" data-prik-example-tabs markdown="1">
+<div class="prik-example-tablist" role="tablist" aria-label="Generic interface example">
+<button class="prik-example-tab" id="generic-example-source-tab" type="button" role="tab" aria-controls="generic-example-source" aria-selected="true">Fortran source</button>
+<button class="prik-example-tab" id="generic-example-contract-tab" type="button" role="tab" aria-controls="generic-example-contract" aria-selected="false" tabindex="-1">Generated contract</button>
+<button class="prik-example-tab" id="generic-example-python-tab" type="button" role="tab" aria-controls="generic-example-python" aria-selected="false" tabindex="-1">Python usage</button>
+</div>
+
+<div class="prik-example-panel" id="generic-example-source" role="tabpanel" aria-labelledby="generic-example-source-tab" tabindex="0" markdown="1">
+
 Create `generic.f90`:
 
 ```fortran
@@ -49,37 +62,53 @@ end module conversions
 Build it:
 
 ```bash
-python3 -m prik generate --pyi generic.f90
 python3 -m prik generic.f90 --out-dir build/generic
 ```
 
----
+</div>
 
-## Generated Contract
+<div class="prik-example-panel" id="generic-example-contract" role="tabpanel" aria-labelledby="generic-example-contract-tab" tabindex="0" markdown="1">
 
 The semantic `.pyi` keeps the concrete procedures as private link targets.
-Each public declaration adds one candidate to `convert`:
+Each public declaration adds one candidate to `convert`.
 
-`@private` hides a concrete procedure from Python. `@overload` links a public
-candidate to that procedure, and `@bind` selects the public native generic when
-the concrete procedure is private in Fortran.
+`@private` hides a concrete procedure from Python. `@native_call(...)` keeps
+its native argument mapping, `@overload` links a public candidate to that
+procedure, and `@bind` selects the public native generic when the concrete
+procedure is private in Fortran.
 
 ```python
-from prik.contracts import Float64, Int32, bind, overload, private
+from prik.contracts import Addr, Arg, Float64, Int32, bind, native_call, overload, private
 
 @private
-def convert_integer(value: Int32) -> Int32: ...
+@native_call([Addr(Arg(0))])
+def convert_integer(
+    value: Int32
+) -> Int32: ...
 
 @private
-def convert_real(value: Float64) -> Float64: ...
+@native_call([Addr(Arg(0))])
+def convert_real(
+    value: Float64
+) -> Float64: ...
 
 @bind("convert")
 @overload("convert_integer")
-def convert(value: Int32) -> Int32: ...
+def convert(
+    value: Int32
+) -> Int32: ...
 
 @bind("convert")
 @overload("convert_real")
-def convert(value: Float64) -> Float64: ...
+def convert(
+    value: Float64
+) -> Float64: ...
+```
+
+Generate the starter contract:
+
+```bash
+python3 -m prik generate --pyi generic.f90
 ```
 
 The source exports `convert`, not `convert_integer` or `convert_real`. Since
@@ -87,9 +116,9 @@ those concrete procedures are native-private,
 [`@bind("convert")`](wrapping-functions.md#python-and-native-names) routes both
 candidates through the public generic.
 
----
+</div>
 
-## Usage in Python
+<div class="prik-example-panel" id="generic-example-python" role="tabpanel" aria-labelledby="generic-example-python-tab" tabindex="0" markdown="1">
 
 ```python
 import sys
@@ -101,6 +130,17 @@ from generic.conversions import convert
 
 print(convert(np.int32(4)))      # 14
 print(convert(np.float64(4.0)))  # 4.5
+```
+
+</div>
+
+</div>
+
+Result:
+
+```text
+14
+4.5
 ```
 
 The argument type selects the concrete procedure. `np.int32` calls

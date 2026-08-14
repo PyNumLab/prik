@@ -1,4 +1,11 @@
-"""Run explicit native object and extension-link compiler commands."""
+"""Build and optionally execute explicit native compiler commands.
+
+``Compiler`` selects one vendor profile, compiles one complete
+:class:`~prik.compiler.objects.ObjectFile` request at a time, and links a
+caller-supplied ordered object list. It records every argv even in record-only
+mode. Project discovery, dependency ordering, generated imports, and wrapper
+policy remain pipeline or earlier-stage responsibilities.
+"""
 
 from __future__ import annotations
 

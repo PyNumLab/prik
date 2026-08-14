@@ -1,4 +1,11 @@
-"""Built-in compiler profiles for the explicit wrapper build stages."""
+"""Select coherent vendor profiles for explicit native wrapper builds.
+
+``available_compilers`` supplies separate C and Fortran settings for every
+supported vendor, including the active Python and NumPy extension inputs.
+``fortran_compiler_family()`` classifies a selected Fortran executable and
+names its matching C driver; executable lookup and command execution belong to
+``Compiler`` in :mod:`prik.compiler.compilers`.
+"""
 
 from __future__ import annotations
 

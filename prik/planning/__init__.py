@@ -1,4 +1,11 @@
-"""Backend-neutral wrapper-plan models and policy projection."""
+"""Public planning API for policy-completed wrapper plans.
+
+``WrapperPlanner`` projects a completed ``SemanticModule`` into an editable
+``ModulePlan``. The records re-exported here describe that plan's shared
+binding, bridge, namespace, transfer, result, lifecycle, class, and descriptor
+views. They represent completed policy for later lowering; they do not provide
+another policy-construction API.
+"""
 
 from .models import (
     ArgumentTransferPlan,

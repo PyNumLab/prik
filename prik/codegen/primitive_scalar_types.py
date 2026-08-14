@@ -1,4 +1,12 @@
-"""Primitive rank-zero backend type facts shared by wrapper generators."""
+"""Backend spelling registries for resolved primitive scalar identities.
+
+``PrimitiveScalarTypeRegistry.type_for`` returns a fresh editable
+``BackendScalarType`` containing the C, Fortran, NumPy, CPython, and descriptor
+spellings required by direct lowering. ``NumpyDtypeRegistry.expression_for``
+returns the corresponding generated Python expression. Both registries consume
+an already-resolved semantic identity and fail for unknown names; neither
+infers a scalar type from source syntax or a backend condition.
+"""
 
 from __future__ import annotations
 
@@ -104,7 +112,7 @@ class PrimitiveScalarTypeRegistry:
             fortran_spelling="integer(c_int32_t)",
             python_parse_unit="O",
             numpy_type_macro="NPY_INT32",
-            python_result_kind="python",
+            python_result_kind="numpy",
             python_type_name=NumpyDtypeRegistry.expression_for("Int32"),
             python_module_result_kind="numpy",
             cfi_type_spelling="CFI_type_int32_t",
@@ -115,7 +123,7 @@ class PrimitiveScalarTypeRegistry:
             fortran_spelling="integer(c_int64_t)",
             python_parse_unit="O",
             numpy_type_macro="NPY_INT64",
-            python_result_kind="python",
+            python_result_kind="numpy",
             python_type_name=NumpyDtypeRegistry.expression_for("Int64"),
             python_module_result_kind="numpy",
             cfi_type_spelling="CFI_type_int64_t",
@@ -137,7 +145,7 @@ class PrimitiveScalarTypeRegistry:
             fortran_spelling="real(c_double)",
             python_parse_unit="O",
             numpy_type_macro="NPY_FLOAT64",
-            python_result_kind="python",
+            python_result_kind="numpy",
             python_type_name=NumpyDtypeRegistry.expression_for("Float64"),
             python_module_result_kind="numpy",
             cfi_type_spelling="CFI_type_double",
@@ -159,7 +167,7 @@ class PrimitiveScalarTypeRegistry:
             fortran_spelling="complex(c_double_complex)",
             python_parse_unit="O",
             numpy_type_macro="NPY_COMPLEX128",
-            python_result_kind="python",
+            python_result_kind="numpy",
             python_type_name=NumpyDtypeRegistry.expression_for("Complex128"),
             python_module_result_kind="numpy",
             cfi_type_spelling="CFI_type_double_Complex",

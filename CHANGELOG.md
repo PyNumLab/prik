@@ -13,14 +13,108 @@ release tags add a leading `v` to the package version.
   and one canonical page per production package, with local structures,
   important objects, runnable examples, expected outputs, test owners, change
   routes, and invariants.
-- Consolidated cross-stage concepts and contributor workflows, retained future
-  and deferred designs explicitly, and removed TODO-only pages, duplicate
-  architecture maps, and completed migration ledgers.
+- Consolidated contributor workflows and removed nonessential concept and
+  design drafts, TODO-only pages, duplicate architecture maps, and completed
+  migration ledgers.
 - Added Zenodo version and concept DOI links to the citation metadata, README,
   and About page.
 
 ### Changed
 
+- Marked the contributor Architecture and Codebase Map as reviewed for
+  publication; the renamed map now focuses on package and cross-stage module
+  ownership.
+- Clarified the Feature-to-Code Map as the capability-to-owner and evidence
+  index, linking reviewed user documentation and retaining only planned
+  contributor-documentation paths before their review.
+- Revised the Feature-to-Code Map with reviewed package-guide links,
+  stage-ordered change routes, narrower focused evidence, and separate array,
+  callback, and error routes.
+- Condensed the contributor Testing Strategy around test ownership, stage
+  evidence, stable contracts, end-to-end evidence, fixture placement, and
+  verification scope.
+- Clarified contributor workflows for changing PRIK, local verification, pull
+  request checks, and documentation maintenance.
+- Linked the Contributing workflow to the Feature-to-Code Map and Testing
+  Strategy, explained its pre-push hook setup, and normalized its editable
+  checkout test commands.
+- Clarified that pull-request validation requires the performance benchmark and
+  identified its workflow implementation.
+- Renamed the Package Guides section to Architecture Components and grouped its
+  build stages separately from its supporting components, distinguishing
+  cross-build pipeline orchestration from sequential stages.
+- Ordered the Developer Documentation sidebar by the architecture reading path,
+  with build stages before supporting components.
+- Made every expandable documentation-sidebar section label open its first
+  published page, including through nested sections, while the adjacent **+**
+  control only expands or collapses it.
+- Made documentation tables wrap readable cell content instead of hiding
+  later columns behind unnecessary horizontal scrolling.
+- Added accessible two-, three-, and four-view example tabs to the User Guide;
+  Getting Started remains linear and example results stay visible.
+- Reviewed the Pipeline Component guide around the source-build handoff,
+  independent contract and inspection workflows, and build-result ownership.
+- Reviewed the Preprocessing Stage guide around its Fortran source route,
+  compiler-derived target probes, module navigation, and executable examples.
+- Reviewed the Parsing Stage guide around its Fortran and semantic-`.pyi`
+  algorithms, source-level navigation, executable examples, and ownership
+  boundaries.
+- Reviewed the Semantics Stage guide around its shared IR, frontend-conversion
+  algorithms, raw contract facts, executable examples, and policy boundary.
+- Reviewed the Policy Stage guide around ordered policy completion, immutable
+  interoperability decisions, module algorithms, executable examples, and the
+  planning boundary.
+- Reviewed the Planning Stage guide around deterministic policy projection,
+  editable plan ownership, module algorithms, executable examples, and the
+  generator freeze boundary.
+- Reviewed the Code Generation Stage guide around its generator handoff,
+  backend lowering algorithms, plan-only decisions, executable examples, and
+  focused evidence.
+- Reviewed the Printing Stage guide around representation-specific traversal,
+  safe source formatting, isolated `.pyi` emission, executable examples, and
+  focused evidence.
+- Reviewed the Compiler Stage guide around coherent toolchain selection,
+  explicit command construction, conditional native-support installation,
+  executable examples, and focused evidence.
+- Added focused C Binding and Fortran Bridge lowering guides with executable
+  manually constructed plans and printed backend-source examples.
+- Moved binding and bridge algorithms and rendered-source demonstrations out
+  of the Code Generation overview and into their focused lowering guides.
+- Explained each reviewed package-guide execution example in terms of its
+  in-memory setup and the stage boundary established by its output.
+- Added Pipeline Component and source-level navigation for contract loading,
+  wrapper generation, build-manifest replay, and `build.py` orchestration.
+- Removed empty package-marker entries from the Pipeline Component and Compiler
+  Stage guides.
+- Added a brief Developer Documentation overview that routes readers to
+  Architecture, then Architecture Components, and linked it from the website
+  home page.
+- Replaced the contributor architecture's text-only build path with a rendered
+  diagram of its two input routes and shared pipeline.
+- Made the architecture build-path diagram keyboard-accessible and linked each
+  route and stage to its reviewed component guide.
+- Added accessible explanations for `.pyi`, f2py `.pyf`, ABI, semantic IR,
+  array order, and the GIL throughout User Documentation and on the Home page,
+  plus per-stage detail panels to the architecture diagram.
+- Changed the site-wide repository control into a “★ Star on GitHub” call to
+  action while preserving its repository destination.
+- Published concise Contracts, Naming, Runtime, and Utilities component guides,
+  restored their architecture links, corrected the diagram fallback, and
+  clarified the NumPy result type in the architecture example.
+- Made numeric scalar results consistently preserve their exact NumPy types;
+  Boolean scalar results remain Python `bool` values.
+- Corrected user documentation to distinguish numeric and Boolean scalar
+  boundaries, and aligned the Getting Started route with normal package
+  installation rather than a repository checkout.
+- Reduced documentation tests to enforce publication, link integrity,
+  executable examples, and public-reference contracts without freezing prose,
+  headings, page inventories, private names, or source-tree layout.
+- Reclassified implementation-structure and codegen-complexity checks as
+  contributor recommendations, while retaining hard behavioral, safety, ABI,
+  publication, and architectural-boundary contracts.
+- Moved contributor package-guide execution checks into the documentation
+  suite, using each guide's displayed result instead of a duplicate exact-
+  output inventory.
 - Reduced the root `prik` API to its version and normal-user build entrypoints;
   parser, semantic, probe, runtime, and planning tools now use their owning
   package import paths.
@@ -29,16 +123,10 @@ release tags add a leading `v` to the package version.
 - Made `prik` an import-only package boundary by removing its direct-script
   demonstration; command and stage-value examples remain available from their
   owning modules.
-- Expanded the contributor architecture and package guides into a complete
-  stage-by-stage tutorial, with every supported Python module, runnable example
-  result, focused test purpose, and change route recorded and checked against
-  the source tree.
+- Expanded the contributor architecture and package guides with concrete stage
+  handoffs, runnable example results, focused test purposes, and change routes.
 - Moved generated documentation and distribution output under the hidden
   `.artifacts/` directory in local commands and CI workflows.
-- Centralized every production-file execution-example output contract in one
-  contributor-architecture test inventory with one named test per file.
-- Renamed the central infrastructure owner to `execution_examples/` so its
-  responsibility is explicit in the test tree.
 - Consolidated developer and maintainer material under one Contributor
   Documentation tree and removed the separate maintainer documentation lane.
 - Moved the bundled header-only binding runtime from the package root into
@@ -52,9 +140,7 @@ release tags add a leading `v` to the package version.
   the former `prik.compiling`, `prik.probes`, parser-local C preprocessor, and
   pipeline-local preprocessing import paths were removed.
 - Replaced the public semantic-to-NumPy helper API with stage-owned semantic,
-  contract-runtime, and code-generation datatype catalogues, and documented the
-  complete internal datatype lifecycle from compiler probing to runtime
-  validation.
+  contract-runtime, and code-generation datatype catalogues.
 - Separated post-IR policy and wrapper planning into `prik.policy` and
   `prik.planning`; code generation now renders plan-driven docstrings, and the
   former maintainer import paths were removed.

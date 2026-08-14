@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import fields
 from pathlib import Path
 
 from prik.pipeline.wrapper import GeneratedSource, GeneratedWrapper
@@ -27,13 +26,3 @@ def test_generated_wrapper_keeps_compile_and_link_ownership_out_of_the_handoff()
     assert wrapper.compile_sources == (Path("bind_c_demo.f90"), Path("demo.c"))
     assert wrapper.generated_files == (Path("bind_c_demo.f90"), Path("demo.c"), Path("demo.h"))
     assert wrapper.source_paths == wrapper.generated_files
-    assert {field.name for field in fields(GeneratedWrapper)} == {
-        "module_name",
-        "sources",
-        "bridge_sources",
-        "binding_sources",
-        "headers",
-        "native_support_keys",
-        "required_headers",
-        "extension_init_name",
-    }

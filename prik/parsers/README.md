@@ -9,9 +9,10 @@ language-specific models:
 
 Cross-language semantic interpretation belongs to `prik.semantics`, while
 preprocessing and build orchestration belong to `prik.pipeline`. Stable parser
-convenience functions remain exported from the `prik` package root.
+APIs are imported from their owning language package, not from the `prik` root
+facade.
 
-See `docs/developer/packages/parsers.md`, `docs/developer/source-map.md`,
+See `docs/developer/packages/parsers.md`, `docs/developer/codebase-map.md`,
 `docs/developer/feature-to-code-map.md`,
 `docs/developer/deferred/c-parser.md`, and
 `docs/user/reference/semantic-pyi-format.md` for maintained behavior.

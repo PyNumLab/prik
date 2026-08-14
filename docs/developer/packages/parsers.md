@@ -1,25 +1,47 @@
 ---
-title: Parsers Package
+title: Parsing Stage
 audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide, prepared source
-related: ../architecture.md, index.md, preprocessing.md, semantics.md, ../source-map.md
+related: ../architecture.md, index.md, preprocessing.md, semantics.md, ../codebase-map.md
 status: maintained
-publication: draft
+publication: reviewed
 ---
 
-# Parsers Package
+# Parsing Stage
 
 ## Purpose And Boundaries
 
-`prik/parsers/` owns syntax-level facts. The Fortran frontend preserves source
-units, declarations, visibility, locations, and diagnostics. The semantic
-`.pyi` frontend deliberately stops at a standard Python AST. A parser reports
-what its input says; it does not assign a stable semantic type, choose
-ownership, decide wrapper support, or emit a Python API.
+`prik/parsers/` records syntax-level facts. The Fortran frontend preserves
+source units, declarations, visibility, locations, and diagnostics. The
+semantic-`.pyi` frontend returns a standard Python AST. A parser reports what
+its input says; it does not assign stable semantic types, choose ownership,
+decide wrapper support, or emit a Python API.
 
-The C-input frontend is intentionally deferred from the published contributor
-workflow. This guide covers the supported Fortran and semantic-`.pyi` path;
-generated C binding remains documented under [code generation](codegen.md).
+The `c/` directory is early work for a future C frontend. C support is not yet
+complete and is outside the current Fortran-wrapper route, so this guide covers
+only the supported Fortran and semantic-`.pyi` parsers.
+
+## Inputs And Results
+
+```text
+prepared Fortran text
+  -> lexer: logical lines with original locations
+  -> source-unit scanner: classified file-level units and their regions
+  -> FortranParser visitors and scoped declaration collection
+  -> source-visible type, shape, kind, and visibility resolution
+  -> FortranFile or dependency-aware FortranProject
+  -> Fortran-to-IR conversion
+
+semantic .pyi text or path
+  -> ast.parse
+  -> ast.Module
+  -> .pyi-to-IR conversion
+```
+
+`FortranFile` and `FortranProject` preserve parser facts. A parsed intrinsic
+kind expression, `intent`, or array shape is still source syntax, not a
+compiler-measured target fact or completed wrapper decision. The `.pyi` result
+is Python syntax only; contract interpretation begins in `semantics/`.
 
 ## Local Structure
 
@@ -35,52 +57,107 @@ prik/parsers/
 │   ├── parser.py
 │   ├── type_resolver.py
 │   └── utils.py
-└── pyi/
-    ├── __init__.py
-    └── parser.py
+├── pyi/
+│   ├── __init__.py
+│   └── parser.py
+└── c/                         incomplete future C frontend
 ```
-
-## What This Stage Receives And Produces
-
-```text
-prepared Fortran text
-  -> logical lines with original locations
-  -> Fortran parser models and diagnostics
-  -> Fortran-to-IR conversion
-
-semantic .pyi text
-  -> ast.Module
-  -> .pyi-to-IR conversion
-```
-
-Fortran parser models retain source spellings such as `real(kind=...)`,
-`intent`, and declaration shapes. Target-dependent kind values arrive from
-preprocessing probes and are resolved in semantic conversion, not here.
 
 ## Directory Tour
 
-| Module | Main entrypoints and contents | Change it when |
+| Module | Public boundary and result | Change it when |
 | --- | --- | --- |
-| [`prik/parsers/__init__.py`](../../../prik/parsers/__init__.py) | Declares the parser frontend namespaces. | The package-level frontend layout changes. |
-| [`prik/parsers/fortran/__init__.py`](../../../prik/parsers/fortran/__init__.py) | Re-exports the supported Fortran parser API: parser functions, `FortranParser`, parser models, and `FortranParseError`. | The supported Fortran-parser import API changes. |
-| [`prik/parsers/fortran/__main__.py`](../../../prik/parsers/fortran/__main__.py) | Module launcher for `python3 -m prik.parsers.fortran`; delegates to the CLI. | Module-launch behavior changes, not parser semantics. |
-| [`prik/parsers/fortran/utils.py`](../../../prik/parsers/fortran/utils.py) | `detect_source_form()` and `split_csv()` are small, grammar-neutral lexical helpers. | Source-form detection or top-level comma splitting changes. |
-| [`prik/parsers/fortran/lexer.py`](../../../prik/parsers/fortran/lexer.py) | `strip_comment()` and `preprocess_lines()` remove comments, fold continuations, and retain logical-line locations. | Lexical normalization or source-coordinate retention changes. |
-| [`prik/parsers/fortran/models.py`](../../../prik/parsers/fortran/models.py) | Passive parser records including `FortranFile`, `FortranProject`, `FortranModule`, variables, signatures, derived types, enums, shapes, and `FortranParseError`. | A parser-level source fact or diagnostic representation changes. |
-| [`prik/parsers/fortran/type_resolver.py`](../../../prik/parsers/fortran/type_resolver.py) | `extract_kind_from_type_spec()` preserves type, kind, and character syntax without measuring its meaning. | Parser-level type-spec spelling extraction changes. |
-| [`prik/parsers/fortran/parser.py`](../../../prik/parsers/fortran/parser.py) | `FortranParser`, source-unit records, `parse_fortran_file()`, and `parse_fortran_project()` slice units, build models, resolve parser-level scope, and order projects. | Grammar, declaration extraction, source-unit structure, parser diagnostics, or project ordering changes. |
-| [`prik/parsers/fortran/cli.py`](../../../prik/parsers/fortran/cli.py) | `main()` turns parser requests into stable human or JSON reports. | Parser CLI arguments or report presentation changes. |
+| [`prik/parsers/__init__.py`](../../../prik/parsers/__init__.py) | Names the language frontend namespaces; it does not flatten their APIs. | The parser-frontend layout changes. |
+| [`prik/parsers/fortran/__init__.py`](../../../prik/parsers/fortran/__init__.py) | Re-exports `FortranParser`, `parse_fortran_file()`, `parse_fortran_project()`, parser models, and `FortranParseError`. | The supported Fortran-parser import surface changes. |
+| [`prik/parsers/fortran/__main__.py`](../../../prik/parsers/fortran/__main__.py) | Runs the Fortran parser CLI for `python3 -m prik.parsers.fortran`. | Module-launch behavior changes. |
+| [`prik/parsers/fortran/utils.py`](../../../prik/parsers/fortran/utils.py) | `detect_source_form()` chooses fixed or free form; `split_csv()` separates only top-level Fortran comma lists. | Source-form detection or grammar-neutral list splitting changes. |
+| [`prik/parsers/fortran/lexer.py`](../../../prik/parsers/fortran/lexer.py) | `preprocess_lines()` produces logical lines with original coordinates; `strip_comment()` preserves string literals and OpenMP directives. | Comment handling, continuation folding, or location preservation changes. |
+| [`prik/parsers/fortran/models.py`](../../../prik/parsers/fortran/models.py) | Passive source-fact records: `FortranFile`, `FortranProject`, units, declarations, shapes, and `FortranParseError`. | A parser result, source fact, or diagnostic representation changes. |
+| [`prik/parsers/fortran/type_resolver.py`](../../../prik/parsers/fortran/type_resolver.py) | `extract_kind_from_type_spec()` preserves intrinsic kind and character syntax after declaration parsing. | Parser-level type-spec spelling extraction changes. |
+| [`prik/parsers/fortran/parser.py`](../../../prik/parsers/fortran/parser.py) | `FortranParser`, `parse_fortran_file()`, and `parse_fortran_project()` build file and project models. | Grammar, source-unit structure, declarations, parser diagnostics, or project assembly changes. |
+| [`prik/parsers/fortran/cli.py`](../../../prik/parsers/fortran/cli.py) | `main()` formats parser reports and diagnostics. Its `--semantics` and `--pyi` options explicitly invoke later stages. | Parser CLI arguments, report layout, or diagnostic presentation changes. |
 | [`prik/parsers/pyi/__init__.py`](../../../prik/parsers/pyi/__init__.py) | Re-exports `parse_pyi_text()` and `parse_pyi_file()`. | The supported raw-`.pyi` parser import surface changes. |
-| [`prik/parsers/pyi/parser.py`](../../../prik/parsers/pyi/parser.py) | `parse_pyi_text()` and `parse_pyi_file()` validate and return `ast.Module` without semantic interpretation. | Accepted Python syntax or raw parse diagnostics change. |
+| [`prik/parsers/pyi/parser.py`](../../../prik/parsers/pyi/parser.py) | Parses text or a file into `ast.Module` with no contract interpretation. | Raw Python syntax input, file reading, or parse diagnostics change. |
 
-Read `fortran/parser.py` by entrypoint, then source-unit scanning, then the
-visitor that owns the construct you are changing. Do not add policy or codegen
-conditions to a parser visitor: preserve the fact and let the next stage
-decide whether it is supported.
+## Module Workflows
 
-## Execution Examples
+### `fortran/parser.py`: source units to parser models
 
-Logical-line preparation:
+Start at `parse_fortran_file()` for one source string or path. It delegates to
+`FortranParser.parse_file()`, whose algorithm is:
+
+1. Read the source and call `preprocess_lines()` to retain logical lines and
+   original coordinates.
+2. Ask the stateless `_SourceUnitScanner` to find direct file-level units and
+   classify each unit's specification, execution, and `contains` regions.
+3. Dispatch each `SourceUnit` to its `_visit_<Unit>` method. The visitor creates
+   an explicit `_ParserScope` and parses only the regions allowed for that unit.
+4. Shared declaration helpers create `FortranVariable`, `FortranArgument`,
+   `FortranProcedureSignature`, and other passive source records.
+5. Resolve derived-type links, source-visible compile-time symbols, and
+   file-owned interfaces, then assemble a `FortranFile`.
+
+Execution statements do not become wrapper metadata. Procedure-internal
+subprograms are ignored after their boundaries are recognized; procedure-local
+interfaces are revisited only when needed to type callback dummy arguments.
+
+`parse_fortran_project()` accepts a mapping of names to source, explicit
+paths, or a directory. It parses each file once, resolves cross-file
+compile-time facts, checks project-level duplicate symbols, orders directory
+files by dependencies, and returns a `FortranProject`. The project result is a
+registry of the preserved file models, not a semantic module.
+
+The source file follows this reading order: public entrypoints, unit visitors,
+file and project assembly, source-unit preparation, grammar/header helpers,
+scope and declaration parsing, finalization, then project diagnostics. Read
+the visitor for the unit you are changing before its private helper group.
+
+### `lexer.py`, `utils.py`, and `type_resolver.py`: syntax preservation
+
+`detect_source_form()` uses a known filename suffix first, then a small
+fixed-form continuation-column heuristic. `preprocess_lines()` removes comments
+without touching quoted strings, folds fixed- and free-form continuations, and
+returns `(logical_line, original_line_number, original_source_line)` tuples.
+Those tuples are the location contract used by parser diagnostics.
+
+`split_csv()` uses the shared balanced-expression scanner, so commas inside
+dimensions, calls, brackets, or quoted text do not split a Fortran list.
+`extract_kind_from_type_spec()` operates after the declaration parser isolates
+an intrinsic type specifier: it preserves positional or `kind=` syntax and
+keeps character length and kind together. Neither helper evaluates a kind
+expression.
+
+### `models.py`: passive parser vocabulary
+
+`FortranVariable` and `FortranArgument` hold a declaration's spelling,
+attributes, type, kind, and shape. `FortranProcedureSignature`,
+`FortranDerivedType`, `FortranInterface`, and the module-like records organize
+those facts by source unit. `FortranFile` is one parsed source; `FortranProject`
+adds cross-file registries and dependencies. `FortranParseError` renders a
+source-located, compiler-style diagnostic.
+
+These records may provide structured views of preserved expressions and shapes,
+but they do not make target, ownership, or wrapper-support decisions.
+
+### `pyi/parser.py`: Python syntax only
+
+`parse_pyi_text()` calls `ast.parse()` and returns its `ast.Module`.
+`parse_pyi_file()` reads UTF-8 text then uses the same function. The module
+does not recognize PRIK decorators, validate contract types, or build a
+`SemanticModule`; `semantics/pyi2ir.py` owns all of that interpretation.
+
+### `cli.py`: presentation after parsing
+
+`python3 -m prik.parsers.fortran` enters `__main__.py`, which delegates to
+`cli.main()`. The normal CLI path parses one or more files or directories and
+renders a human-readable report or JSON. `--semantics` and `--pyi` deliberately
+cross the parser boundary into semantic conversion and printing; they are
+inspection conveniences, not parser behavior.
+
+## Run The Workflows
+
+Logical-line preparation preserves a line's original location after a free-form
+continuation is folded:
 
 ```bash
 python3 prik/parsers/fortran/lexer.py
@@ -94,19 +171,11 @@ line 4:   real, intent(in) :: offset
 line 5: end subroutine shift
 ```
 
-Fortran file parsing:
+The script supplies one continued subroutine declaration and prints the logical
+records returned by the lexer. `line 1` remains the origin of the folded first
+statement, which is the location a later parser diagnostic should report.
 
-```bash
-python3 prik/parsers/fortran/parser.py
-```
-
-```text
-Module: metrics
-Parameter: n = 4
-Procedure: scale(values: real[1])
-```
-
-Type-spec preservation:
+Type-spec extraction preserves syntax without evaluating it:
 
 ```bash
 python3 prik/parsers/fortran/type_resolver.py
@@ -118,7 +187,27 @@ real(kind=selected_real_kind(15, 307)) -> selected_real_kind(15, 307)
 character(len=16, kind=c_char) -> len=16, kind=c_char
 ```
 
-Parser report formatting:
+It passes three type-specification fragments to the extractor. The output
+retains expressions such as `selected_real_kind(15, 307)` instead of evaluating
+them, leaving target-dependent meaning for later stages.
+
+Fortran file parsing assembles the parser model used by the next stage:
+
+```bash
+python3 prik/parsers/fortran/parser.py
+```
+
+```text
+Module: metrics
+Parameter: n = 4
+Procedure: scale(values: real[1])
+```
+
+The script parses one in-memory module containing a parameter and a rank-one
+subroutine argument. The output is parser vocabulary only: no semantic type,
+ownership, or wrapper decision has been added.
+
+The CLI example uses that same parser result and normal report formatter:
 
 ```bash
 python3 prik/parsers/fortran/cli.py
@@ -132,7 +221,11 @@ File: geometry.f90
         - function norm(value:real[0]) -> real[0]
 ```
 
-Raw semantic-`.pyi` parsing:
+The CLI script parses one small file and formats the resulting project record.
+Its nested report shows the same module and procedure hierarchy exposed by the
+programmatic parser, rather than a separate interpretation path.
+
+The semantic-`.pyi` parser returns an AST before any contract interpretation:
 
 ```bash
 python3 prik/parsers/pyi/parser.py
@@ -145,36 +238,47 @@ Argument annotation: Float64
 Semantic conversion performed: False
 ```
 
-These outputs are intentionally parse-only. They show preserved source facts,
-not a completed `SemanticModule`, wrapper plan, or generated source.
+The script parses a one-function `.pyi` string and selects its AST node. The
+function name and annotation are syntax facts; `False` confirms that semantic
+conversion remains the next stage's responsibility.
 
-## Tests And What They Prove
+## Tests And Evidence
 
-- [Fortran parser tests](../../../tests/fortran/source_parsing/parsing/) cover source forms, units, declarations, diagnostics, and project ordering.
-- [Fortran parser CLI tests](../../../tests/fortran/command_line_interface/pipeline/) cover parser command dispatch and report output.
-- [Semantic `.pyi` parsing tests](../../../tests/fortran/semantic_pyi_format/parsing/) cover raw `.pyi` AST parsing and diagnostics.
-- [Semantic IR conversion tests](../../../tests/fortran/semantic_ir/semantics/) prove the downstream Fortran-model handoff.
-- [Direct execution inventory](../../../tests/fortran/infrastructure/execution_examples/test_execution_examples.py) fixes the five demonstrations above.
+| Evidence | What it establishes |
+| --- | --- |
+| [Fortran parser suite](../../../tests/fortran/source_parsing/parsing/) | Source forms, units, declarations, scopes, diagnostics, project assembly, and parser models. |
+| [Public parser entrypoints](../../../tests/fortran/source_parsing/parsing/test_public_entrypoints.py) | File, project, and singular-unit entrypoint contracts. |
+| [Source forms and diagnostics](../../../tests/fortran/source_parsing/parsing/test_source_form_and_diagnostics_regressions.py) | Logical source preparation, unit boundaries, and public diagnostic metadata. |
+| [Parser CLI](../../../tests/fortran/command_line_interface/pipeline/test_stage_dispatch.py) | Module launcher, report modes, diagnostic presentation, and explicit semantic/`.pyi` inspection modes. |
+| [Semantic `.pyi` parsing](../../../tests/fortran/semantic_pyi_format/parsing/test_python_ast_contracts.py) | Raw `ast.Module` results and the AST-to-semantic-conversion handoff. |
 
 ## Change Routes
 
-- Change source form, comments, continuations, or logical locations in
+- Change source forms, comments, continuations, or logical locations in
   `fortran/utils.py` or `fortran/lexer.py`.
-- Change parser facts in `fortran/models.py`; change grammar and source-unit
-  construction in `fortran/parser.py`.
-- Change parser report layout in `fortran/cli.py`.
-- Change only raw `.pyi` AST parsing in `pyi/parser.py`; put meaning in
+- Change a parser result record or its diagnostic shape in `fortran/models.py`.
+- Change type-spec spelling preservation in `fortran/type_resolver.py`.
+- Change grammar, source-unit classification, declarations, source-visible
+  compile-time resolution, or project assembly in `fortran/parser.py`.
+- Change presentation and CLI options in `fortran/cli.py`.
+- Change only raw `.pyi` AST parsing in `pyi/parser.py`; put contract meaning in
   `semantics/pyi2ir.py`.
-- If a change needs target kind values, use preprocessing probes; if it needs
-  ownership, projection, or support, use policy after semantic conversion.
 
-## Invariants And Common Mistakes
+## Boundaries And Invariants
 
-- Preserve original source locations through lexical and structural parsing.
-- Keep parser models passive and source-faithful; do not attach completed
-  policy to them.
-- `parse_fortran_project()` only receives explicit project files; it does not
-  invent recursive source discovery.
+- Preprocess compiler directives before parsing; the raw Fortran parser
+  preserves branch alternatives rather than choosing one.
+- Preserve source coordinates through lexical and structural parsing.
+- Keep parser models source-faithful and policy-free.
 - A construct that parses successfully is not automatically wrapper support.
-- The `.pyi` parser returns Python AST. Contract interpretation starts only in
-  `semantics/pyi2ir.py`.
+- Target kind values come from preprocessing probes; stable semantic types and
+  contract interpretation come from `semantics/`.
+
+## Failure Boundary
+
+This stage reports invalid parser input, malformed or mismatched unit endings,
+unsupported wrapper-relevant syntax, duplicate parser symbols, and invalid raw
+Python syntax. It delegates compiler expansion and target facts to
+`preprocessing/`, shared meaning to `semantics/`, and support decisions to
+`policy/`. Start with the first incorrect logical line, source unit, or parser
+model—not the later semantic or build failure.
