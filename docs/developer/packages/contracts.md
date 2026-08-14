@@ -1,5 +1,5 @@
 ---
-title: Contracts Package
+title: Contracts Component
 audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide, semantic .pyi format
 related: index.md, parsers.md, semantics.md, ../architecture.md
@@ -7,7 +7,7 @@ status: maintained
 publication: draft
 ---
 
-# Contracts Package
+# Contracts Component
 
 ## Purpose And Boundaries
 

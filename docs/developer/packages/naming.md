@@ -1,5 +1,5 @@
 ---
-title: Naming Package
+title: Naming Component
 audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide
 related: ../architecture.md, index.md, planning.md, codegen.md, ../codebase-map.md
@@ -7,7 +7,7 @@ status: maintained
 publication: draft
 ---
 
-# Naming Package
+# Naming Component
 
 ## Purpose And Boundaries
 

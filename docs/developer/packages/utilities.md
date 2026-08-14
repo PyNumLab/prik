@@ -1,5 +1,5 @@
 ---
-title: Utilities Package
+title: Utilities Component
 audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide
 related: ../architecture.md, index.md, semantics.md, planning.md, codegen.md
@@ -7,7 +7,7 @@ status: maintained
 publication: draft
 ---
 
-# Utilities Package
+# Utilities Component
 
 ## Purpose And Boundaries
 

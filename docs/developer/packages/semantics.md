@@ -1,13 +1,13 @@
 ---
-title: Semantics Package
+title: Semantics Stage
 audience: developers, maintainers, contributors
-prerequisites: contributor architecture guide, parser package guide
+prerequisites: contributor architecture guide, parsing-stage guide
 related: ../architecture.md, index.md, parsers.md, policy.md
 status: maintained
 publication: draft
 ---
 
-# Semantics Package
+# Semantics Stage
 
 ## Purpose And Boundaries
 

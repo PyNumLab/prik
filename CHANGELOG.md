@@ -32,10 +32,15 @@ release tags add a leading `v` to the package version.
   verification scope.
 - Clarified contributor workflows for changing PRIK, local verification, pull
   request checks, and documentation maintenance.
-- Clarified the Package Guides index as the ordered ownership route from build
-  orchestration through transformation stages and shared support packages.
+- Renamed the Package Guides section to Architecture Components and grouped its
+  build stages separately from its supporting components.
+- Reviewed the Pipeline Component guide around the source-build handoff,
+  independent contract and inspection workflows, and build-result ownership.
+- Removed empty package-marker entries from the Pipeline Component and Compiler
+  Stage guides.
 - Added a brief Developer Documentation overview that routes readers to
-  Architecture, then Package Guides, and linked it from the website home page.
+  Architecture, then Architecture Components, and linked it from the website
+  home page.
 - Replaced the contributor architecture's text-only build path with a rendered
   diagram of its two input routes and shared pipeline.
 - Reduced documentation tests to enforce publication, link integrity,

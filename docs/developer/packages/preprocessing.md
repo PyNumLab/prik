@@ -1,5 +1,5 @@
 ---
-title: Preprocessing Package
+title: Preprocessing Stage
 audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide, native project compiler flags
 related: ../architecture.md, index.md, parsers.md, semantics.md
@@ -7,7 +7,7 @@ status: maintained
 publication: draft
 ---
 
-# Preprocessing Package
+# Preprocessing Stage
 
 ## Purpose And Boundaries
 

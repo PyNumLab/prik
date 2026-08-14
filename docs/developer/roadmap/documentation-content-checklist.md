@@ -82,7 +82,7 @@ more specialized pages.
   unsupported features, and where to report bugs.
 PRIK_C_DOCS_END -->
 
-### Contributor Architecture And Package Guides
+### Contributor Architecture And Component Guides
 
 - [x] `docs/developer/architecture.md`: shallow repository/package maps,
   complete wrapper workflow, stage authority, root entrypoints, change routes,
@@ -278,7 +278,7 @@ primary placeholder queue.
 - [x] `docs/developer/workflows/quality-assurance.md`: maintained quality and QA
   policy reference.
 - [x] `docs/developer/packages/index.md`: maintained package ownership map and
-  detailed package guide index.
+  detailed architecture component guide index.
 - [x] `docs/developer/packages/policy.md`: maintained
   ownership philosophy, completed policy vocabulary, supported lifetime triples,
   pointer-policy boundary, validation order, source routes, and safety boundary.

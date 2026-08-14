@@ -17,7 +17,7 @@ at semantic-IR construction.
 
 This document describes the system-level model: the stages, their handoffs,
 their authority boundaries, and the representations they produce. The linked
-[package guides](packages/index.md) describe the implementation inside each
+[architecture component guides](packages/index.md) describe the implementation inside each
 package.
 
 ## Build Architecture
@@ -147,6 +147,7 @@ Focused tests prove an invariant at its earliest owner. Public support claims
 also require end-to-end build, import, call, and behavior evidence. The
 [testing strategy](testing-strategy.md) records the complete evidence model;
 the [codebase map](codebase-map.md), [feature-to-code map](feature-to-code-map.md),
-and [package guides](packages/index.md) record the detailed ownership.
+and [architecture component guides](packages/index.md) record the detailed
+ownership.
 For package and module ownership, continue with the
 [Codebase Map](codebase-map.md).

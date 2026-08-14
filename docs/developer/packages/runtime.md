@@ -1,5 +1,5 @@
 ---
-title: Runtime Package
+title: Runtime Component
 audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide, completed native handle policy
 related: ../architecture.md, index.md, policy.md, compiler.md, pipeline.md
@@ -7,7 +7,7 @@ status: maintained
 publication: draft
 ---
 
-# Runtime Package
+# Runtime Component
 
 ## Purpose And Boundaries
 

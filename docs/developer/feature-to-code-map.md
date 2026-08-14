@@ -38,4 +38,4 @@ publication.
 The listed files are the first owners for a capability, not a complete call
 graph. When a change crosses a representation boundary, the
 [Architecture](architecture.md) identifies the next stage and the relevant
-[package guide](packages/index.md) gives its local route.
+[architecture component guide](packages/index.md) gives its local route.

@@ -10,7 +10,7 @@ publication: draft
 # Active Roadmaps
 
 Only incomplete work belongs here. Implemented behavior is documented in user
-and package guides; completed migration ledgers are removed after their stable
+and architecture component guides; completed migration ledgers are removed after their stable
 decisions and evidence routes have moved to canonical documentation.
 
 ## Active Work

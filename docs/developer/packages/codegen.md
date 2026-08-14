@@ -1,5 +1,5 @@
 ---
-title: Code Generation Package
+title: Code Generation Stage
 audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide, completed wrapper plan
 related: ../architecture.md, index.md, planning.md, printers.md, pipeline.md
@@ -7,7 +7,7 @@ status: maintained
 publication: draft
 ---
 
-# Code Generation Package
+# Code Generation Stage
 
 ## Purpose And Boundaries
 

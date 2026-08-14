@@ -1,5 +1,5 @@
 ---
-title: Policy Package
+title: Policy Stage
 audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide, semantic IR
 related: ../architecture.md, index.md, semantics.md, planning.md, runtime.md, ../../user/guide/memory-management.md
@@ -7,7 +7,7 @@ status: maintained
 publication: draft
 ---
 
-# Policy Package
+# Policy Stage
 
 ## Purpose And Boundaries
 

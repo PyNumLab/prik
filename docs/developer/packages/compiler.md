@@ -1,5 +1,5 @@
 ---
-title: Compiler Package
+title: Compiler Stage
 audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide, native compiler toolchain
 related: ../architecture.md, index.md, pipeline.md, runtime.md, ../workflows/quality-assurance.md
@@ -7,7 +7,7 @@ status: maintained
 publication: draft
 ---
 
-# Compiler Package
+# Compiler Stage
 
 ## Purpose And Boundaries
 
@@ -21,7 +21,6 @@ or decide wrapper policy.
 
 ```text
 prik/compiler/
-├── __init__.py
 ├── compiler_profiles.py
 ├── objects.py
 ├── compilers.py
@@ -46,7 +45,6 @@ compiler executes one request at a time.
 
 | Module | Main entrypoints and contents | Change it when |
 | --- | --- | --- |
-| [`prik/compiler/__init__.py`](../../../prik/compiler/__init__.py) | Deliberately empty package boundary; callers use the owning modules or pipeline APIs. | Establishing a small compiler-package public import surface. |
 | [`prik/compiler/compiler_profiles.py`](../../../prik/compiler/compiler_profiles.py) | Profile data and `fortran_compiler_family()` map a Fortran executable to its compatible C driver and flags. | Supporting a compiler family or changing family-specific build settings. |
 | [`prik/compiler/objects.py`](../../../prik/compiler/objects.py) | `ObjectFile` is the immutable description of one source-to-object request. | A compilation input needs another explicit field or validation rule. |
 | [`prik/compiler/compilers.py`](../../../prik/compiler/compilers.py) | `Compiler` builds, records, runs, and reports compile/link commands; `get_condaless_search_path()` isolates environment lookup. | Command spelling, subprocess execution, or command reporting changes. |

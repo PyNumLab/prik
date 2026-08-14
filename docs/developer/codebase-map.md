@@ -26,7 +26,7 @@ user-visible behavior to its documentation and evidence.
 | `prik/pipeline/wrapper.py` | Completed plan to rendered-wrapper orchestration and artifact records. |
 | `prik/compiler/compilers.py` | Native compiler invocation and tool lookup. |
 
-## Package Ownership
+## Component Ownership
 
 | Package | Owns | Key modules |
 | --- | --- | --- |
@@ -44,7 +44,8 @@ user-visible behavior to its documentation and evidence.
 | [`prik.naming`](packages/naming.md) | Public-name normalization and generated-symbol construction. | `policy.py`, `native_symbols.py` |
 | [`prik.utilities`](packages/utilities.md) | Small helpers with no stage-specific ownership. | `strings.py`, `visitor.py`, `stage_values.py` |
 
-The [package guides](packages/index.md) give each package's local module tour,
+The [architecture component guides](packages/index.md) give each component's
+local module tour,
 boundaries, execution example, and focused tests.
 
 ## Cross-Stage Hotspots

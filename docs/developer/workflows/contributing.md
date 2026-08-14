@@ -52,7 +52,8 @@ does not establish runtime behavior. A public wrapper claim needs a build,
 import, call, and observable result. Unsupported input should fail at the first
 stage with enough facts for a stable diagnostic.
 
-Package guides may show a production-file command and representative result.
+Architecture component guides may show a production-file command and
+representative result.
 The documentation suite runs those pairs and uses the page as the expected
 output. Stable output is exact; excerpts and target-dependent output are
 checked only for the facts shown. See
@@ -69,7 +70,7 @@ Add a source fact in parsing, its language-neutral meaning in semantics, and
 ownership or support decisions in policy. Planning projects completed policy;
 code generation, printing, and compilation implement that projection. Put a
 new diagnostic at the first stage that can explain it. The architecture and
-package guides describe these boundaries in detail.
+architecture component guides describe these boundaries in detail.
 
 ## Pull Request
 

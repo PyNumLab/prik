@@ -121,7 +121,7 @@ nav:
   - Developer Documentation:
       - Overview: developer/index.md
       - Architecture: developer/architecture.md
-      - Package Guides:
+      - Architecture Components:
           - Overview: developer/packages/index.md
           - Contracts: developer/packages/contracts.md
           - Compiler: developer/packages/compiler.md

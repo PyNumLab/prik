@@ -1,5 +1,5 @@
 ---
-title: Parsers Package
+title: Parsing Stage
 audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide, prepared source
 related: ../architecture.md, index.md, preprocessing.md, semantics.md, ../codebase-map.md
@@ -7,7 +7,7 @@ status: maintained
 publication: draft
 ---
 
-# Parsers Package
+# Parsing Stage
 
 ## Purpose And Boundaries
 

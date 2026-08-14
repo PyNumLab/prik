@@ -1,5 +1,5 @@
 ---
-title: Printers Package
+title: Printing Stage
 audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide, formed source representations
 related: ../architecture.md, index.md, codegen.md, pipeline.md, parsers.md
@@ -7,7 +7,7 @@ status: maintained
 publication: draft
 ---
 
-# Printers Package
+# Printing Stage
 
 ## Purpose And Boundaries
 

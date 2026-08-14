@@ -1,5 +1,5 @@
 ---
-title: Planning Package
+title: Planning Stage
 audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide, completed policy
 related: ../architecture.md, index.md, policy.md, codegen.md, ../codebase-map.md
@@ -7,7 +7,7 @@ status: maintained
 publication: draft
 ---
 
-# Planning Package
+# Planning Stage
 
 ## Purpose And Boundaries
 
