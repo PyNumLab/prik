@@ -1,4 +1,11 @@
-"""Wrapper backend nodes and direct C/Fortran lowering."""
+"""Public code-generation API for lowering completed wrapper plans.
+
+``CBindingGenerator`` and ``FortranBridgeGenerator`` turn a validated
+``ModulePlan`` into typed backend nodes. The selected node records and scalar
+registry re-exported here are the shared vocabulary for direct backend use and
+printers. Policy completion, plan construction, source rendering, and build
+integration remain in their owning stages.
+"""
 
 from __future__ import annotations
 

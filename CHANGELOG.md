@@ -49,6 +49,32 @@ release tags add a leading `v` to the package version.
   independent contract and inspection workflows, and build-result ownership.
 - Reviewed the Preprocessing Stage guide around its Fortran source route,
   compiler-derived target probes, module navigation, and executable examples.
+- Reviewed the Parsing Stage guide around its Fortran and semantic-`.pyi`
+  algorithms, source-level navigation, executable examples, and ownership
+  boundaries.
+- Reviewed the Semantics Stage guide around its shared IR, frontend-conversion
+  algorithms, raw contract facts, executable examples, and policy boundary.
+- Reviewed the Policy Stage guide around ordered policy completion, immutable
+  interoperability decisions, module algorithms, executable examples, and the
+  planning boundary.
+- Reviewed the Planning Stage guide around deterministic policy projection,
+  editable plan ownership, module algorithms, executable examples, and the
+  generator freeze boundary.
+- Reviewed the Code Generation Stage guide around its generator handoff,
+  backend lowering algorithms, plan-only decisions, executable examples, and
+  focused evidence.
+- Reviewed the Printing Stage guide around representation-specific traversal,
+  safe source formatting, isolated `.pyi` emission, executable examples, and
+  focused evidence.
+- Reviewed the Compiler Stage guide around coherent toolchain selection,
+  explicit command construction, conditional native-support installation,
+  executable examples, and focused evidence.
+- Added focused C Binding and Fortran Bridge lowering guides with executable
+  manually constructed plans and printed backend-source examples.
+- Moved binding and bridge algorithms and rendered-source demonstrations out
+  of the Code Generation overview and into their focused lowering guides.
+- Explained each reviewed package-guide execution example in terms of its
+  in-memory setup and the stage boundary established by its output.
 - Added Pipeline Component and source-level navigation for contract loading,
   wrapper generation, build-manifest replay, and `build.py` orchestration.
 - Removed empty package-marker entries from the Pipeline Component and Compiler

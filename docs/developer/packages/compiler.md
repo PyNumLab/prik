@@ -4,18 +4,18 @@ audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide, native compiler toolchain
 related: ../architecture.md, index.md, pipeline.md, runtime.md, ../workflows/quality-assurance.md
 status: maintained
-publication: draft
+publication: reviewed
 ---
 
 # Compiler Stage
 
 ## Purpose And Boundaries
 
-`prik/compiler/` receives explicit source, object, include, library, flag, and
-link inputs and turns them into native commands. It owns compiler-family
-profiles, command construction and execution, and native-support installation.
-It does not preprocess source, discover build order, probe datatype meaning,
-or decide wrapper policy.
+`prik/compiler/` turns explicit native-build requests into compiler commands.
+It owns coherent compiler-family profiles, command construction and execution,
+and conditional installation of the bundled native support. It does not
+preprocess source, discover build order, probe datatype meaning, or decide
+wrapper policy.
 
 ## Local Structure
 
@@ -30,16 +30,17 @@ prik/compiler/
 ## What This Stage Receives And Produces
 
 ```text
-explicit ObjectFile and link inputs from prik.pipeline
-  -> coherent compiler-family profile
-  -> compile/link argv
-  -> recorded or executed native process
-  -> object file or shared extension
+selected Fortran executable -> compatible vendor profile and C driver
+explicit ObjectFile         -> compile argv -> object file
+ordered objects + link args -> link argv    -> shared extension
+
+generated imports + output directory -> conditional native-support installation
 ```
 
-The selected Fortran compiler family supplies its matching C driver and
-family-specific switches. The pipeline owns dependency-ready batches; the
-compiler executes one request at a time.
+The pipeline supplies dependency-ready batches and decides when native support
+is needed. This component executes one explicit request at a time. Selecting a
+Fortran compiler identifies its compatible C driver and family-specific flags;
+it never combines unrelated toolchain profiles.
 
 ## Directory Tour
 
@@ -50,9 +51,59 @@ compiler executes one request at a time.
 | [`prik/compiler/compilers.py`](../../../prik/compiler/compilers.py) | `Compiler` builds, records, runs, and reports compile/link commands; `get_condaless_search_path()` isolates environment lookup. | Command spelling, subprocess execution, or command reporting changes. |
 | [`prik/compiler/native_support.py`](../../../prik/compiler/native_support.py) | `install_native_support()` copies the bundled support payload and creates the NumPy API-version header. | The pipeline needs a different support-installation result; edit the payload itself under `runtime/native_support/`. |
 
-## Execution Examples
+## Module Algorithms
+
+### `compiler_profiles.py`: select one coherent toolchain
+
+`available_compilers` records the C and Fortran settings for each supported
+vendor. While constructing those profiles, `_toolchain()` attaches the active
+Python and NumPy include and link settings required for a CPython extension.
+
+`fortran_compiler_family()` only classifies a Fortran executable name: it
+returns the identifying token, vendor profile, and matching C executable name.
+It does not locate executables or run a command.
+`Compiler.from_fortran_executable()` performs the lookup, first beside the
+selected Fortran executable and then on the configured search path. It rejects
+an unknown family or a missing matching C driver.
+
+### `objects.py`: carry one complete compilation request
+
+`ObjectFile` is a frozen record for one source-to-object operation. It
+normalizes paths and iterable fields, accepts only C or Fortran, and carries
+the source, output path, flags, include and library directories, libraries,
+and requested tools. Compilation order and dependency discovery remain in the
+pipeline.
+
+### `compilers.py`: construct and run explicit argv commands
+
+`Compiler` loads a built-in profile, a JSON profile, or an installed profile.
+Its `compile_object()` method creates the declared output directory, selects
+the correct language driver, combines profile flags with the request's flags,
+adds include paths, and adds the vendor-specific Fortran module-output flag.
+It then records the exact argv and either executes it or returns it in
+record-only mode.
+
+`link_extension()` requires a nonempty ordered object list. It selects the
+linker for the requested language, adds shared-library, profile, Python, and
+library inputs, preserves the supplied object and link-argument order, and
+returns the extension path. It does not reorder dependencies or search for
+additional objects. `get_condaless_search_path()` is the isolated compiler
+lookup helper for environments whose Conda paths should be ignored.
+
+### `native_support.py`: install support only when generated imports need it
+
+`install_native_support()` does nothing unless generated imports request
+`binding_support` or one of its files. When needed, it locks the destination,
+replaces the copied header-only payload, and writes `numpy_version.h` for the
+active NumPy API level. The pipeline owns the generated imports and destination
+directory; this module only performs that installation.
+
+## Run The Workflows
 
 Compiler-family selection:
+
+`compiler_profiles.py` classifies an example `gfortran-13` executable name and
+reads the matching built-in profile; it does not locate or invoke a compiler.
 
 ```bash
 python3 prik/compiler/compiler_profiles.py
@@ -65,7 +116,14 @@ Matching C executable: gcc
 Fortran module-output flag: -J
 ```
 
+The vendor, C driver, and module-output flag are one coherent family choice.
+They are profile facts that `Compiler.from_fortran_executable()` later uses for
+real executable lookup.
+
 One immutable compilation request:
+
+`objects.py` constructs one `ObjectFile` for a generated Fortran bridge. It
+does not create the source or invoke a compiler.
 
 ```bash
 python3 prik/compiler/objects.py
@@ -78,7 +136,13 @@ Flags: ('-O2',)
 Include directories: build/modules
 ```
 
+These fields are the complete explicit input for one compilation request; the
+pipeline, not `ObjectFile`, decides when that request is compiled.
+
 Record-only command construction:
+
+`compilers.py` creates a temporary C request and a GNU compiler configured to
+record commands without executing them.
 
 ```bash
 python3 prik/compiler/compilers.py
@@ -93,7 +157,14 @@ Contains requested flag: True
 Commands recorded: 1
 ```
 
+The missing object file and recorded `-c` command show that command construction
+is independently inspectable. The requested flag appears after profile flags,
+and no native subprocess ran.
+
 Bundled runtime installation:
+
+`native_support.py` requests `binding_support/prik_binding.h` into a temporary
+directory, which is enough to trigger conditional support installation.
 
 ```bash
 python3 prik/compiler/native_support.py
@@ -105,15 +176,19 @@ Binding header present: True
 NumPy version header present: True
 ```
 
-Together these outputs prove that profile selection, request construction,
-native command mechanics, and support installation remain separate operations.
+The two `True` lines show that the payload and active-NumPy header were written
+only after the generated import requested them. Together the examples cover
+toolchain classification, explicit request representation, command creation,
+and conditional support installation.
 
-## Tests And What They Prove
+## Tests And Evidence
 
-- [Compiler construction tests](../../../tests/fortran/building_shared_library/compiling/) cover profile selection and compile/link argv.
-- [Build pipeline tests](../../../tests/fortran/building_shared_library/pipeline/) cover compiler handoff from a build plan.
-- [Source build modes](../../../tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py) covers real source-build outcomes.
-- [Runtime ABI compatibility](../../../tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py) covers installed support used by a compiled extension.
+| Evidence | What it establishes |
+| --- | --- |
+| [Compiler profile and command construction](../../../tests/fortran/building_shared_library/compiling/test_compiler_verbose.py) | Coherent C/Fortran driver selection, explicit overrides, profile and user-flag order, optional-flag probing, record-only mode, and preserved link-input order. |
+| [Generated-wrapper build handoff](../../../tests/fortran/building_shared_library/pipeline/test_generated_wrapper_build.py) | Generated sources, conditional support installation, explicit C and Fortran object requests, and the final ordered link request passed from the pipeline. |
+| [Source build modes](../../../tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py) | The selected source-build mode produces an importable native extension. |
+| [Native-support surface](../../../tests/fortran/infrastructure/runtime/test_native_support.py) | The bundled payload remains header-only and exposes the small native binding API expected by generated sources. |
 
 ## Change Routes
 
@@ -124,9 +199,18 @@ native command mechanics, and support installation remain separate operations.
 - Change native payload contents in `prik/runtime/native_support/`; change only
   their installation here.
 
-## Invariants And Common Mistakes
+## Boundaries And Invariants
 
 - Never infer ownership, dtype, Python API shape, or wrapper support here.
 - Never silently mix a selected Fortran driver with an unrelated C profile.
 - Each invocation receives explicit inputs; hidden project discovery belongs
   upstream.
+
+## Failure Boundary
+
+This component reports invalid object requests, unknown or incomplete
+toolchains, unavailable compiler executables, and failed compiler processes.
+It delegates dependency order, artifact selection, and build manifests to
+`pipeline/`; generated imports and output locations are also pipeline facts.
+Start with the selected profile or the first recorded argv whose inputs are
+wrong, rather than with the extension that fails later.

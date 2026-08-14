@@ -7973,8 +7973,9 @@ class FortranBridgeGenerator(ClassVisitor):
 
 if __name__ == "__main__":
     from prik.planning.planner import WrapperPlanner
-    from prik.semantics.models import SemanticArgument, SemanticFunction, SemanticModule, SemanticType
     from prik.policy.completion import complete_semantic_policies
+    from prik.printers.fortran import FortranSourcePrinter
+    from prik.semantics.models import SemanticArgument, SemanticFunction, SemanticModule, SemanticType
 
     module = SemanticModule(
         name="bridge_demo",
@@ -7989,38 +7990,9 @@ if __name__ == "__main__":
     )
     complete_semantic_policies(module)
     plan = WrapperPlanner().build(module)
-    function_plan = plan.namespaces[0].functions[0]
     bridge = FortranBridgeGenerator()
     bridge.require_supported(plan)
     fortran_module = bridge.visit(plan)
-    procedure = fortran_module.procedures[0]
 
-    print(f"Native procedure: {function_plan.bridge.native_name}")
-    print(
-        "Native call slots:",
-        ", ".join(f"{slot.source_kind}:{slot.native_name}" for slot in function_plan.native_call_slots),
-    )
-    print(f"Bridge module: {fortran_module.name}")
-    print("Module uses:")
-    for use in fortran_module.uses:
-        only = f", only: {', '.join(use.only)}" if use.only else ""
-        print(f"  use {use.module}{only}")
-    print(f"Bridge procedure: {procedure.name}")
-    print(f"Binding name: {procedure.bind_name}")
-    print(f"Procedure kind: {'subroutine' if procedure.is_subroutine else 'function'}")
-    print(f"Result: {procedure.result_name} :: {procedure.result_type}")
-    print("Parameters:")
-    for parameter in procedure.parameters:
-        attributes = f", {', '.join(parameter.attributes)}" if parameter.attributes else ""
-        print(f"  {parameter.name}: {parameter.type_name}{attributes}")
-    print("Declarations:")
-    if procedure.declarations:
-        for declaration in procedure.declarations:
-            attributes = f", {', '.join(declaration.attributes)}" if declaration.attributes else ""
-            print(f"  {declaration.name}: {declaration.type_name}{attributes}")
-    else:
-        print("  (none)")
-    print("Body nodes:")
-    for statement in procedure.body:
-        print(f"  {statement!r}")
-    print("Internal procedures:", ", ".join(item.name for item in procedure.internal_procedures) or "(none)")
+    print("Rendered Fortran bridge source:")
+    print(FortranSourcePrinter().doprint(fortran_module))

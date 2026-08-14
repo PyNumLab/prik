@@ -1,3 +1,13 @@
+"""Passive source-fact records returned by the Fortran parser.
+
+``FortranFile`` represents one parsed source and ``FortranProject`` adds its
+cross-file registries. Declaration, procedure, type, and unit records retain
+what the source says; they do not make compiler-target, semantic-policy, or
+wrapper-support decisions. ``FortranParseError`` is the source-located parser
+diagnostic. Read these public records before the parser visitors that populate
+them in ``parser.py``.
+"""
+
 from __future__ import annotations
 
 import inspect

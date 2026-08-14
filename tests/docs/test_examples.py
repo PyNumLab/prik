@@ -32,7 +32,7 @@ AUDITED_PYTHON_DOC_PATHS = [
     *sorted((ROOT / "docs/user/getting-started").glob("*.md")),
     *sorted((ROOT / "docs/user/guide").glob("*.md")),
 ]
-DEVELOPER_PACKAGE_DOC_PATHS = sorted((ROOT / "docs/developer/packages").glob("*.md"))
+DEVELOPER_PACKAGE_DOC_PATHS = sorted((ROOT / "docs/developer/packages").rglob("*.md"))
 TEST_MARKER = re.compile(r"^\s*<!--\s*prik-doc-test:\s*(run|exact)(?:\s+([a-z0-9_-]+))?\s*-->\s*$")
 OUTPUT_MARKER = re.compile(r"^\s*<!--\s*prik-doc-test-output\s*-->\s*$")
 SOURCE_MARKER = re.compile(r"^\s*<!--\s*prik-doc-source:\s*(.+?)\s*-->\s*$")

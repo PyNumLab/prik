@@ -12231,8 +12231,9 @@ class CBindingGenerator(ClassVisitor):
 
 if __name__ == "__main__":
     from prik.planning.planner import WrapperPlanner
-    from prik.semantics.models import SemanticArgument, SemanticFunction, SemanticModule, SemanticType
     from prik.policy.completion import complete_semantic_policies
+    from prik.printers.c import CSourcePrinter
+    from prik.semantics.models import SemanticArgument, SemanticFunction, SemanticModule, SemanticType
 
     module = SemanticModule(
         name="binding_demo",
@@ -12247,25 +12248,14 @@ if __name__ == "__main__":
     )
     complete_semantic_policies(module)
     plan = WrapperPlanner().build(module)
-    function_plan = plan.namespaces[0].functions[0]
     binding = CBindingGenerator()
     binding.require_supported(plan)
     c_module, c_header = binding.visit(plan)
     wrapper = next(function for function in c_module.functions if function.name == "wrap_double_value")
 
-    print(f"Native procedure: {function_plan.bridge.native_name}")
-    print(
-        "Native call slots:",
-        ", ".join(f"{slot.source_kind}:{slot.native_name}" for slot in function_plan.native_call_slots),
-    )
-    print(f"C module: {c_module.name}")
-    print(f"Header guard: {c_header.guard}")
-    print("Header prototypes:", ", ".join(prototype.name for prototype in c_header.prototypes))
-    print(f"Binding wrapper: {wrapper.name}")
-    print(f"Return type: {wrapper.return_type}")
-    print("Parameters:")
-    for parameter in wrapper.parameters:
-        print(f"  {parameter.name}: {parameter.type_name}")
-    print("Body nodes:")
-    for statement in wrapper.body:
-        print(f"  {statement!r}")
+    printer = CSourcePrinter()
+    print("Rendered C header:")
+    print(printer.doprint(c_header))
+    print()
+    print("Rendered C binding wrapper:")
+    print(printer.doprint(wrapper))

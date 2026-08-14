@@ -5,6 +5,12 @@ file, or project models and return :class:`~prik.semantics.models.SemanticModule
 objects.  They normalize types, storage, visibility, imported derived types,
 and procedure projections.  Ownership and wrapper-generation policy are
 deliberately completed by later semantic stages.
+
+``FortranToIRConverter`` dispatches each parser model to its matching visitor.
+The public module, file, and project helpers choose the input shape and manage
+per-call compiler facts. Read container visitors first, then variable and
+declaration conversion, followed by storage/projection helpers and the
+compile-time requirement utilities at the end of the module.
 """
 
 from __future__ import annotations

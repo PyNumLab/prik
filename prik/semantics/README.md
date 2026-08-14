@@ -4,6 +4,10 @@ This package owns the language-neutral contract between native parser facts
 and editable `.pyi` files. Post-IR decisions live in `../policy/`; typed wrapper
 implementation plans live in `../planning/`.
 
+The current supported wrapper route uses Fortran parser facts and semantic
+`.pyi` contracts. `c2ir.py` remains preparatory work for a future C frontend;
+its presence does not make C wrapping supported.
+
 ## Entry Points
 
 | File | Owns |

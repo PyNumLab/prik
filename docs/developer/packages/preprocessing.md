@@ -146,6 +146,11 @@ Native includes: 1; diagnostics: 0
 ...
 ```
 
+The script supplies a small module with one include and prints the parser input
+before and after preprocessing. The replacement of the `include` line, plus
+the dependency and diagnostic counts, shows that source expansion preserves
+the information needed by the parser without reporting a problem.
+
 The Fortran-specific module shows the parser input and provenance it returns:
 
 ```bash
@@ -161,6 +166,10 @@ Native include dependencies: 1
 Generated source mappings: 5
 Diagnostics: 0
 ```
+
+This narrower example prepares one Fortran source with one native include. Its
+expanded text is the parser input; the mapping count records how generated
+lines still lead back to their source locations.
 
 The target-probe example shows a compiler measurement, not a fixed semantic
 type. It requires `gfortran` or `f95`.

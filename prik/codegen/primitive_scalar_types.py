@@ -1,4 +1,12 @@
-"""Primitive rank-zero backend type facts shared by wrapper generators."""
+"""Backend spelling registries for resolved primitive scalar identities.
+
+``PrimitiveScalarTypeRegistry.type_for`` returns a fresh editable
+``BackendScalarType`` containing the C, Fortran, NumPy, CPython, and descriptor
+spellings required by direct lowering. ``NumpyDtypeRegistry.expression_for``
+returns the corresponding generated Python expression. Both registries consume
+an already-resolved semantic identity and fail for unknown names; neither
+infers a scalar type from source syntax or a backend condition.
+"""
 
 from __future__ import annotations
 

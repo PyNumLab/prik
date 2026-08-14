@@ -1,3 +1,11 @@
+"""Grammar-neutral lexical helpers for the Fortran parser.
+
+``detect_source_form`` selects fixed or free form before lexical preparation.
+``split_csv`` separates only top-level comma lists after a caller has chosen
+the relevant Fortran construct. Neither function builds parser models or
+interprets declarations; ``lexer.py`` and ``parser.py`` own those next steps.
+"""
+
 from __future__ import annotations
 
 from prik.utilities.declaration_expressions import split_top_level_expression

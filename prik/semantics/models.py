@@ -1,3 +1,13 @@
+"""Language-neutral semantic IR records shared by later stages.
+
+``SemanticModule`` is the convergence object produced by frontend conversion.
+Its declarations retain stable type, storage, projection, and provenance facts
+through ``SemanticType``, ``SemanticStorageContract``, and ``SemanticOrigin``.
+The records do not complete ownership or choose emitted mechanisms; policy and
+planning own those later decisions. Read the public dataclasses in module
+order, then the equality helpers that define structural comparison.
+"""
+
 from __future__ import annotations
 
 import re

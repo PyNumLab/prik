@@ -1,3 +1,12 @@
+"""Prepare and validate source-free native facts declared by semantic `.pyi`.
+
+``prepare_pyi_native_contract`` attaches native origins to loaded contract
+modules. ``native_contract_issues`` reports incomplete or inconsistent native
+placement and type facts, while ``validate_pyi_native_contract`` raises the
+first issue. This module validates declared facts before policy completion; it
+does not choose ownership, support, or generated mechanisms.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Iterable

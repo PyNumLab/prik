@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from tools import mkdocs_publication
 
 
@@ -74,3 +76,38 @@ def test_repository_evidence_links_are_rewritten_to_github(tmp_path: Path, monke
         "[Evidence](https://github.com/PyNumLab/prik/blob/main/tests/evidence.py#proof) "
         "[Missing](../../missing.py)"
     )
+
+
+def test_package_command_expands_its_main_example_source(tmp_path: Path, monkeypatch) -> None:
+    docs_dir = tmp_path / "docs"
+    source_path = tmp_path / "prik" / "component.py"
+    docs_dir.mkdir()
+    source_path.parent.mkdir()
+    source_path.write_text(
+        'def component():\n    return "library code"\n\nif __name__ == "__main__":\n    print(component())\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(mkdocs_publication, "_docs_dir", docs_dir)
+
+    expanded = mkdocs_publication._expand_package_main_examples(
+        "```bash\npython3 prik/component.py\n```",
+        "developer/packages/component.md",
+    )
+
+    assert "<summary>Example source: <code>prik/component.py</code></summary>" in expanded
+    assert 'if __name__ == "__main__":\n    print(component())' in expanded
+
+
+def test_package_command_rejects_a_module_without_one_main_example(tmp_path: Path, monkeypatch) -> None:
+    docs_dir = tmp_path / "docs"
+    source_path = tmp_path / "prik" / "component.py"
+    docs_dir.mkdir()
+    source_path.parent.mkdir()
+    source_path.write_text("def component():\n    return None\n", encoding="utf-8")
+    monkeypatch.setattr(mkdocs_publication, "_docs_dir", docs_dir)
+
+    with pytest.raises(ValueError, match="one top-level __main__ block"):
+        mkdocs_publication._expand_package_main_examples(
+            "```bash\npython3 prik/component.py\n```",
+            "developer/packages/component.md",
+        )

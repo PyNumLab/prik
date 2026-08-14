@@ -1,4 +1,15 @@
-"""Emit the executable Python facade embedded in a generated C extension."""
+"""Emit the executable Python facade installed by generated C initialization.
+
+``PythonSurfaceEmitter`` consumes one planned namespace and a context of
+already-selected holder and proxy identities. It renders opaque derived classes,
+overload forwarders, holder operation maps, and module-object proxy operations
+as Python source. ``CBindingGenerator`` embeds and executes that source during
+extension initialization.
+
+The emitted facade forwards to generated C helpers. It does not select public
+names, ownership, setter exposure, or lifecycle behavior; those facts are
+already fixed in the plan.
+"""
 
 from __future__ import annotations
 

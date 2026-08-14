@@ -3,6 +3,11 @@
 Semantic interpretation belongs to `prik.semantics.pyi2ir`; this module stays
 small so the `.pyi` pipeline mirrors native source parsing:
 parser -> semantic IR converter -> semantic policy completion.
+
+Its only public operations are ``parse_pyi_text`` and ``parse_pyi_file``. Both
+return ``ast.Module`` and leave PRIK contract validation to the semantic
+converter. Read the text function first; the file function is only UTF-8 input
+handling around it.
 """
 
 from __future__ import annotations

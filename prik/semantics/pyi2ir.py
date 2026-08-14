@@ -5,6 +5,12 @@ They validate the supported contract subset, retain declared native facts and
 projections, and return ``SemanticModule`` objects for native-contract
 validation and post-IR policy completion.  They deliberately do not choose
 wrapper ownership or lowering policy.
+
+``convert_pyi_to_ir`` is the public single-contract boundary.
+``_PyiAstParser`` builds declarations in source order, then resolves local
+relationships that require the completed module; ``reconcile_external_type_refs``
+performs the corresponding batch pass. Read those three boundaries before the
+annotation and decorator helpers that implement them.
 """
 
 from __future__ import annotations

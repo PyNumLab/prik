@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import os
 import posixpath
 import re
@@ -18,6 +19,7 @@ _LANE_INDEXES = {
     "developer": "developer/index.md",
 }
 _MARKDOWN_LINK = re.compile(r"(?<!!)\[([^]]+)]\(([^)]+)\)")
+_PACKAGE_MAIN_COMMAND = re.compile(r"(?m)^```bash\npython3 (?P<path>prik/(?:[A-Za-z0-9_]+/)*[A-Za-z0-9_]+\.py)\n```$")
 
 _include_drafts = False
 _known_document_paths: set[str] = set()
@@ -182,6 +184,63 @@ def _rewrite_repository_targets(markdown: str, source_uri: str) -> str:
     return _MARKDOWN_LINK.sub(replace_link, markdown)
 
 
+def _is_main_guard(node: ast.stmt) -> bool:
+    """Return whether one top-level statement is the conventional main guard."""
+    return (
+        isinstance(node, ast.If)
+        and isinstance(node.test, ast.Compare)
+        and isinstance(node.test.left, ast.Name)
+        and node.test.left.id == "__name__"
+        and len(node.test.ops) == len(node.test.comparators) == 1
+        and isinstance(node.test.ops[0], ast.Eq)
+        and isinstance(node.test.comparators[0], ast.Constant)
+        and node.test.comparators[0].value == "__main__"
+    )
+
+
+def _main_example_source(path: str) -> str:
+    """Extract exactly one top-level ``__main__`` block from a PRIK module."""
+    repository_root = _docs_dir.parent.resolve()
+    source_path = (repository_root / path).resolve()
+    source_root = (repository_root / "prik").resolve()
+    if not source_path.is_relative_to(source_root) or not source_path.is_file():
+        raise ValueError(f"Package example source does not exist: {path}")
+
+    source = source_path.read_text(encoding="utf-8")
+    tree = ast.parse(source, filename=str(source_path))
+    matches = [node for node in tree.body if _is_main_guard(node)]
+    if len(matches) != 1:
+        raise ValueError(f"Package example source must contain one top-level __main__ block: {path}")
+    example = ast.get_source_segment(source, matches[0])
+    if example is None:
+        raise ValueError(f"Could not extract the package example source: {path}")
+    return example
+
+
+def _main_example_details(path: str) -> str:
+    """Render one synchronized, collapsed source block for a package command."""
+    source = _main_example_source(path)
+    return (
+        '<details markdown="1">\n'
+        f"<summary>Example source: <code>{path}</code></summary>\n\n"
+        "```python\n"
+        f"{source}\n"
+        "```\n\n"
+        "</details>"
+    )
+
+
+def _expand_package_main_examples(markdown: str, source_uri: str) -> str:
+    """Show the executed source for direct commands in architecture-component guides."""
+    if not source_uri.startswith("developer/packages/"):
+        return markdown
+
+    def replace_command(match: re.Match[str]) -> str:
+        return f"{match.group(0)}\n\n{_main_example_details(match.group('path'))}"
+
+    return _PACKAGE_MAIN_COMMAND.sub(replace_command, markdown)
+
+
 def on_config(config, **_kwargs):
     """Load publication state and filter production navigation."""
     global _docs_dir, _include_drafts, _known_document_paths, _published_paths, _repository_url
@@ -211,6 +270,7 @@ def on_files(files, **_kwargs):
 def on_page_markdown(markdown: str, page, **_kwargs) -> str:
     """Label local drafts and preserve production links to unpublished pages."""
     source_uri = page.file.src_uri
+    markdown = _expand_package_main_examples(markdown, source_uri)
     markdown = _rewrite_repository_targets(markdown, source_uri)
     if _include_drafts:
         if source_uri not in _published_paths:

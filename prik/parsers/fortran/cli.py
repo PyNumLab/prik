@@ -1,3 +1,13 @@
+"""Render Fortran parser results and diagnostics for command-line inspection.
+
+``main`` is reached through ``python3 -m prik.parsers.fortran``. Its default
+route parses paths and formats parser-owned reports; JSON is the same result in
+a machine-readable shape. The explicit ``--semantics`` and ``--pyi`` options
+cross into semantic conversion and printing for inspection, rather than adding
+meaning to the parser itself. Read the report-building helpers before CLI
+argument handling when changing presentation.
+"""
+
 from __future__ import annotations
 
 import argparse

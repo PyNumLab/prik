@@ -117,7 +117,9 @@ scale(3.0, 2.5) = 7.5
 
 This command writes a temporary Fortran source, builds an extension, imports
 it through `WrapperBuildResult.import_module()`, and calls its generated API.
-It requires configured C and Fortran compilers.
+`7.5` therefore confirms generation, native compilation, import, and the
+public call—not merely that source files were written. It requires configured
+C and Fortran compilers.
 
 `WrapperGenerator` demonstrates the handoff immediately before disk output:
 
@@ -132,7 +134,8 @@ Native support: binding_support
 ```
 
 The result is a `GeneratedWrapper` in memory; this command does not write or
-compile files.
+compile files. The initializer and three source names identify the exact
+artifacts that the next build step would write and compile.
 
 The contract-loading workflow produces semantic IR and re-emits a stub:
 
@@ -151,6 +154,10 @@ def scale(
     value: Float64
 ) -> Float64: ...
 ```
+
+The script loads one in-memory contract. The marker confirms that the semantic
+module retains its `.pyi` origin; the final text is a fresh stub emitted from
+that semantic model rather than the original syntax tree.
 
 The target-datatype report is an inspection route, not a wrapper build:
 

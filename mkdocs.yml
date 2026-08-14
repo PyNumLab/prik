@@ -129,7 +129,10 @@ nav:
           - Semantics: developer/packages/semantics.md
           - Policy: developer/packages/policy.md
           - Planning: developer/packages/planning.md
-          - Code Generation: developer/packages/codegen.md
+          - Code Generation:
+              - Overview: developer/packages/codegen.md
+              - C Binding: developer/packages/codegen/c-binding.md
+              - Fortran Bridge: developer/packages/codegen/fortran-bridge.md
           - Printers: developer/packages/printers.md
           - Compiler: developer/packages/compiler.md
           - Contracts: developer/packages/contracts.md

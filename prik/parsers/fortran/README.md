@@ -4,9 +4,8 @@ This package owns Fortran source facts before semantic conversion. It preserves
 modules, procedures, declarations, derived types, visibility, and diagnostics
 needed by wrapper and inspection workflows.
 
-Its canonical implementation namespace is `prik.parsers.fortran`. Public
-callers may also use the stable parser functions and models exported from the
-`prik` package root.
+Its public API is `prik.parsers.fortran`; the `prik` root facade does not
+re-export parser functions or models.
 
 ## Entry Points
 

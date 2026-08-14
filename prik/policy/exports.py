@@ -1,4 +1,15 @@
-"""Completed Python export paths shared by wrapper policy lanes."""
+"""Resolve Python export names for later wrapper-policy construction.
+
+``complete_python_export_policy`` walks public semantic declarations in their
+lowering order, normalizes their requested names, and reserves one name in each
+Python namespace. It writes the completed names back to semantic metadata so
+all policy constructors see the same collision-checked result.
+
+``completed_python_exports`` retrieves that metadata as immutable
+``PythonExportPolicy`` records while wrapper policy is assembled. This module
+decides Python placement only: it does not choose a wrapper mechanism or emit
+the namespace.
+"""
 
 from __future__ import annotations
 
