@@ -28,10 +28,9 @@ user-visible behavior to its documentation and evidence.
 
 ## Component Ownership
 
-| Package | Owns | Key modules |
+| Component | Owns | Key modules |
 | --- | --- | --- |
-| [`prik.contracts`](packages/contracts.md) | Public semantic `.pyi` contract vocabulary. | `__init__.py` |
-| [`prik.compiler`](packages/compiler.md) | Compiler execution, native-support installation, and linking. | `compilers.py`, `objects.py`, `native_support.py` |
+| [`prik.pipeline`](packages/pipeline.md) | Build, wrapper, contract, report, and artifact orchestration. | `build.py`, `pyi.py`, `wrapper.py`, `type_mapping_report.py` |
 | [`prik.preprocessing`](packages/preprocessing.md) | Prepared Fortran input, provenance, includes, and target probes. | `source.py`, `fortran.py`, `probes/fortran_types.py` |
 | [`prik.parsers`](packages/parsers.md) | Fortran and semantic `.pyi` syntax facts. | `fortran/parser.py`, `pyi/parser.py` |
 | [`prik.semantics`](packages/semantics.md) | Language-neutral semantic IR, conversions, scalar vocabulary, and raw metadata. | `models.py`, `fortran2ir.py`, `pyi2ir.py` |
@@ -39,8 +38,9 @@ user-visible behavior to its documentation and evidence.
 | [`prik.planning`](packages/planning.md) | Policy-complete, backend-neutral wrapper plans. | `models.py`, `planner.py` |
 | [`prik.codegen`](packages/codegen.md) | Plan-driven C and Fortran lowering, backend scalar projection, and Python facades. | `c/binding.py`, `c/python_surface.py`, `fortran/bridge.py` |
 | [`prik.printers`](packages/printers.md) | Serialization of C, Fortran, and semantic `.pyi` representations. | `c.py`, `fortran.py`, `pyi.py` |
-| [`prik.pipeline`](packages/pipeline.md) | Build, wrapper, contract, report, and artifact orchestration. | `build.py`, `pyi.py`, `wrapper.py`, `type_mapping_report.py` |
+| [`prik.compiler`](packages/compiler.md) | Compiler execution, native-support installation, and linking. | `compilers.py`, `objects.py`, `native_support.py` |
 | [`prik.runtime`](packages/runtime.md) | Imported runtime objects and bundled native support. | `handles.py`, `native_support/` |
+| [`prik.contracts`](packages/contracts.md) | Public semantic `.pyi` contract vocabulary. | `__init__.py` |
 | [`prik.naming`](packages/naming.md) | Public-name normalization and generated-symbol construction. | `policy.py`, `native_symbols.py` |
 | [`prik.utilities`](packages/utilities.md) | Small helpers with no stage-specific ownership. | `strings.py`, `visitor.py`, `stage_values.py` |
 
