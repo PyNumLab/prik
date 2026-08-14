@@ -14,55 +14,82 @@
       .route-flow { fill: #1f2d3a; font: 700 15px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
       .connector { fill: none; stroke: #607080; stroke-width: 2.5; marker-end: url(#arrow); }
       .join { fill: none; stroke: #607080; stroke-width: 2.5; }
+      .link { cursor: pointer; }
+      .link > rect { transition: fill 120ms ease, stroke 120ms ease, stroke-width 120ms ease; }
+      .link:hover > rect, .link:focus > rect { fill: #d9eeea; stroke: #0f514c; stroke-width: 3; }
+      .link:focus { outline: none; }
+      @media (prefers-reduced-motion: reduce) { .link > rect { transition: none; } }
     </style>
   </defs>
 
   <rect x="1" y="1" width="958" height="458" rx="16" fill="#fbfcfd" stroke="#d8e1e8" stroke-width="2"/>
 
-  <rect x="210" y="30" width="190" height="48" rx="10" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
-  <text x="305" y="60" text-anchor="middle" class="label">Build request</text>
+  <a href="../packages/pipeline/" target="_top" class="link" aria-label="Open the Pipeline Component guide">
+    <rect x="210" y="30" width="190" height="48" rx="10" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
+    <text x="305" y="60" text-anchor="middle" class="label">Build request</text>
+  </a>
   <line x1="400" y1="54" x2="454" y2="54" class="connector"/>
-  <rect x="460" y="30" width="290" height="48" rx="10" fill="#e7f4f2" stroke="#176b64" stroke-width="2.5"/>
-  <text x="605" y="60" text-anchor="middle" class="label">Pipeline orchestration</text>
+  <a href="../packages/pipeline/" target="_top" class="link" aria-label="Open the Pipeline Component guide">
+    <rect x="460" y="30" width="290" height="48" rx="10" fill="#e7f4f2" stroke="#176b64" stroke-width="2.5"/>
+    <text x="605" y="60" text-anchor="middle" class="label">Pipeline orchestration</text>
+  </a>
   <line x1="605" y1="78" x2="605" y2="110" class="connector"/>
 
   <path d="M605 110 V122 H255 V145" class="connector"/>
   <path d="M605 110 V122 H705 V145" class="connector"/>
-  <rect x="40" y="145" width="430" height="72" rx="10" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
-  <text x="62" y="169" class="route">SOURCE-FIRST ROUTE</text>
-  <text x="255" y="190" text-anchor="middle" class="route-flow">Fortran source → preprocessing</text>
-  <text x="255" y="209" text-anchor="middle" class="route-flow">Fortran parser → Fortran-to-IR</text>
-  <rect x="490" y="145" width="430" height="72" rx="10" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
-  <text x="512" y="169" class="route">CONTRACT-FIRST ROUTE</text>
-  <text x="705" y="190" text-anchor="middle" class="route-flow">Semantic .pyi → .pyi parser</text>
-  <text x="705" y="209" text-anchor="middle" class="route-flow">.pyi-to-IR conversion</text>
+  <a href="../packages/preprocessing/" target="_top" class="link" aria-label="Open the Preprocessing Stage guide">
+    <rect x="40" y="145" width="430" height="72" rx="10" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
+    <text x="62" y="169" class="route">SOURCE-FIRST ROUTE</text>
+    <text x="255" y="190" text-anchor="middle" class="route-flow">Fortran source → preprocessing</text>
+    <text x="255" y="209" text-anchor="middle" class="route-flow">Fortran parser → Fortran-to-IR</text>
+  </a>
+  <a href="../packages/parsers/" target="_top" class="link" aria-label="Open the Parsers Stage guide">
+    <rect x="490" y="145" width="430" height="72" rx="10" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
+    <text x="512" y="169" class="route">CONTRACT-FIRST ROUTE</text>
+    <text x="705" y="190" text-anchor="middle" class="route-flow">Semantic .pyi → .pyi parser</text>
+    <text x="705" y="209" text-anchor="middle" class="route-flow">.pyi-to-IR conversion</text>
+  </a>
 
   <path d="M255 217 V244 H155" class="join"/>
   <path d="M705 217 V244 H155" class="join"/>
   <line x1="155" y1="244" x2="155" y2="264" class="connector"/>
-  <rect x="40" y="264" width="230" height="56" rx="12" fill="#e7f4f2" stroke="#176b64" stroke-width="2.5"/>
-  <text x="155" y="287" text-anchor="middle" class="detail">one shared semantic model</text>
-  <text x="155" y="309" text-anchor="middle" class="central">Semantic IR construction</text>
+  <a href="../packages/semantics/" target="_top" class="link" aria-label="Open the Semantics Stage guide">
+    <rect x="40" y="264" width="230" height="56" rx="12" fill="#e7f4f2" stroke="#176b64" stroke-width="2.5"/>
+    <text x="155" y="287" text-anchor="middle" class="detail">one shared semantic model</text>
+    <text x="155" y="309" text-anchor="middle" class="central">Semantic IR construction</text>
+  </a>
 
   <line x1="155" y1="320" x2="155" y2="350" class="connector"/>
-  <rect x="96" y="350" width="118" height="52" rx="9" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
-  <text x="155" y="382" text-anchor="middle" class="stage">Policy</text>
+  <a href="../packages/policy/" target="_top" class="link" aria-label="Open the Policy Stage guide">
+    <rect x="96" y="350" width="118" height="52" rx="9" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
+    <text x="155" y="382" text-anchor="middle" class="stage">Policy</text>
+  </a>
   <line x1="214" y1="376" x2="236" y2="376" class="connector"/>
-  <rect x="242" y="350" width="118" height="52" rx="9" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
-  <text x="301" y="382" text-anchor="middle" class="stage">Planning</text>
+  <a href="../packages/planning/" target="_top" class="link" aria-label="Open the Planning Stage guide">
+    <rect x="242" y="350" width="118" height="52" rx="9" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
+    <text x="301" y="382" text-anchor="middle" class="stage">Planning</text>
+  </a>
   <line x1="360" y1="376" x2="382" y2="376" class="connector"/>
-  <rect x="388" y="350" width="130" height="52" rx="9" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
-  <text x="453" y="382" text-anchor="middle" class="stage">Code generation</text>
+  <a href="../packages/codegen/" target="_top" class="link" aria-label="Open the Code Generation Stage guide">
+    <rect x="388" y="350" width="130" height="52" rx="9" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
+    <text x="453" y="382" text-anchor="middle" class="stage">Code generation</text>
+  </a>
   <line x1="518" y1="376" x2="540" y2="376" class="connector"/>
-  <rect x="546" y="350" width="108" height="52" rx="9" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
-  <text x="600" y="382" text-anchor="middle" class="stage">Printers</text>
+  <a href="../packages/printers/" target="_top" class="link" aria-label="Open the Printers Stage guide">
+    <rect x="546" y="350" width="108" height="52" rx="9" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
+    <text x="600" y="382" text-anchor="middle" class="stage">Printers</text>
+  </a>
   <line x1="654" y1="376" x2="676" y2="376" class="connector"/>
-  <rect x="682" y="350" width="108" height="52" rx="9" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
-  <text x="736" y="382" text-anchor="middle" class="stage">Compiler</text>
+  <a href="../packages/compiler/" target="_top" class="link" aria-label="Open the Compiler Stage guide">
+    <rect x="682" y="350" width="108" height="52" rx="9" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
+    <text x="736" y="382" text-anchor="middle" class="stage">Compiler</text>
+  </a>
   <line x1="790" y1="376" x2="806" y2="376" class="connector"/>
-  <rect x="812" y="350" width="118" height="52" rx="9" fill="#e7f4f2" stroke="#176b64" stroke-width="2"/>
-  <text x="871" y="374" text-anchor="middle" class="stage">Extension</text>
-  <text x="871" y="391" text-anchor="middle" class="detail" style="font-size: 12px">+ runtime support</text>
+  <a href="../packages/pipeline/" target="_top" class="link" aria-label="Open the Pipeline Component guide">
+    <rect x="812" y="350" width="118" height="52" rx="9" fill="#e7f4f2" stroke="#176b64" stroke-width="2"/>
+    <text x="871" y="374" text-anchor="middle" class="stage">Extension</text>
+    <text x="871" y="391" text-anchor="middle" class="detail" style="font-size: 12px">+ runtime support</text>
+  </a>
 
   <text x="480" y="433" text-anchor="middle" class="detail">Shared build path after semantic IR construction</text>
 </svg>

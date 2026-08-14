@@ -41,7 +41,12 @@ wrapper build.
 The two input routes converge in semantic IR construction, then share policy,
 planning, generation, and native compilation:
 
-![PRIK build path: Fortran source and semantic .pyi inputs converge in semantic IR construction before policy, planning, generation, printing, and compilation.](assets/build-path.svg){ .prik-build-path }
+<object class="prik-build-path" type="image/svg+xml" data="../assets/build-path.svg" aria-label="Interactive PRIK build path">
+  <a href="packages/index.md">Open the Architecture Components guides</a>.
+</object>
+
+Select a stage or input route to open its component guide. Each route box opens
+its first owning stage.
 
 Pipeline orchestration spans the complete build: it coordinates source facts,
 shared meaning, completed interoperability policy, a wrapper plan, emitted

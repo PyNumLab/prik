@@ -263,6 +263,7 @@
   display: block;
   width: 100%;
   max-width: 60rem;
+  aspect-ratio: 960 / 460;
   height: auto;
   margin: 1.5rem 0;
 }

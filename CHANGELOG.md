@@ -88,6 +88,8 @@ release tags add a leading `v` to the package version.
   home page.
 - Replaced the contributor architecture's text-only build path with a rendered
   diagram of its two input routes and shared pipeline.
+- Made the architecture build-path diagram keyboard-accessible and linked each
+  route and stage to its reviewed component guide.
 - Reduced documentation tests to enforce publication, link integrity,
   executable examples, and public-reference contracts without freezing prose,
   headings, page inventories, private names, or source-tree layout.
