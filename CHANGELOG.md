@@ -7,6 +7,8 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+## 0.3.0 — 2026-08-14
+
 ### Added
 
 - Reorganized contributor documentation around a concise architecture guide
@@ -16,8 +18,10 @@ release tags add a leading `v` to the package version.
 - Consolidated contributor workflows and removed nonessential concept and
   design drafts, TODO-only pages, duplicate architecture maps, and completed
   migration ledgers.
-- Added Zenodo version and concept DOI links to the citation metadata, README,
-  and About page.
+- Added the persistent Zenodo all-versions DOI badge and citation links to the
+  README and About page.
+- Included the repository's machine-readable `CITATION.cff` metadata in source
+  distributions.
 
 ### Changed
 

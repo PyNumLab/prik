@@ -11,6 +11,5 @@ authors:
 repository-code: "https://github.com/PyNumLab/prik"
 url: "https://pynumlab.github.io/prik/"
 license: MIT
-version: "0.2.1"
-doi: "10.5281/zenodo.21881988"
-date-released: "2026-08-11"
+version: "0.3.0"
+date-released: "2026-08-14"
