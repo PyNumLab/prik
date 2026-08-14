@@ -4,54 +4,64 @@ audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide, completed native handle policy
 related: ../architecture.md, index.md, policy.md, compiler.md, pipeline.md
 status: maintained
-publication: draft
+publication: reviewed
 ---
 
 # Runtime Component
 
 ## Purpose And Boundaries
 
-`prik/runtime/` owns Python objects that remain active after importing a
-generated extension and the bundled native header payload used by generated
-bindings. Runtime objects validate descriptor metadata, retain owners, adapt
-generated operations, and expose policy-selected NumPy views. They enforce
-completed behavior; they do not decide ownership or invent missing operations.
+`prik/runtime/` provides Python objects used after a generated extension is
+imported and the native support compiled into generated bindings. It validates
+the operations and descriptor metadata supplied by the extension, retains
+required owners, and exposes the NumPy views permitted by completed policy.
+
+Runtime code enforces decisions already made by policy and represented in the
+wrapper plan. It does not decide ownership, invent a missing operation, or
+select a different view behavior from local descriptor facts.
+
+## A Native Array Handle At Runtime
+
+```text
+generated operation dictionary + dtype, rank, ownership, and view policy
+  -> NativeArrayHandleBase validation and owner retention
+  -> AllocatableArray or PointerArray
+  -> state, lifecycle, association, and to_numpy() operations
+```
+
+The operation dictionary is the boundary between generated extension code and
+the stable Python handle API. An operation exists only when the completed plan
+allows the generator to expose it. Missing operations fail explicitly rather
+than being inferred from `allocatable` or `pointer` alone.
 
 ## Local Structure
 
 ```text
 prik/runtime/
-├── __init__.py
 ├── handles.py
 └── native_support/
-    ├── __init__.py
     ├── prik_binding.h
     └── LICENSE
 ```
 
-## What This Stage Receives And Produces
+- [`handles.py`](../../../prik/runtime/handles.py) contains the Python runtime.
+  `NativeArrayHandleBase` validates common metadata and operations.
+  `AllocatableArray` adds allocation state, resize, and deallocation;
+  `PointerArray` adds association, nullification, allocation, resize, and
+  deallocation when supplied. Internal adapters translate generated call
+  signatures and descriptor handoffs.
+- `native_support/prik_binding.h` contains header-only CPython/NumPy
+  conversion, descriptor, validation, capsule, and release support. Change it
+  only with its generated C users and `prik/compiler/native_support.py`.
+- `native_support/LICENSE` is distributed with the native payload.
 
-```text
-generated extension operation dictionary
-  -> descriptor metadata validation
-  -> AllocatableArray or PointerArray adapter
-  -> policy-permitted allocate/deallocate/resize/nullify/to_numpy operations
-```
+`to_numpy()` returns `None` for an absent allocatable or pointer and otherwise
+validates the completed view policy, dtype, rank, and any required contiguity.
+Native argument handoff performs the additional expected shape, layout,
+alignment, byte-order, and writeability checks. A returned NumPy array is a
+view of native storage; a caller that needs independent storage must copy it.
 
-The native-support initializer only makes the payload locatable. The compiler
-installs it into a generated `binding_support/` include directory.
-
-## Directory Tour
-
-| Path | Main entrypoints and contents | Change it when |
-| --- | --- | --- |
-| [`prik/runtime/__init__.py`](../../../prik/runtime/__init__.py) | Package boundary for Python runtime support. | A small supported runtime import surface is deliberately introduced. |
-| [`prik/runtime/handles.py`](../../../prik/runtime/handles.py) | `NativeArrayHandleBase`, `AllocatableArray`, and `PointerArray` validate generated operations, retain owners, and produce policy-permitted live NumPy views. | Handle protocol, validation, retention, descriptor conversion, or Python operation behavior changes. |
-| [`prik/runtime/native_support/__init__.py`](../../../prik/runtime/native_support/__init__.py) | Locates the bundled native-support payload without creating another Python runtime API. | Payload discovery changes. |
-| `runtime/native_support/prik_binding.h` | Bundled native capsule, descriptor, validation, conversion, and release support compiled into generated bindings. | A generated binding requires changed native support; also inspect `compiler/native_support.py` installation. |
-| `runtime/native_support/LICENSE` | License text distributed with the native payload. | The payload licensing changes. |
-
-## Execution Example
+## Run The Handle Demonstration
 
 ```bash
 python3 prik/runtime/handles.py
@@ -65,34 +75,28 @@ Resized shape: (4,)
 Generated resize received NumPy extents: True
 ```
 
-The example supplies the same operation dictionary shape exported by a
-generated extension. It proves descriptor selection, validation, operation
-adaptation, and the generated NumPy extent convention. The returned NumPy
-storage is live, not a detached snapshot.
+The example supplies the same operation-dictionary shape as generated code.
+It creates an allocatable handle, reads its live NumPy view, and routes a
+resize through the adapter. The native header has no standalone Python route;
+the compiler installs it into a generated `binding_support/` directory.
 
-The native payload intentionally has no standalone Python example: it is
-compiled only as part of a generated binding.
+## Change Routes And Evidence
 
-## Tests And What They Prove
-
-- [Allocatable runtime tests](../../../tests/fortran/allocatables/runtime/) cover allocatable operations and NumPy views.
-- [Pointer runtime tests](../../../tests/fortran/pointers/runtime/) cover pointer association and views.
-- [Memory-management runtime tests](../../../tests/fortran/memory_management/runtime/) cover release and ownership enforcement.
-- [Runtime infrastructure](../../../tests/fortran/infrastructure/runtime/) covers generated-operation protocols.
-- [Compiled runtime compatibility](../../../tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py) covers the payload in a real extension.
-
-## Change Routes
-
-- Change handle protocol, validation, retention, or adapters in `handles.py`.
-- Change header implementation in `native_support/` and installation in
+- Change handle protocol, validation, retention, views, or adapters in
+  `handles.py`.
+- Change the native payload together with its generated users and
   `prik/compiler/native_support.py`.
-- Complete any new ownership, operation permission, or view policy upstream
-  before runtime enforcement.
+- Complete new ownership, lifecycle, operation, or view policy before planning
+  rather than selecting it in runtime code.
 
-## Invariants And Common Mistakes
+| Evidence | What it establishes |
+| --- | --- |
+| [Allocatable runtime tests](../../../tests/fortran/allocatables/runtime/) | Allocation state, operations, descriptor handoffs, and NumPy views. |
+| [Pointer runtime tests](../../../tests/fortran/pointers/runtime/) | Association, nullification, pointer descriptors, and views. |
+| [Memory-management runtime tests](../../../tests/fortran/memory_management/runtime/) | Owner retention, release, and array handoffs. |
+| [Native-support tests](../../../tests/fortran/infrastructure/runtime/) | Bundled payload discovery and installation inputs. |
+| [Compiled runtime compatibility](../../../tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py) | The payload and Python runtime working through a real extension. |
 
-- Outstanding zero-copy NumPy views cannot be revoked after native
-  reallocation or pointer reassociation. Callers must discard or copy them.
-- Runtime must reject operations absent from completed policy rather than
-  guessing permission from descriptor kind.
-- The native support directory is a payload, not a second pipeline stage.
+An outstanding zero-copy NumPy view cannot be revoked after native
+reallocation, deallocation, or pointer reassociation. Users must discard or
+copy such views before changing the native storage.

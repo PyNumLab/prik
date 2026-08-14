@@ -144,7 +144,7 @@
     </g>
   </a>
   <line x1="790" y1="376" x2="806" y2="376" class="connector"/>
-  <a href="../packages/pipeline/" target="_top" class="link" aria-label="Open the Pipeline Component guide. The linked extension and runtime support expose the planned public Python API.">
+  <a href="../packages/runtime/" target="_top" class="link" aria-label="Open the Runtime Component guide. The linked extension and runtime support expose the planned public Python API.">
     <rect x="812" y="350" width="118" height="52" rx="9" fill="#e7f4f2" stroke="#176b64" stroke-width="2"/>
     <text x="871" y="374" text-anchor="middle" class="stage">Extension</text>
     <text x="871" y="391" text-anchor="middle" class="detail" style="font-size: 12px">+ runtime support</text>

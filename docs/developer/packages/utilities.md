@@ -4,47 +4,63 @@ audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide
 related: ../architecture.md, index.md, semantics.md, planning.md, codegen.md
 status: maintained
-publication: draft
+publication: reviewed
 ---
 
 # Utilities Component
 
 ## Purpose And Boundaries
 
-`prik/utilities/` contains small mechanisms that are genuinely independent of
-one compiler stage. A helper belongs here only while it avoids stage-owned
-semantic policy, syntax grammar, and workflow orchestration.
+`prik/utilities/` contains mechanisms shared by more than one architecture
+stage. A helper belongs here only while it remains independent of source
+grammar, semantic policy, backend behavior, and build orchestration.
 
 ## Local Structure
 
 ```text
 prik/utilities/
-├── __init__.py
 ├── declaration_expressions.py
 ├── stage_values.py
 ├── strings.py
 └── visitor.py
 ```
 
-## What This Stage Receives And Produces
+- [`declaration_expressions.py`](../../../prik/utilities/declaration_expressions.py)
+  splits declaration text, translates Fortran extents, resolves references to
+  wrapper roles, evaluates constant expressions, and renders completed C or
+  Fortran expressions.
+- [`stage_values.py`](../../../prik/utilities/stage_values.py) provides
+  `StageRecord`, which a producer assembles before its consumer recursively
+  freezes it. `FrozenStageRecordError` rejects later mutation.
+- [`strings.py`](../../../prik/utilities/strings.py) provides
+  `create_incremented_string()` for collision-free local names and
+  `random_string()` for unconstrained temporary identifiers. Public and native
+  name policy belongs in `prik.naming`.
+- [`visitor.py`](../../../prik/utilities/visitor.py) provides `ClassVisitor`.
+  It selects the most specific configured class handler, then deliberately
+  follows the model's method-resolution order.
+
+## Declaration-Expression Workflow
+
+`declaration_expressions.py` keeps one expression in different forms at
+explicit boundaries:
 
 ```text
-stage-owned caller facts
-  -> reusable expression, local-name, or visitor mechanism
-  -> requesting stage
+Fortran declaration text
+  -> parser-safe splitting
+  -> public Python-style extent expression
+  -> references bound to completed wrapper roles
+  -> constant evaluation or backend rendering
 ```
 
-## Directory Tour
+The caller supplies array facts during translation, available roles during
+resolution, and backend substitutions during rendering. The utility reports
+unresolved blockers; it does not decide whether a wrapper can supply a value.
 
-| Module | Main entrypoints and contents | Change it when |
-| --- | --- | --- |
-| [`prik/utilities/__init__.py`](../../../prik/utilities/__init__.py) | Package boundary for small stage-neutral mechanisms. | Establishing a deliberate package-level utility API. |
-| [`prik/utilities/declaration_expressions.py`](../../../prik/utilities/declaration_expressions.py) | `ResolvedDeclarationExtent`, `DeclarationExpressionCall`, and `ArrayExpressionSource` translate, validate, resolve, evaluate, and render declaration extents at explicit handoffs. | An extent representation or its stage-owned translation changes. |
-| [`prik/utilities/stage_values.py`](../../../prik/utilities/stage_values.py) | `StageRecord` keeps an output editable until its consumer calls `freeze()`, which recursively converts nested lists, maps, and sets into immutable values. `FrozenStageRecordError` rejects later mutation. | A cross-stage record needs an immutable consumer boundary; do not use it to make semantic policy decisions. |
-| [`prik/utilities/strings.py`](../../../prik/utilities/strings.py) | Collision-safe local-name helpers allocate deterministic temporary identifiers. | Generic local name allocation changes; public name policy belongs in `naming/`. |
-| [`prik/utilities/visitor.py`](../../../prik/utilities/visitor.py) | `ClassVisitor` provides exact-class dispatch with intentional MRO fallback. | Shared generic dispatch changes, not a stage's visitor methods. |
+## Run The Module Demonstrations
 
-## Execution Examples
+The declaration-expression example follows one extent through translation,
+role binding, and Fortran rendering:
 
 ```bash
 python3 prik/utilities/declaration_expressions.py
@@ -58,8 +74,8 @@ Fortran rendering: native_source_extent_0
 Compile-time product: 6
 ```
 
-The expression changes representation at explicit stages. Backend rendering
-uses a plan-supplied substitution and does not rediscover argument ownership.
+The stage-value example shows that a producer can edit nested values until the
+consumer freezes the record:
 
 ```bash
 python3 prik/utilities/stage_values.py
@@ -71,10 +87,11 @@ Frozen consumer input: geometry -> ('scale', 'norm')
 Mutation rejected: ParserOutput is frozen by its consuming stage
 ```
 
-`StageRecord` is a utility rather than a pipeline stage: the caller owns the
-moment it freezes a record. Wrapper generation freezes a completed plan,
-printers freeze generated syntax nodes, and build integration freezes the
-generated wrapper before writing files.
+Wrapper generation freezes a completed plan, printers freeze generated nodes,
+and build integration freezes the generated wrapper before writing it.
+
+The remaining examples show collision-free local naming and exact-class/MRO
+visitor dispatch:
 
 ```bash
 python3 prik/utilities/strings.py
@@ -94,22 +111,21 @@ Exact handler: literal:42
 MRO fallback: expression:Expression
 ```
 
-## Tests And What They Prove
+## Change Routes And Evidence
 
-- [Utility infrastructure](../../../tests/fortran/infrastructure/utilities/) covers local-name and visitor behavior.
-- [Pipeline freeze-boundary tests](../../../tests/fortran/infrastructure/pipeline/test_wrapper_generator.py) cover plan and generated-node mutation rejection after consumption.
-- [Declaration-expression semantics](../../../tests/fortran/arrays/semantics/test_declaration_expression_utilities.py) covers role resolution and expression rendering.
+- Keep declaration parsing, public normalization, role resolution, constant
+  evaluation, and backend rendering as separate operations.
+- Freeze a `StageRecord` at its consumer boundary, after its producing stage
+  has completed local assembly.
+- Put public or target-language name rules in `prik.naming`, not `strings.py`.
+- Define semantic or backend visitor handlers in their owning stage; the
+  shared visitor supplies dispatch only.
 
-## Change Routes
+| Evidence | What it establishes |
+| --- | --- |
+| [Utility tests](../../../tests/fortran/infrastructure/utilities/) | Local-name allocation and generic visitor dispatch. |
+| [Declaration-expression tests](../../../tests/fortran/arrays/semantics/test_declaration_expression_utilities.py) | Translation, validation, role resolution, evaluation, and rendering. |
+| [Wrapper freeze-boundary tests](../../../tests/fortran/infrastructure/pipeline/test_wrapper_generator.py) | Plans and generated nodes reject mutation after consumption. |
 
-- Keep parsing, role resolution, evaluation, and backend rendering separate in
-  declaration-expression code.
-
-## Invariants And Common Mistakes
-
-- Consumers define their own visitor handlers; `ClassVisitor` does not merge
-  frontend or backend visitor responsibilities.
-- Freeze only at the consumer boundary. Freezing a record while its producing
-  stage is still assembling it prevents legitimate local completion.
-- Move a helper out of utilities as soon as it starts selecting semantic
-  policy or a pipeline action.
+Move a helper out of `utilities/` as soon as it starts selecting semantic
+policy, emitted mechanisms, or a pipeline action.

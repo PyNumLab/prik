@@ -10,7 +10,7 @@ publication: reviewed
 
 # Callbacks
 
-Callbacks let wrapped Fortran call a Python function while an prik call is
+Callbacks let wrapped Fortran call a Python function while a PRIK call is
 running. They are useful for objective functions, progress hooks, custom
 transforms, and small pieces of user-defined numerical logic.
 

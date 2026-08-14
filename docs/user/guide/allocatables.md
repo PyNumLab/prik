@@ -12,7 +12,7 @@ publication: reviewed
 
 A Fortran allocatable descriptor records whether storage is allocated and, for
 arrays, its address, shape, and strides. The descriptor controls the allocation,
-and an prik handle gives Python access to that descriptor.
+and a PRIK handle gives Python access to that descriptor.
 
 ## Key Concepts
 

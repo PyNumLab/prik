@@ -20,7 +20,7 @@ as Python results.
 
 The `scale` function built in
 [First Wrapped Function](../getting-started/first-wrapped-function.md) returns
-its direct result as one NumPy scalar:
+its direct `Float64` result as a NumPy `float64` scalar:
 
 ```python
 import numpy as np
@@ -142,7 +142,7 @@ the [`automatic_vector` example](arrays.md#complete-example):
 import numpy as np
 
 result = automatic_vector(np.int32(4))
-print(result)  # [ 1.  4.  9. 16.]
+print(result)  # [2. 4. 6. 8.]
 ```
 
 ---
@@ -179,7 +179,8 @@ total, count = sum_with_count(data_array)
 
 ## Important Rules
 
-- Always pass **exact NumPy dtypes** (`np.float64`, `np.int32`, etc.).
+- Pass exact NumPy dtypes (`np.float64`, `np.int32`, etc.) for numeric scalar
+  arguments. Boolean scalar arguments accept `bool` or `np.bool_`.
 - Array results are returned as new NumPy arrays (copies).
 - Projected scalar outputs follow the direct function result in the return
   tuple.

@@ -1,6 +1,13 @@
-{# Section labels open their first child; the theme's adjacent + control expands them. #}
-{%- set section_landing = nav_item.children[0] if nav_item.is_section and nav_item.children else none %}
-<a class="{% if not nav_item.is_link %}reference internal{% endif %}{% if nav_item.active%} current{%endif%}" {% if nav_item == page %}href="#"{% elif nav_item.is_page or nav_item.is_link %}href="{{ nav_item.url|url }}"{% elif section_landing and (section_landing.is_page or section_landing.is_link) %}href="{{ section_landing.url|url }}"{% endif %}>{{ nav_item.title }}</a>
+{# Section labels open their first published page; the adjacent + control expands them. #}
+{%- macro first_page_url(item) -%}
+    {%- if item.is_page or item.is_link -%}
+        {{- item.url|url -}}
+    {%- elif item.children -%}
+        {{- first_page_url(item.children[0]) -}}
+    {%- endif -%}
+{%- endmacro %}
+{%- set section_landing_url = first_page_url(nav_item) if nav_item.is_section else "" %}
+<a class="{% if not nav_item.is_link %}reference internal{% endif %}{% if nav_item.active%} current{%endif%}" {% if nav_item == page %}href="#"{% elif nav_item.is_page or nav_item.is_link %}href="{{ nav_item.url|url }}"{% elif section_landing_url %}href="{{ section_landing_url }}"{% endif %}>{{ nav_item.title }}</a>
 {%- set navlevel = navlevel + 1 %}
 {%- if navlevel <= config.theme.navigation_depth
     and ((nav_item.is_page and nav_item.toc.items

@@ -42,7 +42,7 @@ user-visible behavior to its documentation and evidence.
 | [`prik.runtime`](packages/runtime.md) | Imported runtime objects and bundled native support. | `handles.py`, `native_support/` |
 | [`prik.contracts`](packages/contracts.md) | Public semantic `.pyi` contract vocabulary. | `__init__.py` |
 | [`prik.naming`](packages/naming.md) | Public-name normalization and generated-symbol construction. | `policy.py`, `native_symbols.py` |
-| [`prik.utilities`](packages/utilities.md) | Small helpers with no stage-specific ownership. | `strings.py`, `visitor.py`, `stage_values.py` |
+| [`prik.utilities`](packages/utilities.md) | Small helpers with no stage-specific ownership. | `declaration_expressions.py`, `stage_values.py`, `strings.py`, `visitor.py` |
 
 The [architecture component guides](packages/index.md) give each component's
 local module tour,

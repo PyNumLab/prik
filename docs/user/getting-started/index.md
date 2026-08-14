@@ -2,7 +2,7 @@
 title: Getting Started
 description: Install PRIK, set up compilers, and build your first Fortran-to-Python extension
 audience: users
-prerequisites: repository checkout
+prerequisites: none
 related: installation.md, verification.md
 status: maintained
 publication: reviewed
@@ -10,7 +10,8 @@ publication: reviewed
 
 # Getting Started
 
-This guide takes you from a fresh clone to your first working Python extension built from Fortran code.
+This guide takes you from a fresh environment to your first working Python
+extension built from Fortran code.
 
 Start with GNU (`gfortran` and `gcc`), tested on Linux and macOS. LLVM Flang
 is tested on both platforms; Intel IFX is tested on Linux. See

@@ -70,4 +70,7 @@ def test_multiple_scalar_results_use_canonical_plan_without_array_blockers(tmp_p
     modules = _build_multiple_scalar_result_modules(tmp_path)
 
     for module in modules:
-        assert module.with_scalar(np.int32(4)) == (np.int32(8), np.int32(7))
+        result = module.with_scalar(np.int32(4))
+
+        assert result == (np.int32(8), np.int32(7))
+        assert tuple(type(value) for value in result) == (np.int32, np.int32)

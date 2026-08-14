@@ -194,7 +194,7 @@ static PyObject * wrap_double_value(PyObject * self, PyObject * args, PyObject *
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O", kwlist, &bound_value_obj)) return NULL;
     if (prik_float64_unpack_exact(bound_value_obj, &bound_value) < 0) { if (!PyErr_Occurred()) { PyErr_Format(PyExc_TypeError, "Expected an argument of type numpy.float64 for argument value. Received <class '%s'>", Py_TYPE(bound_value_obj)->tp_name); } return NULL; };
     result = bind_c_double_value(bound_value);
-    PyObject * result_obj = prik_float64_to_python(&result);
+    PyObject * result_obj = prik_float64_to_numpy(&result);
     if (result_obj == NULL) {
         return NULL;
     }
@@ -203,7 +203,7 @@ static PyObject * wrap_double_value(PyObject * self, PyObject * args, PyObject *
 ```
 
 The header exposes the bridge wrapper prototype. The wrapper's rendered body
-shows the Python-to-bridge call and conversion back to a Python result.
+shows the Python-to-bridge call and conversion back to a NumPy scalar result.
 
 ## Change Routes And Evidence
 

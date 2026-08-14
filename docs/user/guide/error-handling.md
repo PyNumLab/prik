@@ -39,8 +39,8 @@ Use the two diagnostic flags for different problems:
 | `--debug` | prik fails unexpectedly and you need the full Python traceback. |
 
 `--verbose` keeps the normal concise error message. `--debug` exposes prik's
-internal call stack, so it is mainly useful when reporting or investigating an
-prik bug.
+internal call stack, so it is mainly useful when reporting or investigating a
+PRIK bug.
 
 ---
 

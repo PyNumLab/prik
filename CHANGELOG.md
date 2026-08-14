@@ -46,7 +46,10 @@ release tags add a leading `v` to the package version.
 - Ordered the Developer Documentation sidebar by the architecture reading path,
   with build stages before supporting components.
 - Made every expandable documentation-sidebar section label open its first
-  child page, while the adjacent **+** control only expands or collapses it.
+  published page, including through nested sections, while the adjacent **+**
+  control only expands or collapses it.
+- Made documentation tables wrap readable cell content instead of hiding
+  later columns behind unnecessary horizontal scrolling.
 - Added accessible two-, three-, and four-view example tabs to the User Guide;
   Getting Started remains linear and example results stay visible.
 - Reviewed the Pipeline Component guide around the source-build handoff,
@@ -95,6 +98,14 @@ release tags add a leading `v` to the package version.
   plus per-stage detail panels to the architecture diagram.
 - Changed the site-wide repository control into a “★ Star on GitHub” call to
   action while preserving its repository destination.
+- Published concise Contracts, Naming, Runtime, and Utilities component guides,
+  restored their architecture links, corrected the diagram fallback, and
+  clarified the NumPy result type in the architecture example.
+- Made numeric scalar results consistently preserve their exact NumPy types;
+  Boolean scalar results remain Python `bool` values.
+- Corrected user documentation to distinguish numeric and Boolean scalar
+  boundaries, and aligned the Getting Started route with normal package
+  installation rather than a repository checkout.
 - Reduced documentation tests to enforce publication, link integrity,
   executable examples, and public-reference contracts without freezing prose,
   headings, page inventories, private names, or source-tree layout.

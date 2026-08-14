@@ -3,6 +3,15 @@
   margin: 0;
 }
 
+.rst-content .wy-table-responsive table td,
+.rst-content .wy-table-responsive table th {
+  white-space: normal;
+}
+
+.rst-content .wy-table-responsive table code {
+  overflow-wrap: anywhere;
+}
+
 .wy-nav-side {
   padding-bottom: 0;
 }
@@ -421,6 +430,12 @@
     display: block;
     float: none;
     margin-top: 0.75rem;
+  }
+
+  .rst-content .wy-table-responsive table td,
+  .rst-content .wy-table-responsive table th {
+    padding: 0.45rem 0.5rem;
+    font-size: 0.82rem;
   }
 
   .prik-performance-summary {

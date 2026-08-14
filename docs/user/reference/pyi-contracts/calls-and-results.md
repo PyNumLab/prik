@@ -177,7 +177,7 @@ exception projection still run with the GIL held. Remove `@nogil` to restore
 the default held-GIL behavior. This changes call behavior, not the native
 procedure interface.
 
-If a decorated native call invokes an prik callback, the callback trampoline
+If a decorated native call invokes a PRIK callback, the callback trampoline
 temporarily reacquires the GIL for Python execution. Callback contracts are
 covered in the [Callbacks](../../guide/callbacks.md) guide.
 

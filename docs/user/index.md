@@ -22,5 +22,5 @@ extensions.
 Getting Started covers installation, environment verification, the first
 standalone wrapper, the first module wrapper, and the beginner edit-build-test
 loop. The User Guide covers supported Fortran wrapper features, runtime
-behavior, packaging, and distribution. Performance presents the reproducible
-PRIK and f2py comparison.
+behavior, and extension builds. Performance presents the reproducible PRIK and
+f2py comparison.

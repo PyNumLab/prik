@@ -42,7 +42,7 @@ The two input routes converge in semantic IR construction, then share policy,
 planning, generation, and native compilation:
 
 <object class="prik-build-path" type="image/svg+xml" data="../assets/build-path.svg" aria-label="Interactive PRIK build path">
-  <a href="packages/index.md">Open the Architecture Components guides</a>.
+  <a href="../packages/">Open the Architecture Components guides</a>.
 </object>
 
 Select a stage or input route to open its component guide. Each route box opens
@@ -58,7 +58,8 @@ Three supporting packages cross those stages without becoming hidden policy
 owners: [`contracts/`](packages/contracts.md) supplies the public semantic
 `.pyi` vocabulary; [`naming/`](packages/naming.md) supplies stable public and
 generated-name rules; and [`utilities/`](packages/utilities.md) supplies only
-stage-neutral mechanisms.
+stage-neutral mechanisms. [`runtime/`](packages/runtime.md) enforces completed
+handle and view behavior after the generated extension is imported.
 
 Type-mapping reports inspect source and semantic facts without building a
 wrapper. They are an inspection route, not a second backend.
@@ -80,7 +81,7 @@ function illustrates the representations produced across the pipeline.
 | `codegen/` | Planned CPython-binding and Fortran-bridge nodes plus Python-facade representation. | Implement the plan-selected mechanisms. |
 | `printers/` | Generated C and Fortran source text. | Serialize formed nodes without deciding behavior. |
 | `compiler/` | Recorded or executed native commands and a linked extension. | Compile and link the explicit native inputs. |
-| Extension module | An importable `scale` module; its call returns `np.float64(7.5)` for `np.float64(3.0)` and `np.float64(2.5)`. | The generated public Python interface. |
+| Extension module and [`runtime/`](packages/runtime.md) | An importable `scale` module; its call returns `np.float64(7.5)` for `np.float64(3.0)` and `np.float64(2.5)`. | The generated public Python interface and any imported runtime support it uses. |
 
 The first incorrect representation locates the stage whose behavior or
 diagnostic changed.
