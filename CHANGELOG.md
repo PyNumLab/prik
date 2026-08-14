@@ -27,7 +27,7 @@ release tags add a leading `v` to the package version.
 - Clarified the Feature-to-Code Map as the capability-to-owner and evidence
   index, linking reviewed user documentation and retaining only planned
   contributor-documentation paths before their review.
-- Revised the Feature-to-Code Map with visible draft documentation markers,
+- Revised the Feature-to-Code Map with reviewed package-guide links,
   stage-ordered change routes, narrower focused evidence, and separate array,
   callback, and error routes.
 - Condensed the contributor Testing Strategy around test ownership, stage
@@ -90,6 +90,11 @@ release tags add a leading `v` to the package version.
   diagram of its two input routes and shared pipeline.
 - Made the architecture build-path diagram keyboard-accessible and linked each
   route and stage to its reviewed component guide.
+- Added accessible explanations for `.pyi`, f2py `.pyf`, ABI, semantic IR,
+  array order, and the GIL throughout User Documentation and on the Home page,
+  plus per-stage detail panels to the architecture diagram.
+- Changed the site-wide repository control into a “★ Star on GitHub” call to
+  action while preserving its repository destination.
 - Reduced documentation tests to enforce publication, link integrity,
   executable examples, and public-reference contracts without freezing prose,
   headings, page inventories, private names, or source-tree layout.

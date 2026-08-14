@@ -263,7 +263,7 @@
   display: block;
   width: 100%;
   max-width: 60rem;
-  aspect-ratio: 960 / 460;
+  aspect-ratio: 960 / 515;
   height: auto;
   margin: 1.5rem 0;
 }
@@ -326,6 +326,96 @@
   margin-bottom: 1rem;
 }
 
+.prik-term-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  vertical-align: baseline;
+}
+
+.prik-term-trigger {
+  padding: 0;
+  border: 0;
+  border-radius: 0.2rem;
+  background: transparent;
+  color: inherit;
+  cursor: help;
+  font: inherit;
+  line-height: inherit;
+}
+
+.prik-term-trigger > code,
+.prik-term-trigger > .prik-term-label {
+  border-bottom: 1px dashed #176b64;
+  border-radius: 0.2rem;
+  background: #e7f4f2;
+  color: #0f514c;
+}
+
+.prik-term-trigger:hover > code,
+.prik-term-trigger:hover > .prik-term-label,
+.prik-term-wrap.is-open .prik-term-trigger > code,
+.prik-term-wrap.is-open .prik-term-trigger > .prik-term-label {
+  background: #d9eeea;
+}
+
+.prik-term-trigger:focus-visible {
+  outline: 2px solid #f5b041;
+  outline-offset: 2px;
+}
+
+.prik-term-tooltip {
+  position: fixed;
+  z-index: 20;
+  top: 0;
+  left: 50%;
+  width: min(19rem, calc(100vw - 2rem));
+  padding: 0.7rem 0.8rem;
+  border: 1px solid #0f514c;
+  border-radius: 0.45rem;
+  background: #253746;
+  box-shadow: 0 5px 14px rgb(0 0 0 / 22%);
+  color: #fff;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: break-word;
+  transform: translate(-50%, 0.25rem);
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease,
+    visibility 120ms ease;
+}
+
+.prik-term-tooltip::after {
+  position: absolute;
+  bottom: -0.38rem;
+  left: 50%;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-right: 1px solid #0f514c;
+  border-bottom: 1px solid #0f514c;
+  background: #253746;
+  content: "";
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.prik-term-tooltip.prik-term-tooltip-below::after {
+  top: -0.38rem;
+  bottom: auto;
+  transform: translateX(-50%) rotate(225deg);
+}
+
+.prik-term-wrap.is-open .prik-term-tooltip {
+  transform: translate(-50%, 0);
+  visibility: visible;
+  opacity: 1;
+}
+
 @media screen and (max-width: 768px) {
   .wy-breadcrumbs-aside {
     display: block;
@@ -341,10 +431,17 @@
     padding: 0.7rem 0.85rem;
     font-size: 0.9rem;
   }
+
 }
 
 .rst-content pre {
   width: 100%;
   max-width: 56rem;
   padding-right: 3.25rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prik-term-tooltip {
+    transition: none;
+  }
 }

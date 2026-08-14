@@ -17,9 +17,7 @@ public feature matrix states the support boundary and limitations.
 
 ## Feature Routes
 
-Links in the documentation column are reviewed pages. Unlinked
-`docs/developer/` paths marked **(draft)** identify contributor pages that
-still need review before publication.
+Links in the documentation column are reviewed pages.
 
 Find the capability, read its documentation, start with the leftmost owner,
 and run its focused evidence. Use the [Architecture](architecture.md) when the
@@ -27,9 +25,9 @@ change crosses a stage boundary.
 
 | Capability | Relevant documentation | Change route | Focused evidence |
 | --- | --- | --- | --- |
-| Fortran inspection and semantic IR | `docs/developer/packages/parsers.md` **(draft)** | `prik/parsers/fortran/parser.py` → `prik/semantics/fortran2ir.py` → `prik/semantics/models.py` | `tests/fortran/source_parsing/parsing/`, `tests/fortran/semantic_ir/semantics/` |
+| Fortran inspection and semantic IR | [Parsers](packages/parsers.md) | `prik/parsers/fortran/parser.py` → `prik/semantics/fortran2ir.py` → `prik/semantics/models.py` | `tests/fortran/source_parsing/parsing/`, `tests/fortran/semantic_ir/semantics/` |
 | CLI commands and reports | [Beginner workflow](../user/getting-started/beginner-workflow.md) | `prik/cli.py` → `prik/parsers/fortran/cli.py` | `tests/fortran/command_line_interface/pipeline/`, `tests/docs/test_examples.py` |
-| Source preparation and target types | `docs/developer/packages/preprocessing.md` **(draft)** | `prik/preprocessing/source.py` → `prik/preprocessing/fortran.py` → `prik/preprocessing/probes/fortran_types.py` → `prik/semantics/scalar_types.py` → `prik/codegen/primitive_scalar_types.py` | `tests/fortran/source_preprocessing/preprocessing/`, `tests/fortran/data_types/` |
+| Source preparation and target types | [Preprocessing](packages/preprocessing.md) | `prik/preprocessing/source.py` → `prik/preprocessing/fortran.py` → `prik/preprocessing/probes/fortran_types.py` → `prik/semantics/scalar_types.py` → `prik/codegen/primitive_scalar_types.py` | `tests/fortran/source_preprocessing/preprocessing/`, `tests/fortran/data_types/` |
 | Semantic `.pyi` generation and editing | [.pyi contracts](../user/reference/pyi-contracts/index.md) | `prik/parsers/pyi/parser.py` → `prik/semantics/pyi2ir.py` → `prik/pipeline/pyi.py` → `prik/printers/pyi.py` | `tests/fortran/semantic_pyi_format/parsing/`, `tests/fortran/semantic_pyi_format/semantics/`, `tests/fortran/semantic_pyi_format/pipeline/` |
 | Source-first extension builds | [Building the shared library](../user/guide/building-shared-library.md) | `prik/pipeline/build.py` → `prik/pipeline/wrapper.py` → `prik/compiler/compilers.py` | `tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py`, `tests/fortran/building_shared_library/end_to_end/test_multi_source_builds.py` |
 | Contract-first extension builds | [.pyi contracts](../user/reference/pyi-contracts/index.md) | `prik/pipeline/build.py` → `prik/pipeline/pyi.py` → `prik/semantics/pyi2ir.py` | `tests/fortran/semantic_pyi_format/end_to_end/test_authoritative_contract_runtime.py`, `tests/fortran/pyi_contracts/exports_and_modules/` |
@@ -39,7 +37,7 @@ change crosses a stage boundary.
 | Derived objects, allocatables, pointers, and lifetimes | [Derived types](../user/guide/wrapping-derived-types.md), [allocatables](../user/guide/allocatables.md), [pointers](../user/guide/pointers.md), [memory management](../user/guide/memory-management.md) | `prik/policy/ownership.py` → `prik/policy/construction.py` → `prik/policy/native_array_handles.py` → `prik/planning/planner.py` → `prik/runtime/handles.py` | `tests/fortran/derived_types/`, `tests/fortran/allocatables/`, `tests/fortran/pointers/` |
 | Callbacks | [Callbacks](../user/guide/callbacks.md) | `prik/policy/models.py` → `prik/policy/completion.py` → `prik/planning/planner.py` → `prik/codegen/c/binding.py` and `prik/codegen/fortran/bridge.py` | `tests/fortran/callbacks/` |
 | Projected errors | [Error handling](../user/guide/error-handling.md) | `prik/policy/models.py` → `prik/policy/completion.py` → `prik/planning/planner.py` → `prik/codegen/c/binding.py` and `prik/codegen/fortran/bridge.py` | `tests/fortran/error_handling/` |
-| Native compilation, extension runtime, and public build API | `docs/developer/packages/compiler.md` **(draft)**, [Quality Assurance](workflows/quality-assurance.md) | `prik/__init__.py` → `prik/pipeline/build.py` → `prik/compiler/objects.py` → `prik/compiler/compilers.py` → `prik/compiler/native_support.py` → `prik/runtime/native_support/` | `tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py`, `tests/fortran/source_parsing/parsing/test_public_entrypoints.py` |
+| Native compilation, extension runtime, and public build API | [Compiler](packages/compiler.md), [Quality Assurance](workflows/quality-assurance.md) | `prik/__init__.py` → `prik/pipeline/build.py` → `prik/compiler/objects.py` → `prik/compiler/compilers.py` → `prik/compiler/native_support.py` → `prik/runtime/native_support/` | `tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py`, `tests/fortran/source_parsing/parsing/test_public_entrypoints.py` |
 
 Each change route begins with the first owner for a capability; it is not a
 complete call graph. When a change crosses a representation boundary, the
