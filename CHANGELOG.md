@@ -165,6 +165,8 @@ release tags add a leading `v` to the package version.
 
 ### Fixed
 
+- Corrected README licensing wording to refer to bundled native-support files
+  rather than the removed package-root `binding_support/` path.
 - Unified source-level compile-time resolution across project and CLI parsing
   so imported and host-associated kind facts also reach derived-type fields.
 

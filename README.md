@@ -585,9 +585,9 @@ Copyright (c) 2026 Said Hadjout.
 
 Using PRIK does not impose the MIT License on the user's native sources or on
 wrapper code derived from those inputs. Users may distribute generated
-wrappers under terms of their choice. Files copied from PRIK's
-`binding_support/` package remain MIT-licensed and must retain the included
-license notice when redistributed.
+wrappers under terms of their choice. Bundled native-support files copied into
+generated builds remain MIT-licensed and must retain the included license
+notice when redistributed.
 
 ## Documentation
 
