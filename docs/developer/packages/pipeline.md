@@ -57,8 +57,50 @@ prik/pipeline/
 | --- | --- | --- |
 | [`prik/pipeline/pyi.py`](../../../prik/pipeline/pyi.py) | `pyi_*_to_semantic_module()` loads text, files, or path sets into semantic modules. `emit_module_stubs()` completes copied modules and renders `.pyi` stubs. | Contract loading, external-type reconciliation, per-operation cache behavior, or stub output. |
 | [`prik/pipeline/type_mapping_report.py`](../../../prik/pipeline/type_mapping_report.py) | Converts compiler probe facts through semantic conversion and backend dtype projection into a Markdown report. | Datatype-report content or its cross-stage evidence. |
-| [`prik/pipeline/wrapper.py`](../../../prik/pipeline/wrapper.py) | `WrapperGenerator` freezes and validates a `ModulePlan`, delegates backend generation and printing, and returns an in-memory `GeneratedWrapper`. | Plan-to-rendered-wrapper orchestration. |
-| [`prik/pipeline/build.py`](../../../prik/pipeline/build.py) | `build_fortran_extension`, `build_pyi_extension`, and manifest replay write artifacts, prepare native inputs, compile/link, and return `WrapperBuildResult`. `NativeBuildPlan` records those native inputs. | Public build behavior, artifact layout, build modes, manifests, scheduling, linking, or extension import. |
+| [`prik/pipeline/wrapper.py`](../../../prik/pipeline/wrapper.py) | `WrapperGenerator.generate()` freezes and validates a `ModulePlan`, delegates backend generation and printing, and returns an in-memory `GeneratedWrapper`. | Plan-to-rendered-wrapper orchestration. |
+| [`prik/pipeline/build.py`](../../../prik/pipeline/build.py) | `build_fortran_extension()`, `build_pyi_extension()`, and `build_pyi_extension_from_manifest()` write artifacts, prepare native inputs, compile/link, and return `WrapperBuildResult`. `NativeBuildPlan` records those native inputs. | Public build behavior, artifact layout, build modes, manifests, scheduling, linking, or extension import. |
+
+## Module Workflows
+
+- **`pyi.py` has two routes.** `pyi_*_to_semantic_module()` parses a contract
+  and converts it to semantic IR; path-set loading also reconciles external
+  type references. `emit_module_stubs()` deep-copies semantic modules, adds
+  required opaque dependencies, completes policy, and renders `.pyi` text.
+- **`wrapper.py` is the rendered-wrapper boundary.** `GeneratedSource` and
+  `GeneratedWrapper` are the handoff records. `WrapperGenerator.generate()`
+  freezes and validates the completed plan before either backend lowers it,
+  then assembles printed C, Fortran, and header payloads with stable names.
+- **`type_mapping_report.py` is inspection only.** Its fixed C and Fortran
+  inventories pass through the normal target probes, semantic converters, and
+  NumPy dtype registry before Markdown rendering. It does not create a wrapper.
+
+## `build.py` Navigation
+
+`build.py` is the orchestration hub. Its public records describe inputs and
+results without executing a build: `NativeCompilationUnit`,
+`NativePrebuiltArtifact`, `NativeLinkItem`, `NativeBuildPlan`, and
+`WrapperBuildResult`. Its three public entrypoints are source-first builds,
+contract-first builds, and replay of a saved contract-build manifest.
+
+Read its private sections as grouped phases, not as independent helpers:
+
+```text
+source or .pyi contract plus native inputs
+  -> source/contract preparation and semantic-module assembly
+  -> policy completion -> WrapperPlanner -> WrapperGenerator
+  -> generated-source materialization and native build plan
+  -> dependency-aware compilation, linking, and WrapperBuildResult
+
+.pyi builds additionally: contract graph/export projection
+                          -> manifest serialization or replay
+```
+
+The source file groups helpers around build configuration, generated-wrapper
+materialization, native compilation scheduling, `.pyi` contract loading and
+exports, native planning and link inputs, manifest handling, wrapper-module
+assembly, Makefile output, type probing, and semantic preparation. Start from
+the matching public entrypoint at the bottom, then follow only the phase it
+calls.
 
 ## Run The Workflows
 

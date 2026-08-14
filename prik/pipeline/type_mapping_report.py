@@ -3,7 +3,9 @@
 The public functions combine compiler probes, the normal semantic converters,
 and codegen's NumPy projection catalogue before rendering Markdown.  This is a
 cross-stage inspection pipeline, not a probe implementation or an alternative
-datatype conversion path.
+datatype conversion path. ``c_type_mapping_markdown()`` and
+``fortran_type_mapping_markdown()`` are the report boundaries; ``main()`` is
+their standalone command-line adapter.
 """
 
 from __future__ import annotations

@@ -1,4 +1,11 @@
-"""Convert semantic `.pyi` text, files, and path sets into semantic IR."""
+"""Load semantic `.pyi` contracts and emit semantic stubs.
+
+``pyi_*_to_semantic_module()`` parses one contract and converts it to semantic
+IR; path-set loading additionally reconciles external type references within
+one operation-local cache. ``emit_module_stubs()`` deep-copies semantic input,
+adds missing opaque dependencies, completes policy, and renders `.pyi` text.
+The module does not construct wrapper plans or native artifacts.
+"""
 
 from __future__ import annotations
 

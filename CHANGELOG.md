@@ -45,6 +45,8 @@ release tags add a leading `v` to the package version.
   cross-build pipeline orchestration from sequential stages.
 - Reviewed the Pipeline Component guide around the source-build handoff,
   independent contract and inspection workflows, and build-result ownership.
+- Added Pipeline Component and source-level navigation for contract loading,
+  wrapper generation, build-manifest replay, and `build.py` orchestration.
 - Removed empty package-marker entries from the Pipeline Component and Compiler
   Stage guides.
 - Added a brief Developer Documentation overview that routes readers to

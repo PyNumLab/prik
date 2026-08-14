@@ -5,6 +5,11 @@
 plan consistency, asks each backend to preflight and lower its completed plan,
 prints the resulting C, Fortran, and header nodes, assigns stable filenames,
 and returns the complete handoff consumed by build integration.
+
+Its public surface is ``GeneratedSource``, ``GeneratedWrapper``, and
+``WrapperGenerator.generate()``. The private sections first report completed-
+plan inconsistencies, then assemble the rendered wrapper; they do not infer
+semantic policy.
 """
 
 from __future__ import annotations
