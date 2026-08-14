@@ -196,6 +196,20 @@ but unassociated.
 
 ## Complete Module Example
 
+The source, generated contract, and Python call describe the same pointer
+handle. The assertions below demonstrate its association state and target values.
+
+<div class="prik-example-tabs" data-prik-example-tabs markdown="1">
+<div class="prik-example-tablist" role="tablist" aria-label="Pointer handle example">
+<button class="prik-example-tab" id="pointers-source-tab" type="button" role="tab" aria-controls="pointers-source" aria-selected="true">Fortran source</button>
+<button class="prik-example-tab" id="pointers-contract-tab" type="button" role="tab" aria-controls="pointers-contract" aria-selected="false" tabindex="-1">Generated contract</button>
+<button class="prik-example-tab" id="pointers-python-tab" type="button" role="tab" aria-controls="pointers-python" aria-selected="false" tabindex="-1">Python usage</button>
+</div>
+
+<div class="prik-example-panel" id="pointers-source" role="tabpanel" aria-labelledby="pointers-source-tab" tabindex="0" markdown="1">
+
+### Fortran source
+
 Create `pointers.f90`:
 
 ```fortran
@@ -227,6 +241,40 @@ Build and use it:
 python3 -m prik pointers.f90 --out-dir build/pointers
 ```
 
+</div>
+
+<div class="prik-example-panel" id="pointers-contract" role="tabpanel" aria-labelledby="pointers-contract-tab" tabindex="0" markdown="1">
+
+## Generated Contract
+
+The generated `pointers_api.pyi` is:
+
+```python
+from prik.contracts import Aliased, Annotated, Destruction, Float64, Ownership, Pointer, PointerAssociation, Transfer
+
+storage: Annotated[Float64[6], Aliased]
+
+values: Annotated[Pointer[Float64[:]], PointerAssociation("runtime")]
+
+def associate_values() -> None: ...
+
+def sum_pointer(
+    p: Annotated[Pointer[Float64[:]], PointerAssociation("runtime"), Ownership("caller"), Transfer("call_local"), Destruction("none")]
+) -> Float64: ...
+```
+
+Generate it:
+
+```bash
+python3 -m prik generate --pyi pointers.f90
+```
+
+</div>
+
+<div class="prik-example-panel" id="pointers-python" role="tabpanel" aria-labelledby="pointers-python-tab" tabindex="0" markdown="1">
+
+## Python Usage
+
 ```python
 import sys
 
@@ -245,7 +293,10 @@ handle.nullify()
 assert not handle.associated
 ```
 
----
+</div>
+</div>
+
+Result: all assertions succeed.
 
 ## Contiguous And Strided Targets
 

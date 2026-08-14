@@ -32,6 +32,22 @@ advanced boundary covered later in the guide.
 
 ## Complete Example
 
+The source, generated contract, edited contract, and Python calls below
+describe the same string boundaries. The results remain visible below the four
+views.
+
+<div class="prik-example-tabs" data-prik-example-tabs markdown="1">
+<div class="prik-example-tablist" role="tablist" aria-label="Strings example">
+<button class="prik-example-tab" id="strings-source-tab" type="button" role="tab" aria-controls="strings-source" aria-selected="true">Fortran source</button>
+<button class="prik-example-tab" id="strings-generated-contract-tab" type="button" role="tab" aria-controls="strings-generated-contract" aria-selected="false" tabindex="-1">Generated contract</button>
+<button class="prik-example-tab" id="strings-contract-tab" type="button" role="tab" aria-controls="strings-contract" aria-selected="false" tabindex="-1">Edited contract</button>
+<button class="prik-example-tab" id="strings-python-tab" type="button" role="tab" aria-controls="strings-python" aria-selected="false" tabindex="-1">Python usage</button>
+</div>
+
+<div class="prik-example-panel" id="strings-source" role="tabpanel" aria-labelledby="strings-source-tab" tabindex="0" markdown="1">
+
+### Fortran source
+
 Create `strings_api.f90`:
 
 ```fortran
@@ -67,25 +83,62 @@ contains
 end module strings_api
 ```
 
-Generate a starter contract:
+</div>
+
+<div class="prik-example-panel" id="strings-generated-contract" role="tabpanel" aria-labelledby="strings-generated-contract-tab" tabindex="0" markdown="1">
+
+## Generated Contract
+
+The generated `contracts/strings/strings_api.pyi` is:
+
+```python
+from prik.contracts import Addr, Arg, Int32, Returns, String, native_call
+
+def edit_text(
+    text: String[8]
+) -> Returns["text", String[8]]: ...
+
+def edit_buffer(
+    text: String[8]
+) -> Returns["text", String[8]]: ...
+
+def make_text() -> String[8]: ...
+
+@native_call([Addr(Arg(0)), Arg(1)])
+def edit_labels(
+    count: Int32,
+    labels: String[8][count]
+) -> None: ...
+```
+
+Generate it:
 
 ```bash
 python3 -m prik generate --pyi strings_api.f90 --out contracts/strings
 ```
 
-Edit the declarations in `contracts/strings/strings_api.pyi` to use these
-Python boundaries. Keep the other generated decorators and native-call
-metadata unchanged:
+</div>
+
+<div class="prik-example-panel" id="strings-contract" role="tabpanel" aria-labelledby="strings-contract-tab" tabindex="0" markdown="1">
+
+## Edited Contract
+
+Only `edit_buffer` changes. Rank-zero storage makes native mutation visible in
+place rather than returning a replacement value. The edited
+`contracts/strings/strings_api.pyi` is:
 
 ```python
-from prik.contracts import Int32, Returns, String
+from prik.contracts import Addr, Arg, Int32, Returns, String, native_call
 
-def edit_text(text: String[8]) -> Returns["text", String[8]]: ...
+def edit_text(
+    text: String[8]
+) -> Returns["text", String[8]]: ...
 
 def edit_buffer(text: String[8][()]) -> None: ...
 
 def make_text() -> String[8]: ...
 
+@native_call([Addr(Arg(0)), Arg(1)])
 def edit_labels(
     count: Int32,
     labels: String[8][count],
@@ -102,6 +155,10 @@ python3 -m prik contracts/strings/__init__.pyi \
 
 For the complete result-mapping rules, see
 [Reorder Arguments and Project Outputs](../reference/pyi-contracts/calls-and-results.md#reorder-arguments-and-project-outputs).
+
+</div>
+
+<div class="prik-example-panel" id="strings-python" role="tabpanel" aria-labelledby="strings-python-tab" tabindex="0" markdown="1">
 
 ## Immutable Values
 
@@ -168,6 +225,19 @@ print(labels)  # [b'Xlpha   ' b'Xeta    ']
 
 The wrapper checks rank, shape, dtype, and writeability before the call.
 Unicode and object arrays are rejected.
+
+</div>
+</div>
+
+Result:
+
+```text
+'alpha   '
+'Xlpha   '
+'ready   '
+b'Xlpha   '
+[b'Xlpha   ' b'Xeta    ']
+```
 
 ## Length And Encoding
 

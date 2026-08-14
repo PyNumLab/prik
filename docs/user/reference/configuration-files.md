@@ -150,7 +150,9 @@ screen. The same stylesheet keeps the page body adjacent to the sidebar with a
 Code and result blocks use the available page width up to a consistent `56rem`
 cap; long lines scroll inside the block. Local JavaScript and CSS add an
 accessible copy control to every rendered code, command-output, and result
-block, with separate space reserved beside the text. The production hook
+block, with separate space reserved beside the text. The same local assets
+provide keyboard-accessible example tabs for two or more matching source,
+contract, or Python views; the result remains outside the tabs. The production hook
 includes only pages whose front matter says `publication: reviewed`. A draft
 lane index suppresses its complete User, Developer, or Maintainer lane. Links
 from documentation pages to existing source, tests, configuration, and other

@@ -47,6 +47,8 @@ release tags add a leading `v` to the package version.
   with build stages before supporting components.
 - Made every expandable documentation-sidebar section label open its first
   child page, while the adjacent **+** control only expands or collapses it.
+- Added accessible two-, three-, and four-view example tabs to the User Guide;
+  Getting Started remains linear and example results stay visible.
 - Reviewed the Pipeline Component guide around the source-build handoff,
   independent contract and inspection workflows, and build-result ownership.
 - Reviewed the Preprocessing Stage guide around its Fortran source route,

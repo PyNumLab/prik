@@ -16,6 +16,20 @@ prik turns supported Fortran `enum` declarations into **typed integer constants*
 
 ## Complete Example
 
+The source, generated contract, and Python call describe the same module. The
+result stays visible below the three views.
+
+<div class="prik-example-tabs" data-prik-example-tabs markdown="1">
+<div class="prik-example-tablist" role="tablist" aria-label="Enumerations example">
+<button class="prik-example-tab" id="enumerations-source-tab" type="button" role="tab" aria-controls="enumerations-source" aria-selected="true">Fortran source</button>
+<button class="prik-example-tab" id="enumerations-contract-tab" type="button" role="tab" aria-controls="enumerations-contract" aria-selected="false" tabindex="-1">Generated contract</button>
+<button class="prik-example-tab" id="enumerations-python-tab" type="button" role="tab" aria-controls="enumerations-python" aria-selected="false" tabindex="-1">Python usage</button>
+</div>
+
+<div class="prik-example-panel" id="enumerations-source" role="tabpanel" aria-labelledby="enumerations-source-tab" tabindex="0" markdown="1">
+
+### Fortran source
+
 Create `colors.f90`:
 
 ```fortran
@@ -45,7 +59,40 @@ Build it:
 python3 -m prik colors.f90 --out-dir build/colors
 ```
 
----
+</div>
+
+<div class="prik-example-panel" id="enumerations-contract" role="tabpanel" aria-labelledby="enumerations-contract-tab" tabindex="0" markdown="1">
+
+## Generated Contract
+
+The generated `colors_api.pyi` is:
+
+```python
+from prik.contracts import Addr, Arg, Final, Int32, native_call
+
+red: Final[Int32] = -1
+
+blue: Final[Int32] = 0
+
+green: Final[Int32] = 10
+
+yellow: Final[Int32] = 11
+
+@native_call([Addr(Arg(0))])
+def round_trip_color(
+    value: Int32
+) -> Int32: ...
+```
+
+Generate it:
+
+```bash
+python3 -m prik generate --pyi colors.f90
+```
+
+</div>
+
+<div class="prik-example-panel" id="enumerations-python" role="tabpanel" aria-labelledby="enumerations-python-tab" tabindex="0" markdown="1">
 
 ## Usage in Python
 
@@ -62,7 +109,15 @@ result = round_trip_color(green)
 print(result)                    # 10
 ```
 
----
+</div>
+</div>
+
+Result:
+
+```text
+-1 0 10 11
+10
+```
 
 ## Key Points
 

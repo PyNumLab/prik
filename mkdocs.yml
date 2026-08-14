@@ -19,6 +19,7 @@ extra_css:
   - stylesheets/code-copy.css
 extra_javascript:
   - javascripts/code-copy.js
+  - javascripts/example-tabs.js
   - javascripts/faq.js
 plugins:
   - search

@@ -267,6 +267,64 @@
   margin: 1.5rem 0;
 }
 
+.prik-example-tabs {
+  max-width: 56rem;
+  margin: 1.5rem 0;
+  border: 1px solid #cfdde5;
+  border-radius: 0.55rem;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
+}
+
+.prik-example-tablist {
+  display: flex;
+  overflow-x: auto;
+  border-bottom: 1px solid #cfdde5;
+  background: #f5fbfa;
+}
+
+.prik-example-tab {
+  flex: 0 0 auto;
+  padding: 0.75rem 1rem;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: #43515d;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+.prik-example-tab:hover {
+  background: rgb(23 107 100 / 8%);
+  color: #0f514c;
+}
+
+.prik-example-tab[aria-selected="true"] {
+  border-bottom-color: #176b64;
+  background: #fff;
+  color: #0f514c;
+}
+
+.prik-example-tab:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid #f5b041;
+  outline-offset: -2px;
+}
+
+.prik-example-panel {
+  padding: 0 1rem;
+}
+
+.prik-example-panel > :first-child {
+  margin-top: 1rem;
+}
+
+.prik-example-panel > :last-child {
+  margin-bottom: 1rem;
+}
+
 @media screen and (max-width: 768px) {
   .wy-breadcrumbs-aside {
     display: block;
@@ -276,6 +334,11 @@
 
   .prik-performance-summary {
     grid-template-columns: 1fr;
+  }
+
+  .prik-example-tab {
+    padding: 0.7rem 0.85rem;
+    font-size: 0.9rem;
   }
 }
 

@@ -22,6 +22,20 @@ directly.
 
 ## Complete Example
 
+The source, generated contract, and Python call describe the same generated
+class surface. The result stays visible below the three views.
+
+<div class="prik-example-tabs" data-prik-example-tabs markdown="1">
+<div class="prik-example-tablist" role="tablist" aria-label="Derived types example">
+<button class="prik-example-tab" id="derived-types-source-tab" type="button" role="tab" aria-controls="derived-types-source" aria-selected="true">Fortran source</button>
+<button class="prik-example-tab" id="derived-types-contract-tab" type="button" role="tab" aria-controls="derived-types-contract" aria-selected="false" tabindex="-1">Generated contract</button>
+<button class="prik-example-tab" id="derived-types-python-tab" type="button" role="tab" aria-controls="derived-types-python" aria-selected="false" tabindex="-1">Python usage</button>
+</div>
+
+<div class="prik-example-panel" id="derived-types-source" role="tabpanel" aria-labelledby="derived-types-source-tab" tabindex="0" markdown="1">
+
+### Fortran source
+
 Create `points.f90`:
 
 ```fortran
@@ -29,8 +43,8 @@ module points
   implicit none
 
   type :: point
-    real(8) :: x = 0.0_8
-    real(8) :: y = 0.0_8
+    real(8) :: x = 0.0d0
+    real(8) :: y = 0.0d0
   end type point
 
   type :: holder
@@ -68,7 +82,61 @@ Build it:
 python3 -m prik points.f90 --out geometry --out-dir build/geometry
 ```
 
----
+</div>
+
+<div class="prik-example-panel" id="derived-types-contract" role="tabpanel" aria-labelledby="derived-types-contract-tab" tabindex="0" markdown="1">
+
+## Generated Contract
+
+The generated `points.pyi` is:
+
+```python
+from prik.contracts import Addr, Arg, Float64, native_call
+
+class point:
+    def __init__(
+        self,
+        *,
+        x: Float64 = 0.0,
+        y: Float64 = 0.0
+    ) -> None: ...
+
+    x: Float64 = 0.0
+    y: Float64 = 0.0
+
+class holder:
+    def __init__(self) -> None: ...
+
+    origin: point
+
+@native_call([Arg(0), Addr(Arg(1)), Addr(Arg(2))])
+def move(
+    item: point,
+    dx: Float64,
+    dy: Float64
+) -> None: ...
+
+@native_call([Addr(Arg(0)), Addr(Arg(1))])
+def make_point(
+    x: Float64,
+    y: Float64
+) -> point: ...
+
+def set_origin(
+    container: holder,
+    item: point
+) -> None: ...
+```
+
+Generate it:
+
+```bash
+python3 -m prik generate --pyi points.f90
+```
+
+</div>
+
+<div class="prik-example-panel" id="derived-types-python" role="tabpanel" aria-labelledby="derived-types-python-tab" tabindex="0" markdown="1">
 
 ## Usage in Python
 
@@ -97,7 +165,15 @@ container.origin.x = np.float64(12.0)
 print(container.origin.x)  # 12.0
 ```
 
----
+</div>
+</div>
+
+Result:
+
+```text
+4.0 6.0
+12.0
+```
 
 ## Inspect the Class
 

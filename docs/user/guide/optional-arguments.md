@@ -17,6 +17,20 @@ It preserves native `present(...)` semantics.
 
 ## Complete Example
 
+The source, generated contract, and Python call describe the same optional
+input behavior. The result stays visible below the three views.
+
+<div class="prik-example-tabs" data-prik-example-tabs markdown="1">
+<div class="prik-example-tablist" role="tablist" aria-label="Optional arguments example">
+<button class="prik-example-tab" id="optional-arguments-source-tab" type="button" role="tab" aria-controls="optional-arguments-source" aria-selected="true">Fortran source</button>
+<button class="prik-example-tab" id="optional-arguments-contract-tab" type="button" role="tab" aria-controls="optional-arguments-contract" aria-selected="false" tabindex="-1">Generated contract</button>
+<button class="prik-example-tab" id="optional-arguments-python-tab" type="button" role="tab" aria-controls="optional-arguments-python" aria-selected="false" tabindex="-1">Python usage</button>
+</div>
+
+<div class="prik-example-panel" id="optional-arguments-source" role="tabpanel" aria-labelledby="optional-arguments-source-tab" tabindex="0" markdown="1">
+
+### Fortran source
+
 Create `optional.f90`:
 
 ```fortran
@@ -55,7 +69,39 @@ Build it:
 python3 -m prik optional.f90 --out-dir build/optional
 ```
 
----
+</div>
+
+<div class="prik-example-panel" id="optional-arguments-contract" role="tabpanel" aria-labelledby="optional-arguments-contract-tab" tabindex="0" markdown="1">
+
+## Generated Contract
+
+The generated `adjustments.pyi` is:
+
+```python
+from prik.contracts import Addr, Arg, Float64, Int32, Return, native_call
+
+@native_call([Addr(Arg(0)), Addr(Arg(1))])
+def adjust(
+    value: Int32,
+    offset: Int32 = ...
+) -> Int32: ...
+
+@native_call([Addr(Arg(0)), Return('count', 0), Arg(1)])
+def make_values(
+    size: Int32,
+    values: Float64[size] = ...
+) -> Int32: ...
+```
+
+Generate it:
+
+```bash
+python3 -m prik generate --pyi optional.f90
+```
+
+</div>
+
+<div class="prik-example-panel" id="optional-arguments-python" role="tabpanel" aria-labelledby="optional-arguments-python-tab" tabindex="0" markdown="1">
 
 ## Usage in Python
 
@@ -72,7 +118,17 @@ print(adjust(np.int32(5), np.int32(3)))            # 8 (provided)
 print(adjust(np.int32(5), offset=np.int32(10)))    # 15 (keyword)
 ```
 
----
+</div>
+</div>
+
+Result:
+
+```text
+5
+5
+8
+15
+```
 
 ## Key Rules
 

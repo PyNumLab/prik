@@ -27,6 +27,20 @@ behavior. Examples must be complete enough to run in a clean checkout: show
 the input before the command that consumes it, and show the result when it
 helps the reader verify success.
 
+For one user-guide example with two or more matching views, use the
+`prik-example-tabs` component. When an example shows both **Fortran source**
+and **Python usage**, include the complete generated `.pyi` as the third view.
+Later sections may quote only the relevant contract snippet. Use only the
+relevant pair when source is absent. Select source first when it exists;
+otherwise select the contract first. Put the `generate --pyi` command directly
+below the contract, mirroring the build command below the source. Place the
+observable result immediately after the tab set. Do not use it in Getting
+Started, whose pages should remain linear.
+
+When an example teaches a contract edit, add a separate **Generated contract**
+view before **Edited contract**. Put the generation command below the former
+and the edited-contract build command below the latter.
+
 ## Add Or Update A Page
 
 1. Put the page in the user or contributor area that matches its reader and

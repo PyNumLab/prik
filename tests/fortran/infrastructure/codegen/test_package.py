@@ -14,15 +14,44 @@ POLICY_ROOT = REPO_ROOT / "prik" / "policy"
 SEMANTICS_ROOT = REPO_ROOT / "prik" / "semantics"
 
 
+def _is_main_guard(node: ast.If) -> bool:
+    test = node.test
+    return (
+        isinstance(test, ast.Compare)
+        and isinstance(test.left, ast.Name)
+        and test.left.id == "__name__"
+        and len(test.ops) == 1
+        and isinstance(test.ops[0], ast.Eq)
+        and len(test.comparators) == 1
+        and isinstance(test.comparators[0], ast.Constant)
+        and test.comparators[0].value == "__main__"
+    )
+
+
 def _imported_modules(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    imported = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imported.update(alias.name for alias in node.names)
-        if isinstance(node, ast.ImportFrom) and node.module:
-            imported.add(node.module)
-    return imported
+
+    class ImportCollector(ast.NodeVisitor):
+        def __init__(self) -> None:
+            self.imported: set[str] = set()
+
+        def visit_If(self, node: ast.If) -> None:
+            if _is_main_guard(node):
+                for statement in node.orelse:
+                    self.visit(statement)
+                return
+            self.generic_visit(node)
+
+        def visit_Import(self, node: ast.Import) -> None:
+            self.imported.update(alias.name for alias in node.names)
+
+        def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+            if node.module:
+                self.imported.add(node.module)
+
+    collector = ImportCollector()
+    collector.visit(tree)
+    return collector.imported
 
 
 def _imports_under(imports: set[str], package: str) -> bool:

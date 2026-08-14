@@ -202,6 +202,20 @@ print(values.to_numpy())
 
 ## Complete Example
 
+The source, generated contract, and Python call describe the same allocatable
+handle. The result stays visible below the three views.
+
+<div class="prik-example-tabs" data-prik-example-tabs markdown="1">
+<div class="prik-example-tablist" role="tablist" aria-label="Allocatable handle example">
+<button class="prik-example-tab" id="allocatables-source-tab" type="button" role="tab" aria-controls="allocatables-source" aria-selected="true">Fortran source</button>
+<button class="prik-example-tab" id="allocatables-contract-tab" type="button" role="tab" aria-controls="allocatables-contract" aria-selected="false" tabindex="-1">Generated contract</button>
+<button class="prik-example-tab" id="allocatables-python-tab" type="button" role="tab" aria-controls="allocatables-python" aria-selected="false" tabindex="-1">Python usage</button>
+</div>
+
+<div class="prik-example-panel" id="allocatables-source" role="tabpanel" aria-labelledby="allocatables-source-tab" tabindex="0" markdown="1">
+
+### Fortran source
+
 Create `storage.f90`:
 
 ```fortran
@@ -236,6 +250,41 @@ Build it:
 python3 -m prik storage.f90 --out-dir build/storage
 ```
 
+</div>
+
+<div class="prik-example-panel" id="allocatables-contract" role="tabpanel" aria-labelledby="allocatables-contract-tab" tabindex="0" markdown="1">
+
+## Generated Contract
+
+The generated `storage.pyi` is:
+
+```python
+from prik.contracts import Addr, Allocatable, Arg, Float64, Int32, Returns, native_call
+
+values: Allocatable[Float64[:]]
+
+@native_call([Addr(Arg(0))])
+def make_values(
+    n: Int32
+) -> Allocatable[Float64[:]]: ...
+
+def replace_values(
+    arr: Allocatable[Float64[:]]
+) -> Returns["arr", Allocatable[Float64[:]]]: ...
+```
+
+Generate it:
+
+```bash
+python3 -m prik generate --pyi storage.f90
+```
+
+</div>
+
+<div class="prik-example-panel" id="allocatables-python" role="tabpanel" aria-labelledby="allocatables-python-tab" tabindex="0" markdown="1">
+
+## Python Usage
+
 Use the generated module:
 
 ```python
@@ -254,7 +303,15 @@ assert returned is values                   # same handle
 print(values.to_numpy())                    # [10. 20.]
 ```
 
----
+</div>
+</div>
+
+Result:
+
+```text
+[2. 4. 6.]
+[10. 20.]
+```
 
 ## Safety Checklist
 

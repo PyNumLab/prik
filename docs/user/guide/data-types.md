@@ -18,6 +18,20 @@ wrapper because kind numbers are compiler-dependent.
 
 ## Example
 
+The source, generated contract, and Python call describe the same API. The
+observable values remain below the three views.
+
+<div class="prik-example-tabs" data-prik-example-tabs markdown="1">
+<div class="prik-example-tablist" role="tablist" aria-label="Data types example">
+<button class="prik-example-tab" id="data-types-source-tab" type="button" role="tab" aria-controls="data-types-source" aria-selected="true">Fortran source</button>
+<button class="prik-example-tab" id="data-types-contract-tab" type="button" role="tab" aria-controls="data-types-contract" aria-selected="false" tabindex="-1">Generated contract</button>
+<button class="prik-example-tab" id="data-types-python-tab" type="button" role="tab" aria-controls="data-types-python" aria-selected="false" tabindex="-1">Python usage</button>
+</div>
+
+<div class="prik-example-panel" id="data-types-source" role="tabpanel" aria-labelledby="data-types-source-tab" tabindex="0" markdown="1">
+
+### Fortran source
+
 Create `numeric_types.f90`:
 
 ```fortran
@@ -49,19 +63,55 @@ contains
 end module numeric_types
 ```
 
-Generate the contract:
-
-```bash
-python3 -m prik generate --pyi numeric_types.f90
-```
-
 Build it:
 
 ```bash
 python3 -m prik numeric_types.f90 --out-dir build/numeric-types
 ```
 
----
+</div>
+
+<div class="prik-example-panel" id="data-types-contract" role="tabpanel" aria-labelledby="data-types-contract-tab" tabindex="0" markdown="1">
+
+## Generated Contract
+
+The generated `numeric_types.pyi` is:
+
+```python
+from prik.contracts import Addr, Arg, Bool8, Complex128, Float64, Int32, native_call
+
+@native_call([Addr(Arg(0))])
+def add_one(
+    value: Int32
+) -> Int32: ...
+
+@native_call([Addr(Arg(0))])
+def double(
+    value: Float64
+) -> Float64: ...
+
+@native_call([Addr(Arg(0))])
+def conjugate_value(
+    value: Complex128
+) -> Complex128: ...
+
+@native_call([Addr(Arg(0))])
+def invert(
+    flag: Bool8
+) -> Bool8: ...
+```
+
+Generate it:
+
+```bash
+python3 -m prik generate --pyi numeric_types.f90
+```
+
+`Bool8` is the result of probing `logical(kind=1)` with the selected compiler.
+
+</div>
+
+<div class="prik-example-panel" id="data-types-python" role="tabpanel" aria-labelledby="data-types-python-tab" tabindex="0" markdown="1">
 
 ## Calling from Python
 
@@ -76,10 +126,20 @@ from numeric_types.numeric_types import add_one, conjugate_value, double, invert
 print(add_one(np.int32(4)))                        # 5
 print(double(np.float64(1.5)))                     # 3.0
 print(conjugate_value(np.complex128(1.0 + 2.0j)))  # (1-2j)
-print(bool(invert(True)))                          # False
+print(invert(True))                                # False
 ```
 
----
+</div>
+</div>
+
+Result:
+
+```text
+5
+3.0
+(1-2j)
+False
+```
 
 ## Scalar Type Mapping
 
