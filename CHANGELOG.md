@@ -45,6 +45,8 @@ release tags add a leading `v` to the package version.
   cross-build pipeline orchestration from sequential stages.
 - Ordered the Developer Documentation sidebar by the architecture reading path,
   with build stages before supporting components.
+- Made every expandable documentation-sidebar section label open its first
+  child page, while the adjacent **+** control only expands or collapses it.
 - Reviewed the Pipeline Component guide around the source-build handoff,
   independent contract and inspection workflows, and build-result ownership.
 - Reviewed the Preprocessing Stage guide around its Fortran source route,

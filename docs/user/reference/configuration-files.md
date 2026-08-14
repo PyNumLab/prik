@@ -138,7 +138,9 @@ beneath it.
 `mkdocs.yml` is the documentation-site configuration. It sets `docs_dir: docs`,
 sets the generated site output to the hidden `.artifacts/site/` directory,
 selects MkDocs' built-in Read the Docs theme, owns the complete intended
-navigation tree, and loads the publication hook. Generated documentation is
+navigation tree, and loads the publication hook. Its local navigation template
+makes a sidebar section label open its first child page; the adjacent **+**
+control expands or collapses that section. Generated documentation is
 therefore kept out of the visible repository root while remaining available
 for local inspection. The theme configuration keeps
 the sidebar expanded through four navigation levels. A local stylesheet keeps

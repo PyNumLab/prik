@@ -11,7 +11,9 @@ publication: reviewed
 
 PRIK has two active documentation areas: `docs/user/` for product users and
 `docs/developer/` for contributors and maintainers. `mkdocs.yml` defines the
-navigation; `old_docs/` is historical material outside it.
+page order, and `docs_theme/nav.html` makes each expandable section label open
+its first page while its **+** control expands or collapses the section.
+`old_docs/` is historical material outside the site.
 
 ## Write The Right Contract
 
