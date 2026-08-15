@@ -182,17 +182,40 @@ def _global_symbols(path: Path) -> dict[str, str]:
     return symbols
 
 
-def _one_artifact(
+def _compiled_object_symbols(
     workdir: Path,
     files: tuple[str, ...],
+) -> dict[Path, dict[str, str]]:
+    """Inspect every compiled object without relying on backend filenames."""
+    return {
+        workdir / relative_path: _global_symbols(workdir / relative_path)
+        for relative_path in files
+        if Path(relative_path).suffix == ".o"
+    }
+
+
+def _one_direct_symbol_object(
+    objects: Mapping[Path, Mapping[str, str]],
     *,
-    name: str,
+    expected_kinds: frozenset[str],
     description: str,
+    relationship: str,
 ) -> Path:
-    """Return one exact artifact or fail the untimed membership preflight."""
-    matches = tuple(workdir / path for path in files if Path(path).name == name)
+    """Return the unique object with the requested direct-symbol relationship."""
+    matches = tuple(
+        path
+        for path, symbols in objects.items()
+        if all(symbols.get(symbol, "").upper() in expected_kinds for symbol in DIRECT_SYMBOLS)
+    )
     if len(matches) != 1:
-        raise RuntimeError(f"Expected one {description} named {name!r}, found {len(matches)}")
+        observed = {
+            path.as_posix(): {symbol: symbols.get(symbol) for symbol in DIRECT_SYMBOLS}
+            for path, symbols in objects.items()
+        }
+        raise RuntimeError(
+            f"Expected one {description} that {relationship} every direct symbol, "
+            f"found {len(matches)}; observed {observed!r}"
+        )
     return matches[0]
 
 
@@ -217,30 +240,28 @@ def _direct_symbol_report(route: Route, workdir: Path, files: tuple[str, ...], l
     """Prove binding references and native/linked definitions for a direct route."""
     if route == "prik-adapted":
         return {}
-    binding_object_name = (
-        f"{module_name(route)}module.o" if route == "f2py-direct" else f"{module_name(route)}_wrapper.o"
-    )
-    binding_object = _one_artifact(
-        workdir,
-        files,
-        name=binding_object_name,
+    object_symbols = _compiled_object_symbols(workdir, files)
+    binding_object = _one_direct_symbol_object(
+        object_symbols,
+        expected_kinds=frozenset({"U"}),
         description="direct Python binding object",
+        relationship="refers to",
     )
-    native_object = _one_artifact(
-        workdir,
-        files,
-        name="direct_kernels.o",
+    native_object = _one_direct_symbol_object(
+        object_symbols,
+        expected_kinds=frozenset({"T", "W"}),
         description="direct native object",
+        relationship="defines",
     )
     _require_symbol_kinds(
         binding_object,
-        _global_symbols(binding_object),
+        object_symbols[binding_object],
         expected_kinds=frozenset({"U"}),
         relationship="refer to",
     )
     _require_symbol_kinds(
         native_object,
-        _global_symbols(native_object),
+        object_symbols[native_object],
         expected_kinds=frozenset({"T", "W"}),
         relationship="define",
     )
@@ -251,7 +272,9 @@ def _direct_symbol_report(route: Route, workdir: Path, files: tuple[str, ...], l
         relationship="export",
     )
     return {
+        "binding_direct_symbol_object": binding_object.relative_to(workdir).as_posix(),
         "binding_direct_symbol_references": DIRECT_SYMBOLS,
+        "native_direct_symbol_object": native_object.relative_to(workdir).as_posix(),
         "native_direct_symbol_definitions": DIRECT_SYMBOLS,
         "linked_direct_symbol_definitions": DIRECT_SYMBOLS,
     }

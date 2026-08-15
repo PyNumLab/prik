@@ -13,7 +13,11 @@ unneeded generated Fortran procedure wrappers/files, not the Python binding.
 An untimed preflight checks correctness, records the physical generated and
 compiled sources, and verifies that each direct Python binding object refers to
 the three user `bind(C)` labels while the native object and linked extension
-define those labels. These checks finish before either cohort enters a timer.
+define those labels. Object discovery uses those symbol relationships rather
+than backend-specific filenames because Meson retains source suffixes in object
+names while other f2py backends do not. The selected binding and native object
+paths are recorded in the preflight report. These checks finish before either
+cohort enters a timer.
 
 Every scalar case receives the same pre-created `numpy.float64` inputs and
 produces the same numerical value. The timed calls retain each tool's natural

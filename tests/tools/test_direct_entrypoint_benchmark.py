@@ -31,7 +31,9 @@ def _report(route: direct_benchmark.Route) -> dict[str, object]:
     if route != "prik-adapted":
         report.update(
             {
+                "binding_direct_symbol_object": "generated/wrapper.o",
                 "binding_direct_symbol_references": direct_benchmark.DIRECT_SYMBOLS,
+                "native_direct_symbol_object": "generated/native.o",
                 "native_direct_symbol_definitions": direct_benchmark.DIRECT_SYMBOLS,
                 "linked_direct_symbol_definitions": direct_benchmark.DIRECT_SYMBOLS,
             }
@@ -79,7 +81,12 @@ def test_artifact_preflight_rejects_wrappers_and_proves_direct_linkage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def symbols(path: Path) -> dict[str, str]:
-        kind = "U" if path.name.endswith(("_wrapper.o", "module.o")) else "T"
+        if path.name in {"bench_prik_direct_wrapper.o", "bench_f2py_directmodule.c.o"}:
+            kind = "U"
+        elif path.suffix == ".so" or path.name in {"direct_kernels.o", "direct_kernels.f90.o"}:
+            kind = "T"
+        else:
+            return {}
         return dict.fromkeys(direct_benchmark.DIRECT_SYMBOLS, kind)
 
     monkeypatch.setattr(direct_benchmark, "_global_symbols", symbols)
@@ -91,6 +98,8 @@ def test_artifact_preflight_rejects_wrappers_and_proves_direct_linkage(
     (direct / "direct_kernels.o").touch()
     report = direct_benchmark.artifact_report("prik-direct", direct)
     assert report["generated_fortran_adapter_sources"] == ()
+    assert report["binding_direct_symbol_object"] == "bench_prik_direct_wrapper.o"
+    assert report["native_direct_symbol_object"] == "direct_kernels.o"
     assert report["binding_direct_symbol_references"] == direct_benchmark.DIRECT_SYMBOLS
     assert report["linked_direct_symbol_definitions"] == direct_benchmark.DIRECT_SYMBOLS
 
@@ -102,8 +111,11 @@ def test_artifact_preflight_rejects_wrappers_and_proves_direct_linkage(
     f2py.mkdir()
     (f2py / "bench_f2py_direct.so").touch()
     (f2py / "bench_f2py_directmodule.c").touch()
-    (f2py / "bench_f2py_directmodule.o").touch()
-    (f2py / "direct_kernels.o").touch()
+    meson_objects = f2py / "generated" / "bbdir" / "bench_f2py_direct.cpython-312-aarch64-linux-gnu.so.p"
+    meson_objects.mkdir(parents=True)
+    (meson_objects / "bench_f2py_directmodule.c.o").touch()
+    (meson_objects / "direct_kernels.f90.o").touch()
+    (meson_objects / "fortranobject.c.o").touch()
     (f2py / "bench_f2py_direct-f2pywrappers.f90").touch()
     with pytest.raises(RuntimeError, match="generated Fortran wrapper sources"):
         direct_benchmark.artifact_report("f2py-direct", f2py)
@@ -111,6 +123,8 @@ def test_artifact_preflight_rejects_wrappers_and_proves_direct_linkage(
     (f2py / "bench_f2py_direct-f2pywrappers.f90").unlink()
     report = direct_benchmark.artifact_report("f2py-direct", f2py)
     assert report["f2py_fortran_wrapper_sources"] == ()
+    assert report["binding_direct_symbol_object"].endswith("/bench_f2py_directmodule.c.o")
+    assert report["native_direct_symbol_object"].endswith("/direct_kernels.f90.o")
     assert report["native_direct_symbol_definitions"] == direct_benchmark.DIRECT_SYMBOLS
 
 

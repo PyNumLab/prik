@@ -23,6 +23,8 @@ release tags add a leading `v` to the package version.
 
 ### Changed
 
+- Made direct-entrypoint benchmark preflight identify binding and native
+  objects by their inspected symbol relationships across f2py build backends.
 - Reduced exact numeric-scalar call overhead by using typed NumPy scalar
   payload access and result allocation while preserving strict dtype checking
   and exact NumPy result types.
