@@ -185,7 +185,7 @@ def test_native_handle_plans_keep_datatype_specific_state():
     )
     assert normal.native_array_actual.require_contiguous is True
     assert normal.entrypoint.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER
-    assert normal.array is normal.bridge_call_slot.array
+    assert normal.array is normal.projected_call_slot.array
 
     alloc = functions["alloc"].arguments[0]
     pointer = functions["pointer"].arguments[0]
@@ -195,7 +195,7 @@ def test_native_handle_plans_keep_datatype_specific_state():
     ):
         handle = argument.native_array_handle
         assert handle is not None
-        assert handle is argument.bridge_call_slot.native_array_handle
+        assert handle is argument.projected_call_slot.native_array_handle
         assert handle.descriptor_kind is descriptor_kind
         assert handle.handoff.abi is NativeDescriptorHandoffABI.FACT_PACKED_CALL_LOCAL
         assert handle.default_handle.construction is NativeArrayDefaultConstruction.FACT_PACKED_EMPTY
@@ -282,8 +282,8 @@ def test_native_handle_plans_keep_datatype_specific_state():
     assert pointer_output.native_array_handle is not None
     assert pointer_output.native_array_handle.descriptor_kind is NativeArrayDescriptorKind.POINTER
     assert pointer_output.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
-    assert pointer_output.bridge_call_slot is not None
-    assert pointer_output.bridge_call_slot.source_kind == "result"
+    assert pointer_output.projected_call_slot is not None
+    assert pointer_output.projected_call_slot.source_kind == "result"
 
     managed_pointer = functions["make_managed_pointer"].results[0]
     assert managed_pointer.native_array_handle is not None

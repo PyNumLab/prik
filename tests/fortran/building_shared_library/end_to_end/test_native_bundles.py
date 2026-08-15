@@ -126,6 +126,16 @@ end function {name}
 """
 
 
+def _direct_external_source(name: str, expression: str) -> str:
+    return f"""\
+integer(c_int) function {name}(value) bind(C) result(out)
+  use iso_c_binding
+  integer(c_int), value, intent(in) :: value
+  out = {expression}
+end function {name}
+"""
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="shared-library loader behavior differs on Windows")
 @pytest.mark.parametrize("artifact_kind", ["archive", "shared_library"])
 def test_imported_contracts_resolve_from_one_archive_or_shared_library(
@@ -156,6 +166,50 @@ def test_imported_contracts_resolve_from_one_archive_or_shared_library(
     assert native_plan["prebuilt_artifacts"] == [{"kind": artifact_kind, "path": str(artifact)}]
     assert native_plan["link_items"] == [{"kind": artifact_kind, "path": str(artifact)}]
     _assert_combined_runtime(module)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="shared-library loader behavior differs on Windows")
+@pytest.mark.parametrize("artifact_kind", ["archive", "shared_library"])
+def test_source_free_direct_entrypoint_resolves_from_external_fortran_library(
+    tmp_path: Path,
+    artifact_kind: str,
+):
+    source = _write_source(
+        tmp_path / "sources",
+        "external_direct.f90",
+        _direct_external_source("external_direct", "value + 9_c_int"),
+    )
+    native_object = _compile_source(source, tmp_path / "native" / "objects")
+    artifact = (
+        _archive(tmp_path / "native" / "libexternal_direct.a", (native_object,))
+        if artifact_kind == "archive"
+        else _shared_library(tmp_path / "native" / "libexternal_direct.so", (native_object,))
+    )
+    entry = _write_contract_package(
+        tmp_path / "contracts" / "external_direct",
+        entry=(
+            "from prik.contracts import Int32, native_abi, standalone\n\n"
+            '@native_abi("c")\n'
+            "@standalone\n"
+            "def external_direct(value: Int32) -> Int32: ...\n"
+        ),
+    )
+
+    result = build_pyi_extension(
+        entry,
+        native_objects=[artifact],
+        output_name="external_direct",
+        output_dir=tmp_path / "build",
+    )
+    module = _import_from_build(result)
+
+    assert module.external_direct(np.int32(4)) == np.int32(13)
+    assert {path.name for path in result.generated_sources} == {
+        "external_direct_wrapper.c",
+        "external_direct_wrapper.h",
+    }
+    assert result.native_generated_code_groups == ()
+    assert result.native_build_plan.to_dict()["link_items"] == [{"kind": artifact_kind, "path": str(artifact)}]
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="shared-library loader behavior differs on Windows")

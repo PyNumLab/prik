@@ -216,7 +216,7 @@ def test_pyi_makefile_manifest_and_replay_workflows(tmp_path: Path):
     assert manifest_path == build_dir / "prik-build.json"
     assert makefile_path == build_dir / "Makefile.prik"
     assert manifest == payload["manifest"]
-    assert manifest["schema_version"] == 2
+    assert manifest["schema_version"] == 3
     assert manifest["build_kind"] == "pyi-wrapper"
     assert manifest["compiler"]["input_executable"] == str(selected_compiler)
     assert manifest["compiler"]["fortran_flags"] == ["-O2", "-g0"]
@@ -229,6 +229,10 @@ def test_pyi_makefile_manifest_and_replay_workflows(tmp_path: Path):
         "headers": [],
         "items": [],
     }
+    assert manifest["generated_wrapper"]["native_code_groups"][0]["kind"] == "fortran_adapters"
+    assert any(
+        path.endswith("bind_c_fruntime_abi_f90_wrapper.f90") for path in manifest["generated_wrapper"]["sources"]
+    )
     assert [item["kind"] for item in manifest["native_build_plan"]["link_items"]] == ["object"]
     assert manifest["native_build_plan"]["compilation_units"][0]["source"].endswith(native_source.name)
     manifest_includes = manifest["native_build_plan"]["compilation_units"][0]["include_dirs"]
@@ -290,6 +294,37 @@ def test_pyi_makefile_manifest_and_replay_workflows(tmp_path: Path):
     assert Path(replayed_payload["shared_library"]).is_file()
     replayed_module = _sole_native_module(_import_from_build_dir(replayed_payload["module_name"], build_dir))
     _assert_scale_runtime_contract(replayed_module)
+
+
+def test_all_direct_makefile_and_manifest_record_zero_generated_native_groups(tmp_path: Path):
+    contract = tmp_path / "direct_manifest.pyi"
+    contract.write_text(
+        """from prik.contracts import Int32, native_abi
+
+@native_abi("c")
+def direct(value: Int32) -> Int32: ...
+""",
+        encoding="utf-8",
+    )
+    native_source = tmp_path / "direct_manifest.f90"
+    native_source.write_text("native implementation placeholder\n", encoding="utf-8")
+
+    result = build_pyi_extension(
+        contract,
+        native_fortran_sources=[native_source],
+        output_dir=tmp_path / "build",
+        makefile=True,
+    )
+
+    manifest = json.loads(result.build_manifest.read_text(encoding="utf-8"))
+    generated = manifest["generated_wrapper"]
+    makefile = result.build_makefile.read_text(encoding="utf-8")
+
+    assert result.native_generated_code_groups == ()
+    assert generated["native_code_groups"] == []
+    assert {Path(path).suffix for path in generated["sources"]} == {".c", ".h"}
+    assert "bind_c_direct_manifest_wrapper.f90" not in makefile
+    assert "direct_manifest.f90" in makefile
 
 
 def test_pyi_cli_accepts_exactly_one_entry_contract(tmp_path: Path):

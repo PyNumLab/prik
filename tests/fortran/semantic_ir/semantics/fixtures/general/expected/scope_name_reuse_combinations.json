@@ -35,6 +35,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "same_name",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "integer",
@@ -61,6 +63,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "same_name",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "do_work_i",
                 "source_kind": "argument",
                 "source_type": "integer",
@@ -100,6 +104,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "do_work_i",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "scope_name_reuse_combinations",
             "source_kind": "subroutine",
             "source_type": null,
@@ -139,6 +145,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "same_name",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "real",
@@ -163,6 +171,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "same_name",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "do_work_r",
                 "source_kind": "argument",
                 "source_type": "real",
@@ -202,6 +212,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "do_work_r",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "scope_name_reuse_combinations",
             "source_kind": "subroutine",
             "source_type": null,
@@ -241,6 +253,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "same_name",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "logical",
@@ -265,6 +279,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "same_name",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "do_work_l",
                 "source_kind": "argument",
                 "source_type": "logical",
@@ -304,6 +320,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "do_work_l",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "scope_name_reuse_combinations",
             "source_kind": "subroutine",
             "source_type": null,
@@ -343,6 +361,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "same_name",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "integer",
@@ -369,6 +389,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "same_name",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "host_one",
                 "source_kind": "argument",
                 "source_type": "integer",
@@ -408,6 +430,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "host_one",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "scope_name_reuse_combinations",
             "source_kind": "subroutine",
             "source_type": null,
@@ -447,6 +471,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "same_name",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "real",
@@ -473,6 +499,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "same_name",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "host_two",
                 "source_kind": "argument",
                 "source_type": "real",
@@ -512,6 +540,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "host_two",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "scope_name_reuse_combinations",
             "source_kind": "subroutine",
             "source_type": null,
@@ -551,6 +581,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "same_name",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "integer",
@@ -575,6 +607,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "same_name",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "convert_to_complex",
                 "source_kind": "argument",
                 "source_type": "integer",
@@ -612,6 +646,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "shared",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "complex",
@@ -648,6 +684,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "convert_to_complex",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "scope_name_reuse_combinations",
             "source_kind": "function",
             "source_type": null,
@@ -687,6 +725,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "same_name",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "real",
@@ -711,6 +751,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "same_name",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "convert_to_char",
                 "source_kind": "argument",
                 "source_type": "real",
@@ -750,6 +792,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "shared",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "character(kind=len=16)",
@@ -786,6 +830,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "convert_to_char",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "scope_name_reuse_combinations",
             "source_kind": "function",
             "source_type": null,
@@ -827,6 +873,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "same_name",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "character(kind=len=*)",
@@ -851,6 +899,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "same_name",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "convert_to_logical",
                 "source_kind": "argument",
                 "source_type": "character(kind=len=*)",
@@ -888,6 +938,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "shared",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "logical",
@@ -924,6 +976,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "convert_to_logical",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "scope_name_reuse_combinations",
             "source_kind": "function",
             "source_type": null,
@@ -969,6 +1023,8 @@
                     "origin": {
                       "source_language": "fortran",
                       "native_name": "same_name",
+                      "native_abi": null,
+                      "native_symbol": null,
                       "native_scope": null,
                       "source_kind": "variable",
                       "source_type": "integer",
@@ -995,6 +1051,8 @@
                   "origin": {
                     "source_language": "fortran",
                     "native_name": "same_name",
+                    "native_abi": null,
+                    "native_symbol": null,
                     "native_scope": "do_work_i",
                     "source_kind": "argument",
                     "source_type": "integer",
@@ -1038,6 +1096,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "do_work_i",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "scope_name_reuse_combinations",
                 "source_kind": "subroutine",
                 "source_type": null,
@@ -1077,6 +1137,8 @@
                     "origin": {
                       "source_language": "fortran",
                       "native_name": "same_name",
+                      "native_abi": null,
+                      "native_symbol": null,
                       "native_scope": null,
                       "source_kind": "variable",
                       "source_type": "real",
@@ -1101,6 +1163,8 @@
                   "origin": {
                     "source_language": "fortran",
                     "native_name": "same_name",
+                    "native_abi": null,
+                    "native_symbol": null,
                     "native_scope": "do_work_r",
                     "source_kind": "argument",
                     "source_type": "real",
@@ -1144,6 +1208,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "do_work_r",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "scope_name_reuse_combinations",
                 "source_kind": "subroutine",
                 "source_type": null,
@@ -1183,6 +1249,8 @@
                     "origin": {
                       "source_language": "fortran",
                       "native_name": "same_name",
+                      "native_abi": null,
+                      "native_symbol": null,
                       "native_scope": null,
                       "source_kind": "variable",
                       "source_type": "logical",
@@ -1207,6 +1275,8 @@
                   "origin": {
                     "source_language": "fortran",
                     "native_name": "same_name",
+                    "native_abi": null,
+                    "native_symbol": null,
                     "native_scope": "do_work_l",
                     "source_kind": "argument",
                     "source_type": "logical",
@@ -1250,6 +1320,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "do_work_l",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "scope_name_reuse_combinations",
                 "source_kind": "subroutine",
                 "source_type": null,
@@ -1284,6 +1356,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "payload",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "integer",
@@ -1308,6 +1382,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "payload",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": null,
                 "source_kind": "field",
                 "source_type": "integer",
@@ -1355,6 +1431,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "same_name",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "scope_name_reuse_combinations",
             "source_kind": "derived_type",
             "source_type": null,
@@ -1383,6 +1461,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "same_name_i",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "integer",
@@ -1407,6 +1487,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "same_name_i",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "scope_name_reuse_combinations",
             "source_kind": "variable",
             "source_type": "integer",
@@ -1444,6 +1526,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "same_name_r",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "real",
@@ -1468,6 +1552,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "same_name_r",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "scope_name_reuse_combinations",
             "source_kind": "variable",
             "source_type": "real",
@@ -1505,6 +1591,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "same_name_l",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "logical",
@@ -1529,6 +1617,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "same_name_l",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "scope_name_reuse_combinations",
             "source_kind": "variable",
             "source_type": "logical",
@@ -1566,6 +1656,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "same_name_c",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "complex",
@@ -1590,6 +1682,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "same_name_c",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "scope_name_reuse_combinations",
             "source_kind": "variable",
             "source_type": "complex",
@@ -1629,6 +1723,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "same_name_s",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "character(kind=len=8)",
@@ -1653,6 +1749,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "same_name_s",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "scope_name_reuse_combinations",
             "source_kind": "variable",
             "source_type": "character(kind=len=8)",
@@ -1677,6 +1775,8 @@
       "origin": {
         "source_language": "fortran",
         "native_name": "scope_name_reuse_combinations",
+        "native_abi": null,
+        "native_symbol": null,
         "native_scope": "scope_name_reuse_combinations",
         "source_kind": "module",
         "source_type": null,

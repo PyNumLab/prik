@@ -24,11 +24,11 @@ derived-value lifecycles. The generator does not infer a native interface,
 argument optionality, ownership, or result projection from source-language
 details.
 
-Auxiliary generated procedures obtain their exported symbol and public
-parameter/result contract from the same module entrypoint operation registry
+Generated support procedures obtain their exported symbol and public
+parameter/result contract from the same module support-procedure registry
 used by the C binding. Derived-field bodies, origin storage manipulation,
 descriptor association, destruction, and callback adaptation remain
-bridge-local implementation. The lowerer does not reconstruct an auxiliary ABI
+Fortran-local implementation. The lowerer does not reconstruct a support ABI
 from those local facts. The registry also marks callback trampolines as
 binding-implemented, so Fortran consumes their signatures as interfaces rather
 than emitting duplicate implementations.
@@ -115,9 +115,12 @@ from prik.codegen.fortran.bridge import FortranBridgeGenerator
 from prik.planning.models import (
     BindingFunctionPlan, BindingModulePlan, BridgeFunctionPlan,
     BridgeModulePlan, FunctionPlan, ModulePlan,
-    NativeEntrypointFunctionPlan, NativeEntrypointModulePlan, NamespacePlan,
+    NativeEntrypointFunctionPlan, NativeEntrypointModulePlan,
+    NativeGeneratedCodeGroupKind, NativeGeneratedCodeGroupPlan, NamespacePlan,
 )
-from prik.policy.models import ExternalDeclarationMode, NativeInvocationKind
+from prik.policy.models import (
+    ExternalDeclarationMode, NativeEntrypointAction, NativeInvocationKind,
+)
 from prik.printers.fortran import FortranSourcePrinter
 
 binding = BindingFunctionPlan(
@@ -138,8 +141,10 @@ bridge = BridgeFunctionPlan(
 )
 entrypoint = NativeEntrypointFunctionPlan(
     symbol_name="bind_c_ping",
+    action=NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER,
     parameters=(),
     results=(),
+    projected_slots=(),
 )
 function = FunctionPlan(
     owner_path="demo.ping",
@@ -150,7 +155,6 @@ function = FunctionPlan(
     class_call=None,
     arguments=(),
     results=(),
-    bridge_call_slots=(),
     declaration_callables=(),
     available_roles=(),
 )
@@ -166,6 +170,14 @@ plan = ModulePlan(
     entrypoint=NativeEntrypointModulePlan(owner_path="demo"),
     bridge=BridgeModulePlan(owner_path="demo"),
     namespaces=(namespace,),
+    native_generated_code_groups=(
+        NativeGeneratedCodeGroupPlan(
+            kind=NativeGeneratedCodeGroupKind.FORTRAN_ADAPTERS,
+            language="fortran",
+            member_keys=("demo.ping",),
+            source_paths=("bind_c_demo_wrapper.f90",),
+        ),
+    ),
 )
 
 generator = FortranBridgeGenerator()

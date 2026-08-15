@@ -39,6 +39,10 @@ echo "========================================"
 echo
 echo "Check correctness of all shared libraries..."
 python3 correctness.py
+
+echo
+echo "Check direct/adapted correctness and generated artifacts..."
+python3 direct_preflight.py
 echo
 echo "========================================"
 echo "========================================"
@@ -53,6 +57,15 @@ echo "========================================"
 python3 build_time.py \
     --runs "${PRIK_BUILD_BENCHMARK_RUNS:-4}" \
     --warmups "${PRIK_BUILD_BENCHMARK_WARMUPS:-1}" \
+    --first "$benchmark_first"
+
+echo
+echo "========================================"
+echo " Benchmarking direct/adapted clean builds"
+echo "========================================"
+python3 direct_build_time.py \
+    --runs "${PRIK_DIRECT_BUILD_BENCHMARK_RUNS:-4}" \
+    --warmups "${PRIK_DIRECT_BUILD_BENCHMARK_WARMUPS:-1}" \
     --first "$benchmark_first"
 
 runtime_groups=(
@@ -105,9 +118,61 @@ for binding_tool in prik f2py; do
         --output "results/$binding_tool.json"
 done
 
+direct_runtime_passes=(forward reverse)
+for runtime_pass in "${direct_runtime_passes[@]}"; do
+    case "$runtime_pass" in
+        forward)
+            direct_routes=(prik-direct f2py-direct prik-adapted)
+            ;;
+        reverse)
+            direct_routes=(prik-adapted f2py-direct prik-direct)
+            ;;
+    esac
+    echo "Direct runtime benchmark order ($runtime_pass): ${direct_routes[*]}"
+    for direct_route in "${direct_routes[@]}"; do
+        PRIK_DIRECT_BENCHMARK_ROUTE="$direct_route" \
+        PRIK_DIRECT_ORDER_PASS="$runtime_pass" \
+        OMP_NUM_THREADS=1 \
+        OPENBLAS_NUM_THREADS=1 \
+        MKL_NUM_THREADS=1 \
+        python3 direct_runtime.py \
+            --rigorous \
+            --affinity=0 \
+            --inherit-environ=PRIK_DIRECT_BENCHMARK_ROUTE,PRIK_DIRECT_ORDER_PASS,PRIK_DIRECT_PREFLIGHT_REPORT,PRIK_BENCHMARK_CPU_MODEL,OMP_NUM_THREADS,OPENBLAS_NUM_THREADS,MKL_NUM_THREADS \
+            -o "results/$direct_route-$runtime_pass.json"
+    done
+done
+
+for direct_route in prik-direct f2py-direct prik-adapted; do
+    python3 -m pyperf convert \
+        "results/$direct_route-forward.json" \
+        --add "results/$direct_route-reverse.json" \
+        --output "results/$direct_route.json"
+done
+
 python3 -m pyperf compare_to \
     results/f2py.json \
     results/prik.json \
+    --table
+
+python3 -m pyperf compare_to \
+    results/f2py-direct.json \
+    results/prik-direct.json \
+    --table
+
+python3 -m pyperf compare_to \
+    results/prik-adapted.json \
+    results/prik-direct.json \
+    --table
+
+python3 -m pyperf compare_to \
+    results/f2py-direct-build.json \
+    results/prik-direct-build.json \
+    --table
+
+python3 -m pyperf compare_to \
+    results/prik-adapted-build.json \
+    results/prik-direct-build.json \
     --table
 
 python3 -m pyperf compare_to \

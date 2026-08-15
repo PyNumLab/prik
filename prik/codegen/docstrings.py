@@ -12,6 +12,7 @@ from __future__ import annotations
 from prik.policy.ownership import OwnershipOwner, SetterAction, TransferMode
 from prik.policy.models import (
     ClassConstructorKind,
+    EntrypointOptionalityAction,
     ModuleGetterAction,
     NativeArrayDescriptorKind,
     OptionalMode,
@@ -768,6 +769,11 @@ class WrapperDocstringBuilder:
         """
         mode = argument.binding.optional_mode
         if mode is OptionalMode.DESCRIPTOR:
+            if argument.entrypoint.optionality is EntrypointOptionalityAction.NULL_C_DESCRIPTOR_POINTER:
+                return (
+                    "    May be omitted or passed as None to make the native optional dummy absent.",
+                    "    Pass an empty descriptor handle for a present unallocated or unassociated dummy.",
+                )
             return (
                 "    Omit to make the native optional dummy absent.",
                 "    Pass None for a present unallocated or unassociated descriptor.",
@@ -979,8 +985,8 @@ class WrapperDocstringBuilder:
         )
         if projected is not None:
             return projected
-        if result.bridge_call_slot is not None and result.bridge_call_slot.python_name:
-            return result.bridge_call_slot.python_name
+        if result.projected_call_slot is not None and result.projected_call_slot.python_name:
+            return result.projected_call_slot.python_name
         return "result" if result.result_position == 0 else f"result_{result.result_position}"
 
     def _module_variable_summary_lines(self, variable: ModuleVariablePlan) -> tuple[str, ...]:

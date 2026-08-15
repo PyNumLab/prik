@@ -31,6 +31,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "nmax",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "integer(kind=c_int)",
@@ -58,6 +60,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "nmax",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "constants_mod",
             "source_kind": "variable",
             "source_type": "integer(kind=c_int)",
@@ -127,6 +131,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "origin",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "real(kind=c_double)",
@@ -157,6 +163,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "origin",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "constants_mod",
             "source_kind": "variable",
             "source_type": "real(kind=c_double)",
@@ -201,6 +209,8 @@
       "origin": {
         "source_language": "fortran",
         "native_name": "constants_mod",
+        "native_abi": null,
+        "native_symbol": null,
         "native_scope": "constants_mod",
         "source_kind": "module",
         "source_type": null,

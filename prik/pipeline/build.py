@@ -65,13 +65,13 @@ from prik.policy.native_array_handles import (
 from prik.policy.completion import complete_semantic_policies
 from prik.pipeline.pyi import _PyiSemanticModuleCache
 from prik.semantics.pyi_metadata import PYI_LOADED_METADATA
-from prik.planning import WrapperPlanner
+from prik.planning import NativeGeneratedCodeGroupPlan, WrapperPlanner
 from prik.semantics.scalar_types import boolean_storage_bits, is_boolean_semantic_type_name
 
 
 _DEFAULT_BUILD_DIR_NAME = "__prik__"
 _BUILD_MANIFEST_NAME = "prik-build.json"
-_BUILD_MANIFEST_SCHEMA_VERSION = 2
+_BUILD_MANIFEST_SCHEMA_VERSION = 3
 _FORTRAN_SOURCE_SUFFIXES = {".f", ".f03", ".f08", ".f77", ".f90", ".f95", ".for", ".ftn"}
 _C_SOURCE_SUFFIXES = {".c"}
 _NATIVE_PATH_LINK_KINDS = frozenset({"object", "archive", "shared_library"})
@@ -372,6 +372,7 @@ class WrapperBuildResult:
     native_build_plan: NativeBuildPlan = field(default_factory=NativeBuildPlan)
     build_manifest: Path | None = None
     manifest: dict[str, object] | None = None
+    native_generated_code_groups: tuple[NativeGeneratedCodeGroupPlan, ...] = ()
 
     def import_module(self) -> ModuleType:
         """Import and return this result's built extension module.
@@ -436,6 +437,15 @@ class WrapperBuildResult:
             "native_build_plan": self.native_build_plan.to_dict(),
             "build_manifest": str(self.build_manifest) if self.build_manifest is not None else None,
             "manifest": self.manifest,
+            "native_generated_code_groups": [
+                {
+                    "kind": group.kind.value,
+                    "language": group.language,
+                    "member_keys": list(group.member_keys),
+                    "source_paths": list(group.source_paths),
+                }
+                for group in self.native_generated_code_groups
+            ],
         }
 
 
@@ -676,9 +686,18 @@ def _generated_wrapper_object_stages(
 def _generated_wrapper_link_language(
     bridge_objects: tuple[ObjectFile, ...],
     binding_objects: tuple[ObjectFile, ...],
+    *,
+    native_objects: tuple[ObjectFile, ...] = (),
+    required_languages: tuple[str, ...] = (),
 ) -> str:
-    """Return the linker language for generated wrapper sources."""
-    if bridge_objects:
+    """Return the linker language required by every generated and native input."""
+    languages = {
+        *required_languages,
+        *(item.language for item in native_objects),
+        *(item.language for item in bridge_objects),
+        *(item.language for item in binding_objects),
+    }
+    if "fortran" in languages:
         return "fortran"
     if not binding_objects:
         raise ValueError("Generated wrapper must include at least one binding source")
@@ -865,7 +884,12 @@ def _build_generated_wrapper_extension(
     shared_library = compiler.link_extension(
         module_name=rendered.module_name,
         output_dir=shared_output_path,
-        language=_generated_wrapper_link_language(bridge_objects, binding_objects),
+        language=_generated_wrapper_link_language(
+            bridge_objects,
+            binding_objects,
+            native_objects=tuple(native_dependencies),
+            required_languages=rendered.required_link_languages,
+        ),
         objects=(*tuple(native_dependencies), *bridge_objects, *binding_objects),
         link_args=tuple(native_link_args),
         library_dirs=resolved_native_build_plan.library_dirs,
@@ -892,6 +916,7 @@ def _build_generated_wrapper_extension(
             shared_library=shared_library,
         ),
         native_build_plan=resolved_native_build_plan,
+        native_generated_code_groups=rendered.native_generated_code_groups,
     )
 
 
@@ -2055,6 +2080,22 @@ def _manifest_native_array_requirements(requirements: NativeArrayBuildRequiremen
     }
 
 
+def _manifest_generated_wrapper(result: WrapperBuildResult, *, base: Path) -> dict[str, object]:
+    """Serialize physical sources and independently planned native membership."""
+    return {
+        "sources": [_manifest_path(path, base=base) for path in result.generated_sources],
+        "native_code_groups": [
+            {
+                "kind": group.kind.value,
+                "language": group.language,
+                "member_keys": list(group.member_keys),
+                "source_paths": list(group.source_paths),
+            }
+            for group in result.native_generated_code_groups
+        ],
+    }
+
+
 def _pyi_build_manifest(
     *,
     bundle: _PyiContractBundle,
@@ -2070,6 +2111,7 @@ def _pyi_build_manifest(
     wrapper_c_flags: tuple[str, ...],
     native_build_plan: NativeBuildPlan,
     native_array_build_requirements: NativeArrayBuildRequirements,
+    generated_wrapper: dict[str, object],
     manifest_dir: Path,
 ) -> dict[str, object]:
     """Build the complete in-memory manifest for a semantic ``.pyi`` build.
@@ -2103,6 +2145,7 @@ def _pyi_build_manifest(
             "position_independent_code": True,
         },
         "native_array_build_requirements": _manifest_native_array_requirements(native_array_build_requirements),
+        "generated_wrapper": generated_wrapper,
         "native_build_plan": _manifest_native_plan(native_build_plan, base=manifest_dir),
     }
 
@@ -2146,6 +2189,7 @@ def _with_pyi_manifest(
         wrapper_c_flags=wrapper_c_flags,
         native_build_plan=result.native_build_plan,
         native_array_build_requirements=native_array_build_requirements,
+        generated_wrapper=_manifest_generated_wrapper(result, base=result.output_dir),
         manifest_dir=result.output_dir,
     )
     return replace(result, manifest=manifest)

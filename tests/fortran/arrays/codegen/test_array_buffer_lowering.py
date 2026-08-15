@@ -53,15 +53,15 @@ def test_required_array_buffer_has_one_printable_editable_handoff_plan():
     assert argument.bridge.data_action is BridgeDataAction.ASSOCIATE_VIEW
 
     assert isinstance(argument.array, ArrayHandoffPlan)
-    assert argument.array is argument.bridge_call_slot.array
-    assert argument.bridge_call_slot.object_kind is ObjectKind.NUMPY_ARRAY
+    assert argument.array is argument.projected_call_slot.array
+    assert argument.projected_call_slot.object_kind is ObjectKind.NUMPY_ARRAY
     assert argument.array.rank == 1
     assert argument.array.shape == (":",)
     assert argument.array.axes == ("dense",)
     assert argument.array.contiguous is True
     assert argument.array.flatten_python_storage is False
     assert argument.array.flat_axis is None
-    assert argument.array.data_role == argument.binding.handoff_role
+    assert argument.array.data_role == argument.entrypoint.handoff_role
     assert argument.array.extent_roles == (f"{argument.owner_path}:extent:0",)
     assert argument.array.upper_bound_roles == ()
     assert argument.array.stride_roles == ()

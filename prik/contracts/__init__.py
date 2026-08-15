@@ -235,6 +235,7 @@ Work = _expression
 
 bind = _decorator
 nogil = _decorator
+native_abi = _decorator
 native_call = _decorator
 native_type = _decorator
 overload = _decorator
@@ -333,6 +334,7 @@ CONTRACT_SYMBOLS = frozenset(
         "WrappedType",
         "bind",
         "nogil",
+        "native_abi",
         "native_call",
         "native_type",
         "overload",

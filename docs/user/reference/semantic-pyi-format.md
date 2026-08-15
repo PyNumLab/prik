@@ -305,11 +305,36 @@ from prik.contracts import Float64, standalone
 def update(value: Float64[()]) -> None: ...
 ```
 
-`@bind("native_name")` remains necessary only when the Python declaration name
-differs from the native symbol. `@native_call` remains necessary only when the
-Python signature hides, inserts, or reorders native arguments. `Pass()` marks
-the implicit class instance. This is a method receiver or a newly allocated
-constructor object.
+`@native_abi("c")` records that an original Fortran procedure has a standard C
+ABI entrypoint, as declared by Fortran `bind(C)`. It is a Fortran contract fact:
+it does not reinterpret the contract as C source. The only accepted ABI value
+is `"c"`; C-native contracts use their language identity instead and must not
+repeat this decorator.
+
+`@bind("native_name")` remains necessary only when the linkable native label
+differs from the declaration name. It composes with `@native_abi("c")`, so a
+Fortran declaration such as `bind(C, name="solver_step")` is retained as:
+
+```python
+from prik.contracts import Float64, bind, native_abi
+
+@native_abi("c")
+@bind("solver_step")
+def step(value: Float64) -> Float64: ...
+```
+
+The ABI marker is valid on module and standalone procedures, class methods,
+overload declarations, and exact callable prototypes. Each declaration still
+retains its Fortran placement and source identity. The marker records an input
+fact only: post-IR policy decides independently whether an operation is safe to
+call directly or requires a generated Fortran adapter.
+
+`@native_call` remains necessary only when the Python signature hides, inserts,
+or reorders original native-procedure arguments. It is route-neutral: its
+ordered arguments, hidden results, typed literals, address/value projections,
+lengths, presence values, shapes, strides, and work values do not imply that a
+Fortran adapter will execute them. `Pass()` marks the implicit class instance.
+This is a method receiver or a newly allocated constructor object.
 
 Ordinary semantic types are the native type contract. `Int32`, `Float64`,
 `Addr`, scalar storage rank `()`, array rank, shape, and focused metadata such
@@ -1127,6 +1152,12 @@ Dimension entries have the following meaning:
 | `Flat` | edge-position flat contiguous storage dimension |
 | `...` | rank-polymorphic storage |
 
+For a Fortran semantic contract, a concrete dimension list such as
+`Float64[n]` or `Float64[rows, columns]` is an explicit-shape dummy contract.
+That spelling preserves the pointer-based interoperable mechanism needed by a
+`@native_abi("c")` procedure; it is not treated as an unknown source category
+when the `.pyi` is loaded without the original Fortran source.
+
 Declaration extents use Python expression syntax, even when a contract was
 generated from another source language. Generated Fortran contracts translate
 array inquiries to the corresponding public array properties:
@@ -1764,15 +1795,15 @@ default `Arg(i)` representation is already the native storage, handle, or raw
 address representation. Address projections of `Return(...)` and `Work(...)`
 are also rejected; native outputs and workspaces already name their storage.
 
-`Value(Arg(i))` is the inverse override for an exact rank-zero monomorphic
-wrapped derived object. Plain `Arg(i)` passes that object by reference;
-`Value(Arg(i))` asks the typed bridge to pass the exact native object by value.
-Primitive scalars already use value passing with plain `Arg(i)`, while arrays,
-strings, raw addresses, and descriptor handles keep their normal storage ABI and
-do not accept `Value(...)`. The foreign binding boundary still carries an opaque object
-address: `Value(...)` records the native Fortran dummy contract, and the Fortran
-compiler performs any required copy when the typed bridge makes the call. It
-never asks the binding to pass aggregate bytes through the foreign ABI.
+`Value(Arg(i))` is the inverse of `Addr(Arg(i))` for a primitive scalar: it
+records a C-value entrypoint actual explicitly, which is useful in reordered or
+edited source-free signatures. A scalar `String[1]` may also use it to preserve
+a `character(kind=c_char), value` native parameter. Plain `Arg(i)` retains the
+argument's completed declaration transport. `Value(Arg(i))` also remains valid
+for an exact rank-zero monomorphic wrapped derived object; that aggregate case
+stays adapter-backed, with an opaque binding boundary and a typed Fortran-local
+copy. Arrays, longer strings, raw addresses, and descriptor handles keep their
+normal storage ABI and do not accept `Value(...)`.
 
 ```python
 from prik.contracts import Returns, String
@@ -2418,7 +2449,7 @@ Loaded projection entries:
 | --- | --- |
 | `Arg(i)` | native argument is Python argument `i`'s default native representation |
 | `Addr(Arg(i))` | native argument is the address of Python argument `i`'s call-local native scalar representation |
-| `Value(Arg(i))` | exact rank-zero monomorphic wrapped derived object is passed to the native value dummy by the typed bridge |
+| `Value(Arg(i))` | primitive scalar or scalar `String[1]` uses a C-value actual; exact rank-zero monomorphic wrapped derived object uses an adapter-local native value copy |
 | `Allocatable(Arg(i))`, `Pointer(Arg(i))` | native argument is a nullable call-local scalar descriptor initialized from Python argument `i`; `None` means present but unallocated or unassociated |
 | `Return(i)` | native argument is supplied by projected return slot `i` as hidden writable storage passed by address |
 | `Return("name", i)` | named native argument is supplied by projected return slot `i` as hidden writable storage passed by address |
@@ -2510,7 +2541,7 @@ ambiguous, unsafe, or stale before wrapper lowering:
   for the generated derived-type constructor shape.
 - nested enum declarations.
 - ordinary function bodies instead of `...`.
-- unsupported decorators other than `@private`, `@bind`, `@standalone`,
+- unsupported decorators other than `@private`, `@bind`, `@native_abi("c")`, `@standalone`,
   `@native_call`, `@native_type`,
   `@overload("specific")`, the class-operator `generic=` form, `@raises`,
   `@nogil`, and `@staticmethod`.
@@ -2518,6 +2549,9 @@ ambiguous, unsafe, or stale before wrapper lowering:
   procedure name.
 - `@overload(...)` combined with `@native_call(...)`; the linked concrete
   procedure owns native projection metadata.
+- `@native_abi(...)` with a value other than `"c"`, on a class or value, or in
+  a C-native contract; the decorator is only the source-free spelling of a
+  Fortran procedure's `bind(C)` ABI.
 
 ## Remaining Format And Runtime Work
 

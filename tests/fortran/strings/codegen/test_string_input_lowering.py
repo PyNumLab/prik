@@ -45,14 +45,13 @@ def test_required_string_values_reuse_argument_plan_with_character_handoff_facts
         assert argument.bridge.copy_reason == (
             "materialize Fortran character storage from the binding UTF-8 byte buffer"
         )
-        assert argument.bridge_call_slot.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION
-        assert argument.binding.length_handoff_role == argument.entrypoint.length_handoff_role
-        assert argument.binding.length_handoff_role == f"{argument.owner_path}:length"
-        assert argument.bridge_call_slot is functions[function_name].bridge_call_slots[0]
-        assert argument.bridge_call_slot.codegen_action is CodegenAction.CALL_LOCAL_INPUT
+        assert argument.projected_call_slot.adapter.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION
+        assert argument.entrypoint.length_handoff_role == f"{argument.owner_path}:length"
+        assert argument.projected_call_slot is functions[function_name].entrypoint.projected_slots[0]
+        assert argument.projected_call_slot.adapter.codegen_action is CodegenAction.CALL_LOCAL_INPUT
 
-    assert fixed.bridge_call_slot.character_length == 8
-    assert assumed.bridge_call_slot.character_length is None
+    assert fixed.projected_call_slot.character_length == 8
+    assert assumed.projected_call_slot.character_length is None
 
 
 def test_required_string_values_dispatch_to_named_binding_and_bridge_lowering():
@@ -91,15 +90,14 @@ def test_string_handoff_plan_edits_fail_before_backend_lowering(edit: str, diagn
     plan = _string_input_plan()
     argument = plan.namespaces[0].functions[0].arguments[0]
     if edit == "missing-length":
-        argument.binding.length_handoff_role = None
         argument.entrypoint.length_handoff_role = None
     elif edit == "wrong-handoff":
         argument.entrypoint.handoff_mode = ArgumentHandoffMode.TYPED_REFERENCE
     else:
         argument.bridge.data_action = BridgeDataAction.DIRECT_TRANSFER
-        argument.bridge_call_slot.bridge_data_action = BridgeDataAction.DIRECT_TRANSFER
+        argument.projected_call_slot.adapter.bridge_data_action = BridgeDataAction.DIRECT_TRANSFER
         argument.bridge.copy_reason = None
-        argument.bridge_call_slot.bridge_copy_reason = None
+        argument.projected_call_slot.adapter.bridge_copy_reason = None
 
     with pytest.raises(ValueError, match=diagnostic):
         WrapperGenerator().generate(plan)

@@ -47,8 +47,8 @@ the complete public namespace. Its contents have four roles:
 
 - scalar, array, descriptor, and wrapped-type markers describe values;
 - expression helpers such as `Arg`, `Len`, and `Ownership` describe metadata;
-- decorators such as `native_call`, `prototype`, and `standalone` describe
-  callable structure; and
+- decorators such as `native_abi`, `native_call`, `prototype`, and `standalone`
+  describe callable ABI or structure; and
 - `CONTRACT_SYMBOLS` and `CONTRACT_TYPE_NAMES` give parsers and printers the
   canonical public vocabulary.
 

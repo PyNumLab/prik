@@ -1,0 +1,21 @@
+python module bench_f2py_direct
+  interface
+    subroutine noop()
+      intent(c) noop
+    end subroutine noop
+    function add_scalars(a, b)
+      use iso_c_binding
+      intent(c) add_scalars
+      real(kind=c_double), intent(c) :: add_scalars
+      real(kind=c_double), intent(c) :: a
+      real(kind=c_double), intent(c) :: b
+    end function add_scalars
+    subroutine add_scalars_out(a, b, c)
+      use iso_c_binding
+      intent(c) add_scalars_out
+      real(kind=c_double), intent(c) :: a
+      real(kind=c_double), intent(c) :: b
+      real(kind=c_double), intent(out) :: c
+    end subroutine add_scalars_out
+  end interface
+end python module bench_f2py_direct

@@ -28,7 +28,7 @@ Fortran source
   -> policy completion
   -> WrapperPlanner
   -> WrapperGenerator
-  -> GeneratedWrapper: rendered C, Fortran, and header payloads in memory
+  -> GeneratedWrapper: rendered C, optional Fortran, and header payloads in memory
   -> build.py: files, NativeBuildPlan, compiler execution, and linking
   -> WrapperBuildResult
   -> import_module(): imported extension
@@ -69,7 +69,11 @@ prik/pipeline/
 - **`wrapper.py` is the rendered-wrapper boundary.** `GeneratedSource` and
   `GeneratedWrapper` are the handoff records. `WrapperGenerator.generate()`
   freezes and validates the completed plan before either backend lowers it,
-  then assembles printed C, Fortran, and header payloads with stable names.
+  then assembles printed C, optional Fortran, and header payloads with stable
+  names. An all-direct Fortran module has no bridge payload; its retained
+  native-language requirement still selects the Fortran link driver. Generated
+  native-code groups retain adapter and support membership separately even
+  when both groups share one physical Fortran payload.
 - **`type_mapping_report.py` is inspection only.** Its fixed C and Fortran
   inventories pass through the normal target probes, semantic converters, and
   NumPy dtype registry before Markdown rendering. It does not create a wrapper.
@@ -94,6 +98,25 @@ source or .pyi contract plus native inputs
 .pyi builds additionally: contract graph/export projection
                           -> manifest serialization or replay
 ```
+
+Generated wrapper membership is data, not a filename convention. The build
+materializes and compiles only the paths listed by `GeneratedWrapper`; an empty
+bridge-source tuple is a complete all-direct result. Link-driver selection
+combines retained native-language requirements with generated and caller-native
+object languages, so absence of a generated adapter never implies absence of
+the Fortran runtime.
+
+The same rule applies when a source-free direct Fortran contract resolves its
+symbol from a prebuilt object, static archive, or shared library. Those inputs
+remain ordered `NativeLinkItem` records; direct routing changes generated
+adapter membership, not caller-supplied artifact order or the required Fortran
+link runtime.
+
+`WrapperBuildResult` and saved `.pyi` manifests report each generated native
+group's kind, language, member keys, and physical source paths. This makes
+zero-source, adapter-only, support-only, and mixed output factual in direct
+builds, source-only output, Makefiles, and manifest replay. Progress and
+compiler records are emitted only for physical sources that are present.
 
 The source file groups helpers around build configuration, generated-wrapper
 materialization, native compilation scheduling, `.pyi` contract loading and

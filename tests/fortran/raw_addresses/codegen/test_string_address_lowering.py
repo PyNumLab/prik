@@ -61,7 +61,6 @@ def test_string_address_plans_keep_completed_ownership_length_and_copy_facts():
         assert argument.bridge.codegen_action is CodegenAction.IN_PLACE_ARGUMENT
         assert argument.entrypoint.handoff_mode is ArgumentHandoffMode.OPAQUE_ADDRESS
         assert argument.bridge.data_action is BridgeDataAction.COPY_REPRESENTATION
-        assert argument.binding.length_handoff_role is None
         assert argument.entrypoint.length_handoff_role is None
         assert argument.mutates_native is True
         assert argument.projects_result is False
@@ -128,16 +127,15 @@ def test_string_address_plan_edits_fail_before_backend_lowering(edit: str, diagn
     raw = functions["raw"].arguments[0]
     if edit == "missing-length":
         storage.character_length = None
-        storage.bridge_call_slot.character_length = None
+        storage.projected_call_slot.character_length = None
     elif edit == "wrong-owner":
         storage.ownership_owner = OwnershipOwner.NATIVE
     elif edit == "runtime-length-role":
         role = f"{storage.owner_path}:length"
-        storage.binding.length_handoff_role = role
         storage.entrypoint.length_handoff_role = role
     elif edit == "wrong-copy-reason":
         storage.bridge.copy_reason = "an edited reason"
-        storage.bridge_call_slot.bridge_copy_reason = "an edited reason"
+        storage.projected_call_slot.adapter.bridge_copy_reason = "an edited reason"
     elif edit == "missing-mutation":
         storage.mutates_native = False
         storage.binding.writable = False

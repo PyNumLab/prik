@@ -20,6 +20,7 @@
 #define NO_IMPORT_ARRAY
 #endif
 #include <numpy/arrayobject.h>
+#include <numpy/arrayscalars.h>
 
 #define PRIK_NATIVE_ARRAY_HANDLE_ABI_VERSION 1u
 #define PRIK_NATIVE_ARRAY_HANDLE_CAPSULE_NAME "prik.native_array_handle.v1"
@@ -499,8 +500,8 @@ static inline int prik_int8_unpack_exact(PyObject *value, int8_t *destination)
     if (!PyArray_IsScalar(value, Int8)) {
         return -1;
     }
-    PyArray_ScalarAsCtype(value, destination);
-    return PyErr_Occurred() == NULL ? 0 : -1;
+    *destination = (int8_t)PyArrayScalar_VAL(value, Int8);
+    return 0;
 }
 
 static inline int prik_int16_unpack_exact(PyObject *value, int16_t *destination)
@@ -508,8 +509,8 @@ static inline int prik_int16_unpack_exact(PyObject *value, int16_t *destination)
     if (!PyArray_IsScalar(value, Int16)) {
         return -1;
     }
-    PyArray_ScalarAsCtype(value, destination);
-    return PyErr_Occurred() == NULL ? 0 : -1;
+    *destination = (int16_t)PyArrayScalar_VAL(value, Int16);
+    return 0;
 }
 
 static inline int prik_int32_unpack_exact(PyObject *value, int32_t *destination)
@@ -517,8 +518,8 @@ static inline int prik_int32_unpack_exact(PyObject *value, int32_t *destination)
     if (!PyArray_IsScalar(value, Int)) {
         return -1;
     }
-    PyArray_ScalarAsCtype(value, destination);
-    return PyErr_Occurred() == NULL ? 0 : -1;
+    *destination = (int32_t)PyArrayScalar_VAL(value, Int);
+    return 0;
 }
 
 static inline int prik_int64_unpack_exact(PyObject *value, int64_t *destination)
@@ -526,8 +527,8 @@ static inline int prik_int64_unpack_exact(PyObject *value, int64_t *destination)
     if (!PyArray_IsScalar(value, Int64)) {
         return -1;
     }
-    PyArray_ScalarAsCtype(value, destination);
-    return PyErr_Occurred() == NULL ? 0 : -1;
+    *destination = (int64_t)PyArrayScalar_VAL(value, Int64);
+    return 0;
 }
 
 static inline int prik_float32_unpack_exact(PyObject *value, float *destination)
@@ -535,8 +536,8 @@ static inline int prik_float32_unpack_exact(PyObject *value, float *destination)
     if (!PyArray_IsScalar(value, Float)) {
         return -1;
     }
-    PyArray_ScalarAsCtype(value, destination);
-    return PyErr_Occurred() == NULL ? 0 : -1;
+    *destination = (float)PyArrayScalar_VAL(value, Float);
+    return 0;
 }
 
 static inline int prik_float64_unpack_exact(PyObject *value, double *destination)
@@ -544,8 +545,8 @@ static inline int prik_float64_unpack_exact(PyObject *value, double *destination
     if (!PyArray_IsScalar(value, Double)) {
         return -1;
     }
-    PyArray_ScalarAsCtype(value, destination);
-    return PyErr_Occurred() == NULL ? 0 : -1;
+    *destination = (double)PyArrayScalar_VAL(value, Double);
+    return 0;
 }
 
 static inline int prik_complex64_unpack_exact(PyObject *value, float complex *destination)
@@ -553,8 +554,8 @@ static inline int prik_complex64_unpack_exact(PyObject *value, float complex *de
     if (!PyArray_IsScalar(value, CFloat)) {
         return -1;
     }
-    PyArray_ScalarAsCtype(value, destination);
-    return PyErr_Occurred() == NULL ? 0 : -1;
+    *destination = (float complex)PyArrayScalar_VAL(value, CFloat);
+    return 0;
 }
 
 static inline int prik_complex128_unpack_exact(PyObject *value, double complex *destination)
@@ -562,8 +563,8 @@ static inline int prik_complex128_unpack_exact(PyObject *value, double complex *
     if (!PyArray_IsScalar(value, CDouble)) {
         return -1;
     }
-    PyArray_ScalarAsCtype(value, destination);
-    return PyErr_Occurred() == NULL ? 0 : -1;
+    *destination = (double complex)PyArrayScalar_VAL(value, CDouble);
+    return 0;
 }
 
 /* Type-specific coercive conversion for boundaries that permit Python scalars. */
@@ -710,56 +711,83 @@ static inline PyObject *prik_complex128_to_python(const double complex *value)
 /* Create typed NumPy scalars without a runtime dtype argument. */
 static inline PyObject *prik_bool_to_numpy(const bool *value)
 {
-    PyArray_Descr *descriptor = PyArray_DescrFromType(NPY_BOOL);
-    return descriptor == NULL ? NULL : PyArray_Scalar((void *)value, descriptor, NULL);
+    PyObject *result = PyArrayScalar_New(Bool);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, Bool, (npy_bool)*value);
+    }
+    return result;
 }
 
 static inline PyObject *prik_int8_to_numpy(const int8_t *value)
 {
-    PyArray_Descr *descriptor = PyArray_DescrFromType(NPY_INT8);
-    return descriptor == NULL ? NULL : PyArray_Scalar((void *)value, descriptor, NULL);
+    PyObject *result = PyArrayScalar_New(Int8);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, Int8, (npy_int8)*value);
+    }
+    return result;
 }
 
 static inline PyObject *prik_int16_to_numpy(const int16_t *value)
 {
-    PyArray_Descr *descriptor = PyArray_DescrFromType(NPY_INT16);
-    return descriptor == NULL ? NULL : PyArray_Scalar((void *)value, descriptor, NULL);
+    PyObject *result = PyArrayScalar_New(Int16);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, Int16, (npy_int16)*value);
+    }
+    return result;
 }
 
 static inline PyObject *prik_int32_to_numpy(const int32_t *value)
 {
-    PyArray_Descr *descriptor = PyArray_DescrFromType(NPY_INT32);
-    return descriptor == NULL ? NULL : PyArray_Scalar((void *)value, descriptor, NULL);
+    PyObject *result = PyArrayScalar_New(Int);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, Int, (npy_int32)*value);
+    }
+    return result;
 }
 
 static inline PyObject *prik_int64_to_numpy(const int64_t *value)
 {
-    PyArray_Descr *descriptor = PyArray_DescrFromType(NPY_INT64);
-    return descriptor == NULL ? NULL : PyArray_Scalar((void *)value, descriptor, NULL);
+    PyObject *result = PyArrayScalar_New(Int64);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, Int64, (npy_int64)*value);
+    }
+    return result;
 }
 
 static inline PyObject *prik_float32_to_numpy(const float *value)
 {
-    PyArray_Descr *descriptor = PyArray_DescrFromType(NPY_FLOAT32);
-    return descriptor == NULL ? NULL : PyArray_Scalar((void *)value, descriptor, NULL);
+    PyObject *result = PyArrayScalar_New(Float);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, Float, (npy_float32)*value);
+    }
+    return result;
 }
 
 static inline PyObject *prik_float64_to_numpy(const double *value)
 {
-    PyArray_Descr *descriptor = PyArray_DescrFromType(NPY_FLOAT64);
-    return descriptor == NULL ? NULL : PyArray_Scalar((void *)value, descriptor, NULL);
+    PyObject *result = PyArrayScalar_New(Double);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, Double, (npy_float64)*value);
+    }
+    return result;
 }
 
 static inline PyObject *prik_complex64_to_numpy(const float complex *value)
 {
-    PyArray_Descr *descriptor = PyArray_DescrFromType(NPY_COMPLEX64);
-    return descriptor == NULL ? NULL : PyArray_Scalar((void *)value, descriptor, NULL);
+    PyObject *result = PyArrayScalar_New(CFloat);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, CFloat, (npy_cfloat)*value);
+    }
+    return result;
 }
 
 static inline PyObject *prik_complex128_to_numpy(const double complex *value)
 {
-    PyArray_Descr *descriptor = PyArray_DescrFromType(NPY_COMPLEX128);
-    return descriptor == NULL ? NULL : PyArray_Scalar((void *)value, descriptor, NULL);
+    PyObject *result = PyArrayScalar_New(CDouble);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, CDouble, (npy_cdouble)*value);
+    }
+    return result;
 }
 
 /* Release a bridge-owned allocation transferred through a NumPy base capsule. */

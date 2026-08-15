@@ -102,7 +102,7 @@ def test_optional_scalar_descriptors_distinguish_omitted_none_and_value(tmp_path
         with pytest.raises(TypeError):
             function("bad")
     plan_c = (result.output_dir / "scalar_optional_descriptors_wrapper.c").read_text(encoding="utf-8")
-    assert "int32_t bind_c_alloc_state(void * value, void * value_present);" in plan_c
+    assert "int32_t bind_c_alloc_state(double * value, void * value_present);" in plan_c
     assert "Omit to make the native optional dummy absent." in module.alloc_state.__doc__
     assert "Pass None for a present unallocated or unassociated descriptor." in module.alloc_state.__doc__
     assert "Default is None." not in module.alloc_state.__doc__

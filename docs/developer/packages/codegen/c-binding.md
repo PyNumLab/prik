@@ -26,13 +26,13 @@ Fortran invocation facts and never chooses ownership, optionality, storage, or
 conversion policy.
 
 Ordinary functions use their function-owned entrypoint. Every other externally
-linked generated call is looked up in the module entrypoint operation registry.
+linked generated call is looked up in the generated support procedure registry.
 That includes constructors, field/member accessors, derived-origin and holder
 operations, descriptor helpers, and callback trampolines. The C lowerer may
 create static Python helpers, but it does not invent an external symbol or C
-prototype when an auxiliary entrypoint is missing. A binding-implemented
-callback trampoline uses the same record for its function definition that the
-Fortran side uses for its interface.
+prototype when a generated support procedure entrypoint is missing. A
+binding-implemented callback trampoline uses the same record for its function
+definition that the Fortran side uses for its interface.
 
 ## Input And Output
 
@@ -48,6 +48,13 @@ ModulePlan.binding + ModulePlan.entrypoint
 
 `require_supported()` checks that the already selected primitive spellings are
 available. It is capability preflight, not a second policy pass.
+
+Numeric scalar boundaries retain their exact NumPy contract without using the
+generic dtype-conversion path on a successful call. The native support helper
+checks the planned NumPy scalar class, reads its typed payload directly, and
+allocates the matching typed NumPy scalar for a result. Type mismatches still
+follow the generated diagnostic path; this fast path changes neither accepted
+inputs nor returned result types.
 
 ## Lowering Algorithm
 
@@ -116,9 +123,12 @@ from prik.codegen.c.binding import CBindingGenerator
 from prik.planning.models import (
     BindingFunctionPlan, BindingModulePlan, BridgeFunctionPlan,
     BridgeModulePlan, FunctionPlan, ModulePlan,
-    NativeEntrypointFunctionPlan, NativeEntrypointModulePlan, NamespacePlan,
+    NativeEntrypointFunctionPlan, NativeEntrypointModulePlan,
+    NativeGeneratedCodeGroupKind, NativeGeneratedCodeGroupPlan, NamespacePlan,
 )
-from prik.policy.models import ExternalDeclarationMode, NativeInvocationKind
+from prik.policy.models import (
+    ExternalDeclarationMode, NativeEntrypointAction, NativeInvocationKind,
+)
 from prik.printers.c import CSourcePrinter
 
 binding = BindingFunctionPlan(
@@ -139,8 +149,10 @@ bridge = BridgeFunctionPlan(
 )
 entrypoint = NativeEntrypointFunctionPlan(
     symbol_name="bind_c_ping",
+    action=NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER,
     parameters=(),
     results=(),
+    projected_slots=(),
 )
 function = FunctionPlan(
     owner_path="demo.ping",
@@ -151,7 +163,6 @@ function = FunctionPlan(
     class_call=None,
     arguments=(),
     results=(),
-    bridge_call_slots=(),
     declaration_callables=(),
     available_roles=(),
 )
@@ -167,6 +178,14 @@ plan = ModulePlan(
     entrypoint=NativeEntrypointModulePlan(owner_path="demo"),
     bridge=BridgeModulePlan(owner_path="demo"),
     namespaces=(namespace,),
+    native_generated_code_groups=(
+        NativeGeneratedCodeGroupPlan(
+            kind=NativeGeneratedCodeGroupKind.FORTRAN_ADAPTERS,
+            language="fortran",
+            member_keys=("demo.ping",),
+            source_paths=("bind_c_demo_wrapper.f90",),
+        ),
+    ),
 )
 
 generator = CBindingGenerator()
@@ -232,9 +251,9 @@ static PyObject * wrap_double_value(PyObject * self, PyObject * args, PyObject *
 
 The header exposes the planned entrypoint prototype. The wrapper's rendered
 body shows the Python-to-entrypoint call and conversion back to a NumPy scalar
-result. Every current forward native call is still implemented by the
-generated Fortran bridge; binding-owned callback trampolines are reverse-call
-entrypoints used by bridge-local callback adapters.
+result. Policy may route that forward call to an original Fortran `bind(C)`
+symbol or a generated Fortran adapter. Binding-owned callback trampolines are
+reverse-call entrypoints used by adapter-local callback procedures.
 
 ## Change Routes And Evidence
 

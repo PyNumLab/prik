@@ -46,7 +46,12 @@ from prik.utilities.declaration_expressions import (
     split_top_level_expression,
 )
 from prik.semantics.ownership_metadata import set_ownership_metadata
-from prik.semantics.metadata import BIND_TARGET_METADATA, PROJECTED_OUTPUT_METADATA, SCALAR_STORAGE_CATEGORY
+from prik.semantics.metadata import (
+    BIND_TARGET_METADATA,
+    OPTIONAL_ABSENT_HANDLE_METADATA,
+    PROJECTED_OUTPUT_METADATA,
+    SCALAR_STORAGE_CATEGORY,
+)
 from prik.semantics.scalar_types import (
     BOOLEAN_STORAGE_BITS,
     SEMANTIC_SCALAR_TYPE_NAMES,
@@ -529,6 +534,14 @@ class FortranToIRConverter(ClassVisitor):
                 derived_type_context=derived_type_context,
                 declaration_arrays=declaration_arrays,
             )
+        if (
+            getattr(arg, "optional", False)
+            and semantic_type.rank > 0
+            and semantic_type.storage is not None
+            and semantic_type.storage.array is not None
+            and (semantic_type.storage.array.allocatable or semantic_type.storage.array.pointer)
+        ):
+            semantic_type.metadata[OPTIONAL_ABSENT_HANDLE_METADATA] = True
         access = self._argument_access(arg, semantic_type)
         if semantic_type.storage is not None and semantic_type.storage.kind == "callback":
             pass
@@ -545,7 +558,10 @@ class FortranToIRConverter(ClassVisitor):
         self._apply_argument_ownership(semantic_type, writes_argument=access[1])
 
         metadata = {}
-        if getattr(arg, "pass_by_value", False) and str(getattr(arg, "base_type", "")).casefold() == "derived":
+        preserves_explicit_value = str(getattr(arg, "base_type", "")).casefold() == "derived" or (
+            semantic_type.name == "String" and str(semantic_type.metadata.get("fortran_character_length", "")) == "1"
+        )
+        if getattr(arg, "pass_by_value", False) and preserves_explicit_value:
             metadata[NATIVE_BY_VALUE_METADATA] = True
         argument = SemanticArgument(
             name=arg.name,
@@ -685,6 +701,8 @@ class FortranToIRConverter(ClassVisitor):
                 "callback_thread": "entering_thread",
                 "callback_exception": "print_traceback_and_abort",
                 "prototype_metadata": self._procedure_metadata(signature),
+                "prototype_source_language": "fortran",
+                "prototype_native_abi": self._procedure_native_abi(signature),
             },
             storage=SemanticStorageContract(
                 kind="callback",
@@ -781,6 +799,8 @@ class FortranToIRConverter(ClassVisitor):
                         origin=SemanticOrigin(
                             source_language="fortran",
                             native_name=name,
+                            native_abi=self._procedure_native_abi(signature),
+                            native_symbol=self._procedure_native_symbol(signature),
                             native_scope=module.name,
                             source_kind="prototype",
                             metadata={"fortran_interface_kind": "abstract" if interface.abstract else "explicit"},
@@ -875,6 +895,7 @@ class FortranToIRConverter(ClassVisitor):
             for arg in self._projected_procedure_arguments(proc)
         ]
         metadata = self._procedure_metadata(proc)
+        native_abi = self._procedure_native_abi(proc)
         return_type = (
             self.visit(
                 proc.result,
@@ -898,6 +919,8 @@ class FortranToIRConverter(ClassVisitor):
             origin=SemanticOrigin(
                 source_language="fortran",
                 native_name=proc.name,
+                native_abi=native_abi,
+                native_symbol=self._procedure_native_symbol(proc),
                 native_scope=proc.module,
                 source_kind=proc.kind,
                 metadata=dict(metadata),
@@ -1768,15 +1791,24 @@ class FortranToIRConverter(ClassVisitor):
 
     @staticmethod
     def _procedure_metadata(proc: FortranProcedureSignature) -> dict[str, object]:
-        """Return native procedure attributes and optional bind name for semantic IR."""
+        """Return non-ABI native procedure attributes for semantic IR."""
         metadata: dict[str, object] = {}
-        if proc.attributes:
-            metadata["fortran_attributes"] = list(proc.attributes)
-        if "bind(c)" in proc.attributes:
-            metadata["fortran_bind_c"] = True
-            if proc.bind_name:
-                metadata["fortran_bind_c_name"] = proc.bind_name
+        attributes = [item for item in proc.attributes if item.casefold().replace(" ", "") != "bind(c)"]
+        if attributes:
+            metadata["fortran_attributes"] = attributes
         return metadata
+
+    @staticmethod
+    def _procedure_native_abi(proc: FortranProcedureSignature) -> str | None:
+        """Return the standard ABI declared by an original Fortran procedure."""
+        return "c" if any(item.casefold().replace(" ", "") == "bind(c)" for item in proc.attributes) else None
+
+    @classmethod
+    def _procedure_native_symbol(cls, proc: FortranProcedureSignature) -> str | None:
+        """Return the linkable C label only for a C-interoperable procedure."""
+        if cls._procedure_native_abi(proc) is None:
+            return None
+        return proc.bind_name or proc.name
 
     # Storage and argument-contract helpers
 

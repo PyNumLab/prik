@@ -218,6 +218,7 @@ def calculate(x: Float64, y: Float64) -> Float64: ...
     function.binding.python_name = "subtract"
     function.owner_path = "editable_plan.subtract"
     function.bridge.native_name = "SUB_R8"
+    plan.native_generated_code_groups[0].member_keys = (function.owner_path,)
 
     generated_wrapper = WrapperGenerator().generate(plan)
 
@@ -282,7 +283,7 @@ def scale(x: Float64) -> Float64: ...
     assert [function.name for function in c_module.functions] == ["wrap_scale", "PyInit_backend_nodes"]
     assert [prototype.name for prototype in c_header.prototypes] == ["wrap_scale"]
     assert [procedure.name for procedure in fortran_module.procedures] == ["bind_c_scale"]
-    assert "result = native_scale(1, x, .false.)" in FortranSourcePrinter().doprint(fortran_module)
+    assert "result = native_scale(literal_0, x, literal_2)" in FortranSourcePrinter().doprint(fortran_module)
     CSourcePrinter().doprint(c_module)
     with pytest.raises(FrozenStageRecordError):
         c_module.name = "later"
@@ -338,16 +339,18 @@ def test_generator_rejects_hidden_result_slot_codegen_action_disagreement():
     plan = _hidden_result_plan()
     function = plan.namespaces[0].functions[0]
     result = function.results[0]
-    edited_slot = replace(result.bridge_call_slot, codegen_action=CodegenAction.COPY_OUT)
+    original_slot = result.projected_call_slot
+    edited_adapter = replace(original_slot.adapter, codegen_action=CodegenAction.COPY_OUT)
+    edited_slot = replace(original_slot, adapter=edited_adapter)
+    projected_slots = tuple(
+        edited_slot if slot is original_slot else slot for slot in function.entrypoint.projected_slots
+    )
     invalid = _edit_first_function(
         plan,
         lambda item: replace(
             item,
-            results=(replace(result, bridge_call_slot=edited_slot),),
-            bridge_call_slots=tuple(
-                edited_slot if slot.native_position == edited_slot.native_position else slot
-                for slot in item.bridge_call_slots
-            ),
+            results=(replace(result, projected_call_slot=edited_slot),),
+            entrypoint=replace(item.entrypoint, projected_slots=projected_slots),
         ),
     )
 
@@ -358,7 +361,7 @@ def test_generator_rejects_hidden_result_slot_codegen_action_disagreement():
 def test_generator_rejects_argument_native_slot_object_kind_disagreement():
     plan = _scalar_plan()
     argument = plan.namespaces[0].functions[0].arguments[0]
-    argument.bridge_call_slot.object_kind = ObjectKind.STRING
+    argument.projected_call_slot.object_kind = ObjectKind.STRING
 
     with pytest.raises(ValueError, match="inconsistent-argument-object-kind"):
         WrapperGenerator().generate(plan)
@@ -367,7 +370,7 @@ def test_generator_rejects_argument_native_slot_object_kind_disagreement():
 def test_generator_rejects_result_native_slot_object_kind_disagreement():
     plan = _hidden_result_plan()
     result = plan.namespaces[0].functions[0].results[0]
-    result.bridge_call_slot.object_kind = ObjectKind.STRING
+    result.projected_call_slot.object_kind = ObjectKind.STRING
 
     with pytest.raises(ValueError, match="inconsistent-result-object-kind"):
         WrapperGenerator().generate(plan)
@@ -463,7 +466,7 @@ def test_generator_rejects_colliding_generated_namespace_symbols():
                     ),
                 ),
             ),
-            "inconsistent-entrypoint-handoff",
+            "inconsistent-native-handoff",
         ),
     ],
 )
@@ -494,8 +497,8 @@ def test_scalar_address_handoff_plan_edits_fail_before_lowering(edit, diagnostic
     elif edit == "data_action":
         storage.bridge.data_action = BridgeDataAction.COPY_REPRESENTATION
         storage.bridge.copy_reason = "edited scalar-storage copy"
-        storage.bridge_call_slot.bridge_data_action = BridgeDataAction.COPY_REPRESENTATION
-        storage.bridge_call_slot.bridge_copy_reason = "edited scalar-storage copy"
+        storage.projected_call_slot.adapter.bridge_data_action = BridgeDataAction.COPY_REPRESENTATION
+        storage.projected_call_slot.adapter.bridge_copy_reason = "edited scalar-storage copy"
     elif edit == "codegen":
         storage.binding.codegen_action = CodegenAction.SNAPSHOT_COPY
     else:
@@ -519,9 +522,9 @@ def test_bridge_data_action_invariant_rejects_unjustified_or_blocked_plans(actio
     storage = function.arguments[0]
     storage.bridge.data_action = action
     storage.bridge.copy_reason = reason
-    storage.bridge_call_slot.bridge_data_action = action
-    storage.bridge_call_slot.bridge_copy_reason = reason
-    assert function.bridge_call_slots[storage.native_position] is storage.bridge_call_slot
+    storage.projected_call_slot.adapter.bridge_data_action = action
+    storage.projected_call_slot.adapter.bridge_copy_reason = reason
+    assert function.entrypoint.projected_slots[storage.native_position] is storage.projected_call_slot
 
     with pytest.raises(ValueError, match=diagnostic):
         WrapperGenerator().generate(plan)

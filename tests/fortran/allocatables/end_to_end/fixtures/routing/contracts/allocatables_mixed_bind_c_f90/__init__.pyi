@@ -1,0 +1,1 @@
+from . import allocatables_mixed_bind_c_f90

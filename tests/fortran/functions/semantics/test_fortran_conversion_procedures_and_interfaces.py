@@ -35,8 +35,12 @@ end module c_api
     module = fortran_module_to_semantic_module(parsed.modules[0])
     renamed = get_function(module, "renamed")
 
-    assert renamed.metadata["fortran_bind_c"] is True
-    assert renamed.metadata["fortran_bind_c_name"] == "prik_renamed"
+    assert renamed.origin.source_language == "fortran"
+    assert renamed.origin.native_name == "renamed"
+    assert renamed.origin.native_abi == "c"
+    assert renamed.origin.native_symbol == "prik_renamed"
+    assert "fortran_bind_c" not in renamed.metadata
+    assert "fortran_bind_c_name" not in renamed.metadata
     assert renamed.arguments[0].origin.metadata["value"] is True
     assert renamed.arguments[0].semantic_type.storage is None
 

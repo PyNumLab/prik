@@ -607,7 +607,13 @@ jobs:
             benchmarks/results/f2py.json \
             benchmarks/results/prik.json \
             benchmarks/results/f2py-build.json \
-            benchmarks/results/prik-build.json
+            benchmarks/results/prik-build.json \
+            benchmarks/results/f2py-direct.json \
+            benchmarks/results/prik-direct.json \
+            benchmarks/results/prik-adapted.json \
+            benchmarks/results/f2py-direct-build.json \
+            benchmarks/results/prik-direct-build.json \
+            benchmarks/results/prik-adapted-build.json
       - name: Upload Performance snapshot and raw results
         uses: actions/upload-artifact@v4
         with:
@@ -621,9 +627,28 @@ jobs:
             benchmarks/results/prik-f2py-first.json
             benchmarks/results/f2py-build.json
             benchmarks/results/prik-build.json
+            benchmarks/results/f2py-direct.json
+            benchmarks/results/prik-direct.json
+            benchmarks/results/prik-adapted.json
+            benchmarks/results/f2py-direct-forward.json
+            benchmarks/results/f2py-direct-reverse.json
+            benchmarks/results/prik-direct-forward.json
+            benchmarks/results/prik-direct-reverse.json
+            benchmarks/results/prik-adapted-forward.json
+            benchmarks/results/prik-adapted-reverse.json
+            benchmarks/results/f2py-direct-build.json
+            benchmarks/results/prik-direct-build.json
+            benchmarks/results/prik-adapted-build.json
             docs/user/performance.md
             docs/user/assets/performance-comparison.svg
             docs/user/assets/build-time-comparison.svg
+          retention-days: 90
+
+      - name: Upload direct-entrypoint artifact preflight
+        uses: actions/upload-artifact@v4
+        with:
+          name: direct-entrypoint-preflight
+          path: benchmarks/build/direct-runtime
           retention-days: 90
 
   documentation-build:

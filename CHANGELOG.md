@@ -11,12 +11,27 @@ release tags add a leading `v` to the package version.
 
 - Added a native-entrypoint adoption roadmap for selective direct Fortran
   `bind(C)` calls and the initial direct-only C wrapper backend.
+- Added `@native_abi("c")` to semantic `.pyi` contracts so Fortran `bind(C)`
+  procedures retain their ABI and optional link label through generated and
+  source-free contract workflows.
+- Added selective direct routing for policy-proved Fortran `bind(C)` procedures,
+  including direct/mixed compiled feature fixtures and support-only generated
+  Fortran artifacts where independent helpers remain necessary.
+- Added a separate direct-entrypoint PRIK/f2py runtime and clean-build benchmark
+  cohort with untimed correctness, generated-source membership, and linked
+  direct-symbol preflight, plus an ordinary-Fortran PRIK control.
 
 ### Changed
 
-- Separated wrapper plans into binding, shared native-entrypoint, and
-  Fortran-bridge facets, including planner-owned auxiliary accessor, lifecycle,
-  descriptor, and callback entrypoints, without changing generated wrappers.
+- Reduced exact numeric-scalar call overhead by using typed NumPy scalar
+  payload access and result allocation while preserving strict dtype checking
+  and exact NumPy result types.
+- Separated wrapper plans into strict binding, shared native-entrypoint, and
+  Fortran-adapter facets, with planner-owned generated support procedure
+  entrypoints for accessors, lifecycles, descriptors, and callbacks, without
+  changing generated wrappers.
+- Build manifest schema 3 records physical generated sources and separate
+  adapter/support membership, including zero-generated-native builds.
 
 ## 0.3.0 — 2026-08-14
 

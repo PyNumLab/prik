@@ -17,7 +17,7 @@ from prik.policy.models import (
     CallbackTransferAction,
 )
 from prik.pipeline.wrapper import WrapperGenerator
-from prik.planning import NativeEntrypointImplementation, WrapperPlanner
+from prik.planning import GeneratedSupportProcedureImplementationOwner, WrapperPlanner
 from prik.planning.models import DatatypeFamily
 
 CONTRACT_ROOT = Path(__file__).parents[1] / "end_to_end" / "fixtures" / "contracts"
@@ -119,15 +119,19 @@ def test_callback_plan_projects_one_explicit_site_and_stable_roles_per_argument(
     )
     assert len({callback.binding.context_current_symbol for callback in callbacks}) == len(callbacks)
     assert len({callback.bridge.adapter_symbol for callback in callbacks}) == len(callbacks)
-    assert len({callback.entrypoint.operation.symbol_name for callback in callbacks}) == len(callbacks)
+    assert len({callback.entrypoint.support_procedure.symbol_name for callback in callbacks}) == len(callbacks)
     assert all(
-        callback.entrypoint.operation.implementation is NativeEntrypointImplementation.BINDING for callback in callbacks
+        callback.entrypoint.support_procedure.implementation_owner
+        is GeneratedSupportProcedureImplementationOwner.BINDING
+        for callback in callbacks
     )
     assert all(
         next(
-            operation for operation in plan.entrypoint.operations if operation.key == callback.entrypoint.operation.key
+            procedure
+            for procedure in plan.entrypoint.support_procedures
+            if procedure.key == callback.entrypoint.support_procedure.key
         )
-        is callback.entrypoint.operation
+        is callback.entrypoint.support_procedure
         for callback in callbacks
     )
 
@@ -139,6 +143,7 @@ def test_callback_plan_projects_one_explicit_site_and_stable_roles_per_argument(
         ("array_roles", "incomplete-callback-array-roles"),
         ("scalar_projection", "inconsistent-callback-scalar-value-projection"),
         ("result", "callback-void-has-transfer"),
+        ("entrypoint_parameter", "inconsistent-callback-entrypoint-parameter"),
         ("symbols", "invalid-callback-symbols"),
     ),
 )
@@ -156,9 +161,12 @@ def test_callback_plan_edits_fail_central_validation_before_backend_emission(edi
     elif edit == "result":
         callback = _callback_argument(plan, "apply_value_callback").callback
         callback.result.action = CallbackResultAction.RETURN_VOID
+    elif edit == "entrypoint_parameter":
+        argument = _callback_argument(plan, "apply_value_callback")
+        argument.entrypoint.pass_callback_parameter = True
     else:
         callback = _callback_argument(plan, "apply_value_callback").callback
-        callback.entrypoint.operation.symbol_name = callback.bridge.adapter_symbol
+        callback.entrypoint.support_procedure.symbol_name = callback.bridge.adapter_symbol
 
     with pytest.raises(ValueError, match=diagnostic):
         WrapperGenerator().generate(plan)

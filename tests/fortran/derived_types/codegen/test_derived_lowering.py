@@ -62,7 +62,7 @@ def test_exact_typed_value_policy_projects_shared_canonical_derived_handoff(attr
     assert policy.derived.type_identity == ("derived_value", "point")
     assert policy.derived.native_handoff is DerivedNativeHandoff.TYPED_VALUE
     assert policy.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION
-    assert argument.derived is argument.bridge_call_slot.derived
+    assert argument.derived is argument.projected_call_slot.derived
     assert argument.derived.type_identity == ("derived_value", "point")
     assert argument.derived.native_handoff is DerivedNativeHandoff.TYPED_VALUE
     assert "type_identity=('derived_value', 'point')" in str(plan)
@@ -150,7 +150,7 @@ def make_point() -> Returns["value", point]: ...
     result = function.results[0]
 
     assert result.source_kind == "hidden_output"
-    assert result.derived is result.bridge_call_slot.derived
+    assert result.derived is result.projected_call_slot.derived
     assert result.derived.origin is DerivedObjectOrigin.WRAPPER_RESULT
     assert result.derived.release is DerivedRelease.WRAPPER_DESTROY
     assert function.cleanup_actions[0].source_role == result.entrypoint.native_result_role
@@ -178,7 +178,7 @@ def update(value: point) -> Returns["value", point]: ...
     function = plan.namespaces[0].functions[0]
     argument = function.arguments[0]
 
-    assert argument.derived is argument.bridge_call_slot.derived
+    assert argument.derived is argument.projected_call_slot.derived
     assert argument.derived.origin is DerivedObjectOrigin.CALLER_WRAPPER
     assert argument.derived.owner_retention is DerivedOwnerRetention.CALLER_WRAPPER
     assert argument.derived.release is DerivedRelease.NONE

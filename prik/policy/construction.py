@@ -56,6 +56,10 @@ from prik.policy.models import (
     DERIVED_VALUE_COPY_REASON,
     LOGICAL_SCALAR_KIND_COPY_REASON,
     LOGICAL_ARRAY_KIND_COPY_REASON,
+    NativeEntrypointAction,
+    EntrypointPassingConvention,
+    EntrypointOptionalityAction,
+    EntrypointProjectionAction,
     OptionalMode,
     ArgumentHandoffMode,
     ArgumentConversionPhase,
@@ -1244,6 +1248,23 @@ def completed_function_wrapper_policy(function: models.SemanticFunction) -> Func
             f"Semantic function {function.name!r} is missing completed wrapper policy; "
             "run complete_semantic_policies before wrapper planning"
         )
+    if policy.entrypoint_action is None:
+        raise ValueError(f"Semantic function {policy.owner_path!r} is missing completed native entrypoint action")
+    if policy.entrypoint_action is NativeEntrypointAction.DIRECT_C_ABI and not policy.entrypoint_symbol:
+        raise ValueError(f"Semantic function {policy.owner_path!r} has a direct entrypoint without a linkable symbol")
+    if policy.entrypoint_action is NativeEntrypointAction.DIRECT_C_ABI and policy.entrypoint_diagnostics:
+        raise ValueError(f"Semantic function {policy.owner_path!r} has an inconsistent direct entrypoint action")
+    incomplete_slots = [
+        slot.native_position
+        for slot in policy.native_call_slots
+        if slot.projection_action is EntrypointProjectionAction.BLOCKED
+        or slot.entrypoint_passing is EntrypointPassingConvention.BLOCKED
+        or slot.entrypoint_optionality is EntrypointOptionalityAction.BLOCKED
+    ]
+    if incomplete_slots:
+        raise ValueError(
+            f"Semantic function {policy.owner_path!r} has incomplete native entrypoint slots {incomplete_slots}"
+        )
     if not policy.supported:
         details = "; ".join(policy.blockers) or "unsupported wrapper policy"
         raise ValueError(f"Semantic function {policy.owner_path!r} has unsupported wrapper policy: {details}")
@@ -1298,6 +1319,8 @@ def build_callback_handoff_policy(
         name=local_name,
         identity=f"{origin_module or owner_path}.{source_name}",
         pure=_prototype_metadata_is_pure(semantic_type.metadata.get("prototype_metadata")),
+        source_language=semantic_type.metadata.get("prototype_source_language"),
+        native_abi=semantic_type.metadata.get("prototype_native_abi"),
         arguments=tuple(raw_arguments) if isinstance(raw_arguments, list) else (),
         result=return_type if isinstance(return_type, models.SemanticType) else None,
     )
@@ -1332,6 +1355,8 @@ def _procedure_prototype_policy(
     name: str,
     identity: str,
     pure: bool,
+    source_language: str | None,
+    native_abi: str | None,
     arguments: tuple[models.SemanticArgument, ...],
     result: models.SemanticType | None,
 ) -> ProcedurePrototypePolicy:
@@ -1341,6 +1366,8 @@ def _procedure_prototype_policy(
         name=name,
         identity=identity,
         pure=pure,
+        source_language=source_language,
+        native_abi=native_abi,
         arguments=tuple(_semantic_prototype_argument_policy(argument, owner_path=owner_path) for argument in arguments),
         result=(
             _semantic_prototype_result_policy(result, owner_path=owner_path)
@@ -1599,11 +1626,17 @@ def build_function_wrapper_policy(
         native_call_slots,
         declaration_callables,
     )
+    arguments, native_call_slots = _complete_direct_descriptor_handoffs(
+        function,
+        arguments,
+        native_call_slots,
+    )
     # Record ordered writeback, cleanup, and ownership-transfer lifecycle work.
     writeback_actions, lifecycle_blockers = _lifecycle_policies(arguments)
     cleanup_actions, release_actions = _derived_result_lifecycle_policies(results)
     status_error = _completed_native_status_error_policy(function)
     native_module = _native_module(function, owner_path)
+    native_call_slots = _complete_entrypoint_slot_policies(arguments, results, native_call_slots)
     # Aggregate all support validation before exposing the immutable plan input.
     blockers = (
         _function_shape_blockers(function, class_call)
@@ -1621,6 +1654,62 @@ def build_function_wrapper_policy(
     native_name = native_dispatch_name or _native_name(function)
     native_invocation, native_operator = _native_invocation_policy(native_name)
     standalone = _is_standalone(function)
+    entrypoint_diagnostics = _direct_c_abi_ineligibility(
+        function,
+        class_call=class_call,
+        native_invocation=native_invocation,
+        arguments=tuple(arguments),
+        results=results,
+        slots=native_call_slots,
+    )
+    entrypoint_action = (
+        NativeEntrypointAction.DIRECT_C_ABI
+        if not entrypoint_diagnostics
+        else NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER
+    )
+    arguments = [
+        replace(
+            argument,
+            entrypoint_pass_character_length=(
+                entrypoint_action is NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER
+                and argument.handoff_mode is ArgumentHandoffMode.CHARACTER_BUFFER
+            ),
+            entrypoint_pass_array_metadata=(
+                entrypoint_action is NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER
+                and argument.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER
+            ),
+            entrypoint_pass_descriptor_presence=(
+                entrypoint_action is NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER
+                and argument.optional_mode is OptionalMode.DESCRIPTOR
+            ),
+            entrypoint_pass_derived_transaction=(
+                entrypoint_action is NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER
+                and argument.derived_call is not None
+            ),
+            entrypoint_pass_callback_parameter=(
+                entrypoint_action is NativeEntrypointAction.DIRECT_C_ABI and argument.callback is not None
+            ),
+            entrypoint_optionality=(
+                EntrypointOptionalityAction.EXPLICIT_NATIVE_PRESENCE
+                if entrypoint_action is NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER
+                and argument.optional_mode is OptionalMode.DESCRIPTOR
+                else argument.entrypoint_optionality
+            ),
+        )
+        for argument in arguments
+    ]
+    optionality_by_position = {argument.native_position: argument.entrypoint_optionality for argument in arguments}
+    native_call_slots = tuple(
+        replace(slot, entrypoint_optionality=optionality_by_position[slot.native_position])
+        if slot.native_position in optionality_by_position
+        else slot
+        for slot in native_call_slots
+    )
+    entrypoint_symbol = (
+        str(function.origin.native_symbol or function.origin.native_name or function.native_name or function.name)
+        if entrypoint_action is NativeEntrypointAction.DIRECT_C_ABI
+        else ""
+    )
     return FunctionWrapperPolicy(
         owner_path=owner_path,
         python_exports=completed_python_exports(function, function.name),
@@ -1652,7 +1741,52 @@ def build_function_wrapper_policy(
         writeback_actions=writeback_actions,
         cleanup_actions=cleanup_actions,
         release_actions=release_actions,
+        entrypoint_action=entrypoint_action,
+        entrypoint_symbol=entrypoint_symbol,
+        entrypoint_diagnostics=entrypoint_diagnostics,
     )
+
+
+def _complete_direct_descriptor_handoffs(
+    function: models.SemanticFunction,
+    arguments: list[ArgumentPolicy],
+    slots: tuple[NativeCallSlotPolicy, ...],
+) -> tuple[list[ArgumentPolicy], tuple[NativeCallSlotPolicy, ...]]:
+    """Select persistent standard descriptors for Fortran C-ABI candidates."""
+    if function.origin.source_language != "fortran" or function.origin.native_abi != "c":
+        return arguments, slots
+    upgraded_by_position: dict[int, NativeArrayHandleWrapperPolicy] = {}
+    completed_arguments = []
+    for argument in arguments:
+        handle = argument.native_array_handle
+        if (
+            handle is not None
+            and handle.handle_kind
+            in {
+                NativeArrayHandleKind.ARGUMENT_DESCRIPTOR,
+                NativeArrayHandleKind.OPTIONAL_ABSENT_HANDLE,
+            }
+            and argument.rank > 0
+            and argument.semantic_type_name in _PLAN_PRIMITIVE_SCALAR_TYPES
+        ):
+            handle = replace(
+                handle,
+                handoff=replace(handle.handoff, abi=NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR),
+                default_handle=replace(
+                    handle.default_handle,
+                    construction=NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR,
+                ),
+            )
+            upgraded_by_position[argument.native_position] = handle
+            argument = replace(argument, native_array_handle=handle)
+        completed_arguments.append(argument)
+    completed_slots = tuple(
+        replace(slot, native_array_handle=upgraded_by_position[slot.native_position])
+        if slot.native_position in upgraded_by_position
+        else slot
+        for slot in slots
+    )
+    return completed_arguments, completed_slots
 
 
 def _native_invocation_policy(native_name: str) -> tuple[NativeInvocationKind, str | None]:
@@ -1663,6 +1797,346 @@ def _native_invocation_policy(native_name: str) -> tuple[NativeInvocationKind, s
     if compact.startswith("operator(") and compact.endswith(")"):
         return NativeInvocationKind.DEFINED_OPERATOR, compact[len("operator(") : -1]
     return NativeInvocationKind.PROCEDURE, None
+
+
+def _argument_passes_by_value(
+    argument: models.SemanticArgument,
+    slot: NativeCallSlotPolicy | None,
+) -> bool:
+    """Return the original declared value transport without backend inference."""
+    if "value" in argument.origin.metadata:
+        return bool(argument.origin.metadata["value"])
+    if slot is None:
+        return False
+    return slot.value_kind == "value" or slot.native_barrier_action is NativeBarrierAction.PASS_VALUE
+
+
+def _argument_entrypoint_passing(
+    function: models.SemanticFunction,
+    argument: models.SemanticArgument,
+    boundary: _ArgumentBoundaryPolicy,
+    slot: NativeCallSlotPolicy | None,
+    callback: CallbackHandoffPolicy | None,
+) -> EntrypointPassingConvention:
+    """Complete one C parameter transport from already completed boundary facts."""
+    if callback is not None:
+        return EntrypointPassingConvention.RUNTIME_HANDLE
+    direct_c_abi = function.origin.source_language == "fortran" and function.origin.native_abi == "c"
+    if boundary.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR:
+        return EntrypointPassingConvention.C_DESCRIPTOR_POINTER
+    if argument.optional:
+        return EntrypointPassingConvention.NULLABLE_POINTER
+    if direct_c_abi:
+        if _argument_passes_by_value(argument, slot):
+            return EntrypointPassingConvention.C_VALUE
+        return EntrypointPassingConvention.POINTER_REFERENCE
+    if boundary.handoff_mode is ArgumentHandoffMode.VALUE:
+        return EntrypointPassingConvention.C_VALUE
+    if boundary.handoff_mode in {
+        ArgumentHandoffMode.TYPED_REFERENCE,
+        ArgumentHandoffMode.OPAQUE_ADDRESS,
+        ArgumentHandoffMode.CHARACTER_BUFFER,
+        ArgumentHandoffMode.ARRAY_BUFFER,
+    }:
+        return EntrypointPassingConvention.POINTER_REFERENCE
+    return EntrypointPassingConvention.BLOCKED
+
+
+def _argument_entrypoint_optionality(
+    function: models.SemanticFunction,
+    argument: models.SemanticArgument,
+    boundary: _ArgumentBoundaryPolicy,
+    slot: NativeCallSlotPolicy | None,
+) -> EntrypointOptionalityAction:
+    """Complete original native presence independently from the Python surface."""
+    if not argument.optional:
+        return EntrypointOptionalityAction.REQUIRED
+    if boundary.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR:
+        return EntrypointOptionalityAction.NULL_C_DESCRIPTOR_POINTER
+    if _argument_passes_by_value(argument, slot):
+        return EntrypointOptionalityAction.ADAPTER_SIDE_FORTRAN_OMISSION
+    if function.origin.source_language == "fortran" and function.origin.native_abi == "c":
+        return EntrypointOptionalityAction.NULL_POINTER
+    return EntrypointOptionalityAction.ADAPTER_SIDE_FORTRAN_OMISSION
+
+
+def _complete_entrypoint_slot_policies(
+    arguments: list[ArgumentPolicy],
+    results: tuple[ResultPolicy, ...],
+    slots: tuple[NativeCallSlotPolicy, ...],
+) -> tuple[NativeCallSlotPolicy, ...]:
+    """Attach binding projection, passing, and presence decisions to ordered slots."""
+    arguments_by_position = {argument.python_position: argument for argument in arguments}
+    results_by_native_position = {
+        result.native_position: result
+        for result in results
+        if result.source_kind == "hidden_output" and result.native_position is not None
+    }
+    completed = []
+    for slot in slots:
+        argument = arguments_by_position.get(slot.python_position) if slot.python_position is not None else None
+        result = results_by_native_position.get(slot.native_position)
+        projection_action = _entrypoint_projection_action(slot)
+        if result is not None:
+            passing = result.entrypoint_passing
+            optionality = EntrypointOptionalityAction.REQUIRED
+        elif projection_action is EntrypointProjectionAction.HIDDEN_OUTPUT_STORAGE:
+            passing = (
+                EntrypointPassingConvention.C_DESCRIPTOR_POINTER
+                if slot.native_array_handle is not None or slot.scalar_descriptor is not None
+                else EntrypointPassingConvention.OUTPUT_STORAGE
+            )
+            optionality = EntrypointOptionalityAction.REQUIRED
+        elif projection_action in {
+            EntrypointProjectionAction.TYPED_LITERAL,
+            EntrypointProjectionAction.COMPUTED_LENGTH,
+            EntrypointProjectionAction.COMPUTED_PRESENCE,
+            EntrypointProjectionAction.COMPUTED_SHAPE,
+            EntrypointProjectionAction.COMPUTED_STRIDE,
+        }:
+            passing = EntrypointPassingConvention.C_VALUE
+            optionality = EntrypointOptionalityAction.REQUIRED
+        elif argument is not None:
+            optionality = argument.entrypoint_optionality
+            if optionality in {
+                EntrypointOptionalityAction.NULL_POINTER,
+                EntrypointOptionalityAction.ADAPTER_SIDE_FORTRAN_OMISSION,
+            }:
+                passing = EntrypointPassingConvention.NULLABLE_POINTER
+            elif projection_action is EntrypointProjectionAction.ARGUMENT_DEFAULT:
+                passing = argument.entrypoint_passing
+            elif projection_action is EntrypointProjectionAction.ARGUMENT_ADDRESS:
+                passing = EntrypointPassingConvention.POINTER_REFERENCE
+            elif projection_action is EntrypointProjectionAction.ARGUMENT_VALUE:
+                passing = EntrypointPassingConvention.C_VALUE
+            else:
+                passing = argument.entrypoint_passing
+        elif projection_action is EntrypointProjectionAction.WORK_STORAGE:
+            passing = EntrypointPassingConvention.POINTER_REFERENCE
+            optionality = EntrypointOptionalityAction.REQUIRED
+        else:
+            passing = EntrypointPassingConvention.BLOCKED
+            optionality = EntrypointOptionalityAction.BLOCKED
+        completed.append(
+            replace(
+                slot,
+                projection_action=projection_action,
+                entrypoint_passing=passing,
+                entrypoint_optionality=optionality,
+            )
+        )
+    return tuple(completed)
+
+
+def _entrypoint_projection_action(slot: NativeCallSlotPolicy) -> EntrypointProjectionAction:
+    """Map one normalized projection kind to its binding-owned materialization."""
+    if slot.source_kind == "literal" or slot.value_kind == "literal":
+        return EntrypointProjectionAction.TYPED_LITERAL
+    if slot.source_kind == "result":
+        return EntrypointProjectionAction.HIDDEN_OUTPUT_STORAGE
+    if slot.native_array_handle is not None:
+        return EntrypointProjectionAction.DESCRIPTOR
+    if slot.callback is not None:
+        return EntrypointProjectionAction.RUNTIME_HANDLE
+    return {
+        "addr": EntrypointProjectionAction.ARGUMENT_ADDRESS,
+        "arg": EntrypointProjectionAction.ARGUMENT_DEFAULT,
+        "value": EntrypointProjectionAction.ARGUMENT_VALUE,
+        "is_present": EntrypointProjectionAction.COMPUTED_PRESENCE,
+        "len": EntrypointProjectionAction.COMPUTED_LENGTH,
+        "shape": EntrypointProjectionAction.COMPUTED_SHAPE,
+        "stride": EntrypointProjectionAction.COMPUTED_STRIDE,
+        "work": EntrypointProjectionAction.WORK_STORAGE,
+        "allocatable": EntrypointProjectionAction.DESCRIPTOR,
+        "pointer": EntrypointProjectionAction.DESCRIPTOR,
+        "pass": EntrypointProjectionAction.ARGUMENT_ADDRESS,
+    }.get(slot.value_kind, EntrypointProjectionAction.BLOCKED)
+
+
+def _direct_c_abi_ineligibility(
+    function: models.SemanticFunction,
+    *,
+    class_call: ClassMethodPolicy | None,
+    native_invocation: NativeInvocationKind,
+    arguments: tuple[ArgumentPolicy, ...],
+    results: tuple[ResultPolicy, ...],
+    slots: tuple[NativeCallSlotPolicy, ...],
+) -> tuple[str, ...]:
+    """Return central reasons an operation must keep its generated Fortran adapter."""
+    if function.origin.source_language != "fortran" or function.origin.native_abi != "c":
+        return ("original procedure has no Fortran C ABI fact",)
+
+    reasons = list(
+        _direct_operation_ineligibility(
+            function,
+            class_call=class_call,
+            native_invocation=native_invocation,
+        )
+    )
+    for argument in arguments:
+        reasons.extend(_direct_argument_ineligibility(argument))
+    for result in results:
+        reasons.extend(_direct_result_ineligibility(result))
+    for slot in slots:
+        reasons.extend(_direct_slot_ineligibility(slot))
+    return tuple(dict.fromkeys(reasons))
+
+
+def _direct_operation_ineligibility(
+    function: models.SemanticFunction,
+    *,
+    class_call: ClassMethodPolicy | None,
+    native_invocation: NativeInvocationKind,
+) -> tuple[str, ...]:
+    """Return direct-route blockers owned by the original operation."""
+    reasons = []
+    if not function.origin.native_symbol:
+        reasons.append("C ABI procedure has no linkable native symbol")
+    if class_call is not None:
+        reasons.append("type-bound or constructor invocation requires a Fortran adapter")
+    if native_invocation is not NativeInvocationKind.PROCEDURE:
+        reasons.append("defined or generic invocation requires a Fortran adapter")
+    return tuple(reasons)
+
+
+def _direct_argument_ineligibility(argument: ArgumentPolicy) -> tuple[str, ...]:
+    """Return direct-route blockers owned by one completed argument policy."""
+    callback_supported = _direct_callback_supported(argument.callback)
+    descriptor_supported = _direct_descriptor_supported(argument)
+    derived_reference_supported = _direct_derived_reference_supported(argument)
+    mechanism_supported = any(
+        (
+            _direct_scalar_supported(argument),
+            _direct_array_supported(argument),
+            derived_reference_supported,
+            callback_supported,
+            descriptor_supported,
+        )
+    )
+
+    reasons = []
+    if not mechanism_supported:
+        reasons.append(f"argument {argument.name!r} has no adopted direct interoperable mechanism")
+    if (
+        (argument.callback is not None and not callback_supported)
+        or (argument.derived is not None and not derived_reference_supported)
+        or (argument.native_array_handle is not None and not descriptor_supported)
+    ):
+        reasons.append(f"argument {argument.name!r} requires a specialized native handoff")
+    if argument.transformations:
+        reasons.append(f"argument {argument.name!r} requires representation transformation")
+    if argument.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_COPY:
+        reasons.append(f"argument {argument.name!r} uses non-C Boolean storage")
+    if argument.entrypoint_passing is EntrypointPassingConvention.BLOCKED:
+        reasons.append(f"argument {argument.name!r} has no completed C passing convention")
+    if argument.entrypoint_optionality is EntrypointOptionalityAction.ADAPTER_SIDE_FORTRAN_OMISSION:
+        reasons.append(f"argument {argument.name!r} requires adapter-side Fortran omission")
+    if argument.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION and not _is_scalar_c_character(argument):
+        reasons.append(f"argument {argument.name!r} requires adapter representation work")
+    return tuple(reasons)
+
+
+def _direct_scalar_supported(argument: ArgumentPolicy) -> bool:
+    """Return whether one scalar has an adopted interoperable C mechanism."""
+    return argument.rank == 0 and (
+        argument.semantic_type_name in _PLAN_PRIMITIVE_SCALAR_TYPES or _is_scalar_c_character(argument)
+    )
+
+
+def _direct_array_supported(argument: ArgumentPolicy) -> bool:
+    """Return whether one explicit or assumed-size array can use its C pointer."""
+    return bool(
+        argument.rank > 0
+        and (
+            argument.semantic_type_name in _PLAN_PRIMITIVE_SCALAR_TYPES
+            or (argument.semantic_type_name == "String" and argument.character_length == 1)
+        )
+        and argument.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER
+        and argument.array is not None
+        and argument.array.category in {"explicit_shape", "assumed_size"}
+    )
+
+
+def _direct_derived_reference_supported(argument: ArgumentPolicy) -> bool:
+    """Return whether one opaque interoperable object can cross by reference."""
+    return bool(
+        argument.rank == 0
+        and argument.derived is not None
+        and argument.derived.bind_c
+        and argument.derived.native_handoff is DerivedNativeHandoff.REFERENCE
+        and argument.derived.storage is DerivedObjectStorage.DIRECT
+        and not argument.derived.nullable
+        and argument.optional_mode is OptionalMode.REQUIRED
+        and argument.entrypoint_passing is EntrypointPassingConvention.POINTER_REFERENCE
+    )
+
+
+def _is_scalar_c_character(argument: ArgumentPolicy) -> bool:
+    """Return whether one argument is an interoperable scalar C character."""
+    return argument.rank == 0 and argument.semantic_type_name == "String" and argument.character_length == 1
+
+
+def _direct_result_ineligibility(result: ResultPolicy) -> tuple[str, ...]:
+    """Return direct-route blockers owned by one completed result policy."""
+    reasons = []
+    if result.rank != 0 or result.semantic_type_name not in _PLAN_PRIMITIVE_SCALAR_TYPES:
+        reasons.append(f"result {result.owner_path!r} is not a directly supported interoperable scalar")
+    if result.derived is not None or result.native_array_handle is not None or result.scalar_descriptor is not None:
+        reasons.append(f"result {result.owner_path!r} requires a specialized native handoff")
+    if result.transformations or result.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION:
+        reasons.append(f"result {result.owner_path!r} requires adapter representation work")
+    return tuple(reasons)
+
+
+def _direct_slot_ineligibility(slot: NativeCallSlotPolicy) -> tuple[str, ...]:
+    """Return direct-route blockers owned by one completed call projection."""
+    reasons = []
+    if slot.projection_action is EntrypointProjectionAction.BLOCKED:
+        reasons.append(f"native-call slot {slot.native_position} has no binding projection action")
+    if slot.entrypoint_passing is EntrypointPassingConvention.BLOCKED:
+        reasons.append(f"native-call slot {slot.native_position} has no C passing convention")
+    if slot.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION and not (
+        slot.semantic_type_name == "String" and slot.character_length == 1
+    ):
+        reasons.append(f"native-call slot {slot.native_position} requires adapter representation work")
+    return tuple(reasons)
+
+
+def _direct_callback_supported(callback: CallbackHandoffPolicy | None) -> bool:
+    """Return whether one immediate callback has an exact scalar C ABI."""
+    if (
+        callback is None
+        or not callback.supported
+        or callback.prototype.source_language != "fortran"
+        or callback.prototype.native_abi != "c"
+    ):
+        return False
+    transfers = (
+        *callback.arguments,
+        *((callback.result.transfer,) if callback.result.transfer is not None else ()),
+    )
+    return all(
+        transfer.rank == 0
+        and transfer.semantic_type_name in _PLAN_PRIMITIVE_SCALAR_TYPES
+        and transfer.derived_type_identity is None
+        and transfer.abi in {CallbackABIKind.VALUE, CallbackABIKind.REFERENCE}
+        for transfer in transfers
+    )
+
+
+def _direct_descriptor_supported(argument: ArgumentPolicy) -> bool:
+    """Return whether one array handle supplies the standard descriptor ABI."""
+    handle = argument.native_array_handle
+    return bool(
+        handle is not None
+        and handle.handoff.abi is NativeDescriptorHandoffABI.DIRECT_STANDARD_DESCRIPTOR
+        and argument.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR
+        and argument.entrypoint_passing is EntrypointPassingConvention.C_DESCRIPTOR_POINTER
+        and argument.semantic_type_name in _PLAN_PRIMITIVE_SCALAR_TYPES
+        and argument.rank > 0
+        and argument.derived is None
+        and not argument.transformations
+    )
 
 
 def _external_declaration_mode(
@@ -1828,6 +2302,19 @@ def _argument_policy(
         derived,
     )
     boundary = _argument_boundary_policy(function, argument, decision, python_position, callback)
+    entrypoint_passing = _argument_entrypoint_passing(
+        function,
+        argument,
+        boundary,
+        native_slot,
+        callback,
+    )
+    entrypoint_optionality = _argument_entrypoint_optionality(
+        function,
+        argument,
+        boundary,
+        native_slot,
+    )
     blockers = _completed_argument_blockers(
         argument,
         decision,
@@ -1894,6 +2381,8 @@ def _argument_policy(
             callback=callback,
             polymorphic=polymorphic,
             transformations=transformations,
+            entrypoint_passing=entrypoint_passing,
+            entrypoint_optionality=entrypoint_optionality,
         ),
         blockers,
     )
@@ -2178,6 +2667,7 @@ def _direct_result_policy(context: _FunctionPolicyContext) -> _ResultPolicyCandi
             native_array_handle=direct_handle,
             scalar_descriptor=scalar_descriptor,
             derived=derived,
+            entrypoint_passing=EntrypointPassingConvention.C_FUNCTION_RETURN,
         ),
         tuple(blockers),
     )
@@ -2388,6 +2878,11 @@ def _hidden_result_candidate(
             native_array_handle=native_array_handle,
             scalar_descriptor=scalar_descriptor,
             derived=derived,
+            entrypoint_passing=(
+                EntrypointPassingConvention.C_DESCRIPTOR_POINTER
+                if native_array_handle is not None or scalar_descriptor is not None
+                else EntrypointPassingConvention.OUTPUT_STORAGE
+            ),
         ),
         tuple(blockers),
     )
@@ -2472,6 +2967,9 @@ def _projected_native_call_slot_policy(
     if mapping.value_kind == "literal":
         slot, blockers = _literal_native_call_slot_policy(mapping, owner_path, native_position)
         return slot, None, blockers
+    if mapping.value_kind in {"len", "is_present", "shape", "stride", "work"}:
+        slot, blockers = _computed_native_call_slot_policy(mapping, owner_path, native_position)
+        return slot, None, blockers
     python_position = mapping.python_position
     if mapping.result_position is not None and python_position is None:
         slot, blockers = _hidden_result_native_call_slot_policy(
@@ -2490,6 +2988,53 @@ def _projected_native_call_slot_policy(
         visible_arguments,
         derived_types,
     )
+
+
+def _computed_native_call_slot_policy(
+    mapping: models.ProjectionMapping,
+    owner_path: str,
+    native_position: int,
+) -> tuple[NativeCallSlotPolicy, tuple[str, ...]]:
+    """Complete one binding-owned length, presence, shape, stride, or work slot."""
+    value_kind = mapping.value_kind
+    source_position = _projection_value_argument_position(mapping.value)
+    semantic_type_name = "Bool" if value_kind == "is_present" else "SizeT"
+    blockers = []
+    if value_kind != "work" and source_position is None:
+        blockers.append(f"native-call {value_kind} slot {native_position} has no argument source")
+    if value_kind == "work":
+        blockers.append(f"native-call work slot {native_position} has no completed typed storage policy")
+    return (
+        NativeCallSlotPolicy(
+            owner_path=f"{owner_path}.native_slot_{native_position}",
+            native_position=native_position,
+            source_kind="computed" if value_kind != "work" else "work",
+            python_position=source_position,
+            python_name=None,
+            native_name=mapping.native_name or f"{value_kind}_{native_position}",
+            value_kind=value_kind,
+            native_barrier_action=(
+                NativeBarrierAction.BLOCKED if value_kind == "work" else NativeBarrierAction.PASS_VALUE
+            ),
+            codegen_action=(CodegenAction.BLOCKED if value_kind == "work" else CodegenAction.DIRECT_VALUE),
+            bridge_data_action=(BridgeDataAction.BLOCKED if value_kind == "work" else BridgeDataAction.DIRECT_TRANSFER),
+            bridge_copy_reason=None,
+            object_kind=None,
+            semantic_type_name=semantic_type_name,
+            literal_value=mapping.value,
+        ),
+        tuple(blockers),
+    )
+
+
+def _projection_value_argument_position(value: object) -> int | None:
+    """Return the Arg source nested in one route-neutral computed projection."""
+    if not isinstance(value, dict):
+        return None
+    if value.get("kind") == "arg":
+        position = value.get("position")
+        return position if isinstance(position, int) and not isinstance(position, bool) else None
+    return _projection_value_argument_position(value.get("value"))
 
 
 def _projected_argument_native_call_slot_policy(
@@ -3008,6 +3553,7 @@ def _derived_handoff_policy(
         type_identity=type_identity,
         native_type_name=type_identity[1],
         native_scope=type_identity[0],
+        bind_c=bool(type_policy is not None and type_policy.bind_c),
         origin=origin,
         owner_retention=retention,
         release=release,
@@ -6105,6 +6651,8 @@ def _direct_prototype_policy(
         name=local_name,
         identity=f"{prototype.origin.native_scope or owner_path}.{prototype.name}",
         pure=prototype.pure,
+        source_language=prototype.origin.source_language,
+        native_abi=prototype.origin.native_abi,
         arguments=tuple(prototype.arguments),
         result=prototype.return_type,
     )

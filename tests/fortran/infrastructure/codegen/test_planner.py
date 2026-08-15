@@ -178,13 +178,15 @@ def test_planner_directly_projects_three_facets_and_distinct_call_orders():
 
     assert function.entrypoint.symbol_name == "bind_c_scale"
     assert [(item.source_kind, item.owner_path) for item in function.entrypoint.parameters] == [
+        ("projected_slot", function.entrypoint.projected_slots[0].owner_path),
         ("argument", argument.owner_path),
+        ("projected_slot", function.entrypoint.projected_slots[2].owner_path),
         ("hidden_result", result.owner_path),
     ]
     assert function.entrypoint.results == (result.entrypoint,)
-    assert argument.binding.handoff_role == argument.entrypoint.handoff_role
-    assert argument.bridge_call_slot is function.bridge_call_slots[1]
-    assert [slot.source_kind for slot in function.bridge_call_slots] == [
+    assert argument.entrypoint.handoff_role == "hidden_values.scale.x:value"
+    assert argument.projected_call_slot is function.entrypoint.projected_slots[1]
+    assert [slot.source_kind for slot in function.entrypoint.projected_slots] == [
         "literal",
         "projection",
         "literal",

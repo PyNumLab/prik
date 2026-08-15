@@ -77,6 +77,8 @@ class OwnershipPolicy:
 class SemanticOrigin:
     source_language: str | None = None
     native_name: str | None = None
+    native_abi: str | None = None
+    native_symbol: str | None = None
     native_scope: str | None = None
     source_kind: str | None = None
     source_type: str | None = None

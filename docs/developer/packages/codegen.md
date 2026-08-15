@@ -120,7 +120,9 @@ remain unavailable to the C binding. Their algorithms, source-printing
 examples, and failure boundaries are described in [C Binding
 Lowering](codegen/c-binding.md) and [Fortran Bridge
 Lowering](codegen/fortran-bridge.md). Neither page assigns policy completion to
-code generation, and every current entrypoint remains Fortran-bridge-backed.
+code generation. A direct C-ABI entrypoint is called by the same C-binding
+lowering path and has no Fortran adapter facet; adapter-selected operations
+continue through the Fortran bridge.
 
 ### `checks.py`: maintainability recommendations
 

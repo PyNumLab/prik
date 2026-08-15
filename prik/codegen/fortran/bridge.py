@@ -18,7 +18,6 @@ from prik.policy.ownership import (
     CodegenAction,
     NativeBarrierAction,
     ObjectKind,
-    PythonBarrierAction,
     SetterAction,
 )
 from prik.semantics.metadata import SCALAR_STORAGE_CATEGORY
@@ -51,6 +50,8 @@ from prik.policy.models import (
     NativeArrayResultAllocation,
     NativeDescriptorHandoffABI,
     NativeInvocationKind,
+    EntrypointPassingConvention,
+    EntrypointProjectionAction,
     OptionalMode,
     ScalarLogicalABI,
 )
@@ -91,12 +92,12 @@ from prik.planning.models import (
     ModuleVariablePlan,
     NamespacePlan,
     NativeArrayHandlePlan,
-    BridgeCallSlotPlan,
     NativeEntrypointABIValueKind,
     NativeEntrypointABIValuePlan,
-    NativeEntrypointImplementation,
-    NativeEntrypointOperationPlan,
+    GeneratedSupportProcedureImplementationOwner,
+    GeneratedSupportProcedureEntrypointPlan,
     NativeEntrypointParameterPlan,
+    NativeEntrypointProjectedSlotPlan,
     NativeEntrypointResultPlan,
     ProcedurePrototypeArgumentPlan,
     ProcedurePrototypePlan,
@@ -130,7 +131,8 @@ class FortranBridgeGenerator(ClassVisitor):
         for derived in self._derived_types(plan):
             self._require_derived_type_supported(derived)
         for function in self._functions(plan):
-            self._require_function_supported(function)
+            if function.bridge is not None:
+                self._require_function_supported(function)
         for variable in self._variables(plan):
             self._require_variable_supported(variable)
 
@@ -140,7 +142,7 @@ class FortranBridgeGenerator(ClassVisitor):
             self._require_argument_supported(argument)
         for result in function.results:
             self._require_backend_type_supported(result.semantic_type_name, result.datatype_family)
-        for slot in function.bridge_call_slots:
+        for slot in self._adapter_slots(function):
             if slot.source_kind == "result":
                 self._require_backend_type_supported(slot.semantic_type_name, slot.datatype_family)
 
@@ -177,10 +179,19 @@ class FortranBridgeGenerator(ClassVisitor):
             return
         PrimitiveScalarTypeRegistry.type_for(semantic_type_name)
 
+    @staticmethod
+    def _adapter_slots(function: FunctionPlan) -> tuple[NativeEntrypointProjectedSlotPlan, ...]:
+        """Return ordered projected slots that carry adapter-local actions."""
+        return tuple(
+            slot
+            for slot in sorted(function.entrypoint.projected_slots, key=lambda item: item.native_position)
+            if slot.adapter is not None
+        )
+
     def _visit_ModulePlan(self, plan: ModulePlan) -> FortranModule:
         """Build one complete bridge module from one validated module plan."""
-        self._auxiliary_entrypoints = {
-            (operation.owner_path, operation.role): operation for operation in plan.entrypoint.operations
+        self._generated_support_procedure_entrypoints = {
+            (procedure.owner_path, procedure.role): procedure for procedure in plan.entrypoint.support_procedures
         }
         self._derived_owner_paths = {
             derived.backend_symbol: derived.owner_path for derived in self._derived_types(plan)
@@ -200,27 +211,27 @@ class FortranBridgeGenerator(ClassVisitor):
             *(
                 self._derived_destroy_procedure(derived)
                 for derived in self._derived_types(plan)
-                if self._has_auxiliary_entrypoint(derived.owner_path, "derived:destroy")
+                if self._has_generated_support_procedure_entrypoint(derived.owner_path, "derived:destroy")
             ),
             *(
                 self._allocatable_holder_destroy_procedure(derived)
                 for derived in self._derived_types(plan)
-                if self._has_auxiliary_entrypoint(derived.owner_path, "holder:allocatable:destroy")
+                if self._has_generated_support_procedure_entrypoint(derived.owner_path, "holder:allocatable:destroy")
             ),
             *(
                 self._allocatable_holder_presence_procedure(derived)
                 for derived in self._derived_types(plan)
-                if self._has_auxiliary_entrypoint(derived.owner_path, "holder:allocatable:present")
+                if self._has_generated_support_procedure_entrypoint(derived.owner_path, "holder:allocatable:present")
             ),
             *(
                 self._pointer_holder_destroy_procedure(derived)
                 for derived in self._derived_types(plan)
-                if self._has_auxiliary_entrypoint(derived.owner_path, "holder:pointer:destroy")
+                if self._has_generated_support_procedure_entrypoint(derived.owner_path, "holder:pointer:destroy")
             ),
             *(
                 self._pointer_holder_presence_procedure(derived)
                 for derived in self._derived_types(plan)
-                if self._has_auxiliary_entrypoint(derived.owner_path, "holder:pointer:present")
+                if self._has_generated_support_procedure_entrypoint(derived.owner_path, "holder:pointer:present")
             ),
             *(
                 procedure
@@ -245,48 +256,50 @@ class FortranBridgeGenerator(ClassVisitor):
                 *self._allocator_interfaces(plan),
             ),
             declarations=self._prototype_entity_declarations(plan),
-            procedures=self._apply_auxiliary_entrypoints(procedures),
+            procedures=self._apply_generated_support_procedure_entrypoints(procedures),
             standalone_procedures=self._callback_standalone_adapter_procedures(plan),
         )
 
-    def _auxiliary_entrypoint(self, owner_path: str, role: str) -> NativeEntrypointOperationPlan:
+    def _generated_support_procedure_entrypoint(
+        self, owner_path: str, role: str
+    ) -> GeneratedSupportProcedureEntrypointPlan:
         """Return one required planner-owned operation without a naming fallback."""
         try:
-            return self._auxiliary_entrypoints[(owner_path, role)]
+            return self._generated_support_procedure_entrypoints[(owner_path, role)]
         except (AttributeError, KeyError):
-            raise ValueError(f"Missing auxiliary native entrypoint {owner_path!r} role {role!r}") from None
+            raise ValueError(f"Missing generated support procedure entrypoint {owner_path!r} role {role!r}") from None
 
-    def _auxiliary_entrypoints_for(
+    def _generated_support_procedure_entrypoints_for(
         self,
         owner_path: str,
         role_prefix: str,
-    ) -> tuple[NativeEntrypointOperationPlan, ...]:
+    ) -> tuple[GeneratedSupportProcedureEntrypointPlan, ...]:
         """Return planner-ordered operations for one owner and role family."""
         return tuple(
             operation
-            for operation in self._auxiliary_entrypoints.values()
+            for operation in self._generated_support_procedure_entrypoints.values()
             if operation.owner_path == owner_path and operation.role.startswith(role_prefix)
         )
 
-    def _has_auxiliary_entrypoint(self, owner_path: str, role: str) -> bool:
-        """Return whether planning registered one auxiliary operation."""
-        return (owner_path, role) in self._auxiliary_entrypoints
+    def _has_generated_support_procedure_entrypoint(self, owner_path: str, role: str) -> bool:
+        """Return whether planning registered one generated support procedure."""
+        return (owner_path, role) in self._generated_support_procedure_entrypoints
 
-    def _auxiliary_entrypoint_function(
+    def _generated_support_procedure_entrypoint_function(
         self,
-        operation: NativeEntrypointOperationPlan,
+        operation: GeneratedSupportProcedureEntrypointPlan,
         function: FortranFunction,
     ) -> FortranFunction:
         """Apply one planner-owned bridge ABI to an adapter-local procedure body."""
-        if operation.implementation is not NativeEntrypointImplementation.BRIDGE:
+        if operation.implementation_owner is not GeneratedSupportProcedureImplementationOwner.FORTRAN:
             raise ValueError(f"Fortran cannot implement binding-owned operation {operation.key!r}")
-        result_type = self._auxiliary_fortran_type(operation.signature.result)
+        result_type = self._support_procedure_fortran_type(operation.signature.result)
         is_subroutine = operation.signature.result.kind is NativeEntrypointABIValueKind.VOID
         return replace(
             function,
             name=operation.symbol_name,
             parameters=tuple(
-                self._auxiliary_fortran_parameter(parameter) for parameter in operation.signature.parameters
+                self._support_procedure_fortran_parameter(parameter) for parameter in operation.signature.parameters
             ),
             result_name=None if is_subroutine else function.result_name,
             result_type=None if is_subroutine else result_type,
@@ -294,36 +307,36 @@ class FortranBridgeGenerator(ClassVisitor):
             is_subroutine=is_subroutine,
         )
 
-    def _apply_auxiliary_entrypoints(
+    def _apply_generated_support_procedure_entrypoints(
         self,
         procedures: tuple[FortranFunction, ...],
     ) -> tuple[FortranFunction, ...]:
         """Join every adapter-local body to exactly one planner-owned C ABI."""
         operations = {
             operation.symbol_name: operation
-            for operation in self._auxiliary_entrypoints.values()
-            if operation.implementation is NativeEntrypointImplementation.BRIDGE
+            for operation in self._generated_support_procedure_entrypoints.values()
+            if operation.implementation_owner is GeneratedSupportProcedureImplementationOwner.FORTRAN
         }
         generated = {procedure.name for procedure in procedures if procedure.name in operations}
         missing = tuple(symbol for symbol in operations if symbol not in generated)
         if missing:
-            raise ValueError(f"Fortran bridge did not implement planned auxiliary entrypoints: {missing!r}")
+            raise ValueError(f"Fortran lowering did not implement planned support procedures: {missing!r}")
         return tuple(
-            self._auxiliary_entrypoint_function(operations[procedure.name], procedure)
+            self._generated_support_procedure_entrypoint_function(operations[procedure.name], procedure)
             if procedure.name in operations
             else procedure
             for procedure in procedures
         )
 
-    def _auxiliary_fortran_parameter(
+    def _support_procedure_fortran_parameter(
         self,
         value: NativeEntrypointABIValuePlan,
     ) -> FortranParameter:
-        """Lower one structured auxiliary C-ABI value as a Fortran dummy."""
-        type_name = self._auxiliary_fortran_type(value)
+        """Lower one generated-support C-ABI value as a Fortran dummy."""
+        type_name = self._support_procedure_fortran_type(value)
         if value.kind is NativeEntrypointABIValueKind.DESCRIPTOR:
             if value.descriptor_kind is None or value.rank is None:
-                raise ValueError(f"Auxiliary descriptor {value.role!r} is incomplete")
+                raise ValueError(f"Generated-support descriptor {value.role!r} is incomplete")
             attributes = (
                 value.descriptor_kind.value,
                 self._array_dimension_attribute(value.rank),
@@ -331,7 +344,7 @@ class FortranBridgeGenerator(ClassVisitor):
             )
         elif value.kind is NativeEntrypointABIValueKind.CHARACTER:
             if value.character_length is None:
-                raise ValueError(f"Auxiliary character value {value.role!r} has no length")
+                raise ValueError(f"Generated-support character value {value.role!r} has no length")
             attributes = (
                 f"dimension({value.character_length})",
                 *((f"intent({value.intent})",) if value.intent is not None else ()),
@@ -348,11 +361,11 @@ class FortranBridgeGenerator(ClassVisitor):
         return FortranParameter(value.fortran_name, type_name, attributes)
 
     @staticmethod
-    def _auxiliary_fortran_type(value: NativeEntrypointABIValuePlan) -> str | None:
-        """Spell one structured auxiliary ABI value for Fortran."""
+    def _support_procedure_fortran_type(value: NativeEntrypointABIValuePlan) -> str | None:
+        """Spell one structured generated-support ABI value for Fortran."""
         if value.kind is NativeEntrypointABIValueKind.SEMANTIC_SCALAR:
             if value.semantic_type_name is None:
-                raise ValueError(f"Auxiliary ABI value {value.role!r} has no semantic scalar type")
+                raise ValueError(f"Generated-support ABI value {value.role!r} has no semantic scalar type")
             return PrimitiveScalarTypeRegistry.type_for(value.semantic_type_name).fortran_spelling
         types = {
             NativeEntrypointABIValueKind.VOID: None,
@@ -366,12 +379,12 @@ class FortranBridgeGenerator(ClassVisitor):
         }
         if value.kind is NativeEntrypointABIValueKind.DESCRIPTOR:
             if value.semantic_type_name is None:
-                raise ValueError(f"Auxiliary descriptor {value.role!r} has no element type")
+                raise ValueError(f"Generated-support descriptor {value.role!r} has no element type")
             return PrimitiveScalarTypeRegistry.type_for(value.semantic_type_name).fortran_spelling
         try:
             return types[value.kind]
         except KeyError:
-            raise ValueError(f"Unsupported auxiliary Fortran ABI kind {value.kind.value!r}") from None
+            raise ValueError(f"Unsupported generated-support Fortran ABI kind {value.kind.value!r}") from None
 
     def _callback_standalone_adapter_procedures(self, plan: ModulePlan) -> tuple[FortranFunction, ...]:
         """Return separately linked callback adapters in stable site order."""
@@ -419,11 +432,16 @@ class FortranBridgeGenerator(ClassVisitor):
             *(
                 procedure
                 for function in plan.functions
+                if function.bridge is not None
                 for procedure in (
                     self.visit(function, scoped_origin_type_identities),
                     *self._owned_native_array_result_operations(function),
-                    *self._default_native_array_argument_operations(function),
                 )
+            ),
+            *(
+                procedure
+                for function in plan.functions
+                for procedure in self._default_native_array_argument_operations(function)
             ),
             *(procedure for variable in plan.variables for procedure in self.visit(variable)),
         )
@@ -521,6 +539,8 @@ class FortranBridgeGenerator(ClassVisitor):
         """Lower one shared C-ABI parameter group into a bind(C) declaration."""
         if parameter.source_kind == "argument":
             return self.visit(self._argument_by_owner(plan, parameter.owner_path))
+        if parameter.source_kind == "projected_slot":
+            return self._projected_slot_parameters(self._projected_slot_for_parameter(plan, parameter))
         result = self._result_by_owner(plan, parameter.owner_path)
         if parameter.source_kind == "hidden_result":
             return self._native_output_parameters_for_result(result)
@@ -542,6 +562,35 @@ class FortranBridgeGenerator(ClassVisitor):
     def _result_by_owner(plan: FunctionPlan, owner_path: str) -> NativeEntrypointResultPlan:
         """Return the C-ABI result referenced by one entrypoint parameter group."""
         return next(result for result in plan.entrypoint.results if result.owner_path == owner_path)
+
+    @staticmethod
+    def _projected_slot_for_parameter(
+        plan: FunctionPlan,
+        parameter: NativeEntrypointParameterPlan,
+    ) -> NativeEntrypointProjectedSlotPlan:
+        """Return the shared projected slot referenced by one adapter parameter."""
+        return next(
+            slot for slot in plan.entrypoint.projected_slots if slot.native_position == parameter.native_position
+        )
+
+    @staticmethod
+    def _projected_slot_parameters(
+        slot: NativeEntrypointProjectedSlotPlan,
+    ) -> tuple[FortranParameter, ...]:
+        """Declare one binding-materialized projection at the shared C ABI."""
+        if slot.semantic_type_name is None:
+            raise ValueError(f"Projected slot {slot.owner_path!r} has no semantic type")
+        type_name = PrimitiveScalarTypeRegistry.type_for(slot.semantic_type_name).fortran_spelling
+        if slot.passing is EntrypointPassingConvention.C_VALUE:
+            attributes = ("value",)
+        elif slot.passing in {
+            EntrypointPassingConvention.POINTER_REFERENCE,
+            EntrypointPassingConvention.NULLABLE_POINTER,
+        }:
+            attributes = ()
+        else:
+            raise ValueError(f"Unsupported projected Fortran parameter passing {slot.passing.value!r}")
+        return (FortranParameter(slot.native_name.casefold(), type_name, attributes),)
 
     def _declaration_extent_result_parameters_for_result(
         self,
@@ -591,7 +640,7 @@ class FortranBridgeGenerator(ClassVisitor):
         """Adapt one native callback through a separately declared external procedure."""
         result = callback.result.transfer
         is_subroutine = callback.result.action is CallbackResultAction.RETURN_VOID
-        trampoline_name = f"{callback.entrypoint.operation.symbol_name}_call"
+        trampoline_name = f"{callback.entrypoint.support_procedure.symbol_name}_call"
         return FortranFunction(
             name=callback.bridge.adapter_symbol,
             parameters=tuple(self._callback_native_parameter(transfer) for transfer in callback.arguments),
@@ -605,7 +654,7 @@ class FortranBridgeGenerator(ClassVisitor):
                         self._callback_c_interface(
                             callback,
                             name=trampoline_name,
-                            bind_name=callback.entrypoint.operation.symbol_name,
+                            bind_name=callback.entrypoint.support_procedure.symbol_name,
                         ),
                     )
                 ),
@@ -1701,7 +1750,9 @@ class FortranBridgeGenerator(ClassVisitor):
         for result in function.results:
             if not self._supports_owned_native_array_result_operations(result):
                 continue
-            for entrypoint in self._auxiliary_entrypoints_for(result.owner_path, "native_array:owned:"):
+            for entrypoint in self._generated_support_procedure_entrypoints_for(
+                result.owner_path, "native_array:owned:"
+            ):
                 operation = NativeArrayOperation(entrypoint.role.rsplit(":", 1)[-1])
                 procedure = self._owned_native_array_result_operation(result, operation)
                 if procedure is not None:
@@ -1721,7 +1772,9 @@ class FortranBridgeGenerator(ClassVisitor):
                 or handle.default_handle.construction is not NativeArrayDefaultConstruction.LAZY_OWNED_DESCRIPTOR
             ):
                 continue
-            for entrypoint in self._auxiliary_entrypoints_for(argument.owner_path, "native_array:owned:"):
+            for entrypoint in self._generated_support_procedure_entrypoints_for(
+                argument.owner_path, "native_array:owned:"
+            ):
                 operation = NativeArrayOperation(entrypoint.role.rsplit(":", 1)[-1])
                 procedure = self._owned_native_array_result_operation(argument, operation)
                 if procedure is not None:
@@ -1907,11 +1960,13 @@ class FortranBridgeGenerator(ClassVisitor):
         operation: NativeArrayOperation,
     ) -> str:
         """Return one planner-owned descriptor operation symbol."""
-        return self._auxiliary_entrypoint(result.owner_path, f"native_array:owned:{operation.value}").symbol_name
+        return self._generated_support_procedure_entrypoint(
+            result.owner_path, f"native_array:owned:{operation.value}"
+        ).symbol_name
 
     def _visit_ModuleVariablePlan(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
         """Lower bridge-owned getter and setter actions into procedures."""
-        if plan.binding.getter_action is ModuleGetterAction.NATIVE_ARRAY_HANDLE:
+        if plan.bridge.native_getter_action is ModuleGetterAction.NATIVE_ARRAY_HANDLE:
             return self._lower_module_native_array_operations(plan)
         return (
             *self._lower_module_getter(plan),
@@ -1920,7 +1975,7 @@ class FortranBridgeGenerator(ClassVisitor):
 
     def _lower_module_getter(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
         """Dispatch one completed bridge getter action explicitly."""
-        action = plan.bridge.getter_action
+        action = plan.bridge.native_getter_action
         match action:
             case ModuleGetterAction.CONSTANT_VALUE:
                 return self._lower_module_getter_constant_value(plan)
@@ -2270,11 +2325,13 @@ class FortranBridgeGenerator(ClassVisitor):
 
     def _derived_origin_supports(self, variable: ModuleVariablePlan, operation: str) -> bool:
         """Return whether planning registered one derived-origin operation."""
-        return (variable.owner_path, f"derived_origin:{operation}") in self._auxiliary_entrypoints
+        return (variable.owner_path, f"derived_origin:{operation}") in self._generated_support_procedure_entrypoints
 
     def _derived_origin_bridge_name(self, variable: ModuleVariablePlan, operation: str) -> str:
         """Return one planner-owned derived-origin operation symbol."""
-        return self._auxiliary_entrypoint(variable.owner_path, f"derived_origin:{operation}").symbol_name
+        return self._generated_support_procedure_entrypoint(
+            variable.owner_path, f"derived_origin:{operation}"
+        ).symbol_name
 
     def _lower_module_getter_derived_value_copy(
         self,
@@ -2327,7 +2384,7 @@ class FortranBridgeGenerator(ClassVisitor):
                 plan,
                 NativeArrayOperation(operation.role.rsplit(":", 1)[-1]),
             )
-            for operation in self._auxiliary_entrypoints_for(plan.owner_path, "module:native_array:")
+            for operation in self._generated_support_procedure_entrypoints_for(plan.owner_path, "module:native_array:")
         )
 
     def _lower_module_native_array_bridge_operation(
@@ -2616,7 +2673,9 @@ class FortranBridgeGenerator(ClassVisitor):
 
     def _module_native_array_operation_name(self, plan: ModuleVariablePlan, operation) -> str:
         """Return one planner-owned module native-array operation symbol."""
-        return self._auxiliary_entrypoint(plan.owner_path, f"module:native_array:{operation.value}").symbol_name
+        return self._generated_support_procedure_entrypoint(
+            plan.owner_path, f"module:native_array:{operation.value}"
+        ).symbol_name
 
     def _lower_module_getter_direct_value(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
         """Return one direct scalar module-variable getter."""
@@ -2943,7 +3002,8 @@ class FortranBridgeGenerator(ClassVisitor):
     def _is_opaque_array_required_argument(self, plan: ArgumentTransferPlan) -> bool:
         """Return whether a required array-shaped argument uses an opaque address."""
         return bool(
-            plan.binding.python_action is PythonBarrierAction.RAW_ADDRESS or self._is_scalar_storage_array(plan.array)
+            plan.bridge.native_action is NativeBarrierAction.PASS_RAW_ADDRESS
+            or self._is_scalar_storage_array(plan.array)
         )
 
     # Native-array-handle entrypoint parameters.
@@ -3089,7 +3149,7 @@ class FortranBridgeGenerator(ClassVisitor):
         result_name = self._native_direct_result_name(plan, result_name)
         derived_optional = tuple(
             argument
-            for argument in sorted(plan.arguments, key=lambda item: item.bridge_call_slot.native_position)
+            for argument in sorted(plan.arguments, key=lambda item: item.projected_call_slot.native_position)
             if argument.derived_call is not None
             and argument.entrypoint.optional_mode in {OptionalMode.NULLABLE_VALUE, OptionalMode.DESCRIPTOR}
         )
@@ -3142,7 +3202,7 @@ class FortranBridgeGenerator(ClassVisitor):
         """Return polymorphic inputs in original-Fortran call order."""
         return tuple(
             argument
-            for argument in sorted(plan.arguments, key=lambda item: item.bridge_call_slot.native_position)
+            for argument in sorted(plan.arguments, key=lambda item: item.projected_call_slot.native_position)
             if argument.polymorphic is not None
         )
 
@@ -3151,7 +3211,7 @@ class FortranBridgeGenerator(ClassVisitor):
         """Return assumed-rank arrays in original-Fortran call order."""
         return tuple(
             argument
-            for argument in sorted(plan.arguments, key=lambda item: item.bridge_call_slot.native_position)
+            for argument in sorted(plan.arguments, key=lambda item: item.projected_call_slot.native_position)
             if argument.array is not None and argument.array.rank is None
         )
 
@@ -3160,7 +3220,7 @@ class FortranBridgeGenerator(ClassVisitor):
         """Return optional arguments handled by the ordinary presence tree."""
         return tuple(
             argument
-            for argument in sorted(plan.arguments, key=lambda item: item.bridge_call_slot.native_position)
+            for argument in sorted(plan.arguments, key=lambda item: item.projected_call_slot.native_position)
             if argument.entrypoint.optional_mode in {OptionalMode.NULLABLE_VALUE, OptionalMode.DESCRIPTOR}
             and argument.derived_call is None
         )
@@ -3439,7 +3499,7 @@ class FortranBridgeGenerator(ClassVisitor):
         if receiver is None:
             raise ValueError(f"Type-bound call {plan.owner_path!r} has no passed-object argument")
         expression = replacements.get(receiver.owner_path, self._native_argument_expression(receiver))
-        return f"{expression}%{class_call.type_bound_name}", receiver.bridge_call_slot.native_position
+        return f"{expression}%{class_call.type_bound_name}", receiver.projected_call_slot.native_position
 
     @staticmethod
     def _is_pointer_derived_holder_result(result: ResultPlan | None) -> bool:
@@ -3462,14 +3522,23 @@ class FortranBridgeGenerator(ClassVisitor):
         """Return native call expressions in planned ABI order without recomputing argument policy."""
         expressions = dict(self._visible_native_argument_entries(plan, present, replacements))
         expressions.update(
-            (slot.native_position, CodeExpression(self._literal_expression(slot.literal_value)))
-            for slot in plan.bridge_call_slots
-            if slot.source_kind == "literal"
+            (slot.native_position, CodeExpression(slot.native_name.casefold()))
+            for slot in plan.entrypoint.projected_slots
+            if slot.adapter is not None
+            if slot.projection_action
+            in {
+                EntrypointProjectionAction.TYPED_LITERAL,
+                EntrypointProjectionAction.COMPUTED_LENGTH,
+                EntrypointProjectionAction.COMPUTED_PRESENCE,
+                EntrypointProjectionAction.COMPUTED_SHAPE,
+                EntrypointProjectionAction.COMPUTED_STRIDE,
+                EntrypointProjectionAction.WORK_STORAGE,
+            }
         )
         expressions.update(self._hidden_native_result_entries(plan))
         return tuple(
             expressions[slot.native_position]
-            for slot in sorted(plan.bridge_call_slots, key=lambda item: item.native_position)
+            for slot in self._adapter_slots(plan)
             if slot.native_position in expressions and slot.native_position != excluded_position
         )
 
@@ -3491,7 +3560,7 @@ class FortranBridgeGenerator(ClassVisitor):
             expression = replacements.get(argument.owner_path, self._native_argument_expression(argument))
             if has_optional:
                 expression = f"{argument.bridge.native_name}={expression}"
-            entries.append((argument.bridge_call_slot.native_position, CodeExpression(expression)))
+            entries.append((argument.projected_call_slot.native_position, CodeExpression(expression)))
         return tuple(entries)
 
     def _assumed_rank_call_tree(
@@ -3508,7 +3577,7 @@ class FortranBridgeGenerator(ClassVisitor):
         if index == len(arguments):
             optional = tuple(
                 argument
-                for argument in sorted(plan.arguments, key=lambda item: item.bridge_call_slot.native_position)
+                for argument in sorted(plan.arguments, key=lambda item: item.projected_call_slot.native_position)
                 if argument.entrypoint.optional_mode in {OptionalMode.NULLABLE_VALUE, OptionalMode.DESCRIPTOR}
                 and argument.derived_call is None
             )
@@ -3548,7 +3617,7 @@ class FortranBridgeGenerator(ClassVisitor):
     ) -> tuple[tuple[int, CodeExpression], ...]:
         """Return all mechanically lowered hidden-result native entries."""
         entries = []
-        for slot in plan.bridge_call_slots:
+        for slot in self._adapter_slots(plan):
             if slot.source_kind != "result":
                 continue
             expression = self._native_output_value_name(slot)
@@ -3652,7 +3721,7 @@ class FortranBridgeGenerator(ClassVisitor):
             )
         if plan.entrypoint.optional_mode not in {OptionalMode.REQUIRED_DESCRIPTOR, OptionalMode.DESCRIPTOR}:
             raise ValueError(f"Associated-view preparation requires an optional argument: {plan.owner_path!r}")
-        if plan.bridge_call_slot.value_kind != "pointer":
+        if plan.projected_call_slot.value_kind != "pointer":
             raise ValueError(f"Associated descriptor view requires pointer policy: {plan.owner_path!r}")
         return (
             self._descriptor_input_pointer_call(name),
@@ -3693,7 +3762,7 @@ class FortranBridgeGenerator(ClassVisitor):
             )
         if plan.entrypoint.optional_mode not in {OptionalMode.REQUIRED_DESCRIPTOR, OptionalMode.DESCRIPTOR}:
             raise ValueError(f"Representation copy requires descriptor policy: {plan.owner_path!r}")
-        if plan.bridge_call_slot.value_kind != "allocatable":
+        if plan.projected_call_slot.value_kind != "allocatable":
             raise ValueError(f"Representation copy requires allocatable policy: {plan.owner_path!r}")
         name = plan.entrypoint.parameter_name
         return (
@@ -3747,7 +3816,7 @@ class FortranBridgeGenerator(ClassVisitor):
         if mode is OptionalMode.NULLABLE_VALUE:
             return (FortranDeclaration(name, scalar_type.fortran_spelling, ("pointer",)),)
         declarations = [FortranDeclaration(f"{name}_input", scalar_type.fortran_spelling, ("pointer",))]
-        descriptor_attribute = "pointer" if argument.bridge_call_slot.value_kind == "pointer" else "allocatable"
+        descriptor_attribute = "pointer" if argument.projected_call_slot.value_kind == "pointer" else "allocatable"
         declarations.append(
             FortranDeclaration(f"{name}_descriptor", scalar_type.fortran_spelling, (descriptor_attribute,))
         )
@@ -4136,7 +4205,6 @@ class FortranBridgeGenerator(ClassVisitor):
             argument
             for argument in plan.arguments
             if argument.object_kind is ObjectKind.NUMPY_ARRAY
-            and argument.binding.python_action is PythonBarrierAction.RAW_ADDRESS
             and argument.bridge.native_action is NativeBarrierAction.PASS_RAW_ADDRESS
             and argument.entrypoint.handoff_mode is ArgumentHandoffMode.OPAQUE_ADDRESS
             and argument.bridge.data_action is BridgeDataAction.ASSOCIATE_VIEW
@@ -4451,7 +4519,7 @@ class FortranBridgeGenerator(ClassVisitor):
             if (
                 argument.entrypoint.optional_mode in {OptionalMode.REQUIRED_DESCRIPTOR, OptionalMode.DESCRIPTOR}
                 and argument.entrypoint.handoff_mode is not ArgumentHandoffMode.NATIVE_DESCRIPTOR
-                and argument.bridge_call_slot.value_kind == "pointer"
+                and argument.projected_call_slot.value_kind == "pointer"
                 and argument.object_kind is not ObjectKind.DERIVED_TYPE
             )
         )
@@ -4497,7 +4565,7 @@ class FortranBridgeGenerator(ClassVisitor):
                     *state,
                 ),
             )
-        inquiry = "associated" if argument.bridge_call_slot.value_kind == "pointer" else "allocated"
+        inquiry = "associated" if argument.projected_call_slot.value_kind == "pointer" else "allocated"
         return FortranIf(
             CodeExpression(f"{inquiry}({name}_descriptor)"),
             body=(
@@ -4570,7 +4638,7 @@ class FortranBridgeGenerator(ClassVisitor):
     def _native_output_declarations(self, plan: FunctionPlan) -> tuple[FortranDeclaration, ...]:
         """Dispatch helper-local output storage from completed bridge data actions."""
         declarations = []
-        for slot in plan.bridge_call_slots:
+        for slot in self._adapter_slots(plan):
             if slot.source_kind != "result":
                 continue
             if slot.scalar_descriptor is not None:
@@ -4599,13 +4667,14 @@ class FortranBridgeGenerator(ClassVisitor):
                         )
                     )
                 continue
-            if slot.bridge_data_action is BridgeDataAction.DIRECT_TRANSFER:
+            if slot.adapter.bridge_data_action is BridgeDataAction.DIRECT_TRANSFER:
                 continue
-            if slot.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION:
+            if slot.adapter.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION:
                 declarations.extend(self._representation_copy_output_declarations(plan, slot))
                 continue
             raise ValueError(
-                f"Unsupported native-output bridge data action for {slot.owner_path!r}: {slot.bridge_data_action!r}"
+                f"Unsupported native-output bridge data action for {slot.owner_path!r}: "
+                f"{slot.adapter.bridge_data_action!r}"
             )
         return tuple(declarations)
 
@@ -4747,7 +4816,7 @@ class FortranBridgeGenerator(ClassVisitor):
             names.append("result_value")
         names.extend(
             f"{slot.native_name.lower()}_value"
-            for slot in plan.bridge_call_slots
+            for slot in self._adapter_slots(plan)
             if slot.source_kind == "result" and slot.object_kind is ObjectKind.DERIVED_TYPE
         )
         return tuple(names)
@@ -4764,7 +4833,7 @@ class FortranBridgeGenerator(ClassVisitor):
             return success_body
         null_outputs = [
             FortranAssignment(slot.native_name.lower(), CodeExpression("c_null_ptr"))
-            for slot in plan.bridge_call_slots
+            for slot in self._adapter_slots(plan)
             if slot.source_kind == "result" and slot.object_kind is ObjectKind.DERIVED_TYPE
         ]
         direct = self._direct_result(plan)
@@ -4795,14 +4864,14 @@ class FortranBridgeGenerator(ClassVisitor):
 
     def _scalar_descriptor_output_declarations(
         self,
-        slot: BridgeCallSlotPlan,
+        slot: NativeEntrypointProjectedSlotPlan,
     ) -> tuple[FortranDeclaration, ...]:
         """Declare native and detached-copy storage for one hidden descriptor scalar."""
         return self._scalar_descriptor_copy_declarations(slot, slot.native_name.lower())
 
     def _scalar_descriptor_copy_declarations(
         self,
-        result: ResultPlan | BridgeCallSlotPlan,
+        result: ResultPlan | NativeEntrypointProjectedSlotPlan,
         name: str,
     ) -> tuple[FortranDeclaration, ...]:
         """Declare helper-local storage selected by a scalar descriptor plan."""
@@ -5050,7 +5119,7 @@ class FortranBridgeGenerator(ClassVisitor):
     def _representation_copy_output_declarations(
         self,
         plan: FunctionPlan,
-        slot: BridgeCallSlotPlan,
+        slot: NativeEntrypointProjectedSlotPlan,
     ) -> tuple[FortranDeclaration, ...]:
         """Declare storage only for one justified representation-copy output."""
         if slot.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_COPY:
@@ -5106,7 +5175,7 @@ class FortranBridgeGenerator(ClassVisitor):
     def _array_copy_output_declarations(
         self,
         plan: FunctionPlan,
-        slot: BridgeCallSlotPlan,
+        slot: NativeEntrypointProjectedSlotPlan,
     ) -> tuple[FortranDeclaration, ...]:
         """Declare typed native and contiguous-copy storage for one hidden array."""
         shape = self._array_output_shape(plan, slot)
@@ -5132,8 +5201,8 @@ class FortranBridgeGenerator(ClassVisitor):
     ) -> tuple[FortranAssignment | FortranIf, ...]:
         """Dispatch output finalization from completed bridge data actions."""
         nodes = []
-        for slot in plan.bridge_call_slots:
-            if slot.source_kind != "result" or slot.bridge_data_action is BridgeDataAction.DIRECT_TRANSFER:
+        for slot in self._adapter_slots(plan):
+            if slot.source_kind != "result" or slot.adapter.bridge_data_action is BridgeDataAction.DIRECT_TRANSFER:
                 continue
             if slot.scalar_descriptor is not None:
                 nodes.extend(self._scalar_descriptor_copy_nodes(slot, slot.native_name.lower()))
@@ -5160,7 +5229,7 @@ class FortranBridgeGenerator(ClassVisitor):
                     )
                 )
                 continue
-            if slot.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION:
+            if slot.adapter.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION:
                 if slot.object_kind is ObjectKind.DERIVED_TYPE:
                     name = slot.native_name.lower()
                     nodes.append(FortranAssignment(name, CodeExpression(f"c_loc({name}_value)")))
@@ -5168,13 +5237,14 @@ class FortranBridgeGenerator(ClassVisitor):
                 nodes.extend(self._lower_native_output_representation_copy(plan, slot))
                 continue
             raise ValueError(
-                f"Unsupported native-output bridge data action for {slot.owner_path!r}: {slot.bridge_data_action!r}"
+                f"Unsupported native-output bridge data action for {slot.owner_path!r}: "
+                f"{slot.adapter.bridge_data_action!r}"
             )
         return tuple(nodes)
 
     def _scalar_descriptor_copy_nodes(
         self,
-        result: ResultPlan | BridgeCallSlotPlan,
+        result: ResultPlan | NativeEntrypointProjectedSlotPlan,
         name: str,
     ) -> tuple[FortranAssignment | FortranIf, ...]:
         """Copy one present scalar descriptor payload into C-owned storage."""
@@ -5244,7 +5314,7 @@ class FortranBridgeGenerator(ClassVisitor):
     # Deferred-character native-array-handle result copying.
     def _owned_deferred_character_copy_nodes(
         self,
-        result: ResultPlan | BridgeCallSlotPlan,
+        result: ResultPlan | NativeEntrypointProjectedSlotPlan,
         target_name: str,
         value_name: str,
         copy_name: str,
@@ -5303,7 +5373,7 @@ class FortranBridgeGenerator(ClassVisitor):
     def _lower_native_output_representation_copy(
         self,
         plan: FunctionPlan,
-        slot: BridgeCallSlotPlan,
+        slot: NativeEntrypointProjectedSlotPlan,
     ) -> tuple[FortranAssignment | FortranIf, ...]:
         """Copy one native output only through the explicit policy permission."""
         if slot.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_COPY:
@@ -5460,7 +5530,7 @@ class FortranBridgeGenerator(ClassVisitor):
 
     def _array_result_element_type(
         self,
-        plan: ResultPlan | NativeEntrypointResultPlan | BridgeCallSlotPlan,
+        plan: ResultPlan | NativeEntrypointResultPlan | NativeEntrypointProjectedSlotPlan,
     ) -> str:
         """Return the completed numeric, fixed, or deferred character element type."""
         if plan.datatype_family is DatatypeFamily.STRING:
@@ -5474,7 +5544,10 @@ class FortranBridgeGenerator(ClassVisitor):
             raise ValueError(f"Array result {plan.owner_path!r} has no element type")
         return PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).fortran_spelling
 
-    def _array_result_itemsize(self, plan: ResultPlan | BridgeCallSlotPlan) -> int | None:
+    def _array_result_itemsize(
+        self,
+        plan: ResultPlan | NativeEntrypointProjectedSlotPlan,
+    ) -> int | None:
         """Return a character-array itemsize after object-kind dispatch."""
         if plan.datatype_family is not DatatypeFamily.STRING:
             return None
@@ -5515,7 +5588,7 @@ class FortranBridgeGenerator(ClassVisitor):
             ),
         )
 
-    def _native_output_value_name(self, slot: BridgeCallSlotPlan) -> str:
+    def _native_output_value_name(self, slot: NativeEntrypointProjectedSlotPlan) -> str:
         """Return the native-call expression selected for one output slot."""
         name = slot.native_name.lower()
         if slot.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_COPY:
@@ -5536,7 +5609,7 @@ class FortranBridgeGenerator(ClassVisitor):
             else name
         )
 
-    def _string_output_length(self, slot: BridgeCallSlotPlan) -> int:
+    def _string_output_length(self, slot: NativeEntrypointProjectedSlotPlan) -> int:
         """Return a validated fixed length for a hidden native string output; reject absent or non-positive lengths."""
         if slot.character_length is None or slot.character_length <= 0:
             raise ValueError(f"String output {slot.owner_path!r} is missing a fixed character length")
@@ -5639,7 +5712,7 @@ class FortranBridgeGenerator(ClassVisitor):
         return handle is not None and handle.handoff.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
 
     @staticmethod
-    def _is_owned_native_array_slot(slot: BridgeCallSlotPlan) -> bool:
+    def _is_owned_native_array_slot(slot: NativeEntrypointProjectedSlotPlan) -> bool:
         """Return whether one hidden slot shares persistent descriptor storage."""
         handle = slot.native_array_handle
         return handle is not None and handle.handoff.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
@@ -5650,7 +5723,7 @@ class FortranBridgeGenerator(ClassVisitor):
         return cls._is_owned_native_array_result(result) and result.datatype_family is DatatypeFamily.STRING
 
     @classmethod
-    def _is_owned_deferred_character_slot(cls, slot: BridgeCallSlotPlan) -> bool:
+    def _is_owned_deferred_character_slot(cls, slot: NativeEntrypointProjectedSlotPlan) -> bool:
         """Return whether a hidden owner slot needs a runtime-width copy ABI."""
         return cls._is_owned_native_array_slot(slot) and slot.datatype_family is DatatypeFamily.STRING
 
@@ -5673,6 +5746,8 @@ class FortranBridgeGenerator(ClassVisitor):
     def _add_function_module_uses(self, plan: ModulePlan, modules: dict[str, list[str]]) -> None:
         """Import module procedures, excluding direct type-bound invocation."""
         for function in self._functions(plan):
+            if function.bridge is None:
+                continue
             if (
                 function.bridge.native_module is not None
                 and function.bridge.native_invocation is not NativeInvocationKind.PROCEDURE
@@ -5850,7 +5925,7 @@ class FortranBridgeGenerator(ClassVisitor):
             procedure
             for derived in self._derived_types(plan)
             for field in derived.fields
-            for procedure in self._planned_auxiliary_procedures(
+            for procedure in self._planned_support_procedures(
                 f"{derived.owner_path}.{field.name}",
                 "field:direct:",
                 self._direct_field_procedures(derived, field),
@@ -5863,7 +5938,7 @@ class FortranBridgeGenerator(ClassVisitor):
             procedure
             for variable in self._derived_member_proxy_variables(plan)
             for member in variable.derived.member_paths
-            for procedure in self._planned_auxiliary_procedures(
+            for procedure in self._planned_support_procedures(
                 ".".join((variable.owner_path, *member.path)),
                 "field:module:",
                 self._module_member_procedures(variable, member),
@@ -5876,7 +5951,7 @@ class FortranBridgeGenerator(ClassVisitor):
             procedure
             for derived in self._allocatable_holder_field_types(plan)
             for field in derived.fields
-            for procedure in self._planned_auxiliary_procedures(
+            for procedure in self._planned_support_procedures(
                 f"{derived.owner_path}.{field.name}",
                 "field:allocatable:",
                 self._allocatable_holder_field_procedures(derived, field),
@@ -5889,14 +5964,14 @@ class FortranBridgeGenerator(ClassVisitor):
             procedure
             for derived in self._pointer_holder_field_types(plan)
             for field in derived.fields
-            for procedure in self._planned_auxiliary_procedures(
+            for procedure in self._planned_support_procedures(
                 f"{derived.owner_path}.{field.name}",
                 "field:pointer:",
                 self._pointer_holder_field_procedures(derived, field),
             )
         )
 
-    def _planned_auxiliary_procedures(
+    def _planned_support_procedures(
         self,
         owner_path: str,
         role_prefix: str,
@@ -5904,10 +5979,10 @@ class FortranBridgeGenerator(ClassVisitor):
     ) -> tuple[FortranFunction, ...]:
         """Select adapter bodies in the operation order fixed by planning."""
         by_symbol = {candidate.name: candidate for candidate in candidates}
-        operations = self._auxiliary_entrypoints_for(owner_path, role_prefix)
+        operations = self._generated_support_procedure_entrypoints_for(owner_path, role_prefix)
         missing = tuple(operation.symbol_name for operation in operations if operation.symbol_name not in by_symbol)
         if missing:
-            raise ValueError(f"No Fortran adapter body for planned auxiliary entrypoints: {missing!r}")
+            raise ValueError(f"No Fortran body for planned generated support procedures: {missing!r}")
         return tuple(by_symbol[operation.symbol_name] for operation in operations)
 
     def _allocatable_holder_field_types(self, plan: ModulePlan) -> tuple[DerivedTypePlan, ...]:
@@ -6827,7 +6902,9 @@ class FortranBridgeGenerator(ClassVisitor):
 
     def _derived_field_bridge_name(self, derived: DerivedTypePlan, field: DerivedFieldPlan, action: str) -> str:
         """Return the planner-owned direct-field symbol."""
-        return self._auxiliary_entrypoint(f"{derived.owner_path}.{field.name}", f"field:direct:{action}").symbol_name
+        return self._generated_support_procedure_entrypoint(
+            f"{derived.owner_path}.{field.name}", f"field:direct:{action}"
+        ).symbol_name
 
     def _allocatable_holder_field_bridge_name(
         self,
@@ -6836,7 +6913,7 @@ class FortranBridgeGenerator(ClassVisitor):
         action: str,
     ) -> str:
         """Return the planner-owned allocatable-holder field symbol."""
-        return self._auxiliary_entrypoint(
+        return self._generated_support_procedure_entrypoint(
             f"{derived.owner_path}.{field.name}", f"field:allocatable:{action}"
         ).symbol_name
 
@@ -6847,7 +6924,9 @@ class FortranBridgeGenerator(ClassVisitor):
         action: str,
     ) -> str:
         """Return the planner-owned pointer-holder field symbol."""
-        return self._auxiliary_entrypoint(f"{derived.owner_path}.{field.name}", f"field:pointer:{action}").symbol_name
+        return self._generated_support_procedure_entrypoint(
+            f"{derived.owner_path}.{field.name}", f"field:pointer:{action}"
+        ).symbol_name
 
     def _derived_field_callback_interface_name(
         self,
@@ -6864,7 +6943,7 @@ class FortranBridgeGenerator(ClassVisitor):
         operation: NativeArrayOperation,
     ) -> str:
         """Return the planner-owned direct-field handle symbol."""
-        return self._auxiliary_entrypoint(
+        return self._generated_support_procedure_entrypoint(
             f"{derived.owner_path}.{field.name}",
             f"field:direct:handle:{operation.value}",
         ).symbol_name
@@ -6889,7 +6968,7 @@ class FortranBridgeGenerator(ClassVisitor):
         action: str,
     ) -> str:
         """Return the planner-owned module-member symbol."""
-        return self._auxiliary_entrypoint(
+        return self._generated_support_procedure_entrypoint(
             ".".join((variable.owner_path, *member.path)), f"field:module:{action}"
         ).symbol_name
 
@@ -6908,7 +6987,7 @@ class FortranBridgeGenerator(ClassVisitor):
         operation: NativeArrayOperation,
     ) -> str:
         """Return the planner-owned module-member handle symbol."""
-        return self._auxiliary_entrypoint(
+        return self._generated_support_procedure_entrypoint(
             ".".join((variable.owner_path, *member.path)),
             f"field:module:handle:{operation.value}",
         ).symbol_name
@@ -6958,7 +7037,7 @@ class FortranBridgeGenerator(ClassVisitor):
             self._class_constructor_procedure(surface, derived_by_identity[surface.type_identity])
             for namespace in plan.namespaces
             for surface in namespace.classes
-            if self._has_auxiliary_entrypoint(surface.owner_path, "class:create")
+            if self._has_generated_support_procedure_entrypoint(surface.owner_path, "class:create")
         )
 
     def _class_constructor_procedure(
@@ -6995,7 +7074,7 @@ class FortranBridgeGenerator(ClassVisitor):
 
     def _class_create_bridge_name(self, surface: ClassSurfacePlan) -> str:
         """Return the planner-owned class-constructor symbol."""
-        return self._auxiliary_entrypoint(surface.owner_path, "class:create").symbol_name
+        return self._generated_support_procedure_entrypoint(surface.owner_path, "class:create").symbol_name
 
     def _allocatable_holder_destroy_procedure(self, derived: DerivedTypePlan) -> FortranFunction:
         """Destroy one wrapper-owned holder and its allocatable component."""
@@ -7073,7 +7152,9 @@ class FortranBridgeGenerator(ClassVisitor):
 
     def _derived_destroy_bridge_name(self, type_name: str) -> str:
         """Return the planner-owned derived-destroy symbol."""
-        return self._auxiliary_entrypoint(self._derived_owner_paths[type_name], "derived:destroy").symbol_name
+        return self._generated_support_procedure_entrypoint(
+            self._derived_owner_paths[type_name], "derived:destroy"
+        ).symbol_name
 
     @staticmethod
     def _allocatable_holder_type_name(type_name: str) -> str:
@@ -7087,34 +7168,39 @@ class FortranBridgeGenerator(ClassVisitor):
 
     def _allocatable_holder_destroy_bridge_name(self, type_name: str) -> str:
         """Return the planner-owned allocatable-holder destroy symbol."""
-        return self._auxiliary_entrypoint(
+        return self._generated_support_procedure_entrypoint(
             self._derived_owner_paths[type_name], "holder:allocatable:destroy"
         ).symbol_name
 
     def _allocatable_holder_presence_bridge_name(self, type_name: str) -> str:
         """Return the planner-owned allocatable-holder presence symbol."""
-        return self._auxiliary_entrypoint(
+        return self._generated_support_procedure_entrypoint(
             self._derived_owner_paths[type_name], "holder:allocatable:present"
         ).symbol_name
 
     def _pointer_holder_destroy_bridge_name(self, type_name: str) -> str:
         """Return the planner-owned pointer-holder destroy symbol."""
-        return self._auxiliary_entrypoint(self._derived_owner_paths[type_name], "holder:pointer:destroy").symbol_name
+        return self._generated_support_procedure_entrypoint(
+            self._derived_owner_paths[type_name], "holder:pointer:destroy"
+        ).symbol_name
 
     def _pointer_holder_presence_bridge_name(self, type_name: str) -> str:
         """Return the planner-owned pointer-holder presence symbol."""
-        return self._auxiliary_entrypoint(self._derived_owner_paths[type_name], "holder:pointer:present").symbol_name
+        return self._generated_support_procedure_entrypoint(
+            self._derived_owner_paths[type_name], "holder:pointer:present"
+        ).symbol_name
 
     def _module_derived_presence_bridge_name(self, plan: ModuleVariablePlan) -> str:
         """Return the planner-owned nullable module-derived presence symbol."""
-        return self._auxiliary_entrypoint(plan.owner_path, "module:derived:present").symbol_name
+        return self._generated_support_procedure_entrypoint(plan.owner_path, "module:derived:present").symbol_name
 
     def _external_interfaces(self, plan: ModulePlan) -> tuple[FortranInterface, ...]:
         """Declare ordinary standalone wrapper targets with explicit interfaces."""
         native_procedures = tuple(
             self._external_interface_procedure(function)
             for function in self._functions(plan)
-            if function.bridge.external_declaration is ExternalDeclarationMode.EXPLICIT_INTERFACE
+            if function.bridge is not None
+            and function.bridge.external_declaration is ExternalDeclarationMode.EXPLICIT_INTERFACE
         )
         return (FortranInterface(native_procedures),) if native_procedures else ()
 
@@ -7313,18 +7399,18 @@ class FortranBridgeGenerator(ClassVisitor):
         bind_name: str,
     ) -> FortranInterfaceProcedure:
         """Declare the flattened C ABI implemented by one Python trampoline."""
-        operation = callback.entrypoint.operation
-        if operation.implementation is not NativeEntrypointImplementation.BINDING:
+        operation = callback.entrypoint.support_procedure
+        if operation.implementation_owner is not GeneratedSupportProcedureImplementationOwner.BINDING:
             raise ValueError(f"Callback trampoline {operation.key!r} is not binding-owned")
         is_subroutine = operation.signature.result.kind is NativeEntrypointABIValueKind.VOID
         return FortranInterfaceProcedure(
             name=name,
             imports=self._callback_c_imports(callback),
             parameters=tuple(
-                self._auxiliary_fortran_parameter(parameter) for parameter in operation.signature.parameters
+                self._support_procedure_fortran_parameter(parameter) for parameter in operation.signature.parameters
             ),
             result_name=None if is_subroutine else "callback_result",
-            result_type=(None if is_subroutine else self._auxiliary_fortran_type(operation.signature.result)),
+            result_type=(None if is_subroutine else self._support_procedure_fortran_type(operation.signature.result)),
             is_subroutine=is_subroutine,
             bind_name=bind_name,
             bind_c=True,
@@ -7583,7 +7669,8 @@ class FortranBridgeGenerator(ClassVisitor):
     def _needs_module_getter_allocator(self, plan: ModulePlan) -> bool:
         """Return whether a nullable scalar descriptor getter copies one value."""
         return any(
-            variable.bridge.getter_action is ModuleGetterAction.NULLABLE_SNAPSHOT for variable in self._variables(plan)
+            variable.bridge.native_getter_action is ModuleGetterAction.NULLABLE_SNAPSHOT
+            for variable in self._variables(plan)
         )
 
     def _needs_function_copy_allocator(self, plan: ModulePlan) -> bool:
@@ -7605,13 +7692,13 @@ class FortranBridgeGenerator(ClassVisitor):
         """Return whether one hidden native result is an array or string copy."""
         return any(
             slot.scalar_descriptor is not None or slot.object_kind in {ObjectKind.STRING, ObjectKind.NUMPY_ARRAY}
-            for slot in function.bridge_call_slots
+            for slot in self._adapter_slots(function)
             if slot.source_kind == "result"
         )
 
     def _external_interface_procedure(self, plan: FunctionPlan) -> FortranInterfaceProcedure:
         """Declare one standalone native target from its completed function plan."""
-        slots = tuple(sorted(plan.bridge_call_slots, key=lambda item: item.native_position))
+        slots = self._adapter_slots(plan)
         arguments = {argument.owner_path: argument for argument in plan.arguments}
         parameters = tuple(self._external_interface_slot_parameter(plan, slot, arguments) for slot in slots)
         result_name, result_type, direct_result = self._external_interface_result(plan)
@@ -7639,7 +7726,7 @@ class FortranBridgeGenerator(ClassVisitor):
     def _external_interface_imports(
         self,
         plan: FunctionPlan,
-        slots: tuple[BridgeCallSlotPlan, ...],
+        slots: tuple[NativeEntrypointProjectedSlotPlan, ...],
         direct_result: ResultPlan | None,
     ) -> tuple[str, ...]:
         """Collect type and declaration-callable symbols visible in the interface body."""
@@ -7655,7 +7742,7 @@ class FortranBridgeGenerator(ClassVisitor):
 
     @staticmethod
     def _external_interface_parameter_declarations(
-        slots: tuple[BridgeCallSlotPlan, ...],
+        slots: tuple[NativeEntrypointProjectedSlotPlan, ...],
         parameters: tuple[FortranParameter, ...],
     ) -> tuple[FortranParameter, ...]:
         """Declare extent providers first without changing native ABI order."""
@@ -7686,7 +7773,7 @@ class FortranBridgeGenerator(ClassVisitor):
     def _external_interface_slot_parameter(
         self,
         plan: FunctionPlan,
-        slot: BridgeCallSlotPlan,
+        slot: NativeEntrypointProjectedSlotPlan,
         arguments: dict[str, ArgumentTransferPlan],
     ) -> FortranParameter:
         """Declare one external dummy from its completed ordered ABI slot."""
@@ -7704,7 +7791,7 @@ class FortranBridgeGenerator(ClassVisitor):
     def _external_interface_result_parameter(
         self,
         plan: FunctionPlan,
-        slot: BridgeCallSlotPlan,
+        slot: NativeEntrypointProjectedSlotPlan,
     ) -> FortranParameter:
         """Declare one hidden output dummy from completed result-slot policy."""
         if slot.scalar_descriptor is not None:
@@ -7722,7 +7809,9 @@ class FortranBridgeGenerator(ClassVisitor):
                 raise ValueError(f"Unsupported external hidden output {slot.owner_path!r}")
 
     @staticmethod
-    def _external_interface_scalar_descriptor_result_parameter(slot: BridgeCallSlotPlan) -> FortranParameter:
+    def _external_interface_scalar_descriptor_result_parameter(
+        slot: NativeEntrypointProjectedSlotPlan,
+    ) -> FortranParameter:
         """Declare one completed allocatable or pointer scalar output."""
         descriptor = slot.scalar_descriptor
         if descriptor is None:
@@ -7736,7 +7825,9 @@ class FortranBridgeGenerator(ClassVisitor):
         return FortranParameter(slot.native_name.lower(), scalar_type.fortran_spelling, (attribute,))
 
     @staticmethod
-    def _external_interface_scalar_result_parameter(slot: BridgeCallSlotPlan) -> FortranParameter:
+    def _external_interface_scalar_result_parameter(
+        slot: NativeEntrypointProjectedSlotPlan,
+    ) -> FortranParameter:
         """Declare one completed primitive scalar output."""
         if slot.semantic_type_name is None:
             raise ValueError(f"Scalar output {slot.owner_path!r} has no element type")
@@ -7744,7 +7835,9 @@ class FortranBridgeGenerator(ClassVisitor):
         return FortranParameter(slot.native_name.lower(), scalar_type.fortran_spelling)
 
     @staticmethod
-    def _external_interface_string_result_parameter(slot: BridgeCallSlotPlan) -> FortranParameter:
+    def _external_interface_string_result_parameter(
+        slot: NativeEntrypointProjectedSlotPlan,
+    ) -> FortranParameter:
         """Declare one completed fixed or assumed-length string output."""
         length = "*" if slot.character_length is None else str(slot.character_length)
         return FortranParameter(slot.native_name.lower(), f"character(kind=c_char, len={length})")
@@ -7752,7 +7845,7 @@ class FortranBridgeGenerator(ClassVisitor):
     def _external_interface_array_result_parameter(
         self,
         plan: FunctionPlan,
-        slot: BridgeCallSlotPlan,
+        slot: NativeEntrypointProjectedSlotPlan,
     ) -> FortranParameter:
         """Declare one completed ordinary or descriptor array output."""
         if slot.array is None:
@@ -7774,7 +7867,10 @@ class FortranBridgeGenerator(ClassVisitor):
             tuple(attributes),
         )
 
-    def _external_interface_derived_result_parameter(self, slot: BridgeCallSlotPlan) -> FortranParameter:
+    def _external_interface_derived_result_parameter(
+        self,
+        slot: NativeEntrypointProjectedSlotPlan,
+    ) -> FortranParameter:
         """Declare one completed scalar-derived output."""
         if slot.derived is None:
             raise ValueError(f"Derived output {slot.owner_path!r} has no handoff plan")
@@ -7789,7 +7885,9 @@ class FortranBridgeGenerator(ClassVisitor):
         )
 
     @staticmethod
-    def _external_interface_literal_parameter(slot: BridgeCallSlotPlan) -> FortranParameter:
+    def _external_interface_literal_parameter(
+        slot: NativeEntrypointProjectedSlotPlan,
+    ) -> FortranParameter:
         """Declare one hidden literal dummy from its completed scalar type."""
         if slot.semantic_type_name is None:
             raise ValueError(f"External literal slot {slot.owner_path!r} has no scalar type")
@@ -7851,7 +7949,7 @@ class FortranBridgeGenerator(ClassVisitor):
                 attributes,
             )
         if argument.object_kind is ObjectKind.STRING:
-            length = argument.bridge_call_slot.character_length
+            length = argument.projected_call_slot.character_length
             length_text = "*" if length is None else str(length)
             return FortranParameter(
                 parameter_name,
@@ -7932,7 +8030,11 @@ class FortranBridgeGenerator(ClassVisitor):
             raise ValueError(f"Array result {result.owner_path!r} has no shape plan")
         return self._array_shape_from_roles(result.array, plan)
 
-    def _array_output_shape(self, plan: FunctionPlan, slot: BridgeCallSlotPlan) -> tuple[str, ...]:
+    def _array_output_shape(
+        self,
+        plan: FunctionPlan,
+        slot: NativeEntrypointProjectedSlotPlan,
+    ) -> tuple[str, ...]:
         """Lower one hidden-output shape through the plan's native scalar roles."""
         if slot.array is None:
             raise ValueError(f"Array output {slot.owner_path!r} has no shape plan")
@@ -7949,7 +8051,9 @@ class FortranBridgeGenerator(ClassVisitor):
     @staticmethod
     def _array_shape_role_names(plan: FunctionPlan) -> dict[str, str]:
         """Map planned scalar, extent, and callable roles to bridge spellings."""
-        role_names = {argument.binding.handoff_role: argument.entrypoint.parameter_name for argument in plan.arguments}
+        role_names = {
+            argument.entrypoint.handoff_role: argument.entrypoint.parameter_name for argument in plan.arguments
+        }
         role_names.update(
             {
                 role: f"{argument.entrypoint.parameter_name}_extent_{axis}"
@@ -8027,11 +8131,11 @@ class FortranBridgeGenerator(ClassVisitor):
 
     def _module_bridge_getter_name(self, plan: ModuleVariablePlan) -> str:
         """Return the shared module-variable getter entrypoint symbol."""
-        return self._auxiliary_entrypoint(plan.owner_path, "module:get").symbol_name
+        return self._generated_support_procedure_entrypoint(plan.owner_path, "module:get").symbol_name
 
     def _module_bridge_setter_name(self, plan: ModuleVariablePlan) -> str:
         """Return the shared module-variable setter entrypoint symbol."""
-        return self._auxiliary_entrypoint(plan.owner_path, "module:set").symbol_name
+        return self._generated_support_procedure_entrypoint(plan.owner_path, "module:set").symbol_name
 
     def _native_function_name(self, plan: FunctionPlan) -> str:
         """Return the in-module alias or standalone symbol selected for the native procedure."""

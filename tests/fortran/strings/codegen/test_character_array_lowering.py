@@ -67,7 +67,7 @@ def test_fixed_width_character_array_results_reuse_the_ordinary_array_copy_plan(
         assert result.bridge.data_action is BridgeDataAction.COPY_REPRESENTATION
     assert direct.bridge.native_action is NativeBarrierAction.NONE
     assert hidden.bridge.native_action is NativeBarrierAction.PASS_ARRAY_BUFFER
-    assert hidden.bridge_call_slot.object_kind is ObjectKind.NUMPY_ARRAY
+    assert hidden.projected_call_slot.object_kind is ObjectKind.NUMPY_ARRAY
 
 
 def test_fixed_width_character_array_results_lower_itemsize_into_both_backends():

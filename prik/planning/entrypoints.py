@@ -1,4 +1,4 @@
-"""Project auxiliary generated callables into one shared C-ABI registry.
+"""Project generated support procedures into one shared C-ABI registry.
 
 Ordinary wrapped functions own specialized entrypoint facets directly. This
 module covers every other externally linked callable emitted by the current
@@ -41,8 +41,8 @@ from .models import (
     NativeArrayHandlePlan,
     NativeEntrypointABIValueKind,
     NativeEntrypointABIValuePlan,
-    NativeEntrypointImplementation,
-    NativeEntrypointOperationPlan,
+    GeneratedSupportProcedureImplementationOwner,
+    GeneratedSupportProcedureEntrypointPlan,
     NativeEntrypointSignaturePlan,
     ResultPlan,
 )
@@ -81,31 +81,31 @@ _OWNED_HANDLE_ENTRYPOINT_OPERATIONS = frozenset(
 )
 
 
-def build_auxiliary_entrypoint_operations(
+def build_generated_support_procedure_entrypoints(
     namespaces: tuple[NamespacePlan, ...],
-) -> tuple[NativeEntrypointOperationPlan, ...]:
+) -> tuple[GeneratedSupportProcedureEntrypointPlan, ...]:
     """Return every non-function C-visible operation in stable generation order."""
-    builder = _AuxiliaryEntrypointBuilder(namespaces)
-    operations = builder.build()
-    keys = [operation.key for operation in operations]
-    symbols = [operation.symbol_name for operation in operations]
+    builder = _GeneratedSupportProcedureEntrypointBuilder(namespaces)
+    procedures = builder.build()
+    keys = [procedure.key for procedure in procedures]
+    symbols = [procedure.symbol_name for procedure in procedures]
     if len(keys) != len(set(keys)):
         duplicates = tuple(key for key in dict.fromkeys(keys) if keys.count(key) > 1)
-        raise ValueError(f"Auxiliary native entrypoint operation keys are not unique: {duplicates!r}")
+        raise ValueError(f"Generated support procedure entrypoint keys are not unique: {duplicates!r}")
     if len(symbols) != len(set(symbols)):
         duplicates = tuple(symbol for symbol in dict.fromkeys(symbols) if symbols.count(symbol) > 1)
-        raise ValueError(f"Auxiliary native entrypoint symbols are not unique: {duplicates!r}")
-    return operations
+        raise ValueError(f"Generated support procedure entrypoint symbols are not unique: {duplicates!r}")
+    return procedures
 
 
-def build_callback_entrypoint_operation(
+def build_callback_support_procedure_entrypoint(
     owner_path: str,
     symbol_name: str,
     arguments: tuple[CallbackTransferPlan, ...],
     result,
-) -> NativeEntrypointOperationPlan:
+) -> GeneratedSupportProcedureEntrypointPlan:
     """Project the binding trampoline once while its callback site is planned."""
-    builder = _AuxiliaryEntrypointBuilder(())
+    builder = _GeneratedSupportProcedureEntrypointBuilder(())
     parameters = tuple(
         parameter for transfer in arguments for parameter in builder._callback_transfer_parameters(transfer)
     )
@@ -115,11 +115,11 @@ def build_callback_entrypoint_operation(
         symbol_name,
         parameters,
         builder._callback_result_from_plan(result),
-        implementation=NativeEntrypointImplementation.BINDING,
+        implementation_owner=GeneratedSupportProcedureImplementationOwner.BINDING,
     )
 
 
-class _AuxiliaryEntrypointBuilder:
+class _GeneratedSupportProcedureEntrypointBuilder:
     """Project operation existence, symbols, and ABI signatures from completed plans."""
 
     def __init__(self, namespaces: tuple[NamespacePlan, ...]) -> None:
@@ -129,7 +129,7 @@ class _AuxiliaryEntrypointBuilder:
         self.derived_types = tuple(derived for namespace in namespaces for derived in namespace.derived_types)
         self.classes = tuple(surface for namespace in namespaces for surface in namespace.classes)
 
-    def build(self) -> tuple[NativeEntrypointOperationPlan, ...]:
+    def build(self) -> tuple[GeneratedSupportProcedureEntrypointPlan, ...]:
         """Collect operations in the existing generated declaration order."""
         owned_types = self._owned_derived_types()
         allocatable_holders = self._allocatable_holder_types()
@@ -204,9 +204,11 @@ class _AuxiliaryEntrypointBuilder:
         parameters: tuple[NativeEntrypointABIValuePlan, ...] = (),
         result: NativeEntrypointABIValuePlan | None = None,
         *,
-        implementation: NativeEntrypointImplementation = NativeEntrypointImplementation.BRIDGE,
-    ) -> NativeEntrypointOperationPlan:
-        return NativeEntrypointOperationPlan(
+        implementation_owner: GeneratedSupportProcedureImplementationOwner = (
+            GeneratedSupportProcedureImplementationOwner.FORTRAN
+        ),
+    ) -> GeneratedSupportProcedureEntrypointPlan:
+        return GeneratedSupportProcedureEntrypointPlan(
             key=f"{owner_path}::{role}",
             owner_path=owner_path,
             role=role,
@@ -215,7 +217,7 @@ class _AuxiliaryEntrypointBuilder:
                 parameters=parameters,
                 result=result or cls._void_result(),
             ),
-            implementation=implementation,
+            implementation_owner=implementation_owner,
         )
 
     @classmethod
@@ -342,8 +344,8 @@ class _AuxiliaryEntrypointBuilder:
     # Callback trampoline boundary
     # ------------------------------------------------------------------
 
-    def _callback_operations(self) -> tuple[NativeEntrypointOperationPlan, ...]:
-        return tuple(callback.entrypoint.operation for callback in self._callback_sites())
+    def _callback_operations(self) -> tuple[GeneratedSupportProcedureEntrypointPlan, ...]:
+        return tuple(callback.entrypoint.support_procedure for callback in self._callback_sites())
 
     def _callback_sites(self) -> tuple[CallbackHandoffPlan, ...]:
         return tuple(
@@ -379,7 +381,7 @@ class _AuxiliaryEntrypointBuilder:
     # Constructors and derived lifecycles
     # ------------------------------------------------------------------
 
-    def _class_constructor_operations(self) -> tuple[NativeEntrypointOperationPlan, ...]:
+    def _class_constructor_operations(self) -> tuple[GeneratedSupportProcedureEntrypointPlan, ...]:
         return tuple(
             self._operation(
                 surface.owner_path,
@@ -391,7 +393,7 @@ class _AuxiliaryEntrypointBuilder:
             if surface.constructor.kind is not ClassConstructorKind.ABSENT
         )
 
-    def _derived_destroy_operation(self, derived: DerivedTypePlan) -> NativeEntrypointOperationPlan:
+    def _derived_destroy_operation(self, derived: DerivedTypePlan) -> GeneratedSupportProcedureEntrypointPlan:
         return self._operation(
             derived.owner_path,
             "derived:destroy",
@@ -399,7 +401,9 @@ class _AuxiliaryEntrypointBuilder:
             (self._opaque_parameter("address"),),
         )
 
-    def _holder_destroy_operation(self, derived: DerivedTypePlan, holder: str) -> NativeEntrypointOperationPlan:
+    def _holder_destroy_operation(
+        self, derived: DerivedTypePlan, holder: str
+    ) -> GeneratedSupportProcedureEntrypointPlan:
         return self._operation(
             derived.owner_path,
             f"holder:{holder}:destroy",
@@ -407,7 +411,9 @@ class _AuxiliaryEntrypointBuilder:
             (self._opaque_parameter("address"),),
         )
 
-    def _holder_presence_operation(self, derived: DerivedTypePlan, holder: str) -> NativeEntrypointOperationPlan:
+    def _holder_presence_operation(
+        self, derived: DerivedTypePlan, holder: str
+    ) -> GeneratedSupportProcedureEntrypointPlan:
         return self._operation(
             derived.owner_path,
             f"holder:{holder}:present",
@@ -532,7 +538,7 @@ class _AuxiliaryEntrypointBuilder:
         self,
         allocatable_holders: tuple[DerivedTypePlan, ...],
         pointer_holders: tuple[DerivedTypePlan, ...],
-    ) -> tuple[NativeEntrypointOperationPlan, ...]:
+    ) -> tuple[GeneratedSupportProcedureEntrypointPlan, ...]:
         operations = []
         for derived in self.derived_types:
             for field in derived.fields:
@@ -555,7 +561,7 @@ class _AuxiliaryEntrypointBuilder:
         owner: DerivedTypePlan | tuple[ModuleVariablePlan, DerivedMemberPathPlan],
         field: DerivedFieldPlan,
         route: str,
-    ) -> tuple[NativeEntrypointOperationPlan, ...]:
+    ) -> tuple[GeneratedSupportProcedureEntrypointPlan, ...]:
         owner_path = self._field_owner_path(owner, field)
         owner_parameter = route != "module"
         if route in {"allocatable", "pointer"}:
@@ -775,7 +781,7 @@ class _AuxiliaryEntrypointBuilder:
     # Owned/default descriptor operations
     # ------------------------------------------------------------------
 
-    def _owned_native_array_operations(self) -> tuple[NativeEntrypointOperationPlan, ...]:
+    def _owned_native_array_operations(self) -> tuple[GeneratedSupportProcedureEntrypointPlan, ...]:
         operations = []
         transfers: list[ArgumentTransferPlan | ResultPlan] = [
             result
@@ -846,11 +852,11 @@ class _AuxiliaryEntrypointBuilder:
     # Module variables and native-array module operations
     # ------------------------------------------------------------------
 
-    def _module_variable_operations(self) -> tuple[NativeEntrypointOperationPlan, ...]:
+    def _module_variable_operations(self) -> tuple[GeneratedSupportProcedureEntrypointPlan, ...]:
         operations = []
         for variable in self.variables:
             operations.extend(self._primary_module_variable_operations(variable))
-            if variable.binding.getter_action is ModuleGetterAction.NATIVE_ARRAY_HANDLE:
+            if variable.bridge.native_getter_action is ModuleGetterAction.NATIVE_ARRAY_HANDLE:
                 operations.extend(self._module_native_array_operations(variable))
             if self._nullable_derived_module_proxy(variable):
                 operations.append(
@@ -867,9 +873,9 @@ class _AuxiliaryEntrypointBuilder:
         operations = []
         if (
             variable.entrypoint.getter_role is not None
-            and variable.binding.getter_action is not ModuleGetterAction.NATIVE_ARRAY_HANDLE
+            and variable.bridge.native_getter_action is not ModuleGetterAction.NATIVE_ARRAY_HANDLE
         ):
-            if variable.binding.getter_action in {
+            if variable.bridge.native_getter_action in {
                 ModuleGetterAction.BORROWED_ARRAY_VIEW,
                 ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE,
             }:
@@ -878,7 +884,7 @@ class _AuxiliaryEntrypointBuilder:
                     for axis in range(variable.array.rank)
                 )
                 result = self._opaque_result()
-            elif variable.binding.getter_action in {
+            elif variable.bridge.native_getter_action in {
                 ModuleGetterAction.NULLABLE_SNAPSHOT,
                 ModuleGetterAction.DERIVED_OBJECT,
             }:
@@ -998,7 +1004,7 @@ class _AuxiliaryEntrypointBuilder:
     # Derived module-origin transactions
     # ------------------------------------------------------------------
 
-    def _derived_origin_operations(self) -> tuple[NativeEntrypointOperationPlan, ...]:
+    def _derived_origin_operations(self) -> tuple[GeneratedSupportProcedureEntrypointPlan, ...]:
         operations = []
         for variable in self.variables:
             if variable.derived is None:

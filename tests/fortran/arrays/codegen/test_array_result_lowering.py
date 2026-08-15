@@ -59,12 +59,12 @@ def test_array_results_record_producer_shape_copy_ownership_and_shared_hidden_sl
     assert direct.source_kind == "direct_return"
     assert direct.binding.codegen_action is CodegenAction.COPY_OUT
     assert direct.bridge.native_action is NativeBarrierAction.NONE
-    assert direct.bridge_call_slot is None
+    assert direct.projected_call_slot is None
     assert hidden.source_kind == "hidden_output"
     assert hidden.binding.codegen_action is CodegenAction.COPY_OUT
     assert hidden.bridge.native_action is NativeBarrierAction.PASS_ARRAY_BUFFER
-    assert hidden.array is hidden.bridge_call_slot.array
-    assert hidden.bridge_call_slot.object_kind is ObjectKind.NUMPY_ARRAY
+    assert hidden.array is hidden.projected_call_slot.array
+    assert hidden.projected_call_slot.object_kind is ObjectKind.NUMPY_ARRAY
 
 
 def test_array_result_lowering_transfers_bridge_copy_to_capsule_owned_numpy_storage():
@@ -142,7 +142,7 @@ def test_array_result_plan_edits_fail_before_backend_lowering(edit: str, diagnos
     elif edit == "copy":
         direct.bridge.copy_reason = "edited"
     else:
-        hidden.bridge_call_slot.array = direct.array
+        hidden.projected_call_slot.array = direct.array
 
     with pytest.raises(ValueError, match=diagnostic):
         WrapperGenerator().generate(plan)

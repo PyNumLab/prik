@@ -1,4 +1,4 @@
-from prik.contracts import Arg, Complex128, Float64, Int32, Value, native_call, native_type
+from prik.contracts import Arg, Complex128, Float64, Int32, Value, native_abi, native_call, native_type
 
 @native_type(attributes=('bind(c)',))
 class point:
@@ -23,6 +23,7 @@ class tagged_point:
     position: point
     weight: Complex128
 
+@native_abi("c")
 def populate(
     value: tagged_point,
     x: Float64,
@@ -30,6 +31,7 @@ def populate(
     weight: Complex128
 ) -> None: ...
 
+@native_abi("c")
 @native_call([Value(Arg(0))])
 def score_by_value(
     value: tagged_point

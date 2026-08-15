@@ -36,6 +36,23 @@ end module pointer_semantics
     assert scalar.semantic_type.storage.pointer_depth == 1
 
 
+def test_fortran_optional_array_descriptor_preserves_absent_handle_state():
+    source = """
+module optional_descriptor_semantics
+contains
+  subroutine inspect(values)
+    real(8), allocatable, optional, intent(in) :: values(:)
+  end subroutine inspect
+end module optional_descriptor_semantics
+"""
+
+    module = fortran_module_to_semantic_module(parse_fortran_source(source))
+    values = get_function(module, "inspect").arguments[0]
+
+    assert values.optional is True
+    assert values.semantic_type.metadata[OPTIONAL_ABSENT_HANDLE_METADATA] is True
+
+
 def test_pyi_pointer_handles_preserve_rank_optionality_and_scalar_state():
     module = parse_pyi_text(
         """

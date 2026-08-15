@@ -59,6 +59,7 @@ from prik.policy.models import (
     ScalarDescriptorResultPolicy,
     TransformationPolicy,
     WritebackPhase,
+    NativeEntrypointAction,
 )
 from prik.policy.construction import (
     completed_class_surface_policy,
@@ -107,15 +108,20 @@ from prik.planning.models import (
     DerivedModuleObjectPlan,
     DerivedTypePlan,
     FunctionPlan,
+    GeneratedSupportProcedureEntrypointPlan,
     LifecycleActionPlan,
     ModulePlan,
     ModuleVariablePlan,
+    NativeGeneratedCodeGroupKind,
+    NativeGeneratedCodeGroupPlan,
+    GeneratedSupportProcedureImplementationOwner,
     NativeEntrypointArgumentPlan,
     NativeEntrypointCallbackPlan,
     NativeEntrypointFunctionPlan,
     NativeEntrypointModulePlan,
     NativeEntrypointModuleVariablePlan,
     NativeEntrypointParameterPlan,
+    NativeEntrypointProjectedSlotPlan,
     NativeEntrypointResultPlan,
     NamespacePlan,
     NativeArrayActualPlan,
@@ -135,7 +141,10 @@ from prik.naming.native_symbols import NativeSymbolNames
 from prik.semantics.scalar_types import BOOLEAN_SEMANTIC_TYPE_NAMES
 from prik.utilities.visitor import ClassVisitor
 
-from prik.planning.entrypoints import build_auxiliary_entrypoint_operations, build_callback_entrypoint_operation
+from prik.planning.entrypoints import (
+    build_generated_support_procedure_entrypoints,
+    build_callback_support_procedure_entrypoint,
+)
 
 
 _DATATYPE_FAMILIES = {
@@ -144,6 +153,7 @@ _DATATYPE_FAMILIES = {
     "Int16": DatatypeFamily.INTEGER,
     "Int32": DatatypeFamily.INTEGER,
     "Int64": DatatypeFamily.INTEGER,
+    "SizeT": DatatypeFamily.INTEGER,
     "Float32": DatatypeFamily.REAL,
     "Float64": DatatypeFamily.REAL,
     "Complex64": DatatypeFamily.COMPLEX,
@@ -308,16 +318,70 @@ class WrapperPlanner(ClassVisitor):
 
         # Complete stable namespace paths, generated symbols, and required headers.
         namespaces = self._namespace_plans(module.name, functions, variables, derived_types, classes, overloads)
+        support_procedures = build_generated_support_procedure_entrypoints(namespaces)
+        generated_code_groups = self._native_generated_code_groups(
+            module.name,
+            namespaces,
+            support_procedures,
+        )
         return ModulePlan(
             owner_path=module.name,
             binding=BindingModulePlan(module.name),
             entrypoint=NativeEntrypointModulePlan(
                 module.name,
-                build_auxiliary_entrypoint_operations(namespaces),
+                support_procedures,
+                ((module.origin.source_language,) if module.origin.source_language else ()),
             ),
-            bridge=BridgeModulePlan(module.name),
+            bridge=BridgeModulePlan(module.name) if generated_code_groups else None,
             namespaces=namespaces,
+            native_generated_code_groups=generated_code_groups,
             required_headers=self._required_headers(namespaces),
+        )
+
+    @staticmethod
+    def _native_generated_code_groups(
+        module_name: str,
+        namespaces: tuple[NamespacePlan, ...],
+        support_procedures: tuple[GeneratedSupportProcedureEntrypointPlan, ...],
+    ) -> tuple[NativeGeneratedCodeGroupPlan, ...]:
+        """Keep adapted-user and Fortran-support membership independently visible."""
+        source_paths = (f"bind_c_{module_name}_wrapper.f90",)
+        adapter_members = tuple(
+            function.owner_path
+            for namespace in namespaces
+            for function in namespace.functions
+            if function.bridge is not None
+        )
+        support_members = tuple(
+            procedure.key
+            for procedure in support_procedures
+            if procedure.implementation_owner is GeneratedSupportProcedureImplementationOwner.FORTRAN
+        )
+        return (
+            *(
+                (
+                    NativeGeneratedCodeGroupPlan(
+                        kind=NativeGeneratedCodeGroupKind.FORTRAN_ADAPTERS,
+                        language="fortran",
+                        member_keys=adapter_members,
+                        source_paths=source_paths,
+                    ),
+                )
+                if adapter_members
+                else ()
+            ),
+            *(
+                (
+                    NativeGeneratedCodeGroupPlan(
+                        kind=NativeGeneratedCodeGroupKind.FORTRAN_SUPPORT,
+                        language="fortran",
+                        member_keys=support_members,
+                        source_paths=source_paths,
+                    ),
+                )
+                if support_members
+                else ()
+            ),
         )
 
     def _namespace_member_plans(
@@ -936,7 +1000,8 @@ class WrapperPlanner(ClassVisitor):
         """Finalize shared C symbols after all generated-name collisions resolve."""
         for items in functions.values():
             for function in items:
-                function.entrypoint.symbol_name = f"bind_c_{function.symbol_name}"
+                if function.entrypoint.action is NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER:
+                    function.entrypoint.symbol_name = f"bind_c_{function.symbol_name}"
 
     def _qualify_variable_bridge_collisions(
         self,
@@ -1005,7 +1070,7 @@ class WrapperPlanner(ClassVisitor):
             bridge=BridgeModuleVariablePlan(
                 native_name=policy.native_name,
                 native_module=policy.native_module,
-                getter_action=policy.getter_action,
+                native_getter_action=policy.getter_action,
                 native_assignment=policy.native_assignment,
             ),
             array=self._array_plan(policy.array, policy.owner_path),
@@ -1056,13 +1121,14 @@ class WrapperPlanner(ClassVisitor):
         lifecycle actions, and all named roles required by lowering. ``public``
         only controls binding-table visibility for private overload targets.
         """
-        # Share native-call records before projecting their argument and result consumers.
-        bridge_call_slots = self._bridge_slot_plans(policy)
-        arguments = self._argument_plans(policy, bridge_call_slots)
-        results = self._result_plans(policy, bridge_call_slots)
-        entrypoint_results = self._entrypoint_result_plans(results, bridge_call_slots)
+        # Project one authoritative binding/entrypoint sequence, then attach an
+        # adapter facet only for operations whose completed action selected it.
+        projected_slots = self._projected_slot_plans(policy)
+        arguments = self._argument_plans(policy, projected_slots)
+        results = self._result_plans(policy, projected_slots)
+        entrypoint_results = self._entrypoint_result_plans(results, projected_slots)
         declaration_callables = tuple(self._declaration_callable_plan(item) for item in policy.declaration_callables)
-        status_error = self._status_error_plan(policy.status_error, bridge_call_slots)
+        status_error = self._status_error_plan(policy.status_error, projected_slots)
 
         # Retain the completed action order; later stages only dispatch from it.
         writeback_actions = tuple(self.visit(action) for action in policy.writeback_actions)
@@ -1080,28 +1146,41 @@ class WrapperPlanner(ClassVisitor):
                 public=public,
             ),
             entrypoint=NativeEntrypointFunctionPlan(
-                symbol_name=f"bind_c_{export.name.casefold()}",
-                parameters=self._entrypoint_parameter_plans(arguments, entrypoint_results),
+                symbol_name=(
+                    policy.entrypoint_symbol
+                    if policy.entrypoint_action is NativeEntrypointAction.DIRECT_C_ABI
+                    else f"bind_c_{export.name.casefold()}"
+                ),
+                action=policy.entrypoint_action,
+                parameters=self._entrypoint_parameter_plans(
+                    arguments,
+                    entrypoint_results,
+                    projected_slots,
+                ),
                 results=entrypoint_results,
+                projected_slots=projected_slots,
             ),
-            bridge=BridgeFunctionPlan(
-                policy.native_name,
-                policy.native_invocation,
-                policy.native_operator,
-                policy.standalone,
-                policy.external_declaration,
-                policy.native_module,
-                policy.native_is_subroutine,
+            bridge=(
+                BridgeFunctionPlan(
+                    policy.native_name,
+                    policy.native_invocation,
+                    policy.native_operator,
+                    policy.standalone,
+                    policy.external_declaration,
+                    policy.native_module,
+                    policy.native_is_subroutine,
+                )
+                if policy.entrypoint_action is NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER
+                else None
             ),
             class_call=self._class_call_plan(policy),
             arguments=arguments,
             results=results,
-            bridge_call_slots=bridge_call_slots,
             declaration_callables=declaration_callables,
             available_roles=self._available_roles(
                 arguments,
                 results,
-                bridge_call_slots,
+                projected_slots,
                 declaration_callables,
             ),
             writeback_actions=writeback_actions,
@@ -1133,17 +1212,20 @@ class WrapperPlanner(ClassVisitor):
     def _entrypoint_parameter_plans(
         arguments: tuple[ArgumentTransferPlan, ...],
         results: tuple[NativeEntrypointResultPlan, ...],
+        projected_slots: tuple[NativeEntrypointProjectedSlotPlan, ...],
     ) -> tuple[NativeEntrypointParameterPlan, ...]:
         """Record C-ABI parameter groups in emitted call/prototype order."""
-        groups: list[tuple[str, str]] = [
-            (argument.owner_path, "argument")
-            for argument in sorted(arguments, key=lambda item: item.bridge_call_slot.native_position)
-        ]
+        argument_owners = {argument.owner_path for argument in arguments}
+        groups: list[tuple[str, str, int | None]] = []
+        for slot in sorted(projected_slots, key=lambda item: item.native_position):
+            if slot.source_kind == "result":
+                groups.append((slot.owner_path, "hidden_result", slot.native_position))
+            elif slot.owner_path in argument_owners:
+                groups.append((slot.owner_path, "argument", slot.native_position))
+            else:
+                groups.append((slot.owner_path, "projected_slot", slot.native_position))
         groups.extend(
-            (result.owner_path, "hidden_result") for result in results if result.source_kind == "hidden_output"
-        )
-        groups.extend(
-            (result.owner_path, "direct_result")
+            (result.owner_path, "direct_result", None)
             for result in results
             if result.source_kind == "direct_return"
             and (
@@ -1155,32 +1237,39 @@ class WrapperPlanner(ClassVisitor):
             )
         )
         groups.extend(
-            (result.owner_path, "declaration_extent")
+            (result.owner_path, "declaration_extent", None)
             for result in results
             if result.array is not None and "bridge" in result.array.extent_evaluation
         )
         return tuple(
-            NativeEntrypointParameterPlan(owner_path=owner, position=position, source_kind=source_kind)
-            for position, (owner, source_kind) in enumerate(groups)
+            NativeEntrypointParameterPlan(
+                owner_path=owner,
+                position=position,
+                source_kind=source_kind,
+                native_position=native_position,
+            )
+            for position, (owner, source_kind, native_position) in enumerate(groups)
         )
 
     def _entrypoint_result_plans(
         self,
         results: tuple[ResultPlan, ...],
-        bridge_call_slots: tuple[BridgeCallSlotPlan, ...],
+        projected_slots: tuple[NativeEntrypointProjectedSlotPlan, ...],
     ) -> tuple[NativeEntrypointResultPlan, ...]:
         """Collect every C-ABI result, including binding-private status outputs."""
         public = {result.owner_path: result.entrypoint for result in results}
         hidden = tuple(
             public.get(slot.owner_path) or self._entrypoint_result_plan_from_slot(slot)
-            for slot in sorted(bridge_call_slots, key=lambda item: item.native_position)
+            for slot in sorted(projected_slots, key=lambda item: item.native_position)
             if slot.source_kind == "result"
         )
         direct = tuple(result.entrypoint for result in results if result.source_kind == "direct_return")
         return (*hidden, *direct)
 
     @staticmethod
-    def _entrypoint_result_plan_from_slot(slot: BridgeCallSlotPlan) -> NativeEntrypointResultPlan:
+    def _entrypoint_result_plan_from_slot(
+        slot: NativeEntrypointProjectedSlotPlan,
+    ) -> NativeEntrypointResultPlan:
         """Project one non-public hidden output into the shared C-ABI result view."""
         if slot.semantic_type_name is None or slot.datatype_family is None or slot.object_kind is None:
             raise ValueError(f"Hidden entrypoint result {slot.owner_path!r} has incomplete type facts")
@@ -1198,6 +1287,7 @@ class WrapperPlanner(ClassVisitor):
             array=slot.array,
             native_array_handle=slot.native_array_handle,
             scalar_descriptor=slot.scalar_descriptor,
+            passing=slot.passing,
         )
 
     @staticmethod
@@ -1205,7 +1295,7 @@ class WrapperPlanner(ClassVisitor):
         arguments: tuple[ArgumentTransferPlan, ...],
     ) -> dict[str, str]:
         """Map every binding-produced value or extent role to its argument owner."""
-        owners = {argument.binding.handoff_role: argument.owner_path for argument in arguments}
+        owners = {argument.entrypoint.handoff_role: argument.owner_path for argument in arguments}
         owners.update(
             {
                 role: argument.owner_path
@@ -1280,12 +1370,75 @@ class WrapperPlanner(ClassVisitor):
         owners.discard(argument.owner_path)
         return owners
 
-    def _bridge_slot_plans(self, policy: FunctionWrapperPolicy) -> tuple[BridgeCallSlotPlan, ...]:
-        """Project ordered original-Fortran call slots and symbolic roles."""
-        return tuple(
-            self._bridge_slot_plan(slot, self._native_slot_role(slot, policy.results))
-            for slot in policy.native_call_slots
-        )
+    def _projected_slot_plans(
+        self,
+        policy: FunctionWrapperPolicy,
+    ) -> tuple[NativeEntrypointProjectedSlotPlan, ...]:
+        """Project policy-owned entrypoint slots before optional adapter facets."""
+        adapted = policy.entrypoint_action is NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER
+        projected = []
+        for slot_policy in policy.native_call_slots:
+            role = self._native_slot_role(slot_policy, policy.results)
+            include_buffer_roles = slot_policy.native_barrier_action is NativeBarrierAction.PASS_ARRAY_BUFFER
+            array = self._array_plan(
+                slot_policy.array,
+                slot_policy.owner_path,
+                include_buffer_roles=include_buffer_roles,
+                include_dense_actual_role=include_buffer_roles and slot_policy.python_position is not None,
+            )
+            native_array_handle = self._native_array_handle_plan(
+                slot_policy.native_array_handle,
+                slot_policy.owner_path,
+                array=array,
+            )
+            scalar_descriptor = self._scalar_descriptor_result_plan(
+                slot_policy.scalar_descriptor,
+                slot_policy.owner_path,
+            )
+            derived = self._derived_handoff_plan(slot_policy.derived)
+            datatype_family = (
+                self._transfer_datatype_family(
+                    slot_policy.semantic_type_name,
+                    slot_policy.derived,
+                    callback=slot_policy.callback,
+                )
+                if slot_policy.semantic_type_name
+                else None
+            )
+            projected.append(
+                NativeEntrypointProjectedSlotPlan(
+                    owner_path=slot_policy.owner_path,
+                    native_position=slot_policy.native_position,
+                    source_kind=slot_policy.source_kind,
+                    python_position=slot_policy.python_position,
+                    python_name=slot_policy.python_name,
+                    native_name=slot_policy.native_name,
+                    value_kind=slot_policy.value_kind,
+                    symbolic_role=role,
+                    object_kind=slot_policy.object_kind,
+                    scalar_logical_abi=slot_policy.scalar_logical_abi,
+                    scalar_native_type=slot_policy.scalar_native_type,
+                    array_logical_abi=slot_policy.array_logical_abi,
+                    array_native_type=slot_policy.array_native_type,
+                    array_copy_in=slot_policy.array_copy_in,
+                    array_copy_out=slot_policy.array_copy_out,
+                    literal_type=slot_policy.literal_type,
+                    literal_value=slot_policy.literal_value,
+                    result_position=slot_policy.result_position,
+                    semantic_type_name=slot_policy.semantic_type_name,
+                    datatype_family=datatype_family,
+                    character_length=slot_policy.character_length,
+                    array=array,
+                    native_array_handle=native_array_handle,
+                    scalar_descriptor=scalar_descriptor,
+                    derived=derived,
+                    projection_action=slot_policy.projection_action,
+                    passing=slot_policy.entrypoint_passing,
+                    optionality=slot_policy.entrypoint_optionality,
+                    adapter=(self._bridge_slot_plan(slot_policy) if adapted else None),
+                )
+            )
+        return tuple(projected)
 
     @staticmethod
     def _class_call_plan(policy: FunctionWrapperPolicy) -> ClassCallPlan | None:
@@ -1302,13 +1455,13 @@ class WrapperPlanner(ClassVisitor):
     def _argument_plans(
         self,
         policy: FunctionWrapperPolicy,
-        bridge_call_slots: tuple[BridgeCallSlotPlan, ...],
+        projected_slots: tuple[NativeEntrypointProjectedSlotPlan, ...],
     ) -> tuple[ArgumentTransferPlan, ...]:
         """Return declared transfers sharing original-Fortran call slots."""
         return tuple(
             self.visit(
                 argument,
-                bridge_slot=self._planned_bridge_slot(bridge_call_slots, argument.owner_path),
+                projected_slot=self._planned_bridge_slot(projected_slots, argument.owner_path),
             )
             for argument in policy.arguments
         )
@@ -1316,13 +1469,14 @@ class WrapperPlanner(ClassVisitor):
     def _result_plans(
         self,
         policy: FunctionWrapperPolicy,
-        bridge_call_slots: tuple[BridgeCallSlotPlan, ...],
+        projected_slots: tuple[NativeEntrypointProjectedSlotPlan, ...],
     ) -> tuple[ResultPlan, ...]:
         """Return ordered result consumers sharing completed native slots."""
         return tuple(
             self.visit(
                 result,
-                bridge_slot=self._result_bridge_slot(result, bridge_call_slots),
+                projected_slot=self._result_bridge_slot(result, projected_slots),
+                adapted=policy.entrypoint_action is NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER,
             )
             for result in sorted(policy.results, key=lambda item: item.result_position)
         )
@@ -1332,7 +1486,7 @@ class WrapperPlanner(ClassVisitor):
         self,
         policy: ArgumentPolicy,
         *,
-        bridge_slot: BridgeCallSlotPlan,
+        projected_slot: NativeEntrypointProjectedSlotPlan,
     ) -> ArgumentTransferPlan:
         """Project one completed argument transfer around its shared native slot.
 
@@ -1342,7 +1496,7 @@ class WrapperPlanner(ClassVisitor):
         """
         # Derive only symbolic role names; all transfer behavior is policy-owned.
         role = self._value_role(policy.owner_path)
-        native_array_handle = bridge_slot.native_array_handle
+        native_array_handle = projected_slot.native_array_handle
         length_role = self._argument_length_role(policy)
         return ArgumentTransferPlan(
             owner_path=policy.owner_path,
@@ -1373,23 +1527,23 @@ class WrapperPlanner(ClassVisitor):
             projects_result=policy.projects_result,
             python_visible=policy.python_visible,
             result_position=policy.result_position,
-            array=bridge_slot.array,
+            array=projected_slot.array,
             native_array_actual=self._native_array_actual_plan(policy.native_array_actual),
             native_array_handle=native_array_handle,
-            derived=bridge_slot.derived,
+            derived=projected_slot.derived,
             derived_call=self._derived_call_plan(policy.derived_call),
             callback=self._callback_handoff_plan(policy.callback),
             polymorphic=self._polymorphic_dispatch_plan(policy.polymorphic),
-            binding=self._binding_argument_plan(policy, role, length_role),
+            binding=self._binding_argument_plan(policy),
             entrypoint=self._entrypoint_argument_plan(
                 policy,
-                bridge_slot,
+                projected_slot,
                 native_array_handle,
                 role,
                 length_role,
             ),
-            bridge=self._bridge_argument_plan(policy),
-            bridge_call_slot=bridge_slot,
+            bridge=(self._bridge_argument_plan(policy) if projected_slot.adapter is not None else None),
+            projected_call_slot=projected_slot,
             transformations=tuple(self.visit(item) for item in policy.transformations),
         )
 
@@ -1413,7 +1567,7 @@ class WrapperPlanner(ClassVisitor):
                 abort_symbol=f"prik_callback_abort_{stem}",
             ),
             entrypoint=NativeEntrypointCallbackPlan(
-                build_callback_entrypoint_operation(
+                support_procedure=build_callback_support_procedure_entrypoint(
                     policy.owner_path,
                     trampoline_symbol,
                     arguments,
@@ -1553,8 +1707,6 @@ class WrapperPlanner(ClassVisitor):
     @staticmethod
     def _binding_argument_plan(
         policy: ArgumentPolicy,
-        role: str,
-        length_role: str | None,
     ) -> BindingArgumentPlan:
         """Project the binding-facing view without revisiting semantic decisions."""
         return BindingArgumentPlan(
@@ -1562,18 +1714,16 @@ class WrapperPlanner(ClassVisitor):
             python_action=policy.python_barrier_action,
             codegen_action=policy.codegen_action,
             conversion_phase=policy.conversion_phase,
-            handoff_role=role,
             optional_mode=policy.optional_mode,
             nullable=policy.nullable,
             writable=policy.writable,
             descriptor_boundary=policy.descriptor_boundary,
-            length_handoff_role=length_role,
         )
 
     def _entrypoint_argument_plan(
         self,
         policy: ArgumentPolicy,
-        bridge_slot: BridgeCallSlotPlan,
+        projected_slot: NativeEntrypointProjectedSlotPlan,
         native_array_handle: NativeArrayHandlePlan | None,
         role: str,
         length_role: str | None,
@@ -1585,6 +1735,13 @@ class WrapperPlanner(ClassVisitor):
             handoff_role=role,
             optional_mode=policy.optional_mode,
             presence_role=self._argument_presence_role(policy, native_array_handle),
+            passing=policy.entrypoint_passing,
+            optionality=policy.entrypoint_optionality,
+            pass_character_length=policy.entrypoint_pass_character_length,
+            pass_array_metadata=policy.entrypoint_pass_array_metadata,
+            pass_descriptor_presence=policy.entrypoint_pass_descriptor_presence,
+            pass_derived_transaction=policy.entrypoint_pass_derived_transaction,
+            pass_callback_parameter=policy.entrypoint_pass_callback_parameter,
             length_handoff_role=length_role,
             descriptor_output_role=self._required_descriptor_output_role(policy, "descriptor-output"),
             descriptor_output_presence_role=self._required_descriptor_output_role(
@@ -1676,7 +1833,8 @@ class WrapperPlanner(ClassVisitor):
         self,
         policy: ResultPolicy,
         *,
-        bridge_slot: BridgeCallSlotPlan | None,
+        projected_slot: NativeEntrypointProjectedSlotPlan | None,
+        adapted: bool,
     ) -> ResultPlan:
         """Project one completed result with shared binding and bridge views.
 
@@ -1686,13 +1844,12 @@ class WrapperPlanner(ClassVisitor):
         slot from which to obtain its ABI details.
         """
         native_role = f"{policy.owner_path}:native-result"
-        if policy.source_kind == "hidden_output" and bridge_slot is None:
+        if policy.source_kind == "hidden_output" and projected_slot is None:
             raise ValueError(f"{policy.owner_path!r} hidden result requires its completed native-call slot")
-
         # Reuse hidden-output records, or project the direct-result facets once.
-        array = self._result_array_plan(policy, bridge_slot)
-        native_array_handle = self._result_native_array_handle_plan(policy, bridge_slot, array)
-        scalar_descriptor = self._result_scalar_descriptor_plan(policy, bridge_slot)
+        array = self._result_array_plan(policy, projected_slot)
+        native_array_handle = self._result_native_array_handle_plan(policy, projected_slot, array)
+        scalar_descriptor = self._result_scalar_descriptor_plan(policy, projected_slot)
         datatype_family = self._transfer_datatype_family(policy.semantic_type_name, policy.derived)
         return ResultPlan(
             owner_path=policy.owner_path,
@@ -1710,7 +1867,9 @@ class WrapperPlanner(ClassVisitor):
             nullable=policy.ownership.nullable,
             array=array,
             native_array_handle=native_array_handle,
-            derived=(bridge_slot.derived if bridge_slot is not None else self._derived_handoff_plan(policy.derived)),
+            derived=(
+                projected_slot.derived if projected_slot is not None else self._derived_handoff_plan(policy.derived)
+            ),
             binding=BindingResultPlan(
                 policy.codegen_action,
                 policy.python_barrier_action,
@@ -1730,15 +1889,20 @@ class WrapperPlanner(ClassVisitor):
                 array=array,
                 native_array_handle=native_array_handle,
                 scalar_descriptor=scalar_descriptor,
+                passing=policy.entrypoint_passing,
             ),
-            bridge=BridgeResultPlan(
-                policy.codegen_action,
-                policy.native_barrier_action,
-                policy.bridge_data_action,
-                policy.bridge_copy_reason,
-                policy.native_name,
+            bridge=(
+                BridgeResultPlan(
+                    policy.codegen_action,
+                    policy.native_barrier_action,
+                    policy.bridge_data_action,
+                    policy.bridge_copy_reason,
+                    policy.native_name,
+                )
+                if adapted
+                else None
             ),
-            bridge_call_slot=bridge_slot,
+            projected_call_slot=projected_slot,
             scalar_descriptor=scalar_descriptor,
             transformations=tuple(self.visit(item) for item in policy.transformations),
         )
@@ -1746,11 +1910,11 @@ class WrapperPlanner(ClassVisitor):
     def _result_array_plan(
         self,
         policy: ResultPolicy,
-        bridge_slot: BridgeCallSlotPlan | None,
+        projected_slot: NativeEntrypointProjectedSlotPlan | None,
     ) -> ArrayHandoffPlan | None:
         """Reuse a hidden slot array or project one direct result array."""
-        if bridge_slot is not None:
-            return bridge_slot.array
+        if projected_slot is not None:
+            return projected_slot.array
         return self._array_plan(
             policy.array,
             policy.owner_path,
@@ -1760,78 +1924,34 @@ class WrapperPlanner(ClassVisitor):
     def _result_native_array_handle_plan(
         self,
         policy: ResultPolicy,
-        bridge_slot: BridgeCallSlotPlan | None,
+        projected_slot: NativeEntrypointProjectedSlotPlan | None,
         array: ArrayHandoffPlan | None,
     ) -> NativeArrayHandlePlan | None:
         """Reuse a hidden slot handle or project one direct result handle."""
-        if bridge_slot is not None:
-            return bridge_slot.native_array_handle
+        if projected_slot is not None:
+            return projected_slot.native_array_handle
         return self._native_array_handle_plan(policy.native_array_handle, policy.owner_path, array=array)
 
     def _result_scalar_descriptor_plan(
         self,
         policy: ResultPolicy,
-        bridge_slot: BridgeCallSlotPlan | None,
+        projected_slot: NativeEntrypointProjectedSlotPlan | None,
     ) -> ScalarDescriptorResultPlan | None:
         """Reuse exact hidden descriptor state or project one direct result."""
-        if bridge_slot is not None:
-            return bridge_slot.scalar_descriptor
+        if projected_slot is not None:
+            return projected_slot.scalar_descriptor
         return self._scalar_descriptor_result_plan(policy.scalar_descriptor, policy.owner_path)
 
-    def _bridge_slot_plan(self, slot: NativeCallSlotPolicy, role: str) -> BridgeCallSlotPlan:
-        """Project one original-Fortran slot shared by transfers and the call.
-
-        ``role`` is its externally visible symbolic source.  Buffer and dense
-        array roles are included only when the completed native action requires
-        them.  The method copies completed actions and ABI facts into one plan
-        record; it never chooses a backend mechanism.
-        """
-        # The completed native action determines only which already-selected roles are needed.
-        include_buffer_roles = slot.native_barrier_action is NativeBarrierAction.PASS_ARRAY_BUFFER
-        array = self._array_plan(
-            slot.array,
-            slot.owner_path,
-            include_buffer_roles=include_buffer_roles,
-            include_dense_actual_role=include_buffer_roles and slot.python_position is not None,
-        )
+    @staticmethod
+    def _bridge_slot_plan(
+        slot: NativeCallSlotPolicy,
+    ) -> BridgeCallSlotPlan:
+        """Project only adapter-local actions for one shared call slot."""
         return BridgeCallSlotPlan(
-            owner_path=slot.owner_path,
-            native_position=slot.native_position,
-            source_kind=slot.source_kind,
-            python_position=slot.python_position,
-            python_name=slot.python_name,
-            native_name=slot.native_name,
-            value_kind=slot.value_kind,
-            symbolic_role=role,
             native_action=slot.native_barrier_action,
             codegen_action=slot.codegen_action,
             bridge_data_action=slot.bridge_data_action,
             bridge_copy_reason=slot.bridge_copy_reason,
-            object_kind=slot.object_kind,
-            scalar_logical_abi=slot.scalar_logical_abi,
-            scalar_native_type=slot.scalar_native_type,
-            array_logical_abi=slot.array_logical_abi,
-            array_native_type=slot.array_native_type,
-            array_copy_in=slot.array_copy_in,
-            array_copy_out=slot.array_copy_out,
-            literal_type=slot.literal_type,
-            literal_value=slot.literal_value,
-            result_position=slot.result_position,
-            semantic_type_name=slot.semantic_type_name,
-            datatype_family=(
-                self._transfer_datatype_family(
-                    slot.semantic_type_name,
-                    slot.derived,
-                    callback=slot.callback,
-                )
-                if slot.semantic_type_name
-                else None
-            ),
-            character_length=slot.character_length,
-            array=array,
-            native_array_handle=self._native_array_handle_plan(slot.native_array_handle, slot.owner_path, array=array),
-            scalar_descriptor=self._scalar_descriptor_result_plan(slot.scalar_descriptor, slot.owner_path),
-            derived=self._derived_handoff_plan(slot.derived),
         )
 
     # Derived-type argument, result, and module handoff planning.
@@ -2183,12 +2303,12 @@ class WrapperPlanner(ClassVisitor):
     def _status_error_plan(
         self,
         policy: NativeStatusErrorPolicy | None,
-        bridge_call_slots: tuple[BridgeCallSlotPlan, ...],
+        projected_slots: tuple[NativeEntrypointProjectedSlotPlan, ...],
     ) -> BindingStatusErrorPlan | None:
         """Project one completed native-status decision into binding roles."""
         if policy is None:
             return None
-        roles = {slot.owner_path: slot.symbolic_role for slot in bridge_call_slots}
+        roles = {slot.owner_path: slot.symbolic_role for slot in projected_slots}
         try:
             status_role = roles[policy.status.owner_path]
             message_role = roles[policy.message.owner_path] if policy.message is not None else None
@@ -2203,11 +2323,11 @@ class WrapperPlanner(ClassVisitor):
 
     def _planned_bridge_slot(
         self,
-        bridge_call_slots: tuple[BridgeCallSlotPlan, ...],
+        projected_slots: tuple[NativeEntrypointProjectedSlotPlan, ...],
         owner_path: str,
-    ) -> BridgeCallSlotPlan:
-        """Return the one shared editable original-call slot for an owner."""
-        for slot in bridge_call_slots:
+    ) -> NativeEntrypointProjectedSlotPlan:
+        """Return the one authoritative projected slot for an owner."""
+        for slot in projected_slots:
             if slot.owner_path == owner_path:
                 return slot
         raise ValueError(f"{owner_path!r} is missing a completed native-call slot")
@@ -2215,18 +2335,18 @@ class WrapperPlanner(ClassVisitor):
     def _result_bridge_slot(
         self,
         result_policy: ResultPolicy,
-        bridge_call_slots: tuple[BridgeCallSlotPlan, ...],
-    ) -> BridgeCallSlotPlan | None:
+        projected_slots: tuple[NativeEntrypointProjectedSlotPlan, ...],
+    ) -> NativeEntrypointProjectedSlotPlan | None:
         """Return the completed slot for one hidden result, if any."""
         if result_policy.source_kind != "hidden_output":
             return None
-        return self._planned_bridge_slot(bridge_call_slots, result_policy.owner_path)
+        return self._planned_bridge_slot(projected_slots, result_policy.owner_path)
 
     def _available_roles(
         self,
         arguments: tuple[ArgumentTransferPlan, ...],
         results: tuple[ResultPlan, ...],
-        bridge_call_slots: tuple[BridgeCallSlotPlan, ...],
+        projected_slots: tuple[NativeEntrypointProjectedSlotPlan, ...],
         declaration_callables: tuple[DeclarationCallablePlan, ...],
     ) -> tuple[str, ...]:
         """Return symbolic roles available after the native call."""
@@ -2234,7 +2354,7 @@ class WrapperPlanner(ClassVisitor):
             *self._argument_handoff_roles(arguments),
             *self._argument_extent_roles(arguments),
             *self._argument_descriptor_output_roles(arguments),
-            *self._native_result_roles(bridge_call_slots),
+            *self._native_result_roles(projected_slots),
             *self._direct_result_roles(results),
             *self._declaration_callable_roles(declaration_callables),
         )
@@ -2243,7 +2363,7 @@ class WrapperPlanner(ClassVisitor):
     @staticmethod
     def _argument_handoff_roles(arguments: tuple[ArgumentTransferPlan, ...]) -> tuple[str, ...]:
         """Return the primary binding-produced role for every argument."""
-        return tuple(argument.binding.handoff_role for argument in arguments)
+        return tuple(argument.entrypoint.handoff_role for argument in arguments)
 
     @staticmethod
     def _argument_descriptor_output_roles(arguments: tuple[ArgumentTransferPlan, ...]) -> tuple[str, ...]:
@@ -2320,9 +2440,12 @@ class WrapperPlanner(ClassVisitor):
             *(result.native_array_handle for result in function.results),
         )
 
-    def _native_result_roles(self, bridge_call_slots: tuple[BridgeCallSlotPlan, ...]) -> tuple[str, ...]:
+    def _native_result_roles(
+        self,
+        projected_slots: tuple[NativeEntrypointProjectedSlotPlan, ...],
+    ) -> tuple[str, ...]:
         """Return every role produced through a native result slot."""
-        return tuple(slot.symbolic_role for slot in bridge_call_slots if slot.source_kind == "result")
+        return tuple(slot.symbolic_role for slot in projected_slots if slot.source_kind == "result")
 
     def _direct_result_roles(self, results: tuple[ResultPlan, ...]) -> tuple[str, ...]:
         """Return direct-return roles produced by the shared entrypoint result."""

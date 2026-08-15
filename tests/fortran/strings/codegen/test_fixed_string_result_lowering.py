@@ -68,14 +68,14 @@ def test_fixed_strings_reuse_ordered_result_plans_with_completed_length_and_copy
     assert direct.source_kind == "direct_return"
     assert direct.binding.codegen_action is CodegenAction.COPY_OUT
     assert direct.bridge.native_action is NativeBarrierAction.NONE
-    assert direct.bridge_call_slot is None
+    assert direct.projected_call_slot is None
 
     assert hidden.source_kind == "hidden_output"
     assert hidden.binding.codegen_action is CodegenAction.COPY_OUT
     assert hidden.bridge.native_action is NativeBarrierAction.PASS_CALL_LOCAL_ADDRESS
-    assert hidden.bridge_call_slot is functions["hidden_label"].bridge_call_slots[0]
-    assert hidden.bridge_call_slot.object_kind is ObjectKind.STRING
-    assert hidden.bridge_call_slot.character_length == hidden.character_length
+    assert hidden.projected_call_slot is functions["hidden_label"].entrypoint.projected_slots[0]
+    assert hidden.projected_call_slot.object_kind is ObjectKind.STRING
+    assert hidden.projected_call_slot.character_length == hidden.character_length
 
 
 def test_fixed_string_results_dispatch_to_named_binding_and_bridge_copy_lowering():
@@ -151,7 +151,7 @@ def test_fixed_string_result_plan_edits_fail_before_backend_lowering(edit: str, 
     elif edit == "nullable":
         direct.nullable = True
     else:
-        hidden.bridge_call_slot.character_length = 7
+        hidden.projected_call_slot.character_length = 7
 
     with pytest.raises(ValueError, match=diagnostic):
         WrapperGenerator().generate(plan)

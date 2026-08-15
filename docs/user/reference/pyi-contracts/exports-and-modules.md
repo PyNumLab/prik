@@ -112,6 +112,23 @@ from prik.contracts import Float64, bind, standalone
 def norm2(values: Float64[:]) -> Float64: ...
 ```
 
+When an original Fortran procedure was declared `bind(C)`, preserve that ABI
+fact separately with `@native_abi("c")`. An optional `@bind(...)` then names
+its linkable label; neither decorator changes the procedure's module or
+standalone placement:
+
+```python
+from prik.contracts import Float64, bind, native_abi
+
+@native_abi("c")
+@bind("vendor_norm2")
+def norm2(values: Float64[:]) -> Float64: ...
+```
+
+This marker does not guarantee direct routing. Policy still validates the
+complete operation before choosing the direct C ABI entrypoint or a generated
+Fortran adapter.
+
 The declaration must include the correct native arguments, types, ranks, and
 call shape. Adding Python syntax cannot create a native procedure that is not
 present in the linked implementation.

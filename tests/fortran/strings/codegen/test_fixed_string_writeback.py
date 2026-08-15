@@ -66,7 +66,7 @@ def test_fixed_replacement_projects_completed_argument_and_lifecycle_facts():
     assert argument.result_position == 0
     assert argument.binding.codegen_action is CodegenAction.COPY_IN_OUT
     assert argument.bridge.codegen_action is CodegenAction.COPY_IN_OUT
-    assert argument.bridge_call_slot.codegen_action is CodegenAction.COPY_IN_OUT
+    assert argument.projected_call_slot.adapter.codegen_action is CodegenAction.COPY_IN_OUT
     assert argument.bridge.data_action is BridgeDataAction.COPY_REPRESENTATION
     assert argument.bridge.copy_reason == STRING_REPLACEMENT_COPY_REASON
     assert tuple(action.phase for action in replacement.writeback_actions) == tuple(WritebackPhase)
@@ -136,7 +136,7 @@ def optional_identity(label: String = ...) -> None: ...
     for name in ("assumed", "optional", "optional_identity"):
         argument = functions[name].arguments[0]
         assert argument.character_length is None
-        assert argument.bridge_call_slot.character_length is None
+        assert argument.projected_call_slot.character_length is None
     assert functions["assumed"].arguments[0].binding.optional_mode is OptionalMode.REQUIRED
     assert functions["optional"].arguments[0].binding.optional_mode is OptionalMode.NULLABLE_VALUE
     assert functions["optional"].arguments[0].nullable is True
@@ -193,7 +193,7 @@ def test_fixed_string_writeback_plan_edits_fail_before_backend_lowering(edit: st
         argument.ownership_owner = OwnershipOwner.NATIVE
     elif edit == "wrong-copy-reason":
         argument.bridge.copy_reason = "an edited copy reason"
-        argument.bridge_call_slot.bridge_copy_reason = "an edited copy reason"
+        argument.projected_call_slot.adapter.bridge_copy_reason = "an edited copy reason"
     elif edit == "missing-cleanup":
         function.writeback_actions = tuple(
             action for action in function.writeback_actions if action.phase is not WritebackPhase.CLEANUP

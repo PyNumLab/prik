@@ -169,7 +169,7 @@ def test_module_variable_visitors_consume_their_backend_owned_actions():
         ),
         bridge=replace(
             counter.bridge,
-            getter_action=ModuleGetterAction.DIRECT_VALUE,
+            native_getter_action=ModuleGetterAction.DIRECT_VALUE,
             native_assignment=AssignmentMode.VALUE_COPY,
         ),
     )
@@ -265,19 +265,21 @@ def test_module_variable_generators_dispatch_get_set_and_rejection_from_plan():
     assert "selected_scale = value" not in fortran_source
 
 
-def test_auxiliary_entrypoint_symbol_is_shared_by_both_boundary_lowerers():
+def test_generated_support_procedure_symbol_is_shared_by_both_boundary_lowerers():
     plan = _plan()
-    operation = next(
+    procedure = next(
         item
-        for item in plan.entrypoint.operations
+        for item in plan.entrypoint.support_procedures
         if item.owner_path == "scalar_state.counter" and item.role == "module:set"
     )
-    renamed = replace(operation, symbol_name="planned_counter_assignment")
+    renamed = replace(procedure, symbol_name="planned_counter_assignment")
     edited = replace(
         plan,
         entrypoint=replace(
             plan.entrypoint,
-            operations=tuple(renamed if item is operation else item for item in plan.entrypoint.operations),
+            support_procedures=tuple(
+                renamed if item is procedure else item for item in plan.entrypoint.support_procedures
+            ),
         ),
     )
 
@@ -291,15 +293,15 @@ def test_auxiliary_entrypoint_symbol_is_shared_by_both_boundary_lowerers():
     assert 'bind(c, name="planned_counter_assignment")' in fortran_source
 
 
-def test_missing_auxiliary_entrypoint_fails_before_lowering():
+def test_missing_generated_support_procedure_fails_before_lowering():
     plan = _plan()
     edited = replace(
         plan,
         entrypoint=replace(
             plan.entrypoint,
-            operations=tuple(
+            support_procedures=tuple(
                 item
-                for item in plan.entrypoint.operations
+                for item in plan.entrypoint.support_procedures
                 if not (item.owner_path == "scalar_state.counter" and item.role == "module:set")
             ),
         ),
@@ -352,29 +354,4 @@ def test_generator_rejects_python_module_setter_without_bridge_handoff():
     )
 
     with pytest.raises(ValueError, match="missing-module-setter-role"):
-        WrapperGenerator().generate(invalid)
-
-
-def test_generator_rejects_binding_bridge_module_getter_disagreement():
-    plan = _plan()
-    counter = next(
-        variable for variable in plan.namespaces[0].variables if variable.binding.python_names == ("counter",)
-    )
-    invalid_counter = replace(
-        counter,
-        bridge=replace(counter.bridge, getter_action=ModuleGetterAction.NULLABLE_SNAPSHOT),
-    )
-    invalid = replace(
-        plan,
-        namespaces=(
-            replace(
-                plan.namespaces[0],
-                variables=tuple(
-                    invalid_counter if variable is counter else variable for variable in plan.namespaces[0].variables
-                ),
-            ),
-        ),
-    )
-
-    with pytest.raises(ValueError, match="inconsistent-module-getter-action"):
         WrapperGenerator().generate(invalid)

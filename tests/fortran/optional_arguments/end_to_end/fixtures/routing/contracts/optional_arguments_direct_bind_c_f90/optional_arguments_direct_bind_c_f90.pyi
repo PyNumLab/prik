@@ -1,0 +1,13 @@
+from prik.contracts import Addr, Arg, Float64, Int32, Return, native_abi, native_call
+
+@native_abi("c")
+@native_call([Addr(Arg(0))])
+def optional_state(
+    value: Float64 = ...
+) -> Int32: ...
+
+@native_abi("c")
+@native_call([Addr(Arg(0)), Return('total', 0)])
+def add_optional(
+    value: Float64 = ...
+) -> Float64: ...

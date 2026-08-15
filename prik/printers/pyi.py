@@ -291,6 +291,10 @@ class PyiPrinter(ClassVisitor):
                 text += " = ..."
             arguments.append(text)
         decorators = []
+        if prototype.origin.source_language == "fortran" and prototype.origin.native_abi == "c":
+            decorators.append(f'@{context.contract("native_abi")}("c")')
+            if prototype.origin.native_symbol and prototype.origin.native_symbol != prototype.origin.native_name:
+                decorators.append(f"@{context.contract('bind')}({json.dumps(prototype.origin.native_symbol)})")
         if prototype.pure:
             decorators.append(f"@{context.contract('pure')}")
         decorators.append(f"@{context.contract('prototype')}")
@@ -384,8 +388,21 @@ class PyiPrinter(ClassVisitor):
                 indent = ""
             generic = self._overload_generic_argument(candidate, overload_set.name) if in_class else ""
             bind_target = candidate.metadata.get(BIND_TARGET_METADATA)
+            if candidate.origin.native_abi == "c" and candidate.origin.native_symbol:
+                bind_target = (
+                    candidate.origin.native_symbol
+                    if candidate.origin.native_symbol != candidate.origin.native_name
+                    else None
+                )
             bind = f"{indent}@{context.contract('bind')}({json.dumps(str(bind_target))})\n" if bind_target else ""
-            definitions.append(f'{bind}{indent}@{context.contract("overload")}("{target}"{generic})\n{definition}')
+            native_abi = (
+                f'{indent}@{context.contract("native_abi")}("c")\n'
+                if candidate.origin.source_language == "fortran" and candidate.origin.native_abi == "c"
+                else ""
+            )
+            definitions.append(
+                f'{native_abi}{bind}{indent}@{context.contract("overload")}("{target}"{generic})\n{definition}'
+            )
         return "\n\n".join(definitions)
 
     def _visit_SemanticClass(
@@ -1957,8 +1974,17 @@ class PyiPrinter(ClassVisitor):
             decorators.append(f"{indent}@{context.contract('private')}")
         if isinstance(func, SemanticMethod) and func.is_static:
             decorators.append(f"{indent}@staticmethod")
+        is_native_c_abi = func.origin.source_language == "fortran" and func.origin.native_abi == "c"
+        if is_native_c_abi and not func.metadata.get(OVERLOAD_TARGET_METADATA):
+            decorators.append(f'{indent}@{context.contract("native_abi")}("c")')
         bind_target = func.metadata.get(BIND_TARGET_METADATA)
-        if bind_target is None and func.native_name and func.native_name != emitted_name:
+        if is_native_c_abi:
+            bind_target = (
+                func.origin.native_symbol
+                if func.origin.native_symbol and func.origin.native_symbol != func.origin.native_name
+                else None
+            )
+        elif bind_target is None and func.native_name and func.native_name != emitted_name:
             bind_target = func.native_name
         if bind_target and not func.metadata.get(OVERLOAD_TARGET_METADATA):
             decorators.append(f"{indent}@{context.contract('bind')}({json.dumps(str(bind_target))})")
@@ -2203,6 +2229,8 @@ class PyiPrinter(ClassVisitor):
             return f"{context.contract('Len')}({self._native_value_ref(mapping.value, context)})"
         if mapping.value_kind == "shape":
             return f"{self._native_value_ref(mapping.value['value'], context)}.shape[{mapping.value['dim']}]"
+        if mapping.value_kind == "stride":
+            return f"{self._native_value_ref(mapping.value['value'], context)}.strides[{mapping.value['dim']}]"
         if mapping.value_kind == "is_present":
             return f"{context.contract('IsPresent')}({self._native_value_ref(mapping.value, context)})"
         if mapping.value_kind == "work":
