@@ -81,7 +81,7 @@ from prik.semantics.models import (
     SemanticStorageContract,
     SemanticType,
     SemanticVariable,
-    _iter_module_semantic_types,
+    _module_semantic_types,
 )
 
 __all__ = ("convert_pyi_to_ir", "reconcile_external_type_refs")
@@ -228,7 +228,7 @@ class _PyiAstParser:
         collisions = sorted(runtime_names & prototypes.keys())
         if collisions:
             raise ValueError(f"Prototype name collides with a runtime declaration: {collisions[0]!r}")
-        for semantic_type in _iter_module_semantic_types(self.module):
+        for semantic_type in _module_semantic_types(self.module):
             if semantic_type.storage is not None and semantic_type.storage.kind == "callback":
                 continue
             prototype = prototypes.get(semantic_type.name)
@@ -251,7 +251,7 @@ class _PyiAstParser:
         local_functions = {function.name.casefold(): function for function in self.module.functions}
         local_prototypes = {prototype.name.casefold(): prototype for prototype in self.module.prototypes}
         explicit_imports, namespace_imports = self._declaration_callable_imports()
-        for semantic_type in _iter_module_semantic_types(self.module):
+        for semantic_type in _module_semantic_types(self.module):
             storage = semantic_type.storage
             array = storage.array if storage is not None else None
             if array is None:
@@ -1067,13 +1067,6 @@ class _PyiAstParser:
                     f"{pending.target!r} more than once"
                 )
             overload_set.procedures.append(candidate)
-
-    @classmethod
-    def _iter_classes(cls, classes: list[SemanticClass]):
-        """Yield classes and nested classes depth first in source-list order."""
-        for semantic_class in classes:
-            yield semantic_class
-            yield from cls._iter_classes(semantic_class.classes)
 
     @staticmethod
     def _overload_set_name(owner: SemanticModule | SemanticClass, declaration_name: str) -> str:
@@ -3468,7 +3461,7 @@ def _annotate_imported_external_type_refs(module: SemanticModule) -> None:
     to :func:`reconcile_external_type_refs`.
     """
     imported = _imported_type_refs(module)
-    for semantic_type in _iter_module_semantic_types(module):
+    for semantic_type in _module_semantic_types(module):
         imported_ref = imported.get(semantic_type.name)
         if imported_ref is None:
             continue
@@ -3503,7 +3496,7 @@ def _imported_type_refs(module: SemanticModule) -> dict[str, tuple[str, str, str
             imported[visible_name] = (module_name, visible_name, visible_name)
             imported_namespaces[visible_name] = module_name
 
-    for semantic_type in _iter_module_semantic_types(module):
+    for semantic_type in _module_semantic_types(module):
         if "." not in semantic_type.name:
             continue
         module_name, type_name = semantic_type.name.rsplit(".", 1)
@@ -3576,7 +3569,7 @@ def reconcile_external_type_refs(modules: list[SemanticModule]) -> list[Semantic
     prototypes = {(module.name, prototype.name): prototype for module in modules for prototype in module.prototypes}
     functions = {(module.name, function.name): function for module in modules for function in module.functions}
     for module in modules:
-        for semantic_type in _iter_module_semantic_types(module):
+        for semantic_type in _module_semantic_types(module):
             ref = semantic_type.metadata.get(EXTERNAL_TYPE_REF_METADATA)
             if not isinstance(ref, dict):
                 continue
@@ -3633,14 +3626,17 @@ def _reconcile_declaration_expression_callables(
             _bind_declaration_expression_callable(reference, function, native_scope=native_scope, placement="module")
 
 
-def _unresolved_declaration_expression_callables(module: SemanticModule):
-    """Yield imported array-expression callables that still need batch binding.
+def _unresolved_declaration_expression_callables(
+    module: SemanticModule,
+) -> tuple[SemanticExpressionCallable, ...]:
+    """Return imported array-expression callables that still need batch binding.
 
     The semantic module remains unmodified while traversing. References that
     already have a declaration or lack a native scope are intentionally omitted
     because their provenance is complete or explicitly unresolved.
     """
-    for semantic_type in _iter_module_semantic_types(module):
+    unresolved = []
+    for semantic_type in _module_semantic_types(module):
         storage = semantic_type.storage
         array = storage.array if storage is not None else None
         if array is None:
@@ -3648,7 +3644,8 @@ def _unresolved_declaration_expression_callables(module: SemanticModule):
         for references in array.expression_callables:
             for reference in references:
                 if reference.declaration is None and reference.native_scope is not None:
-                    yield reference
+                    unresolved.append(reference)
+    return tuple(unresolved)
 
 
 def _declaration_callable_scope_candidates(native_scope: str) -> tuple[str, str, str]:

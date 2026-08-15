@@ -66,7 +66,7 @@ from prik.semantics.models import (
     SemanticStorageContract,
     SemanticType,
     SemanticVariable,
-    _iter_module_semantic_types,
+    _module_semantic_types,
 )
 from prik.semantics.native_array_handles import native_array_data_type, native_array_descriptor_kind
 from prik.utilities.visitor import ClassVisitor
@@ -1353,7 +1353,7 @@ class PyiPrinter(ClassVisitor):
             names.update(cls._import_local_names(imp))
         for item in [*module.classes, *module.prototypes, *module.variables, *module.functions, *module.overload_sets]:
             cls._collect_reserved_item_names(item, names)
-        for semantic_type in _iter_module_semantic_types(module):
+        for semantic_type in _module_semantic_types(module):
             names.update(cls._contract_like_dimension_names(semantic_type))
         return names
 
@@ -1450,7 +1450,7 @@ class PyiPrinter(ClassVisitor):
         }
         local_names = {function.name.casefold() for function in module.functions}
         required: dict[str, list[SemanticImportItem]] = {}
-        for semantic_type in _iter_module_semantic_types(module):
+        for semantic_type in _module_semantic_types(module):
             storage = semantic_type.storage
             array = storage.array if storage is not None else None
             if array is None:
@@ -1492,7 +1492,7 @@ class PyiPrinter(ClassVisitor):
             for item in imp.items
         }
         synthetic: dict[str, list[SemanticImportItem]] = {}
-        for semantic_type in _iter_module_semantic_types(module):
+        for semantic_type in _module_semantic_types(module):
             ref = cls._flat_external_type_import_ref(semantic_type)
             if ref is None:
                 continue
@@ -1559,7 +1559,7 @@ class PyiPrinter(ClassVisitor):
     def _required_procedure_namespace_import_names(cls, module: SemanticModule) -> set[str]:
         """Return module namespaces required by procedure-local imported types."""
         names: set[str] = set()
-        for semantic_type in _iter_module_semantic_types(module):
+        for semantic_type in _module_semantic_types(module):
             ref = semantic_type.metadata.get(EXTERNAL_TYPE_REF_METADATA)
             if not isinstance(ref, dict) or not cls._is_procedure_local_external_ref(ref):
                 continue

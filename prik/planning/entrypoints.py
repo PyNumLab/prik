@@ -9,6 +9,7 @@ resulting operation records and do not decide which helpers exist.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
 from prik.naming.native_symbols import NativeSymbolNames
 from prik.policy.models import (
@@ -81,12 +82,27 @@ _OWNED_HANDLE_ENTRYPOINT_OPERATIONS = frozenset(
 )
 
 
-def build_generated_support_procedure_entrypoints(
+@dataclass(frozen=True)
+class GeneratedSupportProcedureProjection:
+    """Keep external entrypoints and backend-local support in one projection."""
+
+    support_procedures: tuple[GeneratedSupportProcedureEntrypointPlan, ...]
+    binding_owned_derived_type_owner_paths: tuple[str, ...]
+    binding_allocatable_holder_type_owner_paths: tuple[str, ...]
+    binding_pointer_holder_type_owner_paths: tuple[str, ...]
+    bridge_allocatable_holder_type_owner_paths: tuple[str, ...]
+    bridge_pointer_holder_type_owner_paths: tuple[str, ...]
+    bridge_allocatable_holder_field_type_owner_paths: tuple[str, ...]
+    bridge_pointer_holder_field_type_owner_paths: tuple[str, ...]
+
+
+def build_generated_support_procedure_projection(
     namespaces: tuple[NamespacePlan, ...],
-) -> tuple[GeneratedSupportProcedureEntrypointPlan, ...]:
-    """Return every non-function C-visible operation in stable generation order."""
+) -> GeneratedSupportProcedureProjection:
+    """Return external and backend-local support membership in stable order."""
     builder = _GeneratedSupportProcedureEntrypointBuilder(namespaces)
-    procedures = builder.build()
+    projection = builder.build()
+    procedures = projection.support_procedures
     keys = [procedure.key for procedure in procedures]
     symbols = [procedure.symbol_name for procedure in procedures]
     if len(keys) != len(set(keys)):
@@ -95,7 +111,7 @@ def build_generated_support_procedure_entrypoints(
     if len(symbols) != len(set(symbols)):
         duplicates = tuple(symbol for symbol in dict.fromkeys(symbols) if symbols.count(symbol) > 1)
         raise ValueError(f"Generated support procedure entrypoint symbols are not unique: {duplicates!r}")
-    return procedures
+    return projection
 
 
 def build_callback_support_procedure_entrypoint(
@@ -129,28 +145,39 @@ class _GeneratedSupportProcedureEntrypointBuilder:
         self.derived_types = tuple(derived for namespace in namespaces for derived in namespace.derived_types)
         self.classes = tuple(surface for namespace in namespaces for surface in namespace.classes)
 
-    def build(self) -> tuple[GeneratedSupportProcedureEntrypointPlan, ...]:
-        """Collect operations in the existing generated declaration order."""
+    def build(self) -> GeneratedSupportProcedureProjection:
+        """Collect external and binding-local support in declaration order."""
         owned_types = self._owned_derived_types()
         allocatable_holders = self._allocatable_holder_types()
         pointer_holders = self._pointer_holder_types()
-        allocatable_field_holders = self._allocatable_holder_field_types()
-        pointer_field_holders = self._pointer_holder_field_types()
-        return (
-            *self._callback_operations(),
-            *self._class_constructor_operations(),
-            *(self._derived_destroy_operation(derived) for derived in owned_types),
-            *(self._holder_destroy_operation(derived, "allocatable") for derived in allocatable_holders),
-            *(self._holder_destroy_operation(derived, "pointer") for derived in pointer_holders),
-            *(self._holder_presence_operation(derived, "allocatable") for derived in allocatable_holders),
-            *(self._holder_presence_operation(derived, "pointer") for derived in pointer_holders),
-            *self._owned_native_array_operations(),
-            *self._derived_field_operations(
-                allocatable_field_holders,
-                pointer_field_holders,
+        binding_allocatable_holders = self._allocatable_holder_field_types()
+        binding_pointer_holders = self._pointer_holder_field_types()
+        binding_allocatable_owner_paths = tuple(derived.owner_path for derived in binding_allocatable_holders)
+        binding_pointer_owner_paths = tuple(derived.owner_path for derived in binding_pointer_holders)
+        return GeneratedSupportProcedureProjection(
+            support_procedures=(
+                *self._callback_operations(),
+                *self._class_constructor_operations(),
+                *(self._derived_destroy_operation(derived) for derived in owned_types),
+                *(self._holder_destroy_operation(derived, "allocatable") for derived in allocatable_holders),
+                *(self._holder_destroy_operation(derived, "pointer") for derived in pointer_holders),
+                *(self._holder_presence_operation(derived, "allocatable") for derived in allocatable_holders),
+                *(self._holder_presence_operation(derived, "pointer") for derived in pointer_holders),
+                *self._owned_native_array_operations(),
+                *self._derived_field_operations(
+                    binding_allocatable_holders,
+                    binding_pointer_holders,
+                ),
+                *self._module_variable_operations(),
+                *self._derived_origin_operations(),
             ),
-            *self._module_variable_operations(),
-            *self._derived_origin_operations(),
+            binding_owned_derived_type_owner_paths=tuple(derived.owner_path for derived in owned_types),
+            binding_allocatable_holder_type_owner_paths=binding_allocatable_owner_paths,
+            binding_pointer_holder_type_owner_paths=binding_pointer_owner_paths,
+            bridge_allocatable_holder_type_owner_paths=tuple(derived.owner_path for derived in allocatable_holders),
+            bridge_pointer_holder_type_owner_paths=tuple(derived.owner_path for derived in pointer_holders),
+            bridge_allocatable_holder_field_type_owner_paths=binding_allocatable_owner_paths,
+            bridge_pointer_holder_field_type_owner_paths=binding_pointer_owner_paths,
         )
 
     # ------------------------------------------------------------------

@@ -123,6 +123,9 @@ The architecture preserves these invariants:
 - Code generation implements a plan; printers only serialize it.
 - Pipeline orchestrates stages; it does not become a parser, policy engine, or
   lowering backend.
+- Internal tree and declaration traversals materialize explicit ordered
+  collections. Callers receive a complete reusable stage input rather than
+  depending on hidden generator control flow.
 - Supported behavior has focused owner-stage evidence and, when public,
   end-to-end evidence.
 

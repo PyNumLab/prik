@@ -664,51 +664,67 @@ class SemanticModule:
     origin: SemanticOrigin = field(default_factory=SemanticOrigin, compare=False)
 
 
-def _iter_semantic_type_tree(semantic_type: SemanticType | None):
+def _semantic_type_tree(semantic_type: SemanticType | None) -> tuple[SemanticType, ...]:
+    """Collect one semantic type and its callback signature in stable order."""
     if semantic_type is None:
-        return
-    yield semantic_type
-    if semantic_type.storage is not None and semantic_type.storage.kind == "callback":
-        arguments = semantic_type.metadata.get("arguments")
+        return ()
+    collected = []
+    pending = [semantic_type]
+    while pending:
+        current = pending.pop()
+        collected.append(current)
+        if current.storage is None or current.storage.kind != "callback":
+            continue
+        nested = []
+        arguments = current.metadata.get("arguments")
         if isinstance(arguments, list):
-            for argument in arguments:
-                yield from _iter_semantic_type_tree(argument)
-        yield from _iter_semantic_type_tree(semantic_type.metadata.get("return"))
+            nested.extend(arguments)
+        result = current.metadata.get("return")
+        if result is not None:
+            nested.append(result)
+        pending.extend(reversed(nested))
+    return tuple(collected)
 
 
-def _iter_module_semantic_types(module: SemanticModule):
-    def iter_class(declaration: SemanticClass):
+def _module_semantic_types(module: SemanticModule) -> tuple[SemanticType, ...]:
+    """Collect every semantic type owned by a module in established order."""
+
+    def class_types(declaration: SemanticClass) -> tuple[SemanticType, ...]:
+        collected = []
         for nested in declaration.classes:
-            yield from iter_class(nested)
+            collected.extend(class_types(nested))
         for semantic_field in declaration.fields:
-            yield from _iter_semantic_type_tree(semantic_field.semantic_type)
+            collected.extend(_semantic_type_tree(semantic_field.semantic_type))
         for method in declaration.methods:
             for argument in method.arguments:
-                yield from _iter_semantic_type_tree(argument.semantic_type)
-            yield from _iter_semantic_type_tree(method.return_type)
+                collected.extend(_semantic_type_tree(argument.semantic_type))
+            collected.extend(_semantic_type_tree(method.return_type))
         for overload_set in declaration.overload_sets:
             for procedure in overload_set.procedures:
                 for argument in procedure.arguments:
-                    yield from _iter_semantic_type_tree(argument.semantic_type)
-                yield from _iter_semantic_type_tree(procedure.return_type)
+                    collected.extend(_semantic_type_tree(argument.semantic_type))
+                collected.extend(_semantic_type_tree(procedure.return_type))
+        return tuple(collected)
 
+    collected = []
     for variable in module.variables:
-        yield from _iter_semantic_type_tree(variable.semantic_type)
+        collected.extend(_semantic_type_tree(variable.semantic_type))
     for declaration in module.classes:
-        yield from iter_class(declaration)
+        collected.extend(class_types(declaration))
     for function in module.functions:
         for argument in function.arguments:
-            yield from _iter_semantic_type_tree(argument.semantic_type)
-        yield from _iter_semantic_type_tree(function.return_type)
+            collected.extend(_semantic_type_tree(argument.semantic_type))
+        collected.extend(_semantic_type_tree(function.return_type))
     for prototype in module.prototypes:
         for argument in prototype.arguments:
-            yield from _iter_semantic_type_tree(argument.semantic_type)
-        yield from _iter_semantic_type_tree(prototype.return_type)
+            collected.extend(_semantic_type_tree(argument.semantic_type))
+        collected.extend(_semantic_type_tree(prototype.return_type))
     for overload_set in module.overload_sets:
         for procedure in overload_set.procedures:
             for argument in procedure.arguments:
-                yield from _iter_semantic_type_tree(argument.semantic_type)
-            yield from _iter_semantic_type_tree(procedure.return_type)
+                collected.extend(_semantic_type_tree(argument.semantic_type))
+            collected.extend(_semantic_type_tree(procedure.return_type))
+    return tuple(collected)
 
 
 if __name__ == "__main__":

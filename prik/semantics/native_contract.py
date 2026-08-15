@@ -24,7 +24,7 @@ from prik.semantics.models import (
     SemanticModule,
     SemanticPrototype,
     SemanticType,
-    _iter_module_semantic_types,
+    _module_semantic_types,
 )
 
 
@@ -64,7 +64,7 @@ def _prepare_module(module: SemanticModule) -> None:
             _prepare_function(procedure, native_scope)
     for semantic_class in module.classes:
         _prepare_class(semantic_class, native_scope)
-    for semantic_type in _iter_module_semantic_types(module):
+    for semantic_type in _module_semantic_types(module):
         semantic_type.origin.source_language = "fortran"
 
 

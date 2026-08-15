@@ -125,7 +125,7 @@ from prik.planning.models import (
     ResultPlan,
     WrapperPlanDiagnostic,
 )
-from prik.planning.entrypoints import build_generated_support_procedure_entrypoints
+from prik.planning.entrypoints import build_generated_support_procedure_projection
 from prik.printers import CSourcePrinter, FortranSourcePrinter
 
 __all__ = ("GeneratedSource", "GeneratedWrapper", "WrapperGenerator")
@@ -396,10 +396,50 @@ class WrapperGenerator:
         for operation in operations:
             diagnostics.extend(self._generated_support_procedure_diagnostics(operation))
         try:
-            expected = build_generated_support_procedure_entrypoints(plan.namespaces)
+            expected_projection = build_generated_support_procedure_projection(plan.namespaces)
         except ValueError as error:
             diagnostics.append(self._diagnostic(plan.owner_path, "invalid-auxiliary-entrypoint-inventory", str(error)))
             return tuple(diagnostics)
+        expected = expected_projection.support_procedures
+        binding_inventories = (
+            plan.binding.owned_derived_type_owner_paths,
+            plan.binding.allocatable_holder_type_owner_paths,
+            plan.binding.pointer_holder_type_owner_paths,
+        )
+        expected_binding_inventories = (
+            expected_projection.binding_owned_derived_type_owner_paths,
+            expected_projection.binding_allocatable_holder_type_owner_paths,
+            expected_projection.binding_pointer_holder_type_owner_paths,
+        )
+        if binding_inventories != expected_binding_inventories:
+            diagnostics.append(
+                self._diagnostic(
+                    plan.owner_path,
+                    "inconsistent-binding-derived-support-inventory",
+                    (expected_binding_inventories, binding_inventories),
+                )
+            )
+        if plan.bridge is not None:
+            bridge_inventories = (
+                plan.bridge.allocatable_holder_type_owner_paths,
+                plan.bridge.pointer_holder_type_owner_paths,
+                plan.bridge.allocatable_holder_field_type_owner_paths,
+                plan.bridge.pointer_holder_field_type_owner_paths,
+            )
+            expected_bridge_inventories = (
+                expected_projection.bridge_allocatable_holder_type_owner_paths,
+                expected_projection.bridge_pointer_holder_type_owner_paths,
+                expected_projection.bridge_allocatable_holder_field_type_owner_paths,
+                expected_projection.bridge_pointer_holder_field_type_owner_paths,
+            )
+            if bridge_inventories != expected_bridge_inventories:
+                diagnostics.append(
+                    self._diagnostic(
+                        plan.owner_path,
+                        "inconsistent-bridge-derived-support-inventory",
+                        (expected_bridge_inventories, bridge_inventories),
+                    )
+                )
         expected_by_key = {operation.key: operation for operation in expected}
         actual_by_key = {operation.key: operation for operation in operations}
         if expected_by_key.keys() != actual_by_key.keys():

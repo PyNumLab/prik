@@ -357,6 +357,15 @@ Keep architectural ownership evidence separate from feature behavior:
   once in the entrypoint. Keep two records only when they describe genuinely
   different boundaries, and name the distinction explicitly rather than
   validating accidental equality.
+- [x] Project backend-local derived capsule and holder inventories explicitly
+  alongside the generated support procedure registry. Make C lowering consume
+  binding inventories for static CPython helper membership, make Fortran
+  lowering consume bridge inventories for typed-holder definitions and field
+  bodies, and make both consume only registry records for external procedure
+  existence, symbols, and ABIs. Remove result, argument, module-variable,
+  constructor, release, storage, and call-case walks that rediscover module
+  inventories in either lowerer, including namespace-level holder-method
+  copies.
 - [x] Rename `NativeEntrypointOperationPlan` to
   `GeneratedSupportProcedureEntrypointPlan` before adding routing actions, and
   use **generated support procedure entrypoint** instead of **auxiliary
@@ -810,6 +819,41 @@ blocked by completed policy before planning and source generation.
   merely from pointer or typedef syntax.
 - [ ] Add language-owned parsing, semantic-contract, and diagnostic tests
   under `tests/c/` without importing Fortran-specific fixture helpers.
+
+#### Conservative C Starter-Contract Defaults
+
+C source conversion must preserve only what the declaration proves. The
+generated starter contract is deliberately low-level; it must not guess
+whether a pointer denotes one scalar, an array, an output, owned storage, or a
+retained address.
+
+| C declaration | Default generated semantic `.pyi` | Preserved meaning |
+| --- | --- | --- |
+| `T value` | `value: T` | Primitive scalar passed by value. |
+| `T *value` | `value: Addr(T)` | Unrefined mutable one-level pointer with no invented rank or shape. |
+| `const T *value` | `value: Addr(T)`, with `const` retained in origin and policy facts | Unrefined read-only one-level pointer; `const` does not make it a scalar or array. |
+| `T **value` | `value: Addr[2](T)` | Two native pointer levels; support may remain policy-blocked after serialization. |
+| return `T` | `-> T` | Direct primitive scalar result. |
+| return `T *` | `-> Addr(T)` | Raw pointer result with no invented ownership, lifetime, NumPy storage, or destruction policy. |
+
+An authoritative semantic `.pyi` supplies the missing API meaning. It may
+refine `Addr(T)` to `T[()]` for caller-provided rank-zero scalar storage,
+`T[n]` or `T[:]` for proved array storage, or retain `Addr(T)` intentionally
+as a raw address. `Addr(Arg(i))` requests the address of call-local scalar
+storage, while a matching `Returns["name", T]` requests mutation readback.
+Direction uses the explicit `In`, `Out`, or `InOut` contract, and nullability
+uses an explicit `| None`; neither is inferred from pointer syntax.
+
+The source default must not infer an array from an adjacent extent parameter,
+infer output behavior from a parameter name, interpret non-`const` as
+input/output, or interpret `char *` as a string. C parameter array syntax still
+decays to a pointer at the ABI; retain its dimensions as source provenance and
+emit a shaped public contract only when they establish a real validation
+constraint. Raw pointer contracts do not imply ownership transfer, native
+retention safety, or automatic cleanup. Serialization alone does not make an
+operation eligible: completed policy must block any pointer contract whose
+ownership, lifetime, nullability, transfer, or result behavior remains unsafe
+or unsupported.
 
 ### Stage 1 — Direct-Only C Policy
 

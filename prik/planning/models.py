@@ -616,9 +616,18 @@ class BindingStatusErrorPlan(StageRecord):
 
 @dataclass
 class BindingModulePlan(StageRecord):
-    """Store the binding-facing owner identity for one generated module."""
+    """Store module-wide binding surfaces selected before C lowering.
+
+    The three owner-path inventories select static CPython capsule and holder
+    helpers.  They are distinct from externally linked generated support
+    procedures, whose existence and complete ABI live in the entrypoint module
+    plan.
+    """
 
     owner_path: str
+    owned_derived_type_owner_paths: tuple[str, ...] = ()
+    allocatable_holder_type_owner_paths: tuple[str, ...] = ()
+    pointer_holder_type_owner_paths: tuple[str, ...] = ()
 
 
 @dataclass
@@ -649,9 +658,19 @@ class NativeGeneratedCodeGroupPlan(StageRecord):
 
 @dataclass
 class BridgeModulePlan(StageRecord):
-    """Store the bridge-facing owner identity for one generated module."""
+    """Store module-wide Fortran support selected before bridge lowering.
+
+    Holder-definition inventories include every holder used by an adapter or
+    generated support procedure.  The narrower field inventories select only
+    holder types whose values can cross back to Python and expose field
+    support.
+    """
 
     owner_path: str
+    allocatable_holder_type_owner_paths: tuple[str, ...] = ()
+    pointer_holder_type_owner_paths: tuple[str, ...] = ()
+    allocatable_holder_field_type_owner_paths: tuple[str, ...] = ()
+    pointer_holder_field_type_owner_paths: tuple[str, ...] = ()
 
 
 @dataclass

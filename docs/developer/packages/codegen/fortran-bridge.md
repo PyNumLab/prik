@@ -33,6 +33,13 @@ from those local facts. The registry also marks callback trampolines as
 binding-implemented, so Fortran consumes their signatures as interfaces rather
 than emitting duplicate implementations.
 
+Fortran-local typed-holder definitions and holder field bodies follow explicit
+bridge-module inventories projected beside that registry. The lowerer joins a
+planned owner path to its derived declaration for spelling, but does not walk
+function results, argument call cases, or storage policy to rediscover which
+holder types exist. Per-argument lowering still dispatches the already-planned
+derived call case selected for that one invocation.
+
 ## Input And Output
 
 ```text

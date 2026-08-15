@@ -142,8 +142,8 @@ from prik.semantics.scalar_types import BOOLEAN_SEMANTIC_TYPE_NAMES
 from prik.utilities.visitor import ClassVisitor
 
 from prik.planning.entrypoints import (
-    build_generated_support_procedure_entrypoints,
     build_callback_support_procedure_entrypoint,
+    build_generated_support_procedure_projection,
 )
 
 
@@ -237,24 +237,38 @@ class _ClassPolicyCatalog:
     def from_module(cls, module: models.SemanticModule) -> _ClassPolicyCatalog:
         """Collect one module's completed class policies in source order.
 
-        The method recursively visits nested classes, creates one catalog entry
-        per public declaration, and gives planning one shared collection. For a
-        module containing public ``point`` followed by ``circle``, the returned
+        The method collects nested classes, creates one catalog entry per public
+        declaration, and gives planning one shared collection. For a module
+        containing public ``point`` followed by ``circle``, the returned
         ``entries`` tuple preserves exactly that order.
         """
+        return cls.from_semantic_classes(cls.ordered_semantic_classes(module.classes))
+
+    @classmethod
+    def from_semantic_classes(
+        cls,
+        semantic_classes: tuple[models.SemanticClass, ...],
+    ) -> _ClassPolicyCatalog:
+        """Join one already ordered class collection to completed policies."""
         entries = tuple(
             _ClassPolicyEntry.from_semantic_class(semantic_class)
-            for semantic_class in cls._semantic_classes(module.classes)
+            for semantic_class in semantic_classes
             if semantic_class.visibility == "public"
         )
         return cls(entries=entries)
 
-    @classmethod
-    def _semantic_classes(cls, classes: list[models.SemanticClass]):
-        """Yield top-level and nested semantic classes in depth-first source order."""
-        for semantic_class in classes:
-            yield semantic_class
-            yield from cls._semantic_classes(semantic_class.classes)
+    @staticmethod
+    def ordered_semantic_classes(
+        classes: list[models.SemanticClass],
+    ) -> tuple[models.SemanticClass, ...]:
+        """Collect top-level and nested classes in depth-first source order."""
+        ordered = []
+        pending = list(reversed(classes))
+        while pending:
+            semantic_class = pending.pop()
+            ordered.append(semantic_class)
+            pending.extend(reversed(semantic_class.classes))
+        return tuple(ordered)
 
 
 class WrapperPlanner(ClassVisitor):
@@ -300,13 +314,18 @@ class WrapperPlanner(ClassVisitor):
         It raises before plan construction when the module has no public
         exports; it does not mutate semantic policy.
         """
-        # Initialize the per-module indexes used by derived and field projections.
-        self._derived_type_names = {semantic_class.name for semantic_class in module.classes}
+        # Initialize every class-backed index from one complete ordered collection.
+        semantic_classes = _ClassPolicyCatalog.ordered_semantic_classes(module.classes)
+        class_policies = _ClassPolicyCatalog.from_semantic_classes(semantic_classes)
+        self._derived_type_names = {semantic_class.name for semantic_class in semantic_classes}
         self._derived_field_plans: dict[str, DerivedFieldPlan] = {}
-        self._complete_derived_backend_symbols(module)
+        self._complete_derived_backend_symbols(semantic_classes)
 
         # Project every public surface before linking private callable entries.
-        functions, variables, derived_types, classes, overloads = self._namespace_member_plans(module)
+        functions, variables, derived_types, classes, overloads = self._namespace_member_plans(
+            module,
+            class_policies,
+        )
         if not any(
             (*functions.values(), *variables.values(), *derived_types.values(), *classes.values(), *overloads.values())
         ):
@@ -318,7 +337,8 @@ class WrapperPlanner(ClassVisitor):
 
         # Complete stable namespace paths, generated symbols, and required headers.
         namespaces = self._namespace_plans(module.name, functions, variables, derived_types, classes, overloads)
-        support_procedures = build_generated_support_procedure_entrypoints(namespaces)
+        support_projection = build_generated_support_procedure_projection(namespaces)
+        support_procedures = support_projection.support_procedures
         generated_code_groups = self._native_generated_code_groups(
             module.name,
             namespaces,
@@ -326,13 +346,28 @@ class WrapperPlanner(ClassVisitor):
         )
         return ModulePlan(
             owner_path=module.name,
-            binding=BindingModulePlan(module.name),
+            binding=BindingModulePlan(
+                module.name,
+                support_projection.binding_owned_derived_type_owner_paths,
+                support_projection.binding_allocatable_holder_type_owner_paths,
+                support_projection.binding_pointer_holder_type_owner_paths,
+            ),
             entrypoint=NativeEntrypointModulePlan(
                 module.name,
                 support_procedures,
                 ((module.origin.source_language,) if module.origin.source_language else ()),
             ),
-            bridge=BridgeModulePlan(module.name) if generated_code_groups else None,
+            bridge=(
+                BridgeModulePlan(
+                    module.name,
+                    support_projection.bridge_allocatable_holder_type_owner_paths,
+                    support_projection.bridge_pointer_holder_type_owner_paths,
+                    support_projection.bridge_allocatable_holder_field_type_owner_paths,
+                    support_projection.bridge_pointer_holder_field_type_owner_paths,
+                )
+                if generated_code_groups
+                else None
+            ),
             namespaces=namespaces,
             native_generated_code_groups=generated_code_groups,
             required_headers=self._required_headers(namespaces),
@@ -387,6 +422,7 @@ class WrapperPlanner(ClassVisitor):
     def _namespace_member_plans(
         self,
         module: models.SemanticModule,
+        class_policies: _ClassPolicyCatalog,
     ) -> tuple[dict, dict, dict, dict, dict]:
         """Build namespace-owned plan maps from one shared class-policy catalog.
 
@@ -399,8 +435,6 @@ class WrapperPlanner(ClassVisitor):
         functions = self._functions_by_namespace(module)
         variables = self._variables_by_namespace(module)
 
-        # Join each class to its completed policies and callables once for both projections.
-        class_policies = _ClassPolicyCatalog.from_module(module)
         return (
             functions,
             variables,
@@ -468,9 +502,12 @@ class WrapperPlanner(ClassVisitor):
             overloads=overloads,
         )
 
-    def _complete_derived_backend_symbols(self, module: models.SemanticModule) -> None:
+    def _complete_derived_backend_symbols(
+        self,
+        semantic_classes: tuple[models.SemanticClass, ...],
+    ) -> None:
         """Keep short native type names unless the complete unit needs qualification."""
-        policies = tuple(completed_derived_type_policy(item) for item in module.classes)
+        policies = tuple(completed_derived_type_policy(item) for item in semantic_classes)
         counts = Counter(policy.native_type_name.casefold() for policy in policies)
         self._derived_backend_symbols = {
             policy.type_identity: self._derived_backend_symbol_for_policy(policy, counts) for policy in policies

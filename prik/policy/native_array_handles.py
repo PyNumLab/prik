@@ -243,7 +243,7 @@ def native_array_handle_build_requirements(
     modules = [semantic_ir] if isinstance(semantic_ir, SemanticModule) else list(semantic_ir)
     requirements = tuple(
         _c_descriptor_requirement(owner, item, policy)
-        for owner, item, policy in _iter_native_array_handle_policies(modules)
+        for owner, item, policy in _native_array_handle_policies(modules)
         if policy.requires_c_descriptor_interop
     )
     headers = (NATIVE_ARRAY_POINTER_C_DESCRIPTOR_HEADER,) if requirements else ()
@@ -271,37 +271,58 @@ def _c_descriptor_requirement(
     )
 
 
-def _iter_native_array_handle_policies(modules: Iterable[SemanticModule]):
+def _native_array_handle_policies(
+    modules: Iterable[SemanticModule],
+) -> tuple[tuple[str, str, NativeArrayHandlePolicy], ...]:
+    policies = []
     for module in modules:
         for variable in module.variables:
-            yield from _variable_native_array_policy(variable, owner=f"{module.name}.{variable.name}")
+            policies.extend(_variable_native_array_policy(variable, owner=f"{module.name}.{variable.name}"))
         for semantic_class in module.classes:
-            yield from _iter_class_native_array_policies(semantic_class, owner=f"{module.name}.{semantic_class.name}")
+            policies.extend(_class_native_array_policies(semantic_class, owner=f"{module.name}.{semantic_class.name}"))
         for function in module.functions:
-            yield from _iter_function_native_array_policies(function, owner=f"{module.name}.{function.name}")
+            policies.extend(_function_native_array_policies(function, owner=f"{module.name}.{function.name}"))
         for overload_set in module.overload_sets:
-            yield from _iter_overload_native_array_policies(overload_set, owner=f"{module.name}.{overload_set.name}")
+            policies.extend(_overload_native_array_policies(overload_set, owner=f"{module.name}.{overload_set.name}"))
+    return tuple(policies)
 
 
-def _iter_class_native_array_policies(semantic_class: SemanticClass, *, owner: str):
+def _class_native_array_policies(
+    semantic_class: SemanticClass,
+    *,
+    owner: str,
+) -> tuple[tuple[str, str, NativeArrayHandlePolicy], ...]:
+    policies = []
     for field in semantic_class.fields:
-        yield from _variable_native_array_policy(field, owner=f"{owner}.{field.name}")
+        policies.extend(_variable_native_array_policy(field, owner=f"{owner}.{field.name}"))
     for nested in semantic_class.classes:
-        yield from _iter_class_native_array_policies(nested, owner=f"{owner}.{nested.name}")
+        policies.extend(_class_native_array_policies(nested, owner=f"{owner}.{nested.name}"))
     for method in semantic_class.methods:
-        yield from _iter_function_native_array_policies(method, owner=f"{owner}.{method.name}")
+        policies.extend(_function_native_array_policies(method, owner=f"{owner}.{method.name}"))
     for overload_set in semantic_class.overload_sets:
-        yield from _iter_overload_native_array_policies(overload_set, owner=f"{owner}.{overload_set.name}")
+        policies.extend(_overload_native_array_policies(overload_set, owner=f"{owner}.{overload_set.name}"))
+    return tuple(policies)
 
 
-def _iter_overload_native_array_policies(overload_set: ProcedureOverloadSet, *, owner: str):
+def _overload_native_array_policies(
+    overload_set: ProcedureOverloadSet,
+    *,
+    owner: str,
+) -> tuple[tuple[str, str, NativeArrayHandlePolicy], ...]:
+    policies = []
     for procedure in overload_set.procedures:
-        yield from _iter_function_native_array_policies(procedure, owner=owner)
+        policies.extend(_function_native_array_policies(procedure, owner=owner))
+    return tuple(policies)
 
 
-def _iter_function_native_array_policies(function: SemanticFunction, *, owner: str):
+def _function_native_array_policies(
+    function: SemanticFunction,
+    *,
+    owner: str,
+) -> tuple[tuple[str, str, NativeArrayHandlePolicy], ...]:
+    policies = []
     for argument in function.arguments:
-        yield from _variable_native_array_policy(argument, owner=f"{owner}.{argument.name}")
+        policies.extend(_variable_native_array_policy(argument, owner=f"{owner}.{argument.name}"))
     if native_array_descriptor_kind(function.return_type) is not None:
         policy = function.metadata.get(RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA)
         if policy is None:
@@ -309,19 +330,24 @@ def _iter_function_native_array_policies(function: SemanticFunction, *, owner: s
                 f"Native array handle {owner}.return is missing completed policy; "
                 "run complete_semantic_policies before collecting build requirements"
             )
-        yield f"{owner}.return", "return", policy
+        policies.append((f"{owner}.return", "return", policy))
+    return tuple(policies)
 
 
-def _variable_native_array_policy(variable: SemanticVariable, *, owner: str):
+def _variable_native_array_policy(
+    variable: SemanticVariable,
+    *,
+    owner: str,
+) -> tuple[tuple[str, str, NativeArrayHandlePolicy], ...]:
     if native_array_descriptor_kind(variable.semantic_type) is None:
-        return
+        return ()
     policy = variable.metadata.get(RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA)
     if policy is None:
         raise ValueError(
             f"Native array handle {owner} is missing completed policy; "
             "run complete_semantic_policies before collecting build requirements"
         )
-    yield owner, variable.name, policy
+    return ((owner, variable.name, policy),)
 
 
 __all__ = (

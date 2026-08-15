@@ -158,6 +158,12 @@ class outer:
     with pytest.raises(TypeError):
         inner.methods_by_owner_path["nested_catalog.outer.inner.shift"] = outer.semantic_class
 
+    plan = WrapperPlanner().build(module)
+    generated = WrapperGenerator().generate(plan)
+
+    assert tuple(derived.type_name for derived in plan.namespaces[0].derived_types) == ("outer", "inner")
+    assert {source.path.suffix for source in generated.sources} == {".c", ".h", ".f90"}
+
 
 def test_planner_projects_required_array_buffer_policy():
     module = parse_pyi_text(

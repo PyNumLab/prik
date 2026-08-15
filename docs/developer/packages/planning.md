@@ -62,7 +62,7 @@ ModulePlan
 │   └── GeneratedSupportProcedureEntrypointPlan
 │       └── NativeEntrypointSignaturePlan
 ├── NativeGeneratedCodeGroupPlan (zero or more)
-├── BridgeModulePlan (optional)
+├── BridgeModulePlan (optional; Fortran-local holder inventories)
 └── NamespacePlan (root and child namespaces)
     ├── FunctionPlan
     │   ├── ArgumentTransferPlan
@@ -91,6 +91,16 @@ native-array operations, and callback trampolines. Each record also identifies
 whether the binding or bridge implements the callable; the opposite side uses
 the same record as its declaration/call contract. Static CPython helpers and
 bridge-internal procedures are deliberately absent.
+
+`BindingModulePlan` separately records which derived-type owners need
+binding-local capsule and holder surfaces. Those static CPython helpers are not
+entrypoints, but their membership is still planned rather than rediscovered by
+C lowering. `BridgeModulePlan` likewise records the broad typed-holder
+definitions required by adapter calls and the narrower holder field-support
+inventories. Planning derives both backend-local inventories and the external
+support-procedure registry together. Validation requires every planned local
+helper that calls native support to resolve an entrypoint with the matching
+owner and role.
 
 `ModulePlan.native_generated_code_groups` records generated native membership
 without using the presence of a physical source file as policy. Adapter groups
@@ -129,12 +139,14 @@ policy-completed `SemanticModule` and dispatches it through the planner's
 visitor. The completed-policy accessors used during projection reject missing
 or blocked records, so planning cannot fill in a default.
 
-For each module, the planner resets its derived-type and field indexes, then
-assigns backend symbols, qualifying only genuinely colliding native type names.
-It projects direct functions and variables, then uses `_ClassPolicyCatalog` to
-join each public class to its completed derived-type, surface, method, and
-overload policies. The catalogue is read-only: it maps existing owner paths to
-their semantic declarations without deciding policy again.
+For each module, the planner first collects top-level and nested semantic
+classes into one depth-first, source-ordered tuple. That same collection feeds
+derived-type name indexing, backend-symbol allocation, and
+`_ClassPolicyCatalog`, so a nested class cannot reach projection without its
+symbol being registered. It projects direct functions and variables, then uses
+the catalogue to join each public class to its completed derived-type, surface,
+method, and overload policies. The catalogue is read-only: it maps existing
+owner paths to their semantic declarations without deciding policy again.
 
 The planner attaches class and overload callables to the function collections
 that need their native entrypoints. It completes generated symbols, adds every
@@ -231,6 +243,13 @@ than reconstructed by either backend.
 - Neither generator may reconstruct the symbol, existence, parameter order, or
   result ABI of a generated support procedure from a derived field, storage
   kind, array operation, lifecycle action, or callback record.
+- C lowering may map a planned binding-local derived owner back to its
+  `DerivedTypePlan` for names and fields, but it may not walk results,
+  arguments, module variables, constructors, releases, or storage kinds to
+  rediscover capsule or holder membership.
+- Fortran lowering may perform the same mechanical owner-to-type join for its
+  planned holder definitions and holder field bodies. It may not walk result
+  storage or argument call cases to reconstruct either module inventory.
 - Direct Fortran operations have no bridge facet. Adapter and Fortran-support
   membership are separate generated-code groups even when they share a
   physical source.

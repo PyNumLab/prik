@@ -10,7 +10,8 @@ release tags add a leading `v` to the package version.
 ### Added
 
 - Added a native-entrypoint adoption roadmap for selective direct Fortran
-  `bind(C)` calls and the initial direct-only C wrapper backend.
+  `bind(C)` calls and the initial direct-only C wrapper backend, including
+  conservative starter-contract defaults for ambiguous C pointers.
 - Added `@native_abi("c")` to semantic `.pyi` contracts so Fortran `bind(C)`
   procedures retain their ABI and optional link label through generated and
   source-free contract workflows.
@@ -23,6 +24,8 @@ release tags add a leading `v` to the package version.
 
 ### Changed
 
+- Made nested semantic classes use the same complete planning and backend-symbol
+  allocation path as top-level classes.
 - Published the maintained-run direct-entrypoint runtime, adapter-control, and
   clean-build results separately from the normal-interface benchmark cohort.
 - Made direct-entrypoint benchmark preflight identify binding and native

@@ -6,6 +6,8 @@ import ast
 from inspect import getsource
 from textwrap import dedent
 
+import pytest
+
 from tests.fortran._support.ownership_policy import parse_pyi_text
 from prik.codegen.c.binding import CBindingGenerator
 from prik.codegen.fortran.bridge import FortranBridgeGenerator
@@ -112,3 +114,145 @@ def _edited_callback_symbol(source: str, symbol: str):
     plan = _plan(source, module_name="binding_support_boundary")
     plan.namespaces[0].functions[0].arguments[0].callback.entrypoint.support_procedure.symbol_name = symbol
     return plan
+
+
+def test_external_holder_support_is_distinct_from_binding_local_holder_surfaces():
+    plan = _plan(
+        """
+class item:
+    value: Int32
+
+def consume(value: item) -> Int32: ...
+""",
+        module_name="input_holder_boundary",
+    )
+    roles = {
+        procedure.role
+        for procedure in plan.entrypoint.support_procedures
+        if procedure.owner_path == "input_holder_boundary.item"
+    }
+
+    assert {
+        "holder:allocatable:destroy",
+        "holder:allocatable:present",
+        "holder:pointer:destroy",
+        "holder:pointer:present",
+    } <= roles
+    assert plan.binding.allocatable_holder_type_owner_paths == ()
+    assert plan.binding.pointer_holder_type_owner_paths == ()
+    assert plan.bridge is not None
+    assert plan.bridge.allocatable_holder_type_owner_paths == ("input_holder_boundary.item",)
+    assert plan.bridge.pointer_holder_type_owner_paths == ("input_holder_boundary.item",)
+
+
+@pytest.mark.parametrize(
+    ("bridge_inventory", "definition_name", "support_role"),
+    [
+        (
+            "allocatable_holder_type_owner_paths",
+            "prik_item_allocatable_holder",
+            "holder:allocatable:destroy",
+        ),
+        (
+            "pointer_holder_type_owner_paths",
+            "prik_item_pointer_holder",
+            "holder:pointer:destroy",
+        ),
+    ],
+)
+def test_fortran_holder_definitions_are_consumed_from_the_bridge_inventory(
+    bridge_inventory: str,
+    definition_name: str,
+    support_role: str,
+):
+    plan = _plan(
+        """
+class item:
+    value: Int32
+
+def consume(value: item) -> Int32: ...
+""",
+        module_name="bridge_derived_support_boundary",
+    )
+    procedure = next(item for item in plan.entrypoint.support_procedures if item.role == support_role)
+    planned_module = FortranBridgeGenerator().visit(plan)
+
+    assert plan.bridge is not None
+    setattr(plan.bridge, bridge_inventory, ())
+    edited_module = FortranBridgeGenerator().visit(plan)
+
+    assert definition_name in {definition.name for definition in planned_module.type_definitions}
+    assert definition_name not in {definition.name for definition in edited_module.type_definitions}
+    assert procedure.symbol_name in {function.name for function in edited_module.procedures}
+    with pytest.raises(ValueError, match="inconsistent-bridge-derived-support-inventory"):
+        WrapperGenerator().generate(plan)
+
+
+@pytest.mark.parametrize(
+    ("source", "binding_inventory", "support_role"),
+    [
+        (
+            """
+class item:
+    value: Int32
+
+def make() -> item: ...
+""",
+            "owned_derived_type_owner_paths",
+            "derived:destroy",
+        ),
+        (
+            """
+from prik.contracts import Allocatable, Arg, Int32, Pointer, Return, Returns, native_call
+
+class item:
+    value: Int32
+
+@native_call([Allocatable(Arg(0))])
+def update(value: item | None) -> Returns["value", item] | None: ...
+
+@native_call([], result=Pointer(Return(0)))
+def make_pointer() -> item | None: ...
+""",
+            "allocatable_holder_type_owner_paths",
+            "holder:allocatable:destroy",
+        ),
+        (
+            """
+from prik.contracts import Allocatable, Arg, Int32, Pointer, Return, Returns, native_call
+
+class item:
+    value: Int32
+
+@native_call([Allocatable(Arg(0))])
+def update(value: item | None) -> Returns["value", item] | None: ...
+
+@native_call([], result=Pointer(Return(0)))
+def make_pointer() -> item | None: ...
+""",
+            "pointer_holder_type_owner_paths",
+            "holder:pointer:destroy",
+        ),
+    ],
+)
+def test_binding_local_support_membership_is_consumed_from_its_planned_inventory(
+    source: str,
+    binding_inventory: str,
+    support_role: str,
+):
+    plan = _plan(source, module_name="binding_derived_support_boundary")
+    procedure = next(item for item in plan.entrypoint.support_procedures if item.role == support_role)
+    planned_module = CBindingGenerator().binding_module(plan)
+
+    setattr(plan.binding, binding_inventory, ())
+    edited_module = CBindingGenerator().binding_module(plan)
+
+    assert procedure.symbol_name in {getattr(declaration, "name", None) for declaration in planned_module.declarations}
+    assert procedure.symbol_name not in {
+        getattr(declaration, "name", None) for declaration in edited_module.declarations
+    }
+    assert sum(procedure.symbol_name in repr(function) for function in planned_module.functions) > sum(
+        procedure.symbol_name in repr(function) for function in edited_module.functions
+    )
+    with pytest.raises(ValueError, match="inconsistent-binding-derived-support-inventory"):
+        WrapperGenerator().generate(plan)

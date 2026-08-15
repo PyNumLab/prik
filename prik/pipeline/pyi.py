@@ -17,7 +17,7 @@ from pathlib import Path
 from prik.parsers.pyi import parse_pyi_text
 from prik.policy.completion import complete_semantic_policies
 from prik.printers.pyi import emit_module
-from prik.semantics.models import EXTERNAL_TYPE_REF_METADATA, SemanticClass, SemanticModule, _iter_module_semantic_types
+from prik.semantics.models import EXTERNAL_TYPE_REF_METADATA, SemanticClass, SemanticModule, _module_semantic_types
 from prik.semantics.pyi_metadata import PYI_LOADED_METADATA
 from prik.semantics.pyi2ir import convert_pyi_to_ir, reconcile_external_type_refs
 
@@ -76,7 +76,7 @@ def opaque_dependency_modules(
     }
     dependencies: dict[str, dict[str, str | None]] = {}
     for module in source_modules:
-        for semantic_type in _iter_module_semantic_types(module):
+        for semantic_type in _module_semantic_types(module):
             ref = semantic_type.metadata.get(EXTERNAL_TYPE_REF_METADATA)
             if not isinstance(ref, dict) or ref.get("representation") != "opaque":
                 continue

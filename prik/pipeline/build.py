@@ -55,7 +55,7 @@ from prik.semantics.models import (
     SemanticModule,
     SemanticPrototype,
     SemanticVariable,
-    _iter_module_semantic_types,
+    _module_semantic_types,
 )
 from prik.semantics.native_contract import NATIVE_CONTRACT_PREPARED_METADATA, validate_pyi_native_contract
 from prik.policy.native_array_handles import (
@@ -2699,7 +2699,7 @@ def _complete_pyi_fortran_boolean_types(
     boolean_types = [
         semantic_type
         for module in modules
-        for semantic_type in _iter_module_semantic_types(module)
+        for semantic_type in _module_semantic_types(module)
         if is_boolean_semantic_type_name(semantic_type.name)
     ]
     if not boolean_types:

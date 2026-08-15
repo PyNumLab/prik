@@ -27,13 +27,10 @@ from prik.policy.models import (
     CallbackResultAction,
     CallbackTransferAction,
     ClassConstructorKind,
-    DerivedActualAccess,
-    DerivedCallAction,
     DerivedDummyCategory,
     DerivedFieldAccessMechanism,
     DerivedObjectStorage,
     DerivedOwnerRetention,
-    DerivedRelease,
     DerivedWriteback,
     DirectResultABI,
     ModuleObjectAccessMechanism,
@@ -260,6 +257,9 @@ class CBindingGenerator(ClassVisitor):
         self._derived_owner_paths = {
             derived.backend_symbol: derived.owner_path for derived in self._derived_types(plan)
         }
+        self._binding_owned_derived_owner_paths = frozenset(plan.binding.owned_derived_type_owner_paths)
+        self._binding_allocatable_holder_owner_paths = frozenset(plan.binding.allocatable_holder_type_owner_paths)
+        self._binding_pointer_holder_owner_paths = frozenset(plan.binding.pointer_holder_type_owner_paths)
         # Stage 2: complete the immutable name index consumed by Python-surface emission.
         class_python_names = {
             surface.type_identity: surface.python_names[0]
@@ -2034,26 +2034,29 @@ class CBindingGenerator(ClassVisitor):
             *self._derived_origin_declarations(plan),
             *(self._entrypoint_prototype(function) for function in self._functions(plan)),
             *self._class_constructor_prototypes(plan),
-            *(self._derived_destroy_entrypoint_prototype(derived) for derived in self._owned_derived_types(plan)),
+            *(
+                self._derived_destroy_entrypoint_prototype(derived)
+                for derived in self._binding_owned_derived_types(plan)
+            ),
             *(
                 self._allocatable_holder_destroy_entrypoint_prototype(derived)
-                for derived in self._allocatable_holder_types(plan)
+                for derived in self._binding_allocatable_holder_types(plan)
             ),
             *(
                 self._pointer_holder_destroy_entrypoint_prototype(derived)
-                for derived in self._pointer_holder_types(plan)
+                for derived in self._binding_pointer_holder_types(plan)
             ),
             *(
                 self._generated_support_procedure_entrypoint_prototype(
                     self._generated_support_procedure_entrypoint(derived.owner_path, "holder:allocatable:present")
                 )
-                for derived in self._allocatable_holder_types(plan)
+                for derived in self._binding_allocatable_holder_types(plan)
             ),
             *(
                 self._generated_support_procedure_entrypoint_prototype(
                     self._generated_support_procedure_entrypoint(derived.owner_path, "holder:pointer:present")
                 )
-                for derived in self._pointer_holder_types(plan)
+                for derived in self._binding_pointer_holder_types(plan)
             ),
             *self._owned_native_array_bridge_prototypes(plan),
             *self._default_native_array_bridge_prototypes(plan),
@@ -2108,117 +2111,25 @@ class CBindingGenerator(ClassVisitor):
         """Return namespace-owned opaque types in stable plan order."""
         return tuple(derived for namespace in plan.namespaces for derived in namespace.derived_types)
 
-    def _owned_derived_types(self, plan: ModulePlan) -> tuple[DerivedTypePlan, ...]:
-        """Return only types whose completed transfers create wrapper-owned storage."""
-        identities = self._owned_derived_result_identities(plan)
-        identities.update(self._owned_derived_module_identities(plan))
-        identities.update(self._constructible_class_identities(plan))
-        return tuple(derived for derived in self._derived_types(plan) if derived.type_identity in identities)
+    def _binding_derived_types(
+        self,
+        plan: ModulePlan,
+        owner_paths: frozenset[str],
+    ) -> tuple[DerivedTypePlan, ...]:
+        """Join planner-owned binding support membership to derived records."""
+        return tuple(derived for derived in self._derived_types(plan) if derived.owner_path in owner_paths)
 
-    @staticmethod
-    def _constructible_class_identities(plan: ModulePlan) -> set[tuple[str, str]]:
-        """Return class identities whose completed constructor allocates storage."""
-        return {
-            surface.type_identity
-            for namespace in plan.namespaces
-            for surface in namespace.classes
-            if surface.constructor.kind is not ClassConstructorKind.ABSENT
-        }
+    def _binding_owned_derived_types(self, plan: ModulePlan) -> tuple[DerivedTypePlan, ...]:
+        """Return planned direct-capsule owners in stable derived-type order."""
+        return self._binding_derived_types(plan, self._binding_owned_derived_owner_paths)
 
-    def _owned_derived_result_identities(self, plan: ModulePlan) -> set[tuple[str, str]]:
-        """Return owned derived result identities from the supplied completed binding records; this helper preserves the selected binding behavior."""
-        return {
-            result.derived.type_identity
-            for function in self._functions(plan)
-            for result in function.results
-            if result.derived is not None
-            and result.derived.release is DerivedRelease.WRAPPER_DESTROY
-            and result.derived.storage
-            not in {DerivedObjectStorage.ALLOCATABLE_HOLDER, DerivedObjectStorage.POINTER_HOLDER}
-        }
+    def _binding_allocatable_holder_types(self, plan: ModulePlan) -> tuple[DerivedTypePlan, ...]:
+        """Return planned allocatable-holder Python support owners."""
+        return self._binding_derived_types(plan, self._binding_allocatable_holder_owner_paths)
 
-    def _owned_derived_module_identities(self, plan: ModulePlan) -> set[tuple[str, str]]:
-        """Return owned derived module identities from the supplied completed binding records; this helper preserves the selected binding behavior."""
-        return {
-            variable.derived.handoff.type_identity
-            for variable in self._variables(plan)
-            if variable.derived is not None and variable.derived.access is ModuleObjectAccessMechanism.VALUE_COPY
-        }
-
-    def _allocatable_holder_types(self, plan: ModulePlan) -> tuple[DerivedTypePlan, ...]:
-        """Return types carried by wrapper-owned typed allocatable holders."""
-        identities = self._allocatable_holder_result_identities(plan)
-        identities.update(self._allocatable_holder_argument_identities(plan))
-        return tuple(derived for derived in self._derived_types(plan) if derived.type_identity in identities)
-
-    def _allocatable_holder_result_identities(self, plan: ModulePlan) -> set[tuple[str, str]]:
-        """Build allocatable holder result identities from the supplied completed binding records; emitted nodes only project completed binding actions."""
-        return {
-            result.derived.type_identity
-            for function in self._functions(plan)
-            for result in function.results
-            if result.derived is not None and result.derived.storage is DerivedObjectStorage.ALLOCATABLE_HOLDER
-        }
-
-    def _allocatable_holder_argument_identities(self, plan: ModulePlan) -> set[tuple[str, str]]:
-        """Build allocatable holder argument identities from the supplied completed binding records; emitted nodes only project completed binding actions."""
-        return {
-            argument.derived.type_identity
-            for function in self._functions(plan)
-            for argument in function.arguments
-            if argument.derived is not None
-            and argument.derived_call is not None
-            and argument.entrypoint.descriptor_output_role is not None
-            and any(
-                case.access is DerivedActualAccess.ALLOCATABLE_HOLDER
-                for case in argument.derived_call.cases
-                if case.action is not DerivedCallAction.INCOMPATIBLE
-            )
-        }
-
-    def _pointer_holder_types(self, plan: ModulePlan) -> tuple[DerivedTypePlan, ...]:
-        """Return the binding-local pointer holder types derived from the supplied completed binding records; this helper preserves completed policy."""
-        identities = self._pointer_holder_result_identities(plan)
-        identities.update(self._pointer_holder_argument_identities(plan))
-        return tuple(derived for derived in self._derived_types(plan) if derived.type_identity in identities)
-
-    def _pointer_holder_result_identities(self, plan: ModulePlan) -> set[tuple[str, str]]:
-        """Return pointer holder result identities from the supplied completed binding records; this helper preserves the selected binding behavior."""
-        return {
-            result.derived.type_identity
-            for function in self._functions(plan)
-            for result in function.results
-            if result.derived is not None and result.derived.storage is DerivedObjectStorage.POINTER_HOLDER
-        }
-
-    def _pointer_holder_argument_identities(self, plan: ModulePlan) -> set[tuple[str, str]]:
-        """Return pointer holder argument identities from the supplied completed binding records; this helper preserves the selected binding behavior."""
-        return {
-            argument.derived.type_identity
-            for function in self._functions(plan)
-            for argument in function.arguments
-            if argument.derived is not None
-            and argument.derived_call is not None
-            and argument.entrypoint.descriptor_output_role is not None
-            and any(
-                case.access is DerivedActualAccess.POINTER_HOLDER
-                for case in argument.derived_call.cases
-                if case.action is not DerivedCallAction.INCOMPATIBLE
-            )
-        }
-
-    @staticmethod
-    def _uses_allocatable_holder(argument: ArgumentTransferPlan) -> bool:
-        """Return whether allocatable holder is required by the supplied completed binding records; this helper does not choose policy."""
-        call = argument.derived_call
-        return bool(
-            call is not None
-            and any(
-                case.access is DerivedActualAccess.ALLOCATABLE_HOLDER
-                for case in call.cases
-                if case.action is not DerivedCallAction.INCOMPATIBLE
-            )
-        )
+    def _binding_pointer_holder_types(self, plan: ModulePlan) -> tuple[DerivedTypePlan, ...]:
+        """Return planned pointer-holder Python support owners."""
+        return self._binding_derived_types(plan, self._binding_pointer_holder_owner_paths)
 
     def _derived_destroy_entrypoint_prototype(self, derived: DerivedTypePlan) -> CFunctionPrototype:
         """Declare the native-aware destroy helper for one opaque type."""
@@ -2240,12 +2151,13 @@ class CBindingGenerator(ClassVisitor):
 
     def _derived_capsule_destructor_functions(self, plan: ModulePlan) -> tuple[CFunction, ...]:
         """Emit one capsule destructor that delegates to the native bridge."""
-        direct = tuple(self._derived_capsule_destructor(derived) for derived in self._owned_derived_types(plan))
+        direct = tuple(self._derived_capsule_destructor(derived) for derived in self._binding_owned_derived_types(plan))
         holders = tuple(
-            self._allocatable_holder_capsule_destructor(derived) for derived in self._allocatable_holder_types(plan)
+            self._allocatable_holder_capsule_destructor(derived)
+            for derived in self._binding_allocatable_holder_types(plan)
         )
         pointers = tuple(
-            self._pointer_holder_capsule_destructor(derived) for derived in self._pointer_holder_types(plan)
+            self._pointer_holder_capsule_destructor(derived) for derived in self._binding_pointer_holder_types(plan)
         )
         return (*direct, *holders, *pointers)
 
@@ -2471,7 +2383,7 @@ class CBindingGenerator(ClassVisitor):
         """Declare planner-owned allocatable-holder field bridge operations."""
         return tuple(
             self._generated_support_procedure_entrypoint_prototype(operation)
-            for derived in self._allocatable_holder_types(plan)
+            for derived in self._binding_allocatable_holder_types(plan)
             for field in derived.fields
             for operation in self._generated_support_procedure_entrypoints_for(
                 f"{derived.owner_path}.{field.name}", "field:allocatable:"
@@ -2482,7 +2394,7 @@ class CBindingGenerator(ClassVisitor):
         """Declare planner-owned pointer-holder field bridge operations."""
         return tuple(
             self._generated_support_procedure_entrypoint_prototype(operation)
-            for derived in self._pointer_holder_types(plan)
+            for derived in self._binding_pointer_holder_types(plan)
             for field in derived.fields
             for operation in self._generated_support_procedure_entrypoints_for(
                 f"{derived.owner_path}.{field.name}", "field:pointer:"
@@ -2531,7 +2443,7 @@ class CBindingGenerator(ClassVisitor):
 
     def _allocatable_holder_functions_for_plan(self, plan: ModulePlan) -> tuple[CFunction, ...]:
         """Build allocatable holder functions for plan from the supplied completed binding records; emitted nodes only project completed binding actions."""
-        derived_types = self._allocatable_holder_types(plan)
+        derived_types = self._binding_allocatable_holder_types(plan)
         fields = tuple(
             function
             for derived in derived_types
@@ -2543,7 +2455,7 @@ class CBindingGenerator(ClassVisitor):
 
     def _pointer_holder_functions_for_plan(self, plan: ModulePlan) -> tuple[CFunction, ...]:
         """Build pointer holder functions for plan from the supplied completed binding records; emitted nodes only project completed binding actions."""
-        derived_types = self._pointer_holder_types(plan)
+        derived_types = self._binding_pointer_holder_types(plan)
         fields = tuple(
             function
             for derived in derived_types
@@ -11370,102 +11282,42 @@ class CBindingGenerator(ClassVisitor):
             for action in self._field_method_actions(member.field)
         )
 
-    def _namespace_allocatable_holder_identities(self, namespace: NamespacePlan) -> frozenset[tuple[str, str]]:
-        """Return the binding-local namespace allocatable holder identities derived from the supplied completed binding records; this helper preserves completed policy."""
-        identities = self._namespace_allocatable_holder_result_identities(namespace)
-        identities.update(self._namespace_allocatable_holder_argument_identities(namespace))
-        return frozenset(identities)
-
     @staticmethod
-    def _namespace_allocatable_holder_result_identities(namespace: NamespacePlan) -> set[tuple[str, str]]:
-        """Return the binding-local namespace allocatable holder result identities derived from the supplied completed binding records; this helper preserves completed policy."""
-        return {
-            result.derived.type_identity
-            for function in namespace.functions
-            for result in function.results
-            if result.derived is not None and result.derived.storage is DerivedObjectStorage.ALLOCATABLE_HOLDER
-        }
-
-    def _namespace_allocatable_holder_argument_identities(
-        self,
+    def _namespace_binding_holder_types(
         namespace: NamespacePlan,
-    ) -> set[tuple[str, str]]:
-        """Return the binding-local namespace allocatable holder argument identities derived from the supplied completed binding records; this helper preserves completed policy."""
-        return {
-            argument.derived.type_identity
-            for function in namespace.functions
-            for argument in function.arguments
-            if argument.derived is not None
-            and argument.derived_call is not None
-            and argument.entrypoint.descriptor_output_role is not None
-            and self._uses_allocatable_holder(argument)
-        }
+        owner_paths: frozenset[str],
+    ) -> tuple[DerivedTypePlan, ...]:
+        """Join one namespace to its planner-owned binding holder inventory."""
+        return tuple(derived for derived in namespace.derived_types if derived.owner_path in owner_paths)
 
     def _allocatable_holder_method_names(self, namespace: NamespacePlan) -> tuple[str, ...]:
-        """Return the binding-local allocatable holder method names derived from the supplied completed binding records; this helper preserves completed policy."""
-        holder_identities = self._namespace_allocatable_holder_identities(namespace)
+        """Return methods for the namespace's planned allocatable holders."""
+        holders = self._namespace_binding_holder_types(
+            namespace,
+            self._binding_allocatable_holder_owner_paths,
+        )
         fields = tuple(
             self._allocatable_holder_field_method_name(derived, field, action)
-            for derived in namespace.derived_types
-            if derived.type_identity in holder_identities
+            for derived in holders
             for field in derived.fields
             for action in self._field_method_actions(field)
         )
-        guards = tuple(
-            self._allocatable_holder_presence_method_name(derived.backend_symbol)
-            for derived in namespace.derived_types
-            if derived.type_identity in holder_identities
-        )
+        guards = tuple(self._allocatable_holder_presence_method_name(derived.backend_symbol) for derived in holders)
         return (*fields, *guards)
 
-    def _namespace_pointer_holder_identities(self, namespace: NamespacePlan) -> frozenset[tuple[str, str]]:
-        """Return the binding-local namespace pointer holder identities derived from the supplied completed binding records; this helper preserves completed policy."""
-        identities = self._namespace_pointer_holder_result_identities(namespace)
-        identities.update(self._namespace_pointer_holder_argument_identities(namespace))
-        return frozenset(identities)
-
-    @staticmethod
-    def _namespace_pointer_holder_result_identities(namespace: NamespacePlan) -> set[tuple[str, str]]:
-        """Return the binding-local namespace pointer holder result identities derived from the supplied completed binding records; this helper preserves completed policy."""
-        return {
-            result.derived.type_identity
-            for function in namespace.functions
-            for result in function.results
-            if result.derived is not None and result.derived.storage is DerivedObjectStorage.POINTER_HOLDER
-        }
-
-    @staticmethod
-    def _namespace_pointer_holder_argument_identities(namespace: NamespacePlan) -> set[tuple[str, str]]:
-        """Return the binding-local namespace pointer holder argument identities derived from the supplied completed binding records; this helper preserves completed policy."""
-        return {
-            argument.derived.type_identity
-            for function in namespace.functions
-            for argument in function.arguments
-            if argument.derived is not None
-            and argument.derived_call is not None
-            and argument.entrypoint.descriptor_output_role is not None
-            and any(
-                case.access is DerivedActualAccess.POINTER_HOLDER
-                for case in argument.derived_call.cases
-                if case.action is not DerivedCallAction.INCOMPATIBLE
-            )
-        }
-
     def _pointer_holder_method_names(self, namespace: NamespacePlan) -> tuple[str, ...]:
-        """Return the binding-local pointer holder method names derived from the supplied completed binding records; this helper preserves completed policy."""
-        holder_identities = self._namespace_pointer_holder_identities(namespace)
+        """Return methods for the namespace's planned pointer holders."""
+        holders = self._namespace_binding_holder_types(
+            namespace,
+            self._binding_pointer_holder_owner_paths,
+        )
         fields = tuple(
             self._pointer_holder_field_method_name(derived, field, action)
-            for derived in namespace.derived_types
-            if derived.type_identity in holder_identities
+            for derived in holders
             for field in derived.fields
             for action in self._field_method_actions(field)
         )
-        guards = tuple(
-            self._pointer_holder_presence_method_name(derived.backend_symbol)
-            for derived in namespace.derived_types
-            if derived.type_identity in holder_identities
-        )
+        guards = tuple(self._pointer_holder_presence_method_name(derived.backend_symbol) for derived in holders)
         return (*fields, *guards)
 
     def _module_proxy_guard_method_names(self, namespace: NamespacePlan) -> tuple[str, ...]:
@@ -11626,9 +11478,17 @@ class CBindingGenerator(ClassVisitor):
         has_proxy = any(variable.derived is not None for variable in namespace.variables)
         if not namespace.derived_types and not has_proxy:
             return ()
+        allocatable_holders = self._namespace_binding_holder_types(
+            namespace,
+            self._binding_allocatable_holder_owner_paths,
+        )
+        pointer_holders = self._namespace_binding_holder_types(
+            namespace,
+            self._binding_pointer_holder_owner_paths,
+        )
         context = PythonSurfaceContext(
-            allocatable_holder_identities=self._namespace_allocatable_holder_identities(namespace),
-            pointer_holder_identities=self._namespace_pointer_holder_identities(namespace),
+            allocatable_holder_identities=frozenset(derived.type_identity for derived in allocatable_holders),
+            pointer_holder_identities=frozenset(derived.type_identity for derived in pointer_holders),
             nullable_module_proxy_owner_paths=frozenset(
                 variable.owner_path for variable in namespace.variables if self._nullable_derived_module_proxy(variable)
             ),

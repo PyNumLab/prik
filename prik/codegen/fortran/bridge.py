@@ -29,7 +29,6 @@ from prik.policy.models import (
     CallbackABIKind,
     CallbackResultAction,
     CallbackTransferAction,
-    ClassConstructorKind,
     ClassInvocationKind,
     DerivedActualAccess,
     DerivedCallAction,
@@ -37,7 +36,6 @@ from prik.policy.models import (
     DerivedNativeHandoff,
     DerivedDummyCategory,
     DerivedObjectStorage,
-    DerivedRelease,
     DeclarationCallableAction,
     DirectResultABI,
     ExternalDeclarationMode,
@@ -196,6 +194,14 @@ class FortranBridgeGenerator(ClassVisitor):
         self._derived_owner_paths = {
             derived.backend_symbol: derived.owner_path for derived in self._derived_types(plan)
         }
+        if plan.bridge is None:
+            raise ValueError(f"Fortran lowering requires a bridge plan for {plan.owner_path!r}")
+        self._bridge_allocatable_holder_owner_paths = frozenset(plan.bridge.allocatable_holder_type_owner_paths)
+        self._bridge_pointer_holder_owner_paths = frozenset(plan.bridge.pointer_holder_type_owner_paths)
+        self._bridge_allocatable_holder_field_owner_paths = frozenset(
+            plan.bridge.allocatable_holder_field_type_owner_paths
+        )
+        self._bridge_pointer_holder_field_owner_paths = frozenset(plan.bridge.pointer_holder_field_type_owner_paths)
         # Scoped origins are module-wide facts needed by derived-call lowering.
         scoped_origin_type_identities = self._scoped_origin_type_identities(plan)
         procedures = (
@@ -405,7 +411,7 @@ class FortranBridgeGenerator(ClassVisitor):
                     ),
                 ),
             )
-            for derived in self._allocatable_holder_types(plan)
+            for derived in self._bridge_support_types(plan, self._bridge_allocatable_holder_owner_paths)
         )
         pointers = tuple(
             FortranTypeDefinition(
@@ -418,7 +424,7 @@ class FortranBridgeGenerator(ClassVisitor):
                     ),
                 ),
             )
-            for derived in self._pointer_holder_types(plan)
+            for derived in self._bridge_support_types(plan, self._bridge_pointer_holder_owner_paths)
         )
         return (*allocatable, *pointers)
 
@@ -5793,112 +5799,18 @@ class FortranBridgeGenerator(ClassVisitor):
         """Return namespace-owned opaque types in stable plan order."""
         return tuple(derived for namespace in plan.namespaces for derived in namespace.derived_types)
 
-    def _owned_derived_types(self, plan: ModulePlan) -> tuple[DerivedTypePlan, ...]:
-        """Return only native types with completed wrapper-owned result storage."""
-        identities = self._owned_derived_result_identities(plan)
-        identities.update(self._owned_derived_module_identities(plan))
-        identities.update(self._constructible_class_identities(plan))
-        return tuple(derived for derived in self._derived_types(plan) if derived.type_identity in identities)
-
-    @staticmethod
-    def _constructible_class_identities(plan: ModulePlan) -> set[tuple[str, str]]:
-        """Return class identities whose completed constructor allocates storage."""
-        return {
-            surface.type_identity
-            for namespace in plan.namespaces
-            for surface in namespace.classes
-            if surface.constructor.kind is not ClassConstructorKind.ABSENT
-        }
-
-    def _owned_derived_result_identities(self, plan: ModulePlan) -> set[tuple[str, str]]:
-        """Return derived identities required by direct-result ownership helpers."""
-        return {
-            result.derived.type_identity
-            for function in self._functions(plan)
-            for result in function.results
-            if result.derived is not None
-            and result.derived.release is DerivedRelease.WRAPPER_DESTROY
-            and result.derived.storage
-            not in {DerivedObjectStorage.ALLOCATABLE_HOLDER, DerivedObjectStorage.POINTER_HOLDER}
-        }
-
-    def _owned_derived_module_identities(self, plan: ModulePlan) -> set[tuple[str, str]]:
-        """Return derived identities required by owned module-origin helpers."""
-        return {
-            variable.derived.handoff.type_identity
-            for variable in self._variables(plan)
-            if variable.derived is not None and variable.derived.access is ModuleObjectAccessMechanism.VALUE_COPY
-        }
-
-    def _allocatable_holder_types(self, plan: ModulePlan) -> tuple[DerivedTypePlan, ...]:
-        """Return types whose completed storage or call action uses a typed holder."""
-        identities = self._allocatable_holder_result_identities(plan)
-        identities.update(self._allocatable_holder_argument_identities(plan))
-        return tuple(derived for derived in self._derived_types(plan) if derived.type_identity in identities)
-
-    def _allocatable_holder_result_identities(self, plan: ModulePlan) -> set[tuple[str, str]]:
-        """Return identities whose direct results need allocatable holder definitions."""
-        return {
-            result.derived.type_identity
-            for function in self._functions(plan)
-            for result in function.results
-            if result.derived is not None and result.derived.storage is DerivedObjectStorage.ALLOCATABLE_HOLDER
-        }
-
-    def _allocatable_holder_argument_identities(self, plan: ModulePlan) -> set[tuple[str, str]]:
-        """Return identities whose arguments need allocatable holder definitions."""
-        return {
-            argument.derived.type_identity
-            for function in self._functions(plan)
-            for argument in function.arguments
-            if argument.derived is not None
-            and argument.derived_call is not None
-            and any(
-                case.access is DerivedActualAccess.ALLOCATABLE_HOLDER
-                for case in argument.derived_call.cases
-                if case.action is not DerivedCallAction.INCOMPATIBLE
-            )
-        }
-
-    def _pointer_holder_types(self, plan: ModulePlan) -> tuple[DerivedTypePlan, ...]:
-        """Return types whose results or call rows use pointer holders."""
-        identities = self._pointer_holder_result_identities(plan)
-        identities.update(self._pointer_holder_argument_identities(plan))
-        return tuple(derived for derived in self._derived_types(plan) if derived.type_identity in identities)
-
-    def _pointer_holder_result_identities(self, plan: ModulePlan) -> set[tuple[str, str]]:
-        """Return identities whose direct results need pointer holder definitions."""
-        return {
-            result.derived.type_identity
-            for function in self._functions(plan)
-            for result in function.results
-            if result.derived is not None and result.derived.storage is DerivedObjectStorage.POINTER_HOLDER
-        }
-
-    def _pointer_holder_argument_identities(self, plan: ModulePlan) -> set[tuple[str, str]]:
-        """Return identities whose arguments need pointer holder definitions."""
-        return {
-            argument.derived.type_identity
-            for function in self._functions(plan)
-            for argument in function.arguments
-            if argument.derived is not None
-            and argument.derived_call is not None
-            and any(
-                case.access is DerivedActualAccess.POINTER_HOLDER
-                for case in argument.derived_call.cases
-                if case.action is not DerivedCallAction.INCOMPATIBLE
-            )
-        }
+    def _bridge_support_types(
+        self,
+        plan: ModulePlan,
+        owner_paths: frozenset[str],
+    ) -> tuple[DerivedTypePlan, ...]:
+        """Join one planned Fortran support inventory to derived declarations."""
+        return tuple(derived for derived in self._derived_types(plan) if derived.owner_path in owner_paths)
 
     @staticmethod
     def _uses_allocatable_holder(argument: ArgumentTransferPlan) -> bool:
         """Return whether the module plan requires the allocatable holder for one native derived identity."""
         return FortranBridgeGenerator._uses_holder(argument, DerivedActualAccess.ALLOCATABLE_HOLDER)
-
-    @staticmethod
-    def _uses_pointer_holder(argument: ArgumentTransferPlan) -> bool:
-        """Return whether the module plan requires the pointer holder for one native derived identity."""
-        return FortranBridgeGenerator._uses_holder(argument, DerivedActualAccess.POINTER_HOLDER)
 
     @staticmethod
     def _uses_holder(argument: ArgumentTransferPlan, access: DerivedActualAccess) -> bool:
@@ -5986,30 +5898,18 @@ class FortranBridgeGenerator(ClassVisitor):
         return tuple(by_symbol[operation.symbol_name] for operation in operations)
 
     def _allocatable_holder_field_types(self, plan: ModulePlan) -> tuple[DerivedTypePlan, ...]:
-        """Return holders that can cross back to Python and need field operations."""
-        identities = self._allocatable_holder_result_identities(plan)
-        identities.update(
-            argument.derived.type_identity
-            for function in self._functions(plan)
-            for argument in function.arguments
-            if argument.derived is not None
-            and argument.entrypoint.descriptor_output_role is not None
-            and self._uses_allocatable_holder(argument)
+        """Return the planned allocatable-holder field-support inventory."""
+        return self._bridge_support_types(
+            plan,
+            self._bridge_allocatable_holder_field_owner_paths,
         )
-        return tuple(derived for derived in self._derived_types(plan) if derived.type_identity in identities)
 
     def _pointer_holder_field_types(self, plan: ModulePlan) -> tuple[DerivedTypePlan, ...]:
-        """Return pointer holders that can cross back to Python and need fields."""
-        identities = self._pointer_holder_result_identities(plan)
-        identities.update(
-            argument.derived.type_identity
-            for function in self._functions(plan)
-            for argument in function.arguments
-            if argument.derived is not None
-            and argument.entrypoint.descriptor_output_role is not None
-            and self._uses_pointer_holder(argument)
+        """Return the planned pointer-holder field-support inventory."""
+        return self._bridge_support_types(
+            plan,
+            self._bridge_pointer_holder_field_owner_paths,
         )
-        return tuple(derived for derived in self._derived_types(plan) if derived.type_identity in identities)
 
     def _allocatable_holder_field_procedures(
         self,

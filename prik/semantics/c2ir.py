@@ -71,7 +71,7 @@ from prik.semantics.models import (
     SemanticStorageContract,
     SemanticType,
     SemanticVariable,
-    _iter_module_semantic_types,
+    _module_semantic_types,
 )
 
 
@@ -1270,7 +1270,7 @@ class CToIRConverter(ClassVisitor):
         if not external_classes:
             return
 
-        for semantic_type in _iter_module_semantic_types(module):
+        for semantic_type in _module_semantic_types(module):
             origin_module = external_classes.get(semantic_type.name)
             if origin_module is None:
                 continue
@@ -1309,7 +1309,7 @@ class CToIRConverter(ClassVisitor):
             }
             if not external_names:
                 continue
-            for semantic_type in _iter_module_semantic_types(module):
+            for semantic_type in _module_semantic_types(module):
                 owner = owners.get(semantic_type.name)
                 if owner is None or owner[0] == module.name:
                     continue
@@ -1462,7 +1462,7 @@ class CToIRConverter(ClassVisitor):
     def _standard_type_facts(report: Any | None) -> dict[str, dict[str, Any]]:
         """Normalize a probe report or mapping into copied per-standard-type facts.
 
-        Missing or malformed reports yield an empty lookup.  Fact dictionaries
+        Missing or malformed reports produce an empty lookup.  Fact dictionaries
         are copied so caller-owned reports cannot be mutated during conversion.
         """
         if report is None:

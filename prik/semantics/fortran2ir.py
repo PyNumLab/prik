@@ -2924,21 +2924,21 @@ def _requirement_unit_name(
     return unit_name or module or "<source>"
 
 
-def _iter_fortran_variable_contexts(
+def _fortran_variable_contexts(
     node,
     *,
     module_name: str | None = None,
     unit_kind: str = "file",
     unit_name: str | None = None,
 ):
-    """Yield parser variables with enough unit context for diagnostics.
+    """Return parser variables with enough unit context for diagnostics.
 
     Example:
-        ``list(_iter_fortran_variable_contexts(parsed_file))`` returns module
+        ``_fortran_variable_contexts(parsed_file)`` returns module
         parameters, procedure arguments/results/locals, and type fields with
         the unit that owns each symbol.
     """
-    yield from _FortranVariableContextVisitor()._visit(
+    return _FortranVariableContextVisitor()._visit(
         node,
         module_name=module_name,
         unit_kind=unit_kind,
@@ -2950,15 +2950,19 @@ class _FortranVariableContextVisitor(ClassVisitor):
     """Traverse parsed Fortran models through the shared class visitor protocol."""
 
     def _visit_FortranProject(self, node: FortranProject, **_context):
-        """Yield variable contexts from every project file."""
+        """Return variable contexts from every project file."""
+        contexts = []
         for parsed_file in node.files:
-            yield from self._visit(parsed_file)
+            contexts.extend(self._visit(parsed_file))
+        return tuple(contexts)
 
     def _visit_FortranFile(self, node: FortranFile, **_context):
-        """Yield file, module, and standalone variable contexts."""
+        """Return file, module, and standalone variable contexts."""
         file_unit = node.filename or "<source>"
-        for variable in getattr(node, "variables", []):
-            yield _variable_context(variable, unit_kind="file", unit=file_unit, module=None, role="variable")
+        contexts = [
+            _variable_context(variable, unit_kind="file", unit=file_unit, module=None, role="variable")
+            for variable in getattr(node, "variables", [])
+        ]
         collections = (
             node.modules,
             node.submodules,
@@ -2969,30 +2973,36 @@ class _FortranVariableContextVisitor(ClassVisitor):
         )
         for collection in collections:
             for child in collection:
-                yield from self._visit(child)
+                contexts.extend(self._visit(child))
+        return tuple(contexts)
 
     def _visit_FortranModule(self, node: FortranModule, **_context):
-        """Yield module-owned variable contexts."""
-        yield from self._module_variable_contexts(node, unit_kind="module")
+        """Return module-owned variable contexts."""
+        return self._module_variable_contexts(node, unit_kind="module")
 
     def _visit_FortranSubmodule(self, node: FortranSubmodule, **_context):
-        """Yield submodule-owned variable contexts."""
-        yield from self._module_variable_contexts(node, unit_kind="submodule")
+        """Return submodule-owned variable contexts."""
+        return self._module_variable_contexts(node, unit_kind="submodule")
 
     def _visit_FortranProgram(self, node: FortranProgram, **_context):
-        """Yield program-owned variable contexts."""
+        """Return program-owned variable contexts."""
         owner = node.name or "<program>"
-        for variable in node.variables:
-            yield _variable_context(variable, unit_kind="program", unit=owner, module=None, role="variable")
+        contexts = [
+            _variable_context(variable, unit_kind="program", unit=owner, module=None, role="variable")
+            for variable in node.variables
+        ]
         for procedure in node.procedures:
-            yield from self._visit(procedure, unit_kind="program", unit_name=owner)
+            contexts.extend(self._visit(procedure, unit_kind="program", unit_name=owner))
+        return tuple(contexts)
 
     @staticmethod
     def _visit_FortranBlockData(node: FortranBlockData, **_context):
-        """Yield block-data variable contexts."""
+        """Return block-data variable contexts."""
         owner = node.name or "<block_data>"
-        for variable in node.variables:
-            yield _variable_context(variable, unit_kind="block_data", unit=owner, module=None, role="variable")
+        return tuple(
+            _variable_context(variable, unit_kind="block_data", unit=owner, module=None, role="variable")
+            for variable in node.variables
+        )
 
     @staticmethod
     def _visit_FortranProcedureSignature(
@@ -3001,7 +3011,7 @@ class _FortranVariableContextVisitor(ClassVisitor):
         module_name: str | None = None,
         **_context,
     ):
-        """Yield procedure argument, result, and local contexts."""
+        """Return procedure argument, result, and local contexts."""
         procedure_module = module_name or node.module
         owner = _requirement_unit_name(module=procedure_module, unit_name=node.name)
         context = {
@@ -3010,12 +3020,12 @@ class _FortranVariableContextVisitor(ClassVisitor):
             "module": procedure_module,
             "procedure": node.name,
         }
-        for argument in node.arguments:
-            yield _variable_context(argument, **context, role="argument")
+        contexts = [_variable_context(argument, **context, role="argument") for argument in node.arguments]
         if node.result is not None:
-            yield _variable_context(node.result, **context, role="result")
+            contexts.append(_variable_context(node.result, **context, role="result"))
         for variable in node.variables.values():
-            yield _variable_context(variable, **context, role="variable")
+            contexts.append(_variable_context(variable, **context, role="variable"))
+        return tuple(contexts)
 
     @staticmethod
     def _visit_FortranDerivedType(
@@ -3024,11 +3034,11 @@ class _FortranVariableContextVisitor(ClassVisitor):
         module_name: str | None = None,
         **_context,
     ):
-        """Yield derived-type field contexts."""
+        """Return derived-type field contexts."""
         owner_module = module_name or node.module
         owner = _requirement_unit_name(module=owner_module, unit_name=node.name)
-        for field in node.fields:
-            yield _variable_context(
+        return tuple(
+            _variable_context(
                 field,
                 unit_kind="derived_type",
                 unit=owner,
@@ -3036,6 +3046,8 @@ class _FortranVariableContextVisitor(ClassVisitor):
                 type_owner=node.name,
                 role="field",
             )
+            for field in node.fields
+        )
 
     def _module_variable_contexts(
         self,
@@ -3043,14 +3055,17 @@ class _FortranVariableContextVisitor(ClassVisitor):
         *,
         unit_kind: str,
     ):
-        """Yield variable, procedure, and type contexts owned by a module-like node."""
+        """Return variable, procedure, and type contexts owned by a module-like node."""
         owner = node.name
-        for variable in node.variables:
-            yield _variable_context(variable, unit_kind=unit_kind, unit=owner, module=owner, role="variable")
+        contexts = [
+            _variable_context(variable, unit_kind=unit_kind, unit=owner, module=owner, role="variable")
+            for variable in node.variables
+        ]
         for procedure in node.procedures:
-            yield from self._visit(procedure, module_name=owner)
+            contexts.extend(self._visit(procedure, module_name=owner))
         for derived_type in node.derived_types:
-            yield from self._visit(derived_type, module_name=owner)
+            contexts.extend(self._visit(derived_type, module_name=owner))
+        return tuple(contexts)
 
 
 def _variable_context(variable, *, unit_kind, unit, module, role, **extra):
@@ -3121,7 +3136,7 @@ def collect_fortran_type_storage_requirements(
     converter = FortranToIRConverter(compile_time_values=compile_time_values)
     requirements: list[dict[str, object]] = []
     seen: set[tuple[str, str | None]] = set()
-    for var, context in _iter_fortran_variable_contexts(parsed):
+    for var, context in _fortran_variable_contexts(parsed):
         base_type = str(var.base_type or "").lower()
         if base_type not in _FORTRAN_STORAGE_PROBE_TYPES:
             continue
@@ -3196,7 +3211,7 @@ def collect_semantic_compile_time_requirements(
         seen.add(key)
         requirements.append(item)
 
-    for var, ctx in _iter_fortran_variable_contexts(parsed):
+    for var, ctx in _fortran_variable_contexts(parsed):
         expression = var.symbolic_value if var.symbolic_value is not None else var.value
         parameter_base_type = str(var.base_type or "").lower()
         if var.is_parameter and parameter_base_type == "integer" and var.value is None and expression:

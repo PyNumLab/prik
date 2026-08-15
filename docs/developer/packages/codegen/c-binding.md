@@ -34,6 +34,14 @@ prototype when a generated support procedure entrypoint is missing. A
 binding-implemented callback trampoline uses the same record for its function
 definition that the Fortran side uses for its interface.
 
+Binding-local derived capsule destructors, holder presence methods, and private
+field methods follow the explicit module binding-support inventories. The
+lowerer may join their planned owner paths to namespace-owned derived-type
+records for emitted names and fields. It does not reconstruct those inventories
+from results, arguments, constructors, release actions, or holder storage. Any
+native call made by a local helper still obtains its existence, symbol, and ABI
+from the generated support procedure registry.
+
 ## Input And Output
 
 ```text
