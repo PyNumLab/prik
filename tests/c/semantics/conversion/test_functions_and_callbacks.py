@@ -23,7 +23,7 @@ from prik.parsers.c.models import (
 )
 from prik.semantics.c2ir import CToIRConverter, c_file_to_semantic_modules, c_function_to_semantic_function
 from tests.c.semantics.conversion._support import (
-    _c_origin,
+    _assert_c_origin,
     _function,
 )
 
@@ -88,13 +88,15 @@ def test_c2ir_converts_scalar_function_signatures_and_preserves_native_order():
             "value": None,
         },
     ]
-    assert asdict(add.arguments[0].origin) == _c_origin(
+    _assert_c_origin(
+        add.arguments[0].origin,
         native_name="a",
         native_scope="add",
         source_kind="parameter",
         source_type="int a",
     )
-    assert asdict(add.origin) == _c_origin(
+    _assert_c_origin(
+        add.origin,
         native_name="add",
         source_kind="function",
         source_type="CFunctionType",
@@ -105,7 +107,8 @@ def test_c2ir_converts_scalar_function_signatures_and_preserves_native_order():
             "source_line": "int add(int a, int b);",
         },
     )
-    assert asdict(module.origin) == _c_origin(
+    _assert_c_origin(
+        module.origin,
         native_name="api.h",
         native_scope="api.h",
         source_kind="translation_unit",
@@ -171,7 +174,8 @@ def test_c2ir_converts_qualifiers_callbacks_bitfields_and_unspecified_functions(
     assert variable.semantic_type.name == "CFunctionPointer"
     assert variable.semantic_type.dtype == "CFunctionPointer"
     assert variable.semantic_type.metadata == {"source_type": "void (*)(int)"}
-    assert asdict(variable.semantic_type.origin) == _c_origin(
+    _assert_c_origin(
+        variable.semantic_type.origin,
         source_kind="function_pointer",
         source_type="void (*)(int)",
     )
@@ -179,7 +183,8 @@ def test_c2ir_converts_qualifiers_callbacks_bitfields_and_unspecified_functions(
     assert field.semantic_type.metadata["c_type_fact"]["bits"] == 32
     assert field.visibility == "public"
     assert unresolved_variable.semantic_type.name == "missing_t"
-    assert asdict(field.origin) == _c_origin(
+    _assert_c_origin(
+        field.origin,
         native_name="bits",
         source_kind="variable",
         source_type="CInt",
@@ -209,7 +214,8 @@ def test_c2ir_converts_qualifiers_callbacks_bitfields_and_unspecified_functions(
     assert unnamed_function.projection[0].native_name == "arg0"
     assert variadic.metadata["prototype_style"] == "prototype"
     assert direct_callback.metadata == {"source_type": "void (*)(int)"}
-    assert asdict(direct_callback.origin) == _c_origin(
+    _assert_c_origin(
+        direct_callback.origin,
         source_kind="function_pointer",
         source_type="void (*)(int)",
     )
@@ -217,7 +223,8 @@ def test_c2ir_converts_qualifiers_callbacks_bitfields_and_unspecified_functions(
     assert void_type.name == "Any"
     assert void_type.dtype == "Any"
     assert void_type.metadata == {"c_void_pointer_pointee": True}
-    assert asdict(void_type.origin) == _c_origin(
+    _assert_c_origin(
+        void_type.origin,
         source_kind="type",
         source_type="CVoid",
         metadata={"c_type": "CVoid"},
@@ -226,7 +233,8 @@ def test_c2ir_converts_qualifiers_callbacks_bitfields_and_unspecified_functions(
     assert loose_struct.name == "loose"
     assert loose_struct.dtype == "loose"
     assert loose_struct.metadata == {"c_kind": "struct", "incomplete": False}
-    assert asdict(loose_struct.origin) == _c_origin(
+    _assert_c_origin(
+        loose_struct.origin,
         native_name="struct loose",
         source_kind="type",
         source_type="struct loose",

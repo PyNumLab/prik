@@ -1,13 +1,14 @@
 """C parser model to semantic IR conversion tests."""
 
-from dataclasses import asdict
+from prik.semantics.models import SemanticOrigin
 
 
 def _function(module, name):
     return next(function for function in module.functions if function.name == name)
 
 
-def _c_origin(
+def _assert_c_origin(
+    origin: SemanticOrigin,
     *,
     native_name=None,
     native_scope=None,
@@ -15,16 +16,17 @@ def _c_origin(
     source_type=None,
     source_location=None,
     metadata=None,
-):
-    return {
-        "source_language": "c",
-        "native_name": native_name,
-        "native_scope": native_scope,
-        "source_kind": source_kind,
-        "source_type": source_type,
-        "source_location": source_location or {},
-        "metadata": metadata or {},
-    }
+) -> None:
+    """Assert the meaningful C identity and provenance carried by an origin."""
+    assert origin.source_language == "c"
+    assert origin.native_name == native_name
+    assert origin.native_abi is None
+    assert origin.native_symbol is None
+    assert origin.native_scope == native_scope
+    assert origin.source_kind == source_kind
+    assert origin.source_type == source_type
+    assert origin.source_location == (source_location or {})
+    assert origin.metadata == (metadata or {})
 
 
 def _blocker(code, message, item):
@@ -36,7 +38,8 @@ def _assert_unsupported_type(semantic_type, *, code, message, owner, source_type
     assert semantic_type.name == "CUnsupported"
     assert semantic_type.dtype == "CUnsupported"
     assert semantic_type.metadata == {}
-    assert asdict(semantic_type.origin) == _c_origin(
+    _assert_c_origin(
+        semantic_type.origin,
         source_kind="unsupported_type",
         source_type=source_type,
     )

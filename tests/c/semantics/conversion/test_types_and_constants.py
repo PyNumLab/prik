@@ -52,8 +52,8 @@ from prik.semantics.c2ir import (
     c_type_to_semantic_type,
 )
 from tests.c.semantics.conversion._support import (
+    _assert_c_origin,
     _assert_unsupported_type,
-    _c_origin,
     _function,
 )
 
@@ -233,7 +233,8 @@ void fill(int x[static API_N1]);
     assert constants["API_FORWARD_CHAIN"].semantic_type.name == "Int32"
     assert "API_TEXT" not in constants
     assert "API_CALL" not in constants
-    assert asdict(constants["API_LATE"].origin) == _c_origin(
+    _assert_c_origin(
+        constants["API_LATE"].origin,
         native_name="API_LATE",
         source_kind="macro",
         source_location={
@@ -498,7 +499,7 @@ def test_c2ir_reports_unsupported_type_and_declarator_compositions():
     assert unresolved.name == "missing_t"
     assert unresolved.dtype == "missing_t"
     assert unresolved.metadata == {}
-    assert asdict(unresolved.origin) == _c_origin(source_kind="type", source_type="missing_t")
+    _assert_c_origin(unresolved.origin, source_kind="type", source_type="missing_t")
     _assert_unsupported_type(
         unsupported_integer,
         code="c_unsupported_type",
