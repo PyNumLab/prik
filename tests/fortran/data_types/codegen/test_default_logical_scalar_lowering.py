@@ -31,7 +31,7 @@ def _logical_function_plan():
 def test_policy_completes_default_logical_input_and_output_kind_copies():
     _module_plan, function = _logical_function_plan()
     input_plan = function.arguments[0]
-    output_slot = function.results[0].native_call_slot
+    output_slot = function.results[0].bridge_call_slot
 
     assert input_plan.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_COPY
     assert input_plan.scalar_native_type == "logical"

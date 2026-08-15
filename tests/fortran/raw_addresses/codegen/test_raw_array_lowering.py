@@ -58,8 +58,8 @@ def test_raw_array_addresses_use_one_shared_transfer_and_shape_plan():
     module = _raw_array_module()
     function = _functions(WrapperPlanner().build(module))["raw_vector"]
     argument = function.arguments[1]
-    assert argument.native_call_slot is function.native_call_slots[argument.native_position]
-    assert argument.array is argument.native_call_slot.array
+    assert argument.bridge_call_slot is function.bridge_call_slots[argument.native_position]
+    assert argument.array is argument.bridge_call_slot.array
     assert argument.object_kind is ObjectKind.NUMPY_ARRAY
     assert argument.ownership_owner is OwnershipOwner.CALLER
     assert argument.transfer_mode is TransferMode.IN_PLACE
@@ -70,7 +70,7 @@ def test_raw_array_addresses_use_one_shared_transfer_and_shape_plan():
     assert argument.binding.python_action is PythonBarrierAction.RAW_ADDRESS
     assert argument.binding.codegen_action is CodegenAction.IN_PLACE_ARGUMENT
     assert argument.bridge.native_action is NativeBarrierAction.PASS_RAW_ADDRESS
-    assert argument.bridge.handoff_mode is ArgumentHandoffMode.OPAQUE_ADDRESS
+    assert argument.entrypoint.handoff_mode is ArgumentHandoffMode.OPAQUE_ADDRESS
     assert argument.bridge.data_action is BridgeDataAction.ASSOCIATE_VIEW
     assert argument.bridge.copy_reason is None
 
@@ -150,12 +150,12 @@ def test_raw_array_plan_edits_fail_before_backend_lowering(edit: str, diagnostic
         argument.binding.python_action = PythonBarrierAction.STRING_VALUE
     elif edit == "native-action":
         argument.bridge.native_action = NativeBarrierAction.PASS_ARRAY_BUFFER
-        argument.native_call_slot.native_action = NativeBarrierAction.PASS_ARRAY_BUFFER
+        argument.bridge_call_slot.native_action = NativeBarrierAction.PASS_ARRAY_BUFFER
     elif edit == "handoff":
-        argument.bridge.handoff_mode = ArgumentHandoffMode.ARRAY_BUFFER
+        argument.entrypoint.handoff_mode = ArgumentHandoffMode.ARRAY_BUFFER
     elif edit == "data-action":
         argument.bridge.data_action = BridgeDataAction.DIRECT_TRANSFER
-        argument.native_call_slot.bridge_data_action = BridgeDataAction.DIRECT_TRANSFER
+        argument.bridge_call_slot.bridge_data_action = BridgeDataAction.DIRECT_TRANSFER
     elif edit == "rank":
         argument.array.rank = 0
     elif edit == "shape":
@@ -173,7 +173,7 @@ def test_raw_array_plan_edits_fail_before_backend_lowering(edit: str, diagnostic
     elif edit == "character-length":
         argument.array.itemsize = None
     else:
-        argument.native_call_slot = function.native_call_slots[0]
+        argument.bridge_call_slot = function.bridge_call_slots[0]
 
     with pytest.raises(ValueError, match=diagnostic):
         WrapperGenerator().generate(plan)

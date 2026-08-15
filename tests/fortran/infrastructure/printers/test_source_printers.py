@@ -31,7 +31,13 @@ from prik.codegen import (
     FortranUse,
     UnsupportedWrapperCodegenNodeError,
 )
-from prik.planning import BindingModulePlan, BridgeModulePlan, ModulePlan, NamespacePlan
+from prik.planning import (
+    BindingModulePlan,
+    BridgeModulePlan,
+    ModulePlan,
+    NamespacePlan,
+    NativeEntrypointModulePlan,
+)
 from prik.printers import CSourcePrinter, FortranSourcePrinter
 
 
@@ -102,6 +108,7 @@ def test_source_printers_reject_wrapper_plan_models():
     plan = ModulePlan(
         owner_path="demo",
         binding=BindingModulePlan("demo"),
+        entrypoint=NativeEntrypointModulePlan("demo"),
         bridge=BridgeModulePlan("demo"),
         namespaces=(NamespacePlan(owner_path="demo", python_path=()),),
     )

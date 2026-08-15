@@ -49,7 +49,7 @@ def test_direct_bool_result_normalizes_the_fortran_truth_bit_before_c_conversion
     plan = WrapperPlanner().build(module)
     result = plan.namespaces[0].functions[0].results[0]
 
-    assert result.direct_result_abi is DirectResultABI.LOGICAL_LOW_BIT_INT8
+    assert result.entrypoint.direct_result_abi is DirectResultABI.LOGICAL_LOW_BIT_INT8
 
     artifacts = WrapperGenerator().generate(plan)
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
@@ -70,7 +70,7 @@ def test_generator_rejects_a_non_normalized_direct_bool_result_abi():
     )
     complete_semantic_policies(module)
     plan = WrapperPlanner().build(module)
-    plan.namespaces[0].functions[0].results[0].direct_result_abi = DirectResultABI.NATIVE_SCALAR
+    plan.namespaces[0].functions[0].results[0].entrypoint.direct_result_abi = DirectResultABI.NATIVE_SCALAR
 
     with pytest.raises(ValueError, match="invalid-direct-result-abi"):
         WrapperGenerator().generate(plan)

@@ -7,6 +7,17 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+### Added
+
+- Added a native-entrypoint adoption roadmap for selective direct Fortran
+  `bind(C)` calls and the initial direct-only C wrapper backend.
+
+### Changed
+
+- Separated wrapper plans into binding, shared native-entrypoint, and
+  Fortran-bridge facets, including planner-owned auxiliary accessor, lifecycle,
+  descriptor, and callback entrypoints, without changing generated wrappers.
+
 ## 0.3.0 — 2026-08-14
 
 ### Added

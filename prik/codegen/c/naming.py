@@ -108,11 +108,6 @@ class CBindingNames:
         return f"_prik_create_{surface.type_identity[1].casefold()}"
 
     @staticmethod
-    def class_create_bridge(surface: ClassSurfacePlan) -> str:
-        """Return the Fortran bridge symbol allocating one class owner."""
-        return f"bind_c_prik_create_{surface.type_identity[1].casefold()}"
-
-    @staticmethod
     def class_wrap_helper(
         surface: ClassSurfacePlan | None,
         *,

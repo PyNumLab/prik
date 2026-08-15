@@ -113,11 +113,14 @@ inspection, not overload matching or dispatch policy.
 
 ### Specialized lowerings
 
-The C binding and Fortran bridge lower separate, completed views of the same
-plan. Their algorithms, source-printing examples, and failure boundaries are
-described in [C Binding Lowering](codegen/c-binding.md) and [Fortran Bridge
+The C binding lowers binding plus native-entrypoint views; the Fortran bridge
+lowers that same entrypoint plus bridge-local views. The entrypoint is their
+shared, bidirectional C ABI contract, while original Fortran invocation facts
+remain unavailable to the C binding. Their algorithms, source-printing
+examples, and failure boundaries are described in [C Binding
+Lowering](codegen/c-binding.md) and [Fortran Bridge
 Lowering](codegen/fortran-bridge.md). Neither page assigns policy completion to
-code generation.
+code generation, and every current entrypoint remains Fortran-bridge-backed.
 
 ### `checks.py`: maintainability recommendations
 

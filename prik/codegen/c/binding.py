@@ -79,7 +79,6 @@ from prik.codegen.nodes import (
     CSwitch,
     CodeExpression,
 )
-from prik.naming.native_symbols import NativeSymbolNames
 from prik.codegen.overloads import OverloadPlanQueries
 from prik.planning.models import (
     ArrayHandoffPlan,
@@ -99,7 +98,12 @@ from prik.planning.models import (
     NamespacePlan,
     NativeArrayActualPlan,
     NativeArrayHandlePlan,
-    NativeCallSlotPlan,
+    NativeEntrypointABIValueKind,
+    NativeEntrypointABIValuePlan,
+    NativeEntrypointImplementation,
+    NativeEntrypointOperationPlan,
+    NativeEntrypointParameterPlan,
+    NativeEntrypointResultPlan,
     OverloadArgumentMatchPlan,
     OverloadPlan,
     ResultPlan,
@@ -135,7 +139,7 @@ class _CFunctionContext:
     """Per-function names and role substitutions shared across C lowering.
 
     The record is derived from a completed function plan and is read-only while
-    declarations, conversion nodes, bridge calls, and result assembly are
+    declarations, conversion nodes, entrypoint calls, and result assembly are
     emitted.
     """
 
@@ -209,9 +213,6 @@ class CBindingGenerator(ClassVisitor):
         for argument in function.arguments:
             self._require_argument_supported(argument)
         self._require_function_results_supported(function)
-        for slot in function.native_call_slots:
-            if slot.source_kind == "result":
-                self._require_backend_type_supported(slot.semantic_type_name, slot.datatype_family)
         for action in function.writeback_actions:
             self._require_backend_type_supported(action.semantic_type_name, action.datatype_family)
 
@@ -248,14 +249,21 @@ class CBindingGenerator(ClassVisitor):
         then assembles module support, runtime helpers, wrappers, and module
         initialization in emitted dependency order.
         """
-        # Stage 1: complete the immutable name index consumed by Python-surface emission.
+        # Stage 1: index planner-owned cross-language operations before any lowering.
+        self._auxiliary_entrypoints = {
+            (operation.owner_path, operation.role): operation for operation in plan.entrypoint.operations
+        }
+        self._derived_owner_paths = {
+            derived.backend_symbol: derived.owner_path for derived in self._derived_types(plan)
+        }
+        # Stage 2: complete the immutable name index consumed by Python-surface emission.
         class_python_names = {
             surface.type_identity: surface.python_names[0]
             for namespace in plan.namespaces
             for surface in namespace.classes
             if surface.python_names
         }
-        # Stage 2: select support and assemble generated functions in dependency order.
+        # Stage 3: select support and assemble generated functions in dependency order.
         functions = tuple(function for namespace in plan.namespaces for function in self.visit(namespace))
         needs_native_support = self.requires_native_support(plan)
         needs_free = self._module_needs_allocator(plan)
@@ -280,6 +288,83 @@ class CBindingGenerator(ClassVisitor):
                 self._module_init(plan, needs_native_support),
             ),
         )
+
+    def _auxiliary_entrypoint(self, owner_path: str, role: str) -> NativeEntrypointOperationPlan:
+        """Return one required planner-owned operation without a naming fallback."""
+        try:
+            return self._auxiliary_entrypoints[(owner_path, role)]
+        except (AttributeError, KeyError):
+            raise ValueError(f"Missing auxiliary native entrypoint {owner_path!r} role {role!r}") from None
+
+    def _auxiliary_entrypoints_for(
+        self,
+        owner_path: str,
+        role_prefix: str,
+    ) -> tuple[NativeEntrypointOperationPlan, ...]:
+        """Return planner-ordered operations for one owner and role family."""
+        return tuple(
+            operation
+            for operation in self._auxiliary_entrypoints.values()
+            if operation.owner_path == owner_path and operation.role.startswith(role_prefix)
+        )
+
+    def _has_auxiliary_entrypoint(self, owner_path: str, role: str) -> bool:
+        """Return whether planning registered one auxiliary operation."""
+        return (owner_path, role) in self._auxiliary_entrypoints
+
+    def _auxiliary_entrypoint_prototype(
+        self,
+        operation: NativeEntrypointOperationPlan,
+    ) -> CFunctionPrototype:
+        """Lower one complete planner-owned C ABI into a declaration."""
+        if operation.implementation is not NativeEntrypointImplementation.BRIDGE:
+            raise ValueError(f"C cannot declare binding-owned operation {operation.key!r} as an external bridge")
+        return CFunctionPrototype(
+            operation.symbol_name,
+            self._auxiliary_c_type(operation.signature.result),
+            tuple(self._auxiliary_c_parameter(parameter) for parameter in operation.signature.parameters),
+        )
+
+    def _auxiliary_c_parameter(self, value: NativeEntrypointABIValuePlan) -> CParameter:
+        """Lower one ordered auxiliary C-ABI parameter."""
+        if value.kind is NativeEntrypointABIValueKind.CALLBACK and value.callback_signature is not None:
+            if value.c_type_name is not None:
+                return CParameter(value.c_name, value.c_type_name)
+            return CParameter(
+                value.c_name,
+                self._auxiliary_c_type(value.callback_signature.result),
+                tuple(self._auxiliary_c_type(item) for item in value.callback_signature.parameters),
+            )
+        return CParameter(value.c_name, self._auxiliary_c_type(value))
+
+    @staticmethod
+    def _auxiliary_c_type(value: NativeEntrypointABIValuePlan) -> str:
+        """Spell one structured auxiliary ABI value for C."""
+        base_types = {
+            NativeEntrypointABIValueKind.VOID: "void",
+            NativeEntrypointABIValueKind.BOOL: "bool",
+            NativeEntrypointABIValueKind.INT: "int",
+            NativeEntrypointABIValueKind.INT8: "int8_t",
+            NativeEntrypointABIValueKind.INT64: "int64_t",
+            NativeEntrypointABIValueKind.OPAQUE: "void",
+            NativeEntrypointABIValueKind.CHARACTER: "char",
+            NativeEntrypointABIValueKind.DESCRIPTOR: "CFI_cdesc_t",
+        }
+        if value.kind is NativeEntrypointABIValueKind.SEMANTIC_SCALAR:
+            if value.semantic_type_name is None:
+                raise ValueError(f"Auxiliary ABI value {value.role!r} has no semantic scalar type")
+            base = PrimitiveScalarTypeRegistry.type_for(value.semantic_type_name).c_spelling
+        elif value.kind is NativeEntrypointABIValueKind.CALLBACK:
+            if value.c_type_name is None:
+                raise ValueError(f"Auxiliary ABI callback {value.role!r} has no C typedef")
+            base = value.c_type_name
+        else:
+            try:
+                base = base_types[value.kind]
+            except KeyError:
+                raise ValueError(f"Unsupported auxiliary C ABI kind {value.kind.value!r}") from None
+        prefix = "const " if value.const else ""
+        return f"{prefix}{base}{' *' * value.pointer_depth}"
 
     def binding_modules(self, plan: ModulePlan) -> tuple[CModule, ...]:
         """Build one implementation module or independently compilable wrapper shards.
@@ -335,7 +420,7 @@ class CBindingGenerator(ClassVisitor):
                 name=f"{module.name}_{index:03d}",
                 defines=worker_defines,
                 includes=module.includes,
-                declarations=tuple(self._bridge_prototype(function) for function in group),
+                declarations=tuple(self._entrypoint_prototype(function) for function in group),
                 functions=tuple(wrappers[self._binding_function_name(function)] for function in group),
             )
             for index, group in enumerate(function_groups, start=1)
@@ -453,7 +538,7 @@ class CBindingGenerator(ClassVisitor):
 
     def _function_uses_extent_power(self, function: FunctionPlan) -> bool:
         """Scan one function's direct and callback transfer arrays for ``**``."""
-        direct_owners = (*function.arguments, *function.results, *function.native_call_slots)
+        direct_owners = (*function.arguments, *function.results)
         if any(self._array_uses_extent_power(owner.array) for owner in direct_owners):
             return True
         callbacks = (argument.callback for argument in function.arguments if argument.callback is not None)
@@ -572,23 +657,13 @@ class CBindingGenerator(ClassVisitor):
         ) or any(self._function_needs_allocator(function) for function in self._functions(plan))
 
     def _function_needs_allocator(self, function: FunctionPlan) -> bool:
-        """Return whether one binding/bridge function owns allocated string storage."""
-        return (
-            any(
-                result.scalar_descriptor is not None
-                or result.object_kind in {ObjectKind.STRING, ObjectKind.NUMPY_ARRAY}
-                for result in function.results
-            )
-            or any(
-                argument.object_kind is ObjectKind.STRING
-                and argument.binding.codegen_action is CodegenAction.COPY_IN_OUT
-                for argument in function.arguments
-            )
-            or any(
-                slot.scalar_descriptor is not None or slot.object_kind in {ObjectKind.STRING, ObjectKind.NUMPY_ARRAY}
-                for slot in function.native_call_slots
-                if slot.source_kind == "result"
-            )
+        """Return whether one wrapper function requires allocated string storage."""
+        return any(
+            result.scalar_descriptor is not None or result.object_kind in {ObjectKind.STRING, ObjectKind.NUMPY_ARRAY}
+            for result in function.entrypoint.results
+        ) or any(
+            argument.object_kind is ObjectKind.STRING and argument.binding.codegen_action is CodegenAction.COPY_IN_OUT
+            for argument in function.arguments
         )
 
     def _module_defines(self, plan: ModulePlan, needs_native_support: bool) -> tuple[CMacroDefinition, ...]:
@@ -721,21 +796,21 @@ class CBindingGenerator(ClassVisitor):
             declarations.extend(
                 (
                     CStructDefinition(
-                        callback.context_type_symbol,
+                        callback.binding.context_type_symbol,
                         (
                             CParameter("callable", "PyObject *"),
                             CParameter("module", "PyObject *"),
                             CParameter("thread_id", "unsigned long"),
                             CParameter(
                                 "previous",
-                                f"struct {callback.context_type_symbol} *",
+                                f"struct {callback.binding.context_type_symbol} *",
                             ),
                             CParameter("last_result", "PyObject *"),
                         ),
                     ),
                     CDeclaration(
-                        callback.context_current_symbol,
-                        f"static _Thread_local {callback.context_type_symbol} *",
+                        callback.binding.context_current_symbol,
+                        f"static _Thread_local {callback.binding.context_type_symbol} *",
                         CodeExpression("NULL"),
                     ),
                 )
@@ -757,7 +832,7 @@ class CBindingGenerator(ClassVisitor):
     def _callback_abort_function(callback: CallbackHandoffPlan) -> CFunction:
         """Emit the single non-returning traceback boundary for one site."""
         return CFunction(
-            callback.abort_symbol,
+            callback.binding.abort_symbol,
             "void",
             parameters=(CParameter("message", "const char *"),),
             storage="static",
@@ -778,8 +853,8 @@ class CBindingGenerator(ClassVisitor):
         nodes = [
             CDeclaration(
                 context,
-                f"{callback.context_type_symbol} *",
-                CodeExpression(callback.context_current_symbol),
+                f"{callback.binding.context_type_symbol} *",
+                CodeExpression(callback.binding.context_current_symbol),
             ),
             CIf(
                 CodeExpression(f"{context} == NULL || {context}->thread_id != PyThread_get_thread_ident()"),
@@ -790,7 +865,9 @@ class CBindingGenerator(ClassVisitor):
                             'PyErr_SetString(PyExc_RuntimeError, "callback invoked outside its entering Python thread")'
                         )
                     ),
-                    CExpressionStatement(CodeExpression(f'{callback.abort_symbol}("callback thread violation")')),
+                    CExpressionStatement(
+                        CodeExpression(f'{callback.binding.abort_symbol}("callback thread violation")')
+                    ),
                 ),
             ),
             CDeclaration(gil, "PyGILState_STATE", CodeExpression("PyGILState_Ensure()")),
@@ -823,10 +900,11 @@ class CBindingGenerator(ClassVisitor):
                 *self._callback_result_nodes(callback, context, gil),
             )
         )
+        operation = callback.entrypoint.operation
         return CFunction(
-            callback.trampoline_symbol,
-            self._callback_c_return_type(callback),
-            parameters=self._callback_c_parameters(callback.arguments),
+            operation.symbol_name,
+            self._auxiliary_c_type(operation.signature.result),
+            parameters=tuple(self._auxiliary_c_parameter(parameter) for parameter in operation.signature.parameters),
             body=tuple(nodes),
         )
 
@@ -839,7 +917,7 @@ class CBindingGenerator(ClassVisitor):
         """Build callback abort if null from the supplied local lowering values; emitted nodes only project completed binding actions."""
         return CIf(
             CodeExpression(f"{name} == NULL"),
-            body=(CExpressionStatement(CodeExpression(f'{callback.abort_symbol}("{message}")')),),
+            body=(CExpressionStatement(CodeExpression(f'{callback.binding.abort_symbol}("{message}")')),),
         )
 
     def _callback_python_argument_nodes(
@@ -1022,7 +1100,9 @@ class CBindingGenerator(ClassVisitor):
                     CExpressionStatement(
                         CodeExpression('PyErr_SetString(PyExc_TypeError, "callback subroutine must return None")')
                     ),
-                    CExpressionStatement(CodeExpression(f'{callback.abort_symbol}("invalid callback return value")')),
+                    CExpressionStatement(
+                        CodeExpression(f'{callback.binding.abort_symbol}("invalid callback return value")')
+                    ),
                 ),
             ),
             CExpressionStatement(CodeExpression("Py_DECREF(callback_result)")),
@@ -1046,7 +1126,9 @@ class CBindingGenerator(ClassVisitor):
             CIf(
                 CodeExpression(self._scalar_unpack_expression(scalar, "callback_result", "callback_value") + " < 0"),
                 body=(
-                    CExpressionStatement(CodeExpression(f'{callback.abort_symbol}("invalid callback return value")')),
+                    CExpressionStatement(
+                        CodeExpression(f'{callback.binding.abort_symbol}("invalid callback return value")')
+                    ),
                 ),
             ),
             CExpressionStatement(CodeExpression("Py_DECREF(callback_result)")),
@@ -1082,7 +1164,9 @@ class CBindingGenerator(ClassVisitor):
                     CExpressionStatement(
                         CodeExpression('PyErr_SetString(PyExc_TypeError, "invalid callback array result")')
                     ),
-                    CExpressionStatement(CodeExpression(f'{callback.abort_symbol}("invalid callback return value")')),
+                    CExpressionStatement(
+                        CodeExpression(f'{callback.binding.abort_symbol}("invalid callback return value")')
+                    ),
                 ),
             ),
             CExpressionStatement(CodeExpression(f"Py_XDECREF({context}->last_result)")),
@@ -1142,7 +1226,9 @@ class CBindingGenerator(ClassVisitor):
                             f'PyErr_SetString(PyExc_TypeError, "callback must return {transfer.semantic_type_name}")'
                         )
                     ),
-                    CExpressionStatement(CodeExpression(f'{callback.abort_symbol}("invalid callback return value")')),
+                    CExpressionStatement(
+                        CodeExpression(f'{callback.binding.abort_symbol}("invalid callback return value")')
+                    ),
                 ),
             ),
             CExpressionStatement(CodeExpression("Py_DECREF(callback_expected_type)")),
@@ -1172,42 +1258,6 @@ class CBindingGenerator(ClassVisitor):
             CExpressionStatement(CodeExpression(f"PyGILState_Release({gil})")),
             CReturn(CodeExpression("callback_value")),
         )
-
-    def _callback_c_parameters(
-        self,
-        transfers: tuple[CallbackTransferPlan, ...],
-    ) -> tuple[CParameter, ...]:
-        """Build callback c parameters from the supplied local lowering values; emitted nodes only project completed binding actions."""
-        return tuple(
-            parameter for transfer in transfers for parameter in self._callback_c_transfer_parameters(transfer)
-        )
-
-    def _callback_c_transfer_parameters(
-        self,
-        transfer: CallbackTransferPlan,
-    ) -> tuple[CParameter, ...]:
-        """Build callback c transfer parameters from the supplied local lowering values; emitted nodes only project completed binding actions."""
-        base = self._callback_parameter_base_name(transfer)
-        if transfer.abi is CallbackABIKind.VALUE:
-            scalar = PrimitiveScalarTypeRegistry.type_for(transfer.semantic_type_name)
-            return (CParameter(base, scalar.c_spelling),)
-        if transfer.abi is CallbackABIKind.DATA_AND_SHAPE:
-            return (
-                CParameter(f"{base}_data", "void *"),
-                *(CParameter(f"{base}_extent_{axis}", "int64_t") for axis in range(transfer.rank)),
-            )
-        if transfer.abi is CallbackABIKind.DATA_AND_LENGTH:
-            return CParameter(f"{base}_data", "void *"), CParameter(f"{base}_length", "int64_t")
-        return (CParameter(f"{base}_data", "void *"),)
-
-    def _callback_c_return_type(self, callback: CallbackHandoffPlan) -> str:
-        """Return the binding-local callback c return type derived from the supplied local lowering values; this helper preserves completed policy."""
-        transfer = callback.result.transfer
-        if callback.result.action is CallbackResultAction.RETURN_VOID:
-            return "void"
-        if callback.result.action is CallbackResultAction.RETURN_SCALAR and transfer is not None:
-            return PrimitiveScalarTypeRegistry.type_for(transfer.semantic_type_name).c_spelling
-        return "void *"
 
     @staticmethod
     def _callback_parameter_base_name(transfer: CallbackTransferPlan) -> str:
@@ -1702,40 +1752,11 @@ class CBindingGenerator(ClassVisitor):
         return tuple(declarations)
 
     def _derived_origin_bridge_prototypes(self, variable: ModuleVariablePlan) -> tuple[CFunctionPrototype, ...]:
-        """Return the binding-local derived origin bridge prototypes derived from the supplied completed binding records; this helper preserves completed policy."""
-        prototypes = []
-        if self._derived_origin_supports(variable, "present"):
-            prototypes.append(CFunctionPrototype(self._derived_origin_bridge_name(variable, "present"), "bool"))
-        if self._derived_origin_supports(variable, "address"):
-            prototypes.append(CFunctionPrototype(self._derived_origin_bridge_name(variable, "address"), "void *"))
-        if self._derived_origin_supports(variable, "scoped"):
-            prototypes.append(
-                CFunctionPrototype(
-                    self._derived_origin_bridge_name(variable, "scoped"),
-                    "int",
-                    (
-                        CParameter("consumer", "prik_derived_consumer_fn"),
-                        CParameter("context", "void *"),
-                    ),
-                )
-            )
-        if self._derived_origin_supports(variable, "checkout"):
-            prototypes.append(
-                CFunctionPrototype(
-                    self._derived_origin_bridge_name(variable, "checkout"),
-                    "int",
-                    (CParameter("holder", "void **"),),
-                )
-            )
-        if self._derived_origin_supports(variable, "restore"):
-            prototypes.append(
-                CFunctionPrototype(
-                    self._derived_origin_bridge_name(variable, "restore"),
-                    "int",
-                    (CParameter("holder", "void *"),),
-                )
-            )
-        return tuple(prototypes)
+        """Declare planner-owned derived-origin bridge operations."""
+        return tuple(
+            self._auxiliary_entrypoint_prototype(operation)
+            for operation in self._auxiliary_entrypoints_for(variable.owner_path, "derived_origin:")
+        )
 
     def _derived_origin_wrapper_prototypes(self, variable: ModuleVariablePlan) -> tuple[CFunctionPrototype, ...]:
         """Return the binding-local derived origin wrapper prototypes derived from the supplied completed binding records; this helper preserves completed policy."""
@@ -1952,23 +1973,9 @@ class CBindingGenerator(ClassVisitor):
             ),
         )
 
-    @staticmethod
-    def _derived_origin_supports(variable: ModuleVariablePlan, operation: str) -> bool:
-        """Return derived origin supports from the supplied completed binding records; this helper preserves the selected binding behavior."""
-        storage = variable.derived.handoff.storage
-        support = {
-            DerivedObjectStorage.MODULE_PROXY: {"scoped"},
-            DerivedObjectStorage.MODULE_TARGET: {"address"},
-            DerivedObjectStorage.MODULE_ALLOCATABLE: {"present", "scoped", "checkout", "restore"},
-            DerivedObjectStorage.MODULE_ALLOCATABLE_TARGET: {
-                "present",
-                "address",
-                "checkout",
-                "restore",
-            },
-            DerivedObjectStorage.MODULE_POINTER: {"present", "scoped", "checkout", "restore"},
-        }
-        return operation in support.get(storage, set())
+    def _derived_origin_supports(self, variable: ModuleVariablePlan, operation: str) -> bool:
+        """Return whether planning registered one derived-origin operation."""
+        return (variable.owner_path, f"derived_origin:{operation}") in self._auxiliary_entrypoints
 
     def _derived_origin_needs_guard(self, variable: ModuleVariablePlan) -> bool:
         """Return derived origin needs guard from the supplied completed binding records; this helper preserves the selected binding behavior."""
@@ -1980,8 +1987,8 @@ class CBindingGenerator(ClassVisitor):
         return CBindingNames.derived_origin_symbol(variable)
 
     def _derived_origin_bridge_name(self, variable: ModuleVariablePlan, operation: str) -> str:
-        """Return the binding-local derived origin bridge name derived from the supplied completed binding records; this helper preserves completed policy."""
-        return f"bind_c_prik_origin_{self._derived_origin_symbol(variable)}_{operation}"
+        """Return one planner-owned derived-origin entrypoint symbol."""
+        return self._auxiliary_entrypoint(variable.owner_path, f"derived_origin:{operation}").symbol_name
 
     def _derived_origin_wrapper_name(self, variable: ModuleVariablePlan, operation: str) -> str:
         """Return the binding-local derived origin wrapper name derived from the supplied completed binding records; this helper preserves completed policy."""
@@ -2015,27 +2022,26 @@ class CBindingGenerator(ClassVisitor):
             *self._callback_runtime_declarations(plan),
             *self._derived_call_runtime_declarations(plan),
             *self._derived_origin_declarations(plan),
-            *(self._bridge_prototype(function) for function in self._functions(plan)),
+            *(self._entrypoint_prototype(function) for function in self._functions(plan)),
             *self._class_constructor_prototypes(plan),
-            *(self._derived_destroy_bridge_prototype(derived) for derived in self._owned_derived_types(plan)),
+            *(self._derived_destroy_entrypoint_prototype(derived) for derived in self._owned_derived_types(plan)),
             *(
-                self._allocatable_holder_destroy_bridge_prototype(derived)
+                self._allocatable_holder_destroy_entrypoint_prototype(derived)
                 for derived in self._allocatable_holder_types(plan)
             ),
-            *(self._pointer_holder_destroy_bridge_prototype(derived) for derived in self._pointer_holder_types(plan)),
             *(
-                CFunctionPrototype(
-                    self._allocatable_holder_presence_bridge_name(derived.backend_symbol),
-                    "bool",
-                    (CParameter("address", "void *"),),
+                self._pointer_holder_destroy_entrypoint_prototype(derived)
+                for derived in self._pointer_holder_types(plan)
+            ),
+            *(
+                self._auxiliary_entrypoint_prototype(
+                    self._auxiliary_entrypoint(derived.owner_path, "holder:allocatable:present")
                 )
                 for derived in self._allocatable_holder_types(plan)
             ),
             *(
-                CFunctionPrototype(
-                    self._pointer_holder_presence_bridge_name(derived.backend_symbol),
-                    "bool",
-                    (CParameter("address", "void *"),),
+                self._auxiliary_entrypoint_prototype(
+                    self._auxiliary_entrypoint(derived.owner_path, "holder:pointer:present")
                 )
                 for derived in self._pointer_holder_types(plan)
             ),
@@ -2152,7 +2158,7 @@ class CBindingGenerator(ClassVisitor):
             for argument in function.arguments
             if argument.derived is not None
             and argument.derived_call is not None
-            and argument.bridge.descriptor_output_role is not None
+            and argument.entrypoint.descriptor_output_role is not None
             and any(
                 case.access is DerivedActualAccess.ALLOCATABLE_HOLDER
                 for case in argument.derived_call.cases
@@ -2183,7 +2189,7 @@ class CBindingGenerator(ClassVisitor):
             for argument in function.arguments
             if argument.derived is not None
             and argument.derived_call is not None
-            and argument.bridge.descriptor_output_role is not None
+            and argument.entrypoint.descriptor_output_role is not None
             and any(
                 case.access is DerivedActualAccess.POINTER_HOLDER
                 for case in argument.derived_call.cases
@@ -2204,28 +2210,20 @@ class CBindingGenerator(ClassVisitor):
             )
         )
 
-    def _derived_destroy_bridge_prototype(self, derived: DerivedTypePlan) -> CFunctionPrototype:
+    def _derived_destroy_entrypoint_prototype(self, derived: DerivedTypePlan) -> CFunctionPrototype:
         """Declare the native-aware destroy helper for one opaque type."""
-        return CFunctionPrototype(
-            self._derived_destroy_bridge_name(derived.backend_symbol),
-            "void",
-            (CParameter("address", "void *"),),
-        )
+        return self._auxiliary_entrypoint_prototype(self._auxiliary_entrypoint(derived.owner_path, "derived:destroy"))
 
-    def _allocatable_holder_destroy_bridge_prototype(self, derived: DerivedTypePlan) -> CFunctionPrototype:
+    def _allocatable_holder_destroy_entrypoint_prototype(self, derived: DerivedTypePlan) -> CFunctionPrototype:
         """Declare one typed holder destructor bridge."""
-        return CFunctionPrototype(
-            self._allocatable_holder_destroy_bridge_name(derived.backend_symbol),
-            "void",
-            (CParameter("address", "void *"),),
+        return self._auxiliary_entrypoint_prototype(
+            self._auxiliary_entrypoint(derived.owner_path, "holder:allocatable:destroy")
         )
 
-    def _pointer_holder_destroy_bridge_prototype(self, derived: DerivedTypePlan) -> CFunctionPrototype:
+    def _pointer_holder_destroy_entrypoint_prototype(self, derived: DerivedTypePlan) -> CFunctionPrototype:
         """Return the binding-local pointer holder destroy bridge prototype derived from the supplied local lowering values; this helper preserves completed policy."""
-        return CFunctionPrototype(
-            self._pointer_holder_destroy_bridge_name(derived.backend_symbol),
-            "void",
-            (CParameter("address", "void *"),),
+        return self._auxiliary_entrypoint_prototype(
+            self._auxiliary_entrypoint(derived.owner_path, "holder:pointer:destroy")
         )
 
     def _derived_capsule_destructor_functions(self, plan: ModulePlan) -> tuple[CFunction, ...]:
@@ -2246,9 +2244,9 @@ class CBindingGenerator(ClassVisitor):
             prototype
             for namespace in plan.namespaces
             for surface in namespace.classes
-            if surface.constructor.kind is not ClassConstructorKind.ABSENT
+            if self._has_auxiliary_entrypoint(surface.owner_path, "class:create")
             for prototype in (
-                CFunctionPrototype(CBindingNames.class_create_bridge(surface), "void *"),
+                self._auxiliary_entrypoint_prototype(self._auxiliary_entrypoint(surface.owner_path, "class:create")),
                 CFunctionPrototype(
                     CBindingNames.class_create_method(surface),
                     "PyObject *",
@@ -2265,7 +2263,7 @@ class CBindingGenerator(ClassVisitor):
             self._class_constructor_function(surface, derived_by_identity[surface.type_identity])
             for namespace in plan.namespaces
             for surface in namespace.classes
-            if surface.constructor.kind is not ClassConstructorKind.ABSENT
+            if self._has_auxiliary_entrypoint(surface.owner_path, "class:create")
         )
 
     def _class_constructor_function(
@@ -2278,7 +2276,8 @@ class CBindingGenerator(ClassVisitor):
         capsule = "capsule"
         helper = "wrapper_helper"
         result = "result"
-        destroy = self._derived_destroy_bridge_name(derived.backend_symbol)
+        destroy = self._auxiliary_entrypoint(derived.owner_path, "derived:destroy").symbol_name
+        create = self._auxiliary_entrypoint(surface.owner_path, "class:create").symbol_name
         return CFunction(
             CBindingNames.class_create_method(surface),
             "PyObject *",
@@ -2289,7 +2288,7 @@ class CBindingGenerator(ClassVisitor):
                     CodeExpression('!PyArg_ParseTuple(args, "")'),
                     body=(CReturn(CodeExpression("NULL")),),
                 ),
-                CDeclaration(address, "void *", CodeExpression(f"{CBindingNames.class_create_bridge(surface)}()")),
+                CDeclaration(address, "void *", CodeExpression(f"{create}()")),
                 CIf(
                     CodeExpression(f"{address} == NULL"),
                     body=(
@@ -2430,95 +2429,45 @@ class CBindingGenerator(ClassVisitor):
         )
 
     def _direct_field_bridge_prototype_entries(self, plan: ModulePlan) -> tuple[CFunctionPrototype, ...]:
-        """Return the binding-local direct field bridge prototype entries derived from the supplied completed binding records; this helper preserves completed policy."""
+        """Declare planner-owned direct-field bridge operations."""
         return tuple(
-            prototype
+            self._auxiliary_entrypoint_prototype(operation)
             for derived in self._derived_types(plan)
             for field in derived.fields
-            for prototype in self._direct_field_bridge_prototypes(derived, field)
+            for operation in self._auxiliary_entrypoints_for(f"{derived.owner_path}.{field.name}", "field:direct:")
         )
 
     def _module_member_bridge_prototype_entries(self, plan: ModulePlan) -> tuple[CFunctionPrototype, ...]:
-        """Return the binding-local module member bridge prototype entries derived from the supplied completed binding records; this helper preserves completed policy."""
+        """Declare planner-owned module-member bridge operations."""
         return tuple(
-            prototype
+            self._auxiliary_entrypoint_prototype(operation)
             for variable in self._derived_member_proxy_variables(plan)
             for member in variable.derived.member_paths
-            for prototype in self._module_member_bridge_prototypes(variable, member)
+            for operation in self._auxiliary_entrypoints_for(
+                ".".join((variable.owner_path, *member.path)), "field:module:"
+            )
         )
 
     def _allocatable_holder_field_bridge_prototype_entries(
         self,
         plan: ModulePlan,
     ) -> tuple[CFunctionPrototype, ...]:
-        """Return the binding-local allocatable holder field bridge prototype entries derived from the supplied completed binding records; this helper preserves completed policy."""
+        """Declare planner-owned allocatable-holder field bridge operations."""
         return tuple(
-            prototype
+            self._auxiliary_entrypoint_prototype(operation)
             for derived in self._allocatable_holder_types(plan)
             for field in derived.fields
-            for prototype in self._allocatable_holder_field_bridge_prototypes(derived, field)
+            for operation in self._auxiliary_entrypoints_for(f"{derived.owner_path}.{field.name}", "field:allocatable:")
         )
 
     def _pointer_holder_field_bridge_prototype_entries(self, plan: ModulePlan) -> tuple[CFunctionPrototype, ...]:
-        """Return the binding-local pointer holder field bridge prototype entries derived from the supplied completed binding records; this helper preserves completed policy."""
+        """Declare planner-owned pointer-holder field bridge operations."""
         return tuple(
-            prototype
+            self._auxiliary_entrypoint_prototype(operation)
             for derived in self._pointer_holder_types(plan)
             for field in derived.fields
-            for prototype in self._pointer_holder_field_bridge_prototypes(derived, field)
+            for operation in self._auxiliary_entrypoints_for(f"{derived.owner_path}.{field.name}", "field:pointer:")
         )
-
-    def _allocatable_holder_field_bridge_prototypes(
-        self,
-        derived: DerivedTypePlan,
-        field: DerivedFieldPlan,
-    ) -> tuple[CFunctionPrototype, ...]:
-        """Declare typed scalar holder member operations."""
-        if field.access is not DerivedFieldAccessMechanism.SCALAR_VALUE:
-            raise ValueError(f"Unsupported allocatable-holder field for {field.owner_path!r}: {field.access.value}")
-        value_type = self._derived_field_c_type(field)
-        prototypes = [
-            CFunctionPrototype(
-                self._allocatable_holder_field_bridge_name(derived, field, "get"),
-                value_type,
-                (CParameter("owner", "void *"),),
-            )
-        ]
-        if field.setter_action is SetterAction.WRITE_THROUGH:
-            prototypes.append(
-                CFunctionPrototype(
-                    self._allocatable_holder_field_bridge_name(derived, field, "set"),
-                    "void",
-                    (CParameter("owner", "void *"), CParameter("value", value_type)),
-                )
-            )
-        return tuple(prototypes)
-
-    def _pointer_holder_field_bridge_prototypes(
-        self,
-        derived: DerivedTypePlan,
-        field: DerivedFieldPlan,
-    ) -> tuple[CFunctionPrototype, ...]:
-        """Return the binding-local pointer holder field bridge prototypes derived from the supplied completed binding records; this helper preserves completed policy."""
-        if field.access is not DerivedFieldAccessMechanism.SCALAR_VALUE:
-            raise ValueError(f"Unsupported pointer-holder field for {field.owner_path!r}: {field.access.value}")
-        value_type = self._derived_field_c_type(field)
-        prototypes = [
-            CFunctionPrototype(
-                self._pointer_holder_field_bridge_name(derived, field, "get"),
-                value_type,
-                (CParameter("owner_address", "void *"),),
-            )
-        ]
-        if field.setter_action is SetterAction.WRITE_THROUGH:
-            prototypes.append(
-                CFunctionPrototype(
-                    self._pointer_holder_field_bridge_name(derived, field, "set"),
-                    "void",
-                    (CParameter("owner_address", "void *"), CParameter("value", value_type)),
-                )
-            )
-        return tuple(prototypes)
 
     def _derived_private_method_prototypes(self, plan: ModulePlan) -> tuple[CFunctionPrototype, ...]:
         """Declare private property callables before namespace method tables."""
@@ -2531,249 +2480,6 @@ class CBindingGenerator(ClassVisitor):
             )
             for function in self._derived_field_functions(plan)
         )
-
-    def _direct_field_bridge_prototypes(
-        self,
-        derived: DerivedTypePlan,
-        field: DerivedFieldPlan,
-    ) -> tuple[CFunctionPrototype, ...]:
-        """Return getter/setter ABI for one address-backed parent field."""
-        if field.access is DerivedFieldAccessMechanism.FIXED_STRING_COPY:
-            return self._string_field_bridge_prototypes(
-                self._derived_field_bridge_name(derived, field, "get"),
-                self._derived_field_bridge_name(derived, field, "set"),
-                owner_parameter=True,
-                writable=field.setter_action is SetterAction.WRITE_THROUGH,
-            )
-        if field.access is DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE:
-            return self._derived_handle_bridge_prototypes(
-                field,
-                lambda operation: self._derived_handle_bridge_name(derived, field, operation),
-                owner_parameter=True,
-            )
-        if field.access is DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR:
-            return self._ordinary_array_field_bridge_prototypes(
-                self._derived_field_bridge_name(derived, field, "get"),
-                self._derived_field_bridge_name(derived, field, "set"),
-                owner_parameter=True,
-                writable=field.setter_action is SetterAction.WRITE_THROUGH,
-            )
-        value_type = self._derived_field_c_type(field)
-        prototypes = [
-            CFunctionPrototype(
-                self._derived_field_bridge_name(derived, field, "get"),
-                value_type,
-                (CParameter("owner", "void *"),),
-            )
-        ]
-        if field.setter_action is SetterAction.WRITE_THROUGH:
-            prototypes.append(
-                CFunctionPrototype(
-                    self._derived_field_bridge_name(derived, field, "set"),
-                    "void",
-                    (CParameter("owner", "void *"), CParameter("value", value_type)),
-                )
-            )
-        return tuple(prototypes)
-
-    def _module_member_bridge_prototypes(
-        self,
-        variable: ModuleVariablePlan,
-        member: DerivedMemberPathPlan,
-    ) -> tuple[CFunctionPrototype, ...]:
-        """Return typed plain-module member operation declarations."""
-        field = member.field
-        prototypes = []
-        if field.access is DerivedFieldAccessMechanism.FIXED_STRING_COPY:
-            return self._string_field_bridge_prototypes(
-                self._module_member_bridge_name(variable, member, "get"),
-                self._module_member_bridge_name(variable, member, "set"),
-                owner_parameter=False,
-                writable=field.setter_action is SetterAction.WRITE_THROUGH,
-            )
-        if field.access is DerivedFieldAccessMechanism.NATIVE_ARRAY_HANDLE:
-            return self._derived_handle_bridge_prototypes(
-                field,
-                lambda operation: self._module_member_handle_bridge_name(variable, member, operation),
-                owner_parameter=False,
-            )
-        if field.access is DerivedFieldAccessMechanism.ORDINARY_ARRAY_DESCRIPTOR:
-            return self._ordinary_array_field_bridge_prototypes(
-                self._module_member_bridge_name(variable, member, "get"),
-                self._module_member_bridge_name(variable, member, "set"),
-                owner_parameter=False,
-                writable=field.setter_action is SetterAction.WRITE_THROUGH,
-            )
-        if field.object_kind is ObjectKind.SCALAR:
-            prototypes.append(
-                CFunctionPrototype(
-                    self._module_member_bridge_name(variable, member, "get"),
-                    self._derived_field_c_type(field),
-                )
-            )
-        if field.setter_action is SetterAction.WRITE_THROUGH:
-            prototypes.append(
-                CFunctionPrototype(
-                    self._module_member_bridge_name(variable, member, "set"),
-                    "void",
-                    (CParameter("value", self._derived_field_c_type(field)),),
-                )
-            )
-        return tuple(prototypes)
-
-    @staticmethod
-    def _string_field_bridge_prototypes(
-        getter_name: str,
-        setter_name: str,
-        *,
-        owner_parameter: bool,
-        writable: bool,
-    ) -> tuple[CFunctionPrototype, ...]:
-        """Return a fixed-width byte-copy ABI for one scalar string field."""
-        owner = (CParameter("owner", "void *"),) if owner_parameter else ()
-        prototypes = [CFunctionPrototype(getter_name, "void", (*owner, CParameter("value", "char *")))]
-        if writable:
-            prototypes.append(
-                CFunctionPrototype(
-                    setter_name,
-                    "void",
-                    (*owner, CParameter("value", "const char *")),
-                )
-            )
-        return tuple(prototypes)
-
-    def _derived_handle_bridge_prototypes(
-        self,
-        field: DerivedFieldPlan,
-        bridge_name,
-        *,
-        owner_parameter: bool,
-    ) -> tuple[CFunctionPrototype, ...]:
-        """Return typed native operation declarations for one borrowed field handle."""
-        handle = field.native_array_handle
-        if handle is None or handle.array.rank is None:
-            raise ValueError(f"Native handle field {field.owner_path!r} has no operation plan")
-        owner = (CParameter("owner", "void *"),) if owner_parameter else ()
-        prototypes = (
-            self._derived_handle_bridge_prototype(
-                operation,
-                bridge_name(operation),
-                owner,
-                handle.array.rank,
-            )
-            for operation in handle.operations
-        )
-        return tuple(prototype for prototype in prototypes if prototype is not None)
-
-    def _derived_handle_bridge_prototype(
-        self,
-        operation: NativeArrayOperation,
-        name: str,
-        owner: tuple[CParameter, ...],
-        rank: int,
-    ) -> CFunctionPrototype | None:
-        """Lower one completed field-handle operation into its bridge ABI."""
-        ignored = {
-            NativeArrayOperation.NATIVE_BYTE_ORDER,
-            NativeArrayOperation.ALIGNED,
-            NativeArrayOperation.WRITEABLE,
-            NativeArrayOperation.LAYOUT,
-            NativeArrayOperation.TO_NUMPY,
-            NativeArrayOperation.ARRAY_ACTUAL,
-        }
-        if operation in ignored:
-            return None
-        if operation in {
-            NativeArrayOperation.ALLOCATED,
-            NativeArrayOperation.ASSOCIATED,
-            NativeArrayOperation.CONTIGUOUS,
-        }:
-            return CFunctionPrototype(name, "bool", owner)
-        if operation is NativeArrayOperation.ELEMENT_LENGTH:
-            return CFunctionPrototype(name, "int64_t", owner)
-        if operation is NativeArrayOperation.SHAPE:
-            return self._derived_handle_shape_prototype(name, owner, rank)
-        if operation is NativeArrayOperation.DESCRIPTOR:
-            return self._derived_handle_descriptor_prototype(name, owner)
-        if operation is NativeArrayOperation.ASSOCIATE:
-            return CFunctionPrototype(
-                name,
-                "void",
-                (*owner, CParameter("source", "CFI_cdesc_t *")),
-            )
-        if operation in {NativeArrayOperation.ALLOCATE, NativeArrayOperation.RESIZE}:
-            return self._derived_handle_extent_prototype(name, owner, rank)
-        if operation in {NativeArrayOperation.DEALLOCATE, NativeArrayOperation.NULLIFY}:
-            return CFunctionPrototype(name, "void", owner)
-        raise ValueError(f"Unsupported field handle bridge operation {operation!r}")
-
-    @staticmethod
-    def _derived_handle_shape_prototype(
-        name: str,
-        owner: tuple[CParameter, ...],
-        rank: int,
-    ) -> CFunctionPrototype:
-        """Return the binding-local derived handle shape prototype derived from the supplied local lowering values; this helper preserves completed policy."""
-        parameters = (*owner, *(CParameter(f"extent_{axis}", "int64_t *") for axis in range(rank)))
-        return CFunctionPrototype(name, "void", parameters)
-
-    @staticmethod
-    def _derived_handle_descriptor_prototype(
-        name: str,
-        owner: tuple[CParameter, ...],
-    ) -> CFunctionPrototype:
-        """Return the binding-local derived handle descriptor prototype derived from the supplied local lowering values; this helper preserves completed policy."""
-        parameters = (
-            *owner,
-            CParameter("callback", "void", function_parameters=("CFI_cdesc_t *", "void *")),
-            CParameter("context", "void *"),
-        )
-        return CFunctionPrototype(name, "void", parameters)
-
-    @staticmethod
-    def _derived_handle_extent_prototype(
-        name: str,
-        owner: tuple[CParameter, ...],
-        rank: int,
-    ) -> CFunctionPrototype:
-        """Return the binding-local derived handle extent prototype derived from the supplied local lowering values; this helper preserves completed policy."""
-        parameters = (*owner, *(CParameter(f"extent_{axis}", "int64_t") for axis in range(rank)))
-        return CFunctionPrototype(name, "void", parameters)
-
-    @staticmethod
-    def _ordinary_array_field_bridge_prototypes(
-        getter_name: str,
-        setter_name: str,
-        *,
-        owner_parameter: bool,
-        writable: bool,
-    ) -> tuple[CFunctionPrototype, ...]:
-        """Return a standard-descriptor callback ABI for one fixed array field."""
-        owner = (CParameter("owner", "void *"),) if owner_parameter else ()
-        prototypes = [
-            CFunctionPrototype(
-                getter_name,
-                "void",
-                (
-                    *owner,
-                    CParameter(
-                        "callback",
-                        "void",
-                        function_parameters=("CFI_cdesc_t *", "void *"),
-                    ),
-                    CParameter("context", "void *"),
-                ),
-            )
-        ]
-        if writable:
-            prototypes.append(
-                CFunctionPrototype(
-                    setter_name,
-                    "void",
-                    (*owner, CParameter("value", "void *")),
-                )
-            )
-        return tuple(prototypes)
 
     def _derived_field_functions(self, plan: ModulePlan) -> tuple[CFunction, ...]:
         """Lower address-backed and plain-module field methods."""
@@ -4098,18 +3804,7 @@ class CBindingGenerator(ClassVisitor):
         }:
             return self._module_native_array_metadata_body(operation)
         prefix = self._field_handle_owner_nodes(owner)
-        bridge = self._field_handle_bridge_name(owner, field, operation)
         owner_args = self._field_handle_owner_arguments(owner)
-        if operation in {
-            NativeArrayOperation.ALLOCATED,
-            NativeArrayOperation.ASSOCIATED,
-            NativeArrayOperation.CONTIGUOUS,
-        }:
-            return (*prefix, CReturn(CodeExpression(f"PyBool_FromLong({bridge}({owner_args}))")))
-        if operation is NativeArrayOperation.ELEMENT_LENGTH:
-            return (*prefix, CReturn(CodeExpression(f"PyLong_FromLongLong((long long){bridge}({owner_args}))")))
-        if operation is NativeArrayOperation.SHAPE:
-            return (*prefix, *self._field_handle_shape_nodes(field, bridge, owner_args))
         if operation in {NativeArrayOperation.DESCRIPTOR, NativeArrayOperation.TO_NUMPY}:
             callback = self._field_handle_descriptor_callback(owner, field)
             descriptor_bridge = self._field_handle_bridge_name(
@@ -4126,6 +3821,17 @@ class CBindingGenerator(ClassVisitor):
                 NativeArrayOperation.DESCRIPTOR,
             )
             return (*prefix, *self._field_handle_actual_nodes(descriptor_bridge, owner_args, callback))
+        bridge = self._field_handle_bridge_name(owner, field, operation)
+        if operation in {
+            NativeArrayOperation.ALLOCATED,
+            NativeArrayOperation.ASSOCIATED,
+            NativeArrayOperation.CONTIGUOUS,
+        }:
+            return (*prefix, CReturn(CodeExpression(f"PyBool_FromLong({bridge}({owner_args}))")))
+        if operation is NativeArrayOperation.ELEMENT_LENGTH:
+            return (*prefix, CReturn(CodeExpression(f"PyLong_FromLongLong((long long){bridge}({owner_args}))")))
+        if operation is NativeArrayOperation.SHAPE:
+            return (*prefix, *self._field_handle_shape_nodes(field, bridge, owner_args))
         if operation is NativeArrayOperation.ASSOCIATE:
             return self._field_handle_associate_body(field, prefix, bridge, owner_args)
         if operation in {NativeArrayOperation.ALLOCATE, NativeArrayOperation.RESIZE}:
@@ -4908,8 +4614,8 @@ class CBindingGenerator(ClassVisitor):
         variable: ModuleVariablePlan,
         operation: NativeArrayOperation,
     ) -> str:
-        """Return the binding-local module native array bridge operation name derived from the supplied completed binding records; this helper preserves completed policy."""
-        return f"bind_c_{variable.symbol_name}_{operation.value}"
+        """Return one planner-owned module native-array entrypoint symbol."""
+        return self._auxiliary_entrypoint(variable.owner_path, f"module:native_array:{operation.value}").symbol_name
 
     def _module_native_array_cache_name(self, variable: ModuleVariablePlan) -> str:
         """Return the binding-local module native array cache name derived from the supplied completed binding records; this helper preserves completed policy."""
@@ -5693,10 +5399,8 @@ class CBindingGenerator(ClassVisitor):
         result: ArgumentTransferPlan | ResultPlan,
         operation: NativeArrayOperation,
     ) -> str:
-        """Return the C-visible typed bridge operation symbol."""
-        preferred = result.bridge.native_name or "result"
-        owner = NativeSymbolNames.compact(result.owner_path, preferred, limit=38)
-        return f"bind_c_owned_{owner}_{operation.value}"
+        """Return one planner-owned descriptor operation symbol."""
+        return self._auxiliary_entrypoint(result.owner_path, f"native_array:owned:{operation.value}").symbol_name
 
     def _owned_native_array_operation_def_name(
         self,
@@ -6209,7 +5913,7 @@ class CBindingGenerator(ClassVisitor):
         context = self._function_context(plan)
         argument_declarations, argument_body = self._declarations_first(self._function_argument_nodes(plan, context))
         alias_declarations, alias_body = self._declarations_first(self._derived_alias_preflight_nodes(plan, context))
-        # Stage 2: assemble bridge call, completed output projection, and cleanup.
+        # Stage 2: assemble the entrypoint call, completed output projection, and cleanup.
         output_nodes = self._output_nodes(plan, context)
         return CFunction(
             name=self._binding_function_name(plan),
@@ -6353,7 +6057,7 @@ class CBindingGenerator(ClassVisitor):
         return tuple(
             CDeclaration(
                 self._callback_context_name(argument),
-                argument.callback.context_type_symbol,
+                argument.callback.binding.context_type_symbol,
             )
             for argument in plan.arguments
             if argument.callback is not None
@@ -6382,7 +6086,8 @@ class CBindingGenerator(ClassVisitor):
                 ),
                 CExpressionStatement(
                     CodeExpression(
-                        f"{self._callback_context_name(argument)}.previous = {argument.callback.context_current_symbol}"
+                        f"{self._callback_context_name(argument)}.previous = "
+                        f"{argument.callback.binding.context_current_symbol}"
                     )
                 ),
                 CExpressionStatement(CodeExpression(f"{self._callback_context_name(argument)}.last_result = NULL")),
@@ -6392,7 +6097,7 @@ class CBindingGenerator(ClassVisitor):
                 CExpressionStatement(CodeExpression("Py_INCREF(self)")),
                 CExpressionStatement(
                     CodeExpression(
-                        f"{argument.callback.context_current_symbol} = &{self._callback_context_name(argument)}"
+                        f"{argument.callback.binding.context_current_symbol} = &{self._callback_context_name(argument)}"
                     )
                 ),
             )
@@ -6410,7 +6115,8 @@ class CBindingGenerator(ClassVisitor):
             for node in (
                 CExpressionStatement(
                     CodeExpression(
-                        f"{argument.callback.context_current_symbol} = {self._callback_context_name(argument)}.previous"
+                        f"{argument.callback.binding.context_current_symbol} = "
+                        f"{self._callback_context_name(argument)}.previous"
                     )
                 ),
                 CExpressionStatement(
@@ -6458,7 +6164,7 @@ class CBindingGenerator(ClassVisitor):
                         CodeExpression("0"),
                     ),
                 )
-                if plan.bridge.descriptor_output_role is not None
+                if plan.entrypoint.descriptor_output_role is not None
                 else ()
             ),
             CIf(
@@ -6573,7 +6279,7 @@ class CBindingGenerator(ClassVisitor):
                         CodeExpression("0"),
                     ),
                 )
-                if plan.bridge.descriptor_output_role is not None
+                if plan.entrypoint.descriptor_output_role is not None
                 else ()
             ),
             CIf(CodeExpression(f"{names.object_name} != Py_None"), body=extraction, else_body=none_body),
@@ -8580,7 +8286,7 @@ class CBindingGenerator(ClassVisitor):
         expression: str,
         context: _CFunctionContext,
     ) -> str:
-        """Use the bridge result for native axes and local roles for all others."""
+        """Use the entrypoint result for native axes and local roles for all others."""
         if handoff.extent_evaluation[axis] == "bridge":
             return self._declaration_extent_result_name(result, axis)
         return self._array_extent_expression(handoff, axis, expression, context)
@@ -8976,7 +8682,7 @@ class CBindingGenerator(ClassVisitor):
                 raise ValueError(f"Direct result {plan.owner_path!r} has no C storage")
             return context.result_name
         try:
-            return context.native_outputs[plan.bridge.native_result_role]
+            return context.native_outputs[plan.entrypoint.native_result_role]
         except KeyError:
             raise ValueError(f"Hidden result {plan.owner_path!r} has no C output storage") from None
 
@@ -8988,7 +8694,7 @@ class CBindingGenerator(ClassVisitor):
         """Return the native envelope, status projection, and Python result."""
         nodes = [
             *self._callback_context_push_nodes(plan, context),
-            *self._lower_native_call(plan, self._bridge_call_statement(plan, context)),
+            *self._lower_native_call(plan, self._entrypoint_call_statement(plan, context)),
             *self._callback_context_pop_nodes(plan),
             *self._derived_call_failure_nodes(plan, context),
             *self._derived_after_native_failure_nodes(plan, context),
@@ -9383,16 +9089,16 @@ class CBindingGenerator(ClassVisitor):
             CReturn(CodeExpression(aggregate)),
         )
 
-    def _bridge_call_statement(self, plan: FunctionPlan, context: _CFunctionContext) -> CExpressionStatement:
-        """Return the mechanical bridge call selected by result storage."""
-        call = self._bridge_call(plan, context)
+    def _entrypoint_call_statement(self, plan: FunctionPlan, context: _CFunctionContext) -> CExpressionStatement:
+        """Return the mechanical entrypoint call selected by result storage."""
+        call = self._entrypoint_call(plan, context)
         direct_result = self._direct_result(plan)
         if direct_result is None or self._is_owned_native_array_result(direct_result):
             expression = call
-        elif direct_result.direct_result_abi is DirectResultABI.LOGICAL_LOW_BIT_INT8:
+        elif direct_result.entrypoint.direct_result_abi is DirectResultABI.LOGICAL_LOW_BIT_INT8:
             expression = f"{context.result_name} = (bool){call}"
         elif (
-            direct_result.direct_result_abi is DirectResultABI.NATIVE_SCALAR
+            direct_result.entrypoint.direct_result_abi is DirectResultABI.NATIVE_SCALAR
             or direct_result.object_kind is not ObjectKind.SCALAR
             or direct_result.scalar_descriptor is not None
         ):
@@ -9412,14 +9118,14 @@ class CBindingGenerator(ClassVisitor):
         return self._lower_native_call_held(call)
 
     def _lower_native_call_held(self, call: CExpressionStatement) -> tuple[CExpressionStatement, ...]:
-        """Emit one native bridge call while retaining the GIL."""
+        """Emit one native entrypoint call while retaining the GIL."""
         return (call,)
 
     def _lower_native_call_released(
         self,
         call: CExpressionStatement,
     ) -> tuple[CAllowThreadsBegin | CExpressionStatement | CAllowThreadsEnd, ...]:
-        """Release the GIL only for the native bridge call."""
+        """Release the GIL only for the native entrypoint call."""
         return (CAllowThreadsBegin(), call, CAllowThreadsEnd())
 
     def _lower_status_error(
@@ -9573,7 +9279,7 @@ class CBindingGenerator(ClassVisitor):
             CodeExpression(f"{target} = {self._scalar_result_expression(scalar_type, f'&{names.value_name}')}")
         )
         failure = CIf(CodeExpression(f"{target} == NULL"), body=(*cleanup, CReturn(CodeExpression("NULL"))))
-        if source.bridge.descriptor_output_presence_role is None:
+        if source.entrypoint.descriptor_output_presence_role is None:
             return (CDeclaration(target, "PyObject *", CodeExpression("NULL")), conversion, failure)
         return (
             CDeclaration(target, "PyObject *", CodeExpression("NULL")),
@@ -9693,9 +9399,9 @@ class CBindingGenerator(ClassVisitor):
     def _native_output_names(self, plan: FunctionPlan) -> dict[str, str]:
         """Name native hidden-output locals by their completed symbolic roles."""
         return {
-            slot.symbolic_role: slot.native_name.lower()
-            for slot in plan.native_call_slots
-            if slot.source_kind == "result"
+            result.native_result_role: result.parameter_name
+            for result in plan.entrypoint.results
+            if result.source_kind == "hidden_output" and result.parameter_name is not None
         }
 
     def _output_owners(self, plan: FunctionPlan) -> tuple[tuple[str, int], ...]:
@@ -9880,21 +9586,19 @@ class CBindingGenerator(ClassVisitor):
         plan: FunctionPlan,
         context: _CFunctionContext,
     ) -> tuple[CDeclaration, ...]:
-        """Declare bridge output storage from typed native result slots."""
+        """Declare C storage for every hidden entrypoint result."""
         declarations = []
-        for slot in sorted(plan.native_call_slots, key=lambda item: item.native_position):
-            if slot.source_kind != "result":
-                continue
-            name = context.native_outputs[slot.symbolic_role]
-            if slot.scalar_descriptor is not None:
+        for result in self._entrypoint_hidden_results(plan):
+            name = context.native_outputs[result.native_result_role]
+            if result.scalar_descriptor is not None:
                 declarations.append(CDeclaration(name, "void *", CodeExpression("NULL")))
                 declarations.append(CDeclaration(f"{name}_present", "int", CodeExpression("0")))
-                if slot.scalar_descriptor.runtime_length:
+                if result.scalar_descriptor.runtime_length:
                     declarations.append(CDeclaration(f"{name}_length", "int64_t", CodeExpression("0")))
                 continue
-            if self._is_owned_native_array_slot(slot):
-                if self._is_owned_deferred_character_slot(slot):
-                    rank = slot.native_array_handle.array.rank
+            if self._is_owned_native_array_result(result):
+                if self._is_owned_deferred_character_result(result):
+                    rank = result.native_array_handle.array.rank
                     declarations.extend(
                         (
                             CDeclaration(name, "void *", CodeExpression("NULL")),
@@ -9919,12 +9623,10 @@ class CBindingGenerator(ClassVisitor):
                     )
                 )
                 continue
-            if slot.object_kind in {ObjectKind.STRING, ObjectKind.NUMPY_ARRAY, ObjectKind.DERIVED_TYPE}:
+            if result.object_kind in {ObjectKind.STRING, ObjectKind.NUMPY_ARRAY, ObjectKind.DERIVED_TYPE}:
                 declarations.append(CDeclaration(name, "void *", CodeExpression("NULL")))
                 continue
-            if slot.semantic_type_name is None:
-                raise ValueError(f"Missing native result datatype for {slot.owner_path!r}")
-            scalar_type = PrimitiveScalarTypeRegistry.type_for(slot.semantic_type_name)
+            scalar_type = PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name)
             declarations.append(CDeclaration(name, scalar_type.c_spelling))
         return tuple(declarations)
 
@@ -10189,26 +9891,15 @@ class CBindingGenerator(ClassVisitor):
         return tuple(CExpressionStatement(CodeExpression(f"Py_DECREF({name})")) for name in names)
 
     @staticmethod
-    def _is_owned_native_array_result(result: ResultPlan) -> bool:
+    def _is_owned_native_array_result(result: ResultPlan | NativeEntrypointResultPlan) -> bool:
         """Return whether one result owns persistent standard-descriptor storage."""
         handle = result.native_array_handle
         return handle is not None and handle.handoff.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
 
-    @staticmethod
-    def _is_owned_native_array_slot(slot: NativeCallSlotPlan) -> bool:
-        """Return whether one hidden slot shares owned descriptor storage."""
-        handle = slot.native_array_handle
-        return handle is not None and handle.handoff.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
-
     @classmethod
-    def _is_owned_deferred_character_result(cls, result: ResultPlan) -> bool:
+    def _is_owned_deferred_character_result(cls, result: ResultPlan | NativeEntrypointResultPlan) -> bool:
         """Return whether owner storage needs runtime character-width materialization."""
         return cls._is_owned_native_array_result(result) and result.datatype_family is DatatypeFamily.STRING
-
-    @classmethod
-    def _is_owned_deferred_character_slot(cls, slot: NativeCallSlotPlan) -> bool:
-        """Return whether a hidden owner slot carries runtime-width characters."""
-        return cls._is_owned_native_array_slot(slot) and slot.datatype_family is DatatypeFamily.STRING
 
     def _owned_result_descriptor_name(self, result: ResultPlan, context: _CFunctionContext) -> str:
         """Return persistent owner storage after any deferred-character materialization."""
@@ -10217,81 +9908,98 @@ class CBindingGenerator(ClassVisitor):
             return f"{native_name}_owner_descriptor"
         return native_name
 
-    def _bridge_call(self, plan: FunctionPlan, context: _CFunctionContext) -> str:
-        """Return bridge call from the supplied completed binding records; this helper preserves the selected binding behavior."""
+    def _entrypoint_call(self, plan: FunctionPlan, context: _CFunctionContext) -> str:
+        """Return the call assembled in planned entrypoint-parameter order."""
         arguments = [
-            *self._bridge_visible_argument_values(plan, context),
-            *self._bridge_hidden_result_values(plan, context),
-            *self._bridge_direct_result_values(plan, context),
-            *self._declaration_extent_result_values(plan),
+            value
+            for parameter in sorted(plan.entrypoint.parameters, key=lambda item: item.position)
+            for value in self._entrypoint_parameter_values(plan, parameter, context)
         ]
-        return f"{self._bridge_function_name(plan)}({', '.join(arguments)})"
+        return f"{self._entrypoint_function_name(plan)}({', '.join(arguments)})"
 
-    def _declaration_extent_result_values(self, plan: FunctionPlan) -> tuple[str, ...]:
-        """Pass native-dependent result extent output storage to the main bridge."""
+    def _entrypoint_parameter_values(
+        self,
+        plan: FunctionPlan,
+        parameter: NativeEntrypointParameterPlan,
+        context: _CFunctionContext,
+    ) -> tuple[str, ...]:
+        """Lower one planned C-ABI parameter group to binding call actuals."""
+        if parameter.source_kind == "argument":
+            argument = self._argument_by_owner(plan, parameter.owner_path)
+            names = context.arguments[argument.owner_path]
+            values = list(self._entrypoint_argument_values(argument, names))
+            if argument.entrypoint.optional_mode is OptionalMode.DESCRIPTOR:
+                values.append(names.present_name)
+            if argument.entrypoint.descriptor_output_role is not None:
+                values.extend((f"&{names.value_name}", f"&{self._descriptor_output_present_name(names)}"))
+            return tuple(values)
+        result = self._entrypoint_result_by_owner(plan, parameter.owner_path)
+        if parameter.source_kind == "hidden_result":
+            name = context.native_outputs[result.native_result_role]
+            return self._entrypoint_hidden_result_values(result, name)
+        if parameter.source_kind == "direct_result":
+            return self._entrypoint_direct_result_values(result, context)
+        if parameter.source_kind == "declaration_extent":
+            return self._declaration_extent_result_values_for_result(result)
+        raise ValueError(f"Unsupported entrypoint parameter group {parameter.source_kind!r}")
+
+    @staticmethod
+    def _argument_by_owner(plan: FunctionPlan, owner_path: str) -> ArgumentTransferPlan:
+        """Return the argument referenced by one entrypoint parameter group."""
+        return next(argument for argument in plan.arguments if argument.owner_path == owner_path)
+
+    @staticmethod
+    def _entrypoint_result_by_owner(plan: FunctionPlan, owner_path: str) -> NativeEntrypointResultPlan:
+        """Return the C-ABI result referenced by one parameter group."""
+        return next(result for result in plan.entrypoint.results if result.owner_path == owner_path)
+
+    def _entrypoint_hidden_results(self, plan: FunctionPlan) -> tuple[NativeEntrypointResultPlan, ...]:
+        """Return hidden results in planned C-ABI parameter-group order."""
+        return tuple(
+            self._entrypoint_result_by_owner(plan, parameter.owner_path)
+            for parameter in sorted(plan.entrypoint.parameters, key=lambda item: item.position)
+            if parameter.source_kind == "hidden_result"
+        )
+
+    def _declaration_extent_result_values_for_result(
+        self,
+        result: NativeEntrypointResultPlan,
+    ) -> tuple[str, ...]:
+        """Return extent output actuals for one planned result group."""
+        if result.array is None:
+            return ()
         return tuple(
             f"&{self._declaration_extent_result_name(result, axis)}"
-            for result in plan.results
-            if result.array is not None
             for axis, evaluation in enumerate(result.array.extent_evaluation)
             if evaluation == "bridge"
         )
 
-    def _bridge_visible_argument_values(
+    def _entrypoint_hidden_result_values(
         self,
-        plan: FunctionPlan,
-        context: _CFunctionContext,
+        result: NativeEntrypointResultPlan,
+        name: str,
     ) -> tuple[str, ...]:
-        """Return ordered visible binding-to-bridge ABI values."""
-        values = []
-        for argument in sorted(plan.arguments, key=lambda item: item.bridge.abi_position):
-            names = context.arguments[argument.owner_path]
-            values.extend(self._bridge_call_arguments(argument, names))
-            if argument.bridge.optional_mode is OptionalMode.DESCRIPTOR:
-                values.append(names.present_name)
-            if argument.bridge.descriptor_output_role is not None:
-                values.extend((f"&{names.value_name}", f"&{self._descriptor_output_present_name(names)}"))
-        return tuple(values)
-
-    def _bridge_hidden_result_values(
-        self,
-        plan: FunctionPlan,
-        context: _CFunctionContext,
-    ) -> tuple[str, ...]:
-        """Return ordered hidden output ABI pointers."""
-        values = []
-        for slot in sorted(plan.native_call_slots, key=lambda item: item.native_position):
-            if slot.source_kind != "result":
-                continue
-            name = context.native_outputs[slot.symbolic_role]
-            values.extend(self._bridge_hidden_result_slot_values(slot, name))
-        return tuple(values)
-
-    def _bridge_hidden_result_slot_values(self, slot: NativeCallSlotPlan, name: str) -> tuple[str, ...]:
         """Return ABI pointers for one hidden output slot."""
-        if self._is_owned_deferred_character_slot(slot):
-            rank = slot.native_array_handle.array.rank
+        if self._is_owned_deferred_character_result(result):
+            rank = result.native_array_handle.array.rank
             return (
                 f"&{name}",
                 f"&{name}_itemsize",
                 *(f"&{name}_extent_{axis}" for axis in range(rank)),
             )
-        values = [name if self._is_owned_native_array_slot(slot) else f"&{name}"]
-        if slot.scalar_descriptor is not None:
+        values = [name if self._is_owned_native_array_result(result) else f"&{name}"]
+        if result.scalar_descriptor is not None:
             values.append(f"&{name}_present")
-            if slot.scalar_descriptor.runtime_length:
+            if result.scalar_descriptor.runtime_length:
                 values.append(f"&{name}_length")
         return tuple(values)
 
-    def _bridge_direct_result_values(
+    def _entrypoint_direct_result_values(
         self,
-        plan: FunctionPlan,
+        result: NativeEntrypointResultPlan,
         context: _CFunctionContext,
     ) -> tuple[str, ...]:
-        """Return helper ABI fields for one direct result."""
-        result = self._direct_result(plan)
-        if result is None:
-            return ()
+        """Return helper ABI actuals for one planned direct-result group."""
         if self._is_owned_native_array_result(result):
             if context.result_name is None:
                 raise ValueError(f"Owned direct result {result.owner_path!r} has no C storage")
@@ -10310,20 +10018,20 @@ class CBindingGenerator(ClassVisitor):
             values.append(f"&{context.result_name}_length")
         return tuple(values)
 
-    def _bridge_call_arguments(self, plan: ArgumentTransferPlan, names: _CArgumentNames) -> tuple[str, ...]:
-        """Return one binding-to-bridge C handoff, including helper ABI fields."""
+    def _entrypoint_argument_values(self, plan: ArgumentTransferPlan, names: _CArgumentNames) -> tuple[str, ...]:
+        """Return one binding-to-entrypoint C handoff, including helper ABI fields."""
         if plan.callback is not None:
             return ()
-        if plan.bridge.handoff_mode is ArgumentHandoffMode.CHARACTER_BUFFER:
-            return self._string_bridge_call_arguments(names)
-        if plan.bridge.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER:
-            return self._array_bridge_call_arguments(plan, names)
-        if plan.bridge.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR:
+        if plan.entrypoint.handoff_mode is ArgumentHandoffMode.CHARACTER_BUFFER:
+            return self._string_entrypoint_argument_values(names)
+        if plan.entrypoint.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER:
+            return self._array_entrypoint_argument_values(plan, names)
+        if plan.entrypoint.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR:
             return (names.value_name,)
-        return self._scalar_bridge_call_arguments(plan, names)
+        return self._scalar_entrypoint_argument_values(plan, names)
 
-    # Scalar bridge call arguments.
-    def _scalar_bridge_call_arguments(
+    # Scalar entrypoint call arguments.
+    def _scalar_entrypoint_argument_values(
         self,
         plan: ArgumentTransferPlan,
         names: _CArgumentNames,
@@ -10341,21 +10049,21 @@ class CBindingGenerator(ClassVisitor):
                 f"{ops} != NULL ? {ops}->restore : NULL",
                 f"&{self._derived_status_name(names)}",
             )
-        if plan.bridge.optional_mode is not OptionalMode.REQUIRED:
+        if plan.entrypoint.optional_mode is not OptionalMode.REQUIRED:
             return (names.nullable_name,)
-        if plan.bridge.handoff_mode is ArgumentHandoffMode.OPAQUE_ADDRESS:
+        if plan.entrypoint.handoff_mode is ArgumentHandoffMode.OPAQUE_ADDRESS:
             return (names.value_name,)
-        if plan.bridge.handoff_mode is ArgumentHandoffMode.TYPED_REFERENCE:
+        if plan.entrypoint.handoff_mode is ArgumentHandoffMode.TYPED_REFERENCE:
             return (f"&{names.value_name}",)
         return (names.value_name,)
 
-    # String bridge call arguments.
-    def _string_bridge_call_arguments(self, names: _CArgumentNames) -> tuple[str, ...]:
+    # String entrypoint call arguments.
+    def _string_entrypoint_argument_values(self, names: _CArgumentNames) -> tuple[str, ...]:
         """Return one scalar string pointer-and-length handoff."""
         return names.value_name, f"(int64_t){names.length_name}"
 
-    # Ordinary-array bridge call arguments.
-    def _array_bridge_call_arguments(
+    # Ordinary-array entrypoint call arguments.
+    def _array_entrypoint_argument_values(
         self,
         plan: ArgumentTransferPlan,
         names: _CArgumentNames,
@@ -10380,110 +10088,73 @@ class CBindingGenerator(ClassVisitor):
         """Return array ABI local names only when the plan carries their roles."""
         return names if roles else ()
 
-    def _bridge_prototype(self, plan: FunctionPlan) -> CFunctionPrototype:
-        """Return the binding-local bridge prototype derived from the supplied completed binding records; this helper preserves completed policy."""
-        argument_parameters = tuple(
+    def _entrypoint_prototype(self, plan: FunctionPlan) -> CFunctionPrototype:
+        """Return the shared C prototype in planned parameter-group order."""
+        parameters = tuple(
             parameter
-            for argument in sorted(plan.arguments, key=lambda item: item.bridge.abi_position)
-            for parameter in self._bridge_argument_parameters(argument)
+            for group in sorted(plan.entrypoint.parameters, key=lambda item: item.position)
+            for parameter in self._entrypoint_parameter_declarations(plan, group)
         )
-        result_parameters = tuple(
-            parameter
-            for slot in sorted(plan.native_call_slots, key=lambda item: item.native_position)
-            for parameter in self._bridge_result_parameters(slot)
-        )
-        direct_result = self._direct_result(plan)
-        direct_parameters = self._direct_bridge_result_parameters(direct_result)
-        declaration_extent_parameters = self._declaration_extent_result_parameters(plan)
         return CFunctionPrototype(
-            self._bridge_function_name(plan),
-            self._bridge_return_type(plan),
-            (*argument_parameters, *result_parameters, *direct_parameters, *declaration_extent_parameters),
+            self._entrypoint_function_name(plan),
+            self._entrypoint_return_type(plan),
+            parameters,
         )
 
-    def _declaration_extent_result_parameters(self, plan: FunctionPlan) -> tuple[CParameter, ...]:
-        """Declare native-dependent result extent outputs in the C prototype."""
+    def _entrypoint_parameter_declarations(
+        self,
+        plan: FunctionPlan,
+        parameter: NativeEntrypointParameterPlan,
+    ) -> tuple[CParameter, ...]:
+        """Lower one planned entrypoint parameter group into a C prototype."""
+        if parameter.source_kind == "argument":
+            return self._entrypoint_argument_parameters(self._argument_by_owner(plan, parameter.owner_path))
+        result = self._entrypoint_result_by_owner(plan, parameter.owner_path)
+        if parameter.source_kind == "hidden_result":
+            return self._entrypoint_result_parameters(result)
+        if parameter.source_kind == "direct_result":
+            return self._direct_entrypoint_result_parameters(result)
+        if parameter.source_kind == "declaration_extent":
+            return self._declaration_extent_result_parameters_for_result(result)
+        raise ValueError(f"Unsupported entrypoint parameter group {parameter.source_kind!r}")
+
+    def _declaration_extent_result_parameters_for_result(
+        self,
+        result: NativeEntrypointResultPlan,
+    ) -> tuple[CParameter, ...]:
+        """Declare native-dependent extent outputs for one result group."""
+        if result.array is None:
+            return ()
         return tuple(
             CParameter(self._declaration_extent_result_name(result, axis), "int64_t *")
-            for result in plan.results
-            if result.array is not None
             for axis, evaluation in enumerate(result.array.extent_evaluation)
             if evaluation == "bridge"
         )
 
     @staticmethod
-    def _declaration_extent_result_name(result: ResultPlan, axis: int) -> str:
-        """Return the shared main-bridge ABI name for one evaluated result axis."""
+    def _declaration_extent_result_name(result: ResultPlan | NativeEntrypointResultPlan, axis: int) -> str:
+        """Return the shared entrypoint ABI name for one evaluated result axis."""
         return f"prik_decl_extent_{result.result_position}_{axis}"
 
     def _owned_native_array_bridge_prototypes(self, plan: ModulePlan) -> tuple[CFunctionPrototype, ...]:
         """Declare typed Fortran operations over binding-owned result descriptors."""
         return tuple(
-            prototype
+            self._auxiliary_entrypoint_prototype(operation)
             for _function, result in self._owned_native_array_results(plan)
             if not self._is_owned_deferred_character_result(result)
-            for operation in result.native_array_handle.operations
-            if (prototype := self._owned_native_array_bridge_prototype(result, operation)) is not None
+            for operation in self._auxiliary_entrypoints_for(result.owner_path, "native_array:owned:")
         )
 
     def _default_native_array_bridge_prototypes(self, plan: ModulePlan) -> tuple[CFunctionPrototype, ...]:
         """Declare typed operations over lazily attached caller descriptors."""
         return tuple(
-            prototype
+            self._auxiliary_entrypoint_prototype(operation)
             for _function, argument in self._default_native_array_arguments(plan)
-            for operation in argument.native_array_handle.default_handle.operations
-            if (prototype := self._owned_native_array_bridge_prototype(argument, operation)) is not None
+            for operation in self._auxiliary_entrypoints_for(argument.owner_path, "native_array:owned:")
         )
 
-    def _owned_native_array_bridge_prototype(
-        self,
-        result: ArgumentTransferPlan | ResultPlan,
-        operation: NativeArrayOperation,
-    ) -> CFunctionPrototype | None:
-        """Return one compiler-backed owned-result operation prototype."""
-        if operation in {
-            NativeArrayOperation.ALLOCATED,
-            NativeArrayOperation.ASSOCIATED,
-            NativeArrayOperation.CONTIGUOUS,
-        }:
-            return CFunctionPrototype(
-                self._owned_native_array_bridge_operation_name(result, operation),
-                "bool",
-                (CParameter("result", "CFI_cdesc_t *"),),
-            )
-        if operation is NativeArrayOperation.SHAPE:
-            handle = result.native_array_handle
-            return CFunctionPrototype(
-                self._owned_native_array_bridge_operation_name(result, operation),
-                "void",
-                (
-                    CParameter("result", "CFI_cdesc_t *"),
-                    *(CParameter(f"extent_{axis}", "int64_t *") for axis in range(handle.array.rank)),
-                ),
-            )
-        if operation is NativeArrayOperation.ASSOCIATE:
-            return CFunctionPrototype(
-                self._owned_native_array_bridge_operation_name(result, operation),
-                "void",
-                (
-                    CParameter("result", "CFI_cdesc_t *"),
-                    CParameter("source", "CFI_cdesc_t *"),
-                ),
-            )
-        if operation in {
-            NativeArrayOperation.DEALLOCATE,
-            NativeArrayOperation.NULLIFY,
-            NativeArrayOperation.DESTROY,
-        }:
-            return CFunctionPrototype(
-                self._owned_native_array_bridge_operation_name(result, operation),
-                "void",
-                (CParameter("result", "CFI_cdesc_t *"),),
-            )
-        return None
-
-    def _bridge_return_type(self, plan: FunctionPlan) -> str:
-        """Return the direct bridge result type, or void for subroutines."""
+    def _entrypoint_return_type(self, plan: FunctionPlan) -> str:
+        """Return the direct entrypoint result type, or void for subroutines."""
         result = self._direct_result(plan)
         if result is None:
             return "void"
@@ -10493,16 +10164,14 @@ class CBindingGenerator(ClassVisitor):
             return "void *"
         if result.object_kind in {ObjectKind.STRING, ObjectKind.NUMPY_ARRAY, ObjectKind.DERIVED_TYPE}:
             return "void *"
-        if result.direct_result_abi is DirectResultABI.LOGICAL_LOW_BIT_INT8:
+        if result.entrypoint.direct_result_abi is DirectResultABI.LOGICAL_LOW_BIT_INT8:
             return "int8_t"
-        if result.direct_result_abi is DirectResultABI.NATIVE_SCALAR:
+        if result.entrypoint.direct_result_abi is DirectResultABI.NATIVE_SCALAR:
             return PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name).c_spelling
         raise ValueError(f"Scalar result {result.owner_path!r} has no completed direct-result ABI")
 
-    def _direct_bridge_result_parameters(self, result: ResultPlan | None) -> tuple[CParameter, ...]:
+    def _direct_entrypoint_result_parameters(self, result: NativeEntrypointResultPlan) -> tuple[CParameter, ...]:
         """Return helper ABI parameters associated with one direct result."""
-        if result is None:
-            return ()
         if self._is_owned_native_array_result(result):
             if self._is_owned_deferred_character_result(result):
                 rank = result.native_array_handle.array.rank
@@ -10523,17 +10192,17 @@ class CBindingGenerator(ClassVisitor):
         """Return the sole direct native function result, when present."""
         return next((result for result in plan.results if result.source_kind == "direct_return"), None)
 
-    def _bridge_argument_parameters(self, argument: ArgumentTransferPlan) -> tuple[CParameter, ...]:
-        """Return the bridge ABI parameters for one Python argument."""
-        name = argument.bridge.native_name.lower()
+    def _entrypoint_argument_parameters(self, argument: ArgumentTransferPlan) -> tuple[CParameter, ...]:
+        """Return the entrypoint ABI parameters for one Python argument."""
+        name = argument.entrypoint.parameter_name
         if argument.callback is not None:
             return ()
         if argument.derived_call is not None:
-            return self._derived_bridge_argument_parameters(argument, name)
-        return self._ordinary_bridge_argument_parameters(argument, name)
+            return self._derived_entrypoint_argument_parameters(argument, name)
+        return self._ordinary_entrypoint_argument_parameters(argument, name)
 
     @staticmethod
-    def _derived_bridge_argument_parameters(
+    def _derived_entrypoint_argument_parameters(
         argument: ArgumentTransferPlan,
         name: str,
     ) -> tuple[CParameter, ...]:
@@ -10551,28 +10220,28 @@ class CBindingGenerator(ClassVisitor):
             CParameter(f"{name}_checkout", "prik_derived_checkout_fn"),
             CParameter(f"{name}_restore", "prik_derived_restore_fn"),
             CParameter(f"{name}_status", "int *"),
-            *(descriptor_output if argument.bridge.descriptor_output_role is not None else ()),
+            *(descriptor_output if argument.entrypoint.descriptor_output_role is not None else ()),
         )
 
-    def _ordinary_bridge_argument_parameters(
+    def _ordinary_entrypoint_argument_parameters(
         self,
         argument: ArgumentTransferPlan,
         name: str,
     ) -> tuple[CParameter, ...]:
-        """Dispatch non-callback, non-derived bridge parameters by handoff mode."""
-        if argument.bridge.handoff_mode is ArgumentHandoffMode.CHARACTER_BUFFER:
-            return self._string_bridge_argument_parameters(argument, name)
-        if argument.bridge.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER:
-            return self._array_bridge_argument_parameters(argument, name)
-        if argument.bridge.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR:
+        """Dispatch ordinary entrypoint parameters by completed handoff mode."""
+        if argument.entrypoint.handoff_mode is ArgumentHandoffMode.CHARACTER_BUFFER:
+            return self._string_entrypoint_argument_parameters(argument, name)
+        if argument.entrypoint.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER:
+            return self._array_entrypoint_argument_parameters(argument, name)
+        if argument.entrypoint.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR:
             parameters = [CParameter(name, "CFI_cdesc_t *")]
-            if argument.bridge.optional_mode is OptionalMode.DESCRIPTOR:
+            if argument.entrypoint.optional_mode is OptionalMode.DESCRIPTOR:
                 parameters.append(CParameter(f"{name}_present", "void *"))
             return tuple(parameters)
-        scalar_type = self._scalar_bridge_argument_type(argument)
-        if argument.bridge.optional_mode is OptionalMode.DESCRIPTOR:
+        scalar_type = self._scalar_entrypoint_argument_type(argument)
+        if argument.entrypoint.optional_mode is OptionalMode.DESCRIPTOR:
             return (CParameter(name, scalar_type), CParameter(f"{name}_present", "void *"))
-        if argument.bridge.descriptor_output_role is not None:
+        if argument.entrypoint.descriptor_output_role is not None:
             return (
                 CParameter(name, scalar_type),
                 CParameter(f"{name}_output", "void *"),
@@ -10580,35 +10249,35 @@ class CBindingGenerator(ClassVisitor):
             )
         return (CParameter(name, scalar_type),)
 
-    # Scalar bridge ABI parameters.
-    def _scalar_bridge_argument_type(self, argument: ArgumentTransferPlan) -> str:
-        """Return the C ABI type for one scalar bridge input."""
-        if argument.bridge.optional_mode is not OptionalMode.REQUIRED:
+    # Scalar entrypoint ABI parameters.
+    def _scalar_entrypoint_argument_type(self, argument: ArgumentTransferPlan) -> str:
+        """Return the C ABI type for one scalar entrypoint input."""
+        if argument.entrypoint.optional_mode is not OptionalMode.REQUIRED:
             return "void *"
-        if argument.bridge.handoff_mode is ArgumentHandoffMode.OPAQUE_ADDRESS:
+        if argument.entrypoint.handoff_mode is ArgumentHandoffMode.OPAQUE_ADDRESS:
             return "void *"
         scalar_type = PrimitiveScalarTypeRegistry.type_for(argument.semantic_type_name).c_spelling
-        if argument.bridge.handoff_mode is ArgumentHandoffMode.TYPED_REFERENCE:
+        if argument.entrypoint.handoff_mode is ArgumentHandoffMode.TYPED_REFERENCE:
             return f"{scalar_type} *"
         return scalar_type
 
-    # String bridge ABI parameters.
-    def _string_bridge_argument_parameters(
+    # String entrypoint ABI parameters.
+    def _string_entrypoint_argument_parameters(
         self,
         argument: ArgumentTransferPlan,
         name: str,
     ) -> tuple[CParameter, ...]:
         """Return one scalar string pointer-and-length ABI pair."""
-        pointer_type = "char *" if argument.bridge.codegen_action is CodegenAction.COPY_IN_OUT else "const char *"
+        pointer_type = "char *" if argument.binding.codegen_action is CodegenAction.COPY_IN_OUT else "const char *"
         return CParameter(name, pointer_type), CParameter(f"{name}_length", "int64_t")
 
-    # Ordinary-array bridge ABI parameters.
-    def _array_bridge_argument_parameters(
+    # Ordinary-array entrypoint ABI parameters.
+    def _array_entrypoint_argument_parameters(
         self,
         argument: ArgumentTransferPlan,
         name: str,
     ) -> tuple[CParameter, ...]:
-        """Return the completed ordinary-array bridge ABI parameters."""
+        """Return the completed ordinary-array entrypoint ABI parameters."""
         handoff = argument.array
         if handoff is None:
             raise ValueError(f"Array argument {argument.owner_path!r} has no handoff spec")
@@ -10619,219 +10288,52 @@ class CBindingGenerator(ClassVisitor):
             parameters.append(CParameter(f"{name}_itemsize", "int64_t"))
         if handoff.dense_actual_role is not None:
             parameters.append(CParameter(f"{name}_dense_actual", "int"))
-        parameters.extend(self._array_bridge_axis_parameters(name, "extent", len(handoff.extent_roles)))
-        parameters.extend(self._array_bridge_axis_parameters(name, "upper_bound", len(handoff.upper_bound_roles)))
-        parameters.extend(self._array_bridge_axis_parameters(name, "stride", len(handoff.stride_roles)))
+        parameters.extend(self._array_entrypoint_axis_parameters(name, "extent", len(handoff.extent_roles)))
+        parameters.extend(self._array_entrypoint_axis_parameters(name, "upper_bound", len(handoff.upper_bound_roles)))
+        parameters.extend(self._array_entrypoint_axis_parameters(name, "stride", len(handoff.stride_roles)))
         return tuple(parameters)
 
-    def _array_bridge_axis_parameters(self, name: str, label: str, count: int) -> tuple[CParameter, ...]:
-        """Return one named int64 bridge parameter per ordinary-array axis."""
+    def _array_entrypoint_axis_parameters(self, name: str, label: str, count: int) -> tuple[CParameter, ...]:
+        """Return one named int64 entrypoint parameter per ordinary-array axis."""
         return tuple(CParameter(f"{name}_{label}_{axis}", "int64_t") for axis in range(count))
 
-    def _bridge_result_parameters(self, slot: NativeCallSlotPlan) -> tuple[CParameter, ...]:
+    def _entrypoint_result_parameters(self, result: NativeEntrypointResultPlan) -> tuple[CParameter, ...]:
         """Return the C ABI parameter for one native result slot."""
-        if slot.source_kind != "result":
+        if result.source_kind != "hidden_output":
             return ()
-        if slot.scalar_descriptor is not None:
+        name = result.parameter_name
+        if name is None:
+            raise ValueError(f"Hidden result {result.owner_path!r} has no entrypoint parameter name")
+        if result.scalar_descriptor is not None:
             parameters = [
-                CParameter(slot.native_name.lower(), "void **"),
-                CParameter(f"{slot.native_name.lower()}_present", "int *"),
+                CParameter(name, "void **"),
+                CParameter(f"{name}_present", "int *"),
             ]
-            if slot.scalar_descriptor.runtime_length:
-                parameters.append(CParameter(f"{slot.native_name.lower()}_length", "int64_t *"))
+            if result.scalar_descriptor.runtime_length:
+                parameters.append(CParameter(f"{name}_length", "int64_t *"))
             return tuple(parameters)
-        if self._is_owned_native_array_slot(slot):
-            if self._is_owned_deferred_character_slot(slot):
-                rank = slot.native_array_handle.array.rank
-                name = slot.native_name.lower()
+        if self._is_owned_native_array_result(result):
+            if self._is_owned_deferred_character_result(result):
+                rank = result.native_array_handle.array.rank
                 return (
                     CParameter(name, "void **"),
                     CParameter(f"{name}_itemsize", "int64_t *"),
                     *(CParameter(f"{name}_extent_{axis}", "int64_t *") for axis in range(rank)),
                 )
-            return (CParameter(slot.native_name.lower(), "CFI_cdesc_t *"),)
-        if slot.object_kind in {ObjectKind.STRING, ObjectKind.NUMPY_ARRAY, ObjectKind.DERIVED_TYPE}:
-            return (CParameter(slot.native_name.lower(), "void **"),)
-        if slot.semantic_type_name is None:
-            raise ValueError(f"Missing bridge result datatype for {slot.owner_path!r}")
-        scalar_type = PrimitiveScalarTypeRegistry.type_for(slot.semantic_type_name).c_spelling
-        return (CParameter(slot.native_name.lower(), f"{scalar_type} *"),)
+            return (CParameter(name, "CFI_cdesc_t *"),)
+        if result.object_kind in {ObjectKind.STRING, ObjectKind.NUMPY_ARRAY, ObjectKind.DERIVED_TYPE}:
+            return (CParameter(name, "void **"),)
+        scalar_type = PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name).c_spelling
+        return (CParameter(name, f"{scalar_type} *"),)
 
     def _module_variable_bridge_prototypes(
         self,
         plan: ModuleVariablePlan,
     ) -> tuple[CFunctionPrototype, ...]:
         """Return getter/setter ABI declarations selected by the variable plan."""
-        handler = {
-            ModuleGetterAction.NATIVE_ARRAY_HANDLE: self._module_native_array_bridge_prototypes,
-            ModuleGetterAction.BORROWED_ARRAY_VIEW: self._module_borrowed_array_bridge_prototypes,
-            ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE: self._module_borrowed_array_bridge_prototypes,
-            ModuleGetterAction.DERIVED_OBJECT: self._module_derived_bridge_prototypes,
-        }.get(plan.binding.getter_action)
-        if handler is not None:
-            return handler(plan)
-        return self._module_scalar_bridge_prototypes(plan)
-
-    def _module_borrowed_array_bridge_prototypes(
-        self,
-        plan: ModuleVariablePlan,
-    ) -> tuple[CFunctionPrototype, ...]:
-        """Declare one borrowed array getter with explicit extent outputs."""
-        if plan.array is None or plan.array.rank is None:
-            return ()
-        return (
-            CFunctionPrototype(
-                self._module_bridge_getter_name(plan),
-                "void *",
-                tuple(CParameter(f"extent_{axis}", "int64_t *") for axis in range(plan.array.rank)),
-            ),
-        )
-
-    def _module_derived_bridge_prototypes(
-        self,
-        plan: ModuleVariablePlan,
-    ) -> tuple[CFunctionPrototype, ...]:
-        """Declare the selected direct or member-proxy derived getter ABI."""
-        if plan.derived is None:
-            return ()
-        if plan.derived.access is not ModuleObjectAccessMechanism.MEMBER_PROXY:
-            return (CFunctionPrototype(self._module_bridge_getter_name(plan), "void *"),)
-        if self._nullable_derived_module_proxy(plan):
-            return (CFunctionPrototype(self._module_derived_presence_bridge_name(plan), "bool"),)
-        return ()
-
-    def _module_scalar_bridge_prototypes(
-        self,
-        plan: ModuleVariablePlan,
-    ) -> tuple[CFunctionPrototype, ...]:
-        """Declare ordinary scalar getter and setter bridge functions."""
-        prototypes = []
-        if plan.bridge.getter_role is not None:
-            return_type = (
-                "void *"
-                if plan.binding.getter_action is ModuleGetterAction.NULLABLE_SNAPSHOT
-                else PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).c_spelling
-            )
-            prototypes.append(CFunctionPrototype(self._module_bridge_getter_name(plan), return_type))
-        if plan.bridge.setter_role is not None:
-            scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).c_spelling
-            prototypes.append(
-                CFunctionPrototype(
-                    self._module_bridge_setter_name(plan),
-                    "void",
-                    (CParameter("value", scalar_type),),
-                )
-            )
-        return tuple(prototypes)
-
-    def _module_native_array_bridge_prototypes(
-        self,
-        plan: ModuleVariablePlan,
-    ) -> tuple[CFunctionPrototype, ...]:
-        """Declare only bridge operations named by one borrowed handle plan."""
-        handle = plan.native_array_handle
-        if handle is None or handle.array.rank is None:
-            raise ValueError(f"Module handle {plan.owner_path!r} has no operation plan")
-        prototypes = []
-        for operation in handle.operations:
-            prototype = self._module_native_array_bridge_prototype(plan, operation)
-            if prototype is not None:
-                prototypes.append(prototype)
-        return tuple(prototypes)
-
-    def _module_native_array_bridge_prototype(
-        self,
-        plan: ModuleVariablePlan,
-        operation: NativeArrayOperation,
-    ) -> CFunctionPrototype | None:
-        """Return the native bridge prototype selected by one operation."""
-        if operation in {
-            NativeArrayOperation.NATIVE_BYTE_ORDER,
-            NativeArrayOperation.ALIGNED,
-            NativeArrayOperation.WRITEABLE,
-            NativeArrayOperation.LAYOUT,
-        }:
-            return None
-        if operation is NativeArrayOperation.TO_NUMPY:
-            return None
-        return self._module_native_array_required_bridge_prototype(plan, operation)
-
-    def _module_native_array_required_bridge_prototype(
-        self,
-        plan: ModuleVariablePlan,
-        operation: NativeArrayOperation,
-    ) -> CFunctionPrototype:
-        """Declare one operation that must cross the native bridge."""
-        name = self._module_native_array_bridge_operation_name(plan, operation)
-        if operation in {
-            NativeArrayOperation.ALLOCATED,
-            NativeArrayOperation.ASSOCIATED,
-            NativeArrayOperation.CONTIGUOUS,
-        }:
-            return CFunctionPrototype(name, "bool")
-        if operation is NativeArrayOperation.ELEMENT_LENGTH:
-            return CFunctionPrototype(name, "int64_t")
-        if operation is NativeArrayOperation.ARRAY_ACTUAL:
-            if self._uses_module_allocatable_descriptor(plan):
-                return self._module_allocatable_descriptor_bridge_prototype(name)
-            return CFunctionPrototype(name, "void *")
-        if operation is NativeArrayOperation.SHAPE:
-            return self._module_native_array_shape_prototype(plan, name, pointer=True)
-        if operation is NativeArrayOperation.DESCRIPTOR:
-            return self._module_native_array_descriptor_prototype(plan, name)
-        if operation is NativeArrayOperation.ASSOCIATE:
-            return CFunctionPrototype(name, "void", (CParameter("source", "CFI_cdesc_t *"),))
-        if operation in {NativeArrayOperation.ALLOCATE, NativeArrayOperation.RESIZE}:
-            return self._module_native_array_shape_prototype(plan, name, pointer=False)
-        if operation in {NativeArrayOperation.DEALLOCATE, NativeArrayOperation.NULLIFY}:
-            return CFunctionPrototype(name, "void")
-        raise ValueError(f"Unsupported module native array operation for {plan.owner_path!r}: {operation!r}")
-
-    def _module_native_array_shape_prototype(
-        self,
-        plan: ModuleVariablePlan,
-        name: str,
-        *,
-        pointer: bool,
-    ) -> CFunctionPrototype:
-        """Return one rank-specific shape query or mutation prototype."""
-        handle = plan.native_array_handle
-        if handle is None or handle.array.rank is None:
-            raise ValueError(f"Module handle {plan.owner_path!r} has no rank")
-        suffix = " *" if pointer else ""
-        return CFunctionPrototype(
-            name,
-            "void",
-            tuple(CParameter(f"extent_{axis}", f"int64_t{suffix}") for axis in range(handle.array.rank)),
-        )
-
-    def _module_native_array_descriptor_prototype(
-        self,
-        plan: ModuleVariablePlan,
-        name: str,
-    ) -> CFunctionPrototype | None:
-        """Return a standard-descriptor reader prototype selected by policy."""
-        handle = plan.native_array_handle
-        if self._uses_module_allocatable_descriptor(plan):
-            return self._module_allocatable_descriptor_bridge_prototype(name)
-        if handle is None or handle.descriptor_kind is not NativeArrayDescriptorKind.POINTER:
-            return None
-        return CFunctionPrototype(name, "void", (CParameter("descriptor", "CFI_cdesc_t *"),))
-
-    @staticmethod
-    def _module_allocatable_descriptor_bridge_prototype(name: str) -> CFunctionPrototype:
-        """Declare one callback-based standard-descriptor module operation."""
-        return CFunctionPrototype(
-            name,
-            "void",
-            (
-                CParameter(
-                    "callback",
-                    "void",
-                    function_parameters=("CFI_cdesc_t *", "void *"),
-                ),
-                CParameter("context", "void *"),
-            ),
+        return tuple(
+            self._auxiliary_entrypoint_prototype(operation)
+            for operation in self._auxiliary_entrypoints_for(plan.owner_path, "module:")
         )
 
     def _module_variable_helper_prototypes(
@@ -10911,10 +10413,9 @@ class CBindingGenerator(ClassVisitor):
         """Return one binding-owned capsule cleanup symbol."""
         return f"prik_destroy_{type_name.casefold()}_capsule"
 
-    @staticmethod
-    def _derived_destroy_bridge_name(type_name: str) -> str:
-        """Return the native-aware bridge destroy symbol."""
-        return f"bind_c_prik_destroy_{type_name.casefold()}"
+    def _derived_destroy_bridge_name(self, type_name: str) -> str:
+        """Return the planner-owned native-aware destroy symbol."""
+        return self._auxiliary_entrypoint(self._derived_owner_paths[type_name], "derived:destroy").symbol_name
 
     @staticmethod
     def _allocatable_holder_capsule_name(type_name: str) -> str:
@@ -10931,30 +10432,30 @@ class CBindingGenerator(ClassVisitor):
         """Return the binding-local pointer holder capsule destructor name derived from the supplied local lowering values; this helper preserves completed policy."""
         return f"prik_destroy_{type_name.casefold()}_pointer_holder_capsule"
 
-    @staticmethod
-    def _pointer_holder_destroy_bridge_name(type_name: str) -> str:
-        """Return the binding-local pointer holder destroy bridge name derived from the supplied local lowering values; this helper preserves completed policy."""
-        return f"bind_c_prik_destroy_{type_name.casefold()}_pointer_holder"
+    def _pointer_holder_destroy_bridge_name(self, type_name: str) -> str:
+        """Return the planner-owned pointer-holder destroy symbol."""
+        return self._auxiliary_entrypoint(self._derived_owner_paths[type_name], "holder:pointer:destroy").symbol_name
 
-    @staticmethod
-    def _pointer_holder_presence_bridge_name(type_name: str) -> str:
-        """Return the binding-local pointer holder presence bridge name derived from the supplied local lowering values; this helper preserves completed policy."""
-        return f"bind_c_prik_{type_name.casefold()}_pointer_holder_present"
+    def _pointer_holder_presence_bridge_name(self, type_name: str) -> str:
+        """Return the planner-owned pointer-holder presence symbol."""
+        return self._auxiliary_entrypoint(self._derived_owner_paths[type_name], "holder:pointer:present").symbol_name
 
     @staticmethod
     def _allocatable_holder_capsule_destructor_name(type_name: str) -> str:
         """Return the binding-local allocatable holder capsule destructor name derived from the supplied local lowering values; this helper preserves completed policy."""
         return f"prik_destroy_{type_name.casefold()}_allocatable_holder_capsule"
 
-    @staticmethod
-    def _allocatable_holder_destroy_bridge_name(type_name: str) -> str:
-        """Return the binding-local allocatable holder destroy bridge name derived from the supplied local lowering values; this helper preserves completed policy."""
-        return f"bind_c_prik_destroy_{type_name.casefold()}_allocatable_holder"
+    def _allocatable_holder_destroy_bridge_name(self, type_name: str) -> str:
+        """Return the planner-owned allocatable-holder destroy symbol."""
+        return self._auxiliary_entrypoint(
+            self._derived_owner_paths[type_name], "holder:allocatable:destroy"
+        ).symbol_name
 
-    @staticmethod
-    def _allocatable_holder_presence_bridge_name(type_name: str) -> str:
-        """Return the binding-local allocatable holder presence bridge name derived from the supplied local lowering values; this helper preserves completed policy."""
-        return f"bind_c_prik_{type_name.casefold()}_allocatable_holder_present"
+    def _allocatable_holder_presence_bridge_name(self, type_name: str) -> str:
+        """Return the planner-owned allocatable-holder presence symbol."""
+        return self._auxiliary_entrypoint(
+            self._derived_owner_paths[type_name], "holder:allocatable:present"
+        ).symbol_name
 
     @staticmethod
     def _allocatable_holder_presence_method_name(type_name: str) -> str:
@@ -10976,8 +10477,8 @@ class CBindingGenerator(ClassVisitor):
         return CBindingNames.derived_field_method(derived, field, action)
 
     def _derived_field_bridge_name(self, derived: DerivedTypePlan, field: DerivedFieldPlan, action: str) -> str:
-        """Return the binding-local derived field bridge name derived from the supplied completed binding records; this helper preserves completed policy."""
-        return f"bind_c_prik_field_{self._derived_field_symbol(derived, field)}_{action}"
+        """Return the planner-owned direct-field entrypoint symbol."""
+        return self._auxiliary_entrypoint(f"{derived.owner_path}.{field.name}", f"field:direct:{action}").symbol_name
 
     def _allocatable_holder_field_bridge_name(
         self,
@@ -10985,8 +10486,10 @@ class CBindingGenerator(ClassVisitor):
         field: DerivedFieldPlan,
         action: str,
     ) -> str:
-        """Return the binding-local allocatable holder field bridge name derived from the supplied completed binding records; this helper preserves completed policy."""
-        return f"bind_c_prik_allocatable_holder_field_{self._derived_field_symbol(derived, field)}_{action}"
+        """Return the planner-owned allocatable-holder field symbol."""
+        return self._auxiliary_entrypoint(
+            f"{derived.owner_path}.{field.name}", f"field:allocatable:{action}"
+        ).symbol_name
 
     def _allocatable_holder_field_method_name(
         self,
@@ -11003,8 +10506,8 @@ class CBindingGenerator(ClassVisitor):
         field: DerivedFieldPlan,
         action: str,
     ) -> str:
-        """Return the binding-local pointer holder field bridge name derived from the supplied completed binding records; this helper preserves completed policy."""
-        return f"bind_c_prik_pointer_holder_field_{self._derived_field_symbol(derived, field)}_{action}"
+        """Return the planner-owned pointer-holder field symbol."""
+        return self._auxiliary_entrypoint(f"{derived.owner_path}.{field.name}", f"field:pointer:{action}").symbol_name
 
     def _pointer_holder_field_method_name(
         self,
@@ -11048,8 +10551,11 @@ class CBindingGenerator(ClassVisitor):
         field: DerivedFieldPlan,
         operation: NativeArrayOperation,
     ) -> str:
-        """Return the binding-local derived handle bridge name derived from the supplied completed binding records; this helper preserves completed policy."""
-        return f"bind_c_prik_field_handle_{self._derived_field_symbol(derived, field)}_{operation.value}"
+        """Return the planner-owned direct-field handle symbol."""
+        return self._auxiliary_entrypoint(
+            f"{derived.owner_path}.{field.name}",
+            f"field:direct:handle:{operation.value}",
+        ).symbol_name
 
     def _derived_handle_descriptor_callback_name(
         self,
@@ -11087,8 +10593,10 @@ class CBindingGenerator(ClassVisitor):
         member: DerivedMemberPathPlan,
         action: str,
     ) -> str:
-        """Return the binding-local module member bridge name derived from the supplied completed binding records; this helper preserves completed policy."""
-        return f"bind_c_prik_module_field_{self._module_member_symbol(variable, member)}_{action}"
+        """Return the planner-owned module-member entrypoint symbol."""
+        return self._auxiliary_entrypoint(
+            ".".join((variable.owner_path, *member.path)), f"field:module:{action}"
+        ).symbol_name
 
     def _module_member_descriptor_callback_name(
         self,
@@ -11113,8 +10621,11 @@ class CBindingGenerator(ClassVisitor):
         member: DerivedMemberPathPlan,
         operation: NativeArrayOperation,
     ) -> str:
-        """Return the binding-local module member handle bridge name derived from the supplied completed binding records; this helper preserves completed policy."""
-        return f"bind_c_prik_module_field_handle_{self._module_member_symbol(variable, member)}_{operation.value}"
+        """Return the planner-owned module-member handle symbol."""
+        return self._auxiliary_entrypoint(
+            ".".join((variable.owner_path, *member.path)),
+            f"field:module:handle:{operation.value}",
+        ).symbol_name
 
     def _module_member_handle_descriptor_callback_name(
         self,
@@ -11684,7 +11195,7 @@ class CBindingGenerator(ClassVisitor):
             for argument in function.arguments
             if argument.derived is not None
             and argument.derived_call is not None
-            and argument.bridge.descriptor_output_role is not None
+            and argument.entrypoint.descriptor_output_role is not None
             and self._uses_allocatable_holder(argument)
         }
 
@@ -11730,7 +11241,7 @@ class CBindingGenerator(ClassVisitor):
             for argument in function.arguments
             if argument.derived is not None
             and argument.derived_call is not None
-            and argument.bridge.descriptor_output_role is not None
+            and argument.entrypoint.descriptor_output_role is not None
             and any(
                 case.access is DerivedActualAccess.POINTER_HOLDER
                 for case in argument.derived_call.cases
@@ -12157,9 +11668,9 @@ class CBindingGenerator(ClassVisitor):
         """Return the binding-local binding function name derived from the supplied completed binding records; this helper preserves completed policy."""
         return f"wrap_{plan.symbol_name}"
 
-    def _bridge_function_name(self, plan: FunctionPlan) -> str:
-        """Return the binding-local bridge function name derived from the supplied completed binding records; this helper preserves completed policy."""
-        return f"bind_c_{plan.symbol_name}"
+    def _entrypoint_function_name(self, plan: FunctionPlan) -> str:
+        """Return the shared C-ABI function symbol selected by planning."""
+        return plan.entrypoint.symbol_name
 
     def _module_getter_name(self, plan: ModuleVariablePlan) -> str:
         """Return the binding-local module getter name derived from the supplied completed binding records; this helper preserves completed policy."""
@@ -12170,12 +11681,12 @@ class CBindingGenerator(ClassVisitor):
         return f"module_set_{plan.symbol_name}"
 
     def _module_bridge_getter_name(self, plan: ModuleVariablePlan) -> str:
-        """Return the binding-local module bridge getter name derived from the supplied completed binding records; this helper preserves completed policy."""
-        return f"bind_c_get_{plan.symbol_name}"
+        """Return the shared module-variable getter entrypoint symbol."""
+        return self._auxiliary_entrypoint(plan.owner_path, "module:get").symbol_name
 
     def _module_bridge_setter_name(self, plan: ModuleVariablePlan) -> str:
-        """Return the binding-local module bridge setter name derived from the supplied completed binding records; this helper preserves completed policy."""
-        return f"bind_c_set_{plan.symbol_name}"
+        """Return the shared module-variable setter entrypoint symbol."""
+        return self._auxiliary_entrypoint(plan.owner_path, "module:set").symbol_name
 
     @staticmethod
     def _nullable_derived_module_proxy(plan: ModuleVariablePlan) -> bool:
@@ -12191,10 +11702,9 @@ class CBindingGenerator(ClassVisitor):
             }
         )
 
-    @staticmethod
-    def _module_derived_presence_bridge_name(plan: ModuleVariablePlan) -> str:
-        """Return the binding-local module derived presence bridge name derived from the supplied completed binding records; this helper preserves completed policy."""
-        return f"bind_c_prik_module_{plan.symbol_name.casefold()}_present"
+    def _module_derived_presence_bridge_name(self, plan: ModuleVariablePlan) -> str:
+        """Return the planner-owned nullable module-derived presence symbol."""
+        return self._auxiliary_entrypoint(plan.owner_path, "module:derived:present").symbol_name
 
     @staticmethod
     def _module_derived_presence_method_name(plan: ModuleVariablePlan) -> str:

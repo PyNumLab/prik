@@ -38,20 +38,20 @@ def test_scalar_storage_and_raw_address_plans_keep_explicit_boundary_facts():
     direct_result = direct_function.results[0]
     hidden_result = hidden_function.results[0]
 
-    assert storage.native_call_slot is storage_function.native_call_slots[storage.native_position]
+    assert storage.bridge_call_slot is storage_function.bridge_call_slots[storage.native_position]
     assert storage.object_kind is ObjectKind.NUMPY_ARRAY
     assert storage.array.rank == 0
     assert storage.array.category == "scalar_storage"
     assert storage.binding.python_action is PythonBarrierAction.SCALAR_STORAGE
     assert storage.binding.writable is True
     assert storage.bridge.native_action is NativeBarrierAction.PASS_STORAGE_ADDRESS
-    assert storage.bridge.handoff_mode is ArgumentHandoffMode.OPAQUE_ADDRESS
+    assert storage.entrypoint.handoff_mode is ArgumentHandoffMode.OPAQUE_ADDRESS
     assert storage.bridge.data_action is BridgeDataAction.ASSOCIATE_VIEW
     assert storage.bridge.copy_reason is None
-    assert raw.native_call_slot is raw_function.native_call_slots[raw.native_position]
+    assert raw.bridge_call_slot is raw_function.bridge_call_slots[raw.native_position]
     assert raw.binding.python_action is PythonBarrierAction.RAW_ADDRESS
     assert raw.bridge.native_action is NativeBarrierAction.PASS_RAW_ADDRESS
-    assert raw.bridge.handoff_mode is ArgumentHandoffMode.OPAQUE_ADDRESS
+    assert raw.entrypoint.handoff_mode is ArgumentHandoffMode.OPAQUE_ADDRESS
     assert raw.bridge.data_action is BridgeDataAction.ASSOCIATE_VIEW
     assert raw.bridge.copy_reason is None
     assert direct_result.object_kind is ObjectKind.NUMPY_ARRAY
@@ -60,7 +60,7 @@ def test_scalar_storage_and_raw_address_plans_keep_explicit_boundary_facts():
     assert direct_result.binding.codegen_action is CodegenAction.COPY_OUT
     assert direct_result.bridge.native_action is NativeBarrierAction.NONE
     assert direct_result.bridge.data_action is BridgeDataAction.COPY_REPRESENTATION
-    assert direct_result.direct_result_abi is DirectResultABI.NOT_APPLICABLE
+    assert direct_result.entrypoint.direct_result_abi is DirectResultABI.NOT_APPLICABLE
     assert hidden_result.object_kind is ObjectKind.NUMPY_ARRAY
     assert hidden_result.array.rank == 0
     assert hidden_result.array.category == "scalar_storage"

@@ -47,7 +47,7 @@ def swap_args(x: Float64, y: Float64) -> Float64: ...
         DatatypeFamily.REAL,
         DatatypeFamily.REAL,
     ]
-    assert reordered.arguments[0].native_call_slot.codegen_action is CodegenAction.CALL_LOCAL_INPUT
+    assert reordered.arguments[0].bridge_call_slot.codegen_action is CodegenAction.CALL_LOCAL_INPUT
 
     hidden = (
         _plan(
@@ -60,16 +60,16 @@ def scale(x: Float64) -> Float64: ...
         .namespaces[0]
         .functions[0]
     )
-    assert [(slot.source_kind, slot.literal_type, slot.literal_value) for slot in hidden.native_call_slots] == [
+    assert [(slot.source_kind, slot.literal_type, slot.literal_value) for slot in hidden.bridge_call_slots] == [
         ("literal", "Int32", 1),
         ("projection", None, None),
         ("literal", "Bool", False),
         ("result", None, None),
     ]
     assert hidden.results[0].source_kind == "hidden_output"
-    assert hidden.results[0].bridge.abi_position == 3
+    assert hidden.results[0].bridge_call_slot.native_position == 3
     assert hidden.results[0].bridge.native_action is NativeBarrierAction.PASS_CALL_LOCAL_ADDRESS
-    assert hidden.results[0].native_call_slot.object_kind is ObjectKind.SCALAR
+    assert hidden.results[0].bridge_call_slot.object_kind is ObjectKind.SCALAR
 
 
 @pytest.mark.parametrize(

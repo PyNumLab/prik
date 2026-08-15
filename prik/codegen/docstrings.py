@@ -979,8 +979,8 @@ class WrapperDocstringBuilder:
         )
         if projected is not None:
             return projected
-        if result.native_call_slot is not None and result.native_call_slot.python_name:
-            return result.native_call_slot.python_name
+        if result.bridge_call_slot is not None and result.bridge_call_slot.python_name:
+            return result.bridge_call_slot.python_name
         return "result" if result.result_position == 0 else f"result_{result.result_position}"
 
     def _module_variable_summary_lines(self, variable: ModuleVariablePlan) -> tuple[str, ...]:

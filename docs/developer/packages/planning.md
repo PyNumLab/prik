@@ -13,9 +13,10 @@ publication: reviewed
 
 `prik/planning/` mechanically projects policy-completed semantic IR into one
 backend-neutral `ModulePlan`. It joins common transfer facts with explicit
-binding and bridge views, namespaces, stable native symbols, lifecycle order,
-and build requirements. It may organize and validate completed decisions; it
-may not reinterpret source declarations, choose policy, or render text.
+binding, native-entrypoint, and bridge views, namespaces, stable native
+symbols, lifecycle order, and build requirements. It may organize and validate
+completed decisions; it may not reinterpret source declarations, choose
+policy, or render text.
 
 ## Local Structure
 
@@ -30,10 +31,11 @@ prik/planning/
 
 ```text
 policy-completed SemanticModule
-  -> WrapperPlanner validates completed records and projects views
+  -> WrapperPlanner validates completed records and projects all three views
   -> editable ModulePlan
   -> freeze at WrapperGenerator boundary
-  -> binding and bridge node generation
+  -> binding + entrypoint C generation
+  -> entrypoint + bridge Fortran generation
 ```
 
 ## Directory Tour
@@ -41,8 +43,9 @@ policy-completed SemanticModule
 | Module | Main entrypoints and contents | Change it when |
 | --- | --- | --- |
 | [`prik/planning/__init__.py`](../../../prik/planning/__init__.py) | Re-exports `WrapperPlanner` and the supported plan records. | A supported planning type or import path changes. |
-| [`prik/planning/models.py`](../../../prik/planning/models.py) | `ModulePlan` and typed function, argument, result, slot, lifecycle, class, overload, binding, and bridge records form the editable plan tree. | Lowering needs a new *already completed* fact represented explicitly. |
-| [`prik/planning/planner.py`](../../../prik/planning/planner.py) | `WrapperPlanner` validates policy, indexes declarations, allocates names, and projects deterministic binding and bridge views; `_ClassPolicyCatalog` is a validated lookup. | A completed policy fact is projected or ordered incorrectly. |
+| [`prik/planning/models.py`](../../../prik/planning/models.py) | `ModulePlan` and typed function, argument, result, bridge-call-slot, lifecycle, class, overload, binding, entrypoint, and bridge records form the editable plan tree. | Lowering needs a new *already completed* fact represented explicitly. |
+| [`prik/planning/planner.py`](../../../prik/planning/planner.py) | `WrapperPlanner` validates policy, indexes declarations, allocates names, and projects deterministic binding, entrypoint, and bridge views; `_ClassPolicyCatalog` is a validated lookup. | A completed policy fact is projected or ordered incorrectly. |
+| [`prik/planning/entrypoints.py`](../../../prik/planning/entrypoints.py) | Projects every auxiliary generated callable into the module entrypoint registry, including its implementation owner and structured C ABI. | An accessor, lifecycle, descriptor, origin, constructor, or callback operation changes its shared boundary. |
 
 The private class-policy catalogue is a validated lookup, not another semantic
 authority. The planner does not generate docstrings or source.
@@ -54,20 +57,49 @@ actions, and module variables:
 ```text
 ModulePlan
 ├── BindingModulePlan
+├── NativeEntrypointModulePlan
+│   └── NativeEntrypointOperationPlan
+│       └── NativeEntrypointSignaturePlan
 ├── BridgeModulePlan
 └── NamespacePlan (root and child namespaces)
     ├── FunctionPlan
     │   ├── ArgumentTransferPlan
     │   ├── ResultPlan
-    │   ├── NativeCallSlotPlan
+    │   ├── NativeEntrypointParameterPlan
+    │   ├── BridgeCallSlotPlan
     │   └── LifecycleActionPlan
     └── ModuleVariablePlan
 ```
 
-Each argument or result owns explicit binding and bridge views. Its native-call
-slot is the same record referenced from the transfer and the function-wide ABI
-ordering index, not a duplicated policy fact. Function orchestration owns call,
-result, lifecycle, GIL, and status order without becoming datatype policy.
+Each callable, argument, result, and module variable owns explicit binding,
+entrypoint, and bridge views. Binding records own Python extraction and result
+construction. Native-entrypoint records own the complete bidirectional C ABI:
+the exported symbol, direct return, ordered parameter groups, value/address
+projection, presence and length fields, descriptors, and hidden outputs.
+Bridge records own adapter-local representation conversion and the invocation
+of the original Fortran procedure.
+
+`NativeEntrypointModulePlan.operations` is the authoritative registry for
+externally linked generated helper callables that are not ordinary wrapped
+functions. Each operation stores one collision-safe key and symbol plus a
+structured signature of ordered ABI values. The registry covers constructors,
+accessors, derived-origin transactions, destruction and holder helpers,
+native-array operations, and callback trampolines. Each record also identifies
+whether the binding or bridge implements the callable; the opposite side uses
+the same record as its declaration/call contract. Static CPython helpers and
+bridge-internal procedures are deliberately absent.
+
+`NativeEntrypointFunctionPlan.results` includes public Python results and
+binding-private outputs such as native status and message values. A public
+`ResultPlan` shares its exact entrypoint-result object; a private output remains
+available to C prototype, storage, and call lowering without exposing a bridge
+call slot to the binding generator.
+
+An argument or hidden result shares its `BridgeCallSlotPlan` with the
+function-wide original-Fortran call ordering index. That slot is not the C ABI
+parameter order: `NativeEntrypointParameterPlan` records the latter explicitly.
+Function orchestration owns call, result, lifecycle, GIL, and status order
+without becoming datatype policy.
 
 `OverloadPlan` stores ordered candidates, exact match records, receiver
 conventions, and one candidate ID per overload set. Generated dispatch chooses
@@ -96,18 +128,27 @@ required parent namespace, and creates namespace plans in root-first path
 order. Finally it collects headers selected by completed descriptor-handle
 plans and returns one editable `ModulePlan`.
 
-### `models.py`: shared plans and backend views
+### `models.py`: shared plans and three lowering views
 
 `models.py` defines editable `StageRecord` plans. `ModulePlan` is the root;
 each `NamespacePlan` groups the public functions, variables, derived types,
 classes, and overloads for one Python path. A `FunctionPlan` owns call-wide
-ordering, while its transfers, results, native slots, and lifecycle actions
-carry the datatype-specific details.
+ordering, while its transfers, results, entrypoint parameters, bridge call
+slots, and lifecycle actions carry the datatype-specific details.
 
-Binding and bridge records are separate facets of the same planned operation.
-For example, an `ArgumentTransferPlan` holds both backend views and shares its
-single `NativeCallSlotPlan` with `FunctionPlan.native_call_slots`. This prevents
-two backends from carrying independent interpretations of one ABI position.
+Binding, native-entrypoint, and bridge records are separate facets of the same
+planned operation. For example, an `ArgumentTransferPlan` holds all three
+views and shares its single `BridgeCallSlotPlan` with
+`FunctionPlan.bridge_call_slots`. `FunctionPlan.entrypoint.parameters` is the
+independent ordered C ABI index consumed by both generators. This prevents the
+binding and adapter from carrying independent interpretations of their shared
+boundary while keeping original-Fortran call details out of the binding.
+
+`WrapperPlanner` constructs all three facets directly from completed upstream
+facts. `WrapperGenerator` validates matching entrypoint roles, parameter
+owners, and bridge-call references before freezing the graph. A generator may
+not derive an entrypoint from a bridge record or split a two-part plan after
+planning.
 
 The plan remains editable only until `WrapperGenerator.generate()` validates
 and freezes it. Add presentation details to code generation, not planning.
@@ -125,12 +166,12 @@ python3 prik/planning/models.py
 Plan owner: demo
 Python export: ping
 Native procedure: PING
-Native slots: 0
+Bridge call slots: 0
 ```
 
 The two names show the separate Python and native views carried by one plan.
-Zero slots is complete for a no-argument subroutine; it is not an omitted
-decision.
+Zero entrypoint parameters and zero bridge call slots are complete for a
+no-argument subroutine; they are not omitted decisions.
 
 `planner.py` follows the normal route. It constructs one `Float64` function,
 completes its semantic policy, then asks `WrapperPlanner` to project the plan.
@@ -170,11 +211,17 @@ than reconstructed by either backend.
 ## Boundaries And Invariants
 
 - Missing completed policy is an error, never a reason to infer a default.
-- Binding and bridge views may share one ABI contract without hiding their
-  backend-specific lowering facts.
+- The C binding consumes only binding and entrypoint views; the Fortran bridge
+  consumes entrypoint and bridge views.
+- Neither generator may reconstruct the symbol, existence, parameter order, or
+  result ABI of an auxiliary C-visible operation from a derived field, storage
+  kind, array operation, lifecycle action, or callback record.
+- Every current Fortran operation remains bridge-backed. Entrypoint separation
+  does not select direct routing or make the adapter optional.
 - Planning does not depend on presentation helpers such as docstring builders.
-- Native slots may interleave argument, result, literal, and helper positions;
-  keep their function-wide order explicit.
+- Bridge call slots may interleave argument, result, literal, and helper
+  positions; keep their original-Fortran call order distinct from entrypoint
+  parameter order.
 - Lifecycle actions stay explicit because cleanup and writeback order may span
   several transfers and differ on failure.
 

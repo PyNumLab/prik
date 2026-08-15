@@ -17,7 +17,7 @@ from prik.policy.models import (
     CallbackTransferAction,
 )
 from prik.pipeline.wrapper import WrapperGenerator
-from prik.planning import WrapperPlanner
+from prik.planning import NativeEntrypointImplementation, WrapperPlanner
 from prik.planning.models import DatatypeFamily
 
 CONTRACT_ROOT = Path(__file__).parents[1] / "end_to_end" / "fixtures" / "contracts"
@@ -117,9 +117,19 @@ def test_callback_plan_projects_one_explicit_site_and_stable_roles_per_argument(
             "apply_point_callback",
         )
     )
-    assert len({callback.context_current_symbol for callback in callbacks}) == len(callbacks)
-    assert len({callback.adapter_symbol for callback in callbacks}) == len(callbacks)
-    assert len({callback.trampoline_symbol for callback in callbacks}) == len(callbacks)
+    assert len({callback.binding.context_current_symbol for callback in callbacks}) == len(callbacks)
+    assert len({callback.bridge.adapter_symbol for callback in callbacks}) == len(callbacks)
+    assert len({callback.entrypoint.operation.symbol_name for callback in callbacks}) == len(callbacks)
+    assert all(
+        callback.entrypoint.operation.implementation is NativeEntrypointImplementation.BINDING for callback in callbacks
+    )
+    assert all(
+        next(
+            operation for operation in plan.entrypoint.operations if operation.key == callback.entrypoint.operation.key
+        )
+        is callback.entrypoint.operation
+        for callback in callbacks
+    )
 
 
 @pytest.mark.parametrize(
@@ -148,7 +158,7 @@ def test_callback_plan_edits_fail_central_validation_before_backend_emission(edi
         callback.result.action = CallbackResultAction.RETURN_VOID
     else:
         callback = _callback_argument(plan, "apply_value_callback").callback
-        callback.trampoline_symbol = callback.adapter_symbol
+        callback.entrypoint.operation.symbol_name = callback.bridge.adapter_symbol
 
     with pytest.raises(ValueError, match=diagnostic):
         WrapperGenerator().generate(plan)
@@ -213,8 +223,8 @@ def test_every_callback_uses_the_shared_generated_abstract_prototype():
     assert transform.prototype.interface_symbol.startswith("prik_transform_callback_")
 
     _, bridge = _sources(plan)
-    assert f"procedure({reduce.prototype.interface_symbol}) :: {reduce.adapter_symbol}" in bridge
-    assert f"procedure({transform.prototype.interface_symbol}) :: {transform.adapter_symbol}" in bridge
+    assert f"procedure({reduce.prototype.interface_symbol}) :: {reduce.bridge.adapter_symbol}" in bridge
+    assert f"procedure({transform.prototype.interface_symbol}) :: {transform.bridge.adapter_symbol}" in bridge
     assert "abstract interface" in bridge
     assert "=> transform_callback" not in bridge
 

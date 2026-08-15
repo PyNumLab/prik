@@ -49,12 +49,12 @@ def test_required_array_buffer_has_one_printable_editable_handoff_plan():
     assert argument.binding.python_action is PythonBarrierAction.ARRAY_STORAGE
     assert argument.binding.codegen_action is CodegenAction.IN_PLACE_ARGUMENT
     assert argument.bridge.native_action is NativeBarrierAction.PASS_ARRAY_BUFFER
-    assert argument.bridge.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER
+    assert argument.entrypoint.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER
     assert argument.bridge.data_action is BridgeDataAction.ASSOCIATE_VIEW
 
     assert isinstance(argument.array, ArrayHandoffPlan)
-    assert argument.array is argument.native_call_slot.array
-    assert argument.native_call_slot.object_kind is ObjectKind.NUMPY_ARRAY
+    assert argument.array is argument.bridge_call_slot.array
+    assert argument.bridge_call_slot.object_kind is ObjectKind.NUMPY_ARRAY
     assert argument.array.rank == 1
     assert argument.array.shape == (":",)
     assert argument.array.axes == ("dense",)

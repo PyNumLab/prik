@@ -23,7 +23,7 @@ def scale(x: Float64) -> Float64: ...
     function = plan.namespaces[0].functions[0]
     result = function.results[0]
 
-    assert result.native_call_slot is function.native_call_slots[result.bridge.abi_position]
+    assert result.bridge_call_slot is function.bridge_call_slots[result.bridge_call_slot.native_position]
 
     artifacts = WrapperGenerator().generate(plan)
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")

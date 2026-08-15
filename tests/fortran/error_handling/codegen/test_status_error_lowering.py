@@ -55,21 +55,30 @@ def test_planner_records_editable_native_runtime_and_status_error_facts():
     assert solve.binding.status_error is not None
     assert solve.binding.status_error.success == 0
     assert solve.binding.status_error.exception_kind is PythonExceptionKind.RUNTIME_ERROR
-    assert solve.binding.status_error.status_role == solve.native_call_slots[1].symbolic_role
-    assert solve.binding.status_error.message_role == solve.native_call_slots[2].symbolic_role
+    assert solve.binding.status_error.status_role == solve.bridge_call_slots[1].symbolic_role
+    assert solve.binding.status_error.message_role == solve.bridge_call_slots[2].symbolic_role
+    assert [(result.parameter_name, result.native_result_role) for result in solve.entrypoint.results] == [
+        ("status", solve.binding.status_error.status_role),
+        ("message", solve.binding.status_error.message_role),
+    ]
+    assert [parameter.source_kind for parameter in solve.entrypoint.parameters] == [
+        "argument",
+        "hidden_result",
+        "hidden_result",
+    ]
     WrapperGenerator().generate(plan)
     assert "Raises\n------" in solve.binding.docstring
     assert solve.binding.docstring.count("RuntimeError\n") == 1
     assert "If native status differs from the success value 0." in solve.binding.docstring
-    assert solve.native_call_slots[1].semantic_type_name == "Int32"
-    assert solve.native_call_slots[1].datatype_family is DatatypeFamily.INTEGER
-    assert solve.native_call_slots[1].bridge_data_action is BridgeDataAction.DIRECT_TRANSFER
-    assert solve.native_call_slots[1].bridge_copy_reason is None
-    assert solve.native_call_slots[2].semantic_type_name == "String"
-    assert solve.native_call_slots[2].datatype_family is DatatypeFamily.STRING
-    assert solve.native_call_slots[2].character_length == 32
-    assert solve.native_call_slots[2].bridge_data_action is BridgeDataAction.COPY_REPRESENTATION
-    assert solve.native_call_slots[2].bridge_copy_reason == (
+    assert solve.bridge_call_slots[1].semantic_type_name == "Int32"
+    assert solve.bridge_call_slots[1].datatype_family is DatatypeFamily.INTEGER
+    assert solve.bridge_call_slots[1].bridge_data_action is BridgeDataAction.DIRECT_TRANSFER
+    assert solve.bridge_call_slots[1].bridge_copy_reason is None
+    assert solve.bridge_call_slots[2].semantic_type_name == "String"
+    assert solve.bridge_call_slots[2].datatype_family is DatatypeFamily.STRING
+    assert solve.bridge_call_slots[2].character_length == 32
+    assert solve.bridge_call_slots[2].bridge_data_action is BridgeDataAction.COPY_REPRESENTATION
+    assert solve.bridge_call_slots[2].bridge_copy_reason == (
         "copy fixed-length Fortran character output into C-owned null-terminated storage"
     )
 
@@ -113,9 +122,9 @@ def test_fixed_message_bridge_copy_requires_its_completed_reason():
         "solve",
         lambda function: replace(
             function,
-            native_call_slots=tuple(
+            bridge_call_slots=tuple(
                 replace(slot, bridge_copy_reason=None) if slot.datatype_family is DatatypeFamily.STRING else slot
-                for slot in function.native_call_slots
+                for slot in function.bridge_call_slots
             ),
         ),
     )

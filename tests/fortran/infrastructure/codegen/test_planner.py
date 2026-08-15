@@ -171,6 +171,27 @@ def sum_values(values: Float64[:]) -> Float64: ...
     assert WrapperPlanner().build(module).namespaces[0].functions[0].arguments[0].array is not None
 
 
+def test_planner_directly_projects_three_facets_and_distinct_call_orders():
+    function = _hidden_result_plan().namespaces[0].functions[0]
+    argument = function.arguments[0]
+    result = function.results[0]
+
+    assert function.entrypoint.symbol_name == "bind_c_scale"
+    assert [(item.source_kind, item.owner_path) for item in function.entrypoint.parameters] == [
+        ("argument", argument.owner_path),
+        ("hidden_result", result.owner_path),
+    ]
+    assert function.entrypoint.results == (result.entrypoint,)
+    assert argument.binding.handoff_role == argument.entrypoint.handoff_role
+    assert argument.bridge_call_slot is function.bridge_call_slots[1]
+    assert [slot.source_kind for slot in function.bridge_call_slots] == [
+        "literal",
+        "projection",
+        "literal",
+        "result",
+    ]
+
+
 def test_planner_fails_when_post_ir_policy_has_not_completed():
     module = parse_pyi_text(
         """

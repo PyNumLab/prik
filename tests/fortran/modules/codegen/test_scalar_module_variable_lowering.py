@@ -99,10 +99,10 @@ def test_module_variable_plan_contains_only_completed_dispatch_facts():
     assert variables["counter"].binding.initializer == 3
     assert variables["target_scale"].bridge.native_assignment is AssignmentMode.VALUE_COPY
     assert variables["optional_scale"].binding.getter_action is ModuleGetterAction.NULLABLE_SNAPSHOT
-    assert variables["optional_scale"].bridge.descriptor_kind == "allocatable"
+    assert variables["optional_scale"].entrypoint.descriptor_kind == "allocatable"
     assert variables["optional_scale"].binding.setter_action is SetterAction.REJECT_REPLACEMENT
     assert variables["optional_scale"].bridge.native_assignment is AssignmentMode.NONE
-    assert variables["selected_scale"].bridge.descriptor_kind == "pointer"
+    assert variables["selected_scale"].entrypoint.descriptor_kind == "pointer"
     assert variables["selected_scale"].bridge.native_assignment is AssignmentMode.NONE
 
 
@@ -112,7 +112,7 @@ def test_symbolic_source_parameter_reuses_scalar_bridge_getter_for_module_initia
     computed = variables["computed"]
     assert computed.binding.getter_action is ModuleGetterAction.NATIVE_CONSTANT_VALUE
     assert computed.binding.constant_value is None
-    assert computed.bridge.getter_role == "computed_constants.computed:getter"
+    assert computed.entrypoint.getter_role == "computed_constants.computed:getter"
     assert computed.binding.setter_action is SetterAction.OMIT
 
     artifacts = WrapperGenerator().generate(plan)
@@ -175,7 +175,9 @@ def test_module_variable_visitors_consume_their_backend_owned_actions():
     )
 
     assert CBindingGenerator().visit(split_actions) == ()
-    assert [procedure.name for procedure in FortranBridgeGenerator().visit(split_actions)] == [
+    bridge = FortranBridgeGenerator()
+    bridge.visit(plan)
+    assert [procedure.name for procedure in bridge.visit(split_actions)] == [
         "bind_c_get_counter",
         "bind_c_set_counter",
     ]
@@ -188,8 +190,10 @@ def test_fortran_module_setter_rejects_unsupported_bridge_assignment():
     )
     invalid = replace(counter, bridge=replace(counter.bridge, native_assignment=AssignmentMode.ALIAS))
 
+    bridge = FortranBridgeGenerator()
+    bridge.visit(plan)
     with pytest.raises(ValueError, match="Unsupported Fortran module setter assignment"):
-        FortranBridgeGenerator().visit(invalid)
+        bridge.visit(invalid)
 
 
 @pytest.mark.parametrize(
@@ -261,12 +265,80 @@ def test_module_variable_generators_dispatch_get_set_and_rejection_from_plan():
     assert "selected_scale = value" not in fortran_source
 
 
+def test_auxiliary_entrypoint_symbol_is_shared_by_both_boundary_lowerers():
+    plan = _plan()
+    operation = next(
+        item
+        for item in plan.entrypoint.operations
+        if item.owner_path == "scalar_state.counter" and item.role == "module:set"
+    )
+    renamed = replace(operation, symbol_name="planned_counter_assignment")
+    edited = replace(
+        plan,
+        entrypoint=replace(
+            plan.entrypoint,
+            operations=tuple(renamed if item is operation else item for item in plan.entrypoint.operations),
+        ),
+    )
+
+    artifacts = WrapperGenerator().generate(edited)
+    c_source = _source(artifacts, ".c")
+    fortran_source = _source(artifacts, ".f90")
+
+    assert "void planned_counter_assignment(int32_t value);" in c_source
+    assert "planned_counter_assignment(value);" in c_source
+    assert "subroutine planned_counter_assignment(value)" in fortran_source
+    assert 'bind(c, name="planned_counter_assignment")' in fortran_source
+
+
+def test_missing_auxiliary_entrypoint_fails_before_lowering():
+    plan = _plan()
+    edited = replace(
+        plan,
+        entrypoint=replace(
+            plan.entrypoint,
+            operations=tuple(
+                item
+                for item in plan.entrypoint.operations
+                if not (item.owner_path == "scalar_state.counter" and item.role == "module:set")
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="incomplete-auxiliary-entrypoint-inventory"):
+        WrapperGenerator().generate(edited)
+
+
+def test_bridge_local_module_target_edit_does_not_change_the_c_boundary():
+    plan = _plan()
+    baseline = _source(WrapperGenerator().generate(plan), ".c")
+    counter = next(
+        variable for variable in plan.namespaces[0].variables if variable.binding.python_names == ("counter",)
+    )
+    edited_counter = replace(
+        counter,
+        bridge=replace(counter.bridge, native_name="counter_alternate"),
+    )
+    root = replace(
+        plan.namespaces[0],
+        variables=tuple(
+            edited_counter if variable is counter else variable for variable in plan.namespaces[0].variables
+        ),
+    )
+    edited = replace(plan, namespaces=(root, *plan.namespaces[1:]))
+
+    artifacts = WrapperGenerator().generate(edited)
+
+    assert _source(artifacts, ".c") == baseline
+    assert "native_counter => counter_alternate" in _source(artifacts, ".f90")
+
+
 def test_generator_rejects_python_module_setter_without_bridge_handoff():
     plan = _plan()
     counter = next(
         variable for variable in plan.namespaces[0].variables if variable.binding.python_names == ("counter",)
     )
-    invalid_counter = replace(counter, bridge=replace(counter.bridge, setter_role=None))
+    invalid_counter = replace(counter, entrypoint=replace(counter.entrypoint, setter_role=None))
     invalid = replace(
         plan,
         namespaces=(

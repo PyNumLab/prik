@@ -77,8 +77,8 @@ function illustrates the representations produced across the pipeline.
 | `parsers/` | A `FortranProject` with source-faithful function, argument, type, and `intent` facts. | Record syntax and source-located diagnostics without deciding wrapper behavior. |
 | `semantics/` | A language-neutral semantic model ([`SemanticModule`](packages/semantics.md)) containing a callable and its stable type, shape, origin, and raw contract metadata. | Give frontend facts a shared meaning. |
 | `policy/` | The semantic model with complete export, transport, ownership, projection, lifecycle, and support choices. | Decide how the callable may interoperate with Python. |
-| `planning/` | A deterministic wrapper plan ([`ModulePlan`](packages/planning.md)) with ordered binding and bridge operations, names, and build requirements. | Project and validate completed choices without making new policy. |
-| `codegen/` | Planned CPython-binding and Fortran-bridge nodes plus Python-facade representation. | Implement the plan-selected mechanisms. |
+| `planning/` | A deterministic wrapper plan ([`ModulePlan`](packages/planning.md)) with binding, shared native-entrypoint, and bridge facets, ordered C ABI and original-Fortran call records, names, and build requirements. | Project and validate completed choices without making new policy. |
+| `codegen/` | CPython-binding nodes from binding plus entrypoint facets, and Fortran-bridge nodes from entrypoint plus bridge facets, with Python-facade representation. | Implement the plan-selected mechanisms. |
 | `printers/` | Generated C and Fortran source text. | Serialize formed nodes without deciding behavior. |
 | `compiler/` | Recorded or executed native commands and a linked extension. | Compile and link the explicit native inputs. |
 | Extension module and [`runtime/`](packages/runtime.md) | An importable `scale` module; its call returns `np.float64(7.5)` for `np.float64(3.0)` and `np.float64(2.5)`. | The generated public Python interface and any imported runtime support it uses. |
