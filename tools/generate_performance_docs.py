@@ -270,7 +270,7 @@ def load_snapshot(
     candidate_identity: str = "prik",
     reference_metadata: dict[str, object] | None = None,
     candidate_metadata: dict[str, object] | None = None,
-) -> tuple[PerformanceSnapshot, DirectPerformanceSnapshots]:
+) -> PerformanceSnapshot:
     """Load and validate one paired benchmark snapshot."""
     reference_suite = pyperf.BenchmarkSuite.load(str(reference_path))
     candidate_suite = pyperf.BenchmarkSuite.load(str(candidate_path))
@@ -949,7 +949,7 @@ def generate(
     compiler_version: str,
     commit: str,
     recorded_date: date | None = None,
-) -> PerformanceSnapshot:
+) -> tuple[PerformanceSnapshot, DirectPerformanceSnapshots]:
     """Generate the marked page sections and SVG from paired results."""
     snapshot = load_snapshot(
         f2py_path,
