@@ -23,7 +23,6 @@ def test_value_and_existing_bind_c_renamed_symbol_use_correct_abi(
         BIND_VALUE_F90_SOURCE,
         tmp_path,
         {
-            "bind_c_fbind_value_f90_wrapper.f90",
             "fbind_value_f90_wrapper.c",
             "fbind_value_f90_wrapper.h",
         },
@@ -40,17 +39,14 @@ def test_value_and_existing_bind_c_renamed_symbol_use_correct_abi(
     assert module.char_code("A") == np.int32(65)
 
     if pyi_parity_build_mode == "source":
-        bridge_source = (
-            (tmp_path / "source_build" / "bind_c_fbind_value_f90_wrapper.f90").read_text(encoding="utf-8").lower()
-        )
+        binding_source = (tmp_path / "source_build" / "fbind_value_f90_wrapper.c").read_text(encoding="utf-8")
         for native_name in (
-            "plus_value",
+            "prik_plus_value",
             "double_value",
             "plus_reference",
-            "scale_real",
-            "conjugate_value",
-            "invert_flag",
+            "prik_scale_real",
+            "prik_conjugate_value",
+            "prik_invert_flag",
             "char_code",
         ):
-            assert f"native_{native_name} => {native_name}" in bridge_source
-            assert f"bind_c_{native_name}" in bridge_source
+            assert f"{native_name}(" in binding_source

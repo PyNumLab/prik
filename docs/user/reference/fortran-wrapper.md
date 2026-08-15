@@ -129,8 +129,9 @@ ordered Fortran source files
   -> semantic modules and completed policy
   -> post-IR policy completion
   -> ordered wrapper plan preserving native module namespaces and ABI slots
-  -> direct native-bridge and Python-binding lowering
-  -> compile and link one Python extension module
+  -> Python-binding lowering plus selected Fortran adapters/support procedures
+  -> compile native inputs and only the generated groups that are present
+  -> link one Python extension module with the required native-language driver
 ```
 
 <!-- PRIK_C_DOCS_START
@@ -149,10 +150,11 @@ ordered Fortran source files
 ```
 PRIK_C_DOCS_END -->
 
-The generated bridge preserves native calling contracts while the Python
-binding validates arguments, manages wrapper-owned temporaries, calls native
-code, and projects results onto the documented Python API. Shared runtime
-support supplies array, error, allocation, and ownership helpers.
+The Python binding validates arguments, manages wrapper-owned temporaries,
+calls the planned C ABI entrypoint, and projects results onto the documented
+Python API. Safely interoperable `bind(C)` operations use their existing native
+symbols directly. Other operations use generated Fortran adapters, and shared
+runtime support supplies array, error, allocation, and ownership helpers.
 
 There is no separate codegen-AST conversion stage. Post-IR completion freezes
 object kind, storage, ownership, mutation, output projection, and native-call
@@ -172,11 +174,11 @@ Typical generated artifacts are:
 | Artifact | Purpose |
 | --- | --- |
 | `binding_support/` | Header-only native binding support |
-| user and generated `.o`/`.mod` files | Native build intermediates |
+| user and selected generated `.o`/`.mod` files | Native build intermediates |
 | `<module>.<extension-suffix>.so` | Importable extension on Linux |
 
 <!-- PRIK_C_DOCS_START
-| `bind_c_<module>_wrapper.f90` | Fortran-to-C ABI bridge |
+| `bind_c_<module>_wrapper.f90` (when needed) | Selected Fortran adapters and support procedures |
 | `<module>_wrapper.c` and `.h` | CPython extension binding |
 PRIK_C_DOCS_END -->
 
@@ -979,6 +981,12 @@ Optional scalar allocatable and pointer descriptors are the three-state
 exception: omission means absent, explicit `None` means a present unallocated
 or unassociated descriptor, and a concrete value means present storage.
 
+For a directly routed standard C array descriptor, the native ABI represents
+absence with a null descriptor pointer. Omission and explicit `None` therefore
+both mean absent; pass an unallocated `Allocatable[T[...]]` or unassociated
+`Pointer[T[...]]` handle for the distinct present-empty state, and a populated
+handle for the present-value state.
+
 Optional `intent(out)` and `intent(inout)` dummies remain visible so omission or
 `None` makes native `present(dummy)` false. Optional scalar outputs use mutable
 rank-zero storage such as `Int32[()]`. An optional allocatable or pointer array
@@ -1022,10 +1030,12 @@ rename the Python function.
 PRIK_C_DOCS_END -->
 
 <!-- PRIK_C_DOCS_START
-Arrays, character buffers, derived types, optionals, outputs, pointers,
-allocatables, address-passed dummies, or any non-interoperable declaration retain
-a generated Fortran shim or produce a wrapper-planning diagnostic when no safe shim
-contract exists.
+The completed entrypoint policy selects a direct route only for adopted,
+standard-interoperable mechanisms. A non-`value` scalar uses its typed C
+pointer ABI, including `NULL` for an absent optional dummy. Optional `value`
+dummies and non-interoperable declarations retain a generated Fortran adapter.
+Other arrays, characters, descriptors, callbacks, and aggregate mechanisms are
+direct only where their feature section explicitly documents the C ABI.
 PRIK_C_DOCS_END -->
 
 <!-- PRIK_C_DOCS_START
@@ -1678,6 +1688,15 @@ Supported scalar forms include fixed-length and assumed-length arguments,
 fixed-length and allocatable results, hidden `intent(out)` values, immutable
 replacement for `intent(inout)`, and optional arguments. Default character,
 `kind=1`, and `c_char` are supported; other kinds are blocked.
+
+An interoperable `character(kind=c_char)` scalar or explicit/assumed-size
+array with element length one may use the direct C ABI. A scalar `VALUE` dummy
+is passed as `char`; a non-`VALUE` scalar or `S1` NumPy buffer is passed as
+`char *`. The binding still owns UTF-8 conversion, fixed-width dtype and shape
+validation, mutation/writeback, and Python-owned results. No hidden Fortran
+length or implicit terminator is added to the direct buffer ABI. Longer,
+assumed-length, deferred-length, and returned character buffers retain their
+generated-adapter or descriptor mechanisms.
 PRIK_C_DOCS_END -->
 
 ### Input, Output, And Replacement
@@ -1837,15 +1856,18 @@ PRIK_C_DOCS_END -->
 
 <!-- PRIK_C_DOCS_START
 The parser and semantic IR still preserve `bind(C)`, `sequence`, component
-order, types, kinds, ranks, shapes, and storage facts. Every supported exact
-rank-zero monomorphic derived-type `value` argument is routed through a typed
-Fortran bridge so the Fortran compiler performs the call. The binding never mirrors the
-aggregate, so this wrapper mechanism does not require the type itself to be
-`bind(C)`.
+order, types, kinds, ranks, shapes, and storage facts. A non-`value` dummy of a
+`bind(C)` type may use a direct C ABI pointer to the wrapper's opaque native
+instance; construction, fields, and destruction still use their independently
+planned Fortran support procedures. Every supported exact rank-zero
+monomorphic derived-type `value` argument remains routed through a typed
+Fortran adapter so the Fortran compiler performs the aggregate copy. The
+binding never mirrors the aggregate.
 PRIK_C_DOCS_END -->
 
 <!-- PRIK_C_DOCS_START
-Direct C layout access is not currently enabled. It would require
+Direct C layout access and by-value aggregate lowering are not currently
+enabled. They would require
 compiler-validated size, alignment, padding, component offsets, and nested
 layout, with accessor fallback whenever proof is unavailable.
 PRIK_C_DOCS_END -->
@@ -2109,6 +2131,13 @@ print(result)  # 7.5
 The generated wrapper keeps a strong reference to the callback only until the
 native call returns. Nested callback-taking calls on the same entering Python
 thread are supported.
+
+When both the callback prototype and its containing procedure are `bind(C)`, a
+primitive-scalar callback signature can use the direct route. The generated C
+binding passes its call-scoped trampoline as the native function pointer; the
+same GIL, exception, nesting, and lifetime rules below still apply. A callback
+prototype that requires array, string, derived-object, optional, or other
+Fortran-local conversion keeps the generated adapter route.
 
 ### Callback Values
 

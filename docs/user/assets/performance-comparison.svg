@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 702" role="img" aria-labelledby="title description">
   <title id="title">PRIK performance relative to f2py</title>
   <desc id="description">
-    Relative speed across 13 benchmarks. Values above one indicate PRIK is faster. PRIK is faster in 7 benchmarks.
+    Relative speed across 13 benchmarks. Values above one indicate PRIK is faster. PRIK is faster in 11 benchmarks.
   </desc>
   <rect x="1" y="1" width="998" height="700" rx="16" fill="#ffffff" stroke="#d8e1e8" stroke-width="2"/>
   <g font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" fill="#17212b">
@@ -9,75 +9,75 @@
     <text x="28" y="70" font-size="14" fill="#52616f">f2py time ÷ PRIK time · farther right means faster PRIK calls</text>
     <g stroke="#e4eaef" stroke-width="1">
       <line x1="350.0" y1="115" x2="350.0" y2="626"/>
-      <line x1="413.3" y1="115" x2="413.3" y2="626"/>
-      <line x1="540.0" y1="115" x2="540.0" y2="626"/>
-      <line x1="666.7" y1="115" x2="666.7" y2="626"/>
-      <line x1="793.3" y1="115" x2="793.3" y2="626"/>
+      <line x1="464.0" y1="115" x2="464.0" y2="626"/>
+      <line x1="578.0" y1="115" x2="578.0" y2="626"/>
+      <line x1="692.0" y1="115" x2="692.0" y2="626"/>
+      <line x1="806.0" y1="115" x2="806.0" y2="626"/>
       <line x1="920.0" y1="115" x2="920.0" y2="626"/>
     </g>
-    <line x1="540.0" y1="110" x2="540.0" y2="626" stroke="#52616f" stroke-width="2"/>
+    <line x1="464.0" y1="110" x2="464.0" y2="626" stroke="#52616f" stroke-width="2"/>
     <g font-size="12" fill="#607080" text-anchor="middle">
-      <text x="350.0" y="103">0.7×</text>
-      <text x="413.3" y="103">0.8×</text>
-      <text x="540.0" y="103">1.0×</text>
-      <text x="666.7" y="103">1.2×</text>
-      <text x="793.3" y="103">1.4×</text>
-      <text x="920.0" y="103">1.6×</text>
-      <text x="540.0" y="85" font-weight="700" fill="#344453">1.0× equal</text>
+      <text x="350.0" y="103">0.9×</text>
+      <text x="464.0" y="103">1.0×</text>
+      <text x="578.0" y="103">1.1×</text>
+      <text x="692.0" y="103">1.2×</text>
+      <text x="806.0" y="103">1.3×</text>
+      <text x="920.0" y="103">1.4×</text>
+      <text x="464.0" y="85" font-weight="700" fill="#344453">1.0× equal</text>
     </g>
     <g font-size="14">
       <text x="28" y="155">Empty call</text>
-      <line x1="540.0" y1="150" x2="588.5" y2="150" stroke="#0f766e" stroke-width="5" stroke-linecap="round"/>
-      <circle cx="588.5" cy="150" r="7" fill="#0f766e"/>
-      <text x="602.5" y="155" fill="#0f766e" font-weight="700" text-anchor="start">1.08×</text>
+      <line x1="464.0" y1="150" x2="643.4" y2="150" stroke="#0f766e" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="643.4" cy="150" r="7" fill="#0f766e"/>
+      <text x="657.4" y="155" fill="#0f766e" font-weight="700" text-anchor="start">1.16×</text>
       <text x="28" y="193">Add scalars</text>
-      <line x1="519.6" y1="188" x2="540.0" y2="188" stroke="#b45309" stroke-width="5" stroke-linecap="round"/>
-      <circle cx="519.6" cy="188" r="7" fill="#b45309"/>
-      <text x="505.6" y="193" fill="#b45309" font-weight="700" text-anchor="end">0.97×</text>
+      <line x1="464.0" y1="188" x2="556.8" y2="188" stroke="#0f766e" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="556.8" cy="188" r="7" fill="#0f766e"/>
+      <text x="570.8" y="193" fill="#0f766e" font-weight="700" text-anchor="start">1.08×</text>
       <text x="28" y="231">Increment vector · n=1</text>
-      <line x1="540.0" y1="226" x2="847.4" y2="226" stroke="#0f766e" stroke-width="5" stroke-linecap="round"/>
-      <circle cx="847.4" cy="226" r="7" fill="#0f766e"/>
-      <text x="861.4" y="231" fill="#0f766e" font-weight="700" text-anchor="start">1.49×</text>
+      <line x1="464.0" y1="226" x2="773.0" y2="226" stroke="#0f766e" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="773.0" cy="226" r="7" fill="#0f766e"/>
+      <text x="787.0" y="231" fill="#0f766e" font-weight="700" text-anchor="start">1.27×</text>
       <text x="28" y="269">Increment vector · n=16</text>
-      <line x1="540.0" y1="264" x2="813.2" y2="264" stroke="#0f766e" stroke-width="5" stroke-linecap="round"/>
-      <circle cx="813.2" cy="264" r="7" fill="#0f766e"/>
-      <text x="827.2" y="269" fill="#0f766e" font-weight="700" text-anchor="start">1.43×</text>
+      <line x1="464.0" y1="264" x2="786.0" y2="264" stroke="#0f766e" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="786.0" cy="264" r="7" fill="#0f766e"/>
+      <text x="800.0" y="269" fill="#0f766e" font-weight="700" text-anchor="start">1.28×</text>
       <text x="28" y="307">Increment vector · n=1,024</text>
-      <line x1="505.6" y1="302" x2="540.0" y2="302" stroke="#b45309" stroke-width="5" stroke-linecap="round"/>
-      <circle cx="505.6" cy="302" r="7" fill="#b45309"/>
-      <text x="491.6" y="307" fill="#b45309" font-weight="700" text-anchor="end">0.95×</text>
+      <line x1="464.0" y1="302" x2="742.8" y2="302" stroke="#0f766e" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="742.8" cy="302" r="7" fill="#0f766e"/>
+      <text x="756.8" y="307" fill="#0f766e" font-weight="700" text-anchor="start">1.24×</text>
       <text x="28" y="345">Increment vector · n=1,000,000</text>
-      <line x1="530.6" y1="340" x2="540.0" y2="340" stroke="#64748b" stroke-width="5" stroke-linecap="round"/>
-      <circle cx="530.6" cy="340" r="7" fill="#64748b"/>
-      <text x="516.6" y="345" fill="#64748b" font-weight="700" text-anchor="end">0.99×</text>
+      <line x1="464.0" y1="340" x2="482.6" y2="340" stroke="#0f766e" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="482.6" cy="340" r="7" fill="#0f766e"/>
+      <text x="496.6" y="345" fill="#0f766e" font-weight="700" text-anchor="start">1.02×</text>
       <text x="28" y="383">Sum matrix · 4×4</text>
-      <line x1="540.0" y1="378" x2="620.7" y2="378" stroke="#0f766e" stroke-width="5" stroke-linecap="round"/>
-      <circle cx="620.7" cy="378" r="7" fill="#0f766e"/>
-      <text x="634.7" y="383" fill="#0f766e" font-weight="700" text-anchor="start">1.13×</text>
+      <line x1="464.0" y1="378" x2="523.8" y2="378" stroke="#0f766e" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="523.8" cy="378" r="7" fill="#0f766e"/>
+      <text x="537.8" y="383" fill="#0f766e" font-weight="700" text-anchor="start">1.05×</text>
       <text x="28" y="421">Sum matrix · 32×32</text>
-      <line x1="540.0" y1="416" x2="552.8" y2="416" stroke="#0f766e" stroke-width="5" stroke-linecap="round"/>
-      <circle cx="552.8" cy="416" r="7" fill="#0f766e"/>
-      <text x="566.8" y="421" fill="#0f766e" font-weight="700" text-anchor="start">1.02×</text>
+      <line x1="464.0" y1="416" x2="475.9" y2="416" stroke="#0f766e" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="475.9" cy="416" r="7" fill="#0f766e"/>
+      <text x="489.9" y="421" fill="#0f766e" font-weight="700" text-anchor="start">1.01×</text>
       <text x="28" y="459">Sum matrix · 256×256</text>
-      <line x1="534.2" y1="454" x2="540.0" y2="454" stroke="#b45309" stroke-width="5" stroke-linecap="round"/>
-      <circle cx="534.2" cy="454" r="7" fill="#b45309"/>
-      <text x="520.2" y="459" fill="#b45309" font-weight="700" text-anchor="end">0.991×</text>
+      <line x1="461.5" y1="454" x2="464.0" y2="454" stroke="#b45309" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="461.5" cy="454" r="7" fill="#b45309"/>
+      <text x="447.5" y="459" fill="#b45309" font-weight="700" text-anchor="end">0.998×</text>
       <text x="28" y="497">Sum matrix · 1,024×1,024</text>
-      <line x1="471.6" y1="492" x2="540.0" y2="492" stroke="#b45309" stroke-width="5" stroke-linecap="round"/>
-      <circle cx="471.6" cy="492" r="7" fill="#b45309"/>
-      <text x="457.6" y="497" fill="#b45309" font-weight="700" text-anchor="end">0.89×</text>
+      <line x1="461.7" y1="492" x2="464.0" y2="492" stroke="#b45309" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="461.7" cy="492" r="7" fill="#b45309"/>
+      <text x="447.7" y="497" fill="#b45309" font-weight="700" text-anchor="end">0.998×</text>
       <text x="28" y="535">Update matrix · 4×4</text>
-      <line x1="540.0" y1="530" x2="582.6" y2="530" stroke="#0f766e" stroke-width="5" stroke-linecap="round"/>
-      <circle cx="582.6" cy="530" r="7" fill="#0f766e"/>
-      <text x="596.6" y="535" fill="#0f766e" font-weight="700" text-anchor="start">1.07×</text>
+      <line x1="464.0" y1="530" x2="647.6" y2="530" stroke="#0f766e" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="647.6" cy="530" r="7" fill="#0f766e"/>
+      <text x="661.6" y="535" fill="#0f766e" font-weight="700" text-anchor="start">1.16×</text>
       <text x="28" y="573">Update matrix · 256×256</text>
-      <line x1="540.0" y1="568" x2="547.2" y2="568" stroke="#0f766e" stroke-width="5" stroke-linecap="round"/>
-      <circle cx="547.2" cy="568" r="7" fill="#0f766e"/>
-      <text x="561.2" y="573" fill="#0f766e" font-weight="700" text-anchor="start">1.01×</text>
+      <line x1="464.0" y1="568" x2="489.7" y2="568" stroke="#0f766e" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="489.7" cy="568" r="7" fill="#0f766e"/>
+      <text x="503.7" y="573" fill="#0f766e" font-weight="700" text-anchor="start">1.02×</text>
       <text x="28" y="611">Update matrix · 1,024×1,024</text>
-      <line x1="412.5" y1="606" x2="540.0" y2="606" stroke="#b45309" stroke-width="5" stroke-linecap="round"/>
-      <circle cx="412.5" cy="606" r="7" fill="#b45309"/>
-      <text x="398.5" y="611" fill="#b45309" font-weight="700" text-anchor="end">0.80×</text>
+      <line x1="464.0" y1="606" x2="498.2" y2="606" stroke="#0f766e" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="498.2" cy="606" r="7" fill="#0f766e"/>
+      <text x="512.2" y="611" fill="#0f766e" font-weight="700" text-anchor="start">1.03×</text>
     </g>
     <g font-size="13">
       <circle cx="30" cy="664" r="6" fill="#0f766e"/>
@@ -86,7 +86,7 @@
       <text x="173" y="669" fill="#52616f">f2py faster</text>
       <circle cx="285" cy="664" r="6" fill="#64748b"/>
       <text x="298" y="669" fill="#52616f">no significant difference</text>
-      <text x="970" y="669" text-anchor="end" fill="#52616f">Geometric mean: PRIK 1.05× faster</text>
+      <text x="970" y="669" text-anchor="end" fill="#52616f">Geometric mean: PRIK 1.10× faster</text>
     </g>
   </g>
 </svg>

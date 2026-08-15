@@ -61,6 +61,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "x",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "integer",
@@ -91,6 +93,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "x",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "use_expr",
                 "source_kind": "argument",
                 "source_type": "integer",
@@ -168,6 +172,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "y",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "real",
@@ -198,6 +204,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "y",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "use_expr",
                 "source_kind": "argument",
                 "source_type": "real",
@@ -252,6 +260,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "use_expr",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "dims_mod",
             "source_kind": "subroutine",
             "source_type": null,
@@ -288,6 +298,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "n0",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "integer",
@@ -315,6 +327,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "n0",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "dims_mod",
             "source_kind": "variable",
             "source_type": "integer",
@@ -358,6 +372,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "n1",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "integer",
@@ -385,6 +401,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "n1",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "dims_mod",
             "source_kind": "variable",
             "source_type": "integer",
@@ -410,6 +428,8 @@
       "origin": {
         "source_language": "fortran",
         "native_name": "dims_mod",
+        "native_abi": null,
+        "native_symbol": null,
         "native_scope": "dims_mod",
         "source_kind": "module",
         "source_type": null,

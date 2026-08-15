@@ -37,19 +37,23 @@ Stable top-level fields:
 
 | Field | Meaning |
 | --- | --- |
-| `schema_version` | Manifest schema version. The current supported value is `2`. |
+| `schema_version` | Manifest schema version. The current supported value is `3`. |
 | `build_kind` | Manifest kind. The current supported value is `pyi-wrapper`. |
 | `entry_contract` | Entry semantic `.pyi` path used for the build. |
 | `contract_paths` | Complete discovered `.pyi` import graph. Replay fails if the current graph differs. |
 | `extension` | Requested and resolved Python extension names. |
 | `output` | Output directory, shared-library path, and strict-name setting. |
 | `compiler` | Input-language compiler executable, compiler profile, and wrapper/native flag values recorded by the build. |
+| `generated_wrapper` | Physical generated sources plus separate adapter and generated-support membership groups. |
 | `native_build_plan` | Native compilation units, produced objects, prebuilt artifacts, module/include directories, library directories, and ordered link items. |
 
 Relative paths are resolved relative to the manifest directory during replay.
-Schema 2 records the selected input-language compiler executable and the
-build-wide include directories needed to reproduce native, bridge, binding,
-and link commands; schema 1 manifests are no longer accepted. Use:
+Schema 3 records generated-native group membership in addition to the selected
+input-language compiler executable and the build-wide include directories
+needed to reproduce native, adapter, binding, and link commands. This makes an
+all-direct build's empty generated-native set, a support-only source, and mixed
+adapter/support membership explicit. Earlier schemas are no longer accepted.
+Use:
 
 ```bash
 python3 -m prik --build-manifest build/module/prik-build.json

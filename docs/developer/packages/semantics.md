@@ -129,8 +129,11 @@ references against the batch: prototypes become callback references and classes
 become wrapped or opaque external types.
 
 The converter validates the supported contract subset and preserves declared
-native facts. It does not execute declarations, load native code, infer a
-wrapper mechanism, or complete ownership policy.
+native facts. For a Fortran contract, `@native_abi("c")` records an original
+procedure's C ABI independently from its `@bind(...)` link label, placement,
+and route-neutral `@native_call(...)` projection. It does not execute
+declarations, load native code, infer a wrapper route, or complete ownership
+policy.
 
 ### `models.py` and `scalar_types.py`: the shared vocabulary
 

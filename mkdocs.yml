@@ -152,6 +152,7 @@ nav:
       # PRIK_C_DOCS: - Deferred C Parser Reference: developer/deferred/c-parser.md
       - Roadmaps:
           - Overview: developer/roadmap/index.md
+          - Native Entrypoint and Adapter Adoption: developer/roadmap/native-entrypoint-adoption-checklist.md
           - Language-First Test Suite and Fortran Cleanup: developer/roadmap/fortran-test-suite-cleanup-checklist.md
           - Documentation Content: developer/roadmap/documentation-content-checklist.md
           - Semantic .pyi Wrapper: developer/roadmap/semantic-pyi-wrapper-checklist.md

@@ -184,8 +184,8 @@ def test_native_handle_plans_keep_datatype_specific_state():
         NativeArraySourceKind.POINTER_HANDLE,
     )
     assert normal.native_array_actual.require_contiguous is True
-    assert normal.bridge.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER
-    assert normal.array is normal.native_call_slot.array
+    assert normal.entrypoint.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER
+    assert normal.array is normal.projected_call_slot.array
 
     alloc = functions["alloc"].arguments[0]
     pointer = functions["pointer"].arguments[0]
@@ -195,7 +195,7 @@ def test_native_handle_plans_keep_datatype_specific_state():
     ):
         handle = argument.native_array_handle
         assert handle is not None
-        assert handle is argument.native_call_slot.native_array_handle
+        assert handle is argument.projected_call_slot.native_array_handle
         assert handle.descriptor_kind is descriptor_kind
         assert handle.handoff.abi is NativeDescriptorHandoffABI.FACT_PACKED_CALL_LOCAL
         assert handle.default_handle.construction is NativeArrayDefaultConstruction.FACT_PACKED_EMPTY
@@ -204,12 +204,12 @@ def test_native_handle_plans_keep_datatype_specific_state():
         assert NativeArrayOperation.DESTROY in handle.default_handle.operations
         assert len(handle.handoff.extent_roles) == handle.array.rank == 1
         assert argument.binding.python_action is PythonBarrierAction.WRAPPER_INSTANCE
-        assert argument.bridge.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR
+        assert argument.entrypoint.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR
 
     optional = functions["optional"].arguments[0]
     assert optional.native_array_handle is not None
     assert optional.native_array_handle.optional_absent is True
-    assert optional.native_array_handle.handoff.presence_role == optional.bridge.presence_role
+    assert optional.native_array_handle.handoff.presence_role == optional.entrypoint.presence_role
     assert alloc.native_array_handle is not None
     assert alloc.native_array_handle.handoff.presence_role is None
 
@@ -282,8 +282,8 @@ def test_native_handle_plans_keep_datatype_specific_state():
     assert pointer_output.native_array_handle is not None
     assert pointer_output.native_array_handle.descriptor_kind is NativeArrayDescriptorKind.POINTER
     assert pointer_output.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
-    assert pointer_output.native_call_slot is not None
-    assert pointer_output.native_call_slot.source_kind == "result"
+    assert pointer_output.projected_call_slot is not None
+    assert pointer_output.projected_call_slot.source_kind == "result"
 
     managed_pointer = functions["make_managed_pointer"].results[0]
     assert managed_pointer.native_array_handle is not None

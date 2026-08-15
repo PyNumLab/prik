@@ -40,7 +40,7 @@ prik/policy/
 ```text
 SemanticModule + normalized raw metadata
   -> entry-export filtering and Python export completion
-  -> ownership and accessor decisions
+  -> ownership, accessor, and per-operation native-entrypoint decisions
   -> class, callable, result, overload, and descriptor policy construction
   -> immutable completed policies attached to semantic IR
   -> WrapperPlanner
@@ -100,13 +100,52 @@ substitute. `decide_semantic_variable()`, `decide_semantic_getter()`, and
 
 The construction helpers combine completed decisions into immutable records
 for functions, results, native call slots, module variables, derived types,
-classes, overloads, callbacks, transformations, and lifecycles.
+classes, overloads, callbacks, transformations, lifecycles, and native
+entrypoints.
 
 For a function, `build_function_wrapper_policy()` fixes native-slot order,
-projects visible arguments, completes result and declaration-callable records,
-binds declaration extents, records writeback and cleanup, and aggregates all
-support blockers. The resulting `FunctionWrapperPolicy` is the planner's
-complete description of the wrapper mechanism;
+projects visible arguments, completes each binding-owned projection and C
+passing convention, completes result and declaration-callable records, binds
+declaration extents, records writeback and cleanup, and then selects exactly
+one `NativeEntrypointAction`. A Fortran procedure without the retained C ABI
+fact selects `GENERATED_FORTRAN_ADAPTER`. A `bind(C)` procedure selects
+`DIRECT_C_ABI` only when every argument, result, optional-presence,
+representation, ownership, lifecycle, and invocation fact is directly
+interoperable; otherwise it keeps the adapter route. Optional non-`VALUE`
+interoperable dummies use a nullable C pointer, while optional `VALUE` dummies
+remain adapter-backed.
+
+An immediate callback is directly interoperable only when both the containing
+procedure and its named callback prototype retain the Fortran C ABI marker,
+and every callback argument/result has a supported scalar C value or reference
+ABI. The binding then passes its binding-owned trampoline as the planned
+function-pointer actual. Array, string, derived, optional, and non-`bind(C)`
+callback interfaces retain the generated Fortran adapter route.
+
+An allocatable or pointer array argument may use the direct route only when
+completed native-array policy supplies a persistent standard C descriptor and
+the original `bind(C)` dummy accepts that descriptor. Optional descriptor
+arguments use the standard three states: a null descriptor pointer is absent,
+a non-null empty descriptor is present but unallocated or unassociated, and a
+non-null populated descriptor is present with storage. Fact-packed call-local
+descriptors and owned descriptor results remain adapter-backed.
+
+A `character(c_char)` scalar or explicit/assumed-size array is directly
+interoperable only when its completed element length is one. Policy selects a
+C value for a scalar `VALUE` dummy and a character pointer for reference or
+array storage; longer or runtime-length character storage remains
+adapter-backed. The lowerer does not infer this choice from a C spelling.
+
+`EntrypointPassingConvention` describes value, reference, nullable pointer,
+C-descriptor, runtime-handle, C-return, and output-storage transport.
+`EntrypointOptionalityAction` remains independent from the Python default and
+nullable surface. `EntrypointProjectionAction` records how the binding
+materializes every ordered `@native_call` item. Adapter data actions describe
+only representation or original-invocation work after the shared C boundary;
+they do not choose the call source, ordering, or C passing convention.
+
+The resulting `FunctionWrapperPolicy` is the planner's complete description of
+the wrapper mechanism;
 `completed_function_wrapper_policy()` rejects absent or blocked records at
 that boundary.
 

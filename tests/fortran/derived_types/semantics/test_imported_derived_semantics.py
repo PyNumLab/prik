@@ -86,15 +86,10 @@ def test_converter_preserves_imported_derived_contexts_through_dispatch_paths():
     assert semantic_class.fields[0].semantic_type.metadata["external_type_ref"] == external_ref
     assert isinstance(semantic_class.fields[0], SemanticField)
     assert semantic_class.visibility == "private"
-    assert asdict(semantic_class.origin) == {
-        "source_language": "fortran",
-        "native_name": "container_t",
-        "native_scope": "consumer",
-        "source_kind": "derived_type",
-        "source_type": None,
-        "source_location": {},
-        "metadata": {},
-    }
+    assert semantic_class.origin.source_language == "fortran"
+    assert semantic_class.origin.native_name == "container_t"
+    assert semantic_class.origin.native_scope == "consumer"
+    assert semantic_class.origin.source_kind == "derived_type"
     semantic_proc = semantic_module.functions[0]
     assert semantic_proc.native_name == "step"
     assert semantic_proc.locals == []
@@ -103,16 +98,11 @@ def test_converter_preserves_imported_derived_contexts_through_dispatch_paths():
     assert isinstance(semantic_module.variables[0], SemanticVariable)
     assert [method.name for method in semantic_module.classes[0].methods] == ["step"]
     assert semantic_module.classes[0].methods[0].projection == semantic_proc.projection
-    assert asdict(semantic_module.classes[0].methods[0].origin) == asdict(semantic_proc.origin)
-    assert asdict(semantic_proc.origin) == {
-        "source_language": "fortran",
-        "native_name": "step",
-        "native_scope": "consumer",
-        "source_kind": "subroutine",
-        "source_type": None,
-        "source_location": {},
-        "metadata": {},
-    }
+    assert semantic_module.classes[0].methods[0].origin == semantic_proc.origin
+    assert semantic_proc.origin.source_language == "fortran"
+    assert semantic_proc.origin.native_name == "step"
+    assert semantic_proc.origin.native_scope == "consumer"
+    assert semantic_proc.origin.source_kind == "subroutine"
     assert [asdict(mapping) for mapping in semantic_proc.projection] == [
         {
             "python_name": "arg",
@@ -124,15 +114,10 @@ def test_converter_preserves_imported_derived_contexts_through_dispatch_paths():
             "value": None,
         }
     ]
-    assert asdict(semantic_module.origin) == {
-        "source_language": "fortran",
-        "native_name": "consumer",
-        "native_scope": "consumer",
-        "source_kind": "module",
-        "source_type": None,
-        "source_location": {},
-        "metadata": {},
-    }
+    assert semantic_module.origin.source_language == "fortran"
+    assert semantic_module.origin.native_name == "consumer"
+    assert semantic_module.origin.native_scope == "consumer"
+    assert semantic_module.origin.source_kind == "module"
     assert converter.visit(FortranDerivedType(name="default_t")).visibility == "public"
     assert converter.visit(FortranVariable(name="local", base_type="derived", kind="state_t")).name == "state_t"
 

@@ -158,6 +158,12 @@ class outer:
     with pytest.raises(TypeError):
         inner.methods_by_owner_path["nested_catalog.outer.inner.shift"] = outer.semantic_class
 
+    plan = WrapperPlanner().build(module)
+    generated = WrapperGenerator().generate(plan)
+
+    assert tuple(derived.type_name for derived in plan.namespaces[0].derived_types) == ("outer", "inner")
+    assert {source.path.suffix for source in generated.sources} == {".c", ".h", ".f90"}
+
 
 def test_planner_projects_required_array_buffer_policy():
     module = parse_pyi_text(
@@ -169,6 +175,29 @@ def sum_values(values: Float64[:]) -> Float64: ...
     complete_semantic_policies(module)
 
     assert WrapperPlanner().build(module).namespaces[0].functions[0].arguments[0].array is not None
+
+
+def test_planner_directly_projects_three_facets_and_distinct_call_orders():
+    function = _hidden_result_plan().namespaces[0].functions[0]
+    argument = function.arguments[0]
+    result = function.results[0]
+
+    assert function.entrypoint.symbol_name == "bind_c_scale"
+    assert [(item.source_kind, item.owner_path) for item in function.entrypoint.parameters] == [
+        ("projected_slot", function.entrypoint.projected_slots[0].owner_path),
+        ("argument", argument.owner_path),
+        ("projected_slot", function.entrypoint.projected_slots[2].owner_path),
+        ("hidden_result", result.owner_path),
+    ]
+    assert function.entrypoint.results == (result.entrypoint,)
+    assert argument.entrypoint.handoff_role == "hidden_values.scale.x:value"
+    assert argument.projected_call_slot is function.entrypoint.projected_slots[1]
+    assert [slot.source_kind for slot in function.entrypoint.projected_slots] == [
+        "literal",
+        "projection",
+        "literal",
+        "result",
+    ]
 
 
 def test_planner_fails_when_post_ir_policy_has_not_completed():

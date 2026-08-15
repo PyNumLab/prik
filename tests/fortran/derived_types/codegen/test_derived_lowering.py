@@ -62,7 +62,7 @@ def test_exact_typed_value_policy_projects_shared_canonical_derived_handoff(attr
     assert policy.derived.type_identity == ("derived_value", "point")
     assert policy.derived.native_handoff is DerivedNativeHandoff.TYPED_VALUE
     assert policy.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION
-    assert argument.derived is argument.native_call_slot.derived
+    assert argument.derived is argument.projected_call_slot.derived
     assert argument.derived.type_identity == ("derived_value", "point")
     assert argument.derived.native_handoff is DerivedNativeHandoff.TYPED_VALUE
     assert "type_identity=('derived_value', 'point')" in str(plan)
@@ -123,8 +123,8 @@ def make_point() -> point: ...
 
     assert [action.operation for action in function.cleanup_actions] == [LifecycleOperation.DESTROY_ON_FAILURE]
     assert [action.operation for action in function.release_actions] == [LifecycleOperation.TRANSFER_TO_WRAPPER]
-    assert function.cleanup_actions[0].source_role == function.results[0].bridge.native_result_role
-    assert function.release_actions[0].source_role == function.results[0].bridge.native_result_role
+    assert function.cleanup_actions[0].source_role == function.results[0].entrypoint.native_result_role
+    assert function.release_actions[0].source_role == function.results[0].entrypoint.native_result_role
 
     function.release_actions = ()
     with pytest.raises(ValueError, match="derived-wrapper-release-count"):
@@ -150,11 +150,11 @@ def make_point() -> Returns["value", point]: ...
     result = function.results[0]
 
     assert result.source_kind == "hidden_output"
-    assert result.derived is result.native_call_slot.derived
+    assert result.derived is result.projected_call_slot.derived
     assert result.derived.origin is DerivedObjectOrigin.WRAPPER_RESULT
     assert result.derived.release is DerivedRelease.WRAPPER_DESTROY
-    assert function.cleanup_actions[0].source_role == result.bridge.native_result_role
-    assert function.release_actions[0].source_role == result.bridge.native_result_role
+    assert function.cleanup_actions[0].source_role == result.entrypoint.native_result_role
+    assert function.release_actions[0].source_role == result.entrypoint.native_result_role
 
     c_source, bridge_source = _sources(plan)
     assert "PyCapsule_New(value" in c_source
@@ -178,7 +178,7 @@ def update(value: point) -> Returns["value", point]: ...
     function = plan.namespaces[0].functions[0]
     argument = function.arguments[0]
 
-    assert argument.derived is argument.native_call_slot.derived
+    assert argument.derived is argument.projected_call_slot.derived
     assert argument.derived.origin is DerivedObjectOrigin.CALLER_WRAPPER
     assert argument.derived.owner_retention is DerivedOwnerRetention.CALLER_WRAPPER
     assert argument.derived.release is DerivedRelease.NONE

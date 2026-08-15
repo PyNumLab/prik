@@ -9,8 +9,11 @@ import pytest
 
 from tools.generate_performance_docs import (
     BUILD_SHARED_METADATA,
+    DirectPerformancePaths,
+    DirectPerformanceSnapshots,
     _format_factor,
     _format_ratio,
+    _load_direct_snapshots,
     generate,
     load_snapshot,
     render_build_chart,
@@ -113,6 +116,81 @@ def _paired_build_suites(tmp_path: Path) -> tuple[Path, Path]:
     return f2py, prik
 
 
+def _direct_paths(tmp_path: Path) -> DirectPerformancePaths:
+    runtime_metadata = {
+        "benchmark_cohort": "direct_entrypoint",
+        "compile_flags": "-O3 -march=native -mtune=native",
+        "gil_policy": "held",
+        "runtime_order_protocol": "balanced_three_route_forward_reverse",
+    }
+    direct_metadata = {**runtime_metadata, "route": "direct_c_abi"}
+    adapted_metadata = {**runtime_metadata, "route": "generated_fortran_adapter"}
+    benchmarks = [
+        ("direct.call.noop", [2.0e-6, 2.1e-6, 1.9e-6, 2.05e-6, 1.95e-6]),
+        ("direct.call.scalar_function", [3.0e-6, 3.1e-6, 2.9e-6, 3.05e-6, 2.95e-6]),
+        ("direct.call.scalar_subroutine", [4.0e-6, 4.1e-6, 3.9e-6, 4.05e-6, 3.95e-6]),
+    ]
+    f2py = _write_suite(
+        tmp_path / "f2py-direct.json",
+        "f2py-direct",
+        benchmarks,
+        extra_metadata=direct_metadata,
+    )
+    prik = _write_suite(
+        tmp_path / "prik-direct.json",
+        "prik-direct",
+        [(name, [value * 0.8 for value in values]) for name, values in benchmarks],
+        extra_metadata=direct_metadata,
+    )
+    adapted = _write_suite(
+        tmp_path / "prik-adapted.json",
+        "prik-adapted",
+        [(name, [value * 0.81 for value in values]) for name, values in benchmarks],
+        extra_metadata=adapted_metadata,
+    )
+
+    build_metadata = {
+        "benchmark_cohort": "direct_entrypoint",
+        "build_order_protocol": "balanced_three_route_forward_reverse",
+        "build_runs": 4,
+        "build_scope": "clean small source-to-extension generation, compilation, and linking",
+        "build_warmups": 1,
+        "compile_flags": "-O3 -march=native -mtune=native",
+        "compiler": "/usr/bin/gfortran",
+        "prik_build_jobs": 4,
+    }
+    build_benchmark = [("direct.build.optimized.small", [2.0, 2.1, 1.9, 2.05, 1.95])]
+    f2py_build = _write_suite(
+        tmp_path / "f2py-direct-build.json",
+        "f2py-direct",
+        build_benchmark,
+        extra_metadata={**build_metadata, "route": "direct_c_abi"},
+    )
+    prik_build = _write_suite(
+        tmp_path / "prik-direct-build.json",
+        "prik-direct",
+        [(name, [value * 0.4 for value in values]) for name, values in build_benchmark],
+        extra_metadata={**build_metadata, "route": "direct_c_abi"},
+    )
+    adapted_build = _write_suite(
+        tmp_path / "prik-adapted-build.json",
+        "prik-adapted",
+        [(name, [value * 0.41 for value in values]) for name, values in build_benchmark],
+        extra_metadata={**build_metadata, "route": "generated_fortran_adapter"},
+    )
+    return DirectPerformancePaths(f2py, prik, adapted, f2py_build, prik_build, adapted_build)
+
+
+def _direct_snapshots(tmp_path: Path) -> DirectPerformanceSnapshots:
+    return _load_direct_snapshots(
+        _direct_paths(tmp_path),
+        operating_system=TEST_OS,
+        compiler_version="GNU Fortran 13.3.0",
+        commit="1234567890abcdef",
+        recorded_date=date(2026, 8, 1),
+    )
+
+
 def _page_template() -> str:
     return """before
 <!-- prik-performance-summary:start -->
@@ -123,10 +201,18 @@ between summary and table
 old table
 <!-- prik-performance-table:end -->
 between table and build
+<!-- prik-performance-direct:start -->
+old direct results
+<!-- prik-performance-direct:end -->
+between direct and build
 <!-- prik-performance-build:start -->
 old build results
 <!-- prik-performance-build:end -->
-between build and environment
+between build and direct build
+<!-- prik-performance-direct-build:start -->
+old direct build results
+<!-- prik-performance-direct-build:end -->
+between direct build and environment
 <!-- prik-performance-environment:start -->
 old environment
 <!-- prik-performance-environment:end -->
@@ -145,8 +231,8 @@ def test_load_snapshot_classifies_results_and_formats_public_values(tmp_path: Pa
         commit="1234567890abcdef",
     )
 
-    assert [result.outcome for result in snapshot.results] == ["prik", "f2py", "parity"]
-    assert snapshot.results[0].f2py_display == "2.00 µs"
+    assert [result.outcome for result in snapshot.results] == ["candidate", "reference", "parity"]
+    assert snapshot.results[0].reference_display == "2.00 µs"
     assert snapshot.results[2].table_label == "Increment vector, 1 element"
     assert snapshot.recorded_date == date(2026, 8, 1)
     assert snapshot.compiler_version == "GNU Fortran 13.3.0"
@@ -178,8 +264,9 @@ def test_render_page_updates_only_marked_blocks(tmp_path: Path) -> None:
         commit="1234567890abcdef",
         metadata_keys=BUILD_SHARED_METADATA,
     )
+    direct_snapshots = _direct_snapshots(tmp_path)
 
-    rendered = render_page(_page_template(), snapshot, build_snapshot)
+    rendered = render_page(_page_template(), snapshot, build_snapshot, direct_snapshots)
 
     assert rendered.startswith("before\n")
     assert rendered.endswith("after\n")
@@ -193,6 +280,9 @@ def test_render_page_updates_only_marked_blocks(tmp_path: Path) -> None:
     assert "Optimized (`-O3 -march=native -mtune=native`) · small module" in rendered
     assert "Optimized (`-O3 -march=native -mtune=native`) · full reference BLAS" in rendered
     assert "mean of 4 clean builds after 1 untimed warm-up" in rendered
+    assert "| Workload | f2py direct | PRIK direct | Relative result |" in rendered
+    assert "| Workload | PRIK adapted | PRIK direct | Relative result |" in rendered
+    assert "small direct module (1 source, 3 procedures)" in rendered
     assert "equal PRIK-first and f2py-first process budgets" in rendered
     assert "up to 4 concurrent compiler" in rendered
     assert "f2py uses its normal Meson/Ninja scheduler" in rendered
@@ -222,12 +312,14 @@ def test_render_page_rejects_missing_or_duplicate_markers(tmp_path: Path) -> Non
         commit="1234567890abcdef",
         metadata_keys=BUILD_SHARED_METADATA,
     )
+    direct_snapshots = _direct_snapshots(tmp_path)
 
     with pytest.raises(ValueError, match="exactly one 'summary' marker pair"):
         render_page(
             _page_template().replace("<!-- prik-performance-summary:end -->", ""),
             snapshot,
             build_snapshot,
+            direct_snapshots,
         )
 
 
@@ -309,9 +401,43 @@ def test_load_snapshot_rejects_swapped_tool_results(tmp_path: Path) -> None:
         )
 
 
+def test_direct_snapshot_rejects_route_metadata_that_disagrees_with_identity(tmp_path: Path) -> None:
+    paths = _direct_paths(tmp_path)
+    invalid_f2py = _write_suite(
+        tmp_path / "invalid-f2py-direct.json",
+        "f2py-direct",
+        [("direct.call.noop", [2.0e-6, 2.1e-6, 1.9e-6])],
+        extra_metadata={
+            "benchmark_cohort": "direct_entrypoint",
+            "compile_flags": "-O3 -march=native -mtune=native",
+            "gil_policy": "held",
+            "route": "generated_fortran_adapter",
+            "runtime_order_protocol": "balanced_three_route_forward_reverse",
+        },
+    )
+    invalid_paths = DirectPerformancePaths(
+        invalid_f2py,
+        paths.prik,
+        paths.adapted,
+        paths.f2py_build,
+        paths.prik_build,
+        paths.adapted_build,
+    )
+
+    with pytest.raises(ValueError, match="expected metadata route='direct_c_abi'"):
+        _load_direct_snapshots(
+            invalid_paths,
+            operating_system=TEST_OS,
+            compiler_version="GNU Fortran 13.3.0",
+            commit="1234567890abcdef",
+            recorded_date=date(2026, 8, 1),
+        )
+
+
 def test_generate_writes_page_and_chart(tmp_path: Path) -> None:
     f2py, prik = _paired_suites(tmp_path)
     f2py_build, prik_build = _paired_build_suites(tmp_path)
+    direct_paths = _direct_paths(tmp_path)
     page = tmp_path / "performance.md"
     chart = tmp_path / "assets/performance.svg"
     build_chart = tmp_path / "assets/build-time.svg"
@@ -322,6 +448,7 @@ def test_generate_writes_page_and_chart(tmp_path: Path) -> None:
         prik,
         f2py_build,
         prik_build,
+        direct_paths,
         page,
         chart,
         build_chart,
@@ -341,7 +468,7 @@ def test_generate_writes_page_and_chart(tmp_path: Path) -> None:
 def test_current_performance_page_has_one_complete_marker_pair_per_generated_block() -> None:
     page = Path("docs/user/performance.md").read_text(encoding="utf-8")
 
-    for name in ("summary", "table", "build", "environment"):
+    for name in ("summary", "table", "direct", "build", "direct-build", "environment"):
         assert page.count(f"<!-- prik-performance-{name}:start -->") == 1
         assert page.count(f"<!-- prik-performance-{name}:end -->") == 1
 

@@ -240,15 +240,17 @@ def _blank_preprocessor_directives(source: str) -> str:
     return "".join(out_lines)
 
 
-def _scan_code_states(text: str):
+def _scan_code_states(text: str) -> tuple[tuple[int, str, tuple[str, ...], str], ...]:
+    """Return lexical state before each source character in input order."""
     state = "normal"
     quote = ""
     escaped = False
     stack: list[str] = []
+    scanned = []
 
     for index, char in enumerate(text):
         if state in {"string", "char"}:
-            yield index, char, tuple(stack), state
+            scanned.append((index, char, tuple(stack), state))
             if escaped:
                 escaped = False
                 continue
@@ -260,7 +262,7 @@ def _scan_code_states(text: str):
                 quote = ""
             continue
 
-        yield index, char, tuple(stack), state
+        scanned.append((index, char, tuple(stack), state))
 
         if char in {'"', "'"}:
             state = "string" if char == '"' else "char"
@@ -270,6 +272,7 @@ def _scan_code_states(text: str):
             stack.append(char)
         elif char in _BRACKET_CLOSERS and stack and stack[-1] == _BRACKET_CLOSERS[char]:
             stack.pop()
+    return tuple(scanned)
 
 
 def top_level_split_with_offsets(text: str, delimiter: str = ",") -> list[tuple[str, int]]:

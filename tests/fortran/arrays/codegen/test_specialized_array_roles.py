@@ -47,7 +47,7 @@ def test_optional_assumed_rank_and_character_arrays_have_explicit_distinct_roles
     character = functions["labels"].arguments[0].array
 
     assert optional.binding.optional_mode is OptionalMode.NULLABLE_VALUE
-    assert optional.bridge.optional_mode is OptionalMode.NULLABLE_VALUE
+    assert optional.entrypoint.optional_mode is OptionalMode.NULLABLE_VALUE
     assert assumed is not None
     assert assumed.rank is None
     assert assumed.contiguous is True

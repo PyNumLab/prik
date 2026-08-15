@@ -15,7 +15,7 @@ from prik.parsers.fortran.models import (
 )
 from prik.semantics.fortran2ir import (
     _compile_time_requirement_message,
-    _iter_fortran_variable_contexts,
+    _fortran_variable_contexts,
     collect_semantic_compile_time_requirements,
     fortran_file_to_semantic_modules,
     fortran_module_to_semantic_module,
@@ -140,7 +140,7 @@ def test_semantic_compile_time_requirements_cover_all_parser_contexts():
         ],
     )
 
-    contexts = {var.name: ctx for var, ctx in _iter_fortran_variable_contexts(parsed)}
+    contexts = {var.name: ctx for var, ctx in _fortran_variable_contexts(parsed)}
     requirements = collect_semantic_compile_time_requirements(parsed)
     supplied = collect_semantic_compile_time_requirements(
         parsed,
@@ -378,7 +378,7 @@ def test_semantic_compile_time_requirements_cover_all_parser_contexts():
     assert resolved_kind[0]["expression"] == "8 + 1"
     named_contexts = {
         var.name: ctx
-        for var, ctx in _iter_fortran_variable_contexts(
+        for var, ctx in _fortran_variable_contexts(
             FortranFile(
                 filename="units.f90",
                 variables=[FortranVariable(name="file_named")],

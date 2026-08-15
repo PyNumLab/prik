@@ -35,13 +35,13 @@ def test_multiple_scalar_result_plan_has_ordered_binding_consumers_and_shared_hi
         ("direct_return", 0),
         ("hidden_output", 1),
     ]
-    assert direct.native_call_slot is None
-    assert hidden.native_call_slot is function.native_call_slots[hidden.bridge.abi_position]
+    assert direct.projected_call_slot is None
+    assert hidden.projected_call_slot is function.entrypoint.projected_slots[hidden.projected_call_slot.native_position]
     assert direct.binding.codegen_action is CodegenAction.DIRECT_VALUE
     assert hidden.binding.codegen_action is CodegenAction.DIRECT_VALUE
     assert hidden.bridge.native_action is NativeBarrierAction.PASS_CALL_LOCAL_ADDRESS
-    assert direct.bridge.native_result_role in function.available_roles
-    assert hidden.bridge.native_result_role in function.available_roles
+    assert direct.entrypoint.native_result_role in function.available_roles
+    assert hidden.entrypoint.native_result_role in function.available_roles
 
 
 def test_multiple_scalar_results_lower_to_binding_tuple_and_one_bridge_function_call():
@@ -90,6 +90,6 @@ def test_multiple_scalar_result_validation_rejects_position_and_consumer_drift()
     plan = _multiple_result_plan()
     function = plan.namespaces[0].functions[0]
     _direct, hidden = function.results
-    hidden.native_call_slot = replace(hidden.native_call_slot)
+    hidden.projected_call_slot = replace(hidden.projected_call_slot)
     with pytest.raises(ValueError, match="inconsistent-function-result-slot"):
         WrapperGenerator().generate(plan)

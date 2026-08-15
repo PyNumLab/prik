@@ -89,6 +89,10 @@ from prik.policy.models import (
     TransformationAction,
     TransformationLayer,
     WritebackPhase,
+    NativeEntrypointAction,
+    EntrypointPassingConvention,
+    EntrypointOptionalityAction,
+    EntrypointProjectionAction,
 )
 from prik.utilities.stage_values import StageRecord
 
@@ -113,6 +117,73 @@ class DatatypeFamily(Enum):
     STRING = "string"
     DERIVED = "derived"
     CALLBACK = "callback"
+
+
+class NativeEntrypointABIValueKind(Enum):
+    """Classify one value in a generated support procedure's C ABI."""
+
+    VOID = "void"
+    BOOL = "bool"
+    INT = "int"
+    INT8 = "int8"
+    INT64 = "int64"
+    OPAQUE = "opaque"
+    CHARACTER = "character"
+    SEMANTIC_SCALAR = "semantic_scalar"
+    DESCRIPTOR = "descriptor"
+    CALLBACK = "callback"
+
+
+class GeneratedSupportProcedureImplementationOwner(Enum):
+    """Identify which generated side defines one support procedure."""
+
+    BINDING = "binding"
+    FORTRAN = "fortran"
+
+
+@dataclass
+class NativeEntrypointABIValuePlan(StageRecord):
+    """Describe one ordered parameter or result in a support-procedure C ABI.
+
+    ``pointer_depth`` describes the C representation. The remaining structured
+    facts let C and Fortran lowering spell the same ABI without storing rendered
+    source text in planning. Callback values may carry their own nested C ABI
+    signature; named runtime callback typedefs use ``c_type_name``.
+    """
+
+    role: str
+    c_name: str
+    fortran_name: str
+    kind: NativeEntrypointABIValueKind
+    pointer_depth: int = 0
+    const: bool = False
+    semantic_type_name: str | None = None
+    rank: int | None = None
+    character_length: int | None = None
+    descriptor_kind: NativeArrayDescriptorKind | None = None
+    intent: str | None = None
+    c_type_name: str | None = None
+    callback_signature: NativeEntrypointSignaturePlan | None = None
+
+
+@dataclass
+class NativeEntrypointSignaturePlan(StageRecord):
+    """Store one complete ordered generated-support entrypoint signature."""
+
+    parameters: tuple[NativeEntrypointABIValuePlan, ...]
+    result: NativeEntrypointABIValuePlan
+
+
+@dataclass
+class GeneratedSupportProcedureEntrypointPlan(StageRecord):
+    """Name one externally linked generated support procedure and its C ABI."""
+
+    key: str
+    owner_path: str
+    role: str
+    symbol_name: str
+    signature: NativeEntrypointSignaturePlan
+    implementation_owner: GeneratedSupportProcedureImplementationOwner
 
 
 # ============================================================================
@@ -545,16 +616,61 @@ class BindingStatusErrorPlan(StageRecord):
 
 @dataclass
 class BindingModulePlan(StageRecord):
-    """Store the binding-facing owner identity for one generated module."""
+    """Store module-wide binding surfaces selected before C lowering.
+
+    The three owner-path inventories select static CPython capsule and holder
+    helpers.  They are distinct from externally linked generated support
+    procedures, whose existence and complete ABI live in the entrypoint module
+    plan.
+    """
 
     owner_path: str
+    owned_derived_type_owner_paths: tuple[str, ...] = ()
+    allocatable_holder_type_owner_paths: tuple[str, ...] = ()
+    pointer_holder_type_owner_paths: tuple[str, ...] = ()
+
+
+@dataclass
+class NativeEntrypointModulePlan(StageRecord):
+    """Store the shared C-ABI owner and generated support procedures."""
+
+    owner_path: str
+    support_procedures: tuple[GeneratedSupportProcedureEntrypointPlan, ...] = ()
+    native_languages: tuple[str, ...] = ()
+
+
+class NativeGeneratedCodeGroupKind(Enum):
+    """Classify independently planned generated-native membership."""
+
+    FORTRAN_ADAPTERS = "fortran_adapters"
+    FORTRAN_SUPPORT = "fortran_support"
+
+
+@dataclass
+class NativeGeneratedCodeGroupPlan(StageRecord):
+    """Group generated native members that share one physical source set."""
+
+    kind: NativeGeneratedCodeGroupKind
+    language: str
+    member_keys: tuple[str, ...]
+    source_paths: tuple[str, ...]
 
 
 @dataclass
 class BridgeModulePlan(StageRecord):
-    """Store the bridge-facing owner identity for one generated module."""
+    """Store module-wide Fortran support selected before bridge lowering.
+
+    Holder-definition inventories include every holder used by an adapter or
+    generated support procedure.  The narrower field inventories select only
+    holder types whose values can cross back to Python and expose field
+    support.
+    """
 
     owner_path: str
+    allocatable_holder_type_owner_paths: tuple[str, ...] = ()
+    pointer_holder_type_owner_paths: tuple[str, ...] = ()
+    allocatable_holder_field_type_owner_paths: tuple[str, ...] = ()
+    pointer_holder_field_type_owner_paths: tuple[str, ...] = ()
 
 
 @dataclass
@@ -573,25 +689,31 @@ class BindingModuleVariablePlan(StageRecord):
 
 
 @dataclass
-class BridgeModuleVariablePlan(StageRecord):
-    """Describe native module-variable access selected by completed policy.
+class NativeEntrypointModuleVariablePlan(StageRecord):
+    """Describe the C-ABI operations shared by module-variable lowerers."""
 
-    Binding and bridge views remain separate: this record contains native names,
-    assignment behavior, descriptor form, and symbolic getter/setter roles.
-    """
-
-    native_name: str
-    native_module: str
-    getter_action: ModuleGetterAction
-    native_assignment: AssignmentMode
     descriptor_kind: str | None
     getter_role: str | None
     setter_role: str | None
 
 
 @dataclass
+class BridgeModuleVariablePlan(StageRecord):
+    """Describe native module-variable access selected by completed policy.
+
+    This record contains only original-Fortran naming and adapter-local access
+    behavior. The matching entrypoint record owns public C symbols and roles.
+    """
+
+    native_name: str
+    native_module: str
+    native_getter_action: ModuleGetterAction
+    native_assignment: AssignmentMode
+
+
+@dataclass
 class ModuleVariablePlan(StageRecord):
-    """Join binding and bridge views of one module-state value.
+    """Join binding, entrypoint, and bridge views of one module-state value.
 
     Optional array, native-handle, and derived-object facets are attached only
     when policy selected them. Namespace plans own these records for emission.
@@ -602,6 +724,7 @@ class ModuleVariablePlan(StageRecord):
     semantic_type_name: str
     datatype_family: DatatypeFamily
     binding: BindingModuleVariablePlan
+    entrypoint: NativeEntrypointModuleVariablePlan
     bridge: BridgeModuleVariablePlan
     array: ArrayHandoffPlan | None
     native_array_handle: NativeArrayHandlePlan | None
@@ -624,6 +747,31 @@ class BindingFunctionPlan(StageRecord):
     status_error: BindingStatusErrorPlan | None
     argument_conversion_order: tuple[str, ...]
     public: bool = True
+
+
+@dataclass
+class NativeEntrypointParameterPlan(StageRecord):
+    """Order one argument or result parameter group in the shared C ABI.
+
+    The referenced argument or result entrypoint facet owns the group's exact
+    transport. ``position`` orders groups after any direct function return.
+    """
+
+    owner_path: str
+    position: int
+    source_kind: str
+    native_position: int | None = None
+
+
+@dataclass
+class NativeEntrypointFunctionPlan(StageRecord):
+    """Describe one shared C-ABI symbol, return, and ordered parameter groups."""
+
+    symbol_name: str
+    action: NativeEntrypointAction
+    parameters: tuple[NativeEntrypointParameterPlan, ...]
+    results: tuple[NativeEntrypointResultPlan, ...]
+    projected_slots: tuple[NativeEntrypointProjectedSlotPlan, ...]
 
 
 @dataclass
@@ -655,46 +803,58 @@ class ClassCallPlan(StageRecord):
 
 @dataclass
 class BindingArgumentPlan(StageRecord):
-    """Describe Python input conversion and the binding-to-bridge handoff.
+    """Describe Python input conversion and the binding-to-entrypoint handoff.
 
     Argument transfers own this binding view. Its barrier action, conversion
-    phase, optionality, mutability, and symbolic role are complete policy facts.
+    phase, Python optionality, mutability, and local extraction facts are
+    complete policy decisions. Shared C-ABI roles live only in the entrypoint
+    facet.
     """
 
     python_name: str
     python_action: PythonBarrierAction
     codegen_action: CodegenAction
     conversion_phase: ArgumentConversionPhase
-    handoff_role: str
     optional_mode: OptionalMode
     nullable: bool
     writable: bool
     descriptor_boundary: bool
+
+
+@dataclass
+class NativeEntrypointArgumentPlan(StageRecord):
+    """Describe one binding-to-entrypoint C-ABI parameter group."""
+
+    parameter_name: str
+    handoff_mode: ArgumentHandoffMode
+    handoff_role: str
+    optional_mode: OptionalMode
+    presence_role: str | None
+    passing: EntrypointPassingConvention
+    optionality: EntrypointOptionalityAction
+    pass_character_length: bool = False
+    pass_array_metadata: bool = False
+    pass_descriptor_presence: bool = False
+    pass_derived_transaction: bool = False
+    pass_callback_parameter: bool = False
     length_handoff_role: str | None = None
+    descriptor_output_role: str | None = None
+    descriptor_output_presence_role: str | None = None
 
 
 @dataclass
 class BridgeArgumentPlan(StageRecord):
-    """Describe bridge ABI transport and native argument conversion.
+    """Describe adapter-local conversion into one original Fortran argument.
 
-    The transfer's matching binding view supplies the same handoff role; this
-    record adds the native ABI position, data action, copy reason, and optional
-    descriptor-output roles required by bridge lowering.
+    The native name identifies the original dummy. C-ABI transport and ordering
+    live in the matching native-entrypoint facet.
     """
 
     native_name: str
     native_action: NativeBarrierAction
     codegen_action: CodegenAction
-    handoff_mode: ArgumentHandoffMode
     data_action: BridgeDataAction
     copy_reason: str | None
-    abi_position: int
-    handoff_role: str
-    optional_mode: OptionalMode
-    presence_role: str | None
-    length_handoff_role: str | None = None
-    descriptor_output_role: str | None = None
-    descriptor_output_presence_role: str | None = None
 
 
 @dataclass
@@ -707,16 +867,34 @@ class BindingResultPlan(StageRecord):
 
 
 @dataclass
+class NativeEntrypointResultPlan(StageRecord):
+    """Describe one native-to-binding result at the shared C-ABI boundary."""
+
+    owner_path: str
+    parameter_name: str | None
+    source_kind: str
+    result_position: int | None
+    native_result_role: str
+    direct_result_abi: DirectResultABI
+    semantic_type_name: str
+    datatype_family: DatatypeFamily
+    object_kind: ObjectKind
+    character_length: int | None
+    array: ArrayHandoffPlan | None
+    native_array_handle: NativeArrayHandlePlan | None
+    scalar_descriptor: ScalarDescriptorResultPlan | None
+    passing: EntrypointPassingConvention
+
+
+@dataclass
 class BridgeResultPlan(StageRecord):
-    """Describe bridge-side production, ABI transport, and data action for one result."""
+    """Describe adapter-local production and conversion of one Fortran result."""
 
     codegen_action: CodegenAction
     native_action: NativeBarrierAction
     data_action: BridgeDataAction
     copy_reason: str | None
-    native_result_role: str
     native_name: str | None
-    abi_position: int | None
 
 
 @dataclass
@@ -740,12 +918,23 @@ class BridgeLifecyclePlan(StageRecord):
 
 
 @dataclass
-class NativeCallSlotPlan(StageRecord):
-    """Represent one ordered native ABI slot shared with its owning transfer.
+class BridgeCallSlotPlan(StageRecord):
+    """Store only adapter-local actions for one projected call slot."""
 
-    Function plans index slots in native-call order, while argument and hidden
-    result transfers hold references to the same mutable records. The shared
-    identity is intentional: validation checks the views agree before freezing.
+    native_action: NativeBarrierAction
+    codegen_action: CodegenAction
+    bridge_data_action: BridgeDataAction
+    bridge_copy_reason: str | None
+
+
+@dataclass
+class NativeEntrypointProjectedSlotPlan(StageRecord):
+    """Authoritative ordered binding projection with an optional adapter facet.
+
+    This record owns the route-neutral projection source, order, shared C-ABI
+    transport, and boundary type facts. Adapter-only conversion and original
+    Fortran invocation facts live in ``adapter`` and are never copied into this
+    entrypoint facet.
     """
 
     owner_path: str
@@ -756,10 +945,6 @@ class NativeCallSlotPlan(StageRecord):
     native_name: str
     value_kind: str
     symbolic_role: str
-    native_action: NativeBarrierAction
-    codegen_action: CodegenAction
-    bridge_data_action: BridgeDataAction
-    bridge_copy_reason: str | None
     object_kind: ObjectKind | None
     scalar_logical_abi: ScalarLogicalABI = ScalarLogicalABI.NOT_APPLICABLE
     scalar_native_type: str | None = None
@@ -777,6 +962,10 @@ class NativeCallSlotPlan(StageRecord):
     native_array_handle: NativeArrayHandlePlan | None = None
     scalar_descriptor: ScalarDescriptorResultPlan | None = None
     derived: DerivedHandoffPlan | None = None
+    projection_action: EntrypointProjectionAction = EntrypointProjectionAction.BLOCKED
+    passing: EntrypointPassingConvention = EntrypointPassingConvention.BLOCKED
+    optionality: EntrypointOptionalityAction = EntrypointOptionalityAction.BLOCKED
+    adapter: BridgeCallSlotPlan | None = None
 
 
 @dataclass
@@ -883,6 +1072,29 @@ class CallbackResultPlan(StageRecord):
 
 
 @dataclass
+class BindingCallbackPlan(StageRecord):
+    """Store binding-owned callback runtime symbols."""
+
+    context_type_symbol: str
+    context_current_symbol: str
+    abort_symbol: str
+
+
+@dataclass
+class NativeEntrypointCallbackPlan(StageRecord):
+    """Store the binding-implemented trampoline contract shared with Fortran."""
+
+    support_procedure: GeneratedSupportProcedureEntrypointPlan
+
+
+@dataclass
+class BridgeCallbackPlan(StageRecord):
+    """Store the adapter-local callback symbol used to call original Fortran."""
+
+    adapter_symbol: str
+
+
+@dataclass
 class CallbackHandoffPlan(StageRecord):
     """Describe one call-scoped callback context, adapter, transfers, and fatal contract.
 
@@ -892,11 +1104,9 @@ class CallbackHandoffPlan(StageRecord):
 
     owner_path: str
     prototype: ProcedurePrototypePlan
-    context_type_symbol: str
-    context_current_symbol: str
-    adapter_symbol: str
-    trampoline_symbol: str
-    abort_symbol: str
+    binding: BindingCallbackPlan
+    entrypoint: NativeEntrypointCallbackPlan
+    bridge: BridgeCallbackPlan
     arguments: tuple[CallbackTransferPlan, ...]
     result: CallbackResultPlan
     lifecycle: tuple[CallbackLifecycleAction, ...]
@@ -912,12 +1122,14 @@ class CallbackHandoffPlan(StageRecord):
 
 @dataclass
 class ArgumentTransferPlan(StageRecord):
-    """Represent one complete Python-to-native transfer and its shared ABI slot.
+    """Represent one complete Python-to-native transfer and bridge call slot.
 
     This is the primary datatype-varying plan record. It combines completed
     ownership, storage, nullability, mutation, projection, ABI, optional
-    array/derived/callback facets, and binding/bridge views. The planner shares
-    ``native_call_slot`` with ``FunctionPlan.native_call_slots`` by identity.
+    array/derived/callback facets, and the selected lowering views. The planner
+    shares ``projected_call_slot`` with the function entrypoint sequence by
+    identity; an adapter route may additionally reference its narrow bridge
+    facet.
     """
 
     owner_path: str
@@ -952,8 +1164,9 @@ class ArgumentTransferPlan(StageRecord):
     callback: CallbackHandoffPlan | None
     polymorphic: PolymorphicDispatchPlan | None
     binding: BindingArgumentPlan
-    bridge: BridgeArgumentPlan
-    native_call_slot: NativeCallSlotPlan
+    entrypoint: NativeEntrypointArgumentPlan
+    bridge: BridgeArgumentPlan | None
+    projected_call_slot: NativeEntrypointProjectedSlotPlan
     transformations: tuple[TransformationPlan, ...] = ()
 
 
@@ -961,9 +1174,10 @@ class ArgumentTransferPlan(StageRecord):
 class ResultPlan(StageRecord):
     """Represent one complete native-to-Python transfer and optional hidden ABI slot.
 
-    Direct function results omit ``native_call_slot``; hidden output results
-    share the corresponding function-wide slot. Binding and bridge facets hold
-    the completed projection and production choices consumed by each backend.
+    Direct function results omit ``projected_call_slot``; hidden output results
+    share the corresponding function-wide projected slot. Binding, entrypoint,
+    and bridge facets hold their completed projection, transport, and
+    production choices.
     """
 
     owner_path: str
@@ -972,7 +1186,6 @@ class ResultPlan(StageRecord):
     source_kind: str
     result_position: int
     character_length: int | None
-    direct_result_abi: DirectResultABI
     object_kind: ObjectKind
     ownership_owner: OwnershipOwner
     transfer_mode: TransferMode
@@ -983,8 +1196,9 @@ class ResultPlan(StageRecord):
     array: ArrayHandoffPlan | None
     native_array_handle: NativeArrayHandlePlan | None
     binding: BindingResultPlan
-    bridge: BridgeResultPlan
-    native_call_slot: NativeCallSlotPlan | None = None
+    entrypoint: NativeEntrypointResultPlan
+    bridge: BridgeResultPlan | None
+    projected_call_slot: NativeEntrypointProjectedSlotPlan | None = None
     scalar_descriptor: ScalarDescriptorResultPlan | None = None
     derived: DerivedHandoffPlan | None = None
     transformations: tuple[TransformationPlan, ...] = ()
@@ -1017,18 +1231,19 @@ class FunctionPlan(StageRecord):
     """Orchestrate one generated call with stable ABI and lifecycle indexes.
 
     Namespace plans own functions. Arguments/results hold datatype-specific
-    facts, while this record owns native-call order, callable declarations,
-    available roles, and function-wide writeback, cleanup, and release order.
+    facts, while this record owns entrypoint and original-Fortran call order,
+    callable declarations, available roles, and function-wide writeback,
+    cleanup, and release order.
     """
 
     owner_path: str
     symbol_name: str
     binding: BindingFunctionPlan
-    bridge: BridgeFunctionPlan
+    entrypoint: NativeEntrypointFunctionPlan
+    bridge: BridgeFunctionPlan | None
     class_call: ClassCallPlan | None
     arguments: tuple[ArgumentTransferPlan, ...]
     results: tuple[ResultPlan, ...]
-    native_call_slots: tuple[NativeCallSlotPlan, ...]
     declaration_callables: tuple[DeclarationCallablePlan, ...]
     available_roles: tuple[str, ...]
     writeback_actions: tuple[LifecycleActionPlan, ...] = ()
@@ -1079,16 +1294,18 @@ class NamespacePlan(StageRecord):
 class ModulePlan(StageRecord):
     """Serve as the root editable plan for one generated extension module.
 
-    Constructed by ``WrapperPlanner.build()``, this root joins binding and
-    bridge module views with an explicit namespace tree and required headers.
-    Pass it to ``WrapperGenerator.generate()``; generation validates then
-    freezes the graph before it renders artifacts.
+    Constructed by ``WrapperPlanner.build()``, this root joins binding,
+    native-entrypoint, and bridge module views with an explicit namespace tree
+    and required headers. Pass it to ``WrapperGenerator.generate()``;
+    generation validates then freezes the graph before it renders artifacts.
     """
 
     owner_path: str
     binding: BindingModulePlan
-    bridge: BridgeModulePlan
+    entrypoint: NativeEntrypointModulePlan
+    bridge: BridgeModulePlan | None
     namespaces: tuple[NamespacePlan, ...]
+    native_generated_code_groups: tuple[NativeGeneratedCodeGroupPlan, ...] = ()
     required_headers: tuple[str, ...] = ()
 
 
@@ -1121,21 +1338,29 @@ if __name__ == "__main__":
         native_module=None,
         native_is_subroutine=True,
     )
+    entrypoint_function = NativeEntrypointFunctionPlan(
+        symbol_name="bind_c_ping",
+        action=NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER,
+        parameters=(),
+        results=(),
+        projected_slots=(),
+    )
     function = FunctionPlan(
         owner_path="demo.ping",
         symbol_name="ping",
         binding=binding_function,
+        entrypoint=entrypoint_function,
         bridge=bridge_function,
         class_call=None,
         arguments=(),
         results=(),
-        native_call_slots=(),
         declaration_callables=(),
         available_roles=(),
     )
     plan = ModulePlan(
         owner_path="demo",
         binding=BindingModulePlan(owner_path="demo"),
+        entrypoint=NativeEntrypointModulePlan(owner_path="demo"),
         bridge=BridgeModulePlan(owner_path="demo"),
         namespaces=(NamespacePlan(owner_path="demo", python_path=(), functions=(function,)),),
     )
@@ -1143,4 +1368,4 @@ if __name__ == "__main__":
     print(f"Plan owner: {plan.owner_path}")
     print(f"Python export: {plan.namespaces[0].functions[0].binding.python_name}")
     print(f"Native procedure: {plan.namespaces[0].functions[0].bridge.native_name}")
-    print(f"Native slots: {len(plan.namespaces[0].functions[0].native_call_slots)}")
+    print(f"Projected call slots: {len(plan.namespaces[0].functions[0].entrypoint.projected_slots)}")

@@ -128,6 +128,17 @@ class PrimitiveScalarTypeRegistry:
             python_module_result_kind="numpy",
             cfi_type_spelling="CFI_type_int64_t",
         ),
+        "SizeT": BackendScalarType(
+            semantic_name="SizeT",
+            c_spelling="size_t",
+            fortran_spelling="integer(c_size_t)",
+            python_parse_unit="O",
+            numpy_type_macro="NPY_UINTP",
+            python_result_kind="numpy",
+            python_type_name=NumpyDtypeRegistry.expression_for("SizeT"),
+            python_module_result_kind="numpy",
+            cfi_type_spelling="CFI_type_size_t",
+        ),
         "Float32": BackendScalarType(
             semantic_name="Float32",
             c_spelling="float",

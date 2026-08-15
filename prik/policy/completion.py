@@ -180,7 +180,7 @@ def _complete_ownership_policies(
     _complete_local_derived_type_identities(module)
 
     # Reuse one source-ordered class population while later phases replace its policies.
-    class_nodes = tuple(_iter_semantic_classes(module.classes))
+    class_nodes = _ordered_semantic_classes(module.classes)
 
     # Complete persistent module state and its accessors first.
     for variable in module.variables:
@@ -854,11 +854,15 @@ def _accepted_builtin_scalar_family(
     return overload_builtin_scalar_family(semantic_type_name)
 
 
-def _iter_semantic_classes(classes: list[models.SemanticClass]):
-    """Yield one stable depth-first class sequence for policy completion."""
-    for semantic_class in classes:
-        yield semantic_class
-        yield from _iter_semantic_classes(semantic_class.classes)
+def _ordered_semantic_classes(classes: list[models.SemanticClass]) -> tuple[models.SemanticClass, ...]:
+    """Collect one stable depth-first class sequence for policy completion."""
+    ordered = []
+    pending = list(reversed(classes))
+    while pending:
+        semantic_class = pending.pop()
+        ordered.append(semantic_class)
+        pending.extend(reversed(semantic_class.classes))
+    return tuple(ordered)
 
 
 def _polymorphic_variant_map(

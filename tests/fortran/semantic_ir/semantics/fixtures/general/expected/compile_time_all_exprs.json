@@ -59,6 +59,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "x1",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "integer",
@@ -89,6 +91,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "x1",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "all_exprs",
                 "source_kind": "argument",
                 "source_type": "integer",
@@ -166,6 +170,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "x2",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "integer",
@@ -196,6 +202,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "x2",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "all_exprs",
                 "source_kind": "argument",
                 "source_type": "integer",
@@ -273,6 +281,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "x3",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "integer",
@@ -303,6 +313,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "x3",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "all_exprs",
                 "source_kind": "argument",
                 "source_type": "integer",
@@ -380,6 +392,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "x4",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "integer",
@@ -410,6 +424,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "x4",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "all_exprs",
                 "source_kind": "argument",
                 "source_type": "integer",
@@ -487,6 +503,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "x5",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "integer",
@@ -517,6 +535,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "x5",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "all_exprs",
                 "source_kind": "argument",
                 "source_type": "integer",
@@ -596,6 +616,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "x6",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "integer",
@@ -626,6 +648,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "x6",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "all_exprs",
                 "source_kind": "argument",
                 "source_type": "integer",
@@ -703,6 +727,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "x7",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "integer",
@@ -733,6 +759,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "x7",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "all_exprs",
                 "source_kind": "argument",
                 "source_type": "integer",
@@ -810,6 +838,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "x8",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "integer",
@@ -840,6 +870,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "x8",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "all_exprs",
                 "source_kind": "argument",
                 "source_type": "integer",
@@ -917,6 +949,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "x9",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "integer",
@@ -947,6 +981,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "x9",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "all_exprs",
                 "source_kind": "argument",
                 "source_type": "integer",
@@ -1064,6 +1100,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "all_exprs",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "expr_mod",
             "source_kind": "subroutine",
             "source_type": null,
@@ -1100,6 +1138,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "a",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "integer",
@@ -1127,6 +1167,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "a",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "expr_mod",
             "source_kind": "variable",
             "source_type": "integer",
@@ -1170,6 +1212,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "b",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "integer",
@@ -1197,6 +1241,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "b",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "expr_mod",
             "source_kind": "variable",
             "source_type": "integer",
@@ -1240,6 +1286,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "c",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "integer",
@@ -1267,6 +1315,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "c",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "expr_mod",
             "source_kind": "variable",
             "source_type": "integer",
@@ -1310,6 +1360,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "p_add",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "integer",
@@ -1337,6 +1389,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "p_add",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "expr_mod",
             "source_kind": "variable",
             "source_type": "integer",
@@ -1380,6 +1434,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "p_sub",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "integer",
@@ -1407,6 +1463,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "p_sub",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "expr_mod",
             "source_kind": "variable",
             "source_type": "integer",
@@ -1450,6 +1508,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "p_mul",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "integer",
@@ -1477,6 +1537,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "p_mul",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "expr_mod",
             "source_kind": "variable",
             "source_type": "integer",
@@ -1520,6 +1582,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "p_div",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "integer",
@@ -1547,6 +1611,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "p_div",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "expr_mod",
             "source_kind": "variable",
             "source_type": "integer",
@@ -1590,6 +1656,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "p_pow",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "integer",
@@ -1617,6 +1685,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "p_pow",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "expr_mod",
             "source_kind": "variable",
             "source_type": "integer",
@@ -1660,6 +1730,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "p_mix",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "integer",
@@ -1687,6 +1759,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "p_mix",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "expr_mod",
             "source_kind": "variable",
             "source_type": "integer",
@@ -1712,6 +1786,8 @@
       "origin": {
         "source_language": "fortran",
         "native_name": "expr_mod",
+        "native_abi": null,
+        "native_symbol": null,
         "native_scope": "expr_mod",
         "source_kind": "module",
         "source_type": null,

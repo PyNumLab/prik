@@ -66,7 +66,7 @@ from prik.semantics.models import (
     SemanticStorageContract,
     SemanticType,
     SemanticVariable,
-    _iter_module_semantic_types,
+    _module_semantic_types,
 )
 from prik.semantics.native_array_handles import native_array_data_type, native_array_descriptor_kind
 from prik.utilities.visitor import ClassVisitor
@@ -291,6 +291,10 @@ class PyiPrinter(ClassVisitor):
                 text += " = ..."
             arguments.append(text)
         decorators = []
+        if prototype.origin.source_language == "fortran" and prototype.origin.native_abi == "c":
+            decorators.append(f'@{context.contract("native_abi")}("c")')
+            if prototype.origin.native_symbol and prototype.origin.native_symbol != prototype.origin.native_name:
+                decorators.append(f"@{context.contract('bind')}({json.dumps(prototype.origin.native_symbol)})")
         if prototype.pure:
             decorators.append(f"@{context.contract('pure')}")
         decorators.append(f"@{context.contract('prototype')}")
@@ -384,8 +388,21 @@ class PyiPrinter(ClassVisitor):
                 indent = ""
             generic = self._overload_generic_argument(candidate, overload_set.name) if in_class else ""
             bind_target = candidate.metadata.get(BIND_TARGET_METADATA)
+            if candidate.origin.native_abi == "c" and candidate.origin.native_symbol:
+                bind_target = (
+                    candidate.origin.native_symbol
+                    if candidate.origin.native_symbol != candidate.origin.native_name
+                    else None
+                )
             bind = f"{indent}@{context.contract('bind')}({json.dumps(str(bind_target))})\n" if bind_target else ""
-            definitions.append(f'{bind}{indent}@{context.contract("overload")}("{target}"{generic})\n{definition}')
+            native_abi = (
+                f'{indent}@{context.contract("native_abi")}("c")\n'
+                if candidate.origin.source_language == "fortran" and candidate.origin.native_abi == "c"
+                else ""
+            )
+            definitions.append(
+                f'{native_abi}{bind}{indent}@{context.contract("overload")}("{target}"{generic})\n{definition}'
+            )
         return "\n\n".join(definitions)
 
     def _visit_SemanticClass(
@@ -1336,7 +1353,7 @@ class PyiPrinter(ClassVisitor):
             names.update(cls._import_local_names(imp))
         for item in [*module.classes, *module.prototypes, *module.variables, *module.functions, *module.overload_sets]:
             cls._collect_reserved_item_names(item, names)
-        for semantic_type in _iter_module_semantic_types(module):
+        for semantic_type in _module_semantic_types(module):
             names.update(cls._contract_like_dimension_names(semantic_type))
         return names
 
@@ -1433,7 +1450,7 @@ class PyiPrinter(ClassVisitor):
         }
         local_names = {function.name.casefold() for function in module.functions}
         required: dict[str, list[SemanticImportItem]] = {}
-        for semantic_type in _iter_module_semantic_types(module):
+        for semantic_type in _module_semantic_types(module):
             storage = semantic_type.storage
             array = storage.array if storage is not None else None
             if array is None:
@@ -1475,7 +1492,7 @@ class PyiPrinter(ClassVisitor):
             for item in imp.items
         }
         synthetic: dict[str, list[SemanticImportItem]] = {}
-        for semantic_type in _iter_module_semantic_types(module):
+        for semantic_type in _module_semantic_types(module):
             ref = cls._flat_external_type_import_ref(semantic_type)
             if ref is None:
                 continue
@@ -1542,7 +1559,7 @@ class PyiPrinter(ClassVisitor):
     def _required_procedure_namespace_import_names(cls, module: SemanticModule) -> set[str]:
         """Return module namespaces required by procedure-local imported types."""
         names: set[str] = set()
-        for semantic_type in _iter_module_semantic_types(module):
+        for semantic_type in _module_semantic_types(module):
             ref = semantic_type.metadata.get(EXTERNAL_TYPE_REF_METADATA)
             if not isinstance(ref, dict) or not cls._is_procedure_local_external_ref(ref):
                 continue
@@ -1951,17 +1968,8 @@ class PyiPrinter(ClassVisitor):
         emitted_name: str | None = None,
     ) -> str:
         """Handle decorators for the current generation context."""
-        decorators = []
         emitted_name = emitted_name or func.name
-        if self._is_private(func):
-            decorators.append(f"{indent}@{context.contract('private')}")
-        if isinstance(func, SemanticMethod) and func.is_static:
-            decorators.append(f"{indent}@staticmethod")
-        bind_target = func.metadata.get(BIND_TARGET_METADATA)
-        if bind_target is None and func.native_name and func.native_name != emitted_name:
-            bind_target = func.native_name
-        if bind_target and not func.metadata.get(OVERLOAD_TARGET_METADATA):
-            decorators.append(f"{indent}@{context.contract('bind')}({json.dumps(str(bind_target))})")
+        decorators = self._identity_decorators(func, context, indent=indent, emitted_name=emitted_name)
         if (
             func.origin.source_language == "fortran"
             and func.origin.native_scope is None
@@ -1980,6 +1988,46 @@ class PyiPrinter(ClassVisitor):
         if not decorators:
             return ""
         return "\n".join(decorators) + "\n"
+
+    def _identity_decorators(
+        self,
+        func: SemanticFunction,
+        context: _PyiEmissionContext,
+        *,
+        indent: str,
+        emitted_name: str,
+    ) -> list[str]:
+        """Emit visibility, method-kind, native-ABI, and link-name markers."""
+        decorators = []
+        if self._is_private(func):
+            decorators.append(f"{indent}@{context.contract('private')}")
+        if isinstance(func, SemanticMethod) and func.is_static:
+            decorators.append(f"{indent}@staticmethod")
+        is_native_c_abi = func.origin.source_language == "fortran" and func.origin.native_abi == "c"
+        is_overload = bool(func.metadata.get(OVERLOAD_TARGET_METADATA))
+        if is_native_c_abi and not is_overload:
+            decorators.append(f'{indent}@{context.contract("native_abi")}("c")')
+        bind_target = self._bind_target(func, emitted_name=emitted_name, is_native_c_abi=is_native_c_abi)
+        if bind_target and not is_overload:
+            decorators.append(f"{indent}@{context.contract('bind')}({json.dumps(str(bind_target))})")
+        return decorators
+
+    @staticmethod
+    def _bind_target(
+        func: SemanticFunction,
+        *,
+        emitted_name: str,
+        is_native_c_abi: bool,
+    ) -> object | None:
+        """Return the explicit link label that must survive semantic printing."""
+        if is_native_c_abi:
+            if func.origin.native_symbol and func.origin.native_symbol != func.origin.native_name:
+                return func.origin.native_symbol
+            return None
+        bind_target = func.metadata.get(BIND_TARGET_METADATA)
+        if bind_target is None and func.native_name and func.native_name != emitted_name:
+            return func.native_name
+        return bind_target
 
     @staticmethod
     def _pyi_projection(func: SemanticFunction) -> list[ProjectionMapping]:
@@ -2203,6 +2251,8 @@ class PyiPrinter(ClassVisitor):
             return f"{context.contract('Len')}({self._native_value_ref(mapping.value, context)})"
         if mapping.value_kind == "shape":
             return f"{self._native_value_ref(mapping.value['value'], context)}.shape[{mapping.value['dim']}]"
+        if mapping.value_kind == "stride":
+            return f"{self._native_value_ref(mapping.value['value'], context)}.strides[{mapping.value['dim']}]"
         if mapping.value_kind == "is_present":
             return f"{context.contract('IsPresent')}({self._native_value_ref(mapping.value, context)})"
         if mapping.value_kind == "work":

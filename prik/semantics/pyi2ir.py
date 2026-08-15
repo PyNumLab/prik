@@ -81,7 +81,7 @@ from prik.semantics.models import (
     SemanticStorageContract,
     SemanticType,
     SemanticVariable,
-    _iter_module_semantic_types,
+    _module_semantic_types,
 )
 
 __all__ = ("convert_pyi_to_ir", "reconcile_external_type_refs")
@@ -156,6 +156,7 @@ class _Decorators:
     overload_target: str | None = None
     overload_generic: str | None = None
     bind_target: str | None = None
+    native_abi: str | None = None
     native_type: dict[str, object] | None = None
     standalone: bool = False
     is_static: bool = False
@@ -227,7 +228,7 @@ class _PyiAstParser:
         collisions = sorted(runtime_names & prototypes.keys())
         if collisions:
             raise ValueError(f"Prototype name collides with a runtime declaration: {collisions[0]!r}")
-        for semantic_type in _iter_module_semantic_types(self.module):
+        for semantic_type in _module_semantic_types(self.module):
             if semantic_type.storage is not None and semantic_type.storage.kind == "callback":
                 continue
             prototype = prototypes.get(semantic_type.name)
@@ -250,7 +251,7 @@ class _PyiAstParser:
         local_functions = {function.name.casefold(): function for function in self.module.functions}
         local_prototypes = {prototype.name.casefold(): prototype for prototype in self.module.prototypes}
         explicit_imports, namespace_imports = self._declaration_callable_imports()
-        for semantic_type in _iter_module_semantic_types(self.module):
+        for semantic_type in _module_semantic_types(self.module):
             storage = semantic_type.storage
             array = storage.array if storage is not None else None
             if array is None:
@@ -516,6 +517,7 @@ class _PyiAstParser:
         projection: list[ProjectionMapping] | None = None,
         native_result: ProjectionMapping | None = None,
         native_name: str | None = None,
+        native_abi: str | None = None,
         standalone: bool = False,
         has_native_call: bool = False,
         release_gil: bool = False,
@@ -542,15 +544,19 @@ class _PyiAstParser:
         if error_status_policy is not None:
             metadata[RUNTIME_STATUS_ERROR_METADATA] = dict(error_status_policy)
         origin = self._origin(
-            source_language="fortran" if standalone else None,
+            source_language="fortran" if standalone or native_abi is not None else None,
             user_private=visibility == "private",
         )
-        if standalone:
+        if standalone or native_abi is not None:
             origin.source_kind = "function" if return_type is not None else "subroutine"
-            origin.native_name = native_name or node.name
+            origin.native_name = node.name if native_abi is not None else native_name or node.name
+            origin.native_scope = None if standalone else self.module.name
+        if native_abi is not None:
+            origin.native_abi = native_abi
+            origin.native_symbol = native_name or node.name
         return SemanticFunction(
             name=node.name,
-            native_name=native_name or node.name,
+            native_name=node.name if native_abi is not None else native_name or node.name,
             arguments=semantic_args,
             return_type=return_type,
             projection=actual_projection,
@@ -565,6 +571,8 @@ class _PyiAstParser:
         *,
         visibility: str,
         pure: bool,
+        native_name: str | None = None,
+        native_abi: str | None = None,
     ) -> SemanticPrototype:
         """Convert one exact native interface without creating a runtime function."""
         self._validate_callable_header(node)
@@ -599,7 +607,10 @@ class _PyiAstParser:
             metadata=metadata,
             visibility=visibility,
             origin=SemanticOrigin(
+                source_language="fortran" if native_abi is not None else None,
                 native_name=node.name,
+                native_abi=native_abi,
+                native_symbol=native_name or node.name if native_abi is not None else None,
                 native_scope=self.module.name,
                 source_kind="prototype",
             ),
@@ -615,6 +626,7 @@ class _PyiAstParser:
         native_result: ProjectionMapping | None = None,
         is_static: bool = False,
         native_name: str | None = None,
+        native_abi: str | None = None,
         class_name: str,
         infer_passed_object: bool = True,
         has_native_call: bool = False,
@@ -638,41 +650,28 @@ class _PyiAstParser:
         metadata = {BIND_TARGET_METADATA: native_name} if native_name is not None else {}
         if has_native_call:
             metadata[NATIVE_PROJECTION_METADATA] = True
-        passed_object_name = None
-        passed_object_position = None
-        if infer_passed_object and not is_static:
-            pass_mappings = [mapping for mapping in actual_projection if mapping.value_kind == "pass"]
-            if node.name == "__init__" and len(pass_mappings) != 1:
-                raise ValueError("Bound constructor native_call requires exactly one Pass() entry")
-            if len(pass_mappings) > 1:
-                raise ValueError("native_call may contain at most one Pass() entry")
-            passed_object_position = pass_mappings[0].native_position if pass_mappings else 0
-            if not isinstance(passed_object_position, int) or not 0 <= passed_object_position <= len(semantic_args):
-                raise ValueError("native_call Pass() position is out of range")
-            passed_object_name = "self"
-            semantic_args.insert(
-                passed_object_position,
-                SemanticArgument(
-                    passed_object_name,
-                    SemanticType(
-                        class_name,
-                        dtype=class_name,
-                        storage=SemanticStorageContract(kind="reference", mutable=True, pointer_depth=1),
-                    ),
-                ),
-            )
-            self._restore_pass_projection(actual_projection, passed_object_position)
+        passed_object_name, passed_object_position = self._complete_method_passed_object(
+            node,
+            projection=actual_projection,
+            arguments=semantic_args,
+            class_name=class_name,
+            infer_passed_object=infer_passed_object,
+            is_static=is_static,
+        )
         if release_gil:
             metadata[RUNTIME_RELEASE_GIL_METADATA] = True
         if error_status_policy is not None:
             metadata[RUNTIME_STATUS_ERROR_METADATA] = dict(error_status_policy)
-        origin = self._origin(
-            source_language=None,
-            user_private=visibility == "private",
+        origin = self._method_origin(
+            node,
+            visibility=visibility,
+            native_name=native_name,
+            native_abi=native_abi,
+            return_type=return_type,
         )
         return SemanticMethod(
             name=node.name,
-            native_name=native_name or node.name,
+            native_name=node.name if native_abi is not None else native_name or node.name,
             arguments=semantic_args,
             return_type=return_type,
             projection=actual_projection,
@@ -683,6 +682,64 @@ class _PyiAstParser:
             passed_object_name=passed_object_name,
             passed_object_position=passed_object_position,
         )
+
+    def _complete_method_passed_object(
+        self,
+        node: ast.FunctionDef,
+        *,
+        projection: list[ProjectionMapping],
+        arguments: list[SemanticArgument],
+        class_name: str,
+        infer_passed_object: bool,
+        is_static: bool,
+    ) -> tuple[str | None, int | None]:
+        """Insert and project the implicit object for one bound method."""
+        if not infer_passed_object or is_static:
+            return None, None
+        pass_mappings = [mapping for mapping in projection if mapping.value_kind == "pass"]
+        if node.name == "__init__" and len(pass_mappings) != 1:
+            raise ValueError("Bound constructor native_call requires exactly one Pass() entry")
+        if len(pass_mappings) > 1:
+            raise ValueError("native_call may contain at most one Pass() entry")
+        passed_object_position = pass_mappings[0].native_position if pass_mappings else 0
+        if not isinstance(passed_object_position, int) or not 0 <= passed_object_position <= len(arguments):
+            raise ValueError("native_call Pass() position is out of range")
+        arguments.insert(
+            passed_object_position,
+            SemanticArgument(
+                "self",
+                SemanticType(
+                    class_name,
+                    dtype=class_name,
+                    storage=SemanticStorageContract(kind="reference", mutable=True, pointer_depth=1),
+                ),
+            ),
+        )
+        self._restore_pass_projection(projection, passed_object_position)
+        return "self", passed_object_position
+
+    def _method_origin(
+        self,
+        node: ast.FunctionDef,
+        *,
+        visibility: str,
+        native_name: str | None,
+        native_abi: str | None,
+        return_type: SemanticType | None,
+    ) -> SemanticOrigin:
+        """Retain a method's language identity, ABI, and optional link label."""
+        origin = self._origin(
+            source_language="fortran" if native_abi is not None else None,
+            user_private=visibility == "private",
+        )
+        if native_abi is None:
+            return origin
+        origin.native_name = node.name
+        origin.native_abi = native_abi
+        origin.native_symbol = native_name or node.name
+        origin.native_scope = self.module.name
+        origin.source_kind = "function" if return_type is not None else "subroutine"
+        return origin
 
     @staticmethod
     def _restore_pass_projection(projection: list[ProjectionMapping], passed_position: int) -> None:
@@ -757,8 +814,8 @@ class _PyiAstParser:
                     "prototype cannot be combined with standalone; "
                     "prototype use already determines its native procedure role"
                 )
-            if parsed.has_native_call or parsed.overload_target is not None or parsed.bind_target is not None:
-                raise ValueError("prototype cannot be combined with native_call, overload, or bind")
+            if parsed.has_native_call or parsed.overload_target is not None:
+                raise ValueError("prototype cannot be combined with native_call or overload")
             if parsed.release_gil or parsed.error_status_policy is not None or parsed.native_type is not None:
                 raise ValueError("prototype cannot carry wrapper or native-type decorators")
             if parsed.visibility != "public" or parsed.is_static:
@@ -782,6 +839,7 @@ class _PyiAstParser:
         handlers = {
             "overload": self._apply_overload_decorator,
             "bind": self._apply_bind_decorator,
+            "native_abi": self._apply_native_abi_decorator,
             "standalone": self._apply_standalone_decorator,
             "nogil": self._apply_nogil_decorator,
             "native_call": self._apply_native_call_decorator,
@@ -852,6 +910,17 @@ class _PyiAstParser:
         if parsed.bind_target is not None:
             raise ValueError(f"Duplicate {context} bind decorator")
         parsed.bind_target = self._required_string_decorator_argument(node, "bind")
+
+    def _apply_native_abi_decorator(self, parsed: _Decorators, node: ast.expr, context: str) -> None:
+        """Retain the C ABI declared by an original Fortran procedure."""
+        if parsed.native_abi is not None:
+            raise ValueError(f"Duplicate {context} native_abi decorator")
+        if self.native_language != "fortran":
+            raise ValueError("native_abi is only valid for Fortran semantic .pyi procedures")
+        value = self._required_string_decorator_argument(node, "native_abi")
+        if value.casefold() != "c":
+            raise ValueError('native_abi accepts only "c"')
+        parsed.native_abi = "c"
 
     @staticmethod
     def _apply_nogil_decorator(parsed: _Decorators, node: ast.expr, context: str) -> None:
@@ -999,13 +1068,6 @@ class _PyiAstParser:
                 )
             overload_set.procedures.append(candidate)
 
-    @classmethod
-    def _iter_classes(cls, classes: list[SemanticClass]):
-        """Yield classes and nested classes depth first in source-list order."""
-        for semantic_class in classes:
-            yield semantic_class
-            yield from cls._iter_classes(semantic_class.classes)
-
     @staticmethod
     def _overload_set_name(owner: SemanticModule | SemanticClass, declaration_name: str) -> str:
         """Return the semantic overload-set name, normalizing reflected class operators."""
@@ -1055,6 +1117,12 @@ class _PyiAstParser:
         candidate = deepcopy(target)
         candidate.visibility = declaration.visibility
         candidate.metadata[OVERLOAD_TARGET_METADATA] = target.name
+        if declaration.origin.native_abi is not None:
+            if candidate.origin.native_abi not in {None, declaration.origin.native_abi}:
+                raise ValueError("Overload declaration native ABI contradicts its specific procedure")
+            candidate.origin.native_abi = declaration.origin.native_abi
+            candidate.origin.source_language = declaration.origin.source_language
+            candidate.origin.native_symbol = declaration.origin.native_symbol or candidate.origin.native_symbol
         for key in (RUNTIME_RELEASE_GIL_METADATA, RUNTIME_STATUS_ERROR_METADATA):
             if key in declaration.metadata:
                 candidate.metadata[key] = deepcopy(declaration.metadata[key])
@@ -1064,7 +1132,10 @@ class _PyiAstParser:
                 raise ValueError("generic is only valid for class overloads; use bind on a module overload")
             self._validate_overload_signature(declaration, candidate, list(candidate.arguments))
             if bind_target := declaration.metadata.get(BIND_TARGET_METADATA):
-                candidate.native_name = str(bind_target)
+                if candidate.origin.native_abi is not None:
+                    candidate.origin.native_symbol = str(bind_target)
+                else:
+                    candidate.native_name = str(bind_target)
                 candidate.metadata[BIND_TARGET_METADATA] = str(bind_target)
             candidate.metadata[OVERLOAD_KIND_METADATA] = "generic"
             return candidate
@@ -1085,7 +1156,10 @@ class _PyiAstParser:
         candidate.metadata[OVERLOAD_KIND_METADATA] = kind
         candidate.metadata[PYTHON_METHOD_NAME_METADATA] = declaration.name
         if bind_target := declaration.metadata.get(BIND_TARGET_METADATA):
-            candidate.native_name = str(bind_target)
+            if candidate.origin.native_abi is not None:
+                candidate.origin.native_symbol = str(bind_target)
+            else:
+                candidate.native_name = str(bind_target)
             candidate.metadata[BIND_TARGET_METADATA] = str(bind_target)
         if bound_position is not None:
             candidate.metadata[PYTHON_BOUND_POSITION_METADATA] = bound_position
@@ -1533,15 +1607,15 @@ class _PyiAstParser:
         node: ast.AST,
         native_position: int,
     ) -> ProjectionMapping | None:
-        """Parse a ``value.shape[i]`` native projection, or return ``None`` if absent."""
+        """Parse a ``value.shape[i]`` or ``value.strides[i]`` projection."""
         if not isinstance(node, ast.Subscript) or not isinstance(node.value, ast.Attribute):
             return None
         attribute = node.value.attr
-        if attribute != "shape":
+        if attribute not in {"shape", "strides"}:
             return None
         return ProjectionMapping(
             native_position=native_position,
-            value_kind="shape",
+            value_kind="shape" if attribute == "shape" else "stride",
             value={
                 "value": self.native_value_ref(node.value.value),
                 "dim": int(ast.literal_eval(node.slice)),
@@ -1882,6 +1956,8 @@ class _PyiAstParser:
         if dims == ["..."]:
             category = "assumed_rank"
             source_shape = [".."]
+        if category is None and self.native_language == "fortran" and source_shape:
+            category = "explicit_shape"
 
         rank = 1 if category == "assumed_rank" else len(dims)
         array = SemanticArrayContract(
@@ -2890,14 +2966,14 @@ class _PyiAstParser:
                 raise ValueError(f"native_call argument position is out of range: {mapping.python_position}")
             argument = arguments[mapping.python_position]
             semantic_type = argument.semantic_type
-            if (
-                semantic_type.rank != 0
-                or semantic_type.name in SEMANTIC_SCALAR_TYPE_NAMES
-                or semantic_type.name == "String"
-            ):
+            is_c_char_value = (
+                semantic_type.name == "String"
+                and str(semantic_type.metadata.get("fortran_character_length", "")) == "1"
+            )
+            if semantic_type.rank != 0 or (semantic_type.name == "String" and not is_c_char_value):
                 raise ValueError(
-                    "Value(Arg(i)) is only valid for exact rank-zero wrapped derived objects; "
-                    "primitive scalars already use Arg(i) value passing"
+                    "Value(Arg(i)) is only valid for primitive scalars, String[1], "
+                    "or exact rank-zero wrapped derived objects"
                 )
             argument.metadata[NATIVE_BY_VALUE_METADATA] = True
 
@@ -3187,6 +3263,7 @@ class _ClassBodyVisitor(ClassVisitor):
             native_result=decorators.native_result,
             is_static=decorators.is_static,
             native_name=decorators.bind_target,
+            native_abi=decorators.native_abi,
             class_name=self.class_name,
             infer_passed_object=decorators.overload_target is None,
             has_native_call=decorators.has_native_call,
@@ -3238,6 +3315,7 @@ class _ClassBodyVisitor(ClassVisitor):
             or decorators.release_gil
             or decorators.error_status_policy is not None
             or decorators.standalone
+            or decorators.native_abi is not None
         ):
             raise ValueError(f"Unsupported class body decorator: {ast.unparse(node.decorator_list[-1])!r}")
         if (
@@ -3301,6 +3379,7 @@ class _ModuleVisitor(ClassVisitor):
             or decorators.release_gil
             or decorators.error_status_policy is not None
             or decorators.standalone
+            or decorators.native_abi is not None
         ):
             raise ValueError(f"Unsupported class decorator: {ast.unparse(node.decorator_list[-1])!r}")
         if (
@@ -3330,6 +3409,8 @@ class _ModuleVisitor(ClassVisitor):
                     node,
                     visibility=decorators.visibility,
                     pure=decorators.pure,
+                    native_name=decorators.bind_target,
+                    native_abi=decorators.native_abi,
                 )
             )
             return
@@ -3339,6 +3420,7 @@ class _ModuleVisitor(ClassVisitor):
             projection=decorators.projection,
             native_result=decorators.native_result,
             native_name=decorators.bind_target,
+            native_abi=decorators.native_abi,
             standalone=decorators.standalone,
             has_native_call=decorators.has_native_call,
             release_gil=decorators.release_gil,
@@ -3379,7 +3461,7 @@ def _annotate_imported_external_type_refs(module: SemanticModule) -> None:
     to :func:`reconcile_external_type_refs`.
     """
     imported = _imported_type_refs(module)
-    for semantic_type in _iter_module_semantic_types(module):
+    for semantic_type in _module_semantic_types(module):
         imported_ref = imported.get(semantic_type.name)
         if imported_ref is None:
             continue
@@ -3414,7 +3496,7 @@ def _imported_type_refs(module: SemanticModule) -> dict[str, tuple[str, str, str
             imported[visible_name] = (module_name, visible_name, visible_name)
             imported_namespaces[visible_name] = module_name
 
-    for semantic_type in _iter_module_semantic_types(module):
+    for semantic_type in _module_semantic_types(module):
         if "." not in semantic_type.name:
             continue
         module_name, type_name = semantic_type.name.rsplit(".", 1)
@@ -3453,6 +3535,8 @@ def _bind_prototype_reference(
         "callback_thread": "entering_thread",
         "callback_exception": "print_traceback_and_abort",
         "prototype_metadata": deepcopy(prototype.metadata),
+        "prototype_source_language": prototype.origin.source_language,
+        "prototype_native_abi": prototype.origin.native_abi,
         "native_callback_kind": "subroutine" if return_type.name == "None" else "function",
         PROTOTYPE_REF_METADATA: {
             "name": source_name,
@@ -3485,7 +3569,7 @@ def reconcile_external_type_refs(modules: list[SemanticModule]) -> list[Semantic
     prototypes = {(module.name, prototype.name): prototype for module in modules for prototype in module.prototypes}
     functions = {(module.name, function.name): function for module in modules for function in module.functions}
     for module in modules:
-        for semantic_type in _iter_module_semantic_types(module):
+        for semantic_type in _module_semantic_types(module):
             ref = semantic_type.metadata.get(EXTERNAL_TYPE_REF_METADATA)
             if not isinstance(ref, dict):
                 continue
@@ -3542,14 +3626,17 @@ def _reconcile_declaration_expression_callables(
             _bind_declaration_expression_callable(reference, function, native_scope=native_scope, placement="module")
 
 
-def _unresolved_declaration_expression_callables(module: SemanticModule):
-    """Yield imported array-expression callables that still need batch binding.
+def _unresolved_declaration_expression_callables(
+    module: SemanticModule,
+) -> tuple[SemanticExpressionCallable, ...]:
+    """Return imported array-expression callables that still need batch binding.
 
     The semantic module remains unmodified while traversing. References that
     already have a declaration or lack a native scope are intentionally omitted
     because their provenance is complete or explicitly unresolved.
     """
-    for semantic_type in _iter_module_semantic_types(module):
+    unresolved = []
+    for semantic_type in _module_semantic_types(module):
         storage = semantic_type.storage
         array = storage.array if storage is not None else None
         if array is None:
@@ -3557,7 +3644,8 @@ def _unresolved_declaration_expression_callables(module: SemanticModule):
         for references in array.expression_callables:
             for reference in references:
                 if reference.declaration is None and reference.native_scope is not None:
-                    yield reference
+                    unresolved.append(reference)
+    return tuple(unresolved)
 
 
 def _declaration_callable_scope_candidates(native_scope: str) -> tuple[str, str, str]:

@@ -1,7 +1,5 @@
 """Tests split by stable ownership concept from `test_functions_and_callbacks.py`."""
 
-from dataclasses import asdict
-
 import pytest
 
 from prik.pipeline.pyi import emit_module_stubs
@@ -30,7 +28,7 @@ from prik.semantics.c2ir import (
 )
 from prik.semantics.models import SemanticArgument, SemanticModule, SemanticOrigin, SemanticType
 from tests.c.semantics.conversion._support import (
-    _c_origin,
+    _assert_c_origin,
     _function,
 )
 
@@ -177,7 +175,8 @@ def test_c2ir_visitor_and_project_compatibility_entrypoints_cover_supported_node
             "diagnostics": 0,
         },
     }
-    assert asdict(merged.origin) == _c_origin(
+    _assert_c_origin(
+        merged.origin,
         native_name="42 api/project",
         native_scope="42 api/project",
         source_kind="project",

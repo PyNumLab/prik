@@ -56,6 +56,55 @@ class OptionalMode(str, Enum):
     DESCRIPTOR = "descriptor"
 
 
+class NativeEntrypointAction(str, Enum):
+    """Completed per-operation route from the binding to native code."""
+
+    DIRECT_C_ABI = "direct_c_abi"
+    GENERATED_FORTRAN_ADAPTER = "generated_fortran_adapter"
+
+
+class EntrypointPassingConvention(str, Enum):
+    """Completed C-boundary transport for one parameter or result."""
+
+    C_VALUE = "c_value"
+    POINTER_REFERENCE = "pointer_reference"
+    NULLABLE_POINTER = "nullable_pointer"
+    C_DESCRIPTOR_POINTER = "c_descriptor_pointer"
+    RUNTIME_HANDLE = "runtime_handle"
+    C_FUNCTION_RETURN = "c_function_return"
+    OUTPUT_STORAGE = "output_storage"
+    BLOCKED = "blocked"
+
+
+class EntrypointOptionalityAction(str, Enum):
+    """Native presence representation, independent of Python defaults."""
+
+    REQUIRED = "required"
+    NULL_POINTER = "null_pointer"
+    NULL_C_DESCRIPTOR_POINTER = "null_c_descriptor_pointer"
+    EXPLICIT_NATIVE_PRESENCE = "explicit_native_presence"
+    ADAPTER_SIDE_FORTRAN_OMISSION = "adapter_side_fortran_omission"
+    BLOCKED = "blocked"
+
+
+class EntrypointProjectionAction(str, Enum):
+    """Binding-owned materialization for one ordered native-call mapping."""
+
+    ARGUMENT_DEFAULT = "argument_default"
+    ARGUMENT_VALUE = "argument_value"
+    ARGUMENT_ADDRESS = "argument_address"
+    HIDDEN_OUTPUT_STORAGE = "hidden_output_storage"
+    TYPED_LITERAL = "typed_literal"
+    COMPUTED_LENGTH = "computed_length"
+    COMPUTED_PRESENCE = "computed_presence"
+    COMPUTED_SHAPE = "computed_shape"
+    COMPUTED_STRIDE = "computed_stride"
+    WORK_STORAGE = "work_storage"
+    DESCRIPTOR = "descriptor"
+    RUNTIME_HANDLE = "runtime_handle"
+    BLOCKED = "blocked"
+
+
 class ArgumentHandoffMode(str, Enum):
     """Completed binding-to-bridge ABI shape for one argument."""
 
@@ -453,6 +502,7 @@ class DerivedHandoffPolicy:
     type_identity: tuple[str, str]
     native_type_name: str
     native_scope: str
+    bind_c: bool
     origin: DerivedObjectOrigin
     owner_retention: DerivedOwnerRetention
     release: DerivedRelease
@@ -902,6 +952,8 @@ class ProcedurePrototypePolicy:
     name: str
     identity: str
     pure: bool
+    source_language: str | None
+    native_abi: str | None
     arguments: tuple[ProcedurePrototypeArgumentPolicy, ...]
     result: ProcedurePrototypeResultPolicy | None
 
@@ -1109,6 +1161,13 @@ class ArgumentPolicy:
     callback: CallbackHandoffPolicy | None = None
     polymorphic: PolymorphicDispatchPolicy | None = None
     transformations: tuple[TransformationPolicy, ...] = ()
+    entrypoint_passing: EntrypointPassingConvention = EntrypointPassingConvention.BLOCKED
+    entrypoint_optionality: EntrypointOptionalityAction = EntrypointOptionalityAction.BLOCKED
+    entrypoint_pass_character_length: bool = False
+    entrypoint_pass_array_metadata: bool = False
+    entrypoint_pass_descriptor_presence: bool = False
+    entrypoint_pass_derived_transaction: bool = False
+    entrypoint_pass_callback_parameter: bool = False
 
 
 @dataclass(frozen=True)
@@ -1137,6 +1196,7 @@ class ResultPolicy:
     scalar_descriptor: ScalarDescriptorResultPolicy | None = None
     derived: DerivedHandoffPolicy | None = None
     transformations: tuple[TransformationPolicy, ...] = ()
+    entrypoint_passing: EntrypointPassingConvention = EntrypointPassingConvention.BLOCKED
 
 
 @dataclass(frozen=True)
@@ -1175,6 +1235,9 @@ class NativeCallSlotPolicy:
     scalar_descriptor: ScalarDescriptorResultPolicy | None = None
     derived: DerivedHandoffPolicy | None = None
     callback: CallbackHandoffPolicy | None = None
+    projection_action: EntrypointProjectionAction = EntrypointProjectionAction.BLOCKED
+    entrypoint_passing: EntrypointPassingConvention = EntrypointPassingConvention.BLOCKED
+    entrypoint_optionality: EntrypointOptionalityAction = EntrypointOptionalityAction.BLOCKED
 
 
 @dataclass(frozen=True)
@@ -1209,6 +1272,9 @@ class FunctionWrapperPolicy:
     writeback_actions: tuple[LifecyclePolicy, ...] = ()
     cleanup_actions: tuple[LifecyclePolicy, ...] = ()
     release_actions: tuple[LifecyclePolicy, ...] = ()
+    entrypoint_action: NativeEntrypointAction | None = None
+    entrypoint_symbol: str = ""
+    entrypoint_diagnostics: tuple[str, ...] = ()
 
 
 if __name__ == "__main__":

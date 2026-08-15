@@ -12,20 +12,39 @@ publication: reviewed
 ## Role And Boundary
 
 [`prik/codegen/fortran/bridge.py`](../../../../prik/codegen/fortran/bridge.py)
-lowers the bridge view of a completed `ModulePlan` into a `FortranModule`. The
-result is a typed Fortran syntax tree, not formatted source or a compiled
-library. `FortranSourcePrinter` serializes it later.
+lowers the native-entrypoint and bridge views of a completed `ModulePlan` into
+a `FortranModule`. The result is a typed Fortran syntax tree, not formatted
+source or a compiled library. `FortranSourcePrinter` serializes it later.
 
-The bridge implements the ABI selected by the plan: `bind(C)` procedures,
-native imports and interfaces, declarations, representation conversion,
-ordered native calls, writeback, cleanup, and derived-value lifecycles. It
-does not infer a native interface, argument optionality, ownership, or result
-projection from source-language details.
+The entrypoint records define each public `bind(C)` symbol, ordered argument
+and result transport, and direct-return ABI. Bridge records define native
+imports and interfaces, adapter-local declarations and representation
+conversion, the ordered original-Fortran call, writeback, cleanup, and
+derived-value lifecycles. The generator does not infer a native interface,
+argument optionality, ownership, or result projection from source-language
+details.
+
+Generated support procedures obtain their exported symbol and public
+parameter/result contract from the same module support-procedure registry
+used by the C binding. Derived-field bodies, origin storage manipulation,
+descriptor association, destruction, and callback adaptation remain
+Fortran-local implementation. The lowerer does not reconstruct a support ABI
+from those local facts. The registry also marks callback trampolines as
+binding-implemented, so Fortran consumes their signatures as interfaces rather
+than emitting duplicate implementations.
+
+Fortran-local typed-holder definitions and holder field bodies follow explicit
+bridge-module inventories projected beside that registry. The lowerer joins a
+planned owner path to its derived declaration for spelling, but does not walk
+function results, argument call cases, or storage policy to rediscover which
+holder types exist. Per-argument lowering still dispatches the already-planned
+derived call case selected for that one invocation.
 
 ## Input And Output
 
 ```text
-ModulePlan.bridge + namespaces + function bridge views
+ModulePlan.entrypoint + ModulePlan.bridge
+  + namespaces + function entrypoint/bridge views
   -> FortranBridgeGenerator.require_supported()
   -> FortranBridgeGenerator.visit()
   -> FortranModule
@@ -46,17 +65,17 @@ them.
 
 `_visit_FunctionPlan()` preserves the plan's execution order:
 
-1. It determines the bridge result form and orders ABI parameters by their
-   recorded position.
+1. It lowers the entrypoint result form and ordered C ABI parameters into the
+   public `bind(C)` declaration.
 2. It emits declarations and representation initializers, then forms the
    native invocation from the ordered call slots.
 3. It runs the selected writeback and cleanup finalizers, wrapping derived
    result or carrier lifecycles when the plan requires them.
 
-The bridge result exposes a `bind(C)` name for the C binding. For a standalone
-native procedure, the bridge record explicitly selects its external declaration;
-for a module procedure, it supplies the native module use. Those are completed
-plan facts, not heuristics in the generator.
+The entrypoint record exposes a `bind(C)` name shared with the C binding. For a
+standalone native procedure, the bridge record explicitly selects its external
+declaration; for a module procedure, it supplies the native module use. Those
+are completed plan facts, not heuristics in the generator.
 
 ## Run A Minimal Manual Plan
 
@@ -76,11 +95,15 @@ Expand the full source to run the complete example.
 
 ```python
 binding = BindingFunctionPlan(...)
+entrypoint = NativeEntrypointFunctionPlan(...)
 bridge = BridgeFunctionPlan(...)
-function = FunctionPlan(..., binding=binding, bridge=bridge)
+function = FunctionPlan(
+    ..., binding=binding, entrypoint=entrypoint, bridge=bridge
+)
 namespace = NamespacePlan(..., functions=(function,))
 plan = ModulePlan(
     binding=BindingModulePlan(...),
+    entrypoint=NativeEntrypointModulePlan(...),
     bridge=BridgeModulePlan(...),
     namespaces=(namespace,),
 )
@@ -98,9 +121,13 @@ print(FortranSourcePrinter().doprint(...))
 from prik.codegen.fortran.bridge import FortranBridgeGenerator
 from prik.planning.models import (
     BindingFunctionPlan, BindingModulePlan, BridgeFunctionPlan,
-    BridgeModulePlan, FunctionPlan, ModulePlan, NamespacePlan,
+    BridgeModulePlan, FunctionPlan, ModulePlan,
+    NativeEntrypointFunctionPlan, NativeEntrypointModulePlan,
+    NativeGeneratedCodeGroupKind, NativeGeneratedCodeGroupPlan, NamespacePlan,
 )
-from prik.policy.models import ExternalDeclarationMode, NativeInvocationKind
+from prik.policy.models import (
+    ExternalDeclarationMode, NativeEntrypointAction, NativeInvocationKind,
+)
 from prik.printers.fortran import FortranSourcePrinter
 
 binding = BindingFunctionPlan(
@@ -119,15 +146,22 @@ bridge = BridgeFunctionPlan(
     native_module=None,
     native_is_subroutine=True,
 )
+entrypoint = NativeEntrypointFunctionPlan(
+    symbol_name="bind_c_ping",
+    action=NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER,
+    parameters=(),
+    results=(),
+    projected_slots=(),
+)
 function = FunctionPlan(
     owner_path="demo.ping",
     symbol_name="ping",
     binding=binding,
+    entrypoint=entrypoint,
     bridge=bridge,
     class_call=None,
     arguments=(),
     results=(),
-    native_call_slots=(),
     declaration_callables=(),
     available_roles=(),
 )
@@ -140,8 +174,17 @@ namespace = NamespacePlan(
 plan = ModulePlan(
     owner_path="demo",
     binding=BindingModulePlan(owner_path="demo"),
+    entrypoint=NativeEntrypointModulePlan(owner_path="demo"),
     bridge=BridgeModulePlan(owner_path="demo"),
     namespaces=(namespace,),
+    native_generated_code_groups=(
+        NativeGeneratedCodeGroupPlan(
+            kind=NativeGeneratedCodeGroupKind.FORTRAN_ADAPTERS,
+            language="fortran",
+            member_keys=("demo.ping",),
+            source_paths=("bind_c_demo_wrapper.f90",),
+        ),
+    ),
 )
 
 generator = FortranBridgeGenerator()
@@ -159,9 +202,10 @@ end subroutine bind_c_ping
 
 </details>
 
-The bridge record fixes the public C-ABI name and marks `PING` as an external
-subroutine. The generator contributes the bridge declaration and call syntax;
-it does not decide whether `PING` is callable or how values cross the boundary.
+The entrypoint record fixes the public C-ABI name; the bridge record marks
+`PING` as an external subroutine and original native target. The generator
+contributes the adapter declaration and call syntax; it does not decide whether
+`PING` is callable or how values cross the boundary.
 
 ## Run The Module Demonstration
 
@@ -217,12 +261,13 @@ alias. This gives every imported module procedure a distinct bridge-local name.
 
 ## Change Routes And Evidence
 
-- Change bridge ABI declarations, native invocation, conversion, writeback, or
-  cleanup in `bridge.py`.
+- Change entrypoint declaration lowering or bridge-local native invocation,
+  conversion, writeback, or cleanup in `bridge.py`.
 - Change a primitive's Fortran spelling in
   [`primitive_scalar_types.py`](../../../../prik/codegen/primitive_scalar_types.py).
-- If an ABI fact is absent from a bridge record, add the completed policy and
-  plan fact upstream; do not inspect semantic source or invent a default here.
+- If a C ABI fact is absent from an entrypoint record, or an adapter-local fact
+  is absent from a bridge record, add the completed policy and plan fact
+  upstream; do not inspect semantic source or invent a default here.
 
 | Evidence | What it establishes |
 | --- | --- |

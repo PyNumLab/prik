@@ -57,11 +57,8 @@ def complete_python_export_policy(
 
 
 def _module_export_owners(module: models.SemanticModule):
-    """Yield public-name owners in the same order as semantic lowering."""
-    yield from module.classes
-    yield from module.functions
-    yield from module.overload_sets
-    yield from module.variables
+    """Return public-name owners in the same order as semantic lowering."""
+    return (*module.classes, *module.functions, *module.overload_sets, *module.variables)
 
 
 def _owner_metadata(owner) -> dict[str, object]:

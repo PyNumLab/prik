@@ -21,7 +21,7 @@ from prik.pipeline.wrapper import (
 )
 from prik.policy.completion import complete_semantic_policies
 from prik.utilities.stage_values import FrozenStageRecordError
-from prik.planning import ModulePlan, WrapperPlanner
+from prik.planning import ModulePlan, NativeGeneratedCodeGroupKind, WrapperPlanner
 
 
 class RecordingCompiler:
@@ -215,3 +215,76 @@ def test_build_generated_wrapper_extension_rejects_unknown_native_support_key(tm
         )
     with pytest.raises(FrozenStageRecordError):
         rendered.extension_init_name = "PyInit_later"
+
+
+def test_all_direct_fortran_build_compiles_no_bridge_and_retains_fortran_link_driver(
+    tmp_path: Path,
+    capsys,
+):
+    rendered = _generated_wrapper(
+        """
+@native_abi("c")
+@bind("native_scale")
+def scale(value: Float64) -> Float64: ...
+""",
+        module_name="all_direct_build",
+    )
+    native_source = tmp_path / "native" / "scale.f90"
+    native_source.parent.mkdir()
+    native_source.write_text("native source placeholder\n", encoding="utf-8")
+    native_object = ObjectFile(
+        source=native_source,
+        object_path=native_source.with_suffix(".o"),
+        language="fortran",
+    )
+    native_object.object_path.write_text("native object\n", encoding="utf-8")
+    compiler = RecordingCompiler()
+
+    result = _build_generated_wrapper_extension(
+        rendered,
+        output_dir=tmp_path / "build",
+        native_dependencies=(native_object,),
+        compiler=compiler,
+        verbose=True,
+    )
+
+    assert rendered.bridge_sources == ()
+    assert rendered.native_generated_code_groups == ()
+    assert result.native_generated_code_groups == ()
+    assert [item.language for item, _verbose in compiler.compiled] == ["c"]
+    assert compiler.linked[2] == "fortran"
+    assert [item.language for item in compiler.linked[3]] == ["fortran", "c"]
+    assert not (result.output_dir / "bind_c_all_direct_build_wrapper.f90").exists()
+    assert not (result.output_dir / "bind_c_all_direct_build_wrapper.o").exists()
+    output = capsys.readouterr().out
+    assert "Write bridge source" not in output
+    assert "Compile bridge source" not in output
+
+
+def test_support_only_fortran_build_compiles_the_planned_support_group(tmp_path: Path):
+    rendered = _generated_wrapper(
+        """
+counter: Int32
+
+@native_abi("c")
+def direct(value: Int32) -> Int32: ...
+""",
+        module_name="support_only_build",
+    )
+    compiler = RecordingCompiler()
+
+    result = _build_generated_wrapper_extension(
+        rendered,
+        output_dir=tmp_path / "build",
+        compiler=compiler,
+    )
+
+    assert [group.kind for group in rendered.native_generated_code_groups] == [
+        NativeGeneratedCodeGroupKind.FORTRAN_SUPPORT
+    ]
+    assert result.native_generated_code_groups == rendered.native_generated_code_groups
+    assert {item.language for item, _verbose in compiler.compiled} == {"fortran", "c"}
+    assert [item.language for item in compiler.linked[3]] == ["fortran", "c"]
+    support = (result.output_dir / "bind_c_support_only_build_wrapper.f90").read_text(encoding="utf-8")
+    assert "bind_c_get_counter" in support
+    assert "bind_c_direct" not in support

@@ -1965,13 +1965,14 @@ class FortranParser(ClassVisitor):
             self._resolve_derived_type_compile_time_facts(derived_type, symbols)
 
     @staticmethod
-    def _helper_file_procedures(units: _ParsedFileUnits):
-        """Yield file procedures in their established resolution order."""
-        yield from units.procedures
+    def _helper_file_procedures(units: _ParsedFileUnits) -> tuple[FortranProcedureSignature, ...]:
+        """Return file procedures in their established resolution order."""
+        procedures = list(units.procedures)
         for module in units.modules:
-            yield from module.procedures
+            procedures.extend(module.procedures)
         for submodule in units.submodules:
-            yield from submodule.procedures
+            procedures.extend(submodule.procedures)
+        return tuple(procedures)
 
     def _helper_build_fortran_file(
         self,
@@ -2160,32 +2161,32 @@ class FortranParser(ClassVisitor):
         return self._build_compile_time_symbols(modules, submodules)
 
     @staticmethod
-    def _project_file_derived_types(parsed_file: FortranFile):
-        """Yield every derived type owned by one parsed project file.
+    def _project_file_derived_types(parsed_file: FortranFile) -> tuple[FortranDerivedType, ...]:
+        """Return every derived type owned by one parsed project file.
 
         For example, a file-level type followed by types inside a module and a
-        submodule is yielded in that same ownership order. The iterator lets
-        project resolution cover all type owners without constructing another
-        registry or duplicating nested loops.
+        submodule is returned in that same ownership order.
         """
-        yield from parsed_file.derived_types
+        derived_types = list(parsed_file.derived_types)
         for module in (*parsed_file.modules, *parsed_file.submodules):
-            yield from module.derived_types
+            derived_types.extend(module.derived_types)
+        return tuple(derived_types)
 
     @staticmethod
-    def _helper_project_file_procedures(parsed_file: FortranFile):
-        """Yield direct and interface procedures in project resolution order."""
-        yield from parsed_file.procedures
+    def _helper_project_file_procedures(parsed_file: FortranFile) -> tuple[FortranProcedureSignature, ...]:
+        """Return direct and interface procedures in project resolution order."""
+        procedures = list(parsed_file.procedures)
         for interface in parsed_file.interfaces:
-            yield from interface.procedures
+            procedures.extend(interface.procedures)
         for module in parsed_file.modules:
-            yield from module.procedures
+            procedures.extend(module.procedures)
             for interface in module.interfaces:
-                yield from interface.procedures
+                procedures.extend(interface.procedures)
         for submodule in parsed_file.submodules:
-            yield from submodule.procedures
+            procedures.extend(submodule.procedures)
             for interface in submodule.interfaces:
-                yield from interface.procedures
+                procedures.extend(interface.procedures)
+        return tuple(procedures)
 
     def _helper_index_project_file(self, project: FortranProject, parsed_file: FortranFile) -> None:
         """Add one parsed file's public models to project registries."""

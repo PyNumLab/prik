@@ -35,6 +35,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "p",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "type(particle)",
@@ -59,6 +61,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "p",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "touch",
                 "source_kind": "argument",
                 "source_type": "type(particle)",
@@ -98,6 +102,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "touch",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "particle_mod",
             "source_kind": "subroutine",
             "source_type": null,
@@ -132,6 +138,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "id",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "integer",
@@ -156,6 +164,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "id",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": null,
                 "source_kind": "field",
                 "source_type": "integer",
@@ -224,6 +234,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "x",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "real(kind=8)",
@@ -254,6 +266,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "x",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": null,
                 "source_kind": "field",
                 "source_type": "real(kind=8)",
@@ -320,6 +334,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "particle",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "particle_mod",
             "source_kind": "derived_type",
             "source_type": null,
@@ -334,6 +350,8 @@
       "origin": {
         "source_language": "fortran",
         "native_name": "particle_mod",
+        "native_abi": null,
+        "native_symbol": null,
         "native_scope": "particle_mod",
         "source_kind": "module",
         "source_type": null,

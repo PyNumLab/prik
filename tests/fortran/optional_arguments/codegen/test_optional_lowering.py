@@ -41,7 +41,7 @@ def test_optional_scalar_lowering_distinguishes_absent_or_none_from_value():
     factor = plan.namespaces[0].functions[0].arguments[1]
 
     assert factor.binding.optional_mode is OptionalMode.NULLABLE_VALUE
-    assert factor.bridge.optional_mode is OptionalMode.NULLABLE_VALUE
+    assert factor.entrypoint.optional_mode is OptionalMode.NULLABLE_VALUE
     artifacts = WrapperGenerator().generate(plan)
     c_source = _source(artifacts, ".c")
     fortran_source = _source(artifacts, ".f90")
@@ -69,7 +69,7 @@ def alloc_state(value: Annotated[Float64, Immutable] | None = ...) -> Int32: ...
     value = plan.namespaces[0].functions[0].arguments[0]
 
     assert value.binding.optional_mode is OptionalMode.DESCRIPTOR
-    assert value.bridge.presence_role == "scalar_optional_descriptors.alloc_state.value:present"
+    assert value.entrypoint.presence_role == "scalar_optional_descriptors.alloc_state.value:present"
     assert value.bridge.data_action is BridgeDataAction.COPY_REPRESENTATION
     assert value.bridge.copy_reason == "materialize owned Fortran allocatable scalar storage from the binding value"
     artifacts = WrapperGenerator().generate(plan)
@@ -87,7 +87,7 @@ def alloc_state(value: Annotated[Float64, Immutable] | None = ...) -> Int32: ...
     assert "result = native_alloc_state()" in fortran_source
 
 
-def test_optional_arguments_with_hidden_literals_fail_during_shared_plan_validation():
+def test_optional_arguments_with_hidden_literals_materialize_the_literal_in_the_binding():
     module = parse_pyi_text(
         """
 @native_call([Int32(1), Arg(0)])
@@ -95,10 +95,14 @@ def optional_literal(value: Annotated[Float64, Immutable] | None = ...) -> Float
 """,
         module_name="optional_literal",
     )
-    complete_semantic_policies(module)
+    artifacts = _artifacts(module)
+    c_source = _source(artifacts, ".c")
+    fortran_source = _source(artifacts, ".f90")
 
-    with pytest.raises(ValueError, match="optional-native-literal-combination"):
-        WrapperGenerator().generate(WrapperPlanner().build(module))
+    assert "double bind_c_optional_literal(int32_t literal_0, double * value);" in c_source
+    assert "bind_c_optional_literal(1, bound_value_nullable);" in c_source
+    assert "function bind_c_optional_literal(literal_0, bound_value)" in fortran_source
+    assert "native_optional_literal(literal_0, value=value)" in fortran_source
 
 
 def test_required_descriptor_keeps_python_presence_separate_from_native_state_and_copyout():
@@ -114,9 +118,9 @@ def update(value: Float64 | None) -> Returns["value", Float64] | None: ...
     value = plan.namespaces[0].functions[0].arguments[0]
 
     assert value.binding.optional_mode is OptionalMode.REQUIRED_DESCRIPTOR
-    assert value.bridge.presence_role is None
-    assert value.bridge.descriptor_output_role == f"{value.owner_path}:descriptor-output"
-    assert value.bridge.descriptor_output_presence_role == f"{value.owner_path}:descriptor-output-present"
+    assert value.entrypoint.presence_role is None
+    assert value.entrypoint.descriptor_output_role == f"{value.owner_path}:descriptor-output"
+    assert value.entrypoint.descriptor_output_presence_role == f"{value.owner_path}:descriptor-output-present"
 
     artifacts = WrapperGenerator().generate(plan)
     c_source = _source(artifacts, ".c")
@@ -145,7 +149,7 @@ def alloc_state(value: Annotated[Float64, Immutable] | None = ...) -> Int32: ...
     plan = WrapperPlanner().build(module)
     function = plan.namespaces[0].functions[0]
     argument = function.arguments[0]
-    invalid_argument = replace(argument, bridge=replace(argument.bridge, presence_role=None))
+    invalid_argument = replace(argument, entrypoint=replace(argument.entrypoint, presence_role=None))
     invalid = _replace_root_function(plan, replace(function, arguments=(invalid_argument,)))
 
     with pytest.raises(ValueError, match="missing-descriptor-presence-role"):

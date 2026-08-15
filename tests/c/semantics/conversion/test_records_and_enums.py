@@ -41,7 +41,7 @@ from prik.semantics.models import (
     SemanticVariable,
 )
 from tests.c.semantics.conversion._support import (
-    _c_origin,
+    _assert_c_origin,
     _function,
 )
 
@@ -249,7 +249,8 @@ enum status { STATUS_OK = 0, STATUS_WARN, STATUS_ERROR = 10 };
     assert [asdict(constraint) for constraint in api_version.semantic_type.constraints] == [
         {"name": "Constant", "arguments": []}
     ]
-    assert asdict(api_version.origin) == _c_origin(
+    _assert_c_origin(
+        api_version.origin,
         native_name="API_VERSION",
         source_kind="macro",
     )
@@ -262,7 +263,8 @@ enum status { STATUS_OK = 0, STATUS_WARN, STATUS_ERROR = 10 };
     assert status_ok.semantic_type.metadata["c_enum"] == "enum status"
     assert status_ok.semantic_type.metadata["c_underlying_type"] == "Int"
     assert status_ok.semantic_type.coercions == []
-    assert asdict(status_ok.origin) == _c_origin(
+    _assert_c_origin(
+        status_ok.origin,
         native_name="STATUS_OK",
         native_scope="enum status",
         source_kind="enum_constant",
@@ -405,7 +407,8 @@ def test_c2ir_uses_standard_type_probe_opaque_handle_facts():
     opaque = module.classes[0]
     assert opaque.native_name == "FILE"
     assert opaque.metadata == {"c_kind": "opaque_standard_type"}
-    assert asdict(opaque.origin) == _c_origin(
+    _assert_c_origin(
+        opaque.origin,
         native_name="FILE",
         source_kind="standard_type",
         source_type="FILE",
@@ -464,7 +467,8 @@ def test_c2ir_models_pointer_to_arrays_unknown_extents_unions_and_anonymous_alia
     assert union_type.name == "choice"
     assert union_type.dtype == "choice"
     assert union_type.metadata == {"c_kind": "union", "incomplete": False}
-    assert asdict(union_type.origin) == _c_origin(
+    _assert_c_origin(
+        union_type.origin,
         native_name="union choice",
         source_kind="type",
         source_type="union choice",
@@ -475,7 +479,8 @@ def test_c2ir_models_pointer_to_arrays_unknown_extents_unions_and_anonymous_alia
     assert semantic_union.native_name == "union choice"
     assert [field.name for field in semantic_union.fields] == ["integer"]
     assert semantic_union.metadata == {"c_kind": "union", "incomplete": False}
-    assert asdict(semantic_union.origin) == _c_origin(
+    _assert_c_origin(
+        semantic_union.origin,
         native_name="union choice",
         source_kind="union",
         source_type="union choice",

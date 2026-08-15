@@ -35,6 +35,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "p",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "type(particle)",
@@ -59,6 +61,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "p",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "init_particle",
                 "source_kind": "argument",
                 "source_type": "type(particle)",
@@ -106,6 +110,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "pid",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "integer",
@@ -130,6 +136,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "pid",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "init_particle",
                 "source_kind": "argument",
                 "source_type": "integer",
@@ -177,6 +185,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "mass",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "real(kind=8)",
@@ -201,6 +211,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "mass",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "init_particle",
                 "source_kind": "argument",
                 "source_type": "real(kind=8)",
@@ -248,6 +260,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "x",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "real(kind=8)",
@@ -272,6 +286,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "x",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "init_particle",
                 "source_kind": "argument",
                 "source_type": "real(kind=8)",
@@ -319,6 +335,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "y",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "real(kind=8)",
@@ -343,6 +361,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "y",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "init_particle",
                 "source_kind": "argument",
                 "source_type": "real(kind=8)",
@@ -390,6 +410,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "z",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "real(kind=8)",
@@ -414,6 +436,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "z",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "init_particle",
                 "source_kind": "argument",
                 "source_type": "real(kind=8)",
@@ -498,6 +522,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "init_particle",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "modern_math_physics",
             "source_kind": "subroutine",
             "source_type": null,
@@ -537,6 +563,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "p",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "type(particle)",
@@ -561,6 +589,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "p",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "kinetic_energy",
                 "source_kind": "argument",
                 "source_type": "type(particle)",
@@ -608,6 +638,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "vx",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "real(kind=8)",
@@ -632,6 +664,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "vx",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "kinetic_energy",
                 "source_kind": "argument",
                 "source_type": "real(kind=8)",
@@ -679,6 +713,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "vy",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "real(kind=8)",
@@ -703,6 +739,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "vy",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "kinetic_energy",
                 "source_kind": "argument",
                 "source_type": "real(kind=8)",
@@ -750,6 +788,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "vz",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "real(kind=8)",
@@ -774,6 +814,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "vz",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "kinetic_energy",
                 "source_kind": "argument",
                 "source_type": "real(kind=8)",
@@ -811,6 +853,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "e",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "real(kind=8)",
@@ -874,6 +918,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "kinetic_energy",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "modern_math_physics",
             "source_kind": "function",
             "source_type": null,
@@ -935,6 +981,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "v",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "real(kind=8)",
@@ -965,6 +1013,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "v",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "scale_vector",
                 "source_kind": "argument",
                 "source_type": "real(kind=8)",
@@ -1018,6 +1068,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "alpha",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "real(kind=8)",
@@ -1042,6 +1094,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "alpha",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "scale_vector",
                 "source_kind": "argument",
                 "source_type": "real(kind=8)",
@@ -1090,6 +1144,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "scale_vector",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "modern_math_physics",
             "source_kind": "subroutine",
             "source_type": null,
@@ -1151,6 +1207,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "a",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "real(kind=8)",
@@ -1181,6 +1239,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "a",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "dot3",
                 "source_kind": "argument",
                 "source_type": "real(kind=8)",
@@ -1256,6 +1316,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "b",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "real(kind=8)",
@@ -1286,6 +1348,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "b",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "dot3",
                 "source_kind": "argument",
                 "source_type": "real(kind=8)",
@@ -1329,6 +1393,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "s",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "real(kind=8)",
@@ -1374,6 +1440,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "dot3",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "modern_math_physics",
             "source_kind": "function",
             "source_type": null,
@@ -1439,6 +1507,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "a",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "real(kind=8)",
@@ -1472,6 +1542,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "a",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "fill_identity3",
                 "source_kind": "argument",
                 "source_type": "real(kind=8)",
@@ -1520,6 +1592,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "fill_identity3",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "modern_math_physics",
             "source_kind": "subroutine",
             "source_type": null,
@@ -1559,6 +1633,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "p",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "type(particle)",
@@ -1583,6 +1659,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "p",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "normalize_particle",
                 "source_kind": "argument",
                 "source_type": "type(particle)",
@@ -1622,6 +1700,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "normalize_particle",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "modern_math_physics",
             "source_kind": "subroutine",
             "source_type": null,
@@ -1661,6 +1741,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "x",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "integer",
@@ -1685,6 +1767,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "x",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": "hidden_proc",
                 "source_kind": "argument",
                 "source_type": "integer",
@@ -1724,6 +1808,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "hidden_proc",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "modern_math_physics",
             "source_kind": "subroutine",
             "source_type": null,
@@ -1758,6 +1844,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "id",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "integer",
@@ -1782,6 +1870,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "id",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": null,
                 "source_kind": "field",
                 "source_type": "integer",
@@ -1819,6 +1909,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "mass",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "real(kind=8)",
@@ -1843,6 +1935,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "mass",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": null,
                 "source_kind": "field",
                 "source_type": "real(kind=8)",
@@ -1911,6 +2005,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "position",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "real(kind=8)",
@@ -1941,6 +2037,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "position",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": null,
                 "source_kind": "field",
                 "source_type": "real(kind=8)",
@@ -2018,6 +2116,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "particle",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "modern_math_physics",
             "source_kind": "derived_type",
             "source_type": null,
@@ -2079,6 +2179,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "values",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "real(kind=8)",
@@ -2109,6 +2211,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "values",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": null,
                 "source_kind": "field",
                 "source_type": "real(kind=8)",
@@ -2164,6 +2268,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "vector3",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "modern_math_physics",
             "source_kind": "derived_type",
             "source_type": null,
@@ -2194,6 +2300,8 @@
                 "origin": {
                   "source_language": "fortran",
                   "native_name": "code",
+                  "native_abi": null,
+                  "native_symbol": null,
                   "native_scope": null,
                   "source_kind": "variable",
                   "source_type": "integer",
@@ -2218,6 +2326,8 @@
               "origin": {
                 "source_language": "fortran",
                 "native_name": "code",
+                "native_abi": null,
+                "native_symbol": null,
                 "native_scope": null,
                 "source_kind": "field",
                 "source_type": "integer",
@@ -2265,6 +2375,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "hidden_state",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "modern_math_physics",
             "source_kind": "derived_type",
             "source_type": null,
@@ -2293,6 +2405,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "counter",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "integer",
@@ -2317,6 +2431,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "counter",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "modern_math_physics",
             "source_kind": "variable",
             "source_type": "integer",
@@ -2354,6 +2470,8 @@
             "origin": {
               "source_language": "fortran",
               "native_name": "hidden_scale",
+              "native_abi": null,
+              "native_symbol": null,
               "native_scope": null,
               "source_kind": "variable",
               "source_type": "real(kind=8)",
@@ -2378,6 +2496,8 @@
           "origin": {
             "source_language": "fortran",
             "native_name": "hidden_scale",
+            "native_abi": null,
+            "native_symbol": null,
             "native_scope": "modern_math_physics",
             "source_kind": "variable",
             "source_type": "real(kind=8)",
@@ -2402,6 +2522,8 @@
       "origin": {
         "source_language": "fortran",
         "native_name": "modern_math_physics",
+        "native_abi": null,
+        "native_symbol": null,
         "native_scope": "modern_math_physics",
         "source_kind": "module",
         "source_type": null,

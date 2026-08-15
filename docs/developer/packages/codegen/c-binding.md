@@ -12,20 +12,41 @@ publication: reviewed
 ## Role And Boundary
 
 [`prik/codegen/c/binding.py`](../../../../prik/codegen/c/binding.py) lowers the
-binding view of a completed `ModulePlan` into a `CModule` and `CHeader`. The
-result is CPython and NumPy C syntax nodes, not source text and not a compiled
-extension. `CSourcePrinter` serializes the nodes later.
+binding and native-entrypoint views of a completed `ModulePlan` into a
+`CModule` and `CHeader`. The result is CPython and NumPy C syntax nodes, not
+source text and not a compiled extension. `CSourcePrinter` serializes the
+nodes later.
 
-The generator implements the Python boundary selected by the plan: argument
-conversion, bridge calls, Python results, errors, lifecycle actions, extension
-initialization, and generated Python surfaces. It may select local names and
-the necessary C syntax, but never chooses ownership, optionality, storage, or
+The binding view owns Python extraction, validation, local storage, returned or
+output C storage, Python result construction, errors, lifecycle actions,
+extension initialization, and generated Python surfaces. The entrypoint view
+owns the C ABI prototype and call. The generator may select local names and
+the necessary C syntax, but never reads adapter-local conversion or original
+Fortran invocation facts and never chooses ownership, optionality, storage, or
 conversion policy.
+
+Ordinary functions use their function-owned entrypoint. Every other externally
+linked generated call is looked up in the generated support procedure registry.
+That includes constructors, field/member accessors, derived-origin and holder
+operations, descriptor helpers, and callback trampolines. The C lowerer may
+create static Python helpers, but it does not invent an external symbol or C
+prototype when a generated support procedure entrypoint is missing. A
+binding-implemented callback trampoline uses the same record for its function
+definition that the Fortran side uses for its interface.
+
+Binding-local derived capsule destructors, holder presence methods, and private
+field methods follow the explicit module binding-support inventories. The
+lowerer may join their planned owner paths to namespace-owned derived-type
+records for emitted names and fields. It does not reconstruct those inventories
+from results, arguments, constructors, release actions, or holder storage. Any
+native call made by a local helper still obtains its existence, symbol, and ABI
+from the generated support procedure registry.
 
 ## Input And Output
 
 ```text
-ModulePlan.binding + namespaces + function binding views
+ModulePlan.binding + ModulePlan.entrypoint
+  + namespaces + function binding/entrypoint views
   -> CBindingGenerator.require_supported()
   -> CBindingGenerator.visit()
   -> CModule + CHeader
@@ -36,14 +57,21 @@ ModulePlan.binding + namespaces + function binding views
 `require_supported()` checks that the already selected primitive spellings are
 available. It is capability preflight, not a second policy pass.
 
+Numeric scalar boundaries retain their exact NumPy contract without using the
+generic dtype-conversion path on a successful call. The native support helper
+checks the planned NumPy scalar class, reads its typed payload directly, and
+allocates the matching typed NumPy scalar for a result. Type mismatches still
+follow the generated diagnostic path; this fast path changes neither accepted
+inputs nor returned result types.
+
 ## Lowering Algorithm
 
 `_visit_ModulePlan()` returns the paired C module and header. `binding_module()`
 collects namespace functions, determines whether the plan requires runtime
 helpers, and assembles declarations and functions in emitted dependency order:
 shared helpers, class and descriptor support, wrappers, overload dispatchers,
-then module initialization. `binding_header()` derives bridge prototypes from
-the same plan.
+then module initialization. `binding_header()` lowers prototypes from the
+shared entrypoint records.
 
 `_visit_FunctionPlan()` works in three ordered parts:
 
@@ -51,7 +79,8 @@ the same plan.
    statements.
 2. It applies the plan's `argument_conversion_order`; each transfer dispatches
    on its completed optional, callback, descriptor, or derived facet.
-3. It emits the bridge call, selected result construction, and lifecycle work.
+3. It invokes the planned entrypoint, receives its direct or output-parameter
+   C storage, and applies selected result construction and lifecycle work.
 
 `PythonSurfaceEmitter` is used only when the plan contains generated classes,
 holders, or module proxies. `CBindingNames` keeps its private C symbols aligned
@@ -75,11 +104,15 @@ Expand the full source to run the complete example.
 
 ```python
 binding = BindingFunctionPlan(...)
+entrypoint = NativeEntrypointFunctionPlan(...)
 bridge = BridgeFunctionPlan(...)
-function = FunctionPlan(..., binding=binding, bridge=bridge)
+function = FunctionPlan(
+    ..., binding=binding, entrypoint=entrypoint, bridge=bridge
+)
 namespace = NamespacePlan(..., functions=(function,))
 plan = ModulePlan(
     binding=BindingModulePlan(...),
+    entrypoint=NativeEntrypointModulePlan(...),
     bridge=BridgeModulePlan(...),
     namespaces=(namespace,),
 )
@@ -97,9 +130,13 @@ print(CSourcePrinter().doprint(...))
 from prik.codegen.c.binding import CBindingGenerator
 from prik.planning.models import (
     BindingFunctionPlan, BindingModulePlan, BridgeFunctionPlan,
-    BridgeModulePlan, FunctionPlan, ModulePlan, NamespacePlan,
+    BridgeModulePlan, FunctionPlan, ModulePlan,
+    NativeEntrypointFunctionPlan, NativeEntrypointModulePlan,
+    NativeGeneratedCodeGroupKind, NativeGeneratedCodeGroupPlan, NamespacePlan,
 )
-from prik.policy.models import ExternalDeclarationMode, NativeInvocationKind
+from prik.policy.models import (
+    ExternalDeclarationMode, NativeEntrypointAction, NativeInvocationKind,
+)
 from prik.printers.c import CSourcePrinter
 
 binding = BindingFunctionPlan(
@@ -118,15 +155,22 @@ bridge = BridgeFunctionPlan(
     native_module=None,
     native_is_subroutine=True,
 )
+entrypoint = NativeEntrypointFunctionPlan(
+    symbol_name="bind_c_ping",
+    action=NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER,
+    parameters=(),
+    results=(),
+    projected_slots=(),
+)
 function = FunctionPlan(
     owner_path="demo.ping",
     symbol_name="ping",
     binding=binding,
+    entrypoint=entrypoint,
     bridge=bridge,
     class_call=None,
     arguments=(),
     results=(),
-    native_call_slots=(),
     declaration_callables=(),
     available_roles=(),
 )
@@ -139,8 +183,17 @@ namespace = NamespacePlan(
 plan = ModulePlan(
     owner_path="demo",
     binding=BindingModulePlan(owner_path="demo"),
+    entrypoint=NativeEntrypointModulePlan(owner_path="demo"),
     bridge=BridgeModulePlan(owner_path="demo"),
     namespaces=(namespace,),
+    native_generated_code_groups=(
+        NativeGeneratedCodeGroupPlan(
+            kind=NativeGeneratedCodeGroupKind.FORTRAN_ADAPTERS,
+            language="fortran",
+            member_keys=("demo.ping",),
+            source_paths=("bind_c_demo_wrapper.f90",),
+        ),
+    ),
 )
 
 generator = CBindingGenerator()
@@ -161,9 +214,11 @@ static PyObject * wrap_ping(PyObject * self, PyObject * args, PyObject * kwargs)
 
 </details>
 
-The plan's public name produces `wrap_ping`; its bridge record produces
-`bind_c_ping`. The C generator adds CPython parsing and result mechanics, but
-the selected plan remains the reason that call is permitted and named that way.
+The binding record's public name produces `wrap_ping`; the entrypoint record
+supplies `bind_c_ping`. The C generator adds CPython parsing and result
+mechanics, but the selected plan remains the reason that call is permitted and
+named that way. The bridge record's `PING` target is deliberately unavailable
+to this generator.
 
 ## Run The Module Demonstration
 
@@ -202,8 +257,11 @@ static PyObject * wrap_double_value(PyObject * self, PyObject * args, PyObject *
 }
 ```
 
-The header exposes the bridge wrapper prototype. The wrapper's rendered body
-shows the Python-to-bridge call and conversion back to a NumPy scalar result.
+The header exposes the planned entrypoint prototype. The wrapper's rendered
+body shows the Python-to-entrypoint call and conversion back to a NumPy scalar
+result. Policy may route that forward call to an original Fortran `bind(C)`
+symbol or a generated Fortran adapter. Binding-owned callback trampolines are
+reverse-call entrypoints used by adapter-local callback procedures.
 
 ## Change Routes And Evidence
 

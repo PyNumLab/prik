@@ -13,21 +13,21 @@ publication: reviewed
 **Low-overhead Python calls for real Fortran workloads.**
 
 <!-- prik-performance-summary:start -->
-On the benchmark system, the normal PRIK interface delivered a **1.05× geometric-mean
-speedup over NumPy's f2py**. Across 13 workloads, PRIK was faster in 7 and f2py in 5; 1
-workload showed no statistically significant difference.
+On the benchmark system, the normal PRIK interface delivered a **1.10× geometric-mean
+speedup over NumPy's f2py**. Across 13 workloads, PRIK was faster in 11 and f2py in 2;
+all comparisons were statistically significant.
 
 <div class="prik-performance-summary" role="group" aria-label="Benchmark summary">
   <div class="prik-performance-metric">
-    <strong>1.05×</strong>
+    <strong>1.10×</strong>
     <span>PRIK geometric-mean speedup</span>
   </div>
   <div class="prik-performance-metric">
-    <strong>7 of 13</strong>
+    <strong>11 of 13</strong>
     <span>workloads faster with PRIK</span>
   </div>
   <div class="prik-performance-metric">
-    <strong>1.49×</strong>
+    <strong>1.28×</strong>
     <span>best measured PRIK speedup</span>
   </div>
 </div>
@@ -48,25 +48,60 @@ the normal generated interface of each tool.
 <!-- prik-performance-table:start -->
 | Workload | f2py | PRIK | Relative result |
 | --- | ---: | ---: | ---: |
-| Empty function call | 46.2 ns | **42.9 ns** | PRIK 1.08× faster |
-| Add two scalars | **426 ns** | 440 ns | f2py 1.03× faster |
-| Increment vector, 1 element | 134 ns | **89.9 ns** | PRIK 1.49× faster |
-| Increment vector, 16 elements | 145 ns | **101 ns** | PRIK 1.43× faster |
-| Increment vector, 1,024 elements | **283 ns** | 299 ns | f2py 1.06× faster |
-| Increment vector, 1,000,000 elements | 1.19 ms | 1.21 ms | No significant difference |
-| Sum 4×4 F-order matrix | 166 ns | **148 ns** | PRIK 1.13× faster |
-| Sum 32×32 F-order matrix | 1.15 µs | **1.13 µs** | PRIK 1.02× faster |
-| Sum 256×256 F-order matrix | **63.5 µs** | 64.1 µs | f2py 1.009× faster |
-| Sum 1,024×1,024 F-order matrix | **1.09 ms** | 1.22 ms | f2py 1.12× faster |
-| Update 4×4 F-order matrix | 346 ns | **324 ns** | PRIK 1.07× faster |
-| Update 256×256 F-order matrix | 26.0 µs | **25.7 µs** | PRIK 1.01× faster |
-| Update 1,024×1,024 F-order matrix | **1.13 ms** | 1.42 ms | f2py 1.25× faster |
-| **Geometric mean** | reference | — | **PRIK 1.05× faster** |
+| Empty function call | 34.6 ns | **29.9 ns** | PRIK 1.16× faster |
+| Add two scalars | 341 ns | **316 ns** | PRIK 1.08× faster |
+| Increment vector, 1 element | 103 ns | **80.6 ns** | PRIK 1.27× faster |
+| Increment vector, 16 elements | 106 ns | **82.8 ns** | PRIK 1.28× faster |
+| Increment vector, 1,024 elements | 262 ns | **211 ns** | PRIK 1.24× faster |
+| Increment vector, 1,000,000 elements | 186 µs | **183 µs** | PRIK 1.02× faster |
+| Sum 4×4 F-order matrix | 127 ns | **121 ns** | PRIK 1.05× faster |
+| Sum 32×32 F-order matrix | 718 ns | **711 ns** | PRIK 1.01× faster |
+| Sum 256×256 F-order matrix | **38.9 µs** | 39.0 µs | f2py 1.002× faster |
+| Sum 1,024×1,024 F-order matrix | **621 µs** | 622 µs | f2py 1.002× faster |
+| Update 4×4 F-order matrix | 249 ns | **215 ns** | PRIK 1.16× faster |
+| Update 256×256 F-order matrix | 13.0 µs | **12.7 µs** | PRIK 1.02× faster |
+| Update 1,024×1,024 F-order matrix | 199 µs | **193 µs** | PRIK 1.03× faster |
+| **Geometric mean** | reference | — | **PRIK 1.10× faster** |
 <!-- prik-performance-table:end -->
 
 The smallest workloads expose wrapper overhead most clearly. As more time is
 spent inside Fortran, both tools approach the cost of the native operation and
 small differences matter less.
+
+## Direct `bind(C)` Entrypoints
+
+This separate cohort isolates three scalar call boundaries: an empty
+subroutine, a scalar function, and a scalar subroutine with an output. PRIK and
+f2py compile the same Fortran source and call the same `bind(C)` labels. The
+normal-interface geometric mean above remains unchanged.
+
+Before timing, artifact inspection verifies that neither direct route contains
+a generated Fortran procedure adapter. Each Python binding object refers to
+the three user labels, while its native object and linked extension define
+them. f2py keeps its Python C/API binding and uses `--no-wrap-functions` plus
+`--skip-empty-wrappers`; these options remove unnecessary generated Fortran
+wrappers, not the Python binding. The PRIK adapter control measures equivalent
+ordinary-Fortran procedures separately.
+
+<!-- prik-performance-direct:start -->
+### Direct PRIK and f2py
+
+| Workload | f2py direct | PRIK direct | Relative result |
+| --- | ---: | ---: | ---: |
+| Empty call | 36.5 ns | **29.7 ns** | PRIK direct 1.23× faster |
+| Scalar function | 121 ns | **103 ns** | PRIK direct 1.17× faster |
+| Scalar subroutine | 122 ns | **103 ns** | PRIK direct 1.18× faster |
+| **Geometric mean** | reference | — | **PRIK direct 1.19× faster** |
+
+### PRIK adapter control
+
+| Workload | PRIK adapted | PRIK direct | Relative result |
+| --- | ---: | ---: | ---: |
+| Empty call | 29.9 ns | **29.7 ns** | PRIK direct 1.008× faster |
+| Scalar function | 104 ns | **103 ns** | PRIK direct 1.01× faster |
+| Scalar subroutine | 105 ns | **103 ns** | PRIK direct 1.01× faster |
+| **Geometric mean** | reference | — | **PRIK direct 1.01× faster** |
+<!-- prik-performance-direct:end -->
 
 ## Clean Build Time
 
@@ -86,15 +121,39 @@ optimized build with `-O3 -march=native -mtune=native`.
 { .prik-performance-chart }
 
 <!-- prik-performance-build:start -->
-Each value is the mean of 6 clean builds after 1 untimed warm-up.
+Each value is the mean of 4 clean builds after 1 untimed warm-up.
 
 | Clean build workload | f2py | PRIK | Relative result |
 | --- | ---: | ---: | ---: |
-| Development (`-O0`) · small module (1 source, 5 procedures) | 2.37 sec | **867 ms** | PRIK 2.73× faster |
-| Development (`-O0`) · full reference BLAS (155 sources) | 10.8 sec | **9.29 sec** | PRIK 1.16× faster |
-| Optimized (`-O3 -march=native -mtune=native`) · small module (1 source, 5 procedures) | 2.88 sec | **1.03 sec** | PRIK 2.80× faster |
-| Optimized (`-O3 -march=native -mtune=native`) · full reference BLAS (155 sources) | **22.3 sec** | 33.1 sec | f2py 1.48× faster |
+| Development (`-O0`) · small module (1 source, 5 procedures) | 1.50 sec | **550 ms** | PRIK 2.73× faster |
+| Development (`-O0`) · full reference BLAS (155 sources) | 7.00 sec | **5.05 sec** | PRIK 1.39× faster |
+| Optimized (`-O3 -march=native -mtune=native`) · small module (1 source, 5 procedures) | 1.72 sec | **644 ms** | PRIK 2.68× faster |
+| Optimized (`-O3 -march=native -mtune=native`) · full reference BLAS (155 sources) | **11.0 sec** | 13.3 sec | f2py 1.22× faster |
 <!-- prik-performance-build:end -->
+
+## Direct-Entrypoint Clean Build Time
+
+The direct build workload compiles the same one-source, three-procedure module
+used by the direct runtime cohort with the optimized profile. It includes
+contract or signature processing, Python binding generation, compilation, and
+linking. The separate PRIK adapter control shows whether omitting one generated
+Fortran adapter materially changes this small end-to-end build.
+
+<!-- prik-performance-direct-build:start -->
+Each value is the mean of 4 clean builds after 1 untimed warm-up.
+
+### Direct PRIK and f2py
+
+| Clean build workload | f2py direct | PRIK direct | Relative result |
+| --- | ---: | ---: | ---: |
+| Optimized (`-O3 -march=native -mtune=native`) · small direct module (1 source, 3 procedures) | 1.70 sec | **545 ms** | PRIK direct 3.12× faster |
+
+### PRIK adapter control
+
+| Clean build workload | PRIK adapted | PRIK direct | Relative result |
+| --- | ---: | ---: | ---: |
+| Optimized (`-O3 -march=native -mtune=native`) · small direct module (1 source, 3 procedures) | 547 ms | 545 ms | No significant difference |
+<!-- prik-performance-direct-build:end -->
 
 ## Should I use PRIK or f2py?
 
@@ -128,9 +187,10 @@ so check the linked guides for exact limitations.
 
 ## Fair, Like-for-Like Setup
 
-The suite wraps one set of Fortran kernels with the default PRIK and f2py
-interfaces. It checks both extensions for the same results before measuring
-them. No benchmark-only wrapper mode is used.
+The normal-interface suite wraps one set of Fortran kernels with the default
+PRIK and f2py interfaces. It checks both extensions for the same results before
+measuring them. The direct-entrypoint cohort is kept separate and uses only the
+documented direct-call modes described above.
 
 Each runtime group uses an A/B/B/A sequence with equal PRIK-first and f2py-first
 process budgets. The two passes are merged before significance, winner counts
@@ -145,20 +205,23 @@ independently.
 - Both interfaces keep the GIL held.
 - OpenMP, OpenBLAS, and MKL are limited to one thread.
 - `pyperf --rigorous` pins each benchmark to logical CPU `0`.
-- PRIK build timings use up to 8 concurrent compiler
+- Normal runtime samples combine equal PRIK-first and f2py-first process budgets.
+- Direct runtime samples use balanced forward and reverse PRIK-direct,
+  f2py-direct, and PRIK-adapted process order.
+- PRIK build timings use up to 4 concurrent compiler
   processes; f2py uses its normal Meson/Ninja scheduler.
-- Build timings alternate tool order, use clean output directories, and exclude
-  post-build import checks.
-- CPU: Intel(R) Core(TM) i7-4712MQ CPU @ 2.30GHz.
-- Operating system: Ubuntu 26.04 LTS.
-- Kernel/platform: `Linux-7.0.0-28-generic-x86_64-with-glibc2.43`.
-- Python: 3.14.4.
+- Normal and three-route direct build timings alternate tool order, use clean
+  output directories, and exclude post-build import checks.
+- CPU: Arm Neoverse N2.
+- Operating system: Ubuntu 24.04.4 LTS.
+- Kernel/platform: `Linux-6.17.0-1022-azure-aarch64-with-glibc2.39`.
+- Python: 3.12.13.
 - NumPy/f2py: 2.5.1.
-- Fortran compiler: GNU Fortran 15.2.0.
+- Fortran compiler: GNU Fortran 13.3.0.
 - pyperf: 2.10.0.
-- PRIK revision: `0bcaafdf162d`.
+- PRIK revision: `8ff253070c44`.
 
-These results were recorded on August 1, 2026. Performance depends on the CPU,
+These results were recorded on August 15, 2026. Performance depends on the CPU,
 compiler, operating system, and background activity, so comparisons should use
 results produced together on the same machine.
 <!-- prik-performance-environment:end -->
@@ -173,5 +236,6 @@ measurements, and comparison with one command:
 bash benchmarks/run.sh
 ```
 
-The command writes the runtime and clean-build `pyperf` result pairs under
-`benchmarks/results/` and prints both comparison tables.
+The command writes the normal, direct, and adapter-control runtime and
+clean-build `pyperf` result pairs under `benchmarks/results/` and prints their
+comparison tables.

@@ -31,14 +31,14 @@ def _logical_function_plan():
 def test_policy_completes_default_logical_input_and_output_kind_copies():
     _module_plan, function = _logical_function_plan()
     input_plan = function.arguments[0]
-    output_slot = function.results[0].native_call_slot
+    output_slot = function.results[0].projected_call_slot
 
     assert input_plan.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_COPY
     assert input_plan.scalar_native_type == "logical"
     assert input_plan.bridge.data_action is BridgeDataAction.COPY_REPRESENTATION
     assert output_slot.scalar_logical_abi is ScalarLogicalABI.NATIVE_KIND_COPY
     assert output_slot.scalar_native_type == "logical"
-    assert output_slot.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION
+    assert output_slot.adapter.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION
 
 
 def test_bridge_mechanically_lowers_completed_default_logical_kind_copies():
