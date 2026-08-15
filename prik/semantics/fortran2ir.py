@@ -522,18 +522,59 @@ class FortranToIRConverter(ClassVisitor):
                 source_kind=source_kind,
                 declaration_arrays=declaration_arrays,
             )
+        semantic_type = self._argument_semantic_type(
+            arg,
+            callback_interfaces=callback_interfaces,
+            derived_type_context=derived_type_context,
+            declaration_arrays=declaration_arrays,
+        )
+        access = self._argument_access(arg, semantic_type)
+        self._complete_argument_storage(arg, semantic_type, access=access)
+        self._apply_argument_ownership(semantic_type, writes_argument=access[1])
+
+        argument = SemanticArgument(
+            name=arg.name,
+            semantic_type=semantic_type,
+            optional=getattr(arg, "optional", False),
+            visibility=getattr(arg, "visibility", "public"),
+            metadata=self._argument_metadata(arg, semantic_type),
+            origin=self._argument_origin(arg),
+        )
+        # Source access is an internal optimization fact, not part of the
+        # serialized semantic contract.  It lets policy omit a useless copy-in
+        # for intent(out) arrays without changing scalar ownership behavior.
+        argument._source_reads_argument = access[0]
+        return argument
+
+    def _argument_semantic_type(
+        self,
+        arg: FortranArgument | FortranVariable,
+        *,
+        callback_interfaces: dict[str, FortranProcedureSignature] | None,
+        derived_type_context: _DerivedTypeContext | None,
+        declaration_arrays: dict[str, ArrayExpressionSource] | None,
+    ) -> SemanticType:
+        """Convert one dummy's declared type without completing storage policy."""
         if arg.base_type.lower() == "procedure":
-            semantic_type = self._callback_semantic_type(
+            return self._callback_semantic_type(
                 arg,
                 callback_interfaces or {},
                 derived_type_context=derived_type_context,
             )
-        else:
-            semantic_type = self._convert_variable_type(
-                arg,
-                derived_type_context=derived_type_context,
-                declaration_arrays=declaration_arrays,
-            )
+        return self._convert_variable_type(
+            arg,
+            derived_type_context=derived_type_context,
+            declaration_arrays=declaration_arrays,
+        )
+
+    def _complete_argument_storage(
+        self,
+        arg: FortranArgument | FortranVariable,
+        semantic_type: SemanticType,
+        *,
+        access: tuple[bool, bool],
+    ) -> None:
+        """Complete source storage facts for one converted Fortran dummy."""
         if (
             getattr(arg, "optional", False)
             and semantic_type.rank > 0
@@ -542,7 +583,6 @@ class FortranToIRConverter(ClassVisitor):
             and (semantic_type.storage.array.allocatable or semantic_type.storage.array.pointer)
         ):
             semantic_type.metadata[OPTIONAL_ABSENT_HANDLE_METADATA] = True
-        access = self._argument_access(arg, semantic_type)
         if semantic_type.storage is not None and semantic_type.storage.kind == "callback":
             pass
         elif semantic_type.rank > 0:
@@ -555,27 +595,20 @@ class FortranToIRConverter(ClassVisitor):
                 semantic_type.storage.pointer_depth = 1
         if getattr(arg, "pointer", False) and not access[1]:
             self._apply_pointer_input_policy(semantic_type)
-        self._apply_argument_ownership(semantic_type, writes_argument=access[1])
 
+    @staticmethod
+    def _argument_metadata(
+        arg: FortranArgument | FortranVariable,
+        semantic_type: SemanticType,
+    ) -> dict[str, object]:
+        """Return semantic-call metadata that must survive contract printing."""
         metadata = {}
         preserves_explicit_value = str(getattr(arg, "base_type", "")).casefold() == "derived" or (
             semantic_type.name == "String" and str(semantic_type.metadata.get("fortran_character_length", "")) == "1"
         )
         if getattr(arg, "pass_by_value", False) and preserves_explicit_value:
             metadata[NATIVE_BY_VALUE_METADATA] = True
-        argument = SemanticArgument(
-            name=arg.name,
-            semantic_type=semantic_type,
-            optional=getattr(arg, "optional", False),
-            visibility=getattr(arg, "visibility", "public"),
-            metadata=metadata,
-            origin=self._argument_origin(arg),
-        )
-        # Source access is an internal optimization fact, not part of the
-        # serialized semantic contract.  It lets policy omit a useless copy-in
-        # for intent(out) arrays without changing scalar ownership behavior.
-        argument._source_reads_argument = access[0]
-        return argument
+        return metadata
 
     def _convert_data_member(
         self,

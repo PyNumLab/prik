@@ -1654,61 +1654,15 @@ def build_function_wrapper_policy(
     native_name = native_dispatch_name or _native_name(function)
     native_invocation, native_operator = _native_invocation_policy(native_name)
     standalone = _is_standalone(function)
-    entrypoint_diagnostics = _direct_c_abi_ineligibility(
-        function,
-        class_call=class_call,
-        native_invocation=native_invocation,
-        arguments=tuple(arguments),
-        results=results,
-        slots=native_call_slots,
-    )
-    entrypoint_action = (
-        NativeEntrypointAction.DIRECT_C_ABI
-        if not entrypoint_diagnostics
-        else NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER
-    )
-    arguments = [
-        replace(
-            argument,
-            entrypoint_pass_character_length=(
-                entrypoint_action is NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER
-                and argument.handoff_mode is ArgumentHandoffMode.CHARACTER_BUFFER
-            ),
-            entrypoint_pass_array_metadata=(
-                entrypoint_action is NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER
-                and argument.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER
-            ),
-            entrypoint_pass_descriptor_presence=(
-                entrypoint_action is NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER
-                and argument.optional_mode is OptionalMode.DESCRIPTOR
-            ),
-            entrypoint_pass_derived_transaction=(
-                entrypoint_action is NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER
-                and argument.derived_call is not None
-            ),
-            entrypoint_pass_callback_parameter=(
-                entrypoint_action is NativeEntrypointAction.DIRECT_C_ABI and argument.callback is not None
-            ),
-            entrypoint_optionality=(
-                EntrypointOptionalityAction.EXPLICIT_NATIVE_PRESENCE
-                if entrypoint_action is NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER
-                and argument.optional_mode is OptionalMode.DESCRIPTOR
-                else argument.entrypoint_optionality
-            ),
+    arguments, native_call_slots, entrypoint_action, entrypoint_symbol, entrypoint_diagnostics = (
+        _complete_function_entrypoint_route(
+            function,
+            class_call=class_call,
+            native_invocation=native_invocation,
+            arguments=arguments,
+            results=results,
+            slots=native_call_slots,
         )
-        for argument in arguments
-    ]
-    optionality_by_position = {argument.native_position: argument.entrypoint_optionality for argument in arguments}
-    native_call_slots = tuple(
-        replace(slot, entrypoint_optionality=optionality_by_position[slot.native_position])
-        if slot.native_position in optionality_by_position
-        else slot
-        for slot in native_call_slots
-    )
-    entrypoint_symbol = (
-        str(function.origin.native_symbol or function.origin.native_name or function.native_name or function.name)
-        if entrypoint_action is NativeEntrypointAction.DIRECT_C_ABI
-        else ""
     )
     return FunctionWrapperPolicy(
         owner_path=owner_path,
@@ -1744,6 +1698,76 @@ def build_function_wrapper_policy(
         entrypoint_action=entrypoint_action,
         entrypoint_symbol=entrypoint_symbol,
         entrypoint_diagnostics=entrypoint_diagnostics,
+    )
+
+
+def _complete_function_entrypoint_route(
+    function: models.SemanticFunction,
+    *,
+    class_call: ClassMethodPolicy | None,
+    native_invocation: NativeInvocationKind,
+    arguments: list[ArgumentPolicy],
+    results: tuple[ResultPolicy, ...],
+    slots: tuple[NativeCallSlotPolicy, ...],
+) -> tuple[
+    list[ArgumentPolicy],
+    tuple[NativeCallSlotPolicy, ...],
+    NativeEntrypointAction,
+    str,
+    tuple[str, ...],
+]:
+    """Complete one function's route and route-dependent boundary metadata."""
+    entrypoint_diagnostics = _direct_c_abi_ineligibility(
+        function,
+        class_call=class_call,
+        native_invocation=native_invocation,
+        arguments=tuple(arguments),
+        results=results,
+        slots=slots,
+    )
+    entrypoint_action = (
+        NativeEntrypointAction.DIRECT_C_ABI
+        if not entrypoint_diagnostics
+        else NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER
+    )
+    arguments = [_complete_entrypoint_argument_route(argument, entrypoint_action) for argument in arguments]
+    optionality_by_position = {argument.native_position: argument.entrypoint_optionality for argument in arguments}
+    slots = tuple(
+        replace(slot, entrypoint_optionality=optionality_by_position[slot.native_position])
+        if slot.native_position in optionality_by_position
+        else slot
+        for slot in slots
+    )
+    entrypoint_symbol = (
+        str(function.origin.native_symbol or function.origin.native_name or function.native_name or function.name)
+        if entrypoint_action is NativeEntrypointAction.DIRECT_C_ABI
+        else ""
+    )
+    return arguments, slots, entrypoint_action, entrypoint_symbol, entrypoint_diagnostics
+
+
+def _complete_entrypoint_argument_route(
+    argument: ArgumentPolicy,
+    action: NativeEntrypointAction,
+) -> ArgumentPolicy:
+    """Project a selected route into one argument's completed ABI metadata."""
+    uses_adapter = action is NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER
+    return replace(
+        argument,
+        entrypoint_pass_character_length=(
+            uses_adapter and argument.handoff_mode is ArgumentHandoffMode.CHARACTER_BUFFER
+        ),
+        entrypoint_pass_array_metadata=(uses_adapter and argument.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER),
+        entrypoint_pass_descriptor_presence=(uses_adapter and argument.optional_mode is OptionalMode.DESCRIPTOR),
+        entrypoint_pass_derived_transaction=(uses_adapter and argument.derived_call is not None),
+        entrypoint_pass_callback_parameter=(
+            action is NativeEntrypointAction.DIRECT_C_ABI and argument.callback is not None
+        ),
+        entrypoint_optionality=(
+            EntrypointOptionalityAction.EXPLICIT_NATIVE_PRESENCE
+            if uses_adapter and argument.optional_mode is OptionalMode.DESCRIPTOR
+            else argument.entrypoint_optionality
+        ),
     )
 
 

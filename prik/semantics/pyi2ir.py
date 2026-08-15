@@ -650,44 +650,25 @@ class _PyiAstParser:
         metadata = {BIND_TARGET_METADATA: native_name} if native_name is not None else {}
         if has_native_call:
             metadata[NATIVE_PROJECTION_METADATA] = True
-        passed_object_name = None
-        passed_object_position = None
-        if infer_passed_object and not is_static:
-            pass_mappings = [mapping for mapping in actual_projection if mapping.value_kind == "pass"]
-            if node.name == "__init__" and len(pass_mappings) != 1:
-                raise ValueError("Bound constructor native_call requires exactly one Pass() entry")
-            if len(pass_mappings) > 1:
-                raise ValueError("native_call may contain at most one Pass() entry")
-            passed_object_position = pass_mappings[0].native_position if pass_mappings else 0
-            if not isinstance(passed_object_position, int) or not 0 <= passed_object_position <= len(semantic_args):
-                raise ValueError("native_call Pass() position is out of range")
-            passed_object_name = "self"
-            semantic_args.insert(
-                passed_object_position,
-                SemanticArgument(
-                    passed_object_name,
-                    SemanticType(
-                        class_name,
-                        dtype=class_name,
-                        storage=SemanticStorageContract(kind="reference", mutable=True, pointer_depth=1),
-                    ),
-                ),
-            )
-            self._restore_pass_projection(actual_projection, passed_object_position)
+        passed_object_name, passed_object_position = self._complete_method_passed_object(
+            node,
+            projection=actual_projection,
+            arguments=semantic_args,
+            class_name=class_name,
+            infer_passed_object=infer_passed_object,
+            is_static=is_static,
+        )
         if release_gil:
             metadata[RUNTIME_RELEASE_GIL_METADATA] = True
         if error_status_policy is not None:
             metadata[RUNTIME_STATUS_ERROR_METADATA] = dict(error_status_policy)
-        origin = self._origin(
-            source_language="fortran" if native_abi is not None else None,
-            user_private=visibility == "private",
+        origin = self._method_origin(
+            node,
+            visibility=visibility,
+            native_name=native_name,
+            native_abi=native_abi,
+            return_type=return_type,
         )
-        if native_abi is not None:
-            origin.native_name = node.name
-            origin.native_abi = native_abi
-            origin.native_symbol = native_name or node.name
-            origin.native_scope = self.module.name
-            origin.source_kind = "function" if return_type is not None else "subroutine"
         return SemanticMethod(
             name=node.name,
             native_name=node.name if native_abi is not None else native_name or node.name,
@@ -701,6 +682,64 @@ class _PyiAstParser:
             passed_object_name=passed_object_name,
             passed_object_position=passed_object_position,
         )
+
+    def _complete_method_passed_object(
+        self,
+        node: ast.FunctionDef,
+        *,
+        projection: list[ProjectionMapping],
+        arguments: list[SemanticArgument],
+        class_name: str,
+        infer_passed_object: bool,
+        is_static: bool,
+    ) -> tuple[str | None, int | None]:
+        """Insert and project the implicit object for one bound method."""
+        if not infer_passed_object or is_static:
+            return None, None
+        pass_mappings = [mapping for mapping in projection if mapping.value_kind == "pass"]
+        if node.name == "__init__" and len(pass_mappings) != 1:
+            raise ValueError("Bound constructor native_call requires exactly one Pass() entry")
+        if len(pass_mappings) > 1:
+            raise ValueError("native_call may contain at most one Pass() entry")
+        passed_object_position = pass_mappings[0].native_position if pass_mappings else 0
+        if not isinstance(passed_object_position, int) or not 0 <= passed_object_position <= len(arguments):
+            raise ValueError("native_call Pass() position is out of range")
+        arguments.insert(
+            passed_object_position,
+            SemanticArgument(
+                "self",
+                SemanticType(
+                    class_name,
+                    dtype=class_name,
+                    storage=SemanticStorageContract(kind="reference", mutable=True, pointer_depth=1),
+                ),
+            ),
+        )
+        self._restore_pass_projection(projection, passed_object_position)
+        return "self", passed_object_position
+
+    def _method_origin(
+        self,
+        node: ast.FunctionDef,
+        *,
+        visibility: str,
+        native_name: str | None,
+        native_abi: str | None,
+        return_type: SemanticType | None,
+    ) -> SemanticOrigin:
+        """Retain a method's language identity, ABI, and optional link label."""
+        origin = self._origin(
+            source_language="fortran" if native_abi is not None else None,
+            user_private=visibility == "private",
+        )
+        if native_abi is None:
+            return origin
+        origin.native_name = node.name
+        origin.native_abi = native_abi
+        origin.native_symbol = native_name or node.name
+        origin.native_scope = self.module.name
+        origin.source_kind = "function" if return_type is not None else "subroutine"
+        return origin
 
     @staticmethod
     def _restore_pass_projection(projection: list[ProjectionMapping], passed_position: int) -> None:
