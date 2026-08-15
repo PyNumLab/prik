@@ -86,8 +86,9 @@ Direct-entrypoint results are written separately as
 is `prik-adapted.json`. Their clean-build counterparts end in `-build.json`.
 Metadata identifies the `direct_c_abi` or `generated_fortran_adapter` route,
 f2py wrapper mode, natural result class, compiler flags, process order,
-affinity protocol, and inspected source membership. These files are never
-merged into the default cohort or its published geometric mean.
+affinity protocol, and inspected source membership. These files are published
+as separate tables and are never merged into the default cohort or its
+geometric mean.
 
 The three-route runtime control uses a forward/reverse sequence:
 PRIK-direct, f2py-direct, PRIK-adapted, followed by PRIK-adapted,
@@ -138,12 +139,14 @@ python3 tools/generate_performance_docs.py
 Run this command from the repository root. It reads the runtime and build-time
 `pyperf` pairs, checks that each pair contains the same benchmarks and compatible
 platform metadata, records the host operating-system distribution and compiler,
-and updates only the marked result sections in `docs/user/performance.md` plus
-the runtime and clean-build comparison SVGs in `docs/user/assets/`.
+and updates only the marked normal, direct, adapter-control, and build result
+sections in `docs/user/performance.md` plus the normal runtime and clean-build
+comparison SVGs in `docs/user/assets/`.
 Explanatory prose and the reproduction instructions remain hand-maintained.
-Do not publish a local direct-entrypoint sample or revise the default cohort's
-geometric-mean population; runner-only evidence stays separate until the
-generator and published snapshot explicitly adopt that cohort.
+Do not publish a local sample or revise the default cohort's geometric-mean
+population. The generator keeps the direct-entrypoint and adapter-control
+results in their own published sections and requires compatible maintained-run
+metadata across every cohort.
 
 The Documentation workflow performs the same generation after successful
 correctness checks and rigorous measurements on pushes to `main`. The benchmark
@@ -155,8 +158,8 @@ keeps the raw `pyperf` files as an artifact and overlays the generated snapshot
 only in the website build; it does not create a result commit.
 It also uploads the complete untimed direct-entrypoint preflight directory as a
 separate artifact so the pinned generated C sources, binding/native objects,
-linked extensions, and symbol report remain inspectable without entering the
-published result population.
+linked extensions, and symbol report remain inspectable alongside the
+published timing tables.
 
 The publication environment pins Python 3.12, NumPy/f2py 2.5.1, pyperf 2.10.0,
 Meson 1.11.2, Ninja 1.13.0, GNU Fortran 13, and the ARM64 runner label. Update

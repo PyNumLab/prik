@@ -23,6 +23,8 @@ release tags add a leading `v` to the package version.
 
 ### Changed
 
+- Published the maintained-run direct-entrypoint runtime, adapter-control, and
+  clean-build results separately from the normal-interface benchmark cohort.
 - Made direct-entrypoint benchmark preflight identify binding and native
   objects by their inspected symbol relationships across f2py build backends.
 - Reduced exact numeric-scalar call overhead by using typed NumPy scalar

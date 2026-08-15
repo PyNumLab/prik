@@ -266,14 +266,20 @@ wrapping. Goal 3 owns those capabilities.
 
 ### Current Goal 2 Status (2026-08-15)
 
-Goal 2 is **98% complete by checklist items**: **94 of 96 items are complete,
-with 2% remaining**. Stages 0–7, all fourteen feature rows, the direct benchmark
-implementation and local artifact/correctness preflight, and the final broad
-and static verification audit are complete. The two remaining items are both
-maintained-runner evidence: inspect f2py's generated and linked artifacts with
-the pinned NumPy 2.5.1 version, then complete the paired benchmark run and
-publish its Performance-page methodology and snapshot. The local NumPy 2.2.6
-artifact inspection and performance diagnosis do not satisfy either item.
+Goal 2 is **complete by checklist items**: **96 of 96 items are complete**.
+Stages 0–8, all fourteen feature rows, source/generated/source-free contract
+parity, zero-adapter and mixed builds, broad verification, and the maintained
+direct-entrypoint benchmark evidence are complete.
+
+The maintained ARM64 runner used Python 3.12 and NumPy/f2py 2.5.1. Its pinned
+preflight found no generated Fortran procedure wrapper in either direct route.
+The f2py C/API object referred to all three user labels and its native object
+defined them despite Meson's `.c.o` and `.f90.o` filenames; the linked extension
+also defined all three. The corresponding PRIK binding object, native object,
+and linked extension proved the same relationships. The paired runtime,
+adapter-control, and clean-build results are published as separate generated
+sections of the Performance page without changing the normal-interface
+geometric-mean population.
 
 ### Goal 2 Testing Layers
 
@@ -666,7 +672,7 @@ artifacts, and compiled runtime behavior pass outside the timer.
   `--skip-empty-wrappers` where applicable. Keep f2py's Python C/API binding;
   these flags concern generated Fortran wrapper procedures/files rather than
   removal of the Python binding.
-- [ ] Inspect the generated binding object, native object, linked extension,
+- [x] Inspect the generated binding object, native object, linked extension,
   and generated-source membership with the pinned NumPy version before
   describing the maintained result. Prove that the binding refers directly to
   the three user labels and that both the native object and linked extension
@@ -694,7 +700,7 @@ artifacts, and compiled runtime behavior pass outside the timer.
 - [x] Update `benchmarks/README.md`, benchmark workflows, and tooling tests under
   `tests/tools/` for the separate direct-entrypoint cohort without changing the
   generated Performance page or its published snapshot.
-- [ ] After a complete paired run on the maintained benchmark runner, update
+- [x] After a complete paired run on the maintained benchmark runner, update
   the generated Performance-page methodology and published snapshot with the
   direct-entrypoint cohort.
 

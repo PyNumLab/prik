@@ -17,41 +17,41 @@
     </g>
     <g font-size="12" fill="#607080" text-anchor="middle">
       <text x="390.0" y="97">0 s</text>
-      <text x="496.0" y="97">8 s</text>
-      <text x="602.0" y="97">16 s</text>
-      <text x="708.0" y="97">24 s</text>
-      <text x="814.0" y="97">32 s</text>
-      <text x="920.0" y="97">40 s</text>
+      <text x="496.0" y="97">3 s</text>
+      <text x="602.0" y="97">6 s</text>
+      <text x="708.0" y="97">9 s</text>
+      <text x="814.0" y="97">12 s</text>
+      <text x="920.0" y="97">15 s</text>
     </g>
     <g font-size="14">
       <text x="28" y="131" font-weight="600">Development · small module</text>
       <text x="28" y="155" font-size="12" fill="#607080">f2py</text>
-      <rect x="390" y="141" width="31.3" height="20" rx="5" fill="#b45309"/>
-      <text x="431.3" y="156" fill="#8a3f08" font-weight="700">2.37 sec</text>
+      <rect x="390" y="141" width="53.0" height="20" rx="5" fill="#b45309"/>
+      <text x="453.0" y="156" fill="#8a3f08" font-weight="700">1.50 sec</text>
       <text x="28" y="183" font-size="12" fill="#607080">PRIK</text>
-      <rect x="390" y="169" width="11.5" height="20" rx="5" fill="#0f766e"/>
-      <text x="411.5" y="184" fill="#0b5e58" font-weight="700">867 ms</text>
+      <rect x="390" y="169" width="19.4" height="20" rx="5" fill="#0f766e"/>
+      <text x="419.4" y="184" fill="#0b5e58" font-weight="700">550 ms</text>
       <text x="28" y="223" font-weight="600">Development · full reference BLAS</text>
       <text x="28" y="247" font-size="12" fill="#607080">f2py</text>
-      <rect x="390" y="233" width="142.5" height="20" rx="5" fill="#b45309"/>
-      <text x="542.5" y="248" fill="#8a3f08" font-weight="700">10.8 sec</text>
+      <rect x="390" y="233" width="247.2" height="20" rx="5" fill="#b45309"/>
+      <text x="647.2" y="248" fill="#8a3f08" font-weight="700">7.00 sec</text>
       <text x="28" y="275" font-size="12" fill="#607080">PRIK</text>
-      <rect x="390" y="261" width="123.1" height="20" rx="5" fill="#0f766e"/>
-      <text x="523.1" y="276" fill="#0b5e58" font-weight="700">9.29 sec</text>
+      <rect x="390" y="261" width="178.4" height="20" rx="5" fill="#0f766e"/>
+      <text x="578.4" y="276" fill="#0b5e58" font-weight="700">5.05 sec</text>
       <text x="28" y="315" font-weight="600">Optimized · small module</text>
       <text x="28" y="339" font-size="12" fill="#607080">f2py</text>
-      <rect x="390" y="325" width="38.2" height="20" rx="5" fill="#b45309"/>
-      <text x="438.2" y="340" fill="#8a3f08" font-weight="700">2.88 sec</text>
+      <rect x="390" y="325" width="60.9" height="20" rx="5" fill="#b45309"/>
+      <text x="460.9" y="340" fill="#8a3f08" font-weight="700">1.72 sec</text>
       <text x="28" y="367" font-size="12" fill="#607080">PRIK</text>
-      <rect x="390" y="353" width="13.6" height="20" rx="5" fill="#0f766e"/>
-      <text x="413.6" y="368" fill="#0b5e58" font-weight="700">1.03 sec</text>
+      <rect x="390" y="353" width="22.8" height="20" rx="5" fill="#0f766e"/>
+      <text x="422.8" y="368" fill="#0b5e58" font-weight="700">644 ms</text>
       <text x="28" y="407" font-weight="600">Optimized · full reference BLAS</text>
       <text x="28" y="431" font-size="12" fill="#607080">f2py</text>
-      <rect x="390" y="417" width="295.7" height="20" rx="5" fill="#b45309"/>
-      <text x="695.7" y="432" fill="#8a3f08" font-weight="700">22.3 sec</text>
+      <rect x="390" y="417" width="387.1" height="20" rx="5" fill="#b45309"/>
+      <text x="787.1" y="432" fill="#8a3f08" font-weight="700">11.0 sec</text>
       <text x="28" y="459" font-size="12" fill="#607080">PRIK</text>
-      <rect x="390" y="445" width="437.9" height="20" rx="5" fill="#0f766e"/>
-      <text x="837.9" y="460" fill="#0b5e58" font-weight="700">33.1 sec</text>
+      <rect x="390" y="445" width="471.7" height="20" rx="5" fill="#0f766e"/>
+      <text x="871.7" y="460" fill="#0b5e58" font-weight="700">13.3 sec</text>
     </g>
     <g font-size="13">
       <rect x="28" y="473" width="18" height="12" rx="3" fill="#0f766e"/>
