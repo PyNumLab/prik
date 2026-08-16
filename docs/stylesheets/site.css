@@ -1,3 +1,14 @@
+:root {
+  --prik-primary: #245a78;
+  --prik-primary-rgb: 36 90 120;
+  --prik-primary-dark: #183f56;
+  --prik-primary-light: #78b9df;
+
+  --prik-primary-bg: #eaf2f7;
+  --prik-primary-bg-hover: #dbeaf2;
+  --prik-primary-bg-subtle: #f5f9fc;
+}
+
 .wy-nav-content {
   max-width: 1200px;
   margin: 0;
@@ -118,8 +129,8 @@
 
 .prik-page-source a:hover,
 .prik-page-source a:focus {
-  border-color: #2980b9;
-  color: #1f618d;
+  border-color: var(--prik-primary);
+  color: var(--prik-primary-dark);
 }
 
 .prik-primary-cta {
@@ -127,9 +138,9 @@
   align-items: center;
   min-height: 2.6rem;
   padding: 0.65rem 1rem;
-  border: 1px solid #176b64;
+  border: 1px solid var(--prik-primary);
   border-radius: 0.35rem;
-  background: #176b64;
+  background: var(--prik-primary);
   box-shadow: 0 2px 4px rgb(0 0 0 / 18%);
   color: #fff;
   font-weight: 700;
@@ -147,8 +158,8 @@
 
 .prik-primary-cta:hover,
 .prik-primary-cta:focus {
-  border-color: #0f514c;
-  background: #0f514c;
+  background: var(--prik-primary-dark);
+  border-color: var(--prik-primary-dark);
   box-shadow: 0 4px 9px rgb(0 0 0 / 22%);
   color: #fff;
   transform: translateY(-1px);
@@ -186,7 +197,7 @@
   position: absolute;
   top: 50%;
   right: 1rem;
-  color: #176b64;
+  color: var(--prik-primary);
   content: "+";
   font-size: 1.35rem;
   line-height: 1;
@@ -195,7 +206,7 @@
 
 .prik-faq-item[open] summary {
   border-bottom: 1px solid #d6e0e5;
-  background: #f5fbfa;
+  background: var(--prik-primary-bg-subtle);
 }
 
 .prik-faq-item[open] summary::after {
@@ -203,13 +214,13 @@
 }
 
 .prik-faq-item summary:focus-visible {
-  outline: 2px solid #176b64;
+  outline: 2px solid var(--prik-primary);
   outline-offset: 2px;
 }
 
 .prik-faq-item:target {
-  border-color: #176b64;
-  box-shadow: 0 0 0 2px rgb(23 107 100 / 14%);
+  border-color: var(--prik-primary);
+  box-shadow: 0 0 0 2px rgb(var(--prik-primary-rgb) / 14%);
 }
 
 .prik-faq-item > :not(summary) {
@@ -238,13 +249,17 @@
   padding: 1rem;
   border: 1px solid #cfdde5;
   border-radius: 0.6rem;
-  background: linear-gradient(145deg, #f5fbfa, #eef6f8);
-  box-shadow: 0 2px 7px rgb(23 107 100 / 12%);
+  background: linear-gradient(
+    145deg,
+    var(--prik-primary-bg-subtle),
+    var(--prik-primary-bg)
+  );
+  box-shadow: 0 2px 7px rgb(var(--prik-primary-rgb) / 12%);
   text-align: center;
 }
 
 .prik-performance-metric strong {
-  color: #176b64;
+  color: var(--prik-primary);
   font-size: 2rem;
   line-height: 1.1;
 }
@@ -290,7 +305,7 @@
   display: flex;
   overflow-x: auto;
   border-bottom: 1px solid #cfdde5;
-  background: #f5fbfa;
+  background: var(--prik-primary-bg-subtle);
 }
 
 .prik-example-tab {
@@ -306,14 +321,14 @@
 }
 
 .prik-example-tab:hover {
-  background: rgb(23 107 100 / 8%);
-  color: #0f514c;
+  background: rgb(var(--prik-primary-rgb) / 8%);
+  color: var(--prik-primary-dark);
 }
 
 .prik-example-tab[aria-selected="true"] {
-  border-bottom-color: #176b64;
+  border-bottom-color: var(--prik-primary);
   background: #fff;
-  color: #0f514c;
+  color: var(--prik-primary-dark);
 }
 
 .prik-example-tab:focus-visible {
@@ -355,17 +370,17 @@
 
 .prik-term-trigger > code,
 .prik-term-trigger > .prik-term-label {
-  border-bottom: 1px dashed #176b64;
+  border-bottom: 1px dashed var(--prik-primary);
   border-radius: 0.2rem;
-  background: #e7f4f2;
-  color: #0f514c;
+  background: var(--prik-primary-bg);
+  color: var(--prik-primary-dark);
 }
 
 .prik-term-trigger:hover > code,
 .prik-term-trigger:hover > .prik-term-label,
 .prik-term-wrap.is-open .prik-term-trigger > code,
 .prik-term-wrap.is-open .prik-term-trigger > .prik-term-label {
-  background: #d9eeea;
+  background: var(--prik-primary-bg-hover);
 }
 
 .prik-term-trigger:focus-visible {
@@ -380,7 +395,7 @@
   left: 50%;
   width: min(19rem, calc(100vw - 2rem));
   padding: 0.7rem 0.8rem;
-  border: 1px solid #0f514c;
+  border: 1px solid var(--prik-primary-dark);
   border-radius: 0.45rem;
   background: #253746;
   box-shadow: 0 5px 14px rgb(0 0 0 / 22%);
@@ -406,8 +421,8 @@
   left: 50%;
   width: 0.7rem;
   height: 0.7rem;
-  border-right: 1px solid #0f514c;
-  border-bottom: 1px solid #0f514c;
+  border-right: 1px solid var(--prik-primary-dark);
+  border-bottom: 1px solid var(--prik-primary-dark);
   background: #253746;
   content: "";
   transform: translateX(-50%) rotate(45deg);
@@ -460,3 +475,74 @@
     transition: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+   PRIK sidebar branding
+   -------------------------------------------------------------------------- */
+
+.wy-side-nav-search {
+  background: var(--prik-primary);
+}
+
+/* Section headings */
+.wy-menu-vertical p.caption,
+.wy-menu-vertical header,
+.wy-nav .wy-menu-vertical header {
+  color: var(--prik-primary-light);
+}
+
+/* Normal menu entries */
+.wy-menu-vertical a {
+  color: #fff;
+}
+
+/* Hover / active */
+.wy-menu-vertical a:hover,
+.wy-menu-vertical a:active {
+  background-color: var(--prik-primary);
+  color: #fff;
+}
+
+.wy-side-nav-search .prik-site-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.wy-side-nav-search .prik-site-logo {
+  display: flex;
+  align-items: center;
+}
+
+.wy-side-nav-search .prik-site-logo img.logo {
+  width: auto;
+  height: 4.4rem;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+}
+
+.wy-side-nav-search .prik-site-title {
+  color: #fff;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+/* ReadTheDocs elements that should follow the PRIK palette. */
+
+.wy-side-nav-search input[type="text"] {
+  border-color: var(--prik-primary-dark);
+}
+
+.wy-nav .wy-menu-vertical a:hover,
+.wy-menu-vertical a:active {
+  background-color: var(--prik-primary);
+  color: #fff;
+}
+
+.wy-nav-top {
+  background: var(--prik-primary);
+}
+

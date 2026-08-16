@@ -1,14 +1,11 @@
 <p align="center">
-  <img src="docs/user/assets/prik-logo.svg"
+  <img src="docs/user/assets/prik-logo.png"
        alt="PRIK — Bring Native Code to Python"
        width="450">
 </p>
 
-**PRIK (Python Runtime Interop Kit)** generates native Python bindings for Fortran, with editable `.pyi` contracts
-and Pythonic APIs.**
-
-PRIK generates native Python bindings from Fortran projects, producing
-importable extensions and editable `.pyi` contracts for shaping Pythonic APIs.
+**PRIK (Python Runtime Interop Kit)** generates native Python bindings from Fortran projects,
+producing importable extensions and editable `.pyi` contracts for shaping Pythonic APIs.
 
 [![Tests](https://github.com/PyNumLab/prik/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/PyNumLab/prik/actions/workflows/tests.yml)
 [![Static Analysis](https://github.com/PyNumLab/prik/actions/workflows/static-analysis.yml/badge.svg?branch=main)](https://github.com/PyNumLab/prik/actions/workflows/static-analysis.yml)

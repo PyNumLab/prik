@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block site_name %}
+<div class="prik-site-brand">
+  <a href="{{ nav.homepage.url|url }}" class="prik-site-logo" aria-label="PRIK home">
+    <img src="{{ config.theme.logo|url }}" class="logo" alt="PRIK logo">
+  </a>
+
+  <span class="prik-site-title">PRIK</span>
+</div>
+{% endblock %}
