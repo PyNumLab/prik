@@ -65,13 +65,13 @@ Together they exercise arrays, callbacks, workspaces, in-place mutation,
 allocatable results, module constants, and multi-file linking. The dedicated
 Real Libraries CI lane builds and tests all four projects.
 
-The complete example below builds with one command:
+## See it in action
+
+PRIK turns the Fortran source below into an importable Python extension with one command:
 
 ```bash
 python3 -m prik points.f90 --out geometry
 ```
-
-## See it in action
 
 Create `points.f90`:
 
