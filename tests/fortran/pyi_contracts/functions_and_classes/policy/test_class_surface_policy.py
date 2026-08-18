@@ -37,10 +37,11 @@ def _surface(plan, name: str):
 def test_module_procedure_method_visibility_is_completed_independently():
     public_plan = _plan_text(
         """
-from prik.contracts import Addr, Arg, Float64, Pass, native_call
+from prik.contracts import Addr, Arg, Float64, Pass, native_call, bind
 
 class point:
     @native_call([Pass(), Addr(Arg(0))])
+    @bind('move')
     def move(self, dx: Float64) -> None: ...
 
 @native_call([Arg(0), Addr(Arg(1))])
@@ -58,10 +59,11 @@ def move(item: point, dx: Float64) -> None: ...
 
     private_plan = _plan_text(
         """
-from prik.contracts import Addr, Arg, Float64, Pass, native_call, private
+from prik.contracts import Addr, Arg, Float64, Pass, native_call, private, bind
 
 class point:
     @native_call([Pass(), Addr(Arg(0))])
+    @bind('move')
     def move(self, dx: Float64) -> None: ...
 
 @private

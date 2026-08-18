@@ -496,16 +496,15 @@ def _complete_one_class_method_policy(
     surface = semantic_class.metadata.get(models.RESOLVED_CLASS_SURFACE_POLICY_METADATA)
     if not isinstance(derived, DerivedTypePolicy) or not isinstance(surface, ClassSurfacePolicy):
         return
-    native_bindings = {
-        str(method.native_name or method.name): _native_type_bound_binding_name(method)
-        for method in semantic_class.methods
-        if method.name != "__init__"
+
+    semantic_methods = {
+        f"{derived.owner_path}.{method.name}": method for method in semantic_class.methods if method.name != "__init__"
     }
+
     completed_methods = _completed_class_method_invocations(
         surface,
-        native_bindings,
-        type_bound_targets,
-        module_targets,
+        semantic_methods,
+        semantic_class.name,
     )
     semantic_class.metadata[models.RESOLVED_CLASS_SURFACE_POLICY_METADATA] = replace(
         surface,
@@ -530,18 +529,17 @@ def _complete_one_class_method_policy(
 
 def _completed_class_method_invocations(
     surface: ClassSurfacePolicy,
-    native_bindings: dict[str, str],
-    type_bound_targets: set[str],
-    module_targets: set[str],
+    semantic_methods: dict[str, models.SemanticMethod],
+    class_name: str,
 ) -> tuple[ClassMethodPolicy, ...]:
     """Select direct or type-bound invocation for every ordinary method."""
     return tuple(
         replace(
             method,
             invocation=ClassInvocationKind.TYPE_BOUND,
-            type_bound_name=native_bindings[method.native_name],
+            type_bound_name=_native_type_bound_binding_name(semantic_methods[method.owner_path]),
         )
-        if _uses_type_bound_invocation(method, type_bound_targets, module_targets)
+        if _uses_type_bound_invocation(semantic_methods[method.owner_path], class_name)
         else method
         for method in surface.methods
     )
@@ -662,15 +660,18 @@ def _class_overload_native_target(procedure: models.SemanticFunction) -> str:
     return str(procedure.metadata.get(BIND_TARGET_METADATA) or procedure.native_name or procedure.name)
 
 
-def _uses_type_bound_invocation(
-    method: ClassMethodPolicy,
-    explicit_targets: set[str],
-    module_targets: set[str],
-) -> bool:
+def _uses_type_bound_invocation(method: models.SemanticMethod, class_name: str) -> bool:
     """Restore generated-.pyi type-bound calls when their private root target is absent."""
-    if method.kind is ClassMethodKind.STATIC:
+    if method.is_static:
         return False
-    return method.native_name in explicit_targets or method.native_name not in module_targets
+
+    bind_target = method.metadata.get(BIND_TARGET_METADATA)
+
+    if bind_target is None:
+        return True
+
+    names = bind_target.split(".")
+    return bool(len(names) > 1 and names[0] == class_name)
 
 
 def _native_type_bound_binding_name(method: models.SemanticMethod) -> str:

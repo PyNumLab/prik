@@ -14,7 +14,6 @@ publication: reviewed
        width="500">
 </p>
 
-
 **PRIK (Python Runtime Interop Kit)** generates native Python
 bindings for Fortran, with editable `.pyi` contracts for shaping
 Pythonic APIs.
@@ -68,6 +67,168 @@ print(result)  # 7.5
 
 No manual binding code is required. PRIK derives the native wrapper and a
 readable Python signature from the Fortran source.
+
+## Shape the Python API
+
+For a richer API, PRIK lets you reshape the generated Python surface without
+changing the native implementation. Switch tabs to compare the default and
+edited versions.
+
+<div class="prik-example-tabs" data-prik-example-tabs markdown="1">
+<div class="prik-example-tablist" role="tablist" aria-label="Home example">
+<button class="prik-example-tab" id="home-source-tab" type="button" role="tab" aria-controls="home-source" aria-selected="true">Fortran source</button>
+<button class="prik-example-tab" id="home-python-tab" type="button" role="tab" aria-controls="home-python" aria-selected="false" tabindex="-1">Default API</button>
+<button class="prik-example-tab" id="home-contract-tab" type="button" role="tab" aria-controls="home-contract" aria-selected="false" tabindex="-1">Generated contract</button>
+<button class="prik-example-tab" id="home-edited-contract-tab" type="button" role="tab" aria-controls="home-edited-contract" aria-selected="false" tabindex="-1">Edited .pyi</button>
+<button class="prik-example-tab" id="home-edited-python-tab" type="button" role="tab" aria-controls="home-edited-python" aria-selected="false" tabindex="-1">Edited API</button>
+</div>
+
+<div class="prik-example-panel" id="home-source" role="tabpanel" aria-labelledby="home-source-tab" tabindex="0" markdown="1">
+
+### Fortran source
+
+Create `points.f90`:
+
+```fortran
+module points
+  implicit none
+
+  type :: point
+    real(8) :: x = 0.0d0
+    real(8) :: y = 0.0d0
+  end type point
+
+contains
+
+  subroutine move(item, dx, dy)
+    type(point), intent(inout) :: item
+    real(8), intent(in) :: dx, dy
+    item%x = item%x + dx
+    item%y = item%y + dy
+  end subroutine move
+
+  real(8) function norm_squared(item) result(value)
+    type(point), intent(in) :: item
+    value = item%x * item%x + item%y * item%y
+  end function norm_squared
+
+end module points
+```
+
+Build:
+
+```bash
+python3 -m prik points.f90 --out geometry
+```
+
+</div>
+
+<div class="prik-example-panel" id="home-python" role="tabpanel" aria-labelledby="home-python-tab" tabindex="0" markdown="1">
+
+### Default API
+
+```python
+import numpy as np
+import geometry.points as points
+
+item = points.point(x=np.float64(3.0), y=np.float64(4.0))
+points.move(item, np.float64(1.0), np.float64(-2.0))
+
+print(item.x, item.y)             # 4.0 2.0
+print(points.norm_squared(item))  # 20.0
+```
+
+</div>
+
+<div class="prik-example-panel" id="home-contract" role="tabpanel" aria-labelledby="home-contract-tab" tabindex="0" markdown="1">
+
+### Generated contract
+
+The generated `points.pyi` is:
+
+```python
+from prik.contracts import Addr, Arg, Float64, native_call
+
+class point:
+    x: Float64 = 0.0
+    y: Float64 = 0.0
+
+    def __init__(self, *, x: Float64 = 0.0, y: Float64 = 0.0) -> None: ...
+
+@native_call([Arg(0), Addr(Arg(1)), Addr(Arg(2))])
+def move(item: point, dx: Float64, dy: Float64) -> None: ...
+
+def norm_squared(item: point) -> Float64: ...
+```
+
+Generate it:
+
+```bash
+python3 -m prik generate --pyi points.f90 --out contracts
+```
+
+</div>
+
+<div class="prik-example-panel" id="home-edited-contract" role="tabpanel" aria-labelledby="home-edited-contract-tab" tabindex="0" markdown="1">
+
+### Edited `.pyi`
+
+The edited `points.pyi` is:
+
+```python
+from prik.contracts import Addr, Arg, Float64, Pass, bind, native_call
+
+class point:
+    x: Float64 = 0.0
+    y: Float64 = 0.0
+
+    def __init__(self, *, x: Float64 = 0.0, y: Float64 = 0.0) -> None: ...
+
+    @bind("move")
+    @native_call([Pass(), Addr(Arg(0)), Addr(Arg(1))])
+    def translate(self, dx: Float64, dy: Float64) -> None: ...
+
+    @bind("norm_squared")
+    @native_call([Pass()])
+    def norm_squared(self) -> Float64: ...
+```
+
+`@bind("move")` keeps the original native target while the declaration's
+placement and name define the Python-facing API. `Pass()` supplies the
+receiver (`self`) to the native call; `Addr(Arg(...))` passes the remaining
+arguments by address as required by the native calling convention.
+
+Build from the contract:
+
+```bash
+python3 -m prik contracts/__init__.pyi \
+  --native-fortran-sources points.f90 \
+  --out geometry
+```
+
+</div>
+
+<div class="prik-example-panel" id="home-edited-python" role="tabpanel" aria-labelledby="home-edited-python-tab" tabindex="0" markdown="1">
+
+### Edited Python API
+
+The native Fortran is unchanged, but the Python surface is now:
+
+```python
+import numpy as np
+import geometry.points as points
+
+item = points.point(x=np.float64(3.0), y=np.float64(4.0))
+item.translate(np.float64(1.0), np.float64(-2.0))
+
+print(item.x, item.y)       # 4.0 2.0
+print(item.norm_squared())  # 20.0
+```
+
+</div>
+</div>
+
+Same Fortran source, but a more natural Python API: module procedures become methods.
 
 ## Why PRIK
 

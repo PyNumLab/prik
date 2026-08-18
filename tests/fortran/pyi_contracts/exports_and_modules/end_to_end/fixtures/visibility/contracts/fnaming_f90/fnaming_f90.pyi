@@ -11,7 +11,7 @@ class visible_t:
     lambda_: Annotated[Int32, SourceName("lambda")] = 3
     lambda__2: Annotated[Int32, SourceName("lambda_")] = 4
 
-    @bind("visible_from")
+    @bind("visible_t.from")
     def from_(self) -> Int32: ...
 
 value: Int32

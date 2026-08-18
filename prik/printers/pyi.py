@@ -2007,7 +2007,9 @@ class PyiPrinter(ClassVisitor):
         is_overload = bool(func.metadata.get(OVERLOAD_TARGET_METADATA))
         if is_native_c_abi and not is_overload:
             decorators.append(f'{indent}@{context.contract("native_abi")}("c")')
-        bind_target = self._bind_target(func, emitted_name=emitted_name, is_native_c_abi=is_native_c_abi)
+        bind_target = self._bind_target(
+            func, context=context, emitted_name=emitted_name, is_native_c_abi=is_native_c_abi
+        )
         if bind_target and not is_overload:
             decorators.append(f"{indent}@{context.contract('bind')}({json.dumps(str(bind_target))})")
         return decorators
@@ -2016,6 +2018,7 @@ class PyiPrinter(ClassVisitor):
     def _bind_target(
         func: SemanticFunction,
         *,
+        context: _PyiEmissionContext,
         emitted_name: str,
         is_native_c_abi: bool,
     ) -> object | None:
@@ -2024,10 +2027,22 @@ class PyiPrinter(ClassVisitor):
             if func.origin.native_symbol and func.origin.native_symbol != func.origin.native_name:
                 return func.origin.native_symbol
             return None
+
         bind_target = func.metadata.get(BIND_TARGET_METADATA)
-        if bind_target is None and func.native_name and func.native_name != emitted_name:
+
+        if bind_target is not None:
+            return bind_target
+
+        if isinstance(func, SemanticMethod) and func.name != emitted_name:
+            if not context.public_namespace:
+                return func.native_name
+            class_name = context.public_namespace[-1]
+            return f"{class_name}.{func.name}"
+
+        if func.native_name and func.native_name != emitted_name:
             return func.native_name
-        return bind_target
+
+        return None
 
     @staticmethod
     def _pyi_projection(func: SemanticFunction) -> list[ProjectionMapping]:
