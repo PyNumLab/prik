@@ -248,8 +248,15 @@ b'Xlpha   '
 - `String[8][()]` and `String[8][count]` require dtype `S8`.
 - A dummy without `intent` uses the conservative `intent(inout)` behavior.
 
-Mutable deferred-length scalar storage is not supported. Use a fixed-width
-buffer or an immutable replacement result.
+Deferred-length scalar storage (`character(len=:)`) is supported in two
+places: a read-only `allocatable, intent(in)` argument, and an
+`allocatable, intent(out)` result, which PRIK projects as a returned string.
+
+Two forms are blocked before code generation. A mutable
+`allocatable, intent(inout)` argument is rejected because the native procedure
+may reallocate it to a length the caller's buffer cannot hold. A
+`character(len=:), pointer` argument is rejected because the adapter has no
+target to associate. Use a fixed-width buffer for both.
 
 ## Next
 

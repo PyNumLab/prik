@@ -142,3 +142,12 @@ example. This workflow requires GNU Make.
 The shared library is not universal. It must match the target machine's
 operating system and architecture, Python and NumPy, and required compiler
 libraries. Rebuilding it on the target machine is the safest choice.
+
+## Every build option
+
+This page covers the common build paths. For the complete option surface —
+native sources, objects, libraries, ordered link items, wrapper compiler flags,
+and manifest replay — see the
+[CLI commands reference](../reference/cli-commands.md), or run
+`python3 -m prik --help-build`. To drive the same builds from Python instead of
+a shell, see the [Python API reference](../reference/python-api.md).

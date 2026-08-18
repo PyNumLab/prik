@@ -1796,6 +1796,7 @@ class WrapperPlanner(ClassVisitor):
             codegen_action=policy.codegen_action,
             data_action=policy.bridge_data_action,
             copy_reason=policy.bridge_copy_reason,
+            deferred_character_length=policy.deferred_character_length,
         )
 
     @staticmethod

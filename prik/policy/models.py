@@ -1153,6 +1153,7 @@ class ArgumentPolicy:
     python_visible: bool
     result_position: int | None
     character_length: int | None
+    deferred_character_length: bool = False
     array: ArrayHandoffPolicy | None = None
     native_array_actual: NativeArrayActualPolicy | None = None
     native_array_handle: NativeArrayHandleWrapperPolicy | None = None

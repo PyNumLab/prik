@@ -2393,6 +2393,7 @@ def _argument_policy(
             python_visible=decision.python_visible,
             result_position=boundary.result_position,
             character_length=_character_length(argument.semantic_type),
+            deferred_character_length=_uses_deferred_character_local(argument.semantic_type, decision),
             array=array_policy,
             native_array_actual=_native_array_actual_policy(argument, decision, array_policy),
             native_array_handle=_native_array_handle_wrapper_policy(
@@ -3991,6 +3992,7 @@ def _scalar_or_string_argument_shape_blockers(
     string_value = _is_plan_string_value_type(argument.semantic_type)
     if not (_is_first_lane_scalar_type(argument.semantic_type) or string_value):
         blockers.append(f"argument {argument.name!r} is not a first-lane primitive scalar")
+    blockers.extend(_deferred_character_blockers(argument, decision))
     if not decision.python_visible:
         blockers.append(f"argument {argument.name!r} is not Python-visible")
     expected_kind = ObjectKind.STRING if string_value else ObjectKind.SCALAR
@@ -4991,6 +4993,53 @@ def _runtime_status_plan_blockers(policy: NativeStatusErrorPolicy | None) -> tup
     if policy.message is not None and policy.message.character_length is None:
         blockers.append("native status error message requires a fixed positive character length")
     return tuple(blockers)
+
+
+def _has_deferred_character_length(semantic_type: models.SemanticType) -> bool:
+    """Return whether one character value declares a deferred length parameter.
+
+    A ``character(len=:)`` dummy is not interoperable, so no ``bind(C)``
+    interface can declare it and the generated Fortran adapter must build the
+    local the native dummy requires.  Assumed length (``character(len=*)``) is
+    a different form and stays fixed-length here.
+    """
+    return semantic_type.metadata.get("fortran_character_length") == ":"
+
+
+def _uses_deferred_character_local(
+    semantic_type: models.SemanticType,
+    decision: OwnershipDecision,
+) -> bool:
+    """Return whether the adapter must build an allocatable deferred-length local.
+
+    Only a read-only allocatable dummy is supported.  A pointer dummy needs a
+    pointer actual the adapter has nothing to target, and a mutable dummy may be
+    reallocated to a different length than the caller's buffer holds; both are
+    blocked by :func:`_deferred_character_blockers`.
+    """
+    return bool(
+        _has_deferred_character_length(semantic_type)
+        and semantic_type.metadata.get("fortran_allocatable")
+        and decision.codegen_action is CodegenAction.CALL_LOCAL_INPUT
+    )
+
+
+def _deferred_character_blockers(
+    argument: models.SemanticArgument,
+    decision: OwnershipDecision,
+) -> tuple[str, ...]:
+    """Restrict deferred-length character arguments to the supported read-only lane."""
+    if not _has_deferred_character_length(argument.semantic_type):
+        return ()
+    label = f"argument {argument.name!r}"
+    if argument.semantic_type.metadata.get("fortran_pointer"):
+        return (f"{label} is a deferred-length character pointer; the adapter has no target to associate",)
+    if decision.codegen_action is not CodegenAction.CALL_LOCAL_INPUT:
+        return (
+            f"{label} is a mutable deferred-length character argument; the native procedure may "
+            "reallocate it to a length the caller buffer cannot hold",
+        )
+    return ()
 
 
 def _character_length(semantic_type: models.SemanticType) -> int | None:

@@ -80,6 +80,24 @@ the selected plan requires a genuinely new emitted-code mechanism; those
 generators should otherwise keep reusing and dispatching existing planned
 paths.
 
+To answer an ABI question, or to decide whether something belongs in the
+binding or in the Fortran bridge, first ask: **how would this work for a
+`bind(C)` procedure, where there is no bridge at all?** A direct entrypoint has
+only the binding and the user's C ABI symbol, so whatever the direct route must
+do is binding-owned by definition. The bridge then owns exactly the remainder:
+the work that makes an ordinary non-`bind(C)` procedure reachable through that
+same completed plan. Deriving the boundary this way keeps one shared entrypoint
+contract for both routes instead of two parallel designs.
+
+The question is still decisive when the form cannot be `bind(C)` at all. A
+Fortran type that no interoperable interface can declare — a deferred-length
+`character(len=:)` dummy, for example, which the standard rejects in a
+`bind(C)` interface because character dummies there must have length 1 — proves
+that a generated Fortran adapter is mandatory rather than optional, and names
+what that adapter has to construct: the non-interoperable local the native
+dummy requires. Record that reasoning with the completed policy so the bridge
+implements a decided mechanism rather than rediscovering it.
+
 After every implementation task, the final summary must include a breakdown of
 the stages that actually changed. Relevant stages include parsing, semantic IR
 construction, post-IR policy completion, wrapper planning/direct lowering, binding

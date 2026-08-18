@@ -855,6 +855,7 @@ class BridgeArgumentPlan(StageRecord):
     codegen_action: CodegenAction
     data_action: BridgeDataAction
     copy_reason: str | None
+    deferred_character_length: bool = False
 
 
 @dataclass

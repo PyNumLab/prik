@@ -88,7 +88,9 @@ PRIK also covers important Fortran features: supported
 [pointer forms](../guide/pointers.md), native errors as
 [Python exceptions](../guide/error-handling.md), and
 [overloaded procedures](../guide/generic-interfaces.md). PRIK is currently
-alpha, so check the linked guides for exact limitations. The
+alpha, so check the linked guides for exact limitations, or the
+[language feature matrix](../language-support/feature-matrix.md) for every
+supported and blocked form in one table. The
 [performance results](../performance.md) cover only their measured runtime and
 clean-build workloads.
 

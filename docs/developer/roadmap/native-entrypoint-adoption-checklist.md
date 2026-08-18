@@ -807,44 +807,81 @@ blocked by completed policy before planning and source generation.
 
 ### Stage 0 — C Language And Contract Inputs
 
-- [ ] Add C source conversion and authoritative source-free C semantic
-  contracts while preserving `source_language = "c"` on semantic modules,
-  native inputs, and build records.
-- [ ] Treat a C procedure as C ABI by language identity. Do not require or
+#### Current Stage 0 Status (2026-08-18)
+
+Stage 0 is **partially implemented**. The C frontend, semantic conversion, and
+language-owned test suite exist and pass (497 collected; 496 passed, one parked
+benchmark skip). Generated starter contracts match the defaults recorded below.
+No build path accepts a C input, so nothing compiles or imports a C-backed
+extension yet.
+
+Verified present: C source conversion in `prik/semantics/c2ir.py`;
+`source_language = "c"` on semantic modules, functions, and arguments;
+`native_language` validated as `"c"` or `"fortran"` in
+`prik/semantics/pyi2ir.py`; and `void` versus value returns, pointer depth,
+`const` provenance, structs, unions, opaque records, enum constants, and
+typedef-resolved scalars in generated contracts.
+
+Verified absent: any `native_language` or C-source parameter on
+`build_pyi_extension` and `prik/pipeline/build.py`; a C input route in the CLI;
+and `tests/c/<feature>/policy/`, `codegen/`, and `end_to_end/` evidence owners.
+
+- [x] Add C source conversion preserving `source_language = "c"` on semantic
+  modules, declarations, and arguments.
+- [ ] Emit authoritative source-free C semantic contracts. Function-pointer
+  parameters currently serialize as the `CFunctionPointer` placeholder built by
+  `prik/semantics/c2ir.py`, which `prik.contracts` does not export and the
+  generated import line omits, so such a contract is not hand-editable. Either
+  promote the placeholder into the public contract vocabulary or block the
+  operation with a documented diagnostic. Do not leave a spelling that only
+  PRIK's own `.pyi` parser accepts.
+- [ ] Preserve `source_language = "c"` on native inputs and build records.
+  `build_pyi_extension` accepts only `native_fortran_sources` with a Fortran
+  `input_compiler`, and the CLI documents Fortran inputs only.
+- [x] Treat a C procedure as C ABI by language identity. Do not require or
   synthesize `@native_abi("c")`; that decorator remains the source-free
   Fortran spelling for an original `bind(C)` procedure.
-- [ ] Preserve C symbols, `void` versus value returns, typedef-resolved scalar
+- [x] Preserve C symbols, `void` versus value returns, typedef-resolved scalar
   types, pointer depth, qualifiers, structs, and function-pointer facts needed
   by completed policy. Do not infer ownership, nullability, or aggregate layout
-  merely from pointer or typedef syntax.
-- [ ] Add language-owned parsing, semantic-contract, and diagnostic tests
+  merely from pointer or typedef syntax. Function-pointer facts are retained as
+  origin provenance behind the placeholder named above.
+- [x] Add language-owned parsing, semantic-contract, and diagnostic tests
   under `tests/c/` without importing Fortran-specific fixture helpers.
 
 #### Conservative C Starter-Contract Defaults
 
-C source conversion must preserve only what the declaration proves. The
-generated starter contract is deliberately low-level; it must not guess
-whether a pointer denotes one scalar, an array, an output, owned storage, or a
-retained address.
+A C declaration cannot prove what a one-level pointer denotes. `double *x` is
+equally a scalar passed by reference and a pointer to the first element of an
+array, and no amount of signature inspection distinguishes them. Only the
+library's author knows, so the starter contract commits to the safest reading —
+**one scalar passed by reference** — and the user promotes it to an array by
+editing the semantic `.pyi`. That edit is the intended workflow, not a
+workaround: it is where the contract earns its place.
+
+Everything the declaration *does* prove is preserved exactly. Conversion still
+must not infer rank, shape, direction, nullability, ownership, or lifetime.
 
 | C declaration | Default generated semantic `.pyi` | Preserved meaning |
 | --- | --- | --- |
 | `T value` | `value: T` | Primitive scalar passed by value. |
-| `T *value` | `value: Addr(T)` | Unrefined mutable one-level pointer with no invented rank or shape. |
-| `const T *value` | `value: Addr(T)`, with `const` retained in origin and policy facts | Unrefined read-only one-level pointer; `const` does not make it a scalar or array. |
+| `T *value` | `value: T` with `@native_call([Addr(Arg(i))])` | One scalar passed by reference. The user refines it to array storage in the contract. |
+| `const T *value` | `value: T` with `@native_call([Addr(Arg(i))])`, with `const` retained in origin and policy facts | Same handoff as `T *`; `const` is recorded as provenance and does not by itself change the public contract. |
 | `T **value` | `value: Addr[2](T)` | Two native pointer levels; support may remain policy-blocked after serialization. |
 | return `T` | `-> T` | Direct primitive scalar result. |
 | return `T *` | `-> Addr(T)` | Raw pointer result with no invented ownership, lifetime, NumPy storage, or destruction policy. |
 
-An authoritative semantic `.pyi` supplies the missing API meaning. It may
-refine `Addr(T)` to `T[()]` for caller-provided rank-zero scalar storage,
-`T[n]` or `T[:]` for proved array storage, or retain `Addr(T)` intentionally
-as a raw address. `Addr(Arg(i))` requests the address of call-local scalar
-storage, while a matching `Returns["name", T]` requests mutation readback.
-Direction uses the explicit `In`, `Out`, or `InOut` contract, and nullability
-uses an explicit `| None`; neither is inferred from pointer syntax.
+An authoritative semantic `.pyi` supplies the API meaning the declaration could
+not. It may promote the by-reference scalar default to `T[n]` or `T[:]` for
+proved array storage, keep `T[()]` for caller-provided rank-zero storage, or
+restate `Addr(T)` deliberately as a raw address. `Addr(Arg(i))` requests the
+address of call-local scalar storage, while a matching `Returns["name", T]`
+requests mutation readback. Direction uses the explicit `In`, `Out`, or `InOut`
+contract, and nullability uses an explicit `| None`; neither is inferred from
+pointer syntax.
 
-The source default must not infer an array from an adjacent extent parameter,
+The by-reference scalar default is the only reading conversion may assume. The
+source default must still not infer an array from an adjacent extent parameter,
 infer output behavior from a parameter name, interpret non-`const` as
 input/output, or interpret `char *` as a string. C parameter array syntax still
 decays to a pointer at the ABI; retain its dimensions as source provenance and
@@ -854,6 +891,22 @@ retention safety, or automatic cleanup. Serialization alone does not make an
 operation eligible: completed policy must block any pointer contract whose
 ownership, lifetime, nullability, transfer, or result behavior remains unsafe
 or unsupported.
+
+- [x] Settle the one-level pointer default (decided 2026-08-18). A C signature
+  cannot distinguish a by-reference scalar from a pointer to a first array
+  element, so conversion emits the by-reference scalar and the user promotes it
+  to an array in the semantic `.pyi`. Current conversion output already matches
+  every row of the table above; the table was corrected to record the decision.
+- [ ] Add fixture evidence for every row of the table above. The present
+  round-trip check re-parses generated text with PRIK's own `.pyi` parser, so
+  it accepts a contract that a user could not import, and its unknown-type
+  guard matches only the literal `Unknown`. A pointer-default change must fail
+  a focused test instead of silently rewriting every generated C contract.
+- [ ] Prove the promotion path end to end once C builds exist: one fixture
+  where a `T *` parameter stays a by-reference scalar, and one where an edited
+  contract promotes the same native procedure to a NumPy array argument. This
+  pair is the user-facing demonstration that the contract, not the signature,
+  owns the Python API.
 
 ### Stage 1 — Direct-Only C Policy
 

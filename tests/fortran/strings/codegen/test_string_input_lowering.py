@@ -101,3 +101,69 @@ def test_string_handoff_plan_edits_fail_before_backend_lowering(edit: str, diagn
 
     with pytest.raises(ValueError, match=diagnostic):
         WrapperGenerator().generate(plan)
+
+
+DEFERRED_INPUT_SOURCE = """
+module deferred_input
+  implicit none
+contains
+  subroutine measure(value, length)
+    character(len=:), allocatable, intent(in) :: value
+    integer(4), intent(out) :: length
+    length = len(value)
+  end subroutine measure
+end module deferred_input
+"""
+
+
+def _deferred_input_plan(tmp_path):
+    from prik.parsers.fortran.parser import parse_fortran_project
+    from prik.pipeline.build import (
+        _apply_source_python_exports,
+        _fortran_source_for_pipeline,
+        _merge_wrapper_modules,
+    )
+    from prik.preprocessing import PreprocessingConfig
+    from prik.semantics.fortran2ir import fortran_project_to_semantic_modules
+
+    source = tmp_path / "deferred_input.f90"
+    source.write_text(DEFERRED_INPUT_SOURCE, encoding="utf-8")
+    parsed = parse_fortran_project({str(source): _fortran_source_for_pipeline(source, PreprocessingConfig())})
+    modules = fortran_project_to_semantic_modules(parsed)
+    _apply_source_python_exports(modules)
+    module = _merge_wrapper_modules(modules, name="deferred_input")
+    complete_semantic_policies(module)
+    return WrapperPlanner().build(module)
+
+
+def test_deferred_length_string_input_plans_an_allocatable_adapter_local(tmp_path):
+    """The bridge facet carries the deferred fact; the shared entrypoint does not.
+
+    A deferred-length dummy cannot appear in a ``bind(C)`` interface, so the
+    adapter local is adapter-local conversion rather than part of the C ABI.
+    """
+    plan = _deferred_input_plan(tmp_path)
+    function = next(
+        function
+        for namespace in plan.namespaces
+        for function in namespace.functions
+        if function.binding.python_name == "measure"
+    )
+    argument = function.arguments[0]
+
+    assert argument.bridge.deferred_character_length is True
+    assert argument.entrypoint.handoff_mode is ArgumentHandoffMode.CHARACTER_BUFFER
+    assert argument.bridge.data_action is BridgeDataAction.COPY_REPRESENTATION
+
+
+def test_deferred_length_string_input_lowers_to_allocatable_local_without_changing_the_binding(tmp_path):
+    """The adapter allocates on assignment; the C binding keeps the byte buffer."""
+    artifacts = WrapperGenerator().generate(_deferred_input_plan(tmp_path))
+    bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
+    c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
+
+    assert "character(kind=c_char, len=:), allocatable :: value" in bridge_source
+    assert "transfer(value_bytes, repeat(' ', value_length))" in bridge_source
+    assert "character(kind=c_char, len=value_length)" not in bridge_source
+    # The shared C ABI is unchanged: the binding still hands over bytes plus a length.
+    assert "bind_c_measure" in c_source

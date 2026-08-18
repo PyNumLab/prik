@@ -9,6 +9,13 @@ release tags add a leading `v` to the package version.
 
 ### Added
 
+- Added wrapper support for read-only deferred-length scalar character
+  arguments (`character(len=:), allocatable, intent(in)`). The generated
+  Fortran adapter now builds the allocatable local the native dummy requires
+  instead of a fixed-length temporary the compiler rejected. The C ABI is
+  unchanged: the binding still passes a byte buffer and a length. Mutable
+  `intent(inout)` and `pointer` deferred-length arguments now stop at policy
+  with a diagnostic instead of failing in the Fortran compiler.
 - Added a native-entrypoint adoption roadmap for selective direct Fortran
   `bind(C)` calls and the initial direct-only C wrapper backend, including
   conservative starter-contract defaults for ambiguous C pointers.

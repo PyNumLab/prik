@@ -4432,10 +4432,23 @@ class FortranBridgeGenerator(ClassVisitor):
                         "character(kind=c_char)",
                         ("pointer", "dimension(:)"),
                     ),
-                    FortranDeclaration(name, f"character(kind=c_char, len={name}_length)"),
+                    self._string_value_declaration(argument, name),
                 )
             )
         return tuple(declarations)
+
+    @staticmethod
+    def _string_value_declaration(plan: ArgumentTransferPlan, name: str) -> FortranDeclaration:
+        """Declare the native character local selected by completed bridge policy.
+
+        A deferred-length dummy is not interoperable, so no ``bind(C)`` interface
+        could declare it and the adapter must build the allocatable local the
+        native procedure requires.  Every other character input keeps its
+        fixed-length local.
+        """
+        if plan.bridge.deferred_character_length:
+            return FortranDeclaration(name, "character(kind=c_char, len=:)", ("allocatable",))
+        return FortranDeclaration(name, f"character(kind=c_char, len={name}_length)")
 
     def _string_value_initializers(
         self,
@@ -4465,6 +4478,7 @@ class FortranBridgeGenerator(ClassVisitor):
             if plan.bridge.codegen_action is CodegenAction.COPY_IN_OUT
             else f"{name}_bytes"
         )
+        mold = f"repeat(' ', {name}_length)" if plan.bridge.deferred_character_length else name
         return (
             FortranCall(
                 "c_f_pointer",
@@ -4474,7 +4488,7 @@ class FortranBridgeGenerator(ClassVisitor):
                     CodeExpression(f"[{extent}]"),
                 ),
             ),
-            FortranAssignment(name, CodeExpression(f"transfer({source}, {name})")),
+            FortranAssignment(name, CodeExpression(f"transfer({source}, {mold})")),
         )
 
     def _string_value_finalizers(
