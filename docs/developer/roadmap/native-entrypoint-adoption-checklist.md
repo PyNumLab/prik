@@ -798,6 +798,66 @@ Selective direct Fortran routing is ready to claim only when:
 
 Goal 2 completion does not claim that PRIK accepts native C inputs.
 
+## Deferred-Length Character Update Lane
+
+Independent of Goal 3. Read-only `character(len=:), allocatable, intent(in)`
+arguments and `intent(out)` results are implemented. This section records the
+completed design for the remaining mutable case so it can be built from a clean
+start.
+
+### Current State (2026-08-18)
+
+| Form | Behavior |
+| --- | --- |
+| `allocatable, intent(in)` | Supported. The adapter builds the allocatable local from the binding byte buffer. |
+| `allocatable, intent(out)` | Supported. Projected descriptor result with `c_malloc` storage and a length readback. |
+| `allocatable, intent(inout)` | Blocked in policy by `_deferred_character_blockers`. |
+| `character(len=:), pointer` | Blocked in policy; the adapter has no target to associate. |
+
+The bridge fact is `ArgumentPolicy.deferred_character_length`, set by
+`_uses_deferred_character_local` and projected onto `BridgeArgumentPlan`. The C
+ABI is unchanged for the read-only lane: the binding still passes a byte buffer
+and a length.
+
+### Selected Design For `intent(inout)`
+
+The dummy is a Python-visible **input argument** that also projects a
+**descriptor-backed result**. Output transport belongs to the result facet and
+to the bidirectional entrypoint, not to argument presence.
+
+- [ ] Complete one policy action for a deferred-length allocatable string
+  update: the argument keeps a plain character-buffer input
+  (`CALL_LOCAL_INPUT`, not `COPY_IN_OUT`), and a `ResultPolicy` carries the
+  existing `ScalarDescriptorResultPolicy` unchanged.
+- [ ] Relax the `python_visible=False` gate in `_hidden_result_policies` for
+  that completed action only. A deferred string update is the first shape that
+  is caller-supplied *and* returns freshly allocated storage; hidden outputs and
+  fixed-length replacements keep their current selection.
+- [ ] Let the entrypoint carry the descriptor output parameters it already
+  produces for `intent(out)`. Do not encode output transport as an
+  `OptionalMode`: that enum describes argument presence, and reusing it for
+  transport mixes two facets.
+- [ ] Do not relax the `descriptor_boundary` equivalence with descriptor
+  optional modes in `pipeline/wrapper.py`. That invariant is what catches real
+  inconsistencies; the design above keeps it exact because the argument stays a
+  non-descriptor input.
+- [ ] Reuse the existing binding result path that builds a Python string from
+  the returned pointer and length and releases the C storage.
+- [ ] Prove the round trip end to end: a native procedure that reallocates its
+  dummy to a longer value must return the new value, and an unallocated dummy
+  must return `None`.
+
+### Rejected Alternatives
+
+Both were attempted and reverted; the notes prevent re-deriving them.
+
+- **Relaxing `descriptor_boundary ⟺ descriptor optional mode.** Makes the
+  invariant conditional and removes its ability to catch inconsistencies.
+- **A new `OptionalMode` for string updates.** `OptionalMode` describes argument
+  presence. Setting `REQUIRED_DESCRIPTOR` also routes the C binding into
+  `_lower_argument_required_descriptor`, which calls
+  `PrimitiveScalarTypeRegistry.type_for` and rejects `String`.
+
 ## Goal 3 — Initial Direct-Only C Adoption
 
 Start Goal 3 only after Goal 2 is complete. Goal 3 adds C as a native input
