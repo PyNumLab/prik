@@ -21,12 +21,12 @@ def test_ordinary_fortran_wrapper_preserves_exact_generated_bytes():
 
     expected = {
         "bind_c_ordinary_entrypoint_baseline_wrapper.f90": (
-            740,
-            "cdda3f054ab348a128cfc31bb338fe0ec12277d41c607b209c8b401cc2a29004",
+            843,
+            "01c092ac9eaa0d90b58f0289a49ba0c71c967510e60a384602fe2e6e1e9b035f",
         ),
         "ordinary_entrypoint_baseline_wrapper.c": (
-            1860,
-            "0401eb6eae8b2b3682a6f04986b8da1553fe77cf070fe4b981e642c7ed13c6d2",
+            1941,
+            "9b944e6ebb8f5b1eef87407e046117b5d2b350286cc32917bb2f8182ab3bbb30",
         ),
         "ordinary_entrypoint_baseline_wrapper.h": (
             248,

@@ -229,21 +229,6 @@ code generation with a diagnostic naming the boundary and the reason.
   unlimited polymorphism (`class(*)`), abstract types, and deferred bindings;
 - constructor overload sets whose candidates are ambiguous or incomplete.
 
-**Storage and ownership**
-
-- replacing an `allocatable` or `pointer` module *variable* by assignment.
-  Descriptor module scalars read as a detached snapshot and module arrays as a
-  handle or live view, so native storage is mutated in place rather than
-  rebound. This applies to numeric and `character` state alike.
-
-- establishing a *new* pointer target — `allocate` and `resize` — which stays
-  gated behind an explicit `PointerPolicy`. Operations on the target a handle
-  already names (`deallocate`, `associate`, `nullify`) need no annotation, and
-  carry the same responsibility as writing them in Fortran. prik never frees a
-  native target on your behalf, so a wrapped procedure returning freshly
-  allocated storage leaks until you call `deallocate()`. Allocatable handles
-  additionally get `resize` without an annotation.
-
 The [language feature matrix](https://pynumlab.github.io/prik/user/language-support/feature-matrix/)
 records the full support status of every feature with its evidence.
 

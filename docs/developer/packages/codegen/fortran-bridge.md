@@ -194,6 +194,8 @@ print(FortranSourcePrinter().doprint(bridge_module.procedures[0]))
 ```
 <!-- prik-doc-test-output -->
 ```text
+! Adapter for native procedure 'PING'.
+! Exported to the binding as the C symbol 'bind_c_ping'.
 subroutine bind_c_ping() bind(c, name="bind_c_ping")
   external :: PING
   call PING()
@@ -245,6 +247,9 @@ module bind_c_bridge_demo_wrapper
   use bridge_demo, only: native_double_value => DOUBLE_VALUE
   implicit none
 contains
+
+  ! Adapter for native procedure 'DOUBLE_VALUE'.
+  ! Exported to the binding as the C symbol 'bind_c_double_value'.
   function bind_c_double_value(value) result(result) bind(c, name="bind_c_double_value")
     real(c_double), value :: value
     real(c_double) :: result

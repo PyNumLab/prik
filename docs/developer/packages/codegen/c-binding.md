@@ -204,6 +204,8 @@ print(CSourcePrinter().doprint(wrapper))
 ```
 <!-- prik-doc-test-output -->
 ```text
+/* Python callable 'ping'. */
+/* Calls the native entrypoint 'bind_c_ping'. */
 static PyObject * wrap_ping(PyObject * self, PyObject * args, PyObject * kwargs) {
     static char * kwlist[] = {NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "", kwlist)) return NULL;
@@ -241,6 +243,8 @@ static PyObject * wrap_double_value(PyObject * self, PyObject * args, PyObject *
 #endif /* BINDING_DEMO_WRAPPER_H */
 
 Rendered C binding wrapper:
+/* Python callable 'double_value'. */
+/* Calls the native entrypoint 'bind_c_double_value'. */
 static PyObject * wrap_double_value(PyObject * self, PyObject * args, PyObject * kwargs) {
     static char * kwlist[] = {"value", NULL};
     PyObject * bound_value_obj;

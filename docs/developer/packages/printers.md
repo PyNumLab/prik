@@ -125,6 +125,7 @@ module bind_c_printer_demo_wrapper
   use printer_demo, only: native_double_value => DOUBLE_VALUE
   implicit none
 contains
+
   function bind_c_double_value(value) result(result) bind(c, name="DOUBLE_VALUE")
     real(c_double), value :: value
     real(c_double) :: result

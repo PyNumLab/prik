@@ -108,6 +108,28 @@ from prik.codegen.primitive_scalar_types import PrimitiveScalarTypeRegistry
 from prik.codegen.visitor import ClassVisitor
 
 
+_MODULE_GETTER_SUMMARIES = {
+    ModuleGetterAction.CONSTANT_VALUE: "The value is a compile-time constant materialized by the binding.",
+    ModuleGetterAction.NATIVE_CONSTANT_VALUE: "Returns the compiler-evaluated constant by value.",
+    ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE: (
+        "Copies the parameter array into persistent storage and reports its width and extents."
+    ),
+    ModuleGetterAction.DIRECT_VALUE: "Returns the variable's current value.",
+    ModuleGetterAction.CHARACTER_VALUE: "Copies the characters into a fixed-width byte buffer.",
+    ModuleGetterAction.NULLABLE_SNAPSHOT: (
+        "Copies the value into C-owned storage, or reports a null pointer when it holds nothing."
+    ),
+    ModuleGetterAction.BORROWED_ARRAY_VIEW: "Returns the array's address plus its width and extents, without copying.",
+    ModuleGetterAction.DERIVED_OBJECT: "Returns the address of the derived object.",
+}
+
+_MODULE_ASSIGNMENT_SUMMARIES = {
+    AssignmentMode.NONE: "No native assignment is generated.",
+    AssignmentMode.VALUE_COPY: "Copies the incoming value into the variable.",
+    AssignmentMode.ALIAS: "Points the variable at the incoming storage.",
+}
+
+
 class FortranBridgeGenerator(ClassVisitor):
     """Build the Fortran half of a wrapper from validated bridge-plan views.
 
@@ -504,6 +526,7 @@ class FortranBridgeGenerator(ClassVisitor):
         )
         return FortranFunction(
             name=entrypoint_name,
+            doc=self._entrypoint_doc(plan, entrypoint_name),
             parameters=parameters,
             result_name=result_name,
             result_type=result_type,
@@ -1982,11 +2005,33 @@ class FortranBridgeGenerator(ClassVisitor):
     def _visit_ModuleVariablePlan(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
         """Lower bridge-owned getter and setter actions into procedures."""
         if plan.bridge.native_getter_action is ModuleGetterAction.NATIVE_ARRAY_HANDLE:
-            return self._lower_module_native_array_operations(plan)
+            return self._documented(
+                self._lower_module_native_array_operations(plan),
+                f"Runtime handle operations for native module variable '{plan.bridge.native_name}'.",
+                "Each is one operation the generated Python handle calls.",
+            )
         return (
-            *self._lower_module_getter(plan),
-            *self._lower_module_setter(plan),
+            *self._documented(
+                self._lower_module_getter(plan),
+                f"Read native module variable '{plan.bridge.native_name}'.",
+                _MODULE_GETTER_SUMMARIES.get(plan.bridge.native_getter_action, ""),
+            ),
+            *self._documented(
+                self._lower_module_setter(plan),
+                f"Write native module variable '{plan.bridge.native_name}'.",
+                _MODULE_ASSIGNMENT_SUMMARIES.get(plan.bridge.native_assignment, ""),
+            ),
         )
+
+    @staticmethod
+    def _documented(procedures: tuple[FortranFunction, ...], *doc: str) -> tuple[FortranFunction, ...]:
+        """Attach explanatory prose to generated procedures that carry none.
+
+        The text is emitted as leading comments so a reader opening the
+        generated module can tell what each procedure is for without
+        reconstructing it from the wrapper plan.
+        """
+        return tuple(procedure if procedure.doc else replace(procedure, doc=doc) for procedure in procedures)
 
     def _lower_module_getter(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
         """Dispatch one completed bridge getter action explicitly."""
@@ -3025,6 +3070,44 @@ class FortranBridgeGenerator(ClassVisitor):
                 is_subroutine=True,
             ),
         )
+
+    def _entrypoint_doc(self, plan: FunctionPlan, entrypoint_name: str) -> tuple[str, ...]:
+        """Describe one adapter: who calls it, what it calls, and what it converts.
+
+        The adapter exists because the original procedure is not callable
+        across the C ABI as declared, so the summary names the conversions that
+        difference forces rather than restating the signature.
+        """
+        # Only bridge and entrypoint facts are read here: the Python-visible
+        # name belongs to the binding facet, which this generator never reads.
+        lines = [
+            f"Adapter for native procedure '{plan.bridge.native_name}'.",
+            f"Exported to the binding as the C symbol '{entrypoint_name}'.",
+        ]
+        work = self._entrypoint_doc_conversions(plan)
+        if work:
+            lines.append(f"Converts: {'; '.join(work)}.")
+        return tuple(lines)
+
+    def _entrypoint_doc_conversions(self, plan: FunctionPlan) -> tuple[str, ...]:
+        """Summarize the conversions this adapter performs, in argument order."""
+        notes: list[str] = []
+        for argument in plan.arguments:
+            name = argument.entrypoint.parameter_name
+            if argument.entrypoint.handoff_mode is ArgumentHandoffMode.CHARACTER_BUFFER:
+                local = argument.bridge.character_local if argument.bridge is not None else None
+                attribute = local.descriptor_kind.value if local and local.descriptor_kind else "fixed-length"
+                article = "an" if attribute[0] in "aeiou" else "a"
+                notes.append(f"'{name}' byte buffer into {article} {attribute} character local")
+            elif argument.entrypoint.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER:
+                notes.append(f"'{name}' buffer into a Fortran array actual")
+            elif argument.entrypoint.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR:
+                notes.append(f"'{name}' native descriptor")
+        for result in plan.results:
+            if result.scalar_descriptor is not None:
+                role = "updated value" if result.updates_argument else "descriptor result"
+                notes.append(f"copies out the {role} for '{result.owner_path.rsplit('.', 1)[-1]}'")
+        return tuple(notes)
 
     def _visit_ArgumentTransferPlan(self, plan: ArgumentTransferPlan) -> tuple[FortranParameter, ...]:
         """Lower one argument through the completed optional-mode action."""

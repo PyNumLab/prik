@@ -161,6 +161,24 @@ class _COverloadDispatch:
     public: bool
 
 
+_BINDING_GETTER_SUMMARIES = {
+    ModuleGetterAction.CONSTANT_VALUE: "The value is a constant placed in the module dictionary at import.",
+    ModuleGetterAction.NATIVE_CONSTANT_VALUE: "Builds a Python object from the compiler-evaluated constant.",
+    ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE: "Copies the parameter array into one read-only NumPy array.",
+    ModuleGetterAction.DIRECT_VALUE: "Builds a Python scalar from the current native value.",
+    ModuleGetterAction.CHARACTER_VALUE: "Decodes the fixed-width native characters into a Python str.",
+    ModuleGetterAction.NULLABLE_SNAPSHOT: "Returns a detached copy, or None when the native value holds nothing.",
+    ModuleGetterAction.BORROWED_ARRAY_VIEW: "Wraps the native storage in a live NumPy array without copying.",
+    ModuleGetterAction.DERIVED_OBJECT: "Returns the generated wrapper object for the native value.",
+}
+
+_BINDING_SETTER_SUMMARIES = {
+    SetterAction.WRITE_THROUGH: "Validates the incoming object and writes it into native storage.",
+    SetterAction.REJECT_REPLACEMENT: "Replacement is rejected; the attribute is read-only.",
+    SetterAction.OMIT: "No setter is exposed.",
+}
+
+
 class CBindingGenerator(ClassVisitor):
     """Build the CPython C half of a wrapper from validated binding-plan views.
 
@@ -5362,11 +5380,28 @@ class CBindingGenerator(ClassVisitor):
         owner = re.sub(r"\W", "_", plan.owner_path).casefold()
         return f"prik_release_native_handle_{owner}"
 
+    @staticmethod
+    def _documented(functions: tuple[CFunction, ...], *doc: str) -> tuple[CFunction, ...]:
+        """Attach explanatory prose to generated functions that carry none."""
+        return tuple(function if function.doc else replace(function, doc=doc) for function in functions)
+
     def _visit_ModuleVariablePlan(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
         """Lower binding-owned getter and setter actions into C functions."""
+        # The binding facet names the Python attribute and the C symbols it
+        # calls; the native Fortran variable belongs to the bridge facet and is
+        # deliberately not read here.
+        name = plan.binding.python_names[0]
         return (
-            *self._lower_module_getter(plan),
-            *self._lower_module_setter(plan),
+            *self._documented(
+                self._lower_module_getter(plan),
+                f"Read module attribute '{name}'.",
+                _BINDING_GETTER_SUMMARIES.get(plan.binding.getter_action, ""),
+            ),
+            *self._documented(
+                self._lower_module_setter(plan),
+                f"Assign module attribute '{name}'.",
+                _BINDING_SETTER_SUMMARIES.get(plan.binding.setter_action, ""),
+            ),
         )
 
     def _lower_module_getter(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
@@ -5991,6 +6026,7 @@ class CBindingGenerator(ClassVisitor):
         output_nodes = self._output_nodes(plan, context)
         return CFunction(
             name=self._binding_function_name(plan),
+            doc=self._binding_function_doc(plan),
             return_type="PyObject *",
             parameters=self._binding_parameters(),
             storage="static",
@@ -6066,6 +6102,20 @@ class CBindingGenerator(ClassVisitor):
             return tuple(arguments[owner_path] for owner_path in plan.binding.argument_conversion_order)
         except KeyError as error:
             raise ValueError(f"Unknown binding argument conversion owner {error.args[0]!r}") from None
+
+    def _binding_function_doc(self, plan: FunctionPlan) -> tuple[str, ...]:
+        """Describe one CPython wrapper: its Python name and the symbol it calls.
+
+        A reader opening the generated binding sees the Python entry point and
+        the native symbol it reaches without cross-referencing the plan.
+        """
+        lines = [
+            f"Python callable '{plan.binding.python_name}'.",
+            f"Calls the native entrypoint '{plan.entrypoint.symbol_name}'.",
+        ]
+        if plan.binding.release_gil:
+            lines.append("Releases the GIL around the native call.")
+        return tuple(lines)
 
     def _visit_ArgumentTransferPlan(
         self,

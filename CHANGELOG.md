@@ -7,6 +7,19 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+### Changed
+
+- Generated wrapper source is now readable. Each generated Fortran adapter and
+  each CPython binding function carries a short leading comment naming what it
+  is for — the native procedure an adapter wraps and the C symbol it exports,
+  the Python callable a binding serves and the entrypoint it calls, and what a
+  module accessor reads or writes — and an adapter additionally summarizes the
+  conversions it performs. Generated Fortran modules also separate their
+  procedures with a blank line instead of running them together. Comment prose
+  is wrapped well inside the free-form 132-column limit, and each backend
+  describes only its own plan facet, so the binding never names a Fortran
+  symbol and the bridge never names a Python one.
+
 ### Fixed
 
 - Declared-length `character` module arrays (`character(len=4), allocatable ::
