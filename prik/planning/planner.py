@@ -47,6 +47,7 @@ from prik.policy.models import (
     NativeArrayActualPolicy,
     NativeArrayDefaultConstruction,
     NativeArrayDefaultHandlePolicy,
+    CharacterLocalPolicy,
     NativeArrayHandleWrapperPolicy,
     NativeDescriptorHandoffABI,
     NativeDescriptorHandoffPolicy,
@@ -134,6 +135,7 @@ from prik.planning.models import (
     ProcedurePrototypePlan,
     ProcedurePrototypeResultPlan,
     ResultPlan,
+    CharacterLocalPlan,
     ScalarDescriptorResultPlan,
     TransformationPlan,
 )
@@ -1253,12 +1255,17 @@ class WrapperPlanner(ClassVisitor):
     ) -> tuple[NativeEntrypointParameterPlan, ...]:
         """Record C-ABI parameter groups in emitted call/prototype order."""
         argument_owners = {argument.owner_path for argument in arguments}
+        updated_owners = {result.owner_path for result in results if result.updates_argument}
         groups: list[tuple[str, str, int | None]] = []
         for slot in sorted(projected_slots, key=lambda item: item.native_position):
             if slot.source_kind == "result":
                 groups.append((slot.owner_path, "hidden_result", slot.native_position))
             elif slot.owner_path in argument_owners:
                 groups.append((slot.owner_path, "argument", slot.native_position))
+                # A string update returns through its own output group, placed
+                # directly after the input it belongs to.
+                if slot.owner_path in updated_owners:
+                    groups.append((slot.owner_path, "hidden_result", slot.native_position))
             else:
                 groups.append((slot.owner_path, "projected_slot", slot.native_position))
         groups.extend(
@@ -1300,8 +1307,11 @@ class WrapperPlanner(ClassVisitor):
             for slot in sorted(projected_slots, key=lambda item: item.native_position)
             if slot.source_kind == "result"
         )
+        # A string update produces no result slot of its own; its output group
+        # travels beside the Python-visible argument it updates.
+        updates = tuple(result.entrypoint for result in results if result.updates_argument)
         direct = tuple(result.entrypoint for result in results if result.source_kind == "direct_return")
-        return (*hidden, *direct)
+        return (*hidden, *updates, *direct)
 
     @staticmethod
     def _entrypoint_result_plan_from_slot(
@@ -1788,6 +1798,17 @@ class WrapperPlanner(ClassVisitor):
         )
 
     @staticmethod
+    def _character_local_plan(policy: CharacterLocalPolicy | None) -> CharacterLocalPlan | None:
+        """Mechanically project the completed adapter-local character storage."""
+        if policy is None:
+            return None
+        return CharacterLocalPlan(
+            descriptor_kind=policy.descriptor_kind,
+            deferred_length=policy.deferred_length,
+            release=policy.release,
+        )
+
+    @staticmethod
     def _bridge_argument_plan(policy: ArgumentPolicy) -> BridgeArgumentPlan:
         """Project adapter-local conversion and original-dummy facts."""
         return BridgeArgumentPlan(
@@ -1796,7 +1817,7 @@ class WrapperPlanner(ClassVisitor):
             codegen_action=policy.codegen_action,
             data_action=policy.bridge_data_action,
             copy_reason=policy.bridge_copy_reason,
-            deferred_character_length=policy.deferred_character_length,
+            character_local=WrapperPlanner._character_local_plan(policy.character_local),
         )
 
     @staticmethod
@@ -1915,7 +1936,7 @@ class WrapperPlanner(ClassVisitor):
             ),
             entrypoint=NativeEntrypointResultPlan(
                 owner_path=policy.owner_path,
-                parameter_name=(policy.native_name.casefold() if policy.native_name is not None else None),
+                parameter_name=self._result_parameter_name(policy),
                 source_kind=policy.source_kind,
                 result_position=policy.result_position,
                 native_result_role=native_role,
@@ -1928,6 +1949,7 @@ class WrapperPlanner(ClassVisitor):
                 native_array_handle=native_array_handle,
                 scalar_descriptor=scalar_descriptor,
                 passing=policy.entrypoint_passing,
+                updates_argument=policy.updates_argument,
             ),
             bridge=(
                 BridgeResultPlan(
@@ -1943,7 +1965,23 @@ class WrapperPlanner(ClassVisitor):
             projected_call_slot=projected_slot,
             scalar_descriptor=scalar_descriptor,
             transformations=tuple(self.visit(item) for item in policy.transformations),
+            updates_argument=policy.updates_argument,
         )
+
+    @staticmethod
+    def _result_parameter_name(policy: ResultPolicy) -> str | None:
+        """Return the C-ABI parameter name reserved for one result group.
+
+        A hidden output owns its dummy's name.  A result that updates a
+        Python-visible argument instead crosses the boundary beside that
+        argument's own input parameters, so its output group takes the
+        ``_output`` suffix already used for descriptor copyout rather than
+        colliding with the input's own name and length.
+        """
+        if policy.native_name is None:
+            return None
+        name = policy.native_name.casefold()
+        return f"{name}_output" if policy.updates_argument else name
 
     def _result_array_plan(
         self,
@@ -1975,8 +2013,14 @@ class WrapperPlanner(ClassVisitor):
         policy: ResultPolicy,
         projected_slot: NativeEntrypointProjectedSlotPlan | None,
     ) -> ScalarDescriptorResultPlan | None:
-        """Reuse exact hidden descriptor state or project one direct result."""
-        if projected_slot is not None:
+        """Reuse exact hidden descriptor state or project this result's own record.
+
+        A hidden output owns a dedicated result slot that already carries the
+        completed descriptor, and both views must stay identical.  A string
+        update instead shares its Python-visible argument's input slot, so its
+        descriptor comes from the result policy that owns it.
+        """
+        if projected_slot is not None and projected_slot.source_kind == "result":
             return projected_slot.scalar_descriptor
         return self._scalar_descriptor_result_plan(policy.scalar_descriptor, policy.owner_path)
 
@@ -2393,6 +2437,7 @@ class WrapperPlanner(ClassVisitor):
             *self._argument_extent_roles(arguments),
             *self._argument_descriptor_output_roles(arguments),
             *self._native_result_roles(projected_slots),
+            *self._update_result_roles(results),
             *self._direct_result_roles(results),
             *self._declaration_callable_roles(declaration_callables),
         )
@@ -2490,6 +2535,10 @@ class WrapperPlanner(ClassVisitor):
         return tuple(
             result.entrypoint.native_result_role for result in results if result.source_kind == "direct_return"
         )
+
+    def _update_result_roles(self, results: tuple[ResultPlan, ...]) -> tuple[str, ...]:
+        """Return roles produced by results that update a Python-visible argument."""
+        return tuple(result.entrypoint.native_result_role for result in results if result.updates_argument)
 
     def _datatype_family(self, semantic_type_name: str) -> DatatypeFamily:
         """Copy the backend-relevant family of one supported semantic type."""

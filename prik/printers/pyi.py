@@ -525,17 +525,23 @@ class PyiPrinter(ClassVisitor):
         semantic_type: SemanticType,
         context: _PyiEmissionContext,
         *,
-        include_deferred_length: bool = False,
+        shape_follows: bool = False,
     ) -> str:
-        """Return the semantic dtype including fixed character length."""
+        """Return the semantic dtype, spelling a ``String`` character length.
+
+        A ``String`` annotation carries its length in the first subscription and
+        its shape, if any, in the second.  A scalar assumed length is the bare
+        ``String`` shorthand; when a shape subscription follows, the length slot
+        is always spelled so the two are never confused.
+        """
         if semantic_type.name != "String":
             return context.contract_type(semantic_type.name)
         length = semantic_type.metadata.get("fortran_character_length")
         string = context.contract("String")
         if length is None or str(length) in {"", "*"}:
-            return string
+            return f"{string}[...]" if shape_follows else string
         if str(length) == ":":
-            return f"{string}[:]" if include_deferred_length else string
+            return f"{string}[:]"
         return f"{string}[{length}]"
 
     @staticmethod
@@ -567,7 +573,7 @@ class PyiPrinter(ClassVisitor):
         base_type = self._semantic_base_type(
             semantic_type,
             context,
-            include_deferred_length=semantic_type.rank > 0,
+            shape_follows=semantic_type.rank > 0,
         )
         if semantic_type.rank <= 0:
             return base_type
@@ -587,11 +593,9 @@ class PyiPrinter(ClassVisitor):
         storage = semantic_type.storage
         array = storage.array if storage is not None else None
         if array is not None and array.category == SCALAR_STORAGE_CATEGORY:
-            return f"{self._semantic_base_type(semantic_type, context, include_deferred_length=True)}[()]"
+            return f"{self._semantic_base_type(semantic_type, context, shape_follows=True)}[()]"
         dimensions = self._array_dimensions(semantic_type, array, context)
-        base = (
-            f"{self._semantic_base_type(semantic_type, context, include_deferred_length=True)}[{', '.join(dimensions)}]"
-        )
+        base = f"{self._semantic_base_type(semantic_type, context, shape_follows=True)}[{', '.join(dimensions)}]"
 
         metadata = self._array_annotation_metadata(array, context)
         if metadata:
@@ -851,7 +855,7 @@ class PyiPrinter(ClassVisitor):
             and storage.array is not None
             and storage.array.category == SCALAR_STORAGE_CATEGORY
         ):
-            return self._semantic_base_type(semantic_type, context, include_deferred_length=True)
+            return self._semantic_base_type(semantic_type, context, shape_follows=False)
         if storage is not None and storage.kind in {"reference", "address", "pointer"}:
             return self._address_target_type(semantic_type, context)
         return self._visit(semantic_type, context)

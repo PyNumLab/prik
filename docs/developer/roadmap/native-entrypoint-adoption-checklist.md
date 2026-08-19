@@ -798,26 +798,49 @@ Selective direct Fortran routing is ready to claim only when:
 
 Goal 2 completion does not claim that PRIK accepts native C inputs.
 
-## Deferred-Length Character Update Lane
+## Scalar Character Descriptor Lanes
 
-Independent of Goal 3. Read-only `character(len=:), allocatable, intent(in)`
-arguments and `intent(out)` results are implemented. This section records the
-completed design for the remaining mutable case so it can be built from a clean
-start.
+Independent of Goal 3. Every `allocatable` and `pointer` scalar `character`
+form is implemented. This section records the completed design.
 
-### Current State (2026-08-18)
+### Current State (2026-08-19, updated after implementation)
+
+The attribute, not the length, decides the lane. A dummy carrying `allocatable`
+or `pointer` will not accept a plain temporary as its actual argument, so policy
+completes the adapter local — attribute, length, and release — for each one.
 
 | Form | Behavior |
 | --- | --- |
-| `allocatable, intent(in)` | Supported. The adapter builds the allocatable local from the binding byte buffer. |
-| `allocatable, intent(out)` | Supported. Projected descriptor result with `c_malloc` storage and a length readback. |
-| `allocatable, intent(inout)` | Blocked in policy by `_deferred_character_blockers`. |
-| `character(len=:), pointer` | Blocked in policy; the adapter has no target to associate. |
+| `allocatable`/`pointer`, `intent(in)` | Supported. The adapter builds the matching local from the binding byte buffer. |
+| `allocatable`/`pointer`, `intent(out)` | Supported. Projected descriptor result with `c_malloc` storage and a length readback. |
+| `allocatable`/`pointer`, `intent(inout)` | Supported. Call-local character-buffer input plus a projected descriptor result. |
+| `allocatable` function result | Supported. Moved out through an allocatable dummy, so an unallocated result is `None` rather than a read of storage that was never established. |
+| `pointer` function result | Supported. Copied out of the associated target. |
 
-The bridge fact is `ArgumentPolicy.deferred_character_length`, set by
-`_uses_deferred_character_local` and projected onto `BridgeArgumentPlan`. The C
-ABI is unchanged for the read-only lane: the binding still passes a byte buffer
-and a length.
+Declared length (`len=n`) and deferred length (`len=:`) both work in each row.
+A descriptor local spells the declared length rather than the runtime one,
+because neither side is deferred there and the standard requires them to agree.
+
+A `pointer` local is storage the adapter allocated, so its release is a
+completed decision: an `intent(in)` dummy cannot reassociate, so the adapter
+always frees it; a mutable dummy is freed only while it still identifies that
+allocation. A native procedure that reassociates or nullifies a mutable pointer
+dummy therefore orphans the adapter's allocation — the alternative, freeing the
+seed unconditionally, double-frees the ordinary "deallocate then reallocate"
+idiom, so the leak is the deliberate choice.
+
+The contract vocabulary now spells every character length in the first
+subscription after `String`: `String[...]` assumed, `String[8]` explicit, and
+`String[:]` deferred, with any array shape in a second subscription. That closed
+a round-trip gap affecting every deferred-length *scalar*, including the
+read-only lane that shipped first, whose generated contract previously said
+plain `String` (assumed length) and failed to rebuild. It also replaced the
+one-subscription array spellings (`String[::]`, `String[n]`), which the printer
+emitted but the parser rejected or silently read as a scalar length.
+
+The bridge fact is `ArgumentPolicy.character_local`, set by
+`_character_local_policy` and projected onto `BridgeArgumentPlan`. The C ABI is
+unchanged in every lane: the binding still passes a byte buffer and a length.
 
 ### Selected Design For `intent(inout)`
 
@@ -825,27 +848,37 @@ The dummy is a Python-visible **input argument** that also projects a
 **descriptor-backed result**. Output transport belongs to the result facet and
 to the bidirectional entrypoint, not to argument presence.
 
-- [ ] Complete one policy action for a deferred-length allocatable string
+- [x] Complete one policy action for a deferred-length allocatable string
   update: the argument keeps a plain character-buffer input
   (`CALL_LOCAL_INPUT`, not `COPY_IN_OUT`), and a `ResultPolicy` carries the
   existing `ScalarDescriptorResultPolicy` unchanged.
-- [ ] Relax the `python_visible=False` gate in `_hidden_result_policies` for
-  that completed action only. A deferred string update is the first shape that
-  is caller-supplied *and* returns freshly allocated storage; hidden outputs and
+- [x] Let a Python-visible argument produce a `ResultPolicy`. The gate in
+  `_hidden_result_policies` stayed `python_visible=False`; instead the dummy
+  owns **two** completed decisions, following the getter/setter precedent.
+  `RESOLVED_UPDATE_RESULT_OWNERSHIP_POLICY_METADATA` holds the result facet,
+  resolved from the same native-output context an `intent(out)` dummy uses, so
+  every hidden-result validator keeps checking a real result contract instead of
+  being relaxed against the argument's input decision. Hidden outputs and
   fixed-length replacements keep their current selection.
-- [ ] Let the entrypoint carry the descriptor output parameters it already
-  produces for `intent(out)`. Do not encode output transport as an
-  `OptionalMode`: that enum describes argument presence, and reusing it for
-  transport mixes two facets.
-- [ ] Do not relax the `descriptor_boundary` equivalence with descriptor
-  optional modes in `pipeline/wrapper.py`. That invariant is what catches real
-  inconsistencies; the design above keeps it exact because the argument stays a
-  non-descriptor input.
-- [ ] Reuse the existing binding result path that builds a Python string from
-  the returned pointer and length and releases the C storage.
-- [ ] Prove the round trip end to end: a native procedure that reallocates its
-  dummy to a longer value must return the new value, and an unallocated dummy
-  must return `None`.
+- [x] Let the entrypoint carry the descriptor output parameters it already
+  produces for `intent(out)`. `ResultPolicy.updates_argument` names the fact
+  through planning; the output group is named `<name>_output` (the suffix the
+  existing required-descriptor copyout already uses) so it cannot collide with
+  the input's own name and length parameters. No new `OptionalMode`.
+- [x] Do not relax the `descriptor_boundary` equivalence with descriptor
+  optional modes in `pipeline/wrapper.py`. The argument stays a non-descriptor
+  `REQUIRED` input, so the invariant held exactly and was not touched.
+- [x] Reuse the existing binding result path that builds a Python string from
+  the returned pointer and length and releases the C storage. The C binding
+  needed no change at all.
+- [x] Prove the round trip end to end. `tests/fortran/strings/end_to_end/`
+  compiles and imports the fixture: a reallocated dummy returns the new value,
+  a deallocated dummy returns `None`, an unallocated optional returns `None`,
+  and a zero-length value stays `''`.
+
+The one genuinely new emitted-code mechanism is in the adapter: the descriptor
+readback reads the argument's call-local allocatable rather than a result-local
+of its own, since the native procedure reallocates that local in place.
 
 ### Rejected Alternatives
 
@@ -857,6 +890,12 @@ Both were attempted and reverted; the notes prevent re-deriving them.
   presence. Setting `REQUIRED_DESCRIPTOR` also routes the C binding into
   `_lower_argument_required_descriptor`, which calls
   `PrimitiveScalarTypeRegistry.type_for` and rejects `String`.
+- **One ownership decision for both facets.** Reusing the argument's
+  `CALLER/CALL_LOCAL` input decision as the result's ownership forces
+  `_scalar_descriptor_result_blockers` and the plan's hidden-result checks to be
+  relaxed on owner, destruction, nullability, descriptor boundary, and Python
+  action at once — exactly the checks that would otherwise catch a wrapper
+  returning the pre-call value. The second decision keeps them enforcing.
 
 ## Goal 3 — Initial Direct-Only C Adoption
 

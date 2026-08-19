@@ -1743,11 +1743,8 @@ class _PyiAstParser:
             raise ValueError(f"Unsupported semantic type call: {ast.unparse(node)!r}")
 
         if isinstance(node, ast.Subscript) and self.matches_name(node.value, "String"):
-            if self._string_subscript_is_array_dimensions(node):
-                raise ValueError(
-                    "String[:] is ambiguous; use String for scalar non-fixed length, "
-                    "String[:][:] for an array of non-fixed strings, or String[n] for fixed length"
-                )
+            # One subscription after String is always the character length; an
+            # array adds its shape as a second subscription.
             return self._character_type(node)
         if self.is_subscript_of(node, "Allocatable"):
             return self._descriptor_type(node, "Allocatable")
@@ -1849,7 +1846,7 @@ class _PyiAstParser:
         """Load a bracketed scalar type as an array or fixed-length character contract."""
         if isinstance(node.value, ast.Subscript):
             if self.matches_name(node.value.value, "String"):
-                semantic_type = self._character_type(node.value, allow_deferred_length=True)
+                semantic_type = self._character_type(node.value)
                 return self._array_type_from_dimensions(
                     semantic_type.name,
                     self.array_dimension_texts(node),
@@ -1865,13 +1862,6 @@ class _PyiAstParser:
         return self._array_type_from_dimensions(
             self.type_name(node),
             self.array_dimension_texts(node),
-        )
-
-    def _string_subscript_is_array_dimensions(self, node: ast.Subscript) -> bool:
-        """Return whether ``String[...]`` is an array contract, not a length."""
-        return any(
-            isinstance(item, ast.Slice) or (isinstance(item, ast.Constant) and item.value is Ellipsis)
-            for item in self.subscript_items(node)
         )
 
     def array_dimension_texts(self, node: ast.Subscript) -> list[str]:
@@ -2037,22 +2027,26 @@ class _PyiAstParser:
             return None
         return "ORDER_C" if source_shape.index("*") == 0 else "ORDER_F"
 
-    def _character_type(self, node: ast.Subscript, *, allow_deferred_length: bool = False) -> SemanticType:
-        """Load a fixed or allowed deferred ``String`` length annotation."""
+    def _character_type(self, node: ast.Subscript) -> SemanticType:
+        """Load the character length from one ``String[...]`` subscription.
+
+        A ``String`` annotation carries its length in the first subscription and
+        its shape, if any, in the second.  ``String[8]`` and ``String[n]`` are
+        explicit lengths, ``String[:]`` is a deferred length established by
+        allocation, and ``String[...]`` is the assumed length that bare
+        ``String`` also spells.
+        """
         items = self.subscript_items(node)
-        if len(items) != 1 or (isinstance(items[0], ast.Constant) and items[0].value is Ellipsis):
-            raise ValueError("Fixed character types use String[length]; use String for non-fixed length")
-        if isinstance(items[0], ast.Slice):
-            length = self.dimension_text(items[0])
-            if allow_deferred_length and length == ":":
-                return SemanticType(
-                    name="String",
-                    dtype="String",
-                    metadata={"fortran_character_length": ":"},
-                )
+        if len(items) != 1:
+            raise ValueError("Character length uses one subscription: String[8], String[n], String[:], or String[...]")
+        if isinstance(items[0], ast.Constant) and items[0].value is Ellipsis:
+            return SemanticType(name="String", dtype="String", metadata={"fortran_character_length": "*"})
+        if isinstance(items[0], ast.Slice) and not self._is_deferred_length_slice(node, items[0]):
+            raw_items = self._source_dimension_items(node)
+            spelling = raw_items[0].strip() if raw_items and len(raw_items) == 1 else self.dimension_text(items[0])
             raise ValueError(
-                "String[:] is ambiguous; use String for scalar non-fixed length, "
-                "String[:][:] for an array of non-fixed strings, or String[n] for fixed length"
+                f"String[{spelling}] is not a character length; use String[:] for a deferred "
+                "length and a second subscription for array shape"
             )
         length = self.dimension_text(items[0])
         return SemanticType(
@@ -2060,6 +2054,20 @@ class _PyiAstParser:
             dtype="String",
             metadata={"fortran_character_length": length},
         )
+
+    def _is_deferred_length_slice(self, node: ast.Subscript, item: ast.Slice) -> bool:
+        """Report whether one ``String[...]`` slice spells exactly the deferred length ``:``.
+
+        Python parses ``[:]`` and ``[::]`` into the same AST, so the original
+        contract text decides: only a bare colon is a deferred length, while a
+        strided spelling belongs to the shape subscription.
+        """
+        if not (item.lower is None and item.upper is None and item.step is None):
+            return False
+        raw_items = self._source_dimension_items(node)
+        if raw_items is None or len(raw_items) != 1:
+            return True
+        return raw_items[0].strip() == ":"
 
     def apply_annotation_metadata(self, semantic_type: SemanticType, node: ast.expr) -> None:
         """Apply one ``Annotated`` metadata AST item to a semantic type in place.

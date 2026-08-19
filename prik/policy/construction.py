@@ -43,6 +43,9 @@ from prik.policy.ownership import (
     SetterAction,
     StorageMode,
     TransferMode,
+    character_descriptor_kind,
+    is_character_descriptor_update,
+    uses_deferred_character_length,
 )
 from prik.policy.models import (
     FIXED_STRING_RESULT_COPY_REASON,
@@ -113,6 +116,8 @@ from prik.policy.models import (
     OverloadCandidatePolicy,
     OverloadPolicy,
     ClassSurfacePolicy,
+    CharacterLocalPolicy,
+    CharacterLocalRelease,
     NativeArrayDescriptorKind,
     NativeArrayHandleKind,
     NativeDescriptorHandoffABI,
@@ -2393,7 +2398,7 @@ def _argument_policy(
             python_visible=decision.python_visible,
             result_position=boundary.result_position,
             character_length=_character_length(argument.semantic_type),
-            deferred_character_length=_uses_deferred_character_local(argument.semantic_type, decision),
+            character_local=_character_local_policy(argument.semantic_type, decision),
             array=array_policy,
             native_array_actual=_native_array_actual_policy(argument, decision, array_policy),
             native_array_handle=_native_array_handle_wrapper_policy(
@@ -2649,7 +2654,13 @@ def _direct_result_policy(context: _FunctionPolicyContext) -> _ResultPolicyCandi
     )
     scalar_descriptor = _scalar_descriptor_result_policy(return_type, decision)
     blockers = list(_result_blockers(return_type, decision))
-    if scalar_descriptor is not None and scalar_descriptor.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE:
+    if (
+        scalar_descriptor is not None
+        and scalar_descriptor.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE
+        and decision.kind is not ObjectKind.STRING
+    ):
+        # A character result is moved out through an allocatable dummy, which
+        # makes allocation testable; other scalars have no such completed move.
         blockers.append(
             "direct allocatable scalar function results cannot preserve unallocated state; "
             "use an allocatable hidden output projection"
@@ -2749,6 +2760,11 @@ def _hidden_result_policies(context: _FunctionPolicyContext) -> tuple[_ResultPol
     return tuple(policies)
 
 
+def _update_result_ownership(argument: models.SemanticArgument) -> OwnershipDecision | None:
+    """Return the completed result facet of one caller-supplied string update, if any."""
+    return _ownership_decision(argument, models.RESOLVED_UPDATE_RESULT_OWNERSHIP_POLICY_METADATA)
+
+
 def _hidden_result_projection_index(
     function: models.SemanticFunction,
 ) -> dict[str, models.ProjectionMapping]:
@@ -2775,7 +2791,7 @@ def _hidden_result_ownership(
     argument: models.SemanticArgument,
     suppressed_outputs: frozenset[str],
 ) -> OwnershipDecision | None:
-    """Return ownership only when an argument is an exposed hidden result.
+    """Return ownership only when an argument is an exposed native output.
 
     The helper receives one possible native output dummy and the owner paths
     reserved by runtime status handling.  Source parsing may originally have
@@ -2785,8 +2801,18 @@ def _hidden_result_ownership(
     reserved path.  For example, hidden ``value`` returns its decision, while
     hidden ``status`` returns ``None`` when ``module.proc.status`` appears in
     ``suppressed_outputs``.
+
+    A caller-supplied string descriptor update is the one shape whose
+    result facet is a second completed decision rather than the argument's own,
+    so a Python-visible argument reaches this stage through
+    ``RESOLVED_UPDATE_RESULT_OWNERSHIP_POLICY_METADATA``.  That facet is an
+    ordinary native output: it carries ``python_visible=False`` and is completed,
+    validated, and lowered exactly like an ``intent(out)`` descriptor result.
     """
-    decision = _ownership_decision(argument, models.RESOLVED_OWNERSHIP_POLICY_METADATA)
+    decision = _update_result_ownership(argument) or _ownership_decision(
+        argument,
+        models.RESOLVED_OWNERSHIP_POLICY_METADATA,
+    )
     if decision is None or not (decision.projects_result and not decision.python_visible):
         return None
     if f"{context.owner_path}.{argument.name}" in suppressed_outputs:
@@ -2908,6 +2934,7 @@ def _hidden_result_candidate(
                 if native_array_handle is not None or scalar_descriptor is not None
                 else EntrypointPassingConvention.OUTPUT_STORAGE
             ),
+            updates_argument=_update_result_ownership(argument) is not None,
         ),
         tuple(blockers),
     )
@@ -3992,7 +4019,7 @@ def _scalar_or_string_argument_shape_blockers(
     string_value = _is_plan_string_value_type(argument.semantic_type)
     if not (_is_first_lane_scalar_type(argument.semantic_type) or string_value):
         blockers.append(f"argument {argument.name!r} is not a first-lane primitive scalar")
-    blockers.extend(_deferred_character_blockers(argument, decision))
+    blockers.extend(_character_descriptor_blockers(argument, decision))
     if not decision.python_visible:
         blockers.append(f"argument {argument.name!r} is not Python-visible")
     expected_kind = ObjectKind.STRING if string_value else ObjectKind.SCALAR
@@ -4364,7 +4391,11 @@ def _string_value_boundary_blockers(
             f"argument {argument.name!r} string action is {decision.codegen_action.value}, "
             "not a call-local input or copy-in/out replacement"
         )
-    if decision.codegen_action is CodegenAction.CALL_LOCAL_INPUT and decision.projects_result:
+    if (
+        decision.codegen_action is CodegenAction.CALL_LOCAL_INPUT
+        and decision.projects_result
+        and not is_character_descriptor_update(argument.semantic_type.metadata, decision)
+    ):
         blockers.append(f"argument {argument.name!r} call-local string input unexpectedly projects a result")
     if decision.codegen_action is CodegenAction.COPY_IN_OUT:
         blockers.extend(_string_replacement_blockers(argument, decision))
@@ -4498,7 +4529,14 @@ def _argument_projection_blockers(
     argument: models.SemanticArgument,
     decision: OwnershipDecision,
 ) -> tuple[str, ...]:
-    """Return projected-result action blockers for one argument."""
+    """Return projected-result action blockers for one argument.
+
+    A projected argument normally replaces or mutates caller-visible storage.
+    The deferred-length string update instead keeps a call-local input and
+    returns the reallocated value through its own completed result facet.
+    """
+    if is_character_descriptor_update(argument.semantic_type.metadata, decision):
+        return ()
     if decision.projects_result and decision.codegen_action not in {
         CodegenAction.COPY_IN_OUT,
         CodegenAction.IN_PLACE_ARGUMENT,
@@ -4905,7 +4943,7 @@ def _fixed_string_result_ownership_blockers(
     if (decision.boundary_storage_mode or decision.storage_mode) is not StorageMode.STACK:
         blockers.append(f"{label} boundary storage is not stack")
     if decision.nullable:
-        blockers.append(f"{label} is nullable outside deferred string results")
+        blockers.append(f"{label} is nullable outside descriptor string results")
     return tuple(blockers)
 
 
@@ -4936,9 +4974,16 @@ def _result_position_blockers(
     results: tuple[ResultPolicy, ...],
     arguments: list[ArgumentPolicy] | tuple[ArgumentPolicy, ...] = (),
 ) -> tuple[str, ...]:
-    """Require native results and visible writebacks to cover one public order."""
+    """Require native results and visible writebacks to cover one public order.
+
+    A deferred-length string update contributes its position through the result
+    facet that carries the reallocated value, so counting the argument again
+    would report a duplicate for one public output.
+    """
     positions = tuple(result.result_position for result in results) + tuple(
-        argument.result_position for argument in arguments if argument.projects_result
+        argument.result_position
+        for argument in arguments
+        if argument.projects_result and not argument.projects_character_descriptor_update
     )
     if not positions:
         return ()
@@ -4996,48 +5041,89 @@ def _runtime_status_plan_blockers(policy: NativeStatusErrorPolicy | None) -> tup
 
 
 def _has_deferred_character_length(semantic_type: models.SemanticType) -> bool:
-    """Return whether one character value declares a deferred length parameter.
-
-    A ``character(len=:)`` dummy is not interoperable, so no ``bind(C)``
-    interface can declare it and the generated Fortran adapter must build the
-    local the native dummy requires.  Assumed length (``character(len=*)``) is
-    a different form and stays fixed-length here.
-    """
-    return semantic_type.metadata.get("fortran_character_length") == ":"
+    """Return whether one character value declares a deferred length parameter."""
+    return uses_deferred_character_length(semantic_type.metadata)
 
 
-def _uses_deferred_character_local(
+def _character_local_policy(
     semantic_type: models.SemanticType,
     decision: OwnershipDecision,
-) -> bool:
-    """Return whether the adapter must build an allocatable deferred-length local.
+) -> CharacterLocalPolicy | None:
+    """Complete the adapter-local storage one caller-supplied character input needs.
 
-    Only a read-only allocatable dummy is supported.  A pointer dummy needs a
-    pointer actual the adapter has nothing to target, and a mutable dummy may be
-    reallocated to a different length than the caller's buffer holds; both are
-    blocked by :func:`_deferred_character_blockers`.
+    The binding always hands the adapter a byte buffer and a length, so the
+    only open decision is the Fortran local that buffer is materialized into.
+    A dummy with no descriptor attribute keeps a fixed-length local; an
+    ``allocatable`` or ``pointer`` dummy needs a local carrying the same
+    attribute, and a ``pointer`` local is adapter-allocated storage the adapter
+    must also release.
     """
-    return bool(
-        _has_deferred_character_length(semantic_type)
-        and semantic_type.metadata.get("fortran_allocatable")
-        and decision.codegen_action is CodegenAction.CALL_LOCAL_INPUT
+    if int(semantic_type.rank or 0) != 0 or semantic_type.name != "String":
+        return None
+    plain = CharacterLocalPolicy(
+        descriptor_kind=None,
+        deferred_length=False,
+        release=CharacterLocalRelease.NONE,
+    )
+    if decision.codegen_action is CodegenAction.COPY_IN_OUT:
+        # A replacement writes back through the caller's own buffer, so its
+        # local is the fixed-length storage that buffer already sizes.
+        return plain
+    if decision.codegen_action is not CodegenAction.CALL_LOCAL_INPUT:
+        return None
+    descriptor = character_descriptor_kind(semantic_type.metadata)
+    if descriptor is None:
+        return None if _has_deferred_character_length(semantic_type) else plain
+    return CharacterLocalPolicy(
+        descriptor_kind=NativeArrayDescriptorKind(descriptor),
+        deferred_length=_has_deferred_character_length(semantic_type),
+        release=_character_local_release(descriptor, decision),
     )
 
 
-def _deferred_character_blockers(
+def _character_local_release(descriptor: str, decision: OwnershipDecision) -> CharacterLocalRelease:
+    """Return who frees the adapter-local character storage after the call.
+
+    An ``allocatable`` local is released by the compiler when the adapter
+    returns.  A ``pointer`` local is storage the adapter allocated itself: a
+    read-only dummy cannot change its association, so the adapter always frees
+    it, while an update dummy may be reassociated or deallocated by the native
+    procedure and is freed only while it still identifies that allocation.
+    """
+    if descriptor != "pointer":
+        return CharacterLocalRelease.NONE
+    if decision.projects_result:
+        return CharacterLocalRelease.DEALLOCATE_IF_RETAINED
+    return CharacterLocalRelease.DEALLOCATE
+
+
+def _character_descriptor_blockers(
     argument: models.SemanticArgument,
     decision: OwnershipDecision,
 ) -> tuple[str, ...]:
-    """Restrict deferred-length character arguments to the supported read-only lane."""
-    if not _has_deferred_character_length(argument.semantic_type):
+    """Restrict descriptor and deferred-length character arguments to completed lanes.
+
+    A Python-visible ``allocatable`` or ``pointer`` character dummy is wrapped
+    as one call-local input, optionally paired with the projected result an
+    update returns.  Any other action has no completed conversion, so it stops
+    here instead of reaching an adapter with nothing to build.  A deferred
+    length additionally requires one of those attributes, because
+    ``character(len=:)`` is not a declarable local without it.
+    """
+    semantic_type = argument.semantic_type
+    if int(semantic_type.rank or 0) != 0 or semantic_type.name != "String":
+        return ()
+    descriptor = character_descriptor_kind(semantic_type.metadata)
+    deferred = _has_deferred_character_length(semantic_type)
+    if not (descriptor or deferred):
         return ()
     label = f"argument {argument.name!r}"
-    if argument.semantic_type.metadata.get("fortran_pointer"):
-        return (f"{label} is a deferred-length character pointer; the adapter has no target to associate",)
+    if descriptor is None:
+        return (f"{label} is a deferred-length character argument without an allocatable or pointer attribute",)
     if decision.codegen_action is not CodegenAction.CALL_LOCAL_INPUT:
         return (
-            f"{label} is a mutable deferred-length character argument; the native procedure may "
-            "reallocate it to a length the caller buffer cannot hold",
+            f"{label} is an {descriptor} character argument with action {decision.codegen_action.value}; "
+            "only a call-local input, alone or with a projected update result, is wrapped",
         )
     return ()
 
@@ -5060,6 +5146,10 @@ def _lifecycle_policies(
     blockers: list[str] = []
     for argument in arguments:
         if not argument.projects_result:
+            continue
+        # A string descriptor update publishes its value through the
+        # projected descriptor result, so it owns no writeback phase.
+        if argument.projects_character_descriptor_update:
             continue
         if argument.result_position is None:
             blockers.append(f"argument {argument.name!r} writeback is missing a result position")

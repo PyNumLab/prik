@@ -23,8 +23,11 @@ from prik.policy.ownership import (
 from prik.policy.completion import complete_semantic_policies
 from prik.policy.models import (
     ArgumentConversionPhase,
+    CharacterLocalRelease,
+    NativeArrayDescriptorKind,
     ArgumentHandoffMode,
     BridgeDataAction,
+    OptionalMode,
     WritebackPhase,
 )
 
@@ -163,16 +166,19 @@ end module deferred_input
 
     assert policy.supported is True
     argument = policy.arguments[0]
-    assert argument.deferred_character_length is True
+    assert argument.character_local is not None
+    assert argument.character_local.deferred_length is True
+    assert argument.character_local.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE
+    assert argument.character_local.release is CharacterLocalRelease.NONE
     assert argument.character_length is None
     assert argument.handoff_mode is ArgumentHandoffMode.CHARACTER_BUFFER
 
 
-def test_fixed_and_assumed_length_string_arguments_stay_fixed_length():
-    """Only a deferred length selects the allocatable adapter local.
+def test_fixed_and_assumed_length_string_arguments_stay_plain_locals():
+    """Only a descriptor attribute selects a descriptor adapter local.
 
-    ``character(len=8)`` and ``character(len=*)`` both keep the fixed-length
-    local, so this guards the narrow scope of the deferred flag.
+    ``character(len=8)`` and ``character(len=*)`` are neither allocatable nor
+    pointer, so both keep the plain fixed-length local and owe no release.
     """
     module = parse_pyi_text(
         """
@@ -185,45 +191,164 @@ def assumed(text: String) -> Int32: ...
 
     for index in (0, 1):
         policy = module.functions[index].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
-        assert policy.arguments[0].deferred_character_length is False
+        local = policy.arguments[0].character_local
+        assert local is not None
+        assert local.descriptor_kind is None
+        assert local.deferred_length is False
+        assert local.release is CharacterLocalRelease.NONE
 
 
 @pytest.mark.parametrize(
-    ("attribute", "intent", "expected"),
+    ("intent", "release"),
     [
-        ("allocatable", "inout", "mutable deferred-length character argument"),
-        ("pointer", "in", "deferred-length character pointer"),
+        ("in", CharacterLocalRelease.DEALLOCATE),
+        ("inout", CharacterLocalRelease.DEALLOCATE_IF_RETAINED),
     ],
 )
-def test_unsupported_deferred_length_character_arguments_are_blocked(
-    attribute: str,
+def test_character_pointer_arguments_complete_their_release_responsibility(
     intent: str,
-    expected: str,
+    release: CharacterLocalRelease,
     tmp_path: Path,
 ):
-    """Only the read-only allocatable deferred lane is wrapped.
+    """A pointer local is storage the adapter allocated, so policy must say who frees it.
 
-    A mutable dummy may be reallocated to a length the caller buffer cannot
-    hold, and a pointer dummy needs a pointer actual the adapter has no target
-    for.  Both must stop at policy rather than emit an adapter that miscompiles
-    or silently returns the pre-call value.
+    An ``intent(in)`` dummy cannot change its association, so the allocation is
+    always still the adapter's to release.  A mutable dummy may be reassociated
+    or deallocated by the native procedure, so the adapter may only release the
+    allocation while the dummy still identifies it.
     """
     module = _semantic_module_from_text(
         f"""
-module deferred_unsupported
+module pointer_input
   implicit none
 contains
   subroutine consume(value, length)
-    character(len=:), {attribute}, intent({intent}) :: value
+    character(len=:), pointer, intent({intent}) :: value
     integer(4), intent(out) :: length
-    length = len(value)
+    length = 0
+    if (associated(value)) length = len(value)
   end subroutine consume
-end module deferred_unsupported
+end module pointer_input
 """,
         tmp_path,
-        module_name="deferred_unsupported",
+        module_name="pointer_input",
     )
     policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
 
-    assert policy.supported is False
-    assert any(expected in blocker for blocker in policy.blockers)
+    assert policy.supported is True
+    local = policy.arguments[0].character_local
+    assert local is not None
+    assert local.descriptor_kind is NativeArrayDescriptorKind.POINTER
+    assert local.deferred_length is True
+    assert local.release is release
+
+
+def test_deferred_length_string_update_completes_input_plus_descriptor_result(tmp_path: Path):
+    """A mutable ``character(len=:)`` dummy keeps its input and gains a result facet.
+
+    The caller's ``str`` cannot carry back a length chosen during the call, so
+    policy completes two decisions for the one dummy: a call-local character
+    buffer for the input, and a nullable descriptor result that owns the
+    reallocated storage.  Argument writeback stays absent because the value
+    travels as that result.
+    """
+    module = _semantic_module_from_text(
+        """
+module deferred_update
+  implicit none
+contains
+  subroutine grow(value)
+    character(len=:), allocatable, intent(inout) :: value
+    if (allocated(value)) value = value // '!'
+  end subroutine grow
+end module deferred_update
+""",
+        tmp_path,
+        module_name="deferred_update",
+    )
+    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
+
+    assert policy.supported is True
+    argument = policy.arguments[0]
+    assert argument.codegen_action is CodegenAction.CALL_LOCAL_INPUT
+    assert argument.handoff_mode is ArgumentHandoffMode.CHARACTER_BUFFER
+    assert argument.optional_mode is OptionalMode.REQUIRED
+    assert argument.descriptor_boundary is False
+    assert argument.nullable is False
+    assert argument.projects_character_descriptor_update is True
+    assert policy.writeback_actions == ()
+
+    result = policy.results[0]
+    assert result.updates_argument is True
+    assert result.owner_path == argument.owner_path
+    assert result.codegen_action is CodegenAction.COPY_OUT
+    assert result.ownership.owner is OwnershipOwner.PYTHON
+    assert result.ownership.python_visible is False
+    assert result.scalar_descriptor is not None
+    assert result.scalar_descriptor.runtime_length is True
+    assert result.scalar_descriptor.nullable is True
+    assert result.scalar_descriptor.release_owner is OwnershipOwner.PYTHON
+
+
+def test_fixed_length_allocatable_string_update_takes_the_descriptor_result_lane(tmp_path: Path):
+    """The descriptor attribute, not the length, selects the update lane.
+
+    A copy-in/copy-out replacement writes back through the caller's buffer,
+    which means passing that buffer as the actual argument.  An allocatable
+    dummy will not accept one, so a fixed-length allocatable takes the same
+    call-local input and projected descriptor result a deferred length does.
+    """
+    module = _semantic_module_from_text(
+        """
+module fixed_update
+  implicit none
+contains
+  subroutine relabel(value)
+    character(len=8), allocatable, intent(inout) :: value
+    value = 'fixed'
+  end subroutine relabel
+end module fixed_update
+""",
+        tmp_path,
+        module_name="fixed_update",
+    )
+    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
+
+    assert policy.supported is True
+    argument = policy.arguments[0]
+    assert argument.codegen_action is CodegenAction.CALL_LOCAL_INPUT
+    assert argument.projects_character_descriptor_update is True
+    assert argument.character_local is not None
+    assert argument.character_local.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE
+    assert argument.character_local.deferred_length is False
+    assert policy.writeback_actions == ()
+    assert policy.results[0].updates_argument is True
+
+
+def test_plain_fixed_length_string_update_keeps_copy_in_out_replacement(tmp_path: Path):
+    """A dummy with no descriptor attribute keeps the caller-buffer replacement.
+
+    Nothing about that dummy rejects the caller's buffer as the actual
+    argument, so it stays on the writeback lane rather than gaining a result.
+    """
+    module = _semantic_module_from_text(
+        """
+module plain_update
+  implicit none
+contains
+  subroutine relabel(value)
+    character(len=8), intent(inout) :: value
+    value = 'fixed'
+  end subroutine relabel
+end module plain_update
+""",
+        tmp_path,
+        module_name="plain_update",
+    )
+    policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
+
+    argument = policy.arguments[0]
+    assert argument.codegen_action is CodegenAction.COPY_IN_OUT
+    assert argument.projects_character_descriptor_update is False
+    assert policy.results == ()
+    assert tuple(action.phase for action in policy.writeback_actions) == tuple(WritebackPhase)

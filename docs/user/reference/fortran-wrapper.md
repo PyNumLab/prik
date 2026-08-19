@@ -1750,9 +1750,14 @@ PRIK_C_DOCS_END -->
 Character arrays use fixed-width NumPy bytes dtypes such as `S5`; the dtype
 itemsize is the Fortran element length. Deferred-length allocatable character
 arrays carry that length at runtime and return a fresh fixed-width bytes array.
-Python Unicode arrays, object arrays, mutable scalar deferred-length character
-storage, deferred-length character fields, and mutable character-buffer fields
-remain blocked until an explicit field and encoding policy exists.
+Python Unicode arrays, object arrays, `allocatable` and `pointer` character
+fields at any length, mutable character-buffer fields, and scalar or
+fixed-shape character module variables remain blocked until an explicit field
+and encoding policy exists. Plain fixed-length character fields, and
+`allocatable` or `pointer` character module arrays, are supported. Scalar
+`allocatable` and `pointer` character dummies and results are supported in
+every direction; see
+[Strings](../guide/strings.md#allocatable-and-pointer-scalar-strings).
 
 
 ## Scalar Types And Kind Coverage
@@ -2348,7 +2353,7 @@ wrappers:
 | Pointers | Scalar-derived pointer results without stable typed holder storage, expired-target results, and unproved reassociation or ownership-changing operations | Stable target lifetime, descriptor identity, typed holder storage, or explicit operation policy. |
 | Polymorphism | Results, mutable dummies, arrays, allocatable/pointer scalars, `class(*)` | Dynamic type, allocation, replacement, and ownership. |
 | Constructors | Incomplete or indistinguishable constructor overload sets | Every candidate needs a complete exact runtime signature and compatible owner lifecycle. |
-| Characters | Mutable scalar allocatable character dummies and deferred-length mutable fields | Allocation, encoding, replacement, and destruction. |
+| Characters | Deferred-length mutable character fields | Allocation, encoding, replacement, and destruction. |
 | Kinds | Real wider than 64 bits, complex wider than 128 bits, wider explicit logical storage | Portable NumPy round-trip without silent precision loss. |
 | Callbacks | Stored, optional, cross-thread, or procedure-pointer callbacks | Persistent ownership, thread, exception, nullability, and teardown. |
 

@@ -41,6 +41,7 @@ from prik.policy.models import (
     ExternalDeclarationMode,
     ModuleGetterAction,
     ModuleObjectAccessMechanism,
+    CharacterLocalRelease,
     NativeArrayDescriptorKind,
     NativeArrayDescriptorInterop,
     NativeArrayDefaultConstruction,
@@ -79,6 +80,7 @@ from prik.planning.models import (
     ArgumentTransferPlan,
     CallbackHandoffPlan,
     CallbackTransferPlan,
+    CharacterLocalPlan,
     ClassSurfacePlan,
     DatatypeFamily,
     DeclarationCallablePlan,
@@ -486,6 +488,7 @@ class FortranBridgeGenerator(ClassVisitor):
             *self._string_address_finalizers(plan),
             *self._direct_result_finalizers(plan),
             *self._native_output_finalizers(plan),
+            *self._character_local_release_finalizers(plan),
         )
         # Stage 3: wrap native execution in derived-result and carrier lifecycles.
         call_body = self._derived_result_execution(plan, result_name, native_body)
@@ -516,6 +519,7 @@ class FortranBridgeGenerator(ClassVisitor):
                 *self._derived_result_allocation_declarations(plan),
             ),
             body=(
+                *self._character_local_initializers(plan),
                 *self._descriptor_initializers(plan),
                 *self._required_descriptor_initializers(plan),
                 *self._logical_scalar_argument_initializers(plan),
@@ -3465,6 +3469,11 @@ class FortranBridgeGenerator(ClassVisitor):
                 self._owned_direct_array_result_collector_name(),
                 (CodeExpression(expression), CodeExpression("result")),
             )
+        if self._uses_allocatable_character_result_collector(direct_result):
+            return FortranCall(
+                self._allocatable_character_result_collector_name(),
+                (CodeExpression(expression), CodeExpression("result_value")),
+            )
         if self._uses_pointer_result_assignment(direct_result):
             return FortranPointerAssignment(result_name, CodeExpression(expression))
         return FortranAssignment(result_name, CodeExpression(expression))
@@ -4435,20 +4444,53 @@ class FortranBridgeGenerator(ClassVisitor):
                     self._string_value_declaration(argument, name),
                 )
             )
+            if self._retains_character_local_seed(argument):
+                declarations.append(self._string_value_declaration(argument, f"{name}_seed"))
         return tuple(declarations)
 
     @staticmethod
-    def _string_value_declaration(plan: ArgumentTransferPlan, name: str) -> FortranDeclaration:
+    def _character_local(plan: ArgumentTransferPlan) -> CharacterLocalPlan:
+        """Return the completed adapter-local character storage for one input."""
+        local = plan.bridge.character_local
+        if local is None:
+            raise ValueError(f"String input {plan.owner_path!r} is missing completed character-local policy")
+        return local
+
+    @classmethod
+    def _retains_character_local_seed(cls, plan: ArgumentTransferPlan) -> bool:
+        """Report whether the adapter keeps a second pointer to the storage it allocated.
+
+        A pointer dummy the native procedure may reassociate makes the dummy an
+        unreliable handle on that allocation, so the completed release action
+        asks for a seed pointer to compare against afterwards.
+        """
+        return cls._character_local(plan).release is CharacterLocalRelease.DEALLOCATE_IF_RETAINED
+
+    @classmethod
+    def _string_value_declaration(cls, plan: ArgumentTransferPlan, name: str) -> FortranDeclaration:
         """Declare the native character local selected by completed bridge policy.
 
-        A deferred-length dummy is not interoperable, so no ``bind(C)`` interface
-        could declare it and the adapter must build the allocatable local the
-        native procedure requires.  Every other character input keeps its
-        fixed-length local.
+        The C ABI is a byte buffer and a length whatever the dummy declares, so
+        only the local changes: an ``allocatable`` or ``pointer`` dummy needs a
+        local carrying the same attribute, and a deferred-length dummy is not
+        interoperable at all, so no ``bind(C)`` interface could declare it.
+
+        A descriptor local also takes its fixed length from the plan rather than
+        from the runtime length beside the buffer.  Neither length is deferred
+        there, so the standard requires the actual and the dummy to agree, and
+        the declared length is what lets the compiler check that they do.
         """
-        if plan.bridge.deferred_character_length:
-            return FortranDeclaration(name, "character(kind=c_char, len=:)", ("allocatable",))
-        return FortranDeclaration(name, f"character(kind=c_char, len={name}_length)")
+        local = cls._character_local(plan)
+        if local.deferred_length:
+            length = ":"
+        elif local.descriptor_kind is not None and plan.character_length is not None:
+            length = str(plan.character_length)
+        else:
+            length = f"{plan.entrypoint.parameter_name}_length"
+        spelling = f"character(kind=c_char, len={length})"
+        if local.descriptor_kind is None:
+            return FortranDeclaration(name, spelling)
+        return FortranDeclaration(name, spelling, (local.descriptor_kind.value,))
 
     def _string_value_initializers(
         self,
@@ -4469,16 +4511,19 @@ class FortranBridgeGenerator(ClassVisitor):
     def _string_value_initializer_nodes(
         self,
         plan: ArgumentTransferPlan,
-    ) -> tuple[FortranCall | FortranAssignment, ...]:
+    ) -> tuple[FortranCall | FortranAssignment | FortranAllocate | FortranPointerAssignment, ...]:
         """Associate and materialize one present string payload."""
         name = plan.entrypoint.parameter_name
+        local = self._character_local(plan)
         extent = f"{name}_length + 1" if plan.bridge.codegen_action is CodegenAction.COPY_IN_OUT else f"{name}_length"
         source = (
             f"{name}_bytes(1:{name}_length)"
             if plan.bridge.codegen_action is CodegenAction.COPY_IN_OUT
             else f"{name}_bytes"
         )
-        mold = f"repeat(' ', {name}_length)" if plan.bridge.deferred_character_length else name
+        # A deferred-length local has no length until it is allocated, so its
+        # mold spells the width instead of naming storage that does not exist.
+        mold = f"repeat(' ', {name}_length)" if local.deferred_length else name
         return (
             FortranCall(
                 "c_f_pointer",
@@ -4488,8 +4533,40 @@ class FortranBridgeGenerator(ClassVisitor):
                     CodeExpression(f"[{extent}]"),
                 ),
             ),
+            *self._character_local_allocation_nodes(plan, name),
             FortranAssignment(name, CodeExpression(f"transfer({source}, {mold})")),
+            *self._character_local_seed_nodes(plan, name),
         )
+
+    def _character_local_allocation_nodes(
+        self,
+        plan: ArgumentTransferPlan,
+        name: str,
+    ) -> tuple[FortranAllocate, ...]:
+        """Allocate the adapter local that intrinsic assignment cannot establish.
+
+        Assignment allocates a deferred-length allocatable on its own, so only a
+        pointer local, and a fixed-length allocatable whose mold would otherwise
+        be unallocated storage, need an explicit allocation first.
+        """
+        local = self._character_local(plan)
+        if local.descriptor_kind is None:
+            return ()
+        if local.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE and local.deferred_length:
+            return ()
+        if local.deferred_length:
+            return (FortranAllocate(f"character(kind=c_char, len={name}_length) :: {name}"),)
+        return (FortranAllocate(name),)
+
+    def _character_local_seed_nodes(
+        self,
+        plan: ArgumentTransferPlan,
+        name: str,
+    ) -> tuple[FortranPointerAssignment, ...]:
+        """Record the allocation a reassociable pointer local started out holding."""
+        if not self._retains_character_local_seed(plan):
+            return ()
+        return (FortranPointerAssignment(f"{name}_seed", CodeExpression(name)),)
 
     def _string_value_finalizers(
         self,
@@ -4512,6 +4589,54 @@ class FortranBridgeGenerator(ClassVisitor):
                     nodes.extend(copyback)
                 continue
             raise ValueError(f"Unsupported Fortran string finalizer for {argument.owner_path!r}: {action!r}")
+        return tuple(nodes)
+
+    def _character_local_initializers(self, plan: FunctionPlan) -> tuple[FortranPointerAssignment, ...]:
+        """Disassociate pointer character locals before any presence branch runs.
+
+        An absent optional argument never reaches the allocation, so without
+        this the local's association status stays undefined and both the
+        copy-out test and the release test read it.
+        """
+        nodes = []
+        for argument in plan.arguments:
+            if argument.entrypoint.handoff_mode is not ArgumentHandoffMode.CHARACTER_BUFFER:
+                continue
+            local = self._character_local(argument)
+            if local.descriptor_kind is not NativeArrayDescriptorKind.POINTER:
+                continue
+            name = argument.entrypoint.parameter_name
+            nodes.append(FortranPointerAssignment(name, CodeExpression("null()")))
+            if self._retains_character_local_seed(argument):
+                nodes.append(FortranPointerAssignment(f"{name}_seed", CodeExpression("null()")))
+        return tuple(nodes)
+
+    def _character_local_release_finalizers(self, plan: FunctionPlan) -> tuple[FortranIf | FortranDeallocate, ...]:
+        """Free the character locals the adapter allocated, after every value is read.
+
+        Only a pointer local is adapter-owned storage; an allocatable local is
+        released by the compiler.  A read-only pointer dummy cannot change its
+        association, so its allocation is always the one still in hand.  An
+        update dummy may have been reassociated or deallocated by the native
+        procedure, so the adapter frees its allocation only while the dummy
+        still identifies it, leaving native-owned storage untouched.
+        """
+        nodes: list[FortranIf | FortranDeallocate] = []
+        for argument in plan.arguments:
+            if argument.entrypoint.handoff_mode is not ArgumentHandoffMode.CHARACTER_BUFFER:
+                continue
+            release = self._character_local(argument).release
+            if release is CharacterLocalRelease.NONE:
+                continue
+            name = argument.entrypoint.parameter_name
+            # An absent optional argument skipped the allocation entirely, so
+            # every release is guarded by what the local actually holds.
+            condition = (
+                f"associated({name})"
+                if release is CharacterLocalRelease.DEALLOCATE
+                else f"associated({name}, {name}_seed)"
+            )
+            nodes.append(FortranIf(CodeExpression(condition), body=(FortranDeallocate(name),)))
         return tuple(nodes)
 
     def _lower_argument_string_copyback(
@@ -4696,6 +4821,46 @@ class FortranBridgeGenerator(ClassVisitor):
                 f"Unsupported native-output bridge data action for {slot.owner_path!r}: "
                 f"{slot.adapter.bridge_data_action!r}"
             )
+        declarations.extend(self._argument_update_declarations(plan))
+        return tuple(declarations)
+
+    def _argument_update_results(
+        self,
+        plan: FunctionPlan,
+    ) -> tuple[tuple[ResultPlan, ArgumentTransferPlan], ...]:
+        """Pair each argument-update result with the input storage it returns.
+
+        A character descriptor update has no result call slot: the native
+        procedure receives the adapter's call-local input and may reallocate or
+        reassociate it, so the copied-out value is read from that same local.
+        """
+        arguments = {argument.owner_path: argument for argument in plan.arguments}
+        pairs = []
+        for result in sorted(plan.results, key=lambda item: item.result_position):
+            if not result.updates_argument:
+                continue
+            argument = arguments.get(result.owner_path)
+            if argument is None:
+                raise ValueError(f"Argument update {result.owner_path!r} has no completed input transfer")
+            if result.scalar_descriptor is None:
+                raise ValueError(f"Argument update {result.owner_path!r} has no completed descriptor result")
+            pairs.append((result, argument))
+        return tuple(pairs)
+
+    @staticmethod
+    def _argument_update_names(result: ResultPlan, argument: ArgumentTransferPlan) -> tuple[str, str]:
+        """Return the planned output-group name and the input local it reads."""
+        name = result.entrypoint.parameter_name
+        if name is None:
+            raise ValueError(f"Argument update {result.owner_path!r} has no entrypoint parameter name")
+        return name, argument.entrypoint.parameter_name
+
+    def _argument_update_declarations(self, plan: FunctionPlan) -> tuple[FortranDeclaration, ...]:
+        """Declare detached-copy storage for every completed argument update."""
+        declarations = []
+        for result, argument in self._argument_update_results(plan):
+            name, value_name = self._argument_update_names(result, argument)
+            declarations.extend(self._scalar_descriptor_copy_declarations(result, name, value_name=value_name))
         return tuple(declarations)
 
     def _direct_result_declarations(self, plan: FunctionPlan) -> tuple[FortranDeclaration, ...]:
@@ -4893,23 +5058,39 @@ class FortranBridgeGenerator(ClassVisitor):
         self,
         result: ResultPlan | NativeEntrypointProjectedSlotPlan,
         name: str,
+        *,
+        value_name: str | None = None,
     ) -> tuple[FortranDeclaration, ...]:
-        """Declare helper-local storage selected by a scalar descriptor plan."""
+        """Declare helper-local storage selected by a scalar descriptor plan.
+
+        ``value_name`` names storage another facet already declares, as an
+        argument update does with its call-local input; only the detached copy
+        pointer is then declared here.
+        """
         descriptor = result.scalar_descriptor
         if descriptor is None:
             return ()
         attribute = "allocatable" if descriptor.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE else "pointer"
-        value_name = f"{name}_value"
         copy_name = f"{name}_copy"
         if result.object_kind is ObjectKind.STRING:
+            copy = FortranDeclaration(copy_name, "character(kind=c_char)", ("pointer", "dimension(:)"))
+            if value_name is not None:
+                return (copy,)
+            # An allocatable or pointer dummy accepts a deferred-length actual
+            # only when it declares one itself, so the local mirrors the
+            # completed length instead of always deferring it.
+            length = ":" if result.character_length is None else str(result.character_length)
             return (
-                FortranDeclaration(value_name, "character(kind=c_char, len=:)", (attribute,)),
-                FortranDeclaration(copy_name, "character(kind=c_char)", ("pointer", "dimension(:)")),
+                FortranDeclaration(f"{name}_value", f"character(kind=c_char, len={length})", (attribute,)),
+                copy,
             )
         scalar_type = PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name)
+        copy = FortranDeclaration(copy_name, scalar_type.fortran_spelling, ("pointer",))
+        if value_name is not None:
+            return (copy,)
         return (
-            FortranDeclaration(value_name, scalar_type.fortran_spelling, (attribute,)),
-            FortranDeclaration(copy_name, scalar_type.fortran_spelling, ("pointer",)),
+            FortranDeclaration(f"{name}_value", scalar_type.fortran_spelling, (attribute,)),
+            copy,
         )
 
     # Ordinary-array result storage.
@@ -5075,9 +5256,61 @@ class FortranBridgeGenerator(ClassVisitor):
     def _direct_result_internal_procedures(self, plan: FunctionPlan) -> tuple[FortranFunction, ...]:
         """Return helper procedures needed by direct-result lowering."""
         result = self._direct_result(plan)
-        if result is None or not self._uses_owned_direct_array_result_collector(plan):
+        if result is None:
             return ()
-        return (self._owned_direct_array_result_collector(result),)
+        if self._uses_owned_direct_array_result_collector(plan):
+            return (self._owned_direct_array_result_collector(result),)
+        if self._uses_allocatable_character_result_collector(result):
+            return (self._allocatable_character_result_collector(result),)
+        return ()
+
+    @classmethod
+    def _uses_allocatable_character_result_collector(cls, result: ResultPlan | None) -> bool:
+        """Return whether a direct character result travels through the move helper."""
+        descriptor = result.scalar_descriptor if result is not None else None
+        return bool(
+            result is not None
+            and descriptor is not None
+            and result.object_kind is ObjectKind.STRING
+            and descriptor.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE
+        )
+
+    @staticmethod
+    def _allocatable_character_result_collector_name() -> str:
+        """Return the fixed internal helper name for collecting allocatable character results."""
+        return "prik_collect_allocatable_character_result"
+
+    @classmethod
+    def _allocatable_character_result_collector(cls, result: ResultPlan) -> FortranFunction:
+        """Move an allocatable character function result without assigning it directly.
+
+        Intrinsic assignment reads the result, which is not permitted when the
+        function left it unallocated.  Receiving it through an allocatable dummy
+        makes allocation a testable fact, so an unallocated result becomes the
+        Python ``None`` the descriptor contract already describes rather than a
+        read of storage that was never established.
+        """
+        length = ":" if result.character_length is None else str(result.character_length)
+        element_type = f"character(kind=c_char, len={length})"
+        return FortranFunction(
+            name=cls._allocatable_character_result_collector_name(),
+            parameters=(
+                FortranParameter("value", element_type, ("allocatable",)),
+                FortranParameter("result", element_type, ("allocatable", "intent(out)")),
+            ),
+            body=(
+                FortranIf(
+                    CodeExpression("allocated(value)"),
+                    body=(
+                        FortranCall(
+                            "move_alloc",
+                            (CodeExpression("value"), CodeExpression("result")),
+                        ),
+                    ),
+                ),
+            ),
+            is_subroutine=True,
+        )
 
     def _owned_direct_array_result_collector(self, result: ResultPlan) -> FortranFunction:
         """Move a GNU allocatable function result without the crashing assignment path."""
@@ -5260,18 +5493,34 @@ class FortranBridgeGenerator(ClassVisitor):
                 f"Unsupported native-output bridge data action for {slot.owner_path!r}: "
                 f"{slot.adapter.bridge_data_action!r}"
             )
+        nodes.extend(self._argument_update_finalizers(plan))
+        return tuple(nodes)
+
+    def _argument_update_finalizers(self, plan: FunctionPlan) -> tuple[FortranAssignment | FortranIf, ...]:
+        """Copy every reallocated call-local input into its C-owned output group."""
+        nodes: list[FortranAssignment | FortranIf] = []
+        for result, argument in self._argument_update_results(plan):
+            name, value_name = self._argument_update_names(result, argument)
+            nodes.extend(self._scalar_descriptor_copy_nodes(result, name, value_name=value_name))
         return tuple(nodes)
 
     def _scalar_descriptor_copy_nodes(
         self,
         result: ResultPlan | NativeEntrypointProjectedSlotPlan,
         name: str,
+        *,
+        value_name: str | None = None,
     ) -> tuple[FortranAssignment | FortranIf, ...]:
-        """Copy one present scalar descriptor payload into C-owned storage."""
+        """Copy one present scalar descriptor payload into C-owned storage.
+
+        ``value_name`` overrides the native local read after the call, which an
+        argument update points at the call-local input the native procedure may
+        have reallocated.
+        """
         descriptor = result.scalar_descriptor
         if descriptor is None:
             return ()
-        value_name = f"{name}_value"
+        value_name = value_name or f"{name}_value"
         copy_name = f"{name}_copy"
         present = "allocated" if descriptor.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE else "associated"
         initializers: list[FortranAssignment | FortranIf] = [

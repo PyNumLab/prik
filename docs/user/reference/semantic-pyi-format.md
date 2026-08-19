@@ -940,21 +940,79 @@ PRIK_C_DOCS_END -->
 
 <!-- PRIK_C_DOCS_START
 Character annotations have two axes. The first `String[...]` subscription is
-the character length, and any second subscription is scalar-storage or array
-shape:
+always the character length, and any second subscription is scalar-storage or
+array shape:
 
-- `String`: scalar string with assumed, deferred, or otherwise non-fixed length.
-- `String[8]`: scalar fixed-length string with length 8.
-- `String[:][:]`: rank-one array of non-fixed-length strings.
-- `String[8][:]`: rank-one array of fixed-length strings.
+- `String` and `String[...]`: scalar with assumed length.
+- `String[8]` and `String[n]`: scalar with an explicit length.
+- `String[:]`: scalar with a deferred length, established by allocation.
 - `String[8][()]`: mutable scalar fixed-length string storage.
+- `String[8][:]`, `String[...][:]`, `String[:][:]`: rank-one arrays whose
+  element length is explicit, assumed, or deferred.
 
-Bare `String[:]` is invalid because it omits the shape axis and is ambiguous:
-use `String` for a scalar non-fixed string, `String[:][:]` for an array of
-non-fixed strings, or `String[n]` for a scalar fixed-length string. Source kind
-names are already resolved into semantic dtypes, so generated contracts do not
-import `iso_c_binding`, `iso_fortran_env`, or their kind constants.
+An array always spells its length first, so a single subscription is never a
+shape: `String[::]` is rejected, and the stride-aware rank-one form is
+`String[...][::]`. Source kind names are already resolved into semantic dtypes,
+so generated contracts do not import `iso_c_binding`, `iso_fortran_env`, or
+their kind constants.
 PRIK_C_DOCS_END -->
+
+## Character Length And Shape
+
+A `String` annotation carries two independent facts. The first subscription is
+the character length; the second, when present, is the scalar-storage or array
+shape.
+
+| Contract | Character length | Python/storage shape |
+| --- | --- | --- |
+| `String` | assumed | scalar |
+| `String[...]` | assumed | scalar |
+| `String[8]` | explicit `8` | scalar |
+| `String[n]` | explicit `n` | scalar |
+| `String[:]` | deferred | scalar |
+| `String[8][()]` | explicit `8` | rank-0 storage |
+| `String[8][:]` | explicit `8` | contiguous rank-1 |
+| `String[8][::]` | explicit `8` | stride-aware rank-1 |
+| `String[8][n]` | explicit `8` | extent `n` |
+| `String[...][:]` | assumed | contiguous rank-1 |
+| `String[...][::]` | assumed | stride-aware rank-1 |
+| `String[...][n]` | assumed | extent `n` |
+| `String[:][:]` | deferred | contiguous rank-1 |
+| `String[:][::]` | deferred | stride-aware rank-1 |
+
+Bare `String` is the scalar shorthand for `String[...]`. Because an array always
+spells its length first, a single subscription is never a shape: `String[::]` is
+rejected with a diagnostic naming the second-subscription form.
+
+The three lengths mean different things at the native boundary:
+
+- `String[...]` is `character(len=*)`: the actual argument fixes the length for
+  the call, and native code cannot change it.
+- `String[8]` is `character(len=8)`: the length is part of the contract, and the
+  wrapper requires exactly that many encoded bytes.
+- `String[:]` is `character(len=:)`: the length is established by allocation and
+  may change during the call, so the dummy also needs `allocatable` or
+  `pointer` storage. A `String[:]` output is `None` when it is unallocated.
+
+The length is independent of the descriptor attribute. `Allocatable(Arg(i))`
+and `Pointer(Arg(i))` name the attribute of the native dummy, and either one
+combines with `String[n]` or `String[:]`:
+
+```python
+@native_call([Allocatable(Arg(0))])
+def grow(value: String[:] | None) -> Returns["value", String[:]] | None: ...
+
+@native_call([Pointer(Arg(0))])
+def relabel(value: String[4] | None) -> Returns["value", String[4]] | None: ...
+
+@native_call([], result=Allocatable(Return(0)))
+def build() -> String[:] | None: ...
+```
+
+A scalar character dummy with either attribute is a `str` argument that also
+projects a result, because the native procedure may replace the storage rather
+than write through it. The projected result is `None` when the procedure leaves
+the dummy unallocated or unassociated.
 
 ## Python And Native Boundaries
 
@@ -978,6 +1036,7 @@ arguments, or scalar by-address projection differs from the default lowering.
 | `Float64[()]` | rank-zero NumPy array with dtype `np.float64` | storage address |
 | `Float64[n]`, `Float64[:]`, `Float64[:, :]` | NumPy array storage | data address |
 | `String[n]` | Python `str` whose encoded length is exactly `n` | address of prik's call-local fixed-width character storage |
+| `String[:]` | Python `str`; `None` when an output is unallocated | deferred-length character local built by the generated adapter, carrying the attribute `Allocatable(...)` or `Pointer(...)` names |
 | `String[n][:]`, `String[:][:]` | NumPy bytes array storage | character array descriptor/data contract |
 | `String[n][()]` | rank-zero NumPy bytes array with dtype `S<n>` | fixed-width character storage copied back into the NumPy array when native code mutates it |
 | `Addr(Float64)`, `Addr(Float64[n])`, `Addr(String[n])` | integer raw address such as `array.ctypes.data` or a `ctypes` buffer address | that raw address |
@@ -1293,7 +1352,7 @@ Loaded compatibility metadata:
 | --- | --- |
 | `Contiguous` | source provenance says the array is contiguous |
 | `ArrayCategory("...")` | source array category provenance |
-| `FortranAllocatable` | older scalar character allocatable metadata; generated contracts use `Allocatable[String]` |
+| `FortranAllocatable` | older scalar character allocatable metadata; generated contracts use `Allocatable[String[:]]` |
 
 <!-- PRIK_C_DOCS_START
 | `ORDER_F` | explicit Fortran-oriented storage in a C contract |

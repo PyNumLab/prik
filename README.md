@@ -217,35 +217,28 @@ code generation with a diagnostic naming the boundary and the reason.
 
 - arrays of derived types, and assumed-type `type(*)` arrays;
 - character arrays that cannot be represented as a fixed-width NumPy bytes
-  dtype, and mutable or pointer deferred-length scalar character arguments
-  (`character(len=:)` with `intent(inout)` or `pointer`); read-only
-  `allocatable, intent(in)` arguments and `allocatable, intent(out)` results
-  are supported;
+  dtype, `allocatable` and `pointer` character *fields*, and character
+  *module variables* other than `allocatable` or `pointer` arrays.
 - quad precision — `real(16)` and `complex(16)` — which has no portable NumPy
-  dtype. Everything narrower is supported, including all `logical` kinds.
+  dtype. Everything narrower is supported.
 
 **Procedures and polymorphism**
 
-- procedure pointers, including procedure-pointer module variables, and
+- procedure-pointer module variables, and
   callbacks retained after the wrapped call returns;
-- polymorphic outputs, mutable polymorphic arguments, polymorphic arrays,
+- polymorphic outputs, mutable polymorphic arguments,
   unlimited polymorphism (`class(*)`), abstract types, and deferred bindings;
 - constructor overload sets whose candidates are ambiguous or incomplete.
 
 **Storage and ownership**
 
-- pointer target deallocation and writable reassociation, which stay gated
-  behind explicit completed policy.
-
-Scalar allocatable and pointer *arguments* are supported — they cross the
-boundary as values (`Float64 | None`) rather than as array handles, so there is
-no rank-zero handle form such as `Allocatable[Float64]()`.
-
-**Builds**
-
-- dependency-graph discovery, prebuilt module-path resolution, and external
-  library discovery. Pass sources, objects, and libraries in the order you
-  want them built and linked.
+- establishing a *new* pointer target — `allocate` and `resize` — which stays
+  gated behind an explicit `PointerPolicy`. Operations on the target a handle
+  already names (`deallocate`, `associate`, `nullify`) need no annotation, and
+  carry the same responsibility as writing them in Fortran. prik never frees a
+  native target on your behalf, so a wrapped procedure returning freshly
+  allocated storage leaks until you call `deallocate()`. Allocatable handles
+  additionally get `resize` without an annotation.
 
 The [language feature matrix](https://pynumlab.github.io/prik/user/language-support/feature-matrix/)
 records the full support status of every feature with its evidence.

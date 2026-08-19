@@ -9,13 +9,53 @@ release tags add a leading `v` to the package version.
 
 ### Added
 
-- Added wrapper support for read-only deferred-length scalar character
-  arguments (`character(len=:), allocatable, intent(in)`). The generated
-  Fortran adapter now builds the allocatable local the native dummy requires
-  instead of a fixed-length temporary the compiler rejected. The C ABI is
-  unchanged: the binding still passes a byte buffer and a length. Mutable
-  `intent(inout)` and `pointer` deferred-length arguments now stop at policy
-  with a diagnostic instead of failing in the Fortran compiler.
+- Pointer array handles now expose `deallocate()` without a `PointerPolicy`
+  annotation, matching what allocatable handles already offered. Release stays
+  manual and caller-driven — prik never frees a native target on its own, on
+  garbage collection or otherwise — so this is the same responsibility a
+  Fortran caller takes when writing `deallocate` for the same pointer.
+  Previously a wrapped procedure that returned freshly allocated pointer
+  storage leaked with no way to reclaim it from Python. `allocate` and `resize`
+  still require `PointerPolicy`, because they establish a new target rather
+  than releasing the one the handle already names.
+- Added wrapper support for `allocatable` and `pointer` scalar `character`
+  values in every direction: `intent(in)`, `intent(out)`, and `intent(inout)`
+  arguments, and function results, at both deferred (`len=:`) and declared
+  (`len=n`) length. Policy now completes the adapter-local storage each dummy
+  needs — its attribute, its length, and who releases it — instead of always
+  building a plain fixed-length temporary. The C ABI is unchanged: a scalar
+  character argument still crosses as a byte buffer and a length whatever the
+  dummy declares. Previously most of these forms either stopped at a policy
+  diagnostic or reached the Fortran compiler and failed there with
+  "Actual argument for 'x' must be ALLOCATABLE"; declared-length allocatable
+  and pointer forms additionally failed plan validation.
+- Added a character-length subscription to semantic `.pyi` contracts. The first
+  subscription after `String` is always the length — `String[...]` assumed,
+  `String[8]` or `String[n]` explicit, `String[:]` deferred — and an array adds
+  its shape as a second subscription. Deferred-length scalars therefore have a
+  contract spelling for the first time, so those procedures rebuild from their
+  generated contract; the one-subscription array spellings the printer used to
+  emit (`String[::]`, and `String[n]` for an extent) are replaced by
+  `String[...][::]` and `String[...][n]`, which the parser had rejected or read
+  as a scalar length.
+- Added wrapper support for mutable scalar character descriptor arguments
+  (`allocatable` or `pointer`, `intent(inout)`). The dummy stays a `str`
+  argument and additionally returns the value the native procedure left behind,
+  or `None` when it leaves the dummy unallocated or unassociated. Policy
+  completes two decisions for the one dummy — a call-local character-buffer
+  input and a nullable descriptor result — so the adapter copies back the local
+  the native procedure may have replaced rather than the caller's buffer. A
+  pointer dummy additionally records who releases the target the adapter
+  allocated: the adapter frees it only while the dummy still identifies it, so
+  storage the native procedure deallocated or replaced is left alone. The dummy
+  spells as `Allocatable(Arg(i))` or `Pointer(Arg(i))` with `String[:]` or
+  `String[n]` in a semantic `.pyi` contract, so these procedures also rebuild
+  from their generated contract.
+- Added wrapper support for `allocatable` scalar `character` function results.
+  The adapter moves the result out through an allocatable dummy rather than
+  assigning it, which makes allocation a testable fact, so an unallocated
+  result becomes `None`. Other allocatable scalar function results remain
+  blocked, because they have no such completed move.
 - Added a native-entrypoint adoption roadmap for selective direct Fortran
   `bind(C)` calls and the initial direct-only C wrapper backend, including
   conservative starter-contract defaults for ambiguous C pointers.

@@ -131,7 +131,7 @@ def select_values() -> Pointer[Float64[:]]: ...
     assert policy.target_lifetime == "unknown"
     assert policy.destroy_behavior == "handle_finalizer"
     assert policy.to_numpy == "unsupported"
-    assert set(policy.operations) == {"associate", "associated", "nullify", "to_numpy"}
+    assert set(policy.operations) == {"associate", "associated", "deallocate", "nullify", "to_numpy"}
 
 
 @pytest.mark.parametrize(
@@ -371,9 +371,11 @@ class box:
     assert module_policy.requires_pointer_c_descriptor_interop is True
     assert module_policy.target_lifetime == "module"
     assert module_policy.destroy_behavior == "none"
-    assert set(module_policy.operations) == {"associate", "associated", "nullify", "to_numpy"}
+    assert set(module_policy.operations) == {"associate", "associated", "deallocate", "nullify", "to_numpy"}
+    # Release is available manually, as it is for an allocatable module array.
+    # Allocation and resize still need PointerPolicy, because they establish a
+    # new target rather than releasing the one the module already names.
     assert "allocate" not in module_policy.operations
-    assert "deallocate" not in module_policy.operations
     assert "resize" not in module_policy.operations
 
     assert not field_policy.is_blocked
@@ -384,7 +386,7 @@ class box:
     assert field_policy.requires_pointer_c_descriptor_interop is True
     assert field_policy.target_lifetime == "parent_wrapper"
     assert field_policy.destroy_behavior == "parent_wrapper_finalizer"
-    assert set(field_policy.operations) == {"associate", "associated", "nullify", "to_numpy"}
+    assert set(field_policy.operations) == {"associate", "associated", "deallocate", "nullify", "to_numpy"}
 
 
 def test_complete_pointer_policy_metadata_round_trips_without_overriding_container_ownership():
@@ -618,7 +620,7 @@ def make_target() -> Pointer[Float64[:]]: ...
     assert field_target.descriptor_interop == "pointer_c_descriptor"
     assert field_target.requires_pointer_c_descriptor_interop is True
     assert field_target.is_blocked is False
-    assert set(field_target.operations) == {"associate", "associated", "nullify", "to_numpy"}
+    assert set(field_target.operations) == {"associate", "associated", "deallocate", "nullify", "to_numpy"}
 
     assert argument_values.handle_kind == "argument_descriptor"
     assert argument_values.origin == "argument"
@@ -703,7 +705,7 @@ def make_target() -> Pointer[Float64[:]]: ...
     assert pointer_result.descriptor_interop == "pointer_c_descriptor"
     assert pointer_result.requires_pointer_c_descriptor_interop is True
     assert pointer_result.requires_c_descriptor_interop is True
-    assert set(pointer_result.operations) == {"associate", "associated", "nullify", "to_numpy"}
+    assert set(pointer_result.operations) == {"associate", "associated", "deallocate", "nullify", "to_numpy"}
     assert pointer_result.default_construction == "none"
 
 

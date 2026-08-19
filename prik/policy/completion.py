@@ -21,6 +21,7 @@ from prik.policy.ownership import (
     ObjectKind,
     SetterAction,
     default_ownership_policy,
+    is_character_descriptor_update,
     ownership_context_for_argument,
 )
 from prik.semantics.ownership_metadata import OWNERSHIP_POLICY_METADATA, POINTER_POLICY_METADATA
@@ -947,6 +948,7 @@ def _complete_function(
             ownership_context_for_argument(function, argument),
             owner_path=f"{owner_path}.{argument.name}",
         )
+        _complete_update_result_ownership(argument)
     if function.return_type is not None:
         _validate_maybe_unallocated_return(function, owner_path)
         decision = default_ownership_policy.decide_semantic_type(function.return_type, OwnershipContext.result())
@@ -1436,9 +1438,7 @@ def _native_array_handle_operations(
         return ()
     if descriptor_kind == "allocatable":
         operations = {"allocated", "to_numpy"}
-        if handle_kind in {"borrowed_module_descriptor", "borrowed_field_descriptor", "owned_result_descriptor"} or (
-            context.is_argument and context.writes_argument
-        ):
+        if _handle_releases_its_own_storage(handle_kind, context):
             operations.add("deallocate")
             if not _is_deferred_character_array(semantic_type):
                 operations.add("resize")
@@ -1447,11 +1447,31 @@ def _native_array_handle_operations(
     pointer_policy = _pointer_policy_metadata(semantic_type)
     if _pointer_policy_allows_allocate(pointer_policy):
         operations.add("allocate")
-    if _pointer_policy_allows_deallocate(pointer_policy):
+    if _handle_releases_its_own_storage(handle_kind, context) or _pointer_policy_allows_deallocate(pointer_policy):
         operations.add("deallocate")
     if _pointer_policy_allows_resize(pointer_policy):
         operations.add("resize")
     return tuple(sorted(operations))
+
+
+def _handle_releases_its_own_storage(handle_kind: str, context: OwnershipContext) -> bool:
+    """Report whether one handle exposes manual release of the storage it names.
+
+    Releasing is offered wherever the equivalent Fortran is an ordinary
+    ``deallocate`` on the same entity: a result the wrapper received, a module
+    or field descriptor, and a mutable argument.  A read-only input is excluded,
+    because freeing storage the caller supplied is not the caller's intent.
+
+    The operation is manual in both handle families.  prik never releases native
+    storage on its own, so withholding the operation does not protect anything;
+    it only removes the caller's ability to free storage the native procedure
+    handed over, which is exactly what a Fortran caller would deallocate.
+    """
+    return handle_kind in {
+        "borrowed_module_descriptor",
+        "borrowed_field_descriptor",
+        "owned_result_descriptor",
+    } or (context.is_argument and context.writes_argument)
 
 
 def _is_deferred_character_array(semantic_type: models.SemanticType) -> bool:
@@ -1739,6 +1759,36 @@ def _complete_variable(
     variable.metadata[models.RESOLVED_OWNERSHIP_POLICY_METADATA] = decision
     _complete_prototype_reference_policy(variable.semantic_type, owner_path=owner_path or variable.name)
     _complete_native_array_handle_variable_policy(variable, context)
+
+
+def _complete_update_result_ownership(argument: models.SemanticArgument) -> None:
+    """Complete the projected result facet of one caller-supplied string update.
+
+    A ``character(len=:), allocatable, intent(inout)`` dummy owns two decisions:
+    the argument facet already resolved above converts the caller's ``str`` into
+    call-local native storage, and this facet describes the freshly allocated
+    value the native procedure leaves behind.  The result facet is resolved from
+    the same native output context an ``intent(out)`` dummy uses, so every later
+    stage validates and lowers it exactly like one hidden descriptor output.
+    Arguments outside that lane keep a single decision.
+    """
+    argument.metadata.pop(models.RESOLVED_UPDATE_RESULT_OWNERSHIP_POLICY_METADATA, None)
+    decision = argument.metadata.get(models.RESOLVED_OWNERSHIP_POLICY_METADATA)
+    if not isinstance(decision, OwnershipDecision):
+        return
+    if not is_character_descriptor_update(argument.semantic_type.metadata, decision):
+        return
+    argument.metadata[models.RESOLVED_UPDATE_RESULT_OWNERSHIP_POLICY_METADATA] = (
+        default_ownership_policy.decide_semantic_variable(
+            argument,
+            OwnershipContext.argument(
+                reads_argument=False,
+                writes_argument=True,
+                projects_result=True,
+                python_visible=False,
+            ),
+        )
+    )
 
 
 def _complete_accessor_policies(variable: models.SemanticVariable, context: OwnershipContext) -> None:

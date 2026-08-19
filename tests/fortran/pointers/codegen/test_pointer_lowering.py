@@ -102,7 +102,7 @@ def test_pointer_plans_complete_descriptor_ownership_and_operations_before_lower
     assert pointer_output.native_array_handle.handoff.abi is NativeDescriptorHandoffABI.OWNED_RESULT_STORAGE
 
 
-def test_pointer_lowering_assigns_descriptors_without_target_deallocation():
+def test_pointer_lowering_assigns_descriptors_and_emits_manual_target_release():
     artifacts = WrapperGenerator().generate(_pointer_plan())
     c_source = next(source.text for source in artifacts.sources if source.path.suffix == ".c")
     bridge_source = next(source.text for source in artifacts.sources if source.path.suffix == ".f90")
@@ -131,4 +131,6 @@ def test_pointer_lowering_assigns_descriptors_without_target_deallocation():
     pointer_operations = bridge_source[operations_start:operations_end]
     assert "result => source" in pointer_operations
     assert "nullify(result)" in pointer_operations
-    assert "deallocate(result)" not in pointer_operations
+    # Release is manual and caller-driven, matching the ``deallocate`` a Fortran
+    # caller would write for the same pointer; prik never runs it on its own.
+    assert "deallocate(result)" in pointer_operations

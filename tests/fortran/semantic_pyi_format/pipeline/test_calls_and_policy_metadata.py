@@ -389,7 +389,7 @@ def test_printer_emits_extended_storage_and_callable_forms():
     assert printer.emit(string_pointer_handle) == "Pointer[String[8][:]]"
     assert printer.emit(annotated_array) == "Annotated[Float64[:, :], ORDER_ANY, Finite, Range(1, 3)]"
     assert printer.emit(character) == "String[16]"
-    assert printer.emit(allocatable_character) == "Allocatable[String]"
+    assert printer.emit(allocatable_character) == "Allocatable[String[:]]"
     assert printer.emit(pointer_scalar) == "Pointer[Int32]"
 
 
