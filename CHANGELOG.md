@@ -7,6 +7,18 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+### Fixed
+
+- Declared-length `character` module arrays (`character(len=4), allocatable ::
+  arr(:)`, and the `pointer` equivalent) no longer fail in the Fortran
+  compiler. The generated descriptor-consumer interface and descriptor ABI
+  parameter both spelled `character(len=:)` regardless of what the array
+  declared, and an allocatable or pointer dummy accepts a deferred-length
+  actual only when it declares one itself. Both now spell the declared width.
+  A deferred-length `character(len=:), allocatable` module *array* still fails
+  to compile under GNU Fortran 11.4 with an internal compiler error, which is a
+  compiler defect rather than a wrapper contract.
+
 ### Added
 
 - Every `character` module-variable form is now wrapped. Declared-length
@@ -19,10 +31,12 @@ release tags add a leading `v` to the package version.
   same nullable snapshot a descriptor numeric scalar uses, carrying the width
   the descriptor holds at the time of the read. `character` `parameter` arrays
   are copied once at import into a read-only fixed-width bytes array, the way
-  numeric parameter arrays already were. An assumed-length
-  (`character(len=*)`) scalar keeps its rejecting setter, and an
-  assumed-length `parameter` array is refused with a diagnostic, because its
-  width comes from an initializer prik does not evaluate.
+  numeric parameter arrays already were. Character module arrays report their
+  own element width through their generated accessor rather than having it
+  restated by the binding, so an assumed-length (`character(len=*)`) parameter
+  array works too and takes the dtype width its initializer implied. An
+  assumed-length scalar still keeps its rejecting setter, having no storage
+  width to write into.
 
 - Fixed-shape `character` module arrays with the `target` attribute now expose
   the same live fixed-width bytes view numeric module arrays already did, at

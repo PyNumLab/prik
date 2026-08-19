@@ -269,6 +269,7 @@ module fchar_module_descriptors_f90
   character(len=6), target :: store = 'STORED'
   character(len=2), parameter :: pair(2) = ['ab', 'cd']
   character(len=3), parameter :: grid(2, 2) = reshape(['aaa', 'bbb', 'ccc', 'ddd'], [2, 2])
+  character(len=*), parameter :: inferred(3) = ['alpha', 'beta ', 'gamma']
 contains
   subroutine setup()
     deferred = 'alpha'
@@ -355,3 +356,76 @@ def test_character_parameter_arrays_are_read_only_fixed_width_snapshots(tmp_path
         module.grid,
         np.array([[b"aaa", b"ccc"], [b"bbb", b"ddd"]], dtype="S3"),
     )
+
+
+def test_assumed_length_character_parameter_array_reports_its_inferred_width(tmp_path: Path):
+    """A `len=*` parameter takes its width from its initializer, which prik never reads.
+
+    The width is still a constant the Fortran side knows, so the accessor
+    reports it beside the extents rather than the binding restating a length
+    it would have to evaluate the initializer to learn.
+    """
+    module = _character_descriptor_module(tmp_path)
+
+    assert module.inferred.dtype == np.dtype("S5")
+    np.testing.assert_array_equal(
+        module.inferred,
+        np.array([b"alpha", b"beta ", b"gamma"], dtype="S5"),
+    )
+
+
+DECLARED_LENGTH_CHARACTER_ARRAY_SOURCE = """
+module fchar_declared_arrays_f90
+  implicit none
+  character(len=4), allocatable :: fixed_alloc(:)
+  character(len=:), pointer :: deferred_ptr(:) => null()
+  character(len=4), pointer :: fixed_ptr(:) => null()
+  character(len=4), target :: store(2) = ['aaaa', 'bbbb']
+contains
+  subroutine setup()
+    allocate(fixed_alloc(2))
+    fixed_alloc = ['xxxx', 'yyyy']
+    fixed_ptr => store
+    deferred_ptr => store
+  end subroutine setup
+end module fchar_declared_arrays_f90
+"""
+
+
+def test_declared_length_character_module_arrays_compile_and_expose_their_width(tmp_path: Path):
+    """A descriptor dummy accepts a deferred-length actual only if it declares one.
+
+    The generated descriptor-consumer interface and descriptor ABI both have to
+    spell the width the module array actually declares; deferring it
+    unconditionally is rejected by the Fortran compiler, so building the module
+    at all is the evidence here.
+
+    A deferred-length *allocatable* character array is left out: GNU Fortran
+    11.4 fails with an internal compiler error on that declaration, which is a
+    compiler defect rather than a wrapper contract.
+    """
+    module = _build_text_and_import(
+        DECLARED_LENGTH_CHARACTER_ARRAY_SOURCE,
+        "fchar_declared_arrays_f90.f90",
+        tmp_path,
+        {
+            "bind_c_fchar_declared_arrays_f90_wrapper.f90",
+            "fchar_declared_arrays_f90_wrapper.c",
+            "fchar_declared_arrays_f90_wrapper.h",
+        },
+    )
+
+    assert module.fixed_alloc.allocated is False
+    module.setup()
+
+    assert module.fixed_alloc.allocated is True
+    np.testing.assert_array_equal(
+        module.fixed_alloc.to_numpy(),
+        np.array([b"xxxx", b"yyyy"], dtype="S4"),
+    )
+    # A pointer array reports its shape and association; extracting its target
+    # stays gated behind PointerPolicy, as it is for a numeric pointer array.
+    assert module.fixed_ptr.associated is True
+    assert module.fixed_ptr.shape == (2,)
+    assert module.deferred_ptr.associated is True
+    assert module.deferred_ptr.shape == (2,)

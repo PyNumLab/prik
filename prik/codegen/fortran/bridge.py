@@ -388,6 +388,11 @@ class FortranBridgeGenerator(ClassVisitor):
         if value.kind is NativeEntrypointABIValueKind.DESCRIPTOR:
             if value.semantic_type_name is None:
                 raise ValueError(f"Generated-support descriptor {value.role!r} has no element type")
+            if value.semantic_type_name == "String":
+                # A descriptor dummy accepts a deferred-length actual only when
+                # it declares one, so the width the array declares is spelled.
+                length = ":" if value.character_length is None else str(value.character_length)
+                return f"character(kind=c_char, len={length})"
             return PrimitiveScalarTypeRegistry.type_for(value.semantic_type_name).fortran_spelling
         try:
             return types[value.kind]
@@ -2678,9 +2683,15 @@ class FortranBridgeGenerator(ClassVisitor):
         return f"{intrinsic}({self._native_variable_name(plan)})"
 
     def _module_native_array_element_type(self, plan: ModuleVariablePlan) -> str:
-        """Return one numeric or deferred-character module-array element type."""
+        """Return one numeric or character module-array element type.
+
+        An allocatable or pointer dummy accepts a deferred-length actual only
+        when it declares one itself, so a declared-length character array
+        spells its own width rather than always deferring it.
+        """
         if plan.datatype_family is DatatypeFamily.STRING:
-            return "character(kind=c_char, len=:)"
+            length = ":" if plan.character_length is None else str(plan.character_length)
+            return f"character(kind=c_char, len={length})"
         return PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).fortran_spelling
 
     def _module_native_array_operation_name(self, plan: ModuleVariablePlan, operation) -> str:
@@ -2763,16 +2774,24 @@ class FortranBridgeGenerator(ClassVisitor):
         array = plan.array
         if array is None or array.rank is None or array.rank <= 0:
             raise ValueError(f"Module parameter array {plan.owner_path!r} has no fixed array plan")
-        element_type = self._module_array_element_type(plan, array)
         name = self._module_bridge_getter_name(plan)
         native = self._native_variable_name(plan)
         snapshot = "parameter_snapshot"
         extents = tuple(f"extent_{axis}" for axis in range(array.rank))
+        character = plan.datatype_family is DatatypeFamily.STRING
+        # A character parameter always knows its own width, even when the
+        # declaration spells `len=*` and takes it from an initializer prik does
+        # not evaluate, so the element length is read from the parameter itself.
+        element_type = (
+            f"character(kind=c_char, len=len({native}))" if character else self._module_array_element_type(plan)
+        )
+        width = ("itemsize",) if character else ()
         return (
             FortranFunction(
                 name=name,
                 parameters=tuple(
-                    FortranParameter(extent, "integer(c_int64_t)", ("intent(out)",)) for extent in extents
+                    FortranParameter(reported, "integer(c_int64_t)", ("intent(out)",))
+                    for reported in (*width, *extents)
                 ),
                 result_name="result",
                 result_type="type(c_ptr)",
@@ -2804,6 +2823,10 @@ class FortranBridgeGenerator(ClassVisitor):
                         body=(
                             FortranAssignment(snapshot, CodeExpression(native)),
                             *(
+                                FortranAssignment("itemsize", CodeExpression(f"len({native}, kind=c_int64_t)"))
+                                for _ in width
+                            ),
+                            *(
                                 FortranAssignment(
                                     extent,
                                     CodeExpression(f"int(size({native}, {axis + 1}), c_int64_t)"),
@@ -2817,16 +2840,8 @@ class FortranBridgeGenerator(ClassVisitor):
             ),
         )
 
-    def _module_array_element_type(self, plan: ModuleVariablePlan, array: ArrayHandoffPlan) -> str:
-        """Return the Fortran element spelling one module array snapshot declares.
-
-        A character element carries its Fortran length, which the binding reads
-        back as the fixed dtype width; every other element names a scalar type.
-        """
-        if plan.datatype_family is DatatypeFamily.STRING:
-            if array.itemsize is None or array.itemsize <= 0:
-                raise ValueError(f"Character module array {plan.owner_path!r} has no fixed itemsize")
-            return f"character(kind=c_char, len={array.itemsize})"
+    def _module_array_element_type(self, plan: ModuleVariablePlan) -> str:
+        """Return the Fortran scalar element spelling one module array declares."""
         return PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).fortran_spelling
 
     def _lower_module_getter_borrowed_array_view(
@@ -2839,23 +2854,29 @@ class FortranBridgeGenerator(ClassVisitor):
             raise ValueError(f"Module array view {plan.owner_path!r} has no fixed rank")
         name = self._module_bridge_getter_name(plan)
         native = self._native_variable_name(plan)
+        # A character element reports the width its own declaration carries,
+        # for the same reason a copied parameter does: the length belongs to
+        # the Fortran variable, not to anything the binding can restate.
+        width = ("itemsize",) if plan.datatype_family is DatatypeFamily.STRING else ()
+        extents = tuple(f"extent_{axis}" for axis in range(array.rank))
         return (
             FortranFunction(
                 name=name,
                 parameters=tuple(
-                    FortranParameter(f"extent_{axis}", "integer(c_int64_t)", ("intent(out)",))
-                    for axis in range(array.rank)
+                    FortranParameter(reported, "integer(c_int64_t)", ("intent(out)",))
+                    for reported in (*width, *extents)
                 ),
                 result_name="result",
                 result_type="type(c_ptr)",
                 bind_name=name,
                 body=(
+                    *(FortranAssignment("itemsize", CodeExpression(f"len({native}, kind=c_int64_t)")) for _ in width),
                     *(
                         FortranAssignment(
-                            f"extent_{axis}",
+                            extent,
                             CodeExpression(f"int(size({native}, {axis + 1}), c_int64_t)"),
                         )
-                        for axis in range(array.rank)
+                        for axis, extent in enumerate(extents)
                     ),
                     FortranAssignment("result", CodeExpression(f"c_loc({native})")),
                 ),

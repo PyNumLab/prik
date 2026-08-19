@@ -5584,21 +5584,21 @@ class CBindingGenerator(ClassVisitor):
         array = plan.array
         if array is None or array.rank is None:
             raise ValueError(f"Module array view {plan.owner_path!r} has no fixed rank")
-        # A character element is a fixed-width bytes dtype whose width is the
-        # Fortran element length, so it carries an itemsize instead of naming a
-        # NumPy scalar type macro.
-        if plan.datatype_family is DatatypeFamily.STRING:
-            if array.itemsize is None or array.itemsize <= 0:
-                raise ValueError(f"Character module array {plan.owner_path!r} has no fixed itemsize")
-            element_size = str(array.itemsize)
+        # A character element is a fixed-width bytes dtype whose width the
+        # Fortran variable reports, so it carries an itemsize instead of naming
+        # a NumPy scalar type macro.
+        character = plan.datatype_family is DatatypeFamily.STRING
+        if character:
+            element_size = "itemsize"
             numpy_type = "NPY_STRING"
-            numpy_itemsize = str(array.itemsize)
+            numpy_itemsize = "(int)itemsize"
         else:
             scalar = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
             element_size = f"sizeof({scalar.c_spelling})"
             numpy_type = str(scalar.numpy_type_macro)
             numpy_itemsize = "0"
         owner = self._module_native_array_owner_name(plan)
+        width = ("itemsize",) if character else ()
         extents = tuple(f"extent_{axis}" for axis in range(array.rank))
         strides = "strides"
         return (
@@ -5607,12 +5607,13 @@ class CBindingGenerator(ClassVisitor):
                 "PyObject *",
                 storage="static",
                 body=(
-                    *(CDeclaration(name, "int64_t", CodeExpression("0")) for name in extents),
+                    *(CDeclaration(name, "int64_t", CodeExpression("0")) for name in (*width, *extents)),
                     CDeclaration(
                         "data",
                         "void *",
                         CodeExpression(
-                            f"{self._module_bridge_getter_name(plan)}({', '.join(f'&{name}' for name in extents)})"
+                            f"{self._module_bridge_getter_name(plan)}"
+                            f"({', '.join(f'&{name}' for name in (*width, *extents))})"
                         ),
                     ),
                     CDeclaration(
@@ -11785,27 +11786,29 @@ class CBindingGenerator(ClassVisitor):
         if array is None or array.rank is None or array.rank <= 0:
             raise ValueError(f"Module parameter array {variable.owner_path!r} has no fixed array plan")
         # A character element is a fixed-width bytes dtype whose width is the
-        # Fortran element length, so its snapshot is allocated from an itemsize
-        # rather than from the NumPy scalar type number every other element has.
-        if variable.datatype_family is DatatypeFamily.STRING:
-            if array.itemsize is None or array.itemsize <= 0:
-                raise ValueError(f"Character module array {variable.owner_path!r} has no fixed itemsize")
+        # Fortran element length. The parameter reports that length itself, so
+        # a `len=*` declaration works the same as a declared one.
+        character = variable.datatype_family is DatatypeFamily.STRING
+        itemsize_name = f"{value_name}_itemsize"
+        if character:
             allocation = (
                 f"(PyObject *)PyArray_New(&PyArray_Type, {array.rank}, {{dimensions}}, NPY_STRING, "
-                f"NULL, NULL, {array.itemsize}, NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_WRITEABLE, NULL)"
+                f"NULL, NULL, (int){itemsize_name}, NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_WRITEABLE, NULL)"
             )
         else:
             scalar_type = PrimitiveScalarTypeRegistry.type_for(variable.semantic_type_name)
             allocation = f"(PyObject *)PyArray_EMPTY({array.rank}, {{dimensions}}, {scalar_type.numpy_type_macro}, 1)"
+        width_names = (itemsize_name,) if character else ()
         extent_names = tuple(f"{value_name}_extent_{axis}" for axis in range(array.rank))
         dimensions = f"{value_name}_dimensions"
+        reported = (*width_names, *extent_names)
         return (
-            *(CDeclaration(extent, "int64_t", CodeExpression("0")) for extent in extent_names),
+            *(CDeclaration(name, "int64_t", CodeExpression("0")) for name in reported),
             CDeclaration(
                 value_name,
                 "void *",
                 CodeExpression(
-                    f"{self._module_bridge_getter_name(variable)}({', '.join(f'&{extent}' for extent in extent_names)})"
+                    f"{self._module_bridge_getter_name(variable)}({', '.join(f'&{name}' for name in reported)})"
                 ),
             ),
             CExpressionStatement(

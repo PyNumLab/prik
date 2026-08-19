@@ -1134,10 +1134,6 @@ def _constant_array_module_variable_blockers(
         blockers.append("module parameter array requires one concrete fixed rank")
     if variable.semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES | {"String"}:
         blockers.append("module parameter array requires a primitive numeric element type")
-    if variable.semantic_type.name == "String" and (array is None or not array.itemsize):
-        # An assumed-length parameter takes its width from an initializer prik
-        # does not evaluate, so the fixed dtype width is not available here.
-        blockers.append("character module parameter array requires one declared element length")
     expected_getter = (
         getter is not None
         and getter.kind is ObjectKind.NUMPY_ARRAY

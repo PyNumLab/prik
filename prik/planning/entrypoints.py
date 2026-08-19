@@ -336,6 +336,7 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             pointer_depth=1,
             semantic_type_name=semantic_type_name,
             rank=handle.array.rank,
+            character_length=handle.array.itemsize if semantic_type_name == "String" else None,
             descriptor_kind=handle.descriptor_kind,
             intent=intent,
         )
@@ -907,9 +908,19 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                 ModuleGetterAction.BORROWED_ARRAY_VIEW,
                 ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE,
             }:
-                parameters = tuple(
-                    self._int64_parameter(f"extent_{axis}", reference=True, intent="out")
-                    for axis in range(variable.array.rank)
+                # A character element reports the width its own declaration
+                # carries, which for a parameter may come from an initializer.
+                width = (
+                    (self._int64_parameter("itemsize", reference=True, intent="out"),)
+                    if variable.datatype_family is DatatypeFamily.STRING
+                    else ()
+                )
+                parameters = (
+                    *width,
+                    *(
+                        self._int64_parameter(f"extent_{axis}", reference=True, intent="out")
+                        for axis in range(variable.array.rank)
+                    ),
                 )
                 result = self._opaque_result()
             elif (

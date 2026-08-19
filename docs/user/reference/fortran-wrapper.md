@@ -1761,10 +1761,10 @@ scalar is readable and writable as `str` at exactly the declared byte width; an
 unallocated or unassociated. Character module arrays reach Python as
 fixed-width bytes arrays — `allocatable` and `pointer` ones through a handle,
 fixed-shape `target` ones as a live view, and `parameter` ones as a read-only
-snapshot copied at import. Assumed-length (`character(len=*)`) module state is
-the exception: its width comes from an initializer prik does not evaluate, so a
-scalar keeps a rejecting setter and a `parameter` array is refused before
-generation. Scalar
+snapshot copied at import. Each array accessor reports its own element width,
+so an assumed-length (`character(len=*)`) `parameter` array takes the dtype
+width its initializer implied. An assumed-length scalar remains readable but
+not writable, having no declared storage width to write into. Scalar
 `allocatable` and `pointer` character dummies and results are supported in
 every direction; see
 [Strings](../guide/strings.md#allocatable-and-pointer-scalar-strings).
