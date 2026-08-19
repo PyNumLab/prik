@@ -217,9 +217,7 @@ code generation with a diagnostic naming the boundary and the reason.
 
 - arrays of derived types, and assumed-type `type(*)` arrays;
 - character arrays that cannot be represented as a fixed-width NumPy bytes
-  dtype, `allocatable` and `pointer` character *fields*, and writing to an
-  assumed-length (`character(len=*)`) character module variable, which has no
-  declared storage width to write into.
+  dtype, and `allocatable` and `pointer` character *fields*.
 - quad precision — `real(16)` and `complex(16)` — which has no portable NumPy
   dtype. Everything narrower is supported.
 
@@ -232,6 +230,11 @@ code generation with a diagnostic naming the boundary and the reason.
 - constructor overload sets whose candidates are ambiguous or incomplete.
 
 **Storage and ownership**
+
+- replacing an `allocatable` or `pointer` module *variable* by assignment.
+  Descriptor module scalars read as a detached snapshot and module arrays as a
+  handle or live view, so native storage is mutated in place rather than
+  rebound. This applies to numeric and `character` state alike.
 
 - establishing a *new* pointer target — `allocate` and `resize` — which stays
   gated behind an explicit `PointerPolicy`. Operations on the target a handle
