@@ -15,7 +15,6 @@ from prik.codegen.nodes import (
     FortranAllocate,
     FortranAssignment,
     FortranCall,
-    FortranComment,
     FortranDeallocate,
     FortranDeclaration,
     FortranFunction,
@@ -253,10 +252,6 @@ class FortranSourcePrinter(ClassVisitor):
                 continue
             lines.extend(f"! {chunk}" for chunk in textwrap.wrap(entry, width=96) or [""])
         return lines
-
-    def _visit_FortranComment(self, node: FortranComment) -> str:
-        """Render one generated Fortran line comment."""
-        return f"! {node.text}" if node.text else "!"
 
     def _visit_FortranUse(self, node: FortranUse) -> str:
         """Render one Fortran use statement and wrap a long ONLY list."""

@@ -1355,7 +1355,9 @@ class WrapperGenerator:
     ) -> tuple[WrapperPlanDiagnostic, ...]:
         """Validate one scalar module write-through setter."""
         diagnostics = []
-        if plan.bridge.native_assignment is not AssignmentMode.VALUE_COPY:
+        # A character write copies a byte buffer rather than a value, but it is
+        # the same write-through contract; every other mechanism is rejected.
+        if plan.bridge.native_assignment not in {AssignmentMode.VALUE_COPY, AssignmentMode.CHARACTER_COPY}:
             diagnostics.append(
                 self._diagnostic(plan.owner_path, "invalid-module-native-assignment", plan.bridge.native_assignment)
             )

@@ -5969,7 +5969,7 @@ class CBindingGenerator(ClassVisitor):
 
     def _lower_module_setter_write_through(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
         """Return a Python-to-native scalar write-through helper."""
-        if plan.binding.getter_action is ModuleGetterAction.CHARACTER_VALUE:
+        if plan.binding.setter_converts_characters:
             return self._lower_module_setter_character_value(plan)
         scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
         return (

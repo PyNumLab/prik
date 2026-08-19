@@ -264,12 +264,15 @@ class AssignmentMode(str, Enum):
 
     Values:
         ``NONE`` emits no native assignment. ``VALUE_COPY`` copies the incoming
-        value into existing native storage. ``ALIAS`` associates the
+        value into existing native storage. ``CHARACTER_COPY`` copies an
+        incoming fixed-width byte buffer into existing native character
+        storage, which has no by-value C ABI. ``ALIAS`` associates the
         destination with existing storage rather than copying it.
     """
 
     NONE = "none"
     VALUE_COPY = "value_copy"
+    CHARACTER_COPY = "character_copy"
     ALIAS = "alias"
 
 
@@ -631,16 +634,25 @@ def uses_deferred_character_length(metadata: Mapping[str, Any] | None) -> bool:
     return bool(metadata) and metadata.get("fortran_character_length") == ":"
 
 
+def declared_character_length(metadata: Mapping[str, Any] | None) -> int | None:
+    """Return a positive fixed Fortran character length, normalizing accepted spellings.
+
+    A deferred (``:``) or assumed (``*``) length is not a declared width and
+    returns ``None``, as does any spelling that is not a positive integer.
+    """
+    value = (metadata or {}).get("fortran_character_length")
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    text = str(value).strip()
+    return int(text) if text.isdigit() and int(text) > 0 else None
+
+
 def _has_declared_character_length(variable: Any) -> bool:
     """Return whether one character variable declares a positive fixed width."""
-    metadata = getattr(getattr(variable, "semantic_type", None), "metadata", None) or {}
-    length = metadata.get("fortran_character_length")
-    if isinstance(length, bool) or length is None:
-        return False
-    if isinstance(length, int):
-        return length > 0
-    text = str(length).strip()
-    return text.isdigit() and int(text) > 0
+    metadata = getattr(getattr(variable, "semantic_type", None), "metadata", None)
+    return declared_character_length(metadata) is not None
 
 
 def character_descriptor_kind(metadata: Mapping[str, Any] | None) -> str | None:

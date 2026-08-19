@@ -1085,13 +1085,19 @@ class CharacterLocalPolicy:
 
 @dataclass(frozen=True)
 class ScalarDescriptorResultPolicy:
-    """Completed nullable rank-zero descriptor result copy contract."""
+    """Completed nullable rank-zero descriptor result copy contract.
+
+    ``may_be_unallocated`` marks a result whose storage the native procedure is
+    not obliged to establish, so reading it directly is not permitted and the
+    value has to be moved out through a dummy that can test allocation first.
+    """
 
     descriptor_kind: NativeArrayDescriptorKind
     runtime_length: bool
     nullable: bool
     copy_reason: str
     release_owner: OwnershipOwner
+    may_be_unallocated: bool = False
 
 
 @dataclass(frozen=True)

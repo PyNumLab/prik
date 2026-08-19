@@ -69,7 +69,7 @@ from prik.policy.construction import (
     completed_module_variable_policy,
 )
 from prik.policy.exports import PythonExportPolicy
-from prik.policy.ownership import NativeBarrierAction, SetterAction
+from prik.policy.ownership import AssignmentMode, NativeBarrierAction, SetterAction
 from prik.planning.models import (
     ArrayHandoffPlan,
     ArgumentTransferPlan,
@@ -1100,6 +1100,7 @@ class WrapperPlanner(ClassVisitor):
                 setter_action=policy.setter_action,
                 initializer=policy.initializer,
                 constant_value=policy.constant_value,
+                setter_converts_characters=policy.native_assignment is AssignmentMode.CHARACTER_COPY,
             ),
             entrypoint=NativeEntrypointModuleVariablePlan(
                 descriptor_kind=policy.descriptor_kind,
@@ -2101,6 +2102,7 @@ class WrapperPlanner(ClassVisitor):
             copy_reason=policy.copy_reason,
             release_owner=policy.release_owner,
             presence_role=f"{owner_path}:present",
+            may_be_unallocated=policy.may_be_unallocated,
         )
 
     # Native-array-handle planning.

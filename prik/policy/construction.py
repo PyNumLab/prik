@@ -44,6 +44,7 @@ from prik.policy.ownership import (
     StorageMode,
     TransferMode,
     character_descriptor_kind,
+    declared_character_length,
     is_character_descriptor_update,
     uses_deferred_character_length,
 )
@@ -1174,7 +1175,7 @@ def _scalar_module_variable_policy(
         getter_action=getter_action,
         getter=getter,
         setter_action=setter.setter_action if setter is not None else SetterAction.OMIT,
-        native_assignment=_scalar_module_native_assignment(setter),
+        native_assignment=_scalar_module_native_assignment(setter, variable),
         setter=setter,
         descriptor_kind=descriptor_kind,
         initializer=(
@@ -2653,7 +2654,11 @@ def _direct_result_policy(context: _FunctionPolicyContext) -> _ResultPolicyCandi
         function.metadata.get(models.RESOLVED_NATIVE_ARRAY_HANDLE_POLICY_METADATA),
         result_path,
     )
-    scalar_descriptor = _scalar_descriptor_result_policy(return_type, decision)
+    scalar_descriptor = _scalar_descriptor_result_policy(
+        return_type,
+        decision,
+        may_be_unallocated=_scalar_descriptor_kind(return_type) == "allocatable",
+    )
     blockers = list(_result_blockers(return_type, decision))
     if (
         scalar_descriptor is not None
@@ -5131,12 +5136,7 @@ def _character_descriptor_blockers(
 
 def _character_length(semantic_type: models.SemanticType) -> int | None:
     """Return a positive fixed Fortran character length, normalizing accepted metadata spellings."""
-    value = semantic_type.metadata.get("fortran_character_length")
-    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
-        return value
-    if isinstance(value, str) and value.strip().isdigit() and int(value.strip()) > 0:
-        return int(value.strip())
-    return None
+    return declared_character_length(semantic_type.metadata)
 
 
 def _lifecycle_policies(
@@ -5286,6 +5286,7 @@ def _scalar_descriptor_result_policy(
     decision: OwnershipDecision,
     *,
     descriptor_kind: str | None = None,
+    may_be_unallocated: bool = False,
 ) -> ScalarDescriptorResultPolicy | None:
     """Project one completed nullable rank-zero descriptor copy policy."""
     if decision.kind is ObjectKind.DERIVED_TYPE:
@@ -5301,6 +5302,7 @@ def _scalar_descriptor_result_policy(
         nullable=decision.nullable,
         copy_reason=SCALAR_DESCRIPTOR_RESULT_COPY_REASON,
         release_owner=OwnershipOwner.PYTHON,
+        may_be_unallocated=may_be_unallocated,
     )
 
 
@@ -5980,7 +5982,7 @@ def _scalar_module_setter_blockers(
             return ("scalar constant must omit native setter assignment",)
         return ()
     if setter.setter_action is SetterAction.WRITE_THROUGH:
-        if setter.assignment_mode is not AssignmentMode.VALUE_COPY:
+        if setter.assignment_mode not in {AssignmentMode.VALUE_COPY, AssignmentMode.CHARACTER_COPY}:
             return ("write-through scalar setter requires value-copy native assignment",)
         expected_python_action = (
             PythonBarrierAction.STRING_VALUE if setter.kind is ObjectKind.STRING else PythonBarrierAction.SCALAR_VALUE
@@ -6039,10 +6041,17 @@ def _source_parameter_needs_native_getter(variable: models.SemanticVariable) -> 
 
 def _scalar_module_native_assignment(
     setter: OwnershipDecision | None,
+    variable: models.SemanticVariable,
 ) -> AssignmentMode:
-    """Project the completed native setter action for bridge lowering."""
+    """Project the completed native setter action for bridge lowering.
+
+    A character value has no by-value C ABI, so its write is a distinct native
+    mechanism rather than the same value copy a numeric scalar uses.
+    """
     if setter is None or setter.setter_action is not SetterAction.WRITE_THROUGH:
         return AssignmentMode.NONE
+    if setter.assignment_mode is AssignmentMode.VALUE_COPY and _is_fixed_length_character_scalar(variable):
+        return AssignmentMode.CHARACTER_COPY
     return setter.assignment_mode
 
 

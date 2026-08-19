@@ -591,6 +591,7 @@ class ScalarDescriptorResultPlan(StageRecord):
     copy_reason: str
     release_owner: OwnershipOwner
     presence_role: str
+    may_be_unallocated: bool = False
 
 
 @dataclass
@@ -701,6 +702,7 @@ class BindingModuleVariablePlan(StageRecord):
     setter_action: SetterAction
     initializer: Any
     constant_value: Any
+    setter_converts_characters: bool = False
 
 
 @dataclass

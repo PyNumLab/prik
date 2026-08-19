@@ -64,13 +64,6 @@ class CComment(StageRecord):
 
 
 @dataclass
-class FortranComment(StageRecord):
-    """One generated Fortran line comment."""
-
-    text: str
-
-
-@dataclass
 class CParameter(StageRecord):
     """C function parameter."""
 

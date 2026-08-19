@@ -2828,7 +2828,9 @@ class FortranBridgeGenerator(ClassVisitor):
         # declaration spells `len=*` and takes it from an initializer prik does
         # not evaluate, so the element length is read from the parameter itself.
         element_type = (
-            f"character(kind=c_char, len=len({native}))" if character else self._module_array_element_type(plan)
+            f"character(kind=c_char, len=len({native}))"
+            if character
+            else PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).fortran_spelling
         )
         width = ("itemsize",) if character else ()
         return (
@@ -2884,10 +2886,6 @@ class FortranBridgeGenerator(ClassVisitor):
                 ),
             ),
         )
-
-    def _module_array_element_type(self, plan: ModuleVariablePlan) -> str:
-        """Return the Fortran scalar element spelling one module array declares."""
-        return PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).fortran_spelling
 
     def _lower_module_getter_borrowed_array_view(
         self,
@@ -3049,6 +3047,8 @@ class FortranBridgeGenerator(ClassVisitor):
                 return self._lower_module_setter_none(plan)
             case AssignmentMode.VALUE_COPY:
                 return self._lower_module_setter_value_copy(plan)
+            case AssignmentMode.CHARACTER_COPY:
+                return self._lower_module_setter_character_value(plan)
         raise ValueError(f"Unsupported Fortran module setter assignment for {plan.owner_path!r}: {action!r}")
 
     def _lower_module_setter_none(self, _plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
@@ -3057,8 +3057,6 @@ class FortranBridgeGenerator(ClassVisitor):
 
     def _lower_module_setter_value_copy(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
         """Return one value-copy native module assignment."""
-        if plan.bridge.native_getter_action is ModuleGetterAction.CHARACTER_VALUE:
-            return self._lower_module_setter_character_value(plan)
         scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
         name = self._module_bridge_setter_name(plan)
         return (
@@ -5498,13 +5496,18 @@ class FortranBridgeGenerator(ClassVisitor):
 
     @classmethod
     def _uses_allocatable_character_result_collector(cls, result: ResultPlan | None) -> bool:
-        """Return whether a direct character result travels through the move helper."""
+        """Return whether a direct character result travels through the move helper.
+
+        Whether the storage may be absent is a completed policy fact, exactly as
+        it is for an owned array result; this only selects the lowering it asks
+        for.
+        """
         descriptor = result.scalar_descriptor if result is not None else None
         return bool(
             result is not None
             and descriptor is not None
             and result.object_kind is ObjectKind.STRING
-            and descriptor.descriptor_kind is NativeArrayDescriptorKind.ALLOCATABLE
+            and descriptor.may_be_unallocated
         )
 
     @staticmethod
