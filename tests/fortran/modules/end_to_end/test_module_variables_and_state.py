@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 from tests.fortran._support.wrapper_build import (
     _build_source_or_generated_pyi_and_import,
+    _build_text_and_import,
     _sole_native_module,
 )
 
@@ -123,3 +124,63 @@ def test_scalar_module_variables_use_attributes_and_parameters_have_no_native_se
     assert module.black.r == np.int32(0)
     assert module.black_sum() == np.int32(0)
     assert second_module.black.r == np.int32(0)
+
+
+CHARACTER_MODULE_ARRAY_SOURCE = """
+module fchar_module_arrays_f90
+  implicit none
+  character(len=8), target :: labels(3) = ['alpha   ', 'beta    ', 'gamma   ']
+  character(len=4), target :: grid(2, 2) = reshape(['aa  ', 'bb  ', 'cc  ', 'dd  '], [2, 2])
+contains
+  subroutine relabel_first()
+    labels(1) = 'ALPHA!!!'
+  end subroutine relabel_first
+
+  function read_label(index) result(value)
+    integer(4), intent(in) :: index
+    character(len=8) :: value
+    value = labels(index)
+  end function read_label
+
+  function read_grid(row, column) result(value)
+    integer(4), intent(in) :: row, column
+    character(len=4) :: value
+    value = grid(row, column)
+  end function read_grid
+end module fchar_module_arrays_f90
+"""
+
+
+def test_fixed_shape_character_module_arrays_expose_one_live_bytes_view(tmp_path: Path):
+    """A character module array borrows the same fixed-width view a numeric one does.
+
+    The element type only changes the dtype width, so the live-view contract is
+    what has to hold: native writes appear without re-reading the attribute, and
+    Python writes are visible to Fortran through the same storage.
+    """
+    module = _build_text_and_import(
+        CHARACTER_MODULE_ARRAY_SOURCE,
+        "fchar_module_arrays_f90.f90",
+        tmp_path,
+        {
+            "bind_c_fchar_module_arrays_f90_wrapper.f90",
+            "fchar_module_arrays_f90_wrapper.c",
+            "fchar_module_arrays_f90_wrapper.h",
+        },
+    )
+
+    assert module.labels.dtype == np.dtype("S8")
+    assert module.grid.dtype == np.dtype("S4")
+    assert module.grid.shape == (2, 2)
+    assert module.grid.flags["F_CONTIGUOUS"] is True
+    np.testing.assert_array_equal(module.labels, np.array([b"alpha   ", b"beta    ", b"gamma   "], dtype="S8"))
+
+    # A native write reaches the view the attribute already handed out.
+    module.relabel_first()
+    assert module.labels[0] == b"ALPHA!!!"
+
+    # A Python write reaches the storage Fortran reads.
+    module.labels[1] = b"PYTHON!!"
+    assert module.read_label(np.int32(2)) == "PYTHON!!"
+    module.grid[1, 0] = b"ZZ  "
+    assert module.read_grid(np.int32(2), np.int32(1)) == "ZZ  "

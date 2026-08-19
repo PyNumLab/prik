@@ -1751,10 +1751,11 @@ Character arrays use fixed-width NumPy bytes dtypes such as `S5`; the dtype
 itemsize is the Fortran element length. Deferred-length allocatable character
 arrays carry that length at runtime and return a fresh fixed-width bytes array.
 Python Unicode arrays, object arrays, `allocatable` and `pointer` character
-fields at any length, mutable character-buffer fields, and scalar or
-fixed-shape character module variables remain blocked until an explicit field
-and encoding policy exists. Plain fixed-length character fields, and
-`allocatable` or `pointer` character module arrays, are supported. Scalar
+fields at any length, mutable character-buffer fields, and scalar character
+module variables remain blocked until an explicit field and encoding policy
+exists. Plain fixed-length character fields are supported, as are character
+module arrays — `allocatable` and `pointer` ones through a handle, and
+fixed-shape `target` ones as a live fixed-width bytes view. Scalar
 `allocatable` and `pointer` character dummies and results are supported in
 every direction; see
 [Strings](../guide/strings.md#allocatable-and-pointer-scalar-strings).

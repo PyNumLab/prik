@@ -1199,7 +1199,7 @@ def _ordinary_array_module_variable_blockers(
     blockers = []
     if array.rank is None or array.rank <= 0 or len(array.shape) != array.rank:
         blockers.append("ordinary module array requires one concrete fixed rank")
-    if variable.semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES:
+    if variable.semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES | {"String"}:
         blockers.append("ordinary module array requires a primitive numeric element type")
     if not variable.semantic_type.metadata.get("aliased"):
         blockers.append("ordinary module array requires addressable Aliased target storage")

@@ -5462,7 +5462,20 @@ class CBindingGenerator(ClassVisitor):
         array = plan.array
         if array is None or array.rank is None:
             raise ValueError(f"Module array view {plan.owner_path!r} has no fixed rank")
-        scalar = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
+        # A character element is a fixed-width bytes dtype whose width is the
+        # Fortran element length, so it carries an itemsize instead of naming a
+        # NumPy scalar type macro.
+        if plan.datatype_family is DatatypeFamily.STRING:
+            if array.itemsize is None or array.itemsize <= 0:
+                raise ValueError(f"Character module array {plan.owner_path!r} has no fixed itemsize")
+            element_size = str(array.itemsize)
+            numpy_type = "NPY_STRING"
+            numpy_itemsize = str(array.itemsize)
+        else:
+            scalar = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
+            element_size = f"sizeof({scalar.c_spelling})"
+            numpy_type = str(scalar.numpy_type_macro)
+            numpy_itemsize = "0"
         owner = self._module_native_array_owner_name(plan)
         extents = tuple(f"extent_{axis}" for axis in range(array.rank))
         strides = "strides"
@@ -5486,7 +5499,7 @@ class CBindingGenerator(ClassVisitor):
                         CodeExpression("{" + ", ".join(extents) + "}"),
                     ),
                     CDeclaration(f"{strides}[{array.rank}]", "npy_intp"),
-                    CExpressionStatement(CodeExpression(f"{strides}[0] = (npy_intp)sizeof({scalar.c_spelling})")),
+                    CExpressionStatement(CodeExpression(f"{strides}[0] = (npy_intp){element_size}")),
                     *(
                         CExpressionStatement(
                             CodeExpression(f"{strides}[{axis}] = {strides}[{axis - 1}] * dimensions[{axis - 1}]")
@@ -5497,8 +5510,8 @@ class CBindingGenerator(ClassVisitor):
                         "result",
                         "PyObject *",
                         CodeExpression(
-                            f"PyArray_New(&PyArray_Type, {array.rank}, dimensions, {scalar.numpy_type_macro}, "
-                            f"{strides}, data, 0, NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_ALIGNED | "
+                            f"PyArray_New(&PyArray_Type, {array.rank}, dimensions, {numpy_type}, "
+                            f"{strides}, data, {numpy_itemsize}, NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_ALIGNED | "
                             "NPY_ARRAY_WRITEABLE, NULL)"
                         ),
                     ),

@@ -9,6 +9,14 @@ release tags add a leading `v` to the package version.
 
 ### Added
 
+- Fixed-shape `character` module arrays with the `target` attribute now expose
+  the same live fixed-width bytes view numeric module arrays already did, at
+  any rank. The live-view lane rejected them only because it required a
+  primitive numeric element type; a character element differs only in carrying
+  its Fortran element length as the dtype width. Native writes appear in the
+  view, and Python writes reach the storage Fortran reads. `target` is required
+  here exactly as it already was for numeric module arrays.
+
 - Pointer array handles now expose `deallocate()` without a `PointerPolicy`
   annotation, matching what allocatable handles already offered. Release stays
   manual and caller-driven — prik never frees a native target on its own, on
