@@ -940,3 +940,38 @@ def test_prik_main_formats_value_errors_or_reraises_for_debug(tmp_path: Path, mo
     monkeypatch.setattr(sys, "argv", ["prik", "parse", str(source), "--debug"])
     with pytest.raises(ValueError, match="invalid generated interface"):
         prik_cli.main()
+
+
+ASSUMED_INTENT_SOURCE = """module legacy_mod
+contains
+  real(8) function weigh(count, factor)
+    integer(4) :: count
+    real(8) :: factor
+    weigh = real(count, 8) * factor
+  end function weigh
+end module legacy_mod
+"""
+
+
+def _generated_legacy_contract(tmp_path: Path, *extra_options: str) -> str:
+    source = tmp_path / f"legacy{len(extra_options)}.f90"
+    source.write_text(ASSUMED_INTENT_SOURCE, encoding="utf-8")
+    out = tmp_path / f"contracts{len(extra_options)}"
+
+    cmd = [sys.executable, "-m", "prik", "generate", "--pyi", str(source), "--out", str(out), *extra_options]
+    subprocess.run(cmd, capture_output=True, text=True, check=True)
+    return (out / "legacy_mod.pyi").read_text(encoding="utf-8")
+
+
+def test_generated_contract_projects_undeclared_scalars_by_default(tmp_path: Path):
+    text = _generated_legacy_contract(tmp_path)
+
+    assert 'Returns["count", Int32]' in text
+    assert 'Returns["factor", Float64]' in text
+
+
+def test_assume_intent_in_scalars_removes_them_from_the_generated_contract(tmp_path: Path):
+    text = _generated_legacy_contract(tmp_path, "--assume-intent-in-scalars")
+
+    assert "Returns" not in text
+    assert "-> Float64: ..." in text

@@ -57,22 +57,9 @@ more specialized pages.
 
 ### Troubleshooting, FAQ, And Releases
 
-- [ ] `docs/user/troubleshooting/index.md`: route users by symptom: install, build,
-  compiler, runtime, platform, wrapper contract, and generated artifact issues.
-- [ ] `docs/user/troubleshooting/installation-issues.md`: document missing Python
-  headers, NumPy, compiler packages, virtual environments, and platform package
-  names.
-- [ ] `docs/user/troubleshooting/build-issues.md`: document compile/link failures,
-  missing native libraries, Makefile regeneration, output directories, and
-  verbose logs.
 - [ ] `docs/user/troubleshooting/compiler-issues.md`: document compiler detection,
   Fortran flags, preprocessing, ABI probes, GNU ABI assumptions, and kind
   support failures.
-- [ ] `docs/user/troubleshooting/runtime-issues.md`: document import failures,
-  symbol lookup errors, dtype or shape errors, callback exceptions, finalization,
-  and cleanup symptoms.
-- [ ] `docs/user/troubleshooting/platform-specific-issues.md`: document Linux,
-  macOS, Windows, compiler, linker, and shared-library path caveats.
 - [x] `CHANGELOG.md`: defines the changelog policy and release-note shape at the
   repository root, where package users and GitHub visitors can find it.
 
@@ -106,46 +93,21 @@ The old TODO-only contributor pages, duplicate pipeline/codebase maps, completed
 wrapper-plan and native-array migration ledgers, and separate internal indexes
 were removed after their stable facts moved to these owners.
 
-### Tutorials And Examples
+### Examples
 
-- [ ] `docs/user/tutorials/numerical-solver.md`: add a fast checked solver fixture,
-  build command, Python call, expected numeric output, and validation notes.
-- [ ] `docs/user/tutorials/scientific-library.md`: document a small multi-routine
-  library workflow, package shape, generated `.pyi` review, and regression
-  checks.
-- [ ] `docs/user/tutorials/modern-fortran-project.md`: document modules, derived
-  types, arrays, constructors, and limitations using checked modern Fortran
-  examples.
-- [ ] `docs/user/tutorials/large-fortran-codebase.md`: document source ordering,
-  dependency strategy, generated contract review, staged verification, and
-  current limits for automatic dependency discovery.
-- [ ] `docs/user/tutorials/packaging.md`: document packaging a generated extension,
-  native artifacts, wheel limitations, and reproducible build notes.
+The reserved tutorial, troubleshooting, and project-example pages were removed
+rather than carried as empty placeholders. A page returns here only when its
+runnable content is ready, so this queue tracks pages that exist.
+
 - [ ] `docs/user/examples/blas-wrapper.md`: add the minimal BLAS-style
   runtime example or document the external dependency, with build, import, and
   numerical assertions.
 - [ ] `docs/user/examples/lapack-wrapper.md`: document the LAPACK example as
   CI-owned by default, including why local runs are optional and what evidence CI
   supplies.
-- [ ] `docs/user/examples/openmp-example.md`: document supported OpenMP path,
-  required compiler flags, runtime environment variables, and fallback behavior.
-- [ ] `docs/user/examples/object-oriented-fortran.md`: document classes,
-  type-bound procedures, construction, finalization, and unsupported object
-  model features with checked output.
-- [ ] `docs/user/examples/ode-solver.md`: add a compact checked ODE fixture,
-  expected result tolerance, and failure troubleshooting.
-- [ ] `docs/user/examples/cfd-mini-example.md`: define a small enough fixture,
-  supported array contracts, build command, and runtime validation.
-- [ ] `docs/user/examples/mpi-example.md`: keep this page explicitly
-  not-yet-implemented until MPI build, runtime, and distribution constraints have
-  real evidence.
 
 ### Project Entry And Site Shell
 
-- [ ] `docs/user/tutorials/index.md`: explain which tutorials are maintained and which
-  are planned, with expected prerequisites and runtime cost.
-- [ ] `docs/user/examples/index.md`: split verified cookbook recipes from
-  planned larger examples and state the evidence required for each example.
 - [x] `docs/developer/packages/index.md`: route contributors from each production
   package to its canonical guide.
 - [x] `docs/developer/index.md`: distinguish implemented package references,

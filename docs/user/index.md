@@ -33,6 +33,6 @@ f2py comparison.
   and `.pyi` contract surfaces.
 - [Examples](examples/index.md) — complete wrappers for BLAS, LAPACK, FFTPACK,
   and MINPACK.
-- [Troubleshooting](troubleshooting/index.md) — installation, compiler, build,
-  and runtime problems.
+- [Troubleshooting](troubleshooting/compiler-issues.md) — compiler detection,
+  selection, and toolchain problems.
 - [FAQ](faq/index.md) — short answers to common questions.

@@ -2,7 +2,7 @@
 title: Compiler Issues
 audience: users, contributors
 prerequisites: verification
-related: build-issues.md, platform-specific-issues.md
+related: ../getting-started/installation.md, ../guide/building-shared-library.md
 status: maintained
 publication: reviewed
 ---

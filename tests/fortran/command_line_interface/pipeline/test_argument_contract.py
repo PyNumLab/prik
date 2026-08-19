@@ -819,6 +819,7 @@ def test_subcommand_help_exposes_every_supported_option(parser_factory):
         (["--preprocessor-adapter", "auto"], "replays its saved preprocessing recipe"),
         (["-D", "USE_FAST=1"], "replays its saved preprocessing recipe"),
         (["--strict-wrapper-names"], "replays saved wrapper behavior"),
+        (["--assume-intent-in-scalars"], "replays saved wrapper behavior"),
         (["--native-library", "openblas"], "replays saved native inputs"),
     ],
 )
@@ -958,3 +959,38 @@ def test_prik_main_rejects_invalid_macro_names(macro_flag: str, monkeypatch):
     monkeypatch.setattr(sys, "argv", ["prik", "parse", str(TEST_FILE), macro_flag, "=invalid"])
     with pytest.raises(SystemExit):
         prik_cli.main()
+
+
+def test_assume_intent_in_scalars_is_discoverable_from_the_first_help_screen():
+    """The option changes the default Python surface, so it is not hidden behind --help-build."""
+    top_help = prik_cli._top_level_parser(["--help"]).format_help()
+    build_help = prik_cli._build_parser(["input.f90", "--help"]).format_help()
+    generate_help = prik_cli._generate_parser(["--help"]).format_help()
+
+    semantics_help = prik_cli._semantics_parser(["--help"]).format_help()
+
+    assert "--assume-intent-in-scalars" in top_help
+    assert "--assume-intent-in-scalars" in build_help
+    assert "--assume-intent-in-scalars" in generate_help
+    assert "--assume-intent-in-scalars" in semantics_help
+
+
+def test_pyi_wrapper_build_rejects_assume_intent_in_scalars(tmp_path: Path, capsys):
+    """A contract states its own results, so the option has no missing intent to interpret."""
+    contract = tmp_path / "api.pyi"
+    contract.write_text("from prik.contracts import Float64\n", encoding="utf-8")
+    source = tmp_path / "api.f90"
+    source.write_text("subroutine noop()\nend subroutine noop\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exc_info:
+        prik_cli.main(
+            [
+                str(contract),
+                "--native-fortran-sources",
+                str(source),
+                "--assume-intent-in-scalars",
+            ]
+        )
+
+    assert exc_info.value.code == 2
+    assert "already states its own results" in capsys.readouterr().err

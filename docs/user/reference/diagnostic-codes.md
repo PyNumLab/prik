@@ -2,7 +2,7 @@
 title: Diagnostic Codes
 audience: users, developers
 prerequisites: error handling
-related: index.md, ../troubleshooting/index.md
+related: index.md, ../troubleshooting/compiler-issues.md
 status: maintained
 publication: draft
 ---

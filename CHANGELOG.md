@@ -7,7 +7,46 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+### Added
+
+- Added `--assume-intent-in-scalars`, which treats a primitive scalar dummy
+  that declares no `intent` as `intent(in)` instead of applying the
+  conservative `intent(inout)` default. Fortran permits an undeclared dummy to
+  be written, so prik returns its post-call value; for sources that predate the
+  `intent` attribute this fills the Python return with unmodified controls, and
+  reference BLAS `ddot` returns `(value, n, incx, incy)` rather than the value
+  alone. With the option, that call returns `32.0`. The choice is made once in
+  semantic conversion, where an absent `intent` is interpreted, so the build
+  and `generate --pyi` describe the same Python surface. It is deliberately
+  narrow: it covers the primitive and character scalars whose replacement is
+  otherwise returned, a declared `intent` always wins, and arrays,
+  derived-type objects, and allocatable or pointer scalars are unaffected. It is an
+  assertion about the source rather than a fact derived from it — prik does not
+  inspect the procedure body, so a procedure that does write such a dummy
+  loses that value, exactly as removing the result from the generated contract
+  by hand would. The option appears in the first `--help` screen because it
+  changes the default Python surface, and every command that produces semantic
+  IR accepts it — the build, `generate --pyi`, and `semantics`.
+  `--build-manifest` rejects it along with the other saved wrapper settings,
+  and a `.pyi` wrapper build rejects it because a contract already states its
+  own results.
+
 ### Changed
+
+- A scalar `character` dummy that declares no `intent` now uses the same
+  conservative `intent(inout)` default as every other scalar, so the value the
+  native procedure left behind is returned. It was silently assumed
+  `intent(in)`, which meant a procedure that wrote to such a dummy lost that
+  write with no diagnostic, while an `integer` dummy on the same call had its
+  write returned. The exception was undocumented and untested; the strings
+  guide already stated the uniform rule this change makes true. Wrapping
+  fixed-form sources, where `intent` cannot be declared, therefore returns
+  `(result, text)` where it previously returned `result` —
+  `--assume-intent-in-scalars` restores the shorter surface and now covers
+  character scalars along with primitive ones. An `allocatable` or `pointer`
+  character scalar with no `intent` likewise now matches its numeric
+  counterpart and returns a nullable snapshot; the option does not reach either
+  one, because a snapshot is not a replacement value the caller supplied.
 
 - Generated wrapper source is now readable. Each generated Fortran adapter and
   each CPython binding function carries a short leading comment naming what it

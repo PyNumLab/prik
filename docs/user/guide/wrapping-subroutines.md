@@ -28,12 +28,58 @@ change in place.
 | Derived `intent(out/inout)` | Visible generated object     | Mutated in place; not returned    |
 | `intent(out)` allocatable   | Hidden (or optional)         | `Allocatable[...]` handle         |
 | No `intent`                 | Visible argument             | Conservative `intent(inout)` rule |
+| No `intent`, assumed input  | Visible argument             | Not returned (opt-in, see below)  |
 
 Without `intent`, prik uses the conservative `intent(inout)` behavior. A
-primitive scalar stays visible and its replacement value is returned. If the
-dummy is known to be input-only, remove that projected result from the
-generated contract. This is common in legacy sources, but the rule applies to
-any dummy declaration without `intent`.
+scalar stays visible and its replacement value is returned — `character`
+scalars included, on the same terms as numeric ones. This is common in legacy
+sources, but the rule applies to any dummy declaration without `intent`.
+
+Two ways to drop a result you know the native procedure never writes:
+
+- remove that projected result from the generated contract, one dummy at a
+  time; or
+- pass `--assume-intent-in-scalars`, which applies the same choice to every
+  scalar in the build that declares no `intent`.
+
+### `--assume-intent-in-scalars`
+
+`intent` did not exist before Fortran 90, so a fixed-form source cannot declare
+it and its absence carries no information about the procedure. This option lets
+you say so:
+
+```bash
+python3 -m prik ddot.f --out blas --assume-intent-in-scalars
+```
+
+```python
+# default                      ddot(...) -> tuple[float64, int32, int32, int32]
+# --assume-intent-in-scalars   ddot(...) -> float64
+```
+
+The option is an assertion you make about the source, not a fact prik derives
+from it. prik does not inspect the procedure body, so a procedure that *does*
+write such a dummy silently loses that value, exactly as it would if you
+removed the result from the contract by hand. Use it on sources whose scalar
+arguments are known controls; leave it off when you are not sure.
+
+It is deliberately narrow:
+
+| Declaration | Effect |
+| --- | --- |
+| Primitive scalar with no `intent` | Treated as `intent(in)`; not returned |
+| `character` scalar with no `intent` | Treated as `intent(in)`; not returned |
+| Any declared `intent` | Unchanged — a declared `intent` always wins |
+| Array with no `intent` | Unchanged — still mutated in place, never returned |
+| Derived-type object with no `intent` | Unchanged — still mutated in place |
+| Allocatable or pointer scalar with no `intent` | Unchanged — its result is a nullable snapshot, not a replacement |
+
+Every command that produces semantic IR accepts the option — the build,
+`generate --pyi`, and `semantics` — because it changes how a missing `intent`
+is read rather than how the wrapper is emitted. A contract generated with the
+option and a direct build with the option therefore describe the same Python
+surface. A `.pyi` wrapper build rejects it: a contract already states its own
+results, so edit the contract there instead.
 
 ---
 

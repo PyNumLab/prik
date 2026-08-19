@@ -2644,6 +2644,7 @@ def _fortran_wrapper_module(
     fortran_type_probe_runner: list[str] | None,
     fortran_type_probe_cache_dir: str | Path | None,
     refresh_fortran_type_probe: bool,
+    assume_intent_in_scalars: bool = False,
 ) -> tuple[object, SemanticModule]:
     """Parse Fortran sources, resolve type facts, and form one wrapper module."""
     # Preprocess and parse the complete source project.
@@ -2676,6 +2677,7 @@ def _fortran_wrapper_module(
         parsed,
         compile_time_values=compile_time_values,
         type_facts=type_facts,
+        assume_intent_in_scalars=assume_intent_in_scalars,
     )
     _apply_source_python_exports(modules)
     module_name = _validated_wrapper_module_name(output_name, source_paths[0].stem)
@@ -2727,6 +2729,7 @@ def build_fortran_extension(
     output_name: str | None = None,
     preprocessing: PreprocessingConfig | None = None,
     strict_wrapper_names: bool = False,
+    assume_intent_in_scalars: bool = False,
     fortran_type_report=None,
     fortran_type_probe_runner: list[str] | None = None,
     fortran_type_probe_cache_dir: str | Path | None = None,
@@ -2780,6 +2783,12 @@ def build_fortran_extension(
     strict_wrapper_names
         Reject generated Python names that cannot be represented without a
         strict naming decision.
+    assume_intent_in_scalars
+        Treat a primitive scalar dummy that declares no ``intent`` as
+        ``intent(in)`` rather than applying the conservative ``intent(inout)``
+        default, so its value is not projected as a Python result.  A declared
+        ``intent`` is always honored, and arrays, derived-type objects, and
+        character values are unaffected.
     fortran_type_report, fortran_type_probe_runner,
     fortran_type_probe_cache_dir, refresh_fortran_type_probe
         Optional controls for compiler-probed Fortran type facts used while
@@ -2858,6 +2867,7 @@ def build_fortran_extension(
         fortran_type_probe_runner=fortran_type_probe_runner,
         fortran_type_probe_cache_dir=fortran_type_probe_cache_dir,
         refresh_fortran_type_probe=refresh_fortran_type_probe,
+        assume_intent_in_scalars=assume_intent_in_scalars,
     )
 
     # 3. Complete wrapper policy and generate the canonical wrapper.

@@ -270,6 +270,7 @@ class FortranToIRConverter(ClassVisitor):
         compile_time_values: dict[str, int | str] | None = None,
         wrapped_derived_types: Iterable[tuple[str, str]] | None = None,
         type_facts: dict[tuple[str, str | None], dict[str, object]] | None = None,
+        assume_intent_in_scalars: bool = False,
     ):
         """Configure parser-fact conversion without performing any conversion.
 
@@ -278,7 +279,14 @@ class FortranToIRConverter(ClassVisitor):
         ``wrapped_derived_types`` marks imported types with generated wrappers;
         and ``type_facts`` supplies compiler-measured storage facts.  Inputs are
         normalized into lookup-friendly forms and retained for later visitors.
+
+        ``assume_intent_in_scalars`` replaces the conservative ``intent(inout)``
+        default with ``intent(in)`` for primitive scalar dummies that declare no
+        ``intent`` at all.  It is a caller assertion about sources that predate
+        the attribute, not a fact derived from the source, so it stays off by
+        default and never applies to a declared ``intent``.
         """
+        self.assume_intent_in_scalars = bool(assume_intent_in_scalars)
         self.type_map = FORTRAN_TYPE_MAP if type_map is None else type_map
         self.compile_time_values = _normalize_compile_time_values(compile_time_values)
         self.wrapped_derived_types = {
@@ -528,7 +536,11 @@ class FortranToIRConverter(ClassVisitor):
             derived_type_context=derived_type_context,
             declaration_arrays=declaration_arrays,
         )
-        access = self._argument_access(arg, semantic_type)
+        access = self._argument_access(
+            arg,
+            semantic_type,
+            assume_intent_in_scalars=self.assume_intent_in_scalars,
+        )
         self._complete_argument_storage(arg, semantic_type, access=access)
         self._apply_argument_ownership(semantic_type, writes_argument=access[1])
 
@@ -946,7 +958,11 @@ class FortranToIRConverter(ClassVisitor):
             native_name=proc.name,
             arguments=arguments,
             return_type=return_type,
-            projection=self._procedure_projection(proc, arguments),
+            projection=self._procedure_projection(
+                proc,
+                arguments,
+                assume_intent_in_scalars=self.assume_intent_in_scalars,
+            ),
             metadata=metadata,
             visibility=visibility,
             origin=SemanticOrigin(
@@ -1403,6 +1419,7 @@ class FortranToIRConverter(ClassVisitor):
             compile_time_values=self.compile_time_values,
             wrapped_derived_types=merged,
             type_facts=self.type_facts,
+            assume_intent_in_scalars=self.assume_intent_in_scalars,
         )
         converter._known_procedures = set(self._known_procedures)
         return converter
@@ -1422,6 +1439,7 @@ class FortranToIRConverter(ClassVisitor):
             compile_time_values=self.compile_time_values,
             wrapped_derived_types=self.wrapped_derived_types,
             type_facts=self.type_facts,
+            assume_intent_in_scalars=self.assume_intent_in_scalars,
         )
         converter._known_procedures = merged
         return converter
@@ -2099,15 +2117,41 @@ class FortranToIRConverter(ClassVisitor):
     def _argument_access(
         arg: FortranArgument | FortranVariable,
         semantic_type: SemanticType,
+        *,
+        assume_intent_in_scalars: bool = False,
     ) -> tuple[bool, bool]:
-        """Return parser-provided read/write facts or the established conservative default."""
+        """Return parser-provided read/write facts or the established conservative default.
+
+        A declared ``intent`` always wins; ``assume_intent_in_scalars`` only
+        chooses which default an undeclared ``intent`` receives, and only for
+        the scalars whose replacement value would otherwise be projected as a
+        Python result.
+        """
         reads = getattr(arg, "reads_argument", None)
         writes = getattr(arg, "writes_argument", None)
         if reads is None or writes is None:
-            if semantic_type.name == "String" and semantic_type.rank == 0:
+            if assume_intent_in_scalars and FortranToIRConverter._assumed_input_scalar(semantic_type):
                 return True, False
             return True, True
         return bool(reads), bool(writes)
+
+    @staticmethod
+    def _assumed_input_scalar(semantic_type: SemanticType | None) -> bool:
+        """Return whether an undeclared ``intent`` on this dummy may be assumed ``intent(in)``.
+
+        This covers exactly the rank-zero values whose replacement would
+        otherwise be projected as a Python result: primitive scalars and
+        non-descriptor character scalars.  Descriptor scalars keep the
+        conservative default because their result is a nullable snapshot
+        rather than a replacement value.
+        """
+        return bool(
+            FortranToIRConverter._is_primitive_scalar_replacement(semantic_type)
+            or (
+                FortranToIRConverter._is_scalar_character(semantic_type)
+                and not FortranToIRConverter._is_scalar_descriptor(semantic_type)
+            )
+        )
 
     @staticmethod
     def _argument_has_writable_storage(argument: SemanticArgument) -> bool:
@@ -2723,6 +2767,8 @@ class FortranToIRConverter(ClassVisitor):
     def _procedure_projection(
         proc: FortranProcedureSignature,
         arguments: list[SemanticArgument],
+        *,
+        assume_intent_in_scalars: bool = False,
     ) -> list[ProjectionMapping]:
         """Build native-to-Python argument and result mappings for one procedure.
 
@@ -2737,7 +2783,11 @@ class FortranToIRConverter(ClassVisitor):
         result_position = 1 if proc.result is not None else 0
         for native_position, native_arg in enumerate(proc.arguments):
             arg = by_name[native_arg.name]
-            reads_argument, writes_argument = FortranToIRConverter._argument_access(native_arg, arg.semantic_type)
+            reads_argument, writes_argument = FortranToIRConverter._argument_access(
+                native_arg,
+                arg.semantic_type,
+                assume_intent_in_scalars=assume_intent_in_scalars,
+            )
             is_output = writes_argument and not reads_argument
             is_replacement = reads_argument and writes_argument
             is_allocatable_replacement = is_replacement and FortranToIRConverter._is_allocatable_array(
@@ -3350,6 +3400,7 @@ def _converter_for(
     compile_time_values: dict[str, int | str] | None = None,
     wrapped_derived_types: Iterable[tuple[str, str]] | None = None,
     type_facts: dict[tuple[str, str | None], dict[str, object]] | None = None,
+    assume_intent_in_scalars: bool = False,
 ) -> FortranToIRConverter:
     """Return the shared default converter or an isolated configured converter.
 
@@ -3357,12 +3408,18 @@ def _converter_for(
     conversion input creates a new instance so per-call compile-time values and
     facts never leak into unrelated conversions.
     """
-    if compile_time_values is None and wrapped_derived_types is None and type_facts is None:
+    if (
+        compile_time_values is None
+        and wrapped_derived_types is None
+        and type_facts is None
+        and not assume_intent_in_scalars
+    ):
         return _DEFAULT_CONVERTER
     return FortranToIRConverter(
         compile_time_values=compile_time_values,
         wrapped_derived_types=wrapped_derived_types,
         type_facts=type_facts,
+        assume_intent_in_scalars=assume_intent_in_scalars,
     )
 
 
@@ -3375,6 +3432,7 @@ def fortran_module_to_semantic_module(
     compile_time_values: dict[str, int | str] | None = None,
     wrapped_derived_types: Iterable[tuple[str, str]] | None = None,
     type_facts: dict[tuple[str, str | None], dict[str, object]] | None = None,
+    assume_intent_in_scalars: bool = False,
 ) -> SemanticModule:
     """Convert one parsed Fortran module into a :class:`SemanticModule`.
 
@@ -3394,7 +3452,12 @@ def fortran_module_to_semantic_module(
         >>> fortran_module_to_semantic_module(parsed).functions[0].arguments[0].semantic_type.name
         'Float64'
     """
-    converter = _converter_for(compile_time_values, wrapped_derived_types, type_facts)
+    converter = _converter_for(
+        compile_time_values,
+        wrapped_derived_types,
+        type_facts,
+        assume_intent_in_scalars=assume_intent_in_scalars,
+    )
     return converter.visit(converter.first_module(module))
 
 
@@ -3405,6 +3468,7 @@ def fortran_file_to_semantic_modules(
     compile_time_values: dict[str, int | str] | None = None,
     wrapped_derived_types: Iterable[tuple[str, str]] | None = None,
     type_facts: dict[tuple[str, str | None], dict[str, object]] | None = None,
+    assume_intent_in_scalars: bool = False,
 ) -> list[SemanticModule]:
     """Convert every module and standalone procedure group in one parsed file.
 
@@ -3417,7 +3481,12 @@ def fortran_file_to_semantic_modules(
         >>> [module.name for module in fortran_file_to_semantic_modules(parsed)]
         ['standalone']
     """
-    return _converter_for(compile_time_values, wrapped_derived_types, type_facts).visit(
+    return _converter_for(
+        compile_time_values,
+        wrapped_derived_types,
+        type_facts,
+        assume_intent_in_scalars=assume_intent_in_scalars,
+    ).visit(
         parsed_file,
         standalone_module_name=standalone_module_name,
     )
@@ -3428,6 +3497,7 @@ def fortran_project_to_semantic_modules(
     *,
     compile_time_values: dict[str, int | str] | None = None,
     type_facts: dict[tuple[str, str | None], dict[str, object]] | None = None,
+    assume_intent_in_scalars: bool = False,
 ) -> list[SemanticModule]:
     """Convert an ordered parsed Fortran project with project-wide type context.
 
@@ -3441,7 +3511,11 @@ def fortran_project_to_semantic_modules(
         >>> [module.name for module in fortran_project_to_semantic_modules(project)]
         ['math']
     """
-    return _converter_for(compile_time_values, type_facts=type_facts).visit(project)
+    return _converter_for(
+        compile_time_values,
+        type_facts=type_facts,
+        assume_intent_in_scalars=assume_intent_in_scalars,
+    ).visit(project)
 
 
 if __name__ == "__main__":

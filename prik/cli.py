@@ -408,6 +408,7 @@ class _SemanticPipelineContext:
     fortran_type_probe_runner: list[str] | None = None
     fortran_type_probe_cache_dir: str | None = None
     refresh_fortran_type_probe: bool = False
+    assume_intent_in_scalars: bool = False
 
 
 @dataclass(frozen=True)
@@ -441,6 +442,7 @@ def _converted_semantic_files(
     fortran_type_probe_runner: list[str] | None = None,
     fortran_type_probe_cache_dir: str | None = None,
     refresh_fortran_type_probe: bool = False,
+    assume_intent_in_scalars: bool = False,
 ) -> list[tuple[Path, list[object]]]:
     context = _SemanticPipelineContext(
         paths=paths,
@@ -454,6 +456,7 @@ def _converted_semantic_files(
         fortran_type_probe_runner=fortran_type_probe_runner,
         fortran_type_probe_cache_dir=fortran_type_probe_cache_dir,
         refresh_fortran_type_probe=refresh_fortran_type_probe,
+        assume_intent_in_scalars=assume_intent_in_scalars,
     )
     pipeline = _SOURCE_SEMANTIC_PIPELINES[language]
     parsed = pipeline.parser(context)
@@ -470,6 +473,7 @@ def _semantic_report(
     fortran_type_probe_runner: list[str] | None = None,
     fortran_type_probe_cache_dir: str | None = None,
     refresh_fortran_type_probe: bool = False,
+    assume_intent_in_scalars: bool = False,
 ) -> dict[str, dict]:
     preprocessing = preprocessing or PreprocessingConfig()
     converted_files = _converted_semantic_files(
@@ -481,6 +485,7 @@ def _semantic_report(
         fortran_type_probe_runner=fortran_type_probe_runner,
         fortran_type_probe_cache_dir=fortran_type_probe_cache_dir,
         refresh_fortran_type_probe=refresh_fortran_type_probe,
+        assume_intent_in_scalars=assume_intent_in_scalars,
     )
     return _semantic_payload_for_converted_files(converted_files)
 
@@ -567,6 +572,7 @@ def _convert_fortran_semantic_sources(
             standalone_module_name=p.stem,
             compile_time_values=compile_time_values,
             wrapped_derived_types=wrapped_derived_types,
+            assume_intent_in_scalars=context.assume_intent_in_scalars,
             **({"type_facts": type_facts} if type_facts is not None else {}),
         )
         converted_files.append((p, modules))
@@ -901,6 +907,11 @@ def _validate_pyi_wrapper_options(args: argparse.Namespace, parser: argparse.Arg
         parser.error("A .pyi wrapper build accepts exactly one entry contract")
     if getattr(args, "no_compile_input_sources", False):
         parser.error("--no-compile-input-sources applies only to source-driven wrapper builds")
+    if getattr(args, "assume_intent_in_scalars", False):
+        parser.error(
+            "--assume-intent-in-scalars interprets a missing Fortran intent; a semantic .pyi contract "
+            "already states its own results, so edit the contract instead"
+        )
     if not (
         getattr(args, "native_fortran_sources", None)
         or getattr(args, "native_objects", None)
@@ -934,7 +945,11 @@ def _validate_manifest_wrapper_options(args: argparse.Namespace, parser: argpars
         )
     if _native_link_options_used(args):
         parser.error("--build-manifest replays saved native inputs; do not pass native build flags")
-    if getattr(args, "strict_wrapper_names", False) or _wrapper_compile_options_used(args):
+    if (
+        getattr(args, "strict_wrapper_names", False)
+        or getattr(args, "assume_intent_in_scalars", False)
+        or _wrapper_compile_options_used(args)
+    ):
         parser.error("--build-manifest replays saved wrapper behavior and compiler flags")
 
 
@@ -1048,6 +1063,8 @@ def _semantic_stage_options(
     options: dict[str, object] = {"language": args.language}
     if c_standard_type_report is not None:
         options["c_standard_type_report"] = c_standard_type_report
+    if getattr(args, "assume_intent_in_scalars", False):
+        options["assume_intent_in_scalars"] = True
     return options
 
 
@@ -1277,6 +1294,7 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
         output_name=_wrapper_output_name(args),
         preprocessing=preprocessing,
         strict_wrapper_names=getattr(args, "strict_wrapper_names", False),
+        assume_intent_in_scalars=getattr(args, "assume_intent_in_scalars", False),
         compile_input_sources=not getattr(args, "no_compile_input_sources", False),
         native_fortran_sources=getattr(args, "native_fortran_sources", None),
         native_fortran_flags=_cli_native_compile_flags(getattr(args, "native_compile_flags", None)),
@@ -1754,6 +1772,27 @@ def _add_include_exposure_options(
     )
 
 
+def _add_semantic_interpretation_options(
+    parser: argparse.ArgumentParser,
+    *,
+    group_title: str = "semantic interpretation options",
+) -> None:
+    """Add options that change how source facts are read into semantic IR.
+
+    These belong to every command that produces semantic IR, because they
+    change the IR itself rather than a later wrapper or build choice.
+    """
+    group = parser.add_argument_group(group_title)
+    group.add_argument(
+        "--assume-intent-in-scalars",
+        action="store_true",
+        help=(
+            "Treat a primitive scalar dummy that declares no intent as intent(in) instead of the "
+            "conservative intent(inout) default, so its value is not returned; a declared intent always wins"
+        ),
+    )
+
+
 def _add_wrapper_behavior_options(
     parser: argparse.ArgumentParser,
     *,
@@ -1911,6 +1950,7 @@ _PIPELINE_DEFAULTS = {
     "native_link_items": None,
     "native_library_dirs": None,
     "strict_wrapper_names": False,
+    "assume_intent_in_scalars": False,
     "wrapper_compiler_debug": False,
     "wrapper_fortran_flags": None,
     "wrapper_c_flags": None,
@@ -1966,6 +2006,7 @@ def _add_build_arguments(parser: argparse.ArgumentParser) -> None:
         compiler_help="Compiler used throughout the extension build (default: gfortran)",
         include_help="Add a compiler include search directory; repeat as needed",
     )
+    _add_semantic_interpretation_options(parser)
     _add_wrapper_behavior_options(parser, group_title="wrapper options")
     native_group = parser.add_argument_group("native options")
     _add_native_compilation_options(native_group)
@@ -2041,6 +2082,11 @@ def _add_top_level_arguments(parser: argparse.ArgumentParser) -> None:
         nargs="+",
         metavar="NAME",
         help=("Link against NAME; for example, --native-library openblas passes -lopenblas to the linker"),
+    )
+    build_group.add_argument(
+        "--assume-intent-in-scalars",
+        action="store_true",
+        help="Treat a scalar dummy with no declared intent as intent(in), so its value is not returned",
     )
     build_group.add_argument(
         "--verbose",
@@ -2158,6 +2204,7 @@ def _semantics_parser(argv: list[str]) -> argparse.ArgumentParser:
         include_help="Add a preprocessing include search directory; repeat as needed",
     )
     _add_include_exposure_options(parser, group_title="C include options")
+    _add_semantic_interpretation_options(parser)
     output_group = parser.add_argument_group("output options")
     _add_output_options(
         output_group,
@@ -2220,6 +2267,7 @@ def _generate_parser(argv: list[str]) -> argparse.ArgumentParser:
         include_help="Add an include search directory; repeat as needed",
     )
     _add_include_exposure_options(parser, group_title="C include options")
+    _add_semantic_interpretation_options(parser)
     _add_wrapper_behavior_options(parser, group_title="wrapper options")
     native_group = parser.add_argument_group("native options")
     _add_native_compilation_options(native_group)

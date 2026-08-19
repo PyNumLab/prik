@@ -307,12 +307,18 @@ def _build_source_and_import(
     source_template: Path,
     workdir: Path,
     expected_generated_sources: set[str],
+    **build_options,
 ):
-    """Build one source entry through the canonical production generator."""
+    """Build one source entry through the canonical production generator.
+
+    ``build_options`` forwards public build arguments so a test can exercise an
+    optional wrapper behavior without duplicating the build and import steps.
+    """
     result = build_fortran_extension(
         source_template,
         output_dir=workdir,
         preprocessing=PreprocessingConfig(mode="compiler", compiler=_compiler()),
+        **build_options,
     )
     assert result.shared_library.exists()
     assert {path.name for path in result.generated_sources} == expected_generated_sources
@@ -511,15 +517,19 @@ def _assert_array_rejects_strided_views(module, function_name):
 
 
 def _assert_legacy_string_examples(module):
-    assert module.char_code_default("A") == ord("A")
-    assert module.char_code_star1(np.str_("B")) == ord("B")
-    assert module.string_len_star8("short   ") == 5
+    # Fixed-form sources predate the `intent` attribute, so every character
+    # dummy here reaches the conservative `intent(inout)` default and its
+    # unchanged value follows the result. `--assume-intent-in-scalars` is the
+    # documented way to drop it; see the assumed scalar-intent tests.
+    assert module.char_code_default("A") == (ord("A"), "A")
+    assert module.char_code_star1(np.str_("B")) == (ord("B"), "B")
+    assert module.string_len_star8("short   ") == (5, "short   ")
     with pytest.raises(TypeError, match="exactly 8 bytes"):
         module.string_len_star8("short")
     with pytest.raises(TypeError, match="exactly 8 bytes"):
         module.string_len_star8("too-long-value")
-    assert module.string_len_assumed("variable length") == 15
-    assert module.string_len_entity("python") == 6
+    assert module.string_len_assumed("variable length") == (15, "variable length")
+    assert module.string_len_entity("python") == (6, "python")
     assert module.char_result_default() == "L"
     assert module.string_result_star8() == "LEGACY!!"
     assert module.string_result_padded() == "PAD     "

@@ -407,9 +407,7 @@ notice when redistributed.
 - **[User Guide](https://pynumlab.github.io/prik/user/guide/)** — Data types, functions, modules, arrays, derived types, callbacks, ownership, and runtime behavior
 - **[Changelog](CHANGELOG.md)** — User-visible changes by release
 <!--
-- **[Tutorials](docs/user/tutorials/index.md)** — Step-by-step walkthroughs
 - **[CLI Reference](docs/user/reference/cli-commands.md)** — Complete command-line documentation
 - **[Language Support](docs/user/language-support/index.md)** — What is supported, partially supported, or planned
 - **[FAQ](docs/user/faq/index.md)** — Concise answers to common questions
-- **[Troubleshooting](docs/user/troubleshooting/index.md)** — Solutions for installation, compiler, build, runtime, and platform issues
 -->

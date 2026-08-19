@@ -90,6 +90,7 @@ least one explicit native input: `--native-fortran-sources`, `--native-objects`,
 | `--compiler COMPILER` | The input-language compiler used for the whole build: preprocessing, datatype measurement, native and bridge compilation, and linking. Default `gfortran`. |
 | `-I DIR`, `--include-dir DIR` | Build-wide include directory. Repeat to preserve search order. |
 | `--strict-wrapper-names` | Rejects Python names that would need escaping or a collision suffix. |
+| `&#45;&#45;assume-intent-in-scalars` | Treats a primitive scalar dummy that declares no `intent` as `intent(in)`, so its value is not returned. A declared `intent` always wins; arrays, derived-type objects, and `character` values are unaffected. Also accepted by `generate --pyi`, where it removes the same results from the generated contract, and by `semantics`. |
 | `--no-compile-input-sources` | Treats positional sources as semantic inputs only. Requires an explicit native input. |
 | `--native-fortran-sources PATH ...` | Compiles extra native sources without exposing them as public API. |
 | `--native-compile-flags FLAG ...` | Flags for native implementation compilation. |

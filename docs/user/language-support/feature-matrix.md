@@ -126,4 +126,3 @@ PRIK_C_DOCS_END -->
 | Feature | Status | User docs | Source owner | Evidence | Limitations |
 | --- | --- | --- | --- | --- | --- |
 | Full semantic `.pyi` parity across all wrapper scenarios | Planned | [Semantic `.pyi` format](../reference/semantic-pyi-format.md) | [`.pyi` route](../../developer/architecture.md#build-architecture) | [semantic `.pyi` feature tests](../../../tests/fortran/semantic_pyi_format/) | Only the documented implemented subset is supported. |
-| MPI examples and distribution constraints | Not implemented | [MPI example](../examples/mpi-example.md) | [Planned examples](../examples/index.md) | [Documentation navigation checks](../../../tests/docs/test_navigation.py) | No support contract or runnable evidence exists yet. |
