@@ -263,6 +263,7 @@ class ModuleGetterAction(str, Enum):
     NATIVE_CONSTANT_VALUE = "native_constant_value"
     NATIVE_CONSTANT_ARRAY_VALUE = "native_constant_array_value"
     DIRECT_VALUE = "direct_value"
+    CHARACTER_VALUE = "character_value"
     NULLABLE_SNAPSHOT = "nullable_snapshot"
     BORROWED_ARRAY_VIEW = "borrowed_array_view"
     NATIVE_ARRAY_HANDLE = "native_array_handle"
@@ -888,6 +889,7 @@ class ModuleVariablePolicy:
     constant_value: Any
     supported: bool
     blockers: tuple[str, ...] = ()
+    character_length: int | None = None
     array: ArrayHandoffPolicy | None = None
     native_array_handle: NativeArrayHandleWrapperPolicy | None = None
     derived: DerivedModuleObjectPolicy | None = None

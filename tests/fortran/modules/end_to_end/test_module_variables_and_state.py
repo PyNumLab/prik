@@ -184,3 +184,77 @@ def test_fixed_shape_character_module_arrays_expose_one_live_bytes_view(tmp_path
     assert module.read_label(np.int32(2)) == "PYTHON!!"
     module.grid[1, 0] = b"ZZ  "
     assert module.read_grid(np.int32(2), np.int32(1)) == "ZZ  "
+
+
+CHARACTER_MODULE_SCALAR_SOURCE = """
+module fchar_module_scalars_f90
+  implicit none
+  character(len=8) :: label = 'alpha   '
+  character(len=3) :: code = 'abc'
+  character(len=*), parameter :: tag = 'fixed'
+contains
+  subroutine relabel()
+    label = 'ALPHA!!!'
+  end subroutine relabel
+
+  function read_label() result(value)
+    character(len=8) :: value
+    value = label
+  end function read_label
+end module fchar_module_scalars_f90
+"""
+
+
+def test_scalar_character_module_variables_read_and_write_through(tmp_path: Path):
+    """A character module variable is a `str` property, as a numeric one is a value.
+
+    A character value has no by-value C ABI, so the accessors copy through a
+    fixed-width buffer; what has to hold is that the copy runs in both
+    directions and that a wrong width is refused rather than truncated.
+    """
+    module = _build_text_and_import(
+        CHARACTER_MODULE_SCALAR_SOURCE,
+        "fchar_module_scalars_f90.f90",
+        tmp_path,
+        {
+            "bind_c_fchar_module_scalars_f90_wrapper.f90",
+            "fchar_module_scalars_f90_wrapper.c",
+            "fchar_module_scalars_f90_wrapper.h",
+        },
+    )
+
+    assert module.label == "alpha   "
+    assert module.code == "abc"
+    assert module.tag == "fixed"
+
+    # A native write is observed by the next read, not cached from import.
+    module.relabel()
+    assert module.label == "ALPHA!!!"
+
+    # A Python write reaches the storage Fortran reads.
+    module.label = "PYTHON!!"
+    assert module.read_label() == "PYTHON!!"
+
+    # The declared length is a byte width, so a multi-byte encoding still fits exactly.
+    module.label = "café!!!"
+    assert module.label == "café!!!"
+    assert module.read_label() == "café!!!"
+
+
+@pytest.mark.parametrize("value", ["ab", "abcd"])
+def test_scalar_character_module_variable_rejects_a_wrong_encoded_width(value: str, tmp_path: Path):
+    """Truncating or padding silently would corrupt native state, so the width is exact."""
+    module = _build_text_and_import(
+        CHARACTER_MODULE_SCALAR_SOURCE,
+        "fchar_module_scalars_f90.f90",
+        tmp_path,
+        {
+            "bind_c_fchar_module_scalars_f90_wrapper.f90",
+            "fchar_module_scalars_f90_wrapper.c",
+            "fchar_module_scalars_f90_wrapper.h",
+        },
+    )
+
+    with pytest.raises(TypeError, match="exactly 3 bytes"):
+        module.code = value
+    assert module.code == "abc"

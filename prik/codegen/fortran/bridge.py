@@ -1995,6 +1995,8 @@ class FortranBridgeGenerator(ClassVisitor):
                 return self._lower_module_getter_constant_array_value(plan)
             case ModuleGetterAction.DIRECT_VALUE:
                 return self._lower_module_getter_direct_value(plan)
+            case ModuleGetterAction.CHARACTER_VALUE:
+                return self._lower_module_getter_character_value(plan)
             case ModuleGetterAction.NULLABLE_SNAPSHOT:
                 return self._lower_module_getter_nullable_snapshot(plan)
             case ModuleGetterAction.BORROWED_ARRAY_VIEW:
@@ -2701,6 +2703,56 @@ class FortranBridgeGenerator(ClassVisitor):
             ),
         )
 
+    def _module_character_length(self, plan: ModuleVariablePlan) -> int:
+        """Return the declared width one character module accessor copies."""
+        length = plan.character_length
+        if length is None or length <= 0:
+            raise ValueError(f"Character module variable {plan.owner_path!r} has no declared length")
+        return length
+
+    def _lower_module_getter_character_value(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
+        """Copy one fixed native character module variable into a C byte buffer.
+
+        A character value has no by-value C ABI, so it travels the same
+        fixed-width buffer a character field already uses.
+        """
+        length = self._module_character_length(plan)
+        name = self._module_bridge_getter_name(plan)
+        return (
+            FortranFunction(
+                name=name,
+                parameters=(
+                    FortranParameter("value", "character(kind=c_char)", (f"dimension({length})", "intent(out)")),
+                ),
+                bind_name=name,
+                body=(
+                    FortranAssignment("value", CodeExpression(f"transfer({self._native_variable_name(plan)}, value)")),
+                ),
+                is_subroutine=True,
+            ),
+        )
+
+    def _lower_module_setter_character_value(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
+        """Copy one exact-width C byte buffer into a native character module variable."""
+        length = self._module_character_length(plan)
+        name = self._module_bridge_setter_name(plan)
+        return (
+            FortranFunction(
+                name=name,
+                parameters=(
+                    FortranParameter("value", "character(kind=c_char)", (f"dimension({length})", "intent(in)")),
+                ),
+                bind_name=name,
+                body=(
+                    FortranAssignment(
+                        self._native_variable_name(plan),
+                        CodeExpression(f"transfer(value, {self._native_variable_name(plan)})"),
+                    ),
+                ),
+                is_subroutine=True,
+            ),
+        )
+
     def _lower_module_getter_constant_array_value(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
         """Copy one compiler-owned parameter array into persistent bridge storage.
 
@@ -2865,6 +2917,8 @@ class FortranBridgeGenerator(ClassVisitor):
 
     def _lower_module_setter_value_copy(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
         """Return one value-copy native module assignment."""
+        if plan.bridge.native_getter_action is ModuleGetterAction.CHARACTER_VALUE:
+            return self._lower_module_setter_character_value(plan)
         scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
         name = self._module_bridge_setter_name(plan)
         return (

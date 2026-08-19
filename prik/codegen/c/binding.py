@@ -5381,6 +5381,8 @@ class CBindingGenerator(ClassVisitor):
                 return self._lower_module_getter_constant_value(plan)
             case ModuleGetterAction.DIRECT_VALUE:
                 return self._lower_module_getter_direct_value(plan)
+            case ModuleGetterAction.CHARACTER_VALUE:
+                return self._lower_module_getter_character_value(plan)
             case ModuleGetterAction.NULLABLE_SNAPSHOT:
                 return self._lower_module_getter_nullable_snapshot(plan)
             case ModuleGetterAction.BORROWED_ARRAY_VIEW:
@@ -5419,6 +5421,81 @@ class CBindingGenerator(ClassVisitor):
                         CodeExpression(self._scalar_result_expression(scalar_type, "&value", module=True)),
                     ),
                     CReturn(CodeExpression("result")),
+                ),
+            ),
+        )
+
+    def _module_character_length(self, plan: ModuleVariablePlan) -> int:
+        """Return the declared width one character module accessor copies."""
+        length = plan.character_length
+        if length is None or length <= 0:
+            raise ValueError(f"Character module variable {plan.owner_path!r} has no declared length")
+        return length
+
+    def _lower_module_getter_character_value(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
+        """Copy one fixed native character module variable into an independent Python string."""
+        length = self._module_character_length(plan)
+        return (
+            CFunction(
+                self._module_getter_name(plan),
+                "PyObject *",
+                storage="static",
+                body=(
+                    CDeclaration(f"value[{length + 1}]", "char"),
+                    CExpressionStatement(CodeExpression(f"{self._module_bridge_getter_name(plan)}(value)")),
+                    CExpressionStatement(CodeExpression(f"value[{length}] = '\\0'")),
+                    CReturn(CodeExpression(f'PyUnicode_DecodeUTF8(value, {length}, "strict")')),
+                ),
+            ),
+        )
+
+    def _lower_module_setter_character_value(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
+        """Validate and copy one exact-width Python string into native module storage.
+
+        The setter reports failure with ``-1`` rather than ``NULL``: a module
+        attribute assignment is an ``int`` slot, not a returned object.
+        """
+        length = self._module_character_length(plan)
+        name = plan.binding.python_names[0]
+        return (
+            CFunction(
+                self._module_setter_name(plan),
+                "int",
+                parameters=(CParameter("value_obj", "PyObject *"),),
+                storage="static",
+                body=(
+                    CIf(
+                        CodeExpression("!PyUnicode_Check(value_obj)"),
+                        body=(
+                            CExpressionStatement(
+                                CodeExpression(
+                                    f'PyErr_SetString(PyExc_TypeError, "Expected str for module variable {name}")'
+                                )
+                            ),
+                            CReturn(CodeExpression("-1")),
+                        ),
+                    ),
+                    CDeclaration("value_length", "Py_ssize_t", CodeExpression("0")),
+                    CDeclaration(
+                        "value",
+                        "const char *",
+                        CodeExpression("PyUnicode_AsUTF8AndSize(value_obj, &value_length)"),
+                    ),
+                    CIf(CodeExpression("value == NULL"), body=(CReturn(CodeExpression("-1")),)),
+                    CIf(
+                        CodeExpression(f"value_length != {length} || (Py_ssize_t)strlen(value) != value_length"),
+                        body=(
+                            CExpressionStatement(
+                                CodeExpression(
+                                    f'PyErr_SetString(PyExc_TypeError, "Module variable {name} must encode to '
+                                    f'exactly {length} bytes without embedded NUL")'
+                                )
+                            ),
+                            CReturn(CodeExpression("-1")),
+                        ),
+                    ),
+                    CExpressionStatement(CodeExpression(f"{self._module_bridge_setter_name(plan)}(value)")),
+                    CReturn(CodeExpression("0")),
                 ),
             ),
         )
@@ -5811,6 +5888,8 @@ class CBindingGenerator(ClassVisitor):
 
     def _lower_module_setter_write_through(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
         """Return a Python-to-native scalar write-through helper."""
+        if plan.binding.getter_action is ModuleGetterAction.CHARACTER_VALUE:
+            return self._lower_module_setter_character_value(plan)
         scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
         return (
             CFunction(

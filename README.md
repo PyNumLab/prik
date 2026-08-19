@@ -217,8 +217,8 @@ code generation with a diagnostic naming the boundary and the reason.
 
 - arrays of derived types, and assumed-type `type(*)` arrays;
 - character arrays that cannot be represented as a fixed-width NumPy bytes
-  dtype, `allocatable` and `pointer` character *fields*, and scalar character
-  *module variables*.
+  dtype, `allocatable` and `pointer` character *fields*, and `allocatable`,
+  `pointer`, or assumed-length scalar character *module variables*.
 - quad precision — `real(16)` and `complex(16)` — which has no portable NumPy
   dtype. Everything narrower is supported.
 

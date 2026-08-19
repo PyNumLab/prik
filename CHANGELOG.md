@@ -9,6 +9,15 @@ release tags add a leading `v` to the package version.
 
 ### Added
 
+- Declared-length scalar `character` module variables are now readable and
+  writable as ordinary `str` properties, matching how numeric module variables
+  already behave. A character value has no by-value C ABI, so the generated
+  accessors copy through the same fixed-width buffer a character field already
+  used; assignment requires exactly the declared byte width and refuses to
+  truncate or pad. Assumed-length (`character(len=*)`) and `allocatable` or
+  `pointer` scalar character module variables remain blocked, and string
+  `parameter` constants keep materializing at build time as before.
+
 - Fixed-shape `character` module arrays with the `target` attribute now expose
   the same live fixed-width bytes view numeric module arrays already did, at
   any rank. The live-view lane rejected them only because it required a

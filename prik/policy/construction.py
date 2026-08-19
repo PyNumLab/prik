@@ -1002,6 +1002,7 @@ def _module_variable_policy_base(
         "native_module": str(variable.origin.native_scope or module_name),
         "semantic_type_name": variable.semantic_type.name,
         "rank": int(variable.semantic_type.rank or 0),
+        "character_length": _character_length(variable.semantic_type),
     }
 
 
@@ -5891,11 +5892,15 @@ def _scalar_module_getter_blockers(
     """Validate one completed scalar or literal-string getter."""
     blockers = []
     literal_string = _is_binding_literal_string(variable, getter_action)
-    if not (_is_first_lane_scalar_type(variable.semantic_type) or literal_string):
+    character_value = getter_action is ModuleGetterAction.CHARACTER_VALUE
+    string_getter = literal_string or character_value
+    if not (_is_first_lane_scalar_type(variable.semantic_type) or string_getter):
         blockers.append("module variable is not a primitive rank-zero scalar")
-    expected_getter_kind = ObjectKind.STRING if literal_string else ObjectKind.SCALAR
+    if character_value and _character_length(variable.semantic_type) is None:
+        blockers.append("character module variable requires one declared length")
+    expected_getter_kind = ObjectKind.STRING if string_getter else ObjectKind.SCALAR
     supported_getter_actions = (
-        {CodegenAction.COPY_OUT} if literal_string else {CodegenAction.DIRECT_VALUE, CodegenAction.SNAPSHOT_COPY}
+        {CodegenAction.COPY_OUT} if string_getter else {CodegenAction.DIRECT_VALUE, CodegenAction.SNAPSHOT_COPY}
     )
     if getter is None:
         blockers.append("module variable is missing completed getter policy")
@@ -5972,8 +5977,11 @@ def _scalar_module_setter_blockers(
     if setter.setter_action is SetterAction.WRITE_THROUGH:
         if setter.assignment_mode is not AssignmentMode.VALUE_COPY:
             return ("write-through scalar setter requires value-copy native assignment",)
-        if setter.python_barrier_action is not PythonBarrierAction.SCALAR_VALUE:
-            return ("write-through scalar setter requires scalar-value Python conversion",)
+        expected_python_action = (
+            PythonBarrierAction.STRING_VALUE if setter.kind is ObjectKind.STRING else PythonBarrierAction.SCALAR_VALUE
+        )
+        if setter.python_barrier_action is not expected_python_action:
+            return (f"write-through scalar setter requires {expected_python_action.value} Python conversion",)
         return ()
     if setter.setter_action is SetterAction.REJECT_REPLACEMENT:
         if descriptor_kind is None:
@@ -5994,7 +6002,22 @@ def _scalar_module_getter_action(
         return ModuleGetterAction.CONSTANT_VALUE
     if getter is not None and getter.codegen_action is CodegenAction.SNAPSHOT_COPY and getter.nullable:
         return ModuleGetterAction.NULLABLE_SNAPSHOT
+    if _is_fixed_length_character_scalar(variable):
+        # A character value cannot cross the C ABI by value, so it copies
+        # through a fixed-width byte buffer the way a character field does.
+        return ModuleGetterAction.CHARACTER_VALUE
     return ModuleGetterAction.DIRECT_VALUE
+
+
+def _is_fixed_length_character_scalar(variable: models.SemanticVariable) -> bool:
+    """Return whether one module variable is a rank-zero declared-length character."""
+    semantic_type = variable.semantic_type
+    return bool(
+        semantic_type.name == "String"
+        and int(semantic_type.rank or 0) == 0
+        and _character_length(semantic_type) is not None
+        and character_descriptor_kind(semantic_type.metadata) is None
+    )
 
 
 def _source_parameter_needs_native_getter(variable: models.SemanticVariable) -> bool:

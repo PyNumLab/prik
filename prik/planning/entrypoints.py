@@ -917,6 +917,19 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             }:
                 parameters = ()
                 result = self._opaque_result()
+            elif variable.bridge.native_getter_action is ModuleGetterAction.CHARACTER_VALUE:
+                # A character value has no by-value C ABI, so it copies out
+                # through the same fixed-width buffer a character field uses.
+                parameters = (
+                    self._value(
+                        "value",
+                        NativeEntrypointABIValueKind.CHARACTER,
+                        pointer_depth=1,
+                        character_length=variable.character_length,
+                        intent="out",
+                    ),
+                )
+                result = self._void_result()
             else:
                 parameters = ()
                 result = self._scalar_result(variable.semantic_type_name)
@@ -930,12 +943,23 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                 )
             )
         if variable.entrypoint.setter_role is not None:
+            if variable.bridge.native_getter_action is ModuleGetterAction.CHARACTER_VALUE:
+                value = self._value(
+                    "value",
+                    NativeEntrypointABIValueKind.CHARACTER,
+                    pointer_depth=1,
+                    const=True,
+                    character_length=variable.character_length,
+                    intent="in",
+                )
+            else:
+                value = self._scalar_parameter(variable.semantic_type_name)
             operations.append(
                 self._operation(
                     variable.owner_path,
                     "module:set",
                     f"bind_c_set_{variable.symbol_name}",
-                    (self._scalar_parameter(variable.semantic_type_name),),
+                    (value,),
                 )
             )
         return tuple(operations)

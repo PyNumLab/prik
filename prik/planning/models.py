@@ -744,6 +744,7 @@ class ModuleVariablePlan(StageRecord):
     array: ArrayHandoffPlan | None
     native_array_handle: NativeArrayHandlePlan | None
     derived: DerivedModuleObjectPlan | None = None
+    character_length: int | None = None
     docstring: str | None = None
 
 

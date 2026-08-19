@@ -631,6 +631,18 @@ def uses_deferred_character_length(metadata: Mapping[str, Any] | None) -> bool:
     return bool(metadata) and metadata.get("fortran_character_length") == ":"
 
 
+def _has_declared_character_length(variable: Any) -> bool:
+    """Return whether one character variable declares a positive fixed width."""
+    metadata = getattr(getattr(variable, "semantic_type", None), "metadata", None) or {}
+    length = metadata.get("fortran_character_length")
+    if isinstance(length, bool) or length is None:
+        return False
+    if isinstance(length, int):
+        return length > 0
+    text = str(length).strip()
+    return text.isdigit() and int(text) > 0
+
+
 def character_descriptor_kind(metadata: Mapping[str, Any] | None) -> str | None:
     """Return the ``allocatable`` or ``pointer`` attribute one character value declares.
 
@@ -975,7 +987,7 @@ class OwnershipPolicyResolver:
             assignment_mode=(
                 AssignmentMode.ALIAS if storage.storage_mode is StorageMode.ALIAS else AssignmentMode.VALUE_COPY
             ),
-            setter_action=self._setter_action(storage, incoming, context),
+            setter_action=self._setter_action(storage, incoming, context, variable),
         )
 
     @staticmethod
@@ -983,6 +995,7 @@ class OwnershipPolicyResolver:
         storage: OwnershipDecision,
         incoming: OwnershipDecision,
         context: OwnershipContext,
+        variable: Any = None,
     ) -> SetterAction:
         """Select Python setter exposure from completed storage and incoming policy.
 
@@ -995,6 +1008,15 @@ class OwnershipPolicyResolver:
                 return SetterAction.REJECT_REPLACEMENT
             return SetterAction.WRITE_THROUGH
         if storage.kind is ObjectKind.STRING and context.is_field:
+            return SetterAction.WRITE_THROUGH
+        # A character module variable is written through the same fixed-width
+        # buffer a field uses, so it needs a declared width to write into.
+        # An assumed length has none, and keeps the rejecting setter.
+        if (
+            storage.kind is ObjectKind.STRING
+            and context.is_module_variable
+            and _has_declared_character_length(variable)
+        ):
             return SetterAction.WRITE_THROUGH
         if storage.kind is ObjectKind.DERIVED_TYPE and context.is_module_variable:
             return SetterAction.REJECT_REPLACEMENT
