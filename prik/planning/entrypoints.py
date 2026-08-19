@@ -34,6 +34,7 @@ from .models import (
     ArgumentTransferPlan,
     CallbackHandoffPlan,
     CallbackTransferPlan,
+    DatatypeFamily,
     DerivedFieldPlan,
     DerivedMemberPathPlan,
     DerivedTypePlan,
@@ -910,6 +911,12 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                     self._int64_parameter(f"extent_{axis}", reference=True, intent="out")
                     for axis in range(variable.array.rank)
                 )
+                result = self._opaque_result()
+            elif (
+                variable.bridge.native_getter_action is ModuleGetterAction.NULLABLE_SNAPSHOT
+                and variable.datatype_family is DatatypeFamily.STRING
+            ):
+                parameters = (self._int64_parameter("length", reference=True, intent="out"),)
                 result = self._opaque_result()
             elif variable.bridge.native_getter_action in {
                 ModuleGetterAction.NULLABLE_SNAPSHOT,

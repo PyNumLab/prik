@@ -5502,6 +5502,8 @@ class CBindingGenerator(ClassVisitor):
 
     def _lower_module_getter_nullable_snapshot(self, plan: ModuleVariablePlan) -> tuple[CFunction, ...]:
         """Return None or a detached Python copy from a nullable native snapshot."""
+        if plan.datatype_family is DatatypeFamily.STRING:
+            return self._lower_module_getter_nullable_character_snapshot(plan)
         scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
         return (
             CFunction(
@@ -5527,6 +5529,49 @@ class CBindingGenerator(ClassVisitor):
                         "result",
                         "PyObject *",
                         CodeExpression(self._scalar_result_expression(scalar_type, "&value", module=True)),
+                    ),
+                    CExpressionStatement(CodeExpression("free(data)")),
+                    CReturn(CodeExpression("result")),
+                ),
+            ),
+        )
+
+    def _lower_module_getter_nullable_character_snapshot(
+        self,
+        plan: ModuleVariablePlan,
+    ) -> tuple[CFunction, ...]:
+        """Decode one nullable detached character snapshot, or report absence.
+
+        An unallocated descriptor and a failed allocation are different
+        outcomes: the first is ``None``, the second is a ``MemoryError``, and
+        only the reported width separates them.
+        """
+        return (
+            CFunction(
+                self._module_getter_name(plan),
+                "PyObject *",
+                storage="static",
+                body=(
+                    CDeclaration("length", "int64_t", CodeExpression("0")),
+                    CDeclaration(
+                        "data",
+                        "void *",
+                        CodeExpression(f"{self._module_bridge_getter_name(plan)}(&length)"),
+                    ),
+                    CIf(
+                        CodeExpression("data == NULL"),
+                        body=(
+                            CIf(
+                                CodeExpression("length > 0"),
+                                body=(CReturn(CodeExpression("PyErr_NoMemory()")),),
+                            ),
+                            CExpressionStatement(CodeExpression("Py_RETURN_NONE")),
+                        ),
+                    ),
+                    CDeclaration(
+                        "result",
+                        "PyObject *",
+                        CodeExpression('PyUnicode_DecodeUTF8((const char *)data, (Py_ssize_t)length, "strict")'),
                     ),
                     CExpressionStatement(CodeExpression("free(data)")),
                     CReturn(CodeExpression("result")),
@@ -11739,7 +11784,19 @@ class CBindingGenerator(ClassVisitor):
         array = variable.array
         if array is None or array.rank is None or array.rank <= 0:
             raise ValueError(f"Module parameter array {variable.owner_path!r} has no fixed array plan")
-        scalar_type = PrimitiveScalarTypeRegistry.type_for(variable.semantic_type_name)
+        # A character element is a fixed-width bytes dtype whose width is the
+        # Fortran element length, so its snapshot is allocated from an itemsize
+        # rather than from the NumPy scalar type number every other element has.
+        if variable.datatype_family is DatatypeFamily.STRING:
+            if array.itemsize is None or array.itemsize <= 0:
+                raise ValueError(f"Character module array {variable.owner_path!r} has no fixed itemsize")
+            allocation = (
+                f"(PyObject *)PyArray_New(&PyArray_Type, {array.rank}, {{dimensions}}, NPY_STRING, "
+                f"NULL, NULL, {array.itemsize}, NPY_ARRAY_F_CONTIGUOUS | NPY_ARRAY_WRITEABLE, NULL)"
+            )
+        else:
+            scalar_type = PrimitiveScalarTypeRegistry.type_for(variable.semantic_type_name)
+            allocation = f"(PyObject *)PyArray_EMPTY({array.rank}, {{dimensions}}, {scalar_type.numpy_type_macro}, 1)"
         extent_names = tuple(f"{value_name}_extent_{axis}" for axis in range(array.rank))
         dimensions = f"{value_name}_dimensions"
         return (
@@ -11762,9 +11819,7 @@ class CBindingGenerator(ClassVisitor):
             CDeclaration(
                 object_name,
                 "PyObject *",
-                CodeExpression(
-                    f"(PyObject *)PyArray_EMPTY({array.rank}, {dimensions}, {scalar_type.numpy_type_macro}, 1)"
-                ),
+                CodeExpression(allocation.format(dimensions=dimensions)),
             ),
             CExpressionStatement(CodeExpression(f"if ({object_name} == NULL) {{ Py_DECREF(mod); return NULL; }}")),
             CExpressionStatement(

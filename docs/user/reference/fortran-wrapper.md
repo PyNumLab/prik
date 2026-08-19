@@ -1751,13 +1751,20 @@ Character arrays use fixed-width NumPy bytes dtypes such as `S5`; the dtype
 itemsize is the Fortran element length. Deferred-length allocatable character
 arrays carry that length at runtime and return a fresh fixed-width bytes array.
 Python Unicode arrays, object arrays, `allocatable` and `pointer` character
-fields at any length, mutable character-buffer fields, and `allocatable`,
-`pointer`, or assumed-length scalar character module variables remain blocked
-until an explicit field and encoding policy exists. Plain fixed-length
-character fields are supported, as are declared-length scalar character module
-variables (readable and writable as `str`, at exactly the declared byte width)
-and character module arrays — `allocatable` and `pointer` ones through a
-handle, and fixed-shape `target` ones as a live fixed-width bytes view. Scalar
+fields at any length, and mutable character-buffer fields remain blocked until
+an explicit field and encoding policy exists. Plain fixed-length character
+fields are supported.
+
+Character module variables are supported in every form. A declared-length
+scalar is readable and writable as `str` at exactly the declared byte width; an
+`allocatable` or `pointer` scalar reads as a detached `str`, or `None` when
+unallocated or unassociated. Character module arrays reach Python as
+fixed-width bytes arrays — `allocatable` and `pointer` ones through a handle,
+fixed-shape `target` ones as a live view, and `parameter` ones as a read-only
+snapshot copied at import. Assumed-length (`character(len=*)`) module state is
+the exception: its width comes from an initializer prik does not evaluate, so a
+scalar keeps a rejecting setter and a `parameter` array is refused before
+generation. Scalar
 `allocatable` and `pointer` character dummies and results are supported in
 every direction; see
 [Strings](../guide/strings.md#allocatable-and-pointer-scalar-strings).

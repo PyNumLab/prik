@@ -9,14 +9,20 @@ release tags add a leading `v` to the package version.
 
 ### Added
 
-- Declared-length scalar `character` module variables are now readable and
-  writable as ordinary `str` properties, matching how numeric module variables
-  already behave. A character value has no by-value C ABI, so the generated
-  accessors copy through the same fixed-width buffer a character field already
-  used; assignment requires exactly the declared byte width and refuses to
-  truncate or pad. Assumed-length (`character(len=*)`) and `allocatable` or
-  `pointer` scalar character module variables remain blocked, and string
-  `parameter` constants keep materializing at build time as before.
+- Every `character` module-variable form is now wrapped. Declared-length
+  scalars are readable and writable as ordinary `str` properties, matching how
+  numeric module variables already behave; a character value has no by-value C
+  ABI, so the accessors copy through the same fixed-width buffer a character
+  field already used, and assignment requires exactly the declared byte width
+  rather than truncating or padding. `allocatable` and `pointer` scalars read
+  as a detached `str`, or `None` when unallocated or unassociated, through the
+  same nullable snapshot a descriptor numeric scalar uses, carrying the width
+  the descriptor holds at the time of the read. `character` `parameter` arrays
+  are copied once at import into a read-only fixed-width bytes array, the way
+  numeric parameter arrays already were. An assumed-length
+  (`character(len=*)`) scalar keeps its rejecting setter, and an
+  assumed-length `parameter` array is refused with a diagnostic, because its
+  width comes from an initializer prik does not evaluate.
 
 - Fixed-shape `character` module arrays with the `target` attribute now expose
   the same live fixed-width bytes view numeric module arrays already did, at

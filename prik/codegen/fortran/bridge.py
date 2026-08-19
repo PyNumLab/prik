@@ -2763,7 +2763,7 @@ class FortranBridgeGenerator(ClassVisitor):
         array = plan.array
         if array is None or array.rank is None or array.rank <= 0:
             raise ValueError(f"Module parameter array {plan.owner_path!r} has no fixed array plan")
-        scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
+        element_type = self._module_array_element_type(plan, array)
         name = self._module_bridge_getter_name(plan)
         native = self._native_variable_name(plan)
         snapshot = "parameter_snapshot"
@@ -2781,7 +2781,7 @@ class FortranBridgeGenerator(ClassVisitor):
                 declarations=(
                     FortranDeclaration(
                         snapshot,
-                        scalar_type.fortran_spelling,
+                        element_type,
                         ("allocatable", "target", "save", self._array_dimension_attribute(array.rank)),
                     ),
                     FortranDeclaration("allocation_status", "integer(c_int)"),
@@ -2816,6 +2816,18 @@ class FortranBridgeGenerator(ClassVisitor):
                 ),
             ),
         )
+
+    def _module_array_element_type(self, plan: ModuleVariablePlan, array: ArrayHandoffPlan) -> str:
+        """Return the Fortran element spelling one module array snapshot declares.
+
+        A character element carries its Fortran length, which the binding reads
+        back as the fixed dtype width; every other element names a scalar type.
+        """
+        if plan.datatype_family is DatatypeFamily.STRING:
+            if array.itemsize is None or array.itemsize <= 0:
+                raise ValueError(f"Character module array {plan.owner_path!r} has no fixed itemsize")
+            return f"character(kind=c_char, len={array.itemsize})"
+        return PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).fortran_spelling
 
     def _lower_module_getter_borrowed_array_view(
         self,
@@ -2856,7 +2868,69 @@ class FortranBridgeGenerator(ClassVisitor):
     ) -> tuple[FortranFunction, ...]:
         """Return a nullable detached snapshot through C-owned storage."""
         presence = "allocated" if plan.entrypoint.descriptor_kind == "allocatable" else "associated"
-        return self._lower_nullable_module_getter(plan, f"{presence}({self._native_variable_name(plan)})")
+        condition = f"{presence}({self._native_variable_name(plan)})"
+        if plan.datatype_family is DatatypeFamily.STRING:
+            return self._lower_nullable_character_module_getter(plan, condition)
+        return self._lower_nullable_module_getter(plan, condition)
+
+    def _lower_nullable_character_module_getter(
+        self,
+        plan: ModuleVariablePlan,
+        condition: str,
+    ) -> tuple[FortranFunction, ...]:
+        """Build one nullable detached character snapshot with its runtime width.
+
+        A descriptor character has no width until it is allocated, so the
+        length travels beside the copied bytes rather than being known here.
+        """
+        name = self._module_bridge_getter_name(plan)
+        native = self._native_variable_name(plan)
+        return (
+            FortranFunction(
+                name=name,
+                parameters=(FortranParameter("length", "integer(c_int64_t)", ("intent(out)",)),),
+                result_name="result",
+                result_type="type(c_ptr)",
+                bind_name=name,
+                declarations=(FortranDeclaration("copy", "character(kind=c_char)", ("pointer", "dimension(:)")),),
+                body=(
+                    FortranAssignment("result", CodeExpression("c_null_ptr")),
+                    FortranAssignment("length", CodeExpression("0_c_int64_t")),
+                    FortranIf(
+                        CodeExpression(condition),
+                        body=(
+                            FortranAssignment("length", CodeExpression(f"len({native}, kind=c_int64_t)")),
+                            FortranAssignment(
+                                "result",
+                                CodeExpression("c_malloc(max(1_c_size_t, int(length, c_size_t)))"),
+                            ),
+                            FortranIf(
+                                CodeExpression("c_associated(result)"),
+                                body=(
+                                    FortranCall(
+                                        "c_f_pointer",
+                                        (
+                                            CodeExpression("result"),
+                                            CodeExpression("copy"),
+                                            CodeExpression("[length]"),
+                                        ),
+                                    ),
+                                    FortranIf(
+                                        CodeExpression("length > 0_c_int64_t"),
+                                        body=(
+                                            FortranAssignment(
+                                                "copy(1:length)",
+                                                CodeExpression(f"transfer({native}, copy(1:length))"),
+                                            ),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
 
     def _lower_nullable_module_getter(
         self,

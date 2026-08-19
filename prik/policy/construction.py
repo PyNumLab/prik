@@ -1132,8 +1132,12 @@ def _constant_array_module_variable_blockers(
         blockers.append("module parameter array is not public")
     if array is None or array.rank is None or array.rank <= 0 or len(array.shape) != array.rank:
         blockers.append("module parameter array requires one concrete fixed rank")
-    if variable.semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES:
+    if variable.semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES | {"String"}:
         blockers.append("module parameter array requires a primitive numeric element type")
+    if variable.semantic_type.name == "String" and (array is None or not array.itemsize):
+        # An assumed-length parameter takes its width from an initializer prik
+        # does not evaluate, so the fixed dtype width is not available here.
+        blockers.append("character module parameter array requires one declared element length")
     expected_getter = (
         getter is not None
         and getter.kind is ObjectKind.NUMPY_ARRAY
@@ -5893,8 +5897,13 @@ def _scalar_module_getter_blockers(
     blockers = []
     literal_string = _is_binding_literal_string(variable, getter_action)
     character_value = getter_action is ModuleGetterAction.CHARACTER_VALUE
+    # A descriptor character module variable reaches Python through the same
+    # nullable snapshot a descriptor scalar uses, carrying a runtime width.
+    character_snapshot = (
+        getter_action is ModuleGetterAction.NULLABLE_SNAPSHOT and variable.semantic_type.name == "String"
+    )
     string_getter = literal_string or character_value
-    if not (_is_first_lane_scalar_type(variable.semantic_type) or string_getter):
+    if not (_is_first_lane_scalar_type(variable.semantic_type) or string_getter or character_snapshot):
         blockers.append("module variable is not a primitive rank-zero scalar")
     if character_value and _character_length(variable.semantic_type) is None:
         blockers.append("character module variable requires one declared length")

@@ -258,3 +258,100 @@ def test_scalar_character_module_variable_rejects_a_wrong_encoded_width(value: s
     with pytest.raises(TypeError, match="exactly 3 bytes"):
         module.code = value
     assert module.code == "abc"
+
+
+CHARACTER_MODULE_DESCRIPTOR_SOURCE = """
+module fchar_module_descriptors_f90
+  implicit none
+  character(len=:), allocatable :: deferred
+  character(len=6), allocatable :: fixed
+  character(len=:), pointer :: link => null()
+  character(len=6), target :: store = 'STORED'
+  character(len=2), parameter :: pair(2) = ['ab', 'cd']
+  character(len=3), parameter :: grid(2, 2) = reshape(['aaa', 'bbb', 'ccc', 'ddd'], [2, 2])
+contains
+  subroutine setup()
+    deferred = 'alpha'
+    fixed = 'FIXEDV'
+    link => store
+  end subroutine setup
+
+  subroutine grow()
+    deferred = deferred // '-more'
+  end subroutine grow
+
+  subroutine clear()
+    if (allocated(deferred)) deallocate(deferred)
+    if (allocated(fixed)) deallocate(fixed)
+    nullify(link)
+  end subroutine clear
+end module fchar_module_descriptors_f90
+"""
+
+
+def _character_descriptor_module(tmp_path: Path):
+    return _build_text_and_import(
+        CHARACTER_MODULE_DESCRIPTOR_SOURCE,
+        "fchar_module_descriptors_f90.f90",
+        tmp_path,
+        {
+            "bind_c_fchar_module_descriptors_f90_wrapper.f90",
+            "fchar_module_descriptors_f90_wrapper.c",
+            "fchar_module_descriptors_f90_wrapper.h",
+        },
+    )
+
+
+def test_descriptor_character_module_variables_snapshot_their_runtime_value(tmp_path: Path):
+    """An allocatable or pointer character module variable reads as a detached `str`.
+
+    Its width is established at runtime, so the snapshot has to report the
+    length the descriptor currently holds rather than a width fixed at build
+    time, and re-reading after native code changes it must observe the change.
+    """
+    module = _character_descriptor_module(tmp_path)
+
+    assert module.deferred is None
+    assert module.fixed is None
+    assert module.link is None
+
+    module.setup()
+    assert module.deferred == "alpha"
+    assert module.fixed == "FIXEDV"
+    assert module.link == "STORED"
+
+    # A reallocation to a different width is observed by the next read.
+    module.grow()
+    assert module.deferred == "alpha-more"
+
+
+def test_descriptor_character_module_variables_report_absence_as_none(tmp_path: Path):
+    """Deallocation and nullification are values Python observes, not stale reads."""
+    module = _character_descriptor_module(tmp_path)
+
+    module.setup()
+    module.clear()
+    assert module.deferred is None
+    assert module.fixed is None
+    assert module.link is None
+
+
+def test_character_parameter_arrays_are_read_only_fixed_width_snapshots(tmp_path: Path):
+    """A character parameter array is copied once, like a numeric one.
+
+    A Fortran parameter has no addressable storage, so the value is a
+    Python-owned copy taken at import; it must therefore be read-only and keep
+    the declared element width as its dtype.
+    """
+    module = _character_descriptor_module(tmp_path)
+
+    assert module.pair.dtype == np.dtype("S2")
+    assert module.grid.dtype == np.dtype("S3")
+    assert module.grid.shape == (2, 2)
+    assert module.pair.flags["WRITEABLE"] is False
+    assert module.grid.flags["WRITEABLE"] is False
+    np.testing.assert_array_equal(module.pair, np.array([b"ab", b"cd"], dtype="S2"))
+    np.testing.assert_array_equal(
+        module.grid,
+        np.array([[b"aaa", b"ccc"], [b"bbb", b"ddd"]], dtype="S3"),
+    )
