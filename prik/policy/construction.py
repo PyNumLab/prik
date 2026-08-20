@@ -14,6 +14,8 @@ import ast
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
+import numpy
+
 from immutabledict import immutabledict
 
 from prik.naming import NamingPolicy
@@ -173,12 +175,25 @@ _PLAN_PRIMITIVE_SCALAR_TYPES = frozenset(
         "Int16",
         "Int32",
         "Int64",
+        "UInt8",
+        "UInt16",
+        "UInt32",
+        "UInt64",
+        "SizeT",
         "Float32",
         "Float64",
+        "Float128",
         "Complex64",
         "Complex128",
+        "Complex256",
     }
 )
+
+# Two 128-bit reals differ only in mantissa width: x87 extended precision and
+# IEEE binary128 share a storage size. Whether either is representable depends
+# on the build target's ``long double``, so the decision reads measured facts
+# rather than the source language.
+_EXTENDED_PRECISION_SCALAR_TYPES = frozenset({"Float128", "Complex256"})
 
 _NUMPY_DTYPE_NAMES = {
     **dict.fromkeys(BOOLEAN_SEMANTIC_TYPE_NAMES, "bool"),
@@ -186,10 +201,17 @@ _NUMPY_DTYPE_NAMES = {
     "Int16": "int16",
     "Int32": "int32",
     "Int64": "int64",
+    "UInt8": "uint8",
+    "UInt16": "uint16",
+    "UInt32": "uint32",
+    "UInt64": "uint64",
+    "SizeT": "uintp",
     "Float32": "float32",
     "Float64": "float64",
+    "Float128": "longdouble",
     "Complex64": "complex64",
     "Complex128": "complex128",
+    "Complex256": "clongdouble",
 }
 
 
@@ -4065,6 +4087,9 @@ def _scalar_or_string_argument_shape_blockers(
     string_value = _is_plan_string_value_type(argument.semantic_type)
     if not (_is_first_lane_scalar_type(argument.semantic_type) or string_value):
         blockers.append(f"argument {argument.name!r} is not a first-lane primitive scalar")
+    precision_blocker = _extended_precision_blocker(argument.semantic_type)
+    if precision_blocker is not None:
+        blockers.append(f"argument {argument.name!r}: {precision_blocker}")
     blockers.extend(_character_descriptor_blockers(argument, decision))
     if not decision.python_visible:
         blockers.append(f"argument {argument.name!r} is not Python-visible")
@@ -4687,6 +4712,9 @@ def _scalar_result_blockers(
         blockers.append(f"result has blocked ownership policy: {decision.blocker or decision.reason}")
     if not _is_first_lane_scalar_type(semantic_type):
         blockers.append("result is not a first-lane primitive scalar")
+    precision_blocker = _extended_precision_blocker(semantic_type)
+    if precision_blocker is not None:
+        blockers.append(f"result: {precision_blocker}")
     if decision.kind is not ObjectKind.SCALAR:
         blockers.append(f"result policy kind is {decision.kind.value}, not scalar")
     if decision.codegen_action is not CodegenAction.DIRECT_VALUE:
@@ -5263,6 +5291,46 @@ def _is_first_lane_scalar_type(semantic_type: models.SemanticType) -> bool:
         and not _is_scalar_storage_type(semantic_type)
         and semantic_type.name != "String"
         and scalar_name in _PLAN_PRIMITIVE_SCALAR_TYPES
+    )
+
+
+def _target_long_double_mantissa_bits() -> int:
+    """Return the build target's ``long double`` mantissa width, implicit bit included."""
+    return int(numpy.finfo(numpy.longdouble).nmant) + 1
+
+
+def _measured_mantissa_bits(semantic_type: models.SemanticType) -> int | None:
+    """Return the compiler-measured mantissa width recorded for one scalar.
+
+    The C probe reports ``precision_bits`` from ``LDBL_MANT_DIG`` and the
+    Fortran probe reports ``digits``; both count the implicit bit. A contract
+    that declares the type without a source language carries neither.
+    """
+    for fact_key, field in (("c_type_fact", "precision_bits"), ("fortran_type_fact", "digits")):
+        fact = semantic_type.metadata.get(fact_key)
+        if isinstance(fact, Mapping):
+            measured = fact.get(field)
+            if isinstance(measured, int) and measured > 0:
+                return int(measured)
+    return None
+
+
+def _extended_precision_blocker(semantic_type: models.SemanticType) -> str | None:
+    """Refuse an extended-precision scalar whose measured format the target cannot hold.
+
+    ``Float128`` names the target's ``long double``, which NumPy exposes as
+    ``longdouble``. A source declaring a wider mantissa -- Fortran ``real(16)``
+    on a target whose ``long double`` is x87 extended precision -- has no NumPy
+    representation, and its storage size cannot reveal that on its own.
+    """
+    if semantic_type.name not in _EXTENDED_PRECISION_SCALAR_TYPES:
+        return None
+    measured = _measured_mantissa_bits(semantic_type)
+    if measured is None or measured == _target_long_double_mantissa_bits():
+        return None
+    return (
+        f"{semantic_type.name} declares a {measured}-bit mantissa but this target's long double "
+        f"provides {_target_long_double_mantissa_bits()} bits"
     )
 
 

@@ -40,6 +40,14 @@ release tags add a leading `v` to the package version.
   checks use analytic values and `scipy.interpolate` as independent oracles. It
   is the first example project written in modern Fortran rather than FORTRAN 77.
 
+- BSPLINE-FORTRAN now follows the maintained real-library example workflow:
+  its checked-in build instructions are verified with the documentation suite,
+  its full procedural and derived-type surface is exercised in the native
+  library CI job, and its inventory fails closed if generated exports or named
+  numerical tests drift. The example now calls all one- through six-dimensional
+  procedural setup and evaluation routines and constructs every concrete spline
+  class against an independent affine interpolation result.
+
 - Abstract Fortran derived types are now wrapped. A `type, abstract ::`
   declaration becomes a Python class with no constructor — instantiating it
   raises `TypeError` naming the concrete extensions to use instead — while its
@@ -64,6 +72,15 @@ release tags add a leading `v` to the package version.
   use the corresponding infrastructure owners.
 
 ### Fixed
+
+- A `bind(C)` character dummy that is a pointer now declares deferred length,
+  as the Fortran standard requires. GNU Fortran 13 and newer reject the
+  declared-length spelling earlier releases emitted, so wrapping a
+  `character(len=N), pointer` module array failed to compile there. Pointer
+  assignment takes the length from its target, so the associated width is
+  unchanged. The matching allocatable descriptor consumer travels as an
+  assumed-length assumed-shape dummy, whose descriptor still carries the
+  element length.
 
 - A generic interface whose specifics project an `intent(out)` argument into a
   result now reloads from its generated contract. The declaration states the

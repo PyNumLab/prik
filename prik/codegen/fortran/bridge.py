@@ -9,6 +9,7 @@ actions already projected into the plan.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import replace
 import re
 
@@ -128,6 +129,41 @@ _MODULE_ASSIGNMENT_SUMMARIES = {
     AssignmentMode.VALUE_COPY: "Copies the incoming value into the variable.",
     AssignmentMode.ALIAS: "Points the variable at the incoming storage.",
 }
+
+
+def _plan_semantic_type_names(node: object, _seen: set[int] | None = None) -> frozenset[str]:
+    """Collect every ``semantic_type_name`` reachable from a completed plan node.
+
+    The walk is exhaustive by construction rather than by enumerating plan
+    shapes, so a lowering mechanism that starts carrying a new scalar cannot
+    silently lose the ``iso_c_binding`` import that spells it.
+    """
+    seen = set() if _seen is None else _seen
+    if id(node) in seen:
+        return frozenset()
+    seen.add(id(node))
+    names: set[str] = set()
+    if isinstance(node, str | bytes):
+        return frozenset()
+    if isinstance(node, Mapping):
+        for key, value in node.items():
+            names |= _plan_semantic_type_names(key, seen)
+            names |= _plan_semantic_type_names(value, seen)
+        return frozenset(names)
+    if isinstance(node, Iterable):
+        for item in node:
+            names |= _plan_semantic_type_names(item, seen)
+        return frozenset(names)
+    fields = getattr(node, "__dataclass_fields__", None)
+    if fields is None:
+        return frozenset()
+    for field_name in fields:
+        value = getattr(node, field_name, None)
+        if field_name == "semantic_type_name" and isinstance(value, str):
+            names.add(value)
+        else:
+            names |= _plan_semantic_type_names(value, seen)
+    return frozenset(names)
 
 
 class FortranBridgeGenerator(ClassVisitor):
@@ -416,8 +452,14 @@ class FortranBridgeGenerator(ClassVisitor):
             if value.semantic_type_name is None:
                 raise ValueError(f"Generated-support descriptor {value.role!r} has no element type")
             if value.semantic_type_name == "String":
-                # A descriptor dummy accepts a deferred-length actual only when
-                # it declares one, so the width the array declares is spelled.
+                if value.descriptor_kind is NativeArrayDescriptorKind.POINTER:
+                    # A bind(C) pointer character dummy has to declare deferred
+                    # length. Pointer assignment takes the length from the
+                    # target, so a declared-width array still associates.
+                    return "character(kind=c_char, len=:)"
+                # An allocatable descriptor dummy accepts a deferred-length
+                # actual only when it declares one, so the width the array
+                # declares is spelled.
                 length = ":" if value.character_length is None else str(value.character_length)
                 return f"character(kind=c_char, len={length})"
             return PrimitiveScalarTypeRegistry.type_for(value.semantic_type_name).fortran_spelling
@@ -2612,7 +2654,7 @@ class FortranBridgeGenerator(ClassVisitor):
             parameters=(
                 FortranParameter(
                     "descriptor",
-                    self._module_native_array_element_type(plan),
+                    self._module_pointer_dummy_element_type(plan),
                     ("pointer", self._array_dimension_attribute(handle.array.rank), "intent(out)"),
                 ),
             ),
@@ -2702,7 +2744,7 @@ class FortranBridgeGenerator(ClassVisitor):
             parameters=(
                 FortranParameter(
                     "source",
-                    self._module_native_array_element_type(plan),
+                    self._module_pointer_dummy_element_type(plan),
                     ("pointer", self._array_dimension_attribute(handle.array.rank), "intent(in)"),
                 ),
             ),
@@ -2761,6 +2803,38 @@ class FortranBridgeGenerator(ClassVisitor):
             length = ":" if plan.character_length is None else str(plan.character_length)
             return f"character(kind=c_char, len={length})"
         return PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).fortran_spelling
+
+    def _module_pointer_dummy_element_type(self, plan: ModuleVariablePlan) -> str:
+        """Return the element type of one module pointer dummy.
+
+        A ``bind(C)`` pointer character dummy has to declare deferred length.
+        Pointer assignment then takes the length from the target, so a module
+        array that declares its own width still associates through it.
+        """
+        if plan.datatype_family is DatatypeFamily.STRING:
+            return "character(kind=c_char, len=:)"
+        return PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name).fortran_spelling
+
+    def _module_descriptor_consumer_value_declaration(
+        self,
+        plan: ModuleVariablePlan,
+        rank: int,
+    ) -> tuple[str, tuple[str, ...]]:
+        """Return the type and attributes of one descriptor-consumer value dummy.
+
+        A ``bind(C)`` allocatable character dummy has to declare deferred
+        length, while argument association requires the actual to be deferred
+        exactly when the dummy is. A module array that declares its own width
+        satisfies neither together, so it travels as an assumed-length
+        assumed-shape dummy whose descriptor still carries the element length.
+        The runtime never reaches this operation while the array is
+        unallocated: ``AllocatableArray.to_numpy`` and ``shape`` both return
+        early on ``allocated``.
+        """
+        dimension = self._array_dimension_attribute(rank)
+        if plan.datatype_family is DatatypeFamily.STRING and plan.character_length is not None:
+            return "character(kind=c_char, len=*)", (dimension, "intent(in)")
+        return self._module_native_array_element_type(plan), ("allocatable", dimension, "intent(in)")
 
     def _module_native_array_operation_name(self, plan: ModuleVariablePlan, operation) -> str:
         """Return one planner-owned module native-array operation symbol."""
@@ -8060,11 +8134,7 @@ class FortranBridgeGenerator(ClassVisitor):
             name=self._module_descriptor_callback_interface_name(plan),
             imports=(self._iso_symbol(plan.semantic_type_name), "c_ptr"),
             parameters=(
-                FortranParameter(
-                    "value",
-                    self._module_native_array_element_type(plan),
-                    ("allocatable", self._array_dimension_attribute(handle.array.rank), "intent(in)"),
-                ),
+                FortranParameter("value", *self._module_descriptor_consumer_value_declaration(plan, handle.array.rank)),
                 FortranParameter("context", "type(c_ptr)", ("value",)),
             ),
             is_subroutine=True,
@@ -8589,10 +8659,17 @@ class FortranBridgeGenerator(ClassVisitor):
             "Int16": "c_int16_t",
             "Int32": "c_int32_t",
             "Int64": "c_int64_t",
+            "UInt8": "c_int8_t",
+            "UInt16": "c_int16_t",
+            "UInt32": "c_int32_t",
+            "UInt64": "c_int64_t",
+            "SizeT": "c_size_t",
             "Float32": "c_float",
             "Float64": "c_double",
+            "Float128": "c_long_double",
             "Complex64": "c_float_complex",
             "Complex128": "c_double_complex",
+            "Complex256": "c_long_double_complex",
             "String": "c_char",
         }
         return symbols[semantic_type_name]
@@ -8620,11 +8697,26 @@ class FortranBridgeGenerator(ClassVisitor):
             "c_size_t",
             "c_sizeof",
         ]
+        symbols.extend(self._extended_precision_iso_symbols(plan))
         if self._uses_c_function_pointer_symbols(plan):
             symbols.extend(("c_funptr", "c_f_procpointer"))
         if self._uses_derived_interop_symbols(plan):
             symbols.extend(("c_funloc", "c_funptr", "c_f_procpointer"))
         return tuple(dict.fromkeys(symbols))
+
+    def _extended_precision_iso_symbols(self, plan: ModulePlan) -> tuple[str, ...]:
+        """Return the extended-precision kind imports the completed plan actually spells.
+
+        ``c_long_double`` is imported only when the plan uses it, so an ordinary
+        module's generated bridge keeps the import list it already had.
+        """
+        names = _plan_semantic_type_names(plan)
+        symbols = []
+        if "Float128" in names:
+            symbols.append("c_long_double")
+        if "Complex256" in names:
+            symbols.append("c_long_double_complex")
+        return tuple(symbols)
 
     def _uses_c_function_pointer_symbols(self, plan: ModulePlan) -> bool:
         """Return whether completed module or field descriptor actions require C procedure-pointer support."""

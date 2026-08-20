@@ -770,8 +770,15 @@ def evaluate_fortran_type_facts(
     incomplete.
     """
     requirement_list = list(requirements)
-    expressions = [str(item.get("expression") or "").strip() for item in requirement_list]
-    expressions = [expression for expression in expressions if expression]
+    expressions = [
+        text
+        for item in requirement_list
+        for text in (
+            str(item.get("expression") or "").strip(),
+            str(item.get("precision_expression") or "").strip(),
+        )
+        if text
+    ]
     if not expressions:
         return {}
     active_report = _report_for_expressions(
@@ -794,12 +801,22 @@ def evaluate_fortran_type_facts(
         base_type = str(item.get("base_type") or "").lower()
         raw_kind = item.get("kind")
         kind = None if raw_kind is None else str(raw_kind).lower()
-        facts[(base_type, kind)] = {
+        fact: dict[str, object] = {
             "base_type": base_type,
             "kind": kind,
             "bits": value,
             "expression": expression,
         }
+        precision_expression = str(item.get("precision_expression") or "").strip()
+        if precision_expression:
+            digits = _value_for_expression(active_report.values, precision_expression)
+            if digits is None:
+                raise FortranTypeProbeError(
+                    f"Fortran type probe report is missing required expression {precision_expression!r}"
+                )
+            fact["digits"] = digits
+            fact["precision_expression"] = precision_expression
+        facts[(base_type, kind)] = fact
     return facts
 
 

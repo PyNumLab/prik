@@ -155,11 +155,17 @@ _DATATYPE_FAMILIES = {
     "Int16": DatatypeFamily.INTEGER,
     "Int32": DatatypeFamily.INTEGER,
     "Int64": DatatypeFamily.INTEGER,
+    "UInt8": DatatypeFamily.INTEGER,
+    "UInt16": DatatypeFamily.INTEGER,
+    "UInt32": DatatypeFamily.INTEGER,
+    "UInt64": DatatypeFamily.INTEGER,
     "SizeT": DatatypeFamily.INTEGER,
     "Float32": DatatypeFamily.REAL,
     "Float64": DatatypeFamily.REAL,
+    "Float128": DatatypeFamily.REAL,
     "Complex64": DatatypeFamily.COMPLEX,
     "Complex128": DatatypeFamily.COMPLEX,
+    "Complex256": DatatypeFamily.COMPLEX,
     "String": DatatypeFamily.STRING,
 }
 

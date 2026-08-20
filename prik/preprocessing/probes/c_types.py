@@ -177,6 +177,16 @@ def build_c_standard_type_probe_source() -> str:
            _Alignof(type) * (size_t)CHAR_BIT, \
            precision, max_exp)
 
+#define PRIK_PRINT_COMPLEX(name, type, precision, max_exp) \
+    printf("\"" name "\":{\"header\":\"<builtin>\",\"available\":true," \
+           "\"kind\":\"arithmetic\",\"underlying_c_type\":\"%s\"," \
+           "\"bits\":%zu,\"alignment_bits\":%zu,\"precision_bits\":%d," \
+           "\"max_binary_exponent\":%d}", \
+           PRIK_BASE_TYPE((type)0), \
+           sizeof(type) * (size_t)CHAR_BIT, \
+           _Alignof(type) * (size_t)CHAR_BIT, \
+           precision, max_exp)
+
 int main(void) {
     printf("{\"types\":{");
     PRIK_PRINT_ARITHMETIC("_Bool", "<builtin>", _Bool);
@@ -209,11 +219,11 @@ int main(void) {
     printf(",");
     PRIK_PRINT_REAL("long double", long double, LDBL_MANT_DIG, LDBL_MAX_EXP);
     printf(",");
-    PRIK_PRINT_ARITHMETIC("float _Complex", "<builtin>", float _Complex);
+    PRIK_PRINT_COMPLEX("float _Complex", float _Complex, FLT_MANT_DIG, FLT_MAX_EXP);
     printf(",");
-    PRIK_PRINT_ARITHMETIC("double _Complex", "<builtin>", double _Complex);
+    PRIK_PRINT_COMPLEX("double _Complex", double _Complex, DBL_MANT_DIG, DBL_MAX_EXP);
     printf(",");
-    PRIK_PRINT_ARITHMETIC("long double _Complex", "<builtin>", long double _Complex);
+    PRIK_PRINT_COMPLEX("long double _Complex", long double _Complex, LDBL_MANT_DIG, LDBL_MAX_EXP);
     printf(",");
     PRIK_PRINT_ARITHMETIC("size_t", "stddef.h", size_t);
     printf(",");

@@ -45,7 +45,7 @@ def test_c_standard_type_probe_source_queries_standard_headers_without_layout_cl
     assert "PRIK_PRINT_CHAR()" in source
     assert 'PRIK_PRINT_ARITHMETIC("unsigned long"' in source
     assert 'PRIK_PRINT_REAL("long double"' in source
-    assert 'PRIK_PRINT_ARITHMETIC("long double _Complex"' in source
+    assert 'PRIK_PRINT_COMPLEX("long double _Complex"' in source
     assert 'PRIK_PRINT_ARITHMETIC("int"' in source
     assert 'PRIK_PRINT_ARITHMETIC("size_t"' in source
     assert 'PRIK_PRINT_ARITHMETIC("uint32_t"' in source

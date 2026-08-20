@@ -3278,6 +3278,26 @@ def fortran_type_storage_expression(base_type: str, kind: str | None = None) -> 
     return f"storage_size({constructor})"
 
 
+def fortran_type_precision_expression(base_type: str, kind: str | None = None) -> str | None:
+    """Return the Fortran ``digits`` expression for one floating-point type.
+
+    Storage width alone cannot separate two 128-bit reals: x87 extended
+    precision and IEEE binary128 share a size and differ only in mantissa
+    width. Integer and logical types have no such ambiguity and return ``None``.
+
+    Example:
+        >>> fortran_type_precision_expression("real", "16")
+        'digits(real(0.0,kind=16))'
+    """
+    base = str(base_type).lower()
+    if base not in {"real", "complex"}:
+        return None
+    # ``digits`` rejects a complex argument, and a complex kind's components
+    # are reals of the same kind, so both bases query the real constructor.
+    constructor = "real(0.0)" if kind is None else f"real(0.0,kind={kind})"
+    return f"digits({constructor})"
+
+
 def collect_fortran_type_storage_requirements(
     parsed,
     *,
@@ -3313,6 +3333,7 @@ def collect_fortran_type_storage_requirements(
                 "base_type": key[0],
                 "kind": key[1],
                 "expression": fortran_type_storage_expression(*key),
+                "precision_expression": fortran_type_precision_expression(*key),
                 "unit": context.get("unit"),
                 "symbol": context.get("symbol"),
             }

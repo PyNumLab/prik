@@ -790,6 +790,261 @@ static inline PyObject *prik_complex128_to_numpy(const double complex *value)
     return result;
 }
 
+/* Unsigned-integer and extended-precision scalar conversions.
+
+   NumPy dropped the ``Intp`` scalar tag, so ``size_t`` selects the fixed-width
+   tag that matches the target's pointer width instead. */
+
+static inline int prik_uint8_unpack_exact(PyObject *value, uint8_t *destination)
+{
+    if (!PyArray_IsScalar(value, UByte)) {
+        return -1;
+    }
+    *destination = (uint8_t)PyArrayScalar_VAL(value, UByte);
+    return 0;
+}
+
+static inline int prik_uint8_unpack(PyObject *value, uint8_t *destination)
+{
+    if (PyArray_IsScalar(value, UByte)) {
+        PyArray_ScalarAsCtype(value, destination);
+    } else {
+        *destination = (uint8_t)PyLong_AsUnsignedLong(value);
+    }
+    return PyErr_Occurred() == NULL ? 0 : -1;
+}
+
+static inline PyObject *prik_uint8_to_python(const uint8_t *value)
+{
+    return PyLong_FromUnsignedLong(*value);
+}
+
+static inline PyObject *prik_uint8_to_numpy(const uint8_t *value)
+{
+    PyObject *result = PyArrayScalar_New(UByte);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, UByte, (npy_uint8)*value);
+    }
+    return result;
+}
+
+static inline int prik_uint16_unpack_exact(PyObject *value, uint16_t *destination)
+{
+    if (!PyArray_IsScalar(value, UShort)) {
+        return -1;
+    }
+    *destination = (uint16_t)PyArrayScalar_VAL(value, UShort);
+    return 0;
+}
+
+static inline int prik_uint16_unpack(PyObject *value, uint16_t *destination)
+{
+    if (PyArray_IsScalar(value, UShort)) {
+        PyArray_ScalarAsCtype(value, destination);
+    } else {
+        *destination = (uint16_t)PyLong_AsUnsignedLong(value);
+    }
+    return PyErr_Occurred() == NULL ? 0 : -1;
+}
+
+static inline PyObject *prik_uint16_to_python(const uint16_t *value)
+{
+    return PyLong_FromUnsignedLong(*value);
+}
+
+static inline PyObject *prik_uint16_to_numpy(const uint16_t *value)
+{
+    PyObject *result = PyArrayScalar_New(UShort);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, UShort, (npy_uint16)*value);
+    }
+    return result;
+}
+
+static inline int prik_uint32_unpack_exact(PyObject *value, uint32_t *destination)
+{
+    if (!PyArray_IsScalar(value, UInt)) {
+        return -1;
+    }
+    *destination = (uint32_t)PyArrayScalar_VAL(value, UInt);
+    return 0;
+}
+
+static inline int prik_uint32_unpack(PyObject *value, uint32_t *destination)
+{
+    if (PyArray_IsScalar(value, UInt)) {
+        PyArray_ScalarAsCtype(value, destination);
+    } else {
+        *destination = (uint32_t)PyLong_AsUnsignedLong(value);
+    }
+    return PyErr_Occurred() == NULL ? 0 : -1;
+}
+
+static inline PyObject *prik_uint32_to_python(const uint32_t *value)
+{
+    return PyLong_FromUnsignedLong(*value);
+}
+
+static inline PyObject *prik_uint32_to_numpy(const uint32_t *value)
+{
+    PyObject *result = PyArrayScalar_New(UInt);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, UInt, (npy_uint32)*value);
+    }
+    return result;
+}
+
+static inline int prik_uint64_unpack_exact(PyObject *value, uint64_t *destination)
+{
+    if (!PyArray_IsScalar(value, ULongLong)) {
+        return -1;
+    }
+    *destination = (uint64_t)PyArrayScalar_VAL(value, ULongLong);
+    return 0;
+}
+
+static inline int prik_uint64_unpack(PyObject *value, uint64_t *destination)
+{
+    if (PyArray_IsScalar(value, ULongLong)) {
+        PyArray_ScalarAsCtype(value, destination);
+    } else {
+        *destination = (uint64_t)PyLong_AsUnsignedLongLong(value);
+    }
+    return PyErr_Occurred() == NULL ? 0 : -1;
+}
+
+static inline PyObject *prik_uint64_to_python(const uint64_t *value)
+{
+    return PyLong_FromUnsignedLongLong(*value);
+}
+
+static inline PyObject *prik_uint64_to_numpy(const uint64_t *value)
+{
+    PyObject *result = PyArrayScalar_New(ULongLong);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, ULongLong, (npy_uint64)*value);
+    }
+    return result;
+}
+
+static inline int prik_uintp_unpack_exact(PyObject *value, size_t *destination)
+{
+#if NPY_SIZEOF_INTP == 8
+    if (!PyArray_IsScalar(value, ULongLong)) {
+        return -1;
+    }
+    *destination = (size_t)PyArrayScalar_VAL(value, ULongLong);
+#else
+    if (!PyArray_IsScalar(value, UInt)) {
+        return -1;
+    }
+    *destination = (size_t)PyArrayScalar_VAL(value, UInt);
+#endif
+    return 0;
+}
+
+static inline int prik_uintp_unpack(PyObject *value, size_t *destination)
+{
+#if NPY_SIZEOF_INTP == 8
+    if (PyArray_IsScalar(value, ULongLong)) {
+#else
+    if (PyArray_IsScalar(value, UInt)) {
+#endif
+        PyArray_ScalarAsCtype(value, destination);
+    } else {
+        *destination = (size_t)PyLong_AsUnsignedLongLong(value);
+    }
+    return PyErr_Occurred() == NULL ? 0 : -1;
+}
+
+static inline PyObject *prik_uintp_to_python(const size_t *value)
+{
+    return PyLong_FromUnsignedLongLong((unsigned long long)*value);
+}
+
+static inline PyObject *prik_uintp_to_numpy(const size_t *value)
+{
+#if NPY_SIZEOF_INTP == 8
+    PyObject *result = PyArrayScalar_New(ULongLong);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, ULongLong, (npy_uint64)*value);
+    }
+#else
+    PyObject *result = PyArrayScalar_New(UInt);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, UInt, (npy_uint32)*value);
+    }
+#endif
+    return result;
+}
+
+static inline int prik_longdouble_unpack_exact(PyObject *value, long double *destination)
+{
+    if (!PyArray_IsScalar(value, LongDouble)) {
+        return -1;
+    }
+    *destination = (long double)PyArrayScalar_VAL(value, LongDouble);
+    return 0;
+}
+
+static inline int prik_longdouble_unpack(PyObject *value, long double *destination)
+{
+    if (PyArray_IsScalar(value, LongDouble)) {
+        PyArray_ScalarAsCtype(value, destination);
+    } else {
+        *destination = (long double)PyFloat_AsDouble(value);
+    }
+    return PyErr_Occurred() == NULL ? 0 : -1;
+}
+
+static inline PyObject *prik_longdouble_to_python(const long double *value)
+{
+    return PyFloat_FromDouble((double)*value);
+}
+
+static inline PyObject *prik_longdouble_to_numpy(const long double *value)
+{
+    PyObject *result = PyArrayScalar_New(LongDouble);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, LongDouble, (npy_longdouble)*value);
+    }
+    return result;
+}
+
+static inline int prik_clongdouble_unpack_exact(PyObject *value, long double complex *destination)
+{
+    if (!PyArray_IsScalar(value, CLongDouble)) {
+        return -1;
+    }
+    *destination = (long double complex)PyArrayScalar_VAL(value, CLongDouble);
+    return 0;
+}
+
+static inline int prik_clongdouble_unpack(PyObject *value, long double complex *destination)
+{
+    if (PyArray_IsScalar(value, CLongDouble)) {
+        PyArray_ScalarAsCtype(value, destination);
+    } else {
+        Py_complex parsed = PyComplex_AsCComplex(value);
+        *destination = (long double)parsed.real + (long double)parsed.imag * _Complex_I;
+    }
+    return PyErr_Occurred() == NULL ? 0 : -1;
+}
+
+static inline PyObject *prik_clongdouble_to_python(const long double complex *value)
+{
+    return PyComplex_FromDoubles((double)creall(*value), (double)cimagl(*value));
+}
+
+static inline PyObject *prik_clongdouble_to_numpy(const long double complex *value)
+{
+    PyObject *result = PyArrayScalar_New(CLongDouble);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, CLongDouble, (npy_clongdouble)*value);
+    }
+    return result;
+}
+
 /* Release a bridge-owned allocation transferred through a NumPy base capsule. */
 static inline void prik_release_owned_memory(PyObject *capsule)
 {
