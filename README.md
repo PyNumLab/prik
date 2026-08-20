@@ -226,10 +226,7 @@ code generation with a diagnostic naming the boundary and the reason.
 - procedure-pointer module variables, and
   callbacks retained after the wrapped call returns;
 - polymorphic outputs, mutable polymorphic arguments, polymorphic
-  `allocatable` and `pointer` scalars, and unlimited polymorphism (`class(*)`);
-- overload sets whose candidates share one runtime signature, and hand-edited
-  `.pyi` constructors that omit `@bind` or contradict the generated field
-  constructor.
+  `allocatable` and `pointer` scalars, and unlimited polymorphism (`class(*)`).
 
 The [language feature matrix](https://pynumlab.github.io/prik/user/language-support/feature-matrix/)
 records the full support status of every feature with its evidence.
