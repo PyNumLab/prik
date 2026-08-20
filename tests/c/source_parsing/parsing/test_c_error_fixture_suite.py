@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 
-_C_ROOT = Path(__file__).resolve().parents[1]
+_C_ROOT = Path(__file__).resolve().parents[2]
 _ERRORS_DIR = _C_ROOT / "fixtures" / "native" / "errors" / "parser"
 _EXPECTED_ERRORS_DIR = _C_ROOT / "fixtures" / "parser" / "fixtures" / "errors"
 _SOURCE_SUFFIXES = {".c", ".h", ".i"}

@@ -40,7 +40,7 @@ from prik.semantics.models import (
     SemanticType,
     SemanticVariable,
 )
-from tests.c.semantics.conversion._support import (
+from tests.c._support.semantic_conversion import (
     _assert_c_origin,
     _function,
 )

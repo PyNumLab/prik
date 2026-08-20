@@ -22,7 +22,7 @@ from prik.parsers.c.models import (
     CVoid,
 )
 from prik.semantics.c2ir import CToIRConverter, c_file_to_semantic_modules, c_function_to_semantic_function
-from tests.c.semantics.conversion._support import (
+from tests.c._support.semantic_conversion import (
     _assert_c_origin,
     _function,
 )

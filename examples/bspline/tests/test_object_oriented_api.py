@@ -24,6 +24,17 @@ def _sine_spline(bspline_oo, points=25):
     return spline
 
 
+def _affine_grid(dimension):
+    """Return Fortran-order samples of the affine function in ``dimension`` axes."""
+    axes = [np.linspace(0.0, 1.0, 5) for _ in range(dimension)]
+    values = np.zeros((5,) * dimension)
+    for axis, points in enumerate(axes):
+        shape = [1] * dimension
+        shape[axis] = points.size
+        values += points.reshape(shape)
+    return axes, np.asfortranarray(values)
+
+
 def test_every_reviewed_class_is_exported(bspline_oo):
     for name in (ABSTRACT_BASE, *CLASSES):
         assert hasattr(bspline_oo, name), name
@@ -39,6 +50,19 @@ def test_every_class_extends_the_abstract_base(bspline_oo):
     base = bspline_oo.bspline_class
     for name in CLASSES:
         assert issubclass(getattr(bspline_oo, name), base), name
+
+
+@pytest.mark.parametrize("dimension", range(1, 7))
+def test_every_concrete_class_interpolates_an_affine_grid(bspline_oo, dimension):
+    """Every dimension-specific constructor and evaluator works end to end."""
+    axes, values = _affine_grid(dimension)
+    spline = getattr(bspline_oo, f"bspline_{dimension}d")(*axes, values, *(CUBIC,) * dimension)
+
+    value, iflag = spline.evaluate(*(np.float64(0.3),) * dimension, *(np.int32(0),) * dimension)
+
+    assert spline.status_ok()
+    assert iflag == np.int32(0)
+    assert value == pytest.approx(0.3 * dimension, abs=1.0e-12)
 
 
 def test_every_class_answers_the_deferred_and_inherited_bindings(bspline_oo):

@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 
-_FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "parser" / "fixtures"
+_FIXTURES_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "parser" / "fixtures"
 _PARSER_FIXTURE_GROUPS = ("general", "json", "tinyexpr", "linmath", "nanosvg", "stb")
 
 

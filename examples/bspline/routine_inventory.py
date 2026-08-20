@@ -23,14 +23,17 @@ INHERITED_BINDINGS: tuple[str, ...] = ("clear_flag", "status_message", "status_o
 #: Public procedural routines, by dimension. The module keeps its knot,
 #: interval, and band-solver helpers private, so they are not part of the
 #: wrapped surface.
-SUB_ROUTINE_GROUPS: dict[str, tuple[str, ...]] = {
+PROCEDURAL_ROUTINE_GROUPS: dict[str, tuple[str, ...]] = {
     "Interpolation setup": ("db1ink", "db2ink", "db3ink", "db4ink", "db5ink", "db6ink"),
     "Evaluation": ("db1val", "db2val", "db3val", "db4val", "db5val", "db6val"),
     "Definite integrals": ("db1sqad", "db1fqad"),
     "Status reporting": ("get_status_message",),
 }
 
-ALL_SUB_ROUTINES = tuple(routine for group in SUB_ROUTINE_GROUPS.values() for routine in group)
+ALL_PROCEDURAL_ROUTINES = tuple(routine for group in PROCEDURAL_ROUTINE_GROUPS.values() for routine in group)
+PRIK_TESTED_PROCEDURAL_ROUTINES = frozenset(ALL_PROCEDURAL_ROUTINES)
+UNSUPPORTED_PROCEDURAL_ROUTINES: dict[str, str] = {}
+EXPLICIT_PROCEDURAL_TEST_NAMES = {routine: f"test_{routine}" for routine in ALL_PROCEDURAL_ROUTINES}
 
 #: Public spline-order constants copied into the module at import.
 ORDER_CONSTANTS: dict[str, int] = {
@@ -43,6 +46,9 @@ ORDER_CONSTANTS: dict[str, int] = {
     "bspline_order_heptic": 8,
     "bspline_order_octic": 9,
 }
+
+ALL_OBJECT_EXPORTS = (ABSTRACT_BASE, *CLASSES)
+ALL_PROCEDURAL_EXPORTS = (*ALL_PROCEDURAL_ROUTINES, *ORDER_CONSTANTS)
 
 #: Upstream modules this example deliberately leaves out.
 UNSUPPORTED: dict[str, str] = {

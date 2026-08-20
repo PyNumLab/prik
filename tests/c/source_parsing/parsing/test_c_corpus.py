@@ -10,7 +10,7 @@ import shutil
 
 import pytest
 
-_CJSON_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "native" / "json"
+_CJSON_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "native" / "json"
 
 
 def _preprocessed_cjson_source(filename: str) -> str:

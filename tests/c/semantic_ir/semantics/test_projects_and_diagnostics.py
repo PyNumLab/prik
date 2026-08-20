@@ -27,7 +27,7 @@ from prik.semantics.c2ir import (
     c_type_to_semantic_type,
 )
 from prik.semantics.models import SemanticArgument, SemanticModule, SemanticOrigin, SemanticType
-from tests.c.semantics.conversion._support import (
+from tests.c._support.semantic_conversion import (
     _assert_c_origin,
     _function,
 )

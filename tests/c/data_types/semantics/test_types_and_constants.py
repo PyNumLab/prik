@@ -51,7 +51,7 @@ from prik.semantics.c2ir import (
     c_struct_to_semantic_class,
     c_type_to_semantic_type,
 )
-from tests.c.semantics.conversion._support import (
+from tests.c._support.semantic_conversion import (
     _assert_c_origin,
     _assert_unsupported_type,
     _function,
