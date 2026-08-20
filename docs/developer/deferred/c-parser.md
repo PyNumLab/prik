@@ -850,8 +850,8 @@ Useful local checks for the parse-only frontend:
 ```bash
 python -m prik tests/c/fixtures/native/general/math_api.h &#45;&#45;language c &#45;&#45;parse &#45;&#45;json
 python tests/c/fixtures/parser/generate_c_parser_goldens.py tests/c/fixtures/native/general/math_api.h
-pytest -q tests/c/source_parsing/parsing/test_c_declarations_and_declarators.py
-pytest -q tests/c/source_parsing/parsing/test_c_fixture_suite.py
+pytest -q tests/c/infrastructure/parsing/test_c_declarations_and_declarators.py
+pytest -q tests/c/infrastructure/parsing/test_c_fixture_suite.py
 pytest -q tests/c
 pytest -q
 ```
@@ -861,10 +861,10 @@ Focused test files by implementation area:
 
 <!&#45;&#45; PRIK_C_DOCS_START
 - Lexer, comments, continuations, raw directive handling:
-  `tests/c/infrastructure/parsers/test_c_lexer_preprocessor.py`
+  `tests/c/infrastructure/parsing/test_c_lexer_preprocessor.py`
 - Declaration specifiers, qualifiers, declarators, arrays, pointers,
   callbacks, and variables:
-  `tests/c/source_parsing/parsing/test_c_declarations_and_declarators.py`
+  `tests/c/infrastructure/parsing/test_c_declarations_and_declarators.py`
 - Function prototypes and definitions:
   `tests/c/functions/parsing/test_c_functions.py`
 - Structs, unions, typedefs, and aggregate members:
@@ -873,19 +873,19 @@ Focused test files by implementation area:
   `tests/c/enumerations/parsing/test_c_enum_syntax.py`
 - Project assembly, include graph facts, typedef/tag resolution, and
   redeclarations:
-  `tests/c/source_parsing/parsing/test_c_project_resolution.py`
+  `tests/c/infrastructure/parsing/test_c_project_resolution.py`
 - Compiler extension tolerance and diagnostics:
-  `tests/c/source_parsing/parsing/test_c_compiler_extensions.py`
+  `tests/c/infrastructure/parsing/test_c_compiler_extensions.py`
 - Corpus/third-party-style fixtures:
-  `tests/c/source_parsing/parsing/test_c_corpus.py`
+  `tests/c/infrastructure/parsing/test_c_corpus.py`
 - Project golden fixtures:
-  `tests/c/source_parsing/parsing/test_c_fixture_suite.py`
+  `tests/c/infrastructure/parsing/test_c_fixture_suite.py`
 - Parser JSON shape:
-  `tests/c/infrastructure/parsers/test_c_json_sanity.py`
+  `tests/c/infrastructure/parsing/test_c_json_sanity.py`
 - Fatal parser diagnostic goldens:
-  `tests/c/source_parsing/parsing/test_c_error_fixture_suite.py`
+  `tests/c/infrastructure/parsing/test_c_error_fixture_suite.py`
 - Public API and developer tutorial:
-  `tests/c/infrastructure/parsers/test_c_public_api_skeleton.py` and
+  `tests/c/infrastructure/parsing/test_c_public_api_skeleton.py` and
   `tests/c/infrastructure/execution_examples/test_c_parser_developer_tutorial.py`
 PRIK_C_DOCS_END &#45;&#45;>
 
@@ -1115,12 +1115,12 @@ Testing should grow in this order:
 
 Executable references:
 
-- Shared CLI behavior: `tests/fortran/command_line_interface/pipeline/`
+- Shared CLI behavior: `tests/fortran/infrastructure/cli/pipeline/`
 
 <!&#45;&#45; PRIK_C_DOCS_START
 - C parser walkthrough: `tests/c/infrastructure/execution_examples/test_c_parser_developer_tutorial.py`
-- C declaration coverage: `tests/c/source_parsing/parsing/test_c_declarations_and_declarators.py`
-- C project/golden workflow: `tests/c/source_parsing/parsing/test_c_fixture_suite.py`
+- C declaration coverage: `tests/c/infrastructure/parsing/test_c_declarations_and_declarators.py`
+- C project/golden workflow: `tests/c/infrastructure/parsing/test_c_fixture_suite.py`
 - C semantic handoff: `tests/c/*/semantics/`
 PRIK_C_DOCS_END &#45;&#45;>
 
@@ -1161,7 +1161,7 @@ that Linux reference environment.
 The fixture suite also checks same-stem grouping order and representative raw
 preprocessing failures.
 Fatal diagnostic goldens are regenerated with
-`C_PARSER_UPDATE_GOLDENS=1 PYTHONPATH=. pytest -q tests/c/source_parsing/parsing/test_c_error_fixture_suite.py`.
+`C_PARSER_UPDATE_GOLDENS=1 PYTHONPATH=. pytest -q tests/c/infrastructure/parsing/test_c_error_fixture_suite.py`.
 The standalone error generator remains available for targeted refreshes.
 By policy, a paired project records source-to-header include edges but parses
 each supplied `.c`, `.h`, or `.i` member separately; include traversal is not

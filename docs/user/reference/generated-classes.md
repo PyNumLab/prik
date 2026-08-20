@@ -157,7 +157,7 @@ Generated class behavior is covered by
 [`test_inheritance_and_polymorphism.py`](../../../tests/fortran/derived_types/end_to_end/test_inheritance_and_polymorphism.py).
 Exact class-method and constructor overloads, including explicit bound
 construction, are covered by
-[`test_edited_class_surfaces.py`](../../../tests/fortran/pyi_contracts/functions_and_classes/end_to_end/test_edited_class_surfaces.py).
+[`test_edited_class_surfaces.py`](../../../tests/fortran/infrastructure/semantic_pyi/contracts/functions_and_classes/end_to_end/test_edited_class_surfaces.py).
 
 When class behavior changes, update this page with the derived-type user guide,
 semantic `.pyi` reference, generated contract fixtures, and ownership evidence.

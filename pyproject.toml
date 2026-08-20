@@ -126,8 +126,8 @@ extend-exclude = [
     "tests/c/fixtures/pyi",
     "tests/fortran/*/end_to_end/fixtures",
     "tests/fortran/*/pipeline/fixtures",
-    "tests/fortran/pyi_contracts/*/end_to_end/fixtures",
-    "tests/fortran/semantic_pyi_format/pipeline/fixtures",
+    "tests/fortran/infrastructure/semantic_pyi/contracts/*/end_to_end/fixtures",
+    "tests/fortran/infrastructure/semantic_pyi/pipeline/fixtures",
     "prik.egg-info",
 ]
 
@@ -168,8 +168,8 @@ exclude = [
     "tests/c/fixtures/pyi/",
     "tests/fortran/*/end_to_end/fixtures/",
     "tests/fortran/*/pipeline/fixtures/",
-    "tests/fortran/pyi_contracts/*/end_to_end/fixtures/",
-    "tests/fortran/semantic_pyi_format/pipeline/fixtures/",
+    "tests/fortran/infrastructure/semantic_pyi/contracts/*/end_to_end/fixtures/",
+    "tests/fortran/infrastructure/semantic_pyi/pipeline/fixtures/",
     "prik.egg-info/",
 ]
 min_confidence = 80

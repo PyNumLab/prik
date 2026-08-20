@@ -15,7 +15,9 @@ from prik import build_pyi_extension
 
 NATIVE_CALL_EXAMPLES_F90_SOURCE = (
     Path(__file__).parents[2]
-    / "pyi_contracts"
+    / "infrastructure"
+    / "semantic_pyi"
+    / "contracts"
     / "calls_and_results"
     / "end_to_end"
     / "fixtures"

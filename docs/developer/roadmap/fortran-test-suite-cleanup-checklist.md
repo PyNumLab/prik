@@ -235,7 +235,7 @@ Rules:
 - [x] Public argument parsing and output formatting belong in the owning input
   language's command-line feature.
 - [x] Cross-feature Fortran command contracts belong in
-  `tests/fortran/command_line_interface/pipeline/`.
+  `tests/fortran/infrastructure/cli/pipeline/`.
 - [x] A CLI test that builds, imports, calls, and verifies a Fortran extension
   belongs in the owning feature's `end_to_end/` directory, normally
   `building_shared_library/end_to_end/`.
@@ -387,12 +387,12 @@ directory. Audit and place every artifact beside its final behavioral owner.
 | `tests/data/fortran/general/` | Owning feature/stage; feature-neutral setup is minimized beside its final public-capability owner |
 | `tests/data/fortran/errors/` | Fixture directory of the first rejecting stage |
 | `tests/data/fortran/blas/` and `lapack/` | `examples/blas/native/` and `examples/lapack/native/` |
-| Parser regressions extracted from SciFortran | `tests/fortran/source_parsing/parsing/test_real_world_interaction_regressions.py` |
+| Parser regressions extracted from SciFortran | `tests/fortran/infrastructure/parsing/test_real_world_interaction_regressions.py` |
 | Parser source/JSON pairs | Beside their parser owner |
-| Language-neutral `.pyi` syntax | `tests/fortran/semantic_pyi_format/` |
-| Fortran `.pyi` build fixtures | `tests/fortran/semantic_pyi_format/{pipeline,end_to_end}/fixtures/` |
+| Language-neutral `.pyi` syntax | `tests/fortran/infrastructure/semantic_pyi/` |
+| Fortran `.pyi` build fixtures | `tests/fortran/infrastructure/semantic_pyi/{pipeline,end_to_end}/fixtures/` |
 | Generated contract goldens | Beside their generation/package-shape owner |
-| Edited contracts | `tests/fortran/pyi_contracts/<edit-family>/end_to_end/fixtures/` |
+| Edited contracts | `tests/fortran/infrastructure/semantic_pyi/contracts/<edit-family>/end_to_end/fixtures/` |
 | Invalid `.pyi` contracts | Fixture directory of the first rejecting stage |
 
 ### Native sources
@@ -466,9 +466,9 @@ An edited contract is authoritative input, not expected generated output.
 
 | Owner | What it proves |
 | --- | --- |
-| `tests/fortran/semantic_pyi_format/pipeline/` | Loading, import graph, package assembly, build plan, and diagnostics |
-| `tests/fortran/semantic_pyi_format/end_to_end/` | An ordinary contract is authoritative input and produces a working extension |
-| `tests/fortran/pyi_contracts/<edit-family>/end_to_end/` | A documented edit changes the built API or runtime behavior |
+| `tests/fortran/infrastructure/semantic_pyi/pipeline/` | Loading, import graph, package assembly, build plan, and diagnostics |
+| `tests/fortran/infrastructure/semantic_pyi/end_to_end/` | An ordinary contract is authoritative input and produces a working extension |
+| `tests/fortran/infrastructure/semantic_pyi/contracts/<edit-family>/end_to_end/` | A documented edit changes the built API or runtime behavior |
 
 The end-to-end baseline contains:
 
@@ -1089,7 +1089,7 @@ attributed all 303 SciFortran sources to upstream revision
 measured 37 lines plus 27 branches that the focused parser suite had not
 reached. A follow-up contextual-coverage audit traced all 64 items to 12 source
 units and reduced them to five named inline tests in
-`tests/fortran/source_parsing/parsing/test_real_world_interaction_regressions.py`.
+`tests/fortran/infrastructure/parsing/test_real_world_interaction_regressions.py`.
 The focused parser suite now executes all 64 formerly unique items without the
 third-party project. Existing focused tests retain the historical
 `CLASS(...)`, CPP, scope, `EXTERNAL`, `SAVE`/local-type, `USE`-rename, and
@@ -1413,8 +1413,8 @@ compilation, linking, loading, and the same runtime smoke all succeed.
 - [ ] Implement GNU, Intel ifx, LLVM Flang, and NVIDIA nvfortran one profile at
   a time.
 - [x] Add focused command/capability tests under
-  `tests/fortran/building_shared_library/compiling/` and
-  `tests/fortran/source_preprocessing/preprocessing/`.
+  `tests/fortran/infrastructure/building/compiling/` and
+  `tests/fortran/infrastructure/preprocessing/`.
 - [ ] Carry compiler-derived target facts through semantics and the shared plan;
   bridge/binding generators do not infer semantic policy from compiler family.
 - [x] Give unknown and unsupported compilers explicit diagnostics.

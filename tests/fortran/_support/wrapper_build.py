@@ -55,7 +55,7 @@ WRAPPER_SOURCE_PATHS = {
     "fmath_arrays_f90.f90": REPO_ROOT / "tests/fortran/arrays/end_to_end/fixtures/baseline/native/fmath_arrays_f90.f90",
     "fmath_f90.f90": REPO_ROOT / "tests/fortran/data_types/end_to_end/fixtures/baseline/native/fmath_f90.f90",
     "fnaming_f90.f90": REPO_ROOT
-    / "tests/fortran/pyi_contracts/exports_and_modules/end_to_end/fixtures/visibility/native/fnaming_f90.f90",
+    / "tests/fortran/infrastructure/semantic_pyi/contracts/exports_and_modules/end_to_end/fixtures/visibility/native/fnaming_f90.f90",
     "fopenmp_runtime_f90.f90": REPO_ROOT
     / "tests/fortran/error_handling/end_to_end/fixtures/runtime/native/fopenmp_runtime_f90.f90",
     "free_external.f90": REPO_ROOT / "tests/fortran/functions/end_to_end/fixtures/external/native/free_external.f90",

@@ -116,7 +116,7 @@ Changes limited to wrapper planning, direct bridge/binding lowering, or native
 compilation should use the focused owners under
 `tests/fortran/infrastructure/codegen/`, feature-local
 `tests/fortran/*/codegen/` directories, and
-`tests/fortran/building_shared_library/compiling/` as applicable. Include the
+`tests/fortran/infrastructure/building/compiling/` as applicable. Include the
 relevant end-to-end feature tests whenever a generated or compiled mechanism
 changes; run a broader suite when behavior spans multiple stages.
 Do not run LAPACK wrapper tests locally unless the user explicitly asks for them. Local verification may run everything else, including BLAS-only real-library tests; leave LAPACK coverage to GitHub Actions by default.

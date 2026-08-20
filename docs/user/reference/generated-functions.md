@@ -138,7 +138,7 @@ target without replacing that linked contract.
 ## Evidence And Maintenance
 
 Function and subroutine call surfaces are covered by
-[`test_edited_call_surfaces.py`](../../../tests/fortran/pyi_contracts/calls_and_results/end_to_end/test_edited_call_surfaces.py),
+[`test_edited_call_surfaces.py`](../../../tests/fortran/infrastructure/semantic_pyi/contracts/calls_and_results/end_to_end/test_edited_call_surfaces.py),
 [`test_documented_function_journeys.py`](../../../tests/fortran/functions/end_to_end/test_documented_function_journeys.py),
 [`test_optional_runtime.py`](../../../tests/fortran/optional_arguments/end_to_end/test_optional_runtime.py), and
 [`test_generic_interfaces.py`](../../../tests/fortran/generic_interfaces/end_to_end/test_generic_interfaces.py).

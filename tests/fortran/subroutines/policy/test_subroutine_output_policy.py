@@ -17,7 +17,16 @@ from prik.policy.construction import (
 FMATH_CONTRACT = Path("tests/fortran/data_types/end_to_end/fixtures/baseline/contracts/fmath/__init__.pyi")
 
 
-CALLS_NATIVE = Path(__file__).parents[2] / "pyi_contracts" / "calls_and_results" / "end_to_end" / "fixtures" / "native"
+CALLS_NATIVE = (
+    Path(__file__).parents[2]
+    / "infrastructure"
+    / "semantic_pyi"
+    / "contracts"
+    / "calls_and_results"
+    / "end_to_end"
+    / "fixtures"
+    / "native"
+)
 
 
 def _source_semantic_module(filename: str, *, module_name: str):

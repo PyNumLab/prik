@@ -59,7 +59,7 @@ python3 -m prik points.f90 --out geometry
 
 Create `points.f90`:
 
-<!-- prik-doc-source: tests/fortran/building_shared_library/end_to_end/fixtures/native/home_points.f90 -->
+<!-- prik-doc-source: tests/fortran/infrastructure/building/end_to_end/fixtures/native/home_points.f90 -->
 ```fortran
 module points
   implicit none

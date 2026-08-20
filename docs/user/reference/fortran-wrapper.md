@@ -94,7 +94,7 @@ PRIK_C_DOCS_END -->
 Build the checked scalar example:
 
 ```bash
-python3 -m prik tests/fortran/building_shared_library/end_to_end/fixtures/native/fruntime_abi_f90.f90 \
+python3 -m prik tests/fortran/infrastructure/building/end_to_end/fixtures/native/fruntime_abi_f90.f90 \
   --out-dir build/fruntime_abi
 ```
 
@@ -389,7 +389,7 @@ The equivalent Python entrypoint returns structured artifact paths:
 from prik import build_fortran_extension
 
 result = build_fortran_extension(
-    "tests/fortran/building_shared_library/end_to_end/fixtures/native/fruntime_abi_f90.f90",
+    "tests/fortran/infrastructure/building/end_to_end/fixtures/native/fruntime_abi_f90.f90",
     output_dir="build/fruntime_abi",
 )
 print(result.module_name)

@@ -200,10 +200,10 @@ measured fact, semantic identity, and NumPy projection separate.
 | Evidence | What it establishes |
 | --- | --- |
 | [Pipeline infrastructure](../../../tests/fortran/infrastructure/pipeline/) | Plan-to-rendered-wrapper assembly and cross-stage records. |
-| [Semantic `.pyi` pipeline](../../../tests/fortran/semantic_pyi_format/pipeline/) | Contract loading, reconciliation, and stub emission. |
-| [Build pipeline](../../../tests/fortran/building_shared_library/pipeline/) | Artifact output, manifests, build modes, and build-plan handoffs. |
-| [Compilation integration](../../../tests/fortran/building_shared_library/compiling/) | Native command integration. |
-| [End-to-end builds](../../../tests/fortran/building_shared_library/end_to_end/) | Build, import, and generated-extension behavior. |
+| [Semantic `.pyi` pipeline](../../../tests/fortran/infrastructure/semantic_pyi/pipeline/) | Contract loading, reconciliation, and stub emission. |
+| [Build pipeline](../../../tests/fortran/infrastructure/building/pipeline/) | Artifact output, manifests, build modes, and build-plan handoffs. |
+| [Compilation integration](../../../tests/fortran/infrastructure/building/compiling/) | Native command integration. |
+| [End-to-end builds](../../../tests/fortran/infrastructure/building/end_to_end/) | Build, import, and generated-extension behavior. |
 
 ## Change Routes
 

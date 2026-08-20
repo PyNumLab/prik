@@ -195,9 +195,9 @@ boundaries, reference links, and documentation checklist synchronization.
 ## Evidence And Maintenance
 
 Manifest and Makefile replay behavior is covered by
-[`test_pyi_build_modes.py`](../../../tests/fortran/building_shared_library/pipeline/test_pyi_build_modes.py) and
+[`test_pyi_build_modes.py`](../../../tests/fortran/infrastructure/building/pipeline/test_pyi_build_modes.py) and
 source-build Makefile behavior by
-[`test_build_modes.py`](../../../tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py).
+[`test_build_modes.py`](../../../tests/fortran/infrastructure/building/end_to_end/test_source_build_modes.py).
 
 Tooling configuration is covered by
 [`test_reference_and_codebase_map.py`](../../../tests/docs/test_reference_and_codebase_map.py),

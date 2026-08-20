@@ -21,19 +21,20 @@ index and command map.
 | Documentation content, metadata, navigation, or examples | `tests/docs/` | Published documentation and its repository contracts. |
 | Maintainer command or CI-support behavior | `tests/tools/` | Repository tooling behavior. |
 | Release or automation safety | `tests/workflows/` | Workflow safety properties. |
-| User-visible Fortran or semantic `.pyi` wrapper behavior | `tests/fortran/<feature>/<stage>/` | The documented capability at its owning stage. |
-| Internal cross-feature mechanism | `tests/fortran/infrastructure/<owner>/` | A mechanism with no honest user-visible feature owner. |
+| User-visible language feature behavior | `tests/fortran/<feature>/<stage>/` | The language feature at its owning stage. |
+| Cross-feature parsing, preprocessing, CLI, semantic representation, contract, build, or policy mechanism | `tests/fortran/infrastructure/<owner>/` | Shared pipeline behavior, including documented mechanisms. |
 
-For user-visible behavior, choose the feature before the stage:
+For a language feature, choose the feature before the stage:
 
 ```text
 tests/fortran/<documented-feature>/<owning-stage>/
 ```
 
 `infrastructure/` is not a fallback for tests that touch many packages. A
-feature remains feature-owned when it crosses parsing, policy, planning, and
-lowering. Infrastructure is only for reusable internal mechanisms that have no
-public-capability owner.
+language feature remains feature-owned when it crosses parsing, policy,
+planning, and lowering. Parsing, preprocessing, CLI, semantic IR and `.pyi`
+conversion, build orchestration, and shared policy are cross-feature
+infrastructure even when users can invoke or inspect them directly.
 
 ## Stable Contracts
 
@@ -85,7 +86,7 @@ run LAPACK locally unless explicitly requested.
 ## Test And Fixture Placement
 
 Keep a test and its checked fixtures with their final behavioral owner. Use
-feature-local `end_to_end/fixtures/` for complete native projects; keep
+owner-local `end_to_end/fixtures/` for complete native projects; keep
 parser, semantic, and policy setup with the corresponding stage. Generate
 build products and temporary contracts in pytest temporary directories.
 

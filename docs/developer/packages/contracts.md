@@ -81,8 +81,8 @@ later stages interpret those facts.
 | Evidence | What it establishes |
 | --- | --- |
 | [Contract runtime tests](../../../tests/fortran/data_types/runtime/) | Concrete scalar constructors and invalid constructor use. |
-| [Semantic `.pyi` parser tests](../../../tests/fortran/semantic_pyi_format/parsing/) | Recognition of the public vocabulary and annotation syntax. |
-| [Semantic `.pyi` pipeline tests](../../../tests/fortran/semantic_pyi_format/pipeline/) | Contract loading, semantic conversion, and re-emission. |
+| [Semantic `.pyi` parser tests](../../../tests/fortran/infrastructure/semantic_pyi/parsing/) | Recognition of the public vocabulary and annotation syntax. |
+| [Semantic `.pyi` pipeline tests](../../../tests/fortran/infrastructure/semantic_pyi/pipeline/) | Contract loading, semantic conversion, and re-emission. |
 
 The import path and public names are part of the file format. A name being
 valid Python syntax does not by itself make the corresponding wrapper behavior

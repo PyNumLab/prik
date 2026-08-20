@@ -760,8 +760,8 @@ invariants rather than duplicating those assertions in every feature.
   Fortran source/object absence.
 - Zero-adapter materialization, compile scheduling, link-driver selection,
   Makefiles, manifests, and progress records:
-  `tests/fortran/building_shared_library/pipeline/` and
-  `tests/fortran/building_shared_library/compiling/`.
+  `tests/fortran/infrastructure/building/pipeline/` and
+  `tests/fortran/infrastructure/building/compiling/`.
 - Compiled Fortran feature behavior: the owning
   `tests/fortran/<feature>/end_to_end/` directory. The scalar adoption starts by
   replacing the current assumption that every procedure in
@@ -772,7 +772,7 @@ invariants rather than duplicating those assertions in every feature.
   tooling tests under `tests/tools/`. These supplement rather than replace
   feature-local correctness evidence.
 - Generated and edited semantic-contract parity:
-  `tests/fortran/semantic_pyi_format/` plus feature-local end-to-end fixtures.
+  `tests/fortran/infrastructure/semantic_pyi/` plus feature-local end-to-end fixtures.
 
 Artifact assertions protect observable generated and build behavior: whether
 an adapter source/object exists, which native operations it exports, which

@@ -55,6 +55,14 @@ release tags add a leading `v` to the package version.
   binding carries `@abstractmethod`, both re-exported from `prik.contracts`;
   a deferred binding never carries `@bind`, because it has no native symbol.
 
+### Changed
+
+- Reorganized the C and Fortran test suites around a strict ownership rule:
+  language features remain under `<feature>/<stage>`, while shared parsing,
+  preprocessing, CLI, semantic-representation, contract, build, and policy
+  evidence live under `infrastructure/`. Focused commands and documentation now
+  use the corresponding infrastructure owners.
+
 ### Fixed
 
 - A generic interface whose specifics project an `intent(out)` argument into a

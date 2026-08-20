@@ -15,7 +15,7 @@ semantic contract.
 ## Generate A Starter Contract
 
 ```bash
-python3 -m prik generate --pyi tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90 \
+python3 -m prik generate --pyi tests/fortran/infrastructure/parsing/fixtures/general/basic_subroutine.f90 \
   --out contracts/basic_subroutine
 ```
 

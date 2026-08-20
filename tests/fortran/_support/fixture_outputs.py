@@ -6,9 +6,11 @@ from prik.parsers.fortran import parse_fortran_file
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 
 FORTRAN_ROOT = Path(__file__).resolve().parents[1]
-PARSER_FIXTURE_ROOT = FORTRAN_ROOT / "source_parsing" / "parsing" / "fixtures"
+PARSER_FIXTURE_ROOT = FORTRAN_ROOT / "infrastructure" / "parsing" / "fixtures"
 GENERAL_FORTRAN_DIR = PARSER_FIXTURE_ROOT / "general"
-SEMANTICS_FIXTURE_DIR = FORTRAN_ROOT / "semantic_ir" / "semantics" / "fixtures" / "general" / "expected"
+SEMANTICS_FIXTURE_DIR = (
+    FORTRAN_ROOT / "infrastructure" / "semantic_ir" / "semantics" / "fixtures" / "general" / "expected"
+)
 FORTRAN_SUFFIXES = {".f", ".f90", ".f95", ".f03", ".f08", ".for", ".f77", ".ftn"}
 
 
