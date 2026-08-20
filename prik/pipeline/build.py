@@ -39,6 +39,7 @@ from prik.preprocessing.probes.fortran_types import (
     resolve_fortran_logical_storage_types,
 )
 from prik.preprocessing import PreprocessingConfig, preprocess_source
+from prik.pipeline.pyi import emit_module_stubs
 from prik.pipeline.wrapper import GeneratedSource, GeneratedWrapper, WrapperGenerator
 from prik.semantics.fortran2ir import (
     collect_fortran_type_storage_requirements,
@@ -560,6 +561,46 @@ def _generated_source_output_path(output_dir: Path, path: Path) -> Path:
     if path.is_absolute() or ".." in path.parts:
         raise ValueError(f"Generated wrapper source path must stay inside the build directory: {path}")
     return output_dir / path
+
+
+BUILD_CONTRACT_DIRECTORY_NAME = "contracts"
+
+
+def _write_build_contract_package(
+    source_modules: tuple[SemanticModule, ...],
+    output_dir: Path,
+    *,
+    verbose: bool | int = False,
+) -> tuple[Path, ...]:
+    """Write the editable semantic contract for one build beside its artifacts.
+
+    Every build leaves the contract that describes the API it just generated, so
+    reshaping the Python surface never needs a separate `generate --pyi` run.
+    The package lives in its own directory inside the build output so its
+    ``__init__.pyi`` cannot make the build directory look like a Python package.
+    """
+    if not source_modules:
+        return ()
+    try:
+        stubs = emit_module_stubs(source_modules)
+    except (ValueError, KeyError) as error:
+        # The extension is already built; a contract that cannot be rendered is
+        # reported rather than allowed to fail the build behind it.
+        _print_verbose_step(verbose, f"Skip contract package: {error}")
+        return ()
+    package_dir = output_dir / BUILD_CONTRACT_DIRECTORY_NAME
+    package_dir.mkdir(parents=True, exist_ok=True)
+    written = []
+    for module_name, text in stubs.items():
+        path = package_dir / f"{module_name}.pyi"
+        path.write_text(f"{text}\n", encoding="utf-8")
+        _print_verbose_step(verbose, f"Write semantic contract: {path}")
+        written.append(path)
+    root = package_dir / "__init__.pyi"
+    root.write_text("".join(f"from . import {name}\n" for name in sorted(stubs)), encoding="utf-8")
+    _print_verbose_step(verbose, f"Write semantic contract package: {root}")
+    written.append(root)
+    return tuple(written)
 
 
 def _write_generated_wrapper_sources(
@@ -2645,7 +2686,7 @@ def _fortran_wrapper_module(
     fortran_type_probe_cache_dir: str | Path | None,
     refresh_fortran_type_probe: bool,
     assume_intent_in_scalars: bool = False,
-) -> tuple[object, SemanticModule]:
+) -> tuple[object, SemanticModule, tuple[SemanticModule, ...]]:
     """Parse Fortran sources, resolve type facts, and form one wrapper module."""
     # Preprocess and parse the complete source project.
     preprocessed_sources = {
@@ -2681,7 +2722,7 @@ def _fortran_wrapper_module(
     )
     _apply_source_python_exports(modules)
     module_name = _validated_wrapper_module_name(output_name, source_paths[0].stem)
-    return parsed, _merge_wrapper_modules(modules, name=module_name)
+    return parsed, _merge_wrapper_modules(modules, name=module_name), tuple(modules)
 
 
 def _complete_pyi_fortran_boolean_types(
@@ -2858,7 +2899,7 @@ def build_fortran_extension(
     type_probe_preprocessing = _type_probe_preprocessing(preprocessing, native_inputs.source_flags)
 
     # 2. Parse source, resolve target facts, and assemble semantic IR.
-    parsed, module = _fortran_wrapper_module(
+    parsed, module, source_modules = _fortran_wrapper_module(
         source_paths,
         preprocessing=preprocessing,
         type_probe_preprocessing=type_probe_preprocessing,
@@ -2912,6 +2953,7 @@ def build_fortran_extension(
         source_objects=native_source_objects,
         extra_dependencies=_link_item_paths(native_build_plan.link_items),
     )
+    _write_build_contract_package(source_modules, output_path, verbose=verbose)
     _report_total_build_time(
         verbose,
         time.perf_counter() - build_started,

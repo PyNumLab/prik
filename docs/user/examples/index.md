@@ -9,8 +9,8 @@ publication: draft
 
 # Examples Gallery
 
-This section includes checked recipes and four complete real-library examples:
-BLAS, LAPACK, FFTPACK, and MINPACK. Each one provides build commands, Python
+This section includes checked recipes and five complete real-library examples:
+BLAS, LAPACK, FFTPACK, MINPACK, and BSPLINE-FORTRAN. Each one provides build commands, Python
 usage, and numerical checks for its public routines.
 
 Every page here is runnable. An example earns a place once it has source, a
@@ -37,3 +37,4 @@ PRIK_C_DOCS_END -->
 | Build complete Reference LAPACK and validate 127 float64 routines | [LAPACK wrapper](lapack-wrapper.md) |
 | Wrap and validate all 31 FFTPACK procedures with NumPy and SciPy | [FFTPACK wrapper](fftpack-wrapper.md) |
 | Wrap all 22 MINPACK procedures and use Python callbacks | [MINPACK wrapper](minpack-wrapper.md) |
+| Wrap modern Fortran classes over an abstract base | [BSPLINE-FORTRAN wrapper](bspline-wrapper.md) |

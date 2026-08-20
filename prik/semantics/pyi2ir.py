@@ -37,6 +37,7 @@ from prik.semantics.metadata import (
     ADDRESS_ROLE_PROJECTION,
     ADDRESS_ROLE_RAW,
     BIND_TARGET_METADATA,
+    DEFERRED_BINDING_METADATA,
     MAYBE_UNALLOCATED_METADATA,
     NATIVE_PROJECTION_METADATA,
     OPTIONAL_ABSENT_HANDLE_METADATA,
@@ -164,6 +165,8 @@ class _Decorators:
     error_status_policy: dict[str, object] | None = None
     prototype: bool = False
     pure: bool = False
+    abstract: bool = False
+    abstract_method: bool = False
 
 
 @dataclass
@@ -431,6 +434,7 @@ class _PyiAstParser:
         *,
         visibility: str,
         native_type: dict[str, object] | None = None,
+        abstract: bool = False,
     ) -> SemanticClass:
         """Convert one class AST node, its body, and supported native metadata.
 
@@ -445,15 +449,19 @@ class _PyiAstParser:
             raise ValueError("Direct constructor bindings replace the generated field constructor; remove one __init__")
         base_classes = [self.base_class_name(base) for base in node.bases]
         origin = self._origin(
-            source_language="fortran" if body.constructor_from_fields or native_type is not None else None,
+            source_language=(
+                "fortran" if body.constructor_from_fields or native_type is not None or abstract else None
+            ),
             user_private=visibility == "private",
         )
         if not body.constructor_from_fields:
             origin.metadata[SUPPRESS_DEFAULT_CONSTRUCTOR_METADATA] = True
 
         metadata = self._class_metadata(base_classes)
+        if abstract:
+            metadata["fortran_type_attributes"] = [*metadata.get("fortran_type_attributes", []), "abstract"]
         if native_type is not None:
-            attributes = list(native_type.get("attributes", ()))
+            attributes = [*metadata.get("fortran_type_attributes", []), *native_type.get("attributes", ())]
             metadata["fortran_type_attributes"] = attributes
             normalized_attributes = {str(item).strip().casefold().replace(" ", "") for item in attributes}
             if "bind(c)" in normalized_attributes:
@@ -632,6 +640,7 @@ class _PyiAstParser:
         has_native_call: bool = False,
         release_gil: bool = False,
         error_status_policy: dict[str, object] | None = None,
+        deferred: bool = False,
     ) -> SemanticMethod:
         """Convert a class stub into a semantic method declaration.
 
@@ -648,6 +657,10 @@ class _PyiAstParser:
             drop_untyped_self=True,
         )
         metadata = {BIND_TARGET_METADATA: native_name} if native_name is not None else {}
+        if deferred:
+            if native_name is not None:
+                raise ValueError("A deferred binding has no native target; remove its bind decorator")
+            metadata[DEFERRED_BINDING_METADATA] = True
         if has_native_call:
             metadata[NATIVE_PROJECTION_METADATA] = True
         passed_object_name, passed_object_position = self._complete_method_passed_object(
@@ -846,12 +859,45 @@ class _PyiAstParser:
             "native_type": self._apply_native_type_decorator,
             "prototype": self._apply_prototype_decorator,
             "pure": self._apply_pure_decorator,
+            "abstract": self._apply_abstract_decorator,
+            "abstractmethod": self._apply_abstract_method_decorator,
             "raises": self._apply_raises_decorator,
         }
         handler = next((value for name, value in handlers.items() if self.matches_name(target, name)), None)
         if handler is None:
             raise ValueError(f"Unsupported {context} decorator: {ast.unparse(node)!r}")
         handler(parsed, node, context)
+
+    @staticmethod
+    def _reject_private_constructor(declaration_name: str, visibility: str) -> None:
+        """Refuse an accessibility marker that a constructor cannot express."""
+        if declaration_name == "__init__" and visibility == "private":
+            raise ValueError(
+                "A constructor is published or absent; remove @private from __init__. "
+                "Mark the specific procedure it selects private instead."
+            )
+
+    @staticmethod
+    def _apply_abstract_decorator(parsed: _Decorators, node: ast.expr, context: str) -> None:
+        """Mark a class as an abstract native type that cannot be constructed."""
+        if isinstance(node, ast.Call):
+            raise ValueError("abstract does not accept arguments")
+        if context != "class":
+            raise ValueError("abstract is only valid on a class declaration")
+        if parsed.abstract:
+            raise ValueError("Duplicate abstract decorator")
+        parsed.abstract = True
+
+    @staticmethod
+    def _apply_abstract_method_decorator(parsed: _Decorators, node: ast.expr, context: str) -> None:
+        """Mark a type-bound declaration as a deferred binding with no native target."""
+        if isinstance(node, ast.Call):
+            raise ValueError("abstractmethod does not accept arguments")
+        if context == "class":
+            raise ValueError("abstractmethod is only valid on a method declaration")
+        if parsed.abstract_method:
+            raise ValueError("Duplicate abstractmethod decorator")
+        parsed.abstract_method = True
 
     @staticmethod
     def _apply_prototype_decorator(parsed: _Decorators, node: ast.expr, context: str) -> None:
@@ -1253,11 +1299,20 @@ class _PyiAstParser:
     ) -> int | None:
         """Locate the unique native wrapped-object argument for a class overload.
 
-        Static methods need no bound object.  Instance methods must match one
-        target argument whose type is the owning class and whose removal leaves
-        the declared Python arguments in order; ambiguity is an error.
+        Static methods need no bound object.  A constructor candidate produces
+        the object instead of receiving one, so a specific whose result is the
+        owning class has no bound argument either.  Every other instance method
+        must match one target argument whose type is the owning class and whose
+        removal leaves the declared Python arguments in order; ambiguity is an
+        error.
         """
         if isinstance(declaration, SemanticMethod) and declaration.is_static:
+            return None
+        if (
+            declaration.name == "__init__"
+            and target.return_type is not None
+            and target.return_type.name.casefold() == owner.name.casefold()
+        ):
             return None
         remaining_names = [argument.name for argument in declaration.arguments]
         matching = [
@@ -3277,7 +3332,9 @@ class _ClassBodyVisitor(ClassVisitor):
             has_native_call=decorators.has_native_call,
             release_gil=decorators.release_gil,
             error_status_policy=decorators.error_status_policy,
+            deferred=decorators.abstract_method,
         )
+        self.parser._reject_private_constructor(node.name, decorators.visibility)
         if node.name == "__init__" and decorators.bind_target is not None and decorators.overload_target is None:
             self.has_bound_constructor = True
         if decorators.overload_target is not None:
@@ -3339,6 +3396,7 @@ class _ClassBodyVisitor(ClassVisitor):
                 node,
                 visibility=decorators.visibility,
                 native_type=decorators.native_type,
+                abstract=decorators.abstract,
             )
         )
 
@@ -3403,6 +3461,7 @@ class _ModuleVisitor(ClassVisitor):
                 node,
                 visibility=decorators.visibility,
                 native_type=decorators.native_type,
+                abstract=decorators.abstract,
             )
         )
 

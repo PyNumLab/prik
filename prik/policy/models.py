@@ -579,6 +579,8 @@ class DerivedTypePolicy:
     sequence: bool
     supported: bool
     blockers: tuple[str, ...] = ()
+    abstract: bool = False
+    deferred_bindings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

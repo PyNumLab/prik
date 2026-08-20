@@ -7,7 +7,64 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+### Added
+
+- Every build now writes its semantic `.pyi` contract beside the extension, in a
+  `contracts/` package inside the build directory (`__prik__/contracts/` by
+  default). Reshaping the generated Python API no longer needs a separate
+  `generate --pyi` run: the contract describing the API a build just produced is
+  always there, and rebuilding from it works directly. It lives in its own
+  directory so its `__init__.pyi` cannot make the build directory look like a
+  Python package.
+
+- Generic constructors declared as `interface <typename>` are now wrapped from
+  Fortran source. Such an interface is that type's constructor, so its specifics
+  become the accepted signatures of one overloaded `__init__` rather than a
+  module-level generic, and a call matching none of them is refused instead of
+  guessed at. A specific that is `private` in its module is reached through the
+  public type name, which resolves to the same procedure. Because the interface
+  supplies every accepted signature, it replaces the keyword-field constructor,
+  and the generated contract states only the signatures the class accepts. The
+  three sources of a constructor are now: no user constructor keeps the
+  keyword-field `__init__`, an `interface <typename>` supplies the overload set,
+  and an edited `.pyi` declares exactly what it says. A constructor candidate
+  carries no `@bind`, because the class name already states the generic that
+  reaches it — the same reason an unrenamed method omits it — and `@private` is
+  refused on `__init__`, since a constructor is published or absent and the
+  accessibility of the specific it selects is that procedure's own fact.
+
+- Added the BSPLINE-FORTRAN example under `examples/bspline`. It wraps the
+  upstream sources unmodified and validates both public interfaces from Python:
+  the object-oriented classes over an abstract base with deferred bindings and
+  generic constructors, and the procedural interpolation routines. Numerical
+  checks use analytic values and `scipy.interpolate` as independent oracles. It
+  is the first example project written in modern Fortran rather than FORTRAN 77.
+
+- Abstract Fortran derived types are now wrapped. A `type, abstract ::`
+  declaration becomes a Python class with no constructor — instantiating it
+  raises `TypeError` naming the concrete extensions to use instead — while its
+  extensions remain ordinary Python subclasses that inherit its implemented
+  bindings. A deferred binding (`procedure(iface), deferred ::`) is declared on
+  the base and resolved by the object's own type: the generated adapter converts
+  the address to the caller's concrete type and lets Fortran select the
+  override, so no Python-side dispatch is involved. An abstract type publishes
+  no component accessors of its own, because each extension already generates
+  one for every component it inherits, and it is excluded from the polymorphic
+  cases a caller can supply, since no object can have it as a dynamic type. In
+  semantic `.pyi` contracts the class carries `@abstract` and each deferred
+  binding carries `@abstractmethod`, both re-exported from `prik.contracts`;
+  a deferred binding never carries `@bind`, because it has no native symbol.
+
 ### Fixed
+
+- A module whose only procedures are `bind(C)` now installs the bundled native
+  support its derived-type accessors need. Compiled wrapper builds for such a
+  module previously failed to link with `undefined symbol:
+  prik_float64_to_numpy`, because native support was requested only for module
+  variables, for ordinary procedure arguments and results, and for array
+  components — and a `bind(C)` procedure supplies none of those. Every published
+  component converts through those helpers, so a type with any component now
+  requests them.
 
 - A derived type's `private` and `public` statements are now honored. The
   statement before `contains` sets the default accessibility of components and
@@ -74,6 +131,15 @@ release tags add a leading `v` to the package version.
   own results.
 
 ### Changed
+
+- Expanded the initial direct-only C adoption roadmap around one exact scope:
+  modeled primitive arithmetic scalars and their one-level pointer forms. It
+  now records the unresolved scalar-lowering matrix, requires C inputs to fail
+  direct-or-diagnostic before planning, and makes the ambiguous `T *` workflow
+  explicit: generated contracts default to one scalar address, while an array
+  API requires an authoritative `.pyi` edit of both the shaped annotation and
+  the `Addr(Arg(...))` projection. Broader C pointers, arrays, callbacks,
+  aggregates, ownership, and nullability remain follow-on work.
 
 - A scalar `character` dummy that declares no `intent` now uses the same
   conservative `intent(inout)` default as every other scalar, so the value the

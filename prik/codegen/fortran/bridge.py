@@ -218,6 +218,11 @@ class FortranBridgeGenerator(ClassVisitor):
         self._derived_owner_paths = {
             derived.backend_symbol: derived.owner_path for derived in self._derived_types(plan)
         }
+        # An abstract native type has no instances of its own, so an adapter
+        # reaches one only through a concrete extension's address.
+        self._abstract_backend_symbols = frozenset(
+            derived.backend_symbol for derived in self._derived_types(plan) if derived.abstract
+        )
         if plan.bridge is None:
             raise ValueError(f"Fortran lowering requires a bridge plan for {plan.owner_path!r}")
         self._bridge_allocatable_holder_owner_paths = frozenset(plan.bridge.allocatable_holder_type_owner_paths)
@@ -1021,19 +1026,27 @@ class FortranBridgeGenerator(ClassVisitor):
         declarations = [FortranDeclaration("prik_derived_ready", "logical")]
         for argument in arguments:
             name = argument.entrypoint.parameter_name
-            native_type = f"type({self._derived_native_alias(argument.derived.backend_symbol)})"
+            abstract = argument.derived.backend_symbol in self._abstract_backend_symbols
+            declaration_kind = "class" if abstract else "type"
+            native_type = f"{declaration_kind}({self._derived_native_alias(argument.derived.backend_symbol)})"
             declarations.extend(
                 (
                     FortranDeclaration(name, native_type, ("pointer",)),
-                    FortranDeclaration(
-                        f"{name}_allocatable_holder",
-                        f"type({self._allocatable_holder_type_name(argument.derived.backend_symbol)})",
-                        ("pointer",),
-                    ),
-                    FortranDeclaration(
-                        f"{name}_pointer_holder",
-                        f"type({self._pointer_holder_type_name(argument.derived.backend_symbol)})",
-                        ("pointer",),
+                    *(
+                        ()
+                        if abstract
+                        else (
+                            FortranDeclaration(
+                                f"{name}_allocatable_holder",
+                                f"type({self._allocatable_holder_type_name(argument.derived.backend_symbol)})",
+                                ("pointer",),
+                            ),
+                            FortranDeclaration(
+                                f"{name}_pointer_holder",
+                                f"type({self._pointer_holder_type_name(argument.derived.backend_symbol)})",
+                                ("pointer",),
+                            ),
+                        )
                     ),
                     FortranDeclaration(f"{name}_call_pointer", native_type, ("pointer",)),
                     FortranDeclaration(f"{name}_transaction_address", "type(c_ptr)"),
@@ -1366,8 +1379,16 @@ class FortranBridgeGenerator(ClassVisitor):
         acquisition = FortranSelectCase(
             CodeExpression(f"bound_{name}_access"),
             (
-                FortranCase(5, self._one_derived_transaction_acquisition(argument, allocatable=True)),
-                FortranCase(6, self._one_derived_transaction_acquisition(argument, allocatable=False)),
+                *(
+                    (FortranCase(5, self._one_derived_transaction_acquisition(argument, allocatable=True)),)
+                    if self._uses_allocatable_holder(argument)
+                    else ()
+                ),
+                *(
+                    (FortranCase(6, self._one_derived_transaction_acquisition(argument, allocatable=False)),)
+                    if self._uses_pointer_holder(argument)
+                    else ()
+                ),
                 FortranCase(None, ()),
             ),
         )
@@ -1595,18 +1616,20 @@ class FortranBridgeGenerator(ClassVisitor):
         if argument.entrypoint.descriptor_output_role is not None:
             nodes.append(self._derived_argument_output_finalizer(argument))
         else:
-            nodes.extend(
-                (
+            if self._uses_allocatable_holder(argument):
+                nodes.append(
                     FortranIf(
                         CodeExpression(f"{name}_created .and. bound_{name}_access == 3_c_int"),
                         body=(FortranDeallocate(f"{name}_allocatable_holder"),),
-                    ),
+                    )
+                )
+            if self._uses_pointer_holder(argument):
+                nodes.append(
                     FortranIf(
                         CodeExpression(f"{name}_created .and. bound_{name}_access == 4_c_int"),
                         body=(FortranDeallocate(f"{name}_pointer_holder"),),
-                    ),
+                    )
                 )
-            )
         return tuple(nodes)
 
     def _derived_argument_output_finalizer(self, argument: ArgumentTransferPlan) -> FortranIf:
@@ -6311,6 +6334,11 @@ class FortranBridgeGenerator(ClassVisitor):
         return FortranBridgeGenerator._uses_holder(argument, DerivedActualAccess.ALLOCATABLE_HOLDER)
 
     @staticmethod
+    def _uses_pointer_holder(argument: ArgumentTransferPlan) -> bool:
+        """Return whether the completed matrix keeps the pointer holder for one carrier."""
+        return FortranBridgeGenerator._uses_holder(argument, DerivedActualAccess.POINTER_HOLDER)
+
+    @staticmethod
     def _uses_holder(argument: ArgumentTransferPlan, access: DerivedActualAccess) -> bool:
         """Return whether one completed derived matrix includes a holder row."""
         call = argument.derived_call
@@ -6334,6 +6362,7 @@ class FortranBridgeGenerator(ClassVisitor):
         return tuple(
             procedure
             for derived in self._derived_types(plan)
+            if not derived.abstract
             for field in derived.fields
             for procedure in self._planned_support_procedures(
                 f"{derived.owner_path}.{field.name}",

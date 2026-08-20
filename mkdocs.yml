@@ -73,6 +73,7 @@ nav:
           - LAPACK Wrapper: user/examples/lapack-wrapper.md
           - FFTPACK Wrapper: user/examples/fftpack-wrapper.md
           - MINPACK Wrapper: user/examples/minpack-wrapper.md
+          - BSPLINE-FORTRAN Wrapper: user/examples/bspline-wrapper.md
           - Recipes:
               - Build and Import With the Python API: user/examples/recipes/build-and-import-python-api.md
               - Inspect a Fortran API: user/examples/recipes/inspect-fortran-api.md

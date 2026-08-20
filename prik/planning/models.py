@@ -315,6 +315,8 @@ class DerivedTypePlan(StageRecord):
     finalizers: tuple[str, ...]
     bind_c: bool
     sequence: bool
+    abstract: bool = False
+    deferred_bindings: tuple[str, ...] = ()
 
 
 @dataclass

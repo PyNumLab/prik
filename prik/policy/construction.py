@@ -383,18 +383,15 @@ def build_derived_type_policy(
         str(attribute).casefold() for attribute in semantic_class.metadata.get("fortran_type_attributes", ())
     }
     deferred_bindings = tuple(semantic_class.metadata.get("fortran_deferred_bindings", ()))
+    abstract = "abstract" in type_attributes
     blockers = tuple(
         [*(f"field {name!r} is missing completed derived-field policy" for name in missing)]
         + [reason for field in fields for reason in field.blockers]
         + (
-            ["abstract derived types need a non-instantiable Python class policy"]
-            if "abstract" in type_attributes
+            [f"deferred type-bound procedure {name!r} needs a declaring abstract type" for name in deferred_bindings]
+            if not abstract
             else []
         )
-        + [
-            f"deferred type-bound procedure {name!r} needs an override and dispatch policy"
-            for name in deferred_bindings
-        ]
     )
     exports = completed_python_exports(semantic_class, semantic_class.name)
     native_type_name = str(semantic_class.native_name or semantic_class.name)
@@ -413,6 +410,8 @@ def build_derived_type_policy(
         sequence=bool(semantic_class.metadata.get("fortran_sequence")),
         supported=not blockers,
         blockers=blockers,
+        abstract=abstract,
+        deferred_bindings=deferred_bindings,
     )
 
 
@@ -565,7 +564,28 @@ def _class_constructor_policy(
     owner_path: str,
     derived: DerivedTypePolicy,
 ) -> tuple[ConstructorPolicy, tuple[str, ...]]:
-    """Select exactly one constructor surface from the semantic contract."""
+    """Select exactly one constructor surface from the semantic contract.
+
+    An abstract native type has no constructor at all: Fortran forbids an
+    instance of it, so the generated class exposes its inherited surface while
+    only a concrete extension can be created.
+    """
+    if derived.abstract:
+        return (
+            ConstructorPolicy(
+                kind=ClassConstructorKind.ABSENT,
+                fields=(),
+                target_owner_path=None,
+                overload_name=None,
+                call=None,
+                lifecycle=(),
+                rejection_message=(
+                    f"{semantic_class.name} is an abstract native type and cannot be instantiated; "
+                    "create one of its concrete extensions instead"
+                ),
+            ),
+            (),
+        )
     bound = tuple(
         method
         for method in semantic_class.methods
@@ -3648,6 +3668,15 @@ def _derived_object_storage(
     return DerivedObjectStorage.DIRECT
 
 
+# An abstract type has no instances of its own. Every origin that would declare
+# storage of that exact type -- a wrapper-owned holder, or a module variable --
+# has nothing to hold, so only a plain concrete object address stays reachable.
+# The adapter converts that address to the extension's own type and passes it to
+# the `class(...)` dummy through the polymorphic discriminator.
+_ABSTRACT_REACHABLE_STORAGES = frozenset({DerivedObjectStorage.DIRECT})
+_ABSTRACT_INCOMPATIBLE_STORAGES = frozenset(DerivedObjectStorage) - _ABSTRACT_REACHABLE_STORAGES
+
+
 def _derived_call_policy(
     argument: models.SemanticArgument,
     decision: OwnershipDecision,
@@ -3661,8 +3690,19 @@ def _derived_call_policy(
         argument.semantic_type,
         native_value=_native_by_value_argument(argument),
     )
+    abstract_dummy = bool(argument.semantic_type.metadata.get("fortran_abstract_type"))
     cases = tuple(
         _derived_call_case(category, storage, projects_result=decision.projects_result)
+        if not (abstract_dummy and storage in _ABSTRACT_INCOMPATIBLE_STORAGES)
+        else _derived_incompatible_case(
+            storage,
+            "abstract-owner-storage",
+            (
+                f"{argument.semantic_type.name} is an abstract type; a "
+                f"{storage.value.replace('_', ' ')} actual would declare storage of that exact "
+                "type, which has no instance. Pass a concrete extension instead."
+            ),
+        )
         for storage in DerivedObjectStorage
     )
     writeback = {

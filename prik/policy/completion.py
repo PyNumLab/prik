@@ -466,11 +466,15 @@ def _complete_class_method_policies(
     """
     type_bound_targets = _type_bound_target_names(module_functions)
     module_targets = {str(function.native_name or function.name) for function in module_functions}
+    private_module_targets = {
+        str(function.native_name or function.name) for function in module_functions if function.visibility == "private"
+    }
     for semantic_class in class_nodes:
         _complete_one_class_method_policy(
             semantic_class,
             type_bound_targets,
             module_targets,
+            private_module_targets,
             derived_types,
             polymorphic_variants,
         )
@@ -489,6 +493,7 @@ def _complete_one_class_method_policy(
     semantic_class: models.SemanticClass,
     type_bound_targets: set[str],
     module_targets: set[str],
+    private_module_targets: set[str],
     derived_types: dict[tuple[str, str], DerivedTypePolicy],
     polymorphic_variants: dict[tuple[str, str], tuple[tuple[str, str], ...]],
 ) -> None:
@@ -523,6 +528,7 @@ def _complete_one_class_method_policy(
         derived,
         type_bound_targets,
         module_targets,
+        private_module_targets,
         derived_types,
         polymorphic_variants,
     )
@@ -585,6 +591,7 @@ def _complete_class_overload_methods(
     derived: DerivedTypePolicy,
     type_bound_targets: set[str],
     module_targets: set[str],
+    private_module_targets: set[str],
     derived_types: dict[tuple[str, str], DerivedTypePolicy],
     polymorphic_variants: dict[tuple[str, str], tuple[tuple[str, str], ...]],
 ) -> None:
@@ -604,6 +611,7 @@ def _complete_class_overload_methods(
                 generic_bindings,
                 type_bound_targets,
                 module_targets,
+                private_module_targets,
                 derived_types,
                 polymorphic_variants,
             )
@@ -616,6 +624,7 @@ def _complete_one_class_overload_method(
     generic_bindings: dict[str, str],
     type_bound_targets: set[str],
     module_targets: set[str],
+    private_module_targets: set[str],
     derived_types: dict[tuple[str, str], DerivedTypePolicy],
     polymorphic_variants: dict[tuple[str, str], tuple[tuple[str, str], ...]],
 ) -> None:
@@ -637,12 +646,20 @@ def _complete_one_class_overload_method(
         else None,
     )
     overload_kind = str(procedure.metadata.get(models.OVERLOAD_KIND_METADATA, "generic"))
+    # An overload dispatches through a native generic only when its own name is
+    # one. `__init__` is a Python name with no native counterpart, so a
+    # constructor candidate falls back to the specific procedure it selects --
+    # or, when that specific is private and therefore unreachable by name, to
+    # the constructor generic Fortran names for the type itself.
+    dispatches_through_overload_name = overload_kind != "generic" and overload.name != "__init__"
+    if not bind_target and overload.name == "__init__" and native_name in private_module_targets:
+        bind_target = derived.native_type_name
     native_dispatch_name = (
         str(bind_target)
         if bind_target
         else (
             str(procedure.metadata.get(models.FORTRAN_GENERIC_NAME_METADATA, overload.name))
-            if overload_kind != "generic"
+            if dispatches_through_overload_name
             else None
         )
     )
@@ -889,8 +906,23 @@ def _polymorphic_variant_map(
         return candidate == base or any(extends(parent, base) for parent in bases.get(candidate, ()))
 
     identities = tuple(surface.type_identity for surface in surfaces)
+    # An abstract type has no instance, so it is never the dynamic type a caller
+    # can supply; it stays a dispatch base without becoming one of its own cases.
+    abstract_identities = {
+        surface.type_identity
+        for semantic_class, surface in zip(class_nodes, surfaces, strict=False)
+        if any(
+            str(attribute).casefold() == "abstract"
+            for attribute in semantic_class.metadata.get("fortran_type_attributes", ())
+        )
+    }
     return {
-        base: tuple(candidate for candidate in reversed(identities) if extends(candidate, base)) for base in identities
+        base: tuple(
+            candidate
+            for candidate in reversed(identities)
+            if extends(candidate, base) and candidate not in abstract_identities
+        )
+        for base in identities
     }
 
 

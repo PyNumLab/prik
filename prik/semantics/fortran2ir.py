@@ -47,6 +47,8 @@ from prik.utilities.declaration_expressions import (
 )
 from prik.semantics.ownership_metadata import set_ownership_metadata
 from prik.semantics.metadata import (
+    CONSTRUCTOR_SPECIFIC_METADATA,
+    DEFERRED_BINDING_METADATA,
     BIND_TARGET_METADATA,
     OPTIONAL_ABSENT_HANDLE_METADATA,
     PROJECTED_OUTPUT_METADATA,
@@ -287,6 +289,7 @@ class FortranToIRConverter(ClassVisitor):
         default and never applies to a declared ``intent``.
         """
         self.assume_intent_in_scalars = bool(assume_intent_in_scalars)
+        self._abstract_type_names: set[str] = set()
         self.type_map = FORTRAN_TYPE_MAP if type_map is None else type_map
         self.compile_time_values = _normalize_compile_time_values(compile_time_values)
         self.wrapped_derived_types = {
@@ -457,6 +460,8 @@ class FortranToIRConverter(ClassVisitor):
             metadata["fortran_allocatable"] = True
         if getattr(var, "polymorphic", False):
             metadata["fortran_polymorphic"] = True
+        if semantic_name.casefold() in self._abstract_type_names:
+            metadata["fortran_abstract_type"] = True
         if getattr(var, "target", False):
             metadata["aliased"] = True
             metadata["fortran_target"] = True
@@ -982,6 +987,7 @@ class FortranToIRConverter(ClassVisitor):
         procedure_lookup: dict[str, SemanticFunction] | None = None,
         *,
         derived_type_context: _DerivedTypeContext | None = None,
+        prototype_lookup: dict[str, SemanticFunction] | None = None,
     ) -> SemanticClass:
         """Convert a Fortran derived type into fields, bound methods, and overload sets.
 
@@ -990,11 +996,12 @@ class FortranToIRConverter(ClassVisitor):
         declaration facts for later semantic and printing stages.
         """
         lookup = procedure_lookup or {}
+        prototypes = prototype_lookup or {}
         context = derived_type_context or _DerivedTypeContext(
             module=dtype.module,
             local_types=frozenset({dtype.name.lower()}),
         )
-        methods = self._bound_methods(dtype, lookup)
+        methods = self._bound_methods(dtype, lookup, prototypes)
         overload_sets = self._bound_overload_sets(dtype, methods)
         type_attributes = list(dict.fromkeys(str(attr).casefold() for attr in dtype.attributes))
         metadata = {
@@ -1074,6 +1081,11 @@ class FortranToIRConverter(ClassVisitor):
         later policy completion owns wrapper behavior decisions.
         """
         context = self._module_derived_type_context(module)
+        self._abstract_type_names |= {
+            str(dtype.name).casefold()
+            for dtype in module.derived_types
+            if any(str(attribute).casefold() == "abstract" for attribute in dtype.attributes)
+        }
         callback_interfaces = {
             **(callback_interfaces or {}),
             **self._callback_interface_lookup(module),
@@ -1118,6 +1130,7 @@ class FortranToIRConverter(ClassVisitor):
                 dtype,
                 procedure_lookup=procedure_lookup,
                 derived_type_context=context,
+                prototype_lookup={prototype.name.casefold(): prototype for prototype in prototypes},
             )
             for dtype in module.derived_types
         ]
@@ -2168,6 +2181,7 @@ class FortranToIRConverter(ClassVisitor):
         self,
         dtype: FortranDerivedType,
         procedure_lookup: dict[str, SemanticFunction],
+        prototype_lookup: dict[str, SemanticFunction] | None = None,
     ) -> list[SemanticMethod]:
         """Project resolved type-bound procedure bindings into semantic methods.
 
@@ -2184,6 +2198,9 @@ class FortranToIRConverter(ClassVisitor):
             binding_name, target_name = self._procedure_binding_names(binding["name"])
             proc = procedure_lookup.get(target_name.casefold())
             if proc is None:
+                deferred = self._deferred_bound_method(binding, binding_name, prototype_lookup or {})
+                if deferred is not None:
+                    methods.append(deferred)
                 continue
             binding_attributes = tuple(binding.get("attrs", ()))
             attrs = set(binding_attributes)
@@ -2261,11 +2278,22 @@ class FortranToIRConverter(ClassVisitor):
                     overload_sets.append(ProcedureOverloadSet(interface.name))
                 continue
             if self._is_procedure_generic_name(interface.name):
-                if interface.name.casefold() in class_map:
-                    raise ValueError(
-                        f"Fortran semantic conversion cannot represent generic constructor "
-                        f"{module.name}.{interface.name!s}; constructor projection is not implemented"
-                    )
+                constructor_class = class_map.get(interface.name.casefold())
+                if constructor_class is not None:
+                    # An interface named for a derived type is that type's
+                    # constructor, so its specifics become the class's own
+                    # `__init__` overload set rather than a module generic.
+                    constructor_set = self._normal_overload_set("__init__", procedures)
+                    target_lookup = procedure_lookup | inline_lookup
+                    for target_name, candidate in zip(target_names, constructor_set.procedures, strict=True):
+                        if target_lookup[target_name.casefold()].visibility == "private":
+                            # A private specific is unreachable by name; the type
+                            # name is public and resolves to the same procedure.
+                            candidate.native_name = interface.name
+                            candidate.metadata[BIND_TARGET_METADATA] = interface.name
+                    self._merge_overload_sets(constructor_class.overload_sets, [constructor_set])
+                    self._mark_constructor_specifics(procedures, procedure_lookup, interface.name)
+                    continue
                 overload_set = self._normal_overload_set(interface.name, procedures)
                 target_lookup = procedure_lookup | inline_lookup
                 for target_name, candidate in zip(target_names, overload_set.procedures, strict=True):
@@ -2355,6 +2383,23 @@ class FortranToIRConverter(ClassVisitor):
             original = lookup.get((procedure.native_name or procedure.name).casefold())
             if original is not None:
                 original.projection = self._assignment_projection(original, 0)
+
+    @staticmethod
+    def _mark_constructor_specifics(
+        procedures: list[SemanticFunction],
+        procedure_lookup: dict[str, SemanticFunction],
+        type_name: str,
+    ) -> None:
+        """Hide the module functions a generic constructor selects between.
+
+        Each specific stays reachable as the constructor's native target, but it
+        is no longer published as a separate module procedure: the type name is
+        the public spelling the source chose for it.
+        """
+        for procedure in procedures:
+            original = procedure_lookup.get((procedure.native_name or procedure.name).casefold())
+            if original is not None:
+                original.metadata[CONSTRUCTOR_SPECIFIC_METADATA] = type_name
 
     @staticmethod
     def _merge_overload_sets(
@@ -2708,6 +2753,50 @@ class FortranToIRConverter(ClassVisitor):
                 return argument.name, position
         raise ValueError(
             f"Type-bound procedure {proc.name!r} declares pass({pass_name}), but that dummy argument is not present"
+        )
+
+    @staticmethod
+    def _deferred_bound_method(
+        binding: dict,
+        binding_name: str,
+        prototype_lookup: dict[str, SemanticFunction],
+    ) -> SemanticMethod | None:
+        """Project a deferred type-bound binding from its declared interface.
+
+        A deferred binding names an interface instead of an implementation, so
+        the method carries that signature and no native target. Every concrete
+        extension supplies the override that a caller actually reaches.
+        """
+        interface_name = binding.get("interface")
+        if not interface_name:
+            return None
+        prototype = prototype_lookup.get(str(interface_name).casefold())
+        if prototype is None:
+            return None
+        attributes = tuple(binding.get("attrs", ()))
+        passed_object_name, passed_object_position = FortranToIRConverter._passed_object_argument(
+            prototype,
+            attributes,
+        )
+        # A prototype spells a subroutine's absent result as the "None" semantic
+        # type; a method states the same absence by carrying no result at all.
+        return_type = prototype.return_type
+        if return_type is not None and return_type.name == "None":
+            return_type = None
+        return SemanticMethod(
+            name=binding_name,
+            native_name="",
+            arguments=list(prototype.arguments),
+            return_type=return_type,
+            visibility=str(binding.get("visibility", "public")),
+            is_static="nopass" in set(attributes),
+            passed_object_name=passed_object_name,
+            passed_object_position=passed_object_position,
+            binding_attributes=attributes,
+            metadata={
+                DEFERRED_BINDING_METADATA: True,
+                "fortran_deferred_interface": str(interface_name),
+            },
         )
 
     @staticmethod

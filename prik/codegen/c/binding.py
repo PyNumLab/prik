@@ -667,11 +667,9 @@ class CBindingGenerator(ClassVisitor):
         return (
             bool(tuple(self._variables(plan)))
             or any(function.arguments or function.results for function in self._functions(plan))
-            or any(
-                field.object_kind is ObjectKind.NUMPY_ARRAY
-                for derived in self._derived_types(plan)
-                for field in derived.fields
-            )
+            # Every published component converts through the bundled helpers, so a
+            # type whose module exposes only `bind(C)` procedures still needs them.
+            or any(derived.fields for derived in self._derived_types(plan))
         )
 
     def _module_needs_allocator(self, plan: ModulePlan) -> bool:
@@ -2377,6 +2375,7 @@ class CBindingGenerator(ClassVisitor):
         return tuple(
             self._generated_support_procedure_entrypoint_prototype(operation)
             for derived in self._derived_types(plan)
+            if not derived.abstract
             for field in derived.fields
             for operation in self._generated_support_procedure_entrypoints_for(
                 f"{derived.owner_path}.{field.name}", "field:direct:"
@@ -2446,6 +2445,7 @@ class CBindingGenerator(ClassVisitor):
         return tuple(
             function
             for derived in self._derived_types(plan)
+            if not derived.abstract
             for field in derived.fields
             for function in self._direct_field_functions(derived, field)
         )
@@ -11030,7 +11030,13 @@ class CBindingGenerator(ClassVisitor):
         for surface in namespace.classes:
             constructor = surface.constructor.overload
             if constructor is not None and id(constructor) not in seen:
-                dispatches.append(_COverloadDispatch(constructor, receiver=True, public=False))
+                # A constructor overload whose candidates are type-bound takes the
+                # receiver; one whose candidates are functions returning the type
+                # -- a Fortran `interface <typename>` -- does not.
+                constructor_receiver = bool(
+                    constructor.candidate_passed_objects and constructor.candidate_passed_objects[0]
+                )
+                dispatches.append(_COverloadDispatch(constructor, receiver=constructor_receiver, public=False))
                 seen.add(id(constructor))
             for overload in surface.overloads:
                 if id(overload) in seen:
@@ -11456,6 +11462,7 @@ class CBindingGenerator(ClassVisitor):
         return tuple(
             self._derived_field_method_name(derived, field, action)
             for derived in namespace.derived_types
+            if not derived.abstract
             for field in derived.fields
             for action in self._field_method_actions(field)
         )

@@ -570,6 +570,11 @@ class _GeneratedSupportProcedureEntrypointBuilder:
     ) -> tuple[GeneratedSupportProcedureEntrypointPlan, ...]:
         operations = []
         for derived in self.derived_types:
+            # An abstract type has no instance to address, so it publishes no
+            # accessor of its own; each concrete extension already generates one
+            # for every component it inherits.
+            if derived.abstract:
+                continue
             for field in derived.fields:
                 operations.extend(self._field_operations(derived, field, "direct"))
         for variable in self.variables:

@@ -584,6 +584,8 @@ class WrapperPlanner(ClassVisitor):
             finalizers=policy.finalizers,
             bind_c=policy.bind_c,
             sequence=policy.sequence,
+            abstract=policy.abstract,
+            deferred_bindings=policy.deferred_bindings,
         )
 
     # Generated class surfaces compose Phase 8 types and ordinary function plans.
