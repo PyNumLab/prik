@@ -646,14 +646,15 @@ def test_scope_include_import_and_derived_type_binding_contracts():
 
     assert dtype.methods == ["update", "reset"]
     assert dtype.procedure_bindings == [
-        {"name": "update", "attrs": ["pass(self)", "public"]},
-        {"name": "reset", "attrs": ["pass(self)", "public"]},
+        {"name": "update", "attrs": ["pass(self)", "public"], "visibility": "public"},
+        {"name": "reset", "attrs": ["pass(self)", "public"], "visibility": "public"},
     ]
     assert dtype.generic_bindings == [
         {
             "name": "assignment(=)",
             "targets": ["assign_child", "assign_other"],
             "attrs": ["public"],
+            "visibility": "public",
         }
     ]
 

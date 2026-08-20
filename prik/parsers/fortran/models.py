@@ -355,6 +355,8 @@ class FortranDerivedType:
     attributes: list[str] = field(default_factory=list)
     procedure_bindings: list[dict] = field(default_factory=list)
     generic_bindings: list[dict] = field(default_factory=list)
+    component_visibility: str = "public"
+    binding_visibility: str = "public"
 
 
 @dataclass

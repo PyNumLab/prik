@@ -293,3 +293,82 @@ end module polymorphic_source_mod
     assert module.functions[0].metadata["fortran_passed_object_name"] == "self"
     assert accept_value.origin.source_type == "class(base)"
     assert accept_value.metadata["fortran_polymorphic"] is True
+
+
+def test_declared_type_accessibility_wins_over_the_module_default():
+    """`type, public ::` states the type's own accessibility.
+
+    A module-level `private` default sets accessibility for symbols that do not
+    state one; it must not hide a type whose declaration says `public`.
+    """
+    module = fortran_module_to_semantic_module(
+        parse_fortran_source(
+            """
+module exports_mod
+  implicit none
+  private
+  type,public :: exported
+    integer :: n = 0
+  end type exported
+  type :: defaulted
+    integer :: n = 0
+  end type defaulted
+end module exports_mod
+"""
+        )
+    )
+
+    visibility = {semantic_class.name: semantic_class.visibility for semantic_class in module.classes}
+    assert visibility == {"exported": "public", "defaulted": "private"}
+
+
+def test_private_components_carry_their_hidden_accessibility():
+    """The type's `private` statement is the default accessibility of its components."""
+    module = fortran_module_to_semantic_module(
+        parse_fortran_source(
+            """
+module hidden_mod
+  implicit none
+  type,public :: partly
+    private
+    integer :: hidden = 0
+    integer,public :: shown = 0
+  end type partly
+end module hidden_mod
+"""
+        )
+    )
+
+    partly = module.classes[0]
+    assert {field.name: field.visibility for field in partly.fields} == {
+        "hidden": "private",
+        "shown": "public",
+    }
+
+
+def test_private_type_bound_procedures_stay_off_the_generated_class_surface():
+    """A binding hidden by the `private` statement after `contains` is not a method."""
+    module = fortran_module_to_semantic_module(
+        parse_fortran_source(
+            """
+module bindings_mod
+  implicit none
+  type,public :: gated
+    integer :: n = 0
+  contains
+    private
+    procedure :: internal_step
+    procedure,public :: step => internal_step
+  end type gated
+contains
+  subroutine internal_step(self)
+    class(gated),intent(inout) :: self
+    self%n = self%n + 1
+  end subroutine internal_step
+end module bindings_mod
+"""
+        )
+    )
+
+    gated = module.classes[0]
+    assert [method.name for method in gated.methods if method.visibility == "public"] == ["step"]

@@ -1121,8 +1121,8 @@ class FortranToIRConverter(ClassVisitor):
             )
             for dtype in module.derived_types
         ]
-        for semantic_cls in semantic_classes:
-            semantic_cls.visibility = self._symbol_visibility(module, semantic_cls.name)
+        for semantic_cls, dtype in zip(semantic_classes, module.derived_types, strict=True):
+            semantic_cls.visibility = self._derived_type_visibility(module, dtype)
             self._record_class_declaration_callables(
                 semantic_cls,
                 self._declaration_callable_context(
@@ -2187,11 +2187,15 @@ class FortranToIRConverter(ClassVisitor):
                 continue
             binding_attributes = tuple(binding.get("attrs", ()))
             attrs = set(binding_attributes)
-            visibility = proc.visibility
-            if "private" in attrs:
+            declared_visibility = binding.get("visibility")
+            if declared_visibility in {"private", "public"}:
+                visibility = str(declared_visibility)
+            elif "private" in attrs:
                 visibility = "private"
             elif "public" in attrs:
                 visibility = "public"
+            else:
+                visibility = proc.visibility
             is_static = "nopass" in attrs
             passed_object_name, passed_object_position = self._passed_object_argument(proc, binding_attributes)
             proc.metadata["fortran_type_bound_target"] = True
@@ -2946,6 +2950,21 @@ class FortranToIRConverter(ClassVisitor):
         if parsed_file.filename:
             return Path(parsed_file.filename).stem
         return "standalone"
+
+    @staticmethod
+    def _derived_type_visibility(module: FortranModule, dtype: FortranDerivedType) -> str:
+        """Resolve a derived type's accessibility, preferring its own declaration.
+
+        ``type, public ::`` and ``type, private ::`` state the type's own
+        accessibility, so they win over a module-level ``public``/``private``
+        default and over the module's accessibility lists.
+        """
+        attributes = {str(attribute).lower() for attribute in getattr(dtype, "attributes", ())}
+        if "private" in attributes:
+            return "private"
+        if "public" in attributes:
+            return "public"
+        return FortranToIRConverter._symbol_visibility(module, dtype.name)
 
     @staticmethod
     def _symbol_visibility(module: FortranModule, symbol_name: str) -> str:

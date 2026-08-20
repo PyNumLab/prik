@@ -110,14 +110,18 @@
           "procedure_bindings": [
             {
               "name": "move",
-              "attrs": []
+              "attrs": [],
+              "visibility": "public"
             },
             {
               "name": "reset",
-              "attrs": []
+              "attrs": [],
+              "visibility": "public"
             }
           ],
-          "generic_bindings": []
+          "generic_bindings": [],
+          "component_visibility": "public",
+          "binding_visibility": "public"
         }
       ],
       "interfaces": [],
@@ -244,14 +248,18 @@
           "procedure_bindings": [
             {
               "name": "move",
-              "attrs": []
+              "attrs": [],
+              "visibility": "public"
             },
             {
               "name": "reset",
-              "attrs": []
+              "attrs": [],
+              "visibility": "public"
             }
           ],
-          "generic_bindings": []
+          "generic_bindings": [],
+          "component_visibility": "public",
+          "binding_visibility": "public"
         }
       ],
       "interfaces": [],

@@ -318,6 +318,40 @@ item.move(np.float64(2.0), np.float64(3.0))
 To expose only the method, import `private` and add `@private` to the
 module-level declaration.
 
+## What The Source Already Hides
+
+prik reads the accessibility a type declares and does not publish what the type
+keeps to itself, so a contract is not needed to hide internals:
+
+```fortran
+module solver
+  implicit none
+  private                      ! module default
+
+  type,public :: state         ! exported despite the module default
+    private                    ! components default to private
+    real(8) :: work(8) = 0.0d0 ! internal, not a Python attribute
+    integer(4),public :: steps = 0
+  contains
+    private                    ! bindings default to private
+    procedure :: advance_once  ! internal, not a Python method
+    procedure,public :: run => advance_once
+  end type state
+end module solver
+```
+
+The generated `state` class exposes `steps` and `run` only. Each rule is the
+Fortran one:
+
+| Declaration | Effect on the Python class |
+| --- | --- |
+| `type, public ::` | Exported, even when the module defaults to `private` |
+| `type, private ::` | Not exported, even when the module defaults to `public` |
+| `private` before `contains` | Components default to hidden |
+| `private` after `contains` | Type-bound procedures default to hidden |
+| `integer, public ::` on a component | Published regardless of the type default |
+| `procedure, public ::` on a binding | Published regardless of the type default |
+
 The class docstring now lists `move(dx, dy) -> None` under `Methods`.
 `points.point.move.__doc__` contains its complete parameter and return details.
 

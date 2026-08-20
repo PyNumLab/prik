@@ -258,3 +258,93 @@ subroutine second()
 end subroutine second
 """)
     assert len(parsed.procedures) == 2
+
+
+def test_type_accessibility_statements_set_component_and_binding_defaults():
+    """A type's `private` statement is a default, not an unsupported declaration.
+
+    The statement before `contains` sets component accessibility; the statement
+    after it sets type-bound accessibility. Each declaration that states its own
+    accessibility keeps it.
+    """
+    module = parse_fortran_module(
+        """
+module access_mod
+  implicit none
+  type,public :: t
+    private
+    integer :: hidden = 0
+    integer,public :: shown = 0
+  contains
+    private
+    procedure :: internal_step
+    procedure,public :: step => internal_step
+  end type t
+contains
+  subroutine internal_step(self)
+    class(t),intent(inout) :: self
+  end subroutine internal_step
+end module access_mod
+"""
+    )
+
+    dtype = module.derived_types[0]
+    assert dtype.component_visibility == "private"
+    assert dtype.binding_visibility == "private"
+    assert {field.name: field.visibility for field in dtype.fields} == {
+        "hidden": "private",
+        "shown": "public",
+    }
+    assert [(binding["name"], binding["visibility"]) for binding in dtype.procedure_bindings] == [
+        ("internal_step", "private"),
+        ("step => internal_step", "public"),
+    ]
+
+
+def test_deferred_type_bound_binding_records_its_declaring_interface():
+    """A deferred binding parses; whether it can be wrapped belongs to policy."""
+    module = parse_fortran_module(
+        """
+module deferred_mod
+  implicit none
+  type,public,abstract :: base
+  contains
+    procedure(size_func),deferred,public :: size_of
+  end type base
+  abstract interface
+    pure function size_func(self) result(s)
+      import :: base
+      class(base),intent(in) :: self
+      integer :: s
+    end function size_func
+  end interface
+end module deferred_mod
+"""
+    )
+
+    binding = module.derived_types[0].procedure_bindings[0]
+    assert binding["name"] == "size_of"
+    assert binding["interface"] == "size_func"
+    assert "deferred" in binding["attrs"]
+
+
+def test_named_block_construct_starts_the_execution_part():
+    """`name: block` is an executable construct, not a declaration."""
+    module = parse_fortran_module(
+        """
+module block_mod
+  implicit none
+contains
+  subroutine scale_value(x)
+    real(8),intent(inout) :: x
+    main: block
+      real(8) :: factor
+      factor = 2.0d0
+      x = x * factor
+    end block main
+  end subroutine scale_value
+end module block_mod
+"""
+    )
+
+    assert [procedure.name for procedure in module.procedures] == ["scale_value"]

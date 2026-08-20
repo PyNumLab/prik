@@ -489,7 +489,9 @@
           "extends": null,
           "attributes": [],
           "procedure_bindings": [],
-          "generic_bindings": []
+          "generic_bindings": [],
+          "component_visibility": "public",
+          "binding_visibility": "public"
         }
       ],
       "interfaces": [
@@ -1007,7 +1009,9 @@
           "extends": null,
           "attributes": [],
           "procedure_bindings": [],
-          "generic_bindings": []
+          "generic_bindings": [],
+          "component_visibility": "public",
+          "binding_visibility": "public"
         }
       ],
       "interfaces": [

@@ -7,6 +7,48 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+### Fixed
+
+- A derived type's `private` and `public` statements are now honored. The
+  statement before `contains` sets the default accessibility of components and
+  the statement after it sets the default for type-bound procedures; a
+  declaration that states its own accessibility still keeps it. The statement
+  after `contains` previously failed to parse at all, and the one before it
+  parsed but was discarded — so a type with private components reached the
+  Fortran compiler as generated accessors that read them, failing with
+  "Component 'x' is a PRIVATE component of 'y'". Private components and
+  bindings now simply stay off the generated Python class. Parsed derived types
+  additionally record `component_visibility` and `binding_visibility`, and each
+  type-bound binding records the `visibility` it resolves to, so the parser's
+  serialized form states the accessibility it read.
+
+- A `type, public ::` declaration is no longer hidden by a module-level
+  `private` default. The type's own declared accessibility is the most specific
+  statement about it, so it wins over the module default and over the module's
+  accessibility lists. Previously such a type — and every one of its methods —
+  was dropped from the extension silently, with the build still reporting
+  success.
+
+- A deferred type-bound binding (`procedure(iface), deferred :: name`) now
+  parses, so the decision about whether it can be wrapped is reported by policy
+  as an unsupported derived-type diagnostic naming the binding, rather than by
+  the parser as a syntax error. Abstract types and deferred bindings remain
+  unsupported; only the stage that owns the refusal has changed.
+
+- A named `block` construct (`main: block ... end block main`) is recognized as
+  the start of a procedure's execution part. A construct name prefix is now
+  stripped before a statement is classified, so named `do`, `if`, `select`,
+  `associate`, and `block` constructs are all read as executable rather than as
+  an unknown declaration.
+
+- The compiler type probe no longer emits a program it cannot compile. The
+  probe is a standalone program that cannot `use` a module from the project
+  being analyzed, because that module has not been compiled yet; an expression
+  naming a kind parameter declared elsewhere in the project — `storage_size(1_ip,
+  kind=ip)`, for example — is now left for the requirement report instead of
+  being compiled into the probe. Previously one such expression failed the whole
+  probe and with it the entire build.
+
 ### Added
 
 - Added `--assume-intent-in-scalars`, which treats a primitive scalar dummy
