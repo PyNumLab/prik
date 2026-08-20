@@ -5,12 +5,12 @@ headers, typedef structs, recursive pointers, function declarations, macros,
 constants, and callback hook fields without requiring a large build system.
 """
 
-from pathlib import Path
 import shutil
 
 import pytest
+from tests.c._support.paths import C_DATA_DIR
 
-_CJSON_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "native" / "json"
+_CJSON_DIR = C_DATA_DIR / "json"
 
 
 def _preprocessed_cjson_source(filename: str) -> str:

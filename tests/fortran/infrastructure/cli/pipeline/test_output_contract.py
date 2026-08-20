@@ -21,6 +21,7 @@ from prik.preprocessing import (
     PreprocessingDiagnostic,
     PreprocessingError,
 )
+from tests.fortran._support.paths import GENERAL_FORTRAN_DIR
 from tests.fortran.infrastructure.cli.pipeline._support import (
     TEST_FILE,
     _MainParserError,
@@ -650,7 +651,7 @@ def test_subcommand_help_tailors_shared_compiler_options(command, expected, excl
 
 
 def test_cli_parse_shows_module_derived_types_and_derived_arg_kinds():
-    fixture = Path(__file__).parents[2] / "parsing" / "fixtures" / "general" / "modern_pyi_example.f90"
+    fixture = GENERAL_FORTRAN_DIR / "modern_pyi_example.f90"
     cmd = [sys.executable, "-m", "prik", "parse", str(fixture)]
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
 

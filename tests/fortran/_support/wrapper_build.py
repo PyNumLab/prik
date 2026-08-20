@@ -17,6 +17,7 @@ from types import ModuleType
 import numpy as np
 import pytest
 
+from tests.fortran._support.paths import REPO_ROOT
 from tests.fortran._support.pyi_fixtures import assert_generated_pyi_package_matches_fixture
 from tests.fortran._support.fmath_cases import fmath_cases
 from prik import build_pyi_extension
@@ -38,7 +39,6 @@ from prik.policy.completion import complete_semantic_policies
 from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import WrapperPlanner
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
 WRAPPER_TEST_ROOT = Path(__file__).resolve().parent
 WRAPPER_SOURCE_PATHS = {
     "c_order_flat_buffer.f90": REPO_ROOT

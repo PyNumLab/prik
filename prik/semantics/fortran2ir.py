@@ -1067,6 +1067,14 @@ class FortranToIRConverter(ClassVisitor):
             "target": field.target,
         }
 
+    def _record_abstract_type_names(self, module: FortranModule) -> None:
+        """Remember which of the module's derived types are declared abstract."""
+        self._abstract_type_names |= {
+            str(dtype.name).casefold()
+            for dtype in module.derived_types
+            if any(str(attribute).casefold() == "abstract" for attribute in dtype.attributes)
+        }
+
     def _visit_FortranModule(
         self,
         module: FortranModule,
@@ -1081,11 +1089,7 @@ class FortranToIRConverter(ClassVisitor):
         later policy completion owns wrapper behavior decisions.
         """
         context = self._module_derived_type_context(module)
-        self._abstract_type_names |= {
-            str(dtype.name).casefold()
-            for dtype in module.derived_types
-            if any(str(attribute).casefold() == "abstract" for attribute in dtype.attributes)
-        }
+        self._record_abstract_type_names(module)
         callback_interfaces = {
             **(callback_interfaces or {}),
             **self._callback_interface_lookup(module),

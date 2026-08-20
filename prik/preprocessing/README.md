@@ -35,8 +35,8 @@ extension. `prik.compiler` supplies reusable compiler mechanisms;
 
 ## Tests And Docs
 
-- `tests/c/preprocessing/`
-- `tests/c/probes/`
+- `tests/c/infrastructure/preprocessing/`
+- `tests/c/data_types/probes/`
 - `tests/fortran/infrastructure/preprocessing/`
 - `tests/fortran/data_types/probes/`
 - `docs/developer/packages/preprocessing.md`

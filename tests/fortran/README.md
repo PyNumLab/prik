@@ -84,10 +84,10 @@ representation is supporting evidence, not the ownership rule.
 | `infrastructure/semantic_pyi/` | Semantic `.pyi` parsing, conversion, contracts, and loading |
 | `infrastructure/building/` | Shared native build modes, compiler integration, and runtime ABI behavior |
 | `infrastructure/policy/` | Internal ownership, policy completion, and completed wrapper-policy mechanics |
-| `infrastructure/codegen/` | Internal plan, planner, generator, binding, bridge, printer, docstring, advisory review, and visitor mechanics |
+| `infrastructure/codegen/` | Internal plan, planner, generator, binding, bridge, docstring, advisory review, and visitor mechanics |
 | `infrastructure/naming/` | Internal generated-name and public-name policy owned by `prik/naming/` |
 | `infrastructure/pipeline/` | Generated-wrapper orchestration and transport owned by `prik/pipeline/` |
-| `infrastructure/types/` | Internal NumPy type mapping and target mapping-report mechanics |
+| `infrastructure/printers/` | Internal C and Fortran source serialization owned by `prik/printers/` |
 | `infrastructure/utilities/` | Internal string and class-visitor helpers owned by `prik/utilities/` |
 
 Each infrastructure test module has an explicit production owner. New internal

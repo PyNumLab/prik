@@ -78,12 +78,15 @@ reductions, conditionals, powers, and logical-kind arrays. Contract-batch
 reconciliation belongs with `tests/fortran/infrastructure/semantic_pyi/`,
 where editable `.pyi` imports and prototypes are exercised.
 
-Cross-feature mechanisms have explicit infrastructure owners: `parsing/`,
-`preprocessing/`, `cli/`, `semantic_ir/`, `semantic_pyi/`, `building/`, and
-`policy/`. A user-visible language behavior stays with its feature even when
-its test crosses several pipeline stages. Minimized real-world parser
-interactions belong under `infrastructure/parsing/`; full third-party snapshots
-are temporary analysis inputs, not permanent fixtures.
+Cross-feature mechanisms have explicit infrastructure owners. `parsing/`,
+`preprocessing/`, `cli/`, `semantic_ir/`, `semantic_pyi/`, and `building/` own
+shared pipeline behavior; the remaining owners mirror their production package
+(`policy/`, `codegen/`, `printers/`, `naming/`, `pipeline/`, `runtime/`,
+`utilities/`). `tests/fortran/README.md` and `tests/c/README.md` carry the
+complete per-language tables. A user-visible language behavior stays with its
+feature even when its test crosses several pipeline stages. Minimized
+real-world parser interactions belong under `infrastructure/parsing/`; full
+third-party snapshots are temporary analysis inputs, not permanent fixtures.
 
 ## Independent suite gates
 

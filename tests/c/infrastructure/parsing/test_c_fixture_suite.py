@@ -7,8 +7,9 @@ import sys
 from pathlib import Path
 
 import pytest
+from tests.c._support.paths import C_ROOT
 
-_C_ROOT = Path(__file__).resolve().parents[2]
+_C_ROOT = C_ROOT
 _DATA_DIR = _C_ROOT / "fixtures" / "native"
 _SOURCE_SUFFIXES = {".c", ".h", ".i"}
 _SOURCE_ORDER = {".c": 0, ".h": 1, ".i": 2}

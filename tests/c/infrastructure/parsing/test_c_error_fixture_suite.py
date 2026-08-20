@@ -5,9 +5,10 @@ import os
 from pathlib import Path
 
 import pytest
+from tests.c._support.paths import C_ROOT
 
 
-_C_ROOT = Path(__file__).resolve().parents[2]
+_C_ROOT = C_ROOT
 _ERRORS_DIR = _C_ROOT / "fixtures" / "native" / "errors" / "parser"
 _EXPECTED_ERRORS_DIR = _C_ROOT / "fixtures" / "parser" / "fixtures" / "errors"
 _SOURCE_SUFFIXES = {".c", ".h", ".i"}

@@ -1,9 +1,9 @@
 import types
-from pathlib import Path
 
 import prik.cli as prik_cli
+from tests.fortran._support.paths import GENERAL_FORTRAN_DIR
 
-TEST_FILE = Path(__file__).parents[2] / "parsing" / "fixtures" / "general" / "basic_subroutine.f90"
+TEST_FILE = GENERAL_FORTRAN_DIR / "basic_subroutine.f90"
 
 
 class _MainParserError(Exception):

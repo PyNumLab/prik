@@ -1,6 +1,3 @@
-from pathlib import Path
-
-
 from prik.contracts import CONTRACT_SYMBOLS
 
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
@@ -23,10 +20,9 @@ from prik.semantics.models import (
 )
 
 from prik.policy.completion import complete_semantic_policies
+from tests.fortran._support.paths import FORTRAN_ROOT
 
-OPERATOR_F90_SOURCE = (
-    Path(__file__).parents[1] / "generic_interfaces" / "end_to_end" / "fixtures" / "foperators_f90.f90"
-)
+OPERATOR_F90_SOURCE = FORTRAN_ROOT / "generic_interfaces" / "end_to_end" / "fixtures" / "foperators_f90.f90"
 
 CONTRACT_IMPORT = f"from prik.contracts import {', '.join(sorted(CONTRACT_SYMBOLS))}\n"
 

@@ -4,10 +4,11 @@ from pathlib import Path
 
 from prik.parsers.fortran import parse_fortran_file
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
+from tests.fortran._support.paths import (
+    FORTRAN_ROOT,
+    GENERAL_FORTRAN_DIR,
+)
 
-FORTRAN_ROOT = Path(__file__).resolve().parents[1]
-PARSER_FIXTURE_ROOT = FORTRAN_ROOT / "infrastructure" / "parsing" / "fixtures"
-GENERAL_FORTRAN_DIR = PARSER_FIXTURE_ROOT / "general"
 SEMANTICS_FIXTURE_DIR = (
     FORTRAN_ROOT / "infrastructure" / "semantic_ir" / "semantics" / "fixtures" / "general" / "expected"
 )

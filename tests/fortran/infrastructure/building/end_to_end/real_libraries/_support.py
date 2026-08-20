@@ -10,9 +10,10 @@ import pytest
 
 from prik import build_fortran_extension
 from tests.fortran._support.wrapper_build import _import_from_build_dir
+from tests.fortran._support.paths import REPO_ROOT
 
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[5]
+REPOSITORY_ROOT = REPO_ROOT
 
 
 def real_library_source_dir(library: str) -> Path:

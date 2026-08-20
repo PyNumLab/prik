@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 
 import pytest
 
 from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
 from prik.pipeline.pyi import emit_module_stubs
 from prik.parsers.fortran import parse_fortran_file
+from tests.fortran._support.paths import REPO_ROOT
 
 pytestmark = pytest.mark.skip(reason="Benchmarks are parked until benchmark adoption resumes.")
 
@@ -37,7 +37,7 @@ def test_parse_convert_emit_representative_fortran_module(benchmark):
 
 @pytest.mark.benchmark
 def test_parse_real_lapack_dgesv(benchmark):
-    source = (Path(__file__).resolve().parents[4] / "examples" / "lapack" / "native" / "dgesv.f").read_text(
+    source = (REPO_ROOT / "examples" / "lapack" / "native" / "dgesv.f").read_text(
         encoding="utf-8",
     )
     parsed = benchmark(parse_fortran_file, source, filename="lapack/dgesv.f")

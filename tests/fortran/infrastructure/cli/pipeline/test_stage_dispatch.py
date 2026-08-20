@@ -19,6 +19,7 @@ from prik.preprocessing import (
     PreprocessingError,
 )
 from prik.semantics.fortran2ir import collect_semantic_compile_time_requirements
+from tests.fortran._support.paths import GENERAL_FORTRAN_DIR
 from tests.fortran.infrastructure.cli.pipeline._support import (
     TEST_FILE,
     _install_main_parser,
@@ -572,7 +573,7 @@ def test_prik_main_debug_reraises_preprocessing_errors(monkeypatch):
 
 
 def test_cli_parse_modern_fixture_prints_derived_block_verbatim():
-    fixture = Path(__file__).parents[2] / "parsing" / "fixtures" / "general" / "modern_pyi_example.f90"
+    fixture = GENERAL_FORTRAN_DIR / "modern_pyi_example.f90"
     cmd = [sys.executable, "-m", "prik", "parse", str(fixture)]
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
 

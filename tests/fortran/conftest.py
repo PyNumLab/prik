@@ -10,7 +10,8 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.fortran._support.paths import REPO_ROOT
+
 COMPILER_ENV = "PRIK_TEST_FORTRAN_COMPILER"
 COMPILER_OPTION = "--prik-fortran-compiler"
 

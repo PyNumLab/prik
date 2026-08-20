@@ -13,8 +13,9 @@ from tests.fortran._support.wrapper_build import (
     _import_from_build_dir,
 )
 from prik import build_pyi_extension
+from tests.fortran._support.paths import FORTRAN_ROOT
 
-MODULE_FIXTURES = Path(__file__).parents[5] / "modules" / "end_to_end" / "fixtures"
+MODULE_FIXTURES = FORTRAN_ROOT / "modules" / "end_to_end" / "fixtures"
 EDITED_ENTRIES = Path(__file__).parent / "fixtures" / "edited_contracts" / "module_exports"
 SOURCE = MODULE_FIXTURES / "module_exports.f90"
 BASE_CONTRACT = MODULE_FIXTURES / "contracts" / "module_exports"

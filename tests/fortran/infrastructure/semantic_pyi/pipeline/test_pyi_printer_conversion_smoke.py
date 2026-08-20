@@ -5,10 +5,8 @@ import pytest
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 from prik.printers import emit_module
 
-from tests.fortran._support.fixture_outputs import (
-    PARSER_FIXTURE_ROOT as TESTS_DIR,
-    parse_fixture,
-)
+from tests.fortran._support.fixture_outputs import parse_fixture
+from tests.fortran._support.paths import PARSER_FIXTURE_ROOT as TESTS_DIR
 from tests.fortran._support.fixture_conversion import FORTRAN_FIXTURES
 
 

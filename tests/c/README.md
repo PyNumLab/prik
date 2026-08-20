@@ -28,6 +28,7 @@ The quarantined owners are:
 | `infrastructure/preprocessing/` | C recipes, dependencies, mappings, execution, and diagnostics |
 | `infrastructure/semantic_ir/` | C parser-model conversion to semantic IR |
 | `infrastructure/semantic_pyi/` | C semantic `.pyi` conversion and source/generated-contract parity |
+| `infrastructure/execution_examples/` | Executable C parser walkthroughs kept runnable as documentation |
 | `fixtures/native/` | C source and include inputs |
 | `fixtures/parser/` | C parser snapshots and update commands |
 | `fixtures/pyi/` | checked C generated-contract packages |

@@ -14,6 +14,7 @@ import pytest
 from tests.fortran._support.wrapper_build import _sole_native_module
 from prik.preprocessing import PreprocessingConfig
 from prik.pipeline.build import NativeBuildPlan, NativeLinkItem, build_fortran_extension
+from tests.fortran._support.paths import REPO_ROOT
 
 NATIVE_FIXTURES = Path(__file__).parent / "fixtures" / "native"
 VERBOSE_SOURCE = NATIVE_FIXTURES / "verbose_api.f90"
@@ -21,7 +22,7 @@ DEFAULT_OUTPUT_SOURCE = NATIVE_FIXTURES / "fdefault_output.f"
 SCALE_SOURCE = NATIVE_FIXTURES / "scale.f90"
 SCALAR_SOURCE = SCALE_SOURCE
 HOME_POINTS_SOURCE = NATIVE_FIXTURES / "home_points.f90"
-BUILD_MODULE = Path(__file__).resolve().parents[4] / "prik" / "pipeline" / "build.py"
+BUILD_MODULE = REPO_ROOT / "prik" / "pipeline" / "build.py"
 pytestmark = pytest.mark.fortran_end_to_end
 
 

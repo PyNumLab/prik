@@ -16,6 +16,7 @@ from tests.fortran._support.wrapper_build import (
 )
 from prik import build_pyi_extension
 from prik.runtime.handles import AllocatableArray
+from tests.fortran._support.paths import FORTRAN_ROOT
 
 FIXTURES = Path(__file__).parent / "fixtures"
 EDITED_CONTRACTS = FIXTURES / "edited_contracts"
@@ -25,7 +26,7 @@ PLAIN_MODULE_SOURCE = FIXTURES / "fmodule_derived_snapshot_f90.f90"
 PLAIN_MODULE_CONTRACT = EDITED_CONTRACTS / "module_live_proxy" / "__init__.pyi"
 ALIASED_MODULE_SOURCE = FIXTURES / "fmodule_derived_alias_f90.f90"
 ALIASED_MODULE_CONTRACT = EDITED_CONTRACTS / "module_aliased_proxy" / "__init__.pyi"
-DERIVED_CONSTANT_SOURCE = Path(__file__).parents[2] / "modules" / "end_to_end" / "fixtures" / "fmodule_vars_f90.f90"
+DERIVED_CONSTANT_SOURCE = FORTRAN_ROOT / "modules" / "end_to_end" / "fixtures" / "fmodule_vars_f90.f90"
 pytestmark = pytest.mark.fortran_end_to_end
 DERIVED_CONSTANT_CONTRACT = """\
 from prik.contracts import Final, Int32

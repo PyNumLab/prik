@@ -1,9 +1,9 @@
 """JSON schema sanity tests for legacy C parser project snapshots."""
 
 import json
-from pathlib import Path
+from tests.c._support.paths import PARSER_FIXTURE_ROOT
 
-_FIXTURES_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "parser" / "fixtures"
+_FIXTURES_DIR = PARSER_FIXTURE_ROOT / "fixtures"
 _PARSER_FIXTURE_GROUPS = ("general", "json", "tinyexpr", "linmath", "nanosvg", "stb")
 
 

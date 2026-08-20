@@ -28,7 +28,7 @@ not own preprocessing.
 - User recipe: `docs/user/examples/recipes/inspect-c-api.md`
 - Source navigation: `docs/developer/codebase-map.md`, `docs/developer/feature-to-code-map.md`
 - Parser tests: `tests/c/fixtures/parser/`
-- Semantic handoff tests: `tests/c/semantics/conversion/`
+- Semantic handoff tests: `tests/c/infrastructure/semantic_ir/semantics/`
 
 Runtime C-input wrapping is future backend work. Keep C docs clear about the
 current boundary: parse, semantic IR, and `.pyi` are implemented;
