@@ -179,6 +179,10 @@ class _PendingOverload:
     generic_name: str | None = None
 
 
+#: Sentinel for a projected result this comparison does not reconstruct.
+_UNCOMPARED_PROJECTED_RETURN = object()
+
+
 class _PyiAstParser:
     """Stateful AST visitor that builds one semantic module from a contract.
 
@@ -1227,11 +1231,16 @@ class _PyiAstParser:
         form.  A class overload may instead expose a projected bound-object
         return; every other mismatch raises ``ValueError``.
         """
-        visible_declaration_arguments = [_PyiAstParser._visible_overload_argument(arg) for arg in declaration.arguments]
-        visible_call_arguments = [_PyiAstParser._visible_overload_argument(arg) for arg in call_arguments]
+        projected_arguments = _PyiAstParser._projected_overload_arguments(target, call_arguments)
+        declared_arguments = _PyiAstParser._projected_overload_arguments(declaration, declaration.arguments)
+        visible_declaration_arguments = [_PyiAstParser._visible_overload_argument(arg) for arg in declared_arguments]
+        visible_call_arguments = [_PyiAstParser._visible_overload_argument(arg) for arg in projected_arguments]
+        target_return = _PyiAstParser._projected_overload_return_type(target)
         if visible_declaration_arguments == visible_call_arguments and (
             _PyiAstParser._visible_overload_type(declaration.return_type)
             == _PyiAstParser._visible_overload_type(target.return_type)
+            or target_return is _UNCOMPARED_PROJECTED_RETURN
+            or _PyiAstParser._matches_projected_return(declaration.return_type, target_return)
             or _PyiAstParser._matches_bound_projection_return(declaration, target, bound_position)
         ):
             return
@@ -1239,6 +1248,65 @@ class _PyiAstParser:
             f"Overload declaration {declaration.name!r} is incompatible with "
             f"specific procedure {target.native_name or target.name!r}"
         )
+
+    @staticmethod
+    def _matches_projected_return(declared, target_return) -> bool:
+        """Compare a declared result with a target's, ignoring result ownership."""
+        declared_type = _PyiAstParser._visible_overload_type(declared)
+        target_type = _PyiAstParser._visible_overload_type(target_return)
+        if declared_type is None or target_type is None:
+            return declared_type == target_type
+        expected = deepcopy(target_type)
+        expected.ownership = deepcopy(declared_type.ownership)
+        return declared_type == expected
+
+    @staticmethod
+    def _projected_overload_arguments(
+        function: SemanticFunction,
+        arguments: list[SemanticArgument],
+    ) -> list[SemanticArgument]:
+        """Return only the arguments one projected signature still accepts.
+
+        An output the projection turns into a result is not part of the public
+        signature, whether it is a native output argument on the specific or a
+        further returned value the declaration states.
+        """
+        hidden = {
+            mapping.native_name
+            for mapping in function.projection
+            if mapping.python_position is None and mapping.result_position is not None
+        }
+        if not hidden:
+            return list(arguments)
+        return [argument for argument in arguments if argument.name not in hidden]
+
+    @staticmethod
+    def _projected_overload_return_type(target: SemanticFunction):
+        """Return the result a projected target presents, or the uncompared marker.
+
+        A projection that supplies exactly one result replaces an absent native
+        return with that argument's type. Several results compose a tuple the
+        declaration states directly, which this comparison does not rebuild.
+        """
+        results = [mapping for mapping in target.projection if mapping.result_position is not None]
+        if not results:
+            return target.return_type
+        if target.return_type is not None or len(results) != 1:
+            # Several results compose a tuple the declaration states directly,
+            # and its extra members arrive as `return_position` arguments that
+            # the comparison above has already set aside.
+            return _UNCOMPARED_PROJECTED_RETURN
+        by_name = {argument.name: argument for argument in target.arguments}
+        projected = by_name.get(results[0].native_name)
+        if projected is None:
+            return _UNCOMPARED_PROJECTED_RETURN
+        # A projected output is declared as a native output argument; as a result
+        # it is an ordinary returned value, so its argument-passing storage is
+        # not part of the public type the declaration states.
+        returned = deepcopy(projected.semantic_type)
+        if returned.rank == 0 and returned.storage is not None and returned.storage.kind in {"address", "reference"}:
+            returned.storage = None
+        return returned
 
     @staticmethod
     def _visible_overload_argument(argument: SemanticArgument) -> SemanticArgument:
@@ -1314,12 +1382,18 @@ class _PyiAstParser:
             and target.return_type.name.casefold() == owner.name.casefold()
         ):
             return None
-        remaining_names = [argument.name for argument in declaration.arguments]
+        # Compare public signatures: an output either side projects into a result
+        # is not one of the arguments a caller supplies.
+        declared_names = [
+            argument.name
+            for argument in _PyiAstParser._projected_overload_arguments(declaration, declaration.arguments)
+        ]
+        visible_target_arguments = _PyiAstParser._projected_overload_arguments(target, target.arguments)
         matching = [
             index
             for index, argument in enumerate(target.arguments)
             if argument.semantic_type.name.casefold() == owner.name.casefold()
-            and [arg.name for pos, arg in enumerate(target.arguments) if pos != index] == remaining_names
+            and [item.name for item in visible_target_arguments if item is not argument] == declared_names
         ]
         if len(matching) == 1:
             return matching[0]

@@ -57,6 +57,16 @@ release tags add a leading `v` to the package version.
 
 ### Fixed
 
+- A generic interface whose specifics project an `intent(out)` argument into a
+  result now reloads from its generated contract. The declaration states the
+  public signature, so an output the projection turned into a result is not one
+  of the arguments it accepts; comparing the declaration against the specific's
+  native argument list rejected every such generic — the common shape in
+  numerical Fortran — with "Overload declaration 'x' is incompatible with
+  specific procedure 'y'". The same comparison now drives a type-bound generic's
+  receiver search. Generated contracts for BSPLINE-FORTRAN's `db1ink`,
+  `db1val`, and `initialize` load again.
+
 - A module whose only procedures are `bind(C)` now installs the bundled native
   support its derived-type accessors need. Compiled wrapper builds for such a
   module previously failed to link with `undefined symbol:

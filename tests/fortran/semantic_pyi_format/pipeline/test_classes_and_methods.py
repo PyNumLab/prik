@@ -2,7 +2,7 @@
 
 import pytest
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
-from prik.pipeline.pyi import emit_module_stubs
+from prik.pipeline.pyi import emit_module_stubs, pyi_text_to_semantic_module
 from prik.printers import PyiPrinter, emit_module
 from prik.semantics.fortran2ir import fortran_module_to_semantic_module
 from prik.semantics.models import (
@@ -508,3 +508,46 @@ def test_printer_preserves_structured_class_and_decorator_layout():
 @native_call([Return(0)])
 def wrapper() -> None: ..."""
     )
+
+
+def test_generic_specifics_with_projected_outputs_round_trip():
+    """A generic whose specifics project an `intent(out)` reloads from its contract.
+
+    The declaration states the public signature, so the output the projection
+    turned into a result is not one of the arguments it accepts. Comparing the
+    declaration against the specific's native arguments rejected every such
+    generic, which is the common shape in numerical Fortran.
+    """
+    source = """
+module projected_generic_mod
+  implicit none
+  private
+  public :: ink
+  interface ink
+    module procedure ink_default, ink_extended
+  end interface ink
+contains
+  subroutine ink_default(x, n, iflag)
+    real(8), intent(in) :: x(:)
+    integer(4), intent(in) :: n
+    integer(4), intent(out) :: iflag
+    iflag = 0
+  end subroutine ink_default
+  subroutine ink_extended(x, n, extra, iflag)
+    real(8), intent(in) :: x(:)
+    integer(4), intent(in) :: n
+    real(8), intent(in) :: extra
+    integer(4), intent(out) :: iflag
+    iflag = 0
+  end subroutine ink_extended
+end module projected_generic_mod
+"""
+
+    code = generate_pyi(source)
+    assert '@overload("ink_default")' in code
+    assert '@overload("ink_extended")' in code
+
+    module = pyi_text_to_semantic_module(code, module_name="projected_generic_mod")
+    overloads = [item for item in module.overload_sets if item.name == "ink"]
+    assert len(overloads) == 1
+    assert [procedure.name for procedure in overloads[0].procedures] == ["ink_default", "ink_extended"]
