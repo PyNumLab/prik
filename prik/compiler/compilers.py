@@ -20,7 +20,14 @@ import subprocess
 import threading
 import warnings
 
-from prik.compiler.compiler_profiles import available_compilers, c_compiler_family, fortran_compiler_family, vendors
+from prik.compiler.compiler_profiles import (
+    available_compilers,
+    c_compiler_family,
+    c_compiler_family_from_name,
+    c_compiler_family_from_version,
+    fortran_compiler_family,
+    vendors,
+)
 from prik.compiler.objects import ObjectFile
 
 __all__ = ("Compiler", "get_condaless_search_path")
@@ -95,7 +102,7 @@ class Compiler:
         resolved_c = shutil.which(executable, path=search_path)
         if resolved_c is None:
             raise FileNotFoundError(f"Could not find compiler executable: {executable}")
-        _token, vendor = c_compiler_family(str(Path(resolved_c).resolve()))
+        _token, vendor = cls._c_family(resolved_c)
         return cls(
             vendor,
             debug=debug,
@@ -103,6 +110,41 @@ class Compiler:
             search_path=search_path,
             executables={"c": resolved_c},
         )
+
+    @classmethod
+    def _c_family(cls, resolved_c: str) -> tuple[str, str]:
+        """Identify one C driver from its name, or from its own version banner.
+
+        A generic POSIX name such as ``cc`` may be a real program rather than a
+        link to a vendor-named driver, so the name alone cannot classify it.
+        Asking the compiler keeps the vendor a measured fact instead of a
+        platform guess.
+        """
+        family = c_compiler_family_from_name(str(Path(resolved_c).resolve())) or c_compiler_family_from_name(
+            str(resolved_c)
+        )
+        if family is not None:
+            return family
+        family = c_compiler_family_from_version(cls._version_banner(resolved_c))
+        if family is not None:
+            return family
+        # Reuse the established diagnostic, now that neither route identified it.
+        return c_compiler_family(str(Path(resolved_c).resolve()))
+
+    @staticmethod
+    @cache
+    def _version_banner(executable: str) -> str:
+        """Return a compiler's ``--version`` output, or empty text when it fails."""
+        try:
+            completed = subprocess.run(
+                (executable, "--version"),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError:
+            return ""
+        return f"{completed.stdout}\n{completed.stderr}"
 
     def __init__(
         self,

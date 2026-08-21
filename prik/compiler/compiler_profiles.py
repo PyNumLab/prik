@@ -312,6 +312,19 @@ _C_COMPILER_FAMILIES = (
     ("icc", "intel"),
 )
 
+# Ordered banner markers, most specific vendor first: an Intel or NVIDIA driver
+# is Clang- or LLVM-derived and says so, and GNU's banner names its foundation
+# rather than the ``gcc`` program when it was invoked as ``cc``.
+_C_VERSION_BANNER_FAMILIES = (
+    ("intel(r)", ("icx", "intel")),
+    ("nvidia", ("nvc", "nvidia")),
+    ("nvc ", ("nvc", "nvidia")),
+    ("pgcc ", ("pgcc", "PGI")),
+    ("clang", ("clang", "LLVM")),
+    ("free software foundation", ("gcc", "GNU")),
+    ("gcc", ("gcc", "GNU")),
+)
+
 
 def fortran_compiler_family(executable: str) -> tuple[str, str, str]:
     """Return the compiler token, profile, and matching C executable name."""
@@ -330,13 +343,44 @@ def c_compiler_family(executable: str) -> tuple[str, str]:
     a C executable as a misspelled Fortran driver.  Mixed-language builds keep
     using :func:`fortran_compiler_family`, because the Fortran runtime then
     owns the final link driver.
+
+    A vendor-named driver is recognized from its name alone.  A generic POSIX
+    name such as ``cc`` names no vendor, so callers resolve it with
+    :func:`c_compiler_family_from_version` instead of guessing one.
     """
+    family = c_compiler_family_from_name(executable)
+    if family is not None:
+        return family
+    raise ValueError(f"Unknown C compiler family for {executable!r}; expected one of: {_supported_c_tokens()}")
+
+
+def c_compiler_family_from_name(executable: str) -> tuple[str, str] | None:
+    """Return the C family a vendor-named executable states, if its name states one."""
     name = Path(executable).name
     for token, vendor in _C_COMPILER_FAMILIES:
         if re.search(rf"(?:^|-){re.escape(token)}(?:-|$)", name):
             return token, vendor
-    supported = ", ".join(token for token, _vendor in _C_COMPILER_FAMILIES)
-    raise ValueError(f"Unknown C compiler family for {executable!r}; expected one of: {supported}")
+    return None
+
+
+def c_compiler_family_from_version(version_text: str) -> tuple[str, str] | None:
+    """Return the C family a compiler's own version banner identifies.
+
+    ``cc`` is a POSIX name for whichever C compiler the platform installs, and
+    on some platforms it is a real program rather than a link to a vendor-named
+    one.  The banner is the compiler's own statement of what it is, so it
+    settles the vendor without assuming a platform default.
+    """
+    banner = version_text.casefold()
+    for marker, family in _C_VERSION_BANNER_FAMILIES:
+        if marker in banner:
+            return family
+    return None
+
+
+def _supported_c_tokens() -> str:
+    """Return the recognized C driver names for a diagnostic."""
+    return ", ".join(token for token, _vendor in _C_COMPILER_FAMILIES)
 
 
 if __name__ == "__main__":

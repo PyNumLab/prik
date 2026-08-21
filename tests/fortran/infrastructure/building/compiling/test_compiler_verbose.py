@@ -120,6 +120,34 @@ def test_fortran_selection_rejects_an_unknown_compiler_family(tmp_path: Path):
         Compiler.from_fortran_executable(str(compiler), execute_commands=False)
 
 
+@pytest.mark.parametrize(
+    ("banner", "vendor"),
+    [
+        ("Apple clang version 15.0.0 (clang-1500.3.9.4)\nTarget: arm64-apple-darwin23.4.0", "LLVM"),
+        ("cc (Ubuntu 13.3.0-6ubuntu2) 13.3.0\nCopyright (C) 2023 Free Software Foundation, Inc.", "GNU"),
+        ("Intel(R) oneAPI DPC++/C++ Compiler 2024.0.0 (2024.0.0.20231017)", "intel"),
+    ],
+)
+def test_generic_c_driver_takes_its_vendor_from_its_own_version_banner(tmp_path: Path, banner: str, vendor: str):
+    """``cc`` names no vendor, and on some platforms it is not a link to one."""
+    compiler = tmp_path / "cc"
+    compiler.write_text(f'#!/bin/sh\nif [ "$1" = "--version" ]; then\n  cat <<\'EOF\'\n{banner}\nEOF\nfi\n')
+    compiler.chmod(0o755)
+
+    selected = Compiler.from_c_executable("cc", execute_commands=False, search_path=str(tmp_path))
+
+    assert selected._toolchain is available_compilers[vendor]
+
+
+def test_c_selection_rejects_a_driver_that_names_no_family_and_reports_none(tmp_path: Path):
+    compiler = tmp_path / "mystery-driver"
+    compiler.write_text("#!/bin/sh\nexit 1\n")
+    compiler.chmod(0o755)
+
+    with pytest.raises(ValueError, match="Unknown C compiler family"):
+        Compiler.from_c_executable("mystery-driver", execute_commands=False, search_path=str(tmp_path))
+
+
 def test_fortran_selection_rejects_a_missing_vendor_c_compiler(tmp_path: Path):
     compiler = tmp_path / "ifx"
     compiler.touch(mode=0o755)

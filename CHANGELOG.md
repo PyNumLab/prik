@@ -46,6 +46,13 @@ release tags add a leading `v` to the package version.
   twice, once under a relative spelling that no rule produced, so `make` stopped
   with "No rule to make target". This affected Fortran and C builds alike.
 
+- A C wrapper build now works when the C compiler is named `cc`. `cc` is the
+  documented default for the C lane, but its vendor was read from the
+  executable's filename, which names no vendor. That happened to work where
+  `cc` links to a vendor-named binary and failed everywhere it does not, such
+  as macOS. The driver's own `--version` banner now settles the vendor when the
+  name cannot.
+
 - The BLAS and LAPACK examples now expect the character selectors that the
   conservative `intent(inout)` default returns. Their assertions still encoded
   the older `intent(in)` assumption for `character` dummies, so the example
