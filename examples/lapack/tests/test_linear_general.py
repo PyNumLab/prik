@@ -310,7 +310,9 @@ def test_dgetrs_solves_from_native_lu(prik_lapack, scipy_lapack, f2py_lapack):
     f2py_result = f2py_lapack.dgetrs(b"N", 2, 1, f2py_lu, native_ipiv.copy(), f2py_b, 0)
     scipy_x, scipy_info = scipy_lapack.dgetrs(scipy_lu, scipy_piv, original_b.copy(order="F"), trans=0)
 
-    assert prik_scalars == (2, 1, 2, 2, 0)
+    # LAPACK declares no intent on its dummies, so the conservative
+    # intent(inout) default returns every scalar, character selectors included.
+    assert prik_scalars == ("N", 2, 1, 2, 2, 0)
     assert f2py_result is None
     assert scipy_info == 0
     assert_allclose_float64(prik_b, expected_x, operation_size=2)

@@ -46,7 +46,7 @@ Fatal diagnostic fixtures live in `tests/c/fixtures/native/errors/parser/` and t
 expected metadata lives in `fixtures/errors/`. Regenerate them with:
 
 ```bash
-C_PARSER_UPDATE_GOLDENS=1 PYTHONPATH=. pytest -q tests/c/parsing/test_c_error_fixture_suite.py
+C_PARSER_UPDATE_GOLDENS=1 PYTHONPATH=. pytest -q tests/c/infrastructure/parsing/test_c_error_fixture_suite.py
 ```
 
 The standalone error generator remains available for targeted refreshes, and

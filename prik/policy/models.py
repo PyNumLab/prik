@@ -63,6 +63,27 @@ class NativeEntrypointAction(str, Enum):
     GENERATED_FORTRAN_ADAPTER = "generated_fortran_adapter"
 
 
+@dataclass(frozen=True)
+class DirectCABITypePolicy:
+    """One preserved C declaration type selected before wrapper planning."""
+
+    source_spelling: str | None
+    scalar_type_name: str | None
+    pointer_depth: int
+    qualifiers: tuple[str, ...]
+    const: bool
+
+
+@dataclass(frozen=True)
+class DirectCABIPolicy:
+    """Exact direct-C function ABI facts owned by post-IR policy."""
+
+    calling_convention: str
+    result_transport: str
+    result: DirectCABITypePolicy | None
+    parameters: tuple[DirectCABITypePolicy, ...]
+
+
 class EntrypointPassingConvention(str, Enum):
     """Completed C-boundary transport for one parameter or result."""
 
@@ -263,6 +284,7 @@ class ModuleGetterAction(str, Enum):
     NATIVE_CONSTANT_VALUE = "native_constant_value"
     NATIVE_CONSTANT_ARRAY_VALUE = "native_constant_array_value"
     DIRECT_VALUE = "direct_value"
+    CHARACTER_VALUE = "character_value"
     NULLABLE_SNAPSHOT = "nullable_snapshot"
     BORROWED_ARRAY_VIEW = "borrowed_array_view"
     NATIVE_ARRAY_HANDLE = "native_array_handle"
@@ -578,6 +600,8 @@ class DerivedTypePolicy:
     sequence: bool
     supported: bool
     blockers: tuple[str, ...] = ()
+    abstract: bool = False
+    deferred_bindings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -680,6 +704,19 @@ class NativeArrayDescriptorKind(str, Enum):
 
     ALLOCATABLE = "allocatable"
     POINTER = "pointer"
+
+
+class CharacterLocalRelease(str, Enum):
+    """Completed release responsibility for one adapter-local character value.
+
+    ``NONE`` covers a plain or ``allocatable`` local, which the compiler frees
+    when the adapter returns.  A ``pointer`` local is storage the adapter itself
+    allocated, so it names when the adapter must free it again.
+    """
+
+    NONE = "none"
+    DEALLOCATE = "deallocate"
+    DEALLOCATE_IF_RETAINED = "deallocate_if_retained"
 
 
 class NativeArrayHandleKind(str, Enum):
@@ -875,6 +912,7 @@ class ModuleVariablePolicy:
     constant_value: Any
     supported: bool
     blockers: tuple[str, ...] = ()
+    character_length: int | None = None
     array: ArrayHandoffPolicy | None = None
     native_array_handle: NativeArrayHandleWrapperPolicy | None = None
     derived: DerivedModuleObjectPolicy | None = None
@@ -1054,14 +1092,35 @@ class NativeArrayHandleWrapperPolicy:
 
 
 @dataclass(frozen=True)
+class CharacterLocalPolicy:
+    """Completed adapter-local storage for one scalar character value.
+
+    The C ABI is the same for every scalar character argument: a byte buffer
+    and a length.  What differs is the Fortran local the adapter must build
+    before the original dummy accepts it, so this records the attribute and
+    length kind that local carries and who releases it.
+    """
+
+    descriptor_kind: NativeArrayDescriptorKind | None
+    deferred_length: bool
+    release: CharacterLocalRelease
+
+
+@dataclass(frozen=True)
 class ScalarDescriptorResultPolicy:
-    """Completed nullable rank-zero descriptor result copy contract."""
+    """Completed nullable rank-zero descriptor result copy contract.
+
+    ``may_be_unallocated`` marks a result whose storage the native procedure is
+    not obliged to establish, so reading it directly is not permitted and the
+    value has to be moved out through a dummy that can test allocation first.
+    """
 
     descriptor_kind: NativeArrayDescriptorKind
     runtime_length: bool
     nullable: bool
     copy_reason: str
     release_owner: OwnershipOwner
+    may_be_unallocated: bool = False
 
 
 @dataclass(frozen=True)
@@ -1153,6 +1212,7 @@ class ArgumentPolicy:
     python_visible: bool
     result_position: int | None
     character_length: int | None
+    character_local: CharacterLocalPolicy | None = None
     array: ArrayHandoffPolicy | None = None
     native_array_actual: NativeArrayActualPolicy | None = None
     native_array_handle: NativeArrayHandleWrapperPolicy | None = None
@@ -1168,11 +1228,35 @@ class ArgumentPolicy:
     entrypoint_pass_descriptor_presence: bool = False
     entrypoint_pass_derived_transaction: bool = False
     entrypoint_pass_callback_parameter: bool = False
+    native_storage_c_type: str | None = None
+
+    @property
+    def projects_character_descriptor_update(self) -> bool:
+        """Report whether this argument returns its replaced value as a projected result.
+
+        ``character_local`` carries a descriptor kind only for a call-local
+        ``allocatable`` or ``pointer`` character input, so an input that also
+        occupies a Python result position is the update lane.  Its output
+        travels as one descriptor-backed result rather than as argument
+        writeback.
+        """
+        return bool(
+            self.character_local is not None
+            and self.character_local.descriptor_kind is not None
+            and self.projects_result
+        )
 
 
 @dataclass(frozen=True)
 class ResultPolicy:
-    """Completed wrapper policy for one native result."""
+    """Completed wrapper policy for one native result.
+
+    ``updates_argument`` marks the one shape whose native output storage is also
+    a Python-visible argument: a ``character(len=:), allocatable`` update whose
+    caller supplies a ``str`` and receives the reallocated value.  Its producer
+    is the argument's own native call slot, so stages that pair a hidden output
+    with a dedicated result slot must consult this fact instead.
+    """
 
     owner_path: str
     semantic_type_name: str
@@ -1197,6 +1281,7 @@ class ResultPolicy:
     derived: DerivedHandoffPolicy | None = None
     transformations: tuple[TransformationPolicy, ...] = ()
     entrypoint_passing: EntrypointPassingConvention = EntrypointPassingConvention.BLOCKED
+    updates_argument: bool = False
 
 
 @dataclass(frozen=True)
@@ -1275,6 +1360,7 @@ class FunctionWrapperPolicy:
     entrypoint_action: NativeEntrypointAction | None = None
     entrypoint_symbol: str = ""
     entrypoint_diagnostics: tuple[str, ...] = ()
+    direct_c_abi: DirectCABIPolicy | None = None
 
 
 if __name__ == "__main__":

@@ -14,11 +14,11 @@ import sys
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROFILE_TEST_PATHS = (
-    "tests/fortran/building_shared_library/compiling/test_compiler_verbose.py",
-    "tests/fortran/source_preprocessing/preprocessing/test_configuration_and_adapters.py",
+    "tests/fortran/infrastructure/building/compiling/test_compiler_verbose.py",
+    "tests/fortran/infrastructure/preprocessing/test_configuration_and_adapters.py",
 )
 FOCUSED_FORTRAN_CLI_NODES = (
-    "tests/fortran/source_preprocessing/preprocessing/test_cli.py::"
+    "tests/fortran/infrastructure/preprocessing/test_cli.py::"
     "test_cli_fortran_compiler_mode_runs_exact_compiler_and_parses_stdout",
 )
 

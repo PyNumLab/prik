@@ -9,62 +9,91 @@ publication: draft
 
 # Python API Reference
 
-`prik` is a small normal-user facade. It exposes the installed version and the
-three ways to build a wrapper. It does not re-export parser models, semantic
-conversion, compiler probes, runtime handles, plans, or CLI implementation.
-Import those advanced tools from the package that owns them.
+`prik` is a small facade. The root package exposes the installed version and
+the four ways to build a wrapper — nothing else. Parser models, semantic
+conversion, compiler probes, runtime handles, and plans are imported from the
+package that owns them.
 
+<!-- prik-doc-test: exact -->
 ```python
 import prik
 
-sorted(prik.__all__)
+print(sorted(prik.__all__))
+```
+
+<!-- prik-doc-test-output -->
+```text
+['__version__', 'build_c_extension', 'build_fortran_extension', 'build_pyi_extension', 'build_pyi_extension_from_manifest']
 ```
 
 ## Root API
 
 | Symbol | Use it for |
 | --- | --- |
-| `__version__` | Read the installed PRIK distribution version. |
-| `build_fortran_extension` | Build an extension from Fortran source plus optional native-only inputs. |
-| `build_pyi_extension` | Build an extension from semantic `.pyi` contracts plus explicit native implementation inputs. |
-| `build_pyi_extension_from_manifest` | Replay a saved semantic-`.pyi` build manifest or generate its Makefile. |
+| `__version__` | The installed PRIK distribution version. |
+| `build_c_extension` | Build the documented direct-only primitive C source lane. |
+| `build_fortran_extension` | Build from Fortran source, plus optional native-only inputs. |
+| `build_pyi_extension` | Build from semantic `.pyi` contracts, plus explicit native implementation inputs. |
+| `build_pyi_extension_from_manifest` | Replay a saved `.pyi` build manifest, or generate its Makefile. |
 
-For normal builds, import directly from the root:
+## Building an extension
 
+Every build entrypoint returns a `WrapperBuildResult`. Call `import_module()`
+on it to load the extension without editing `sys.path`:
+
+<!-- prik-doc-test: exact -->
 ```python
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 from prik import build_fortran_extension
 
-result = build_fortran_extension("solver.f90", output_dir="build/solver")
-module = result.import_module()
+source = Path("tests/fortran/infrastructure/building/end_to_end/fixtures/native/fruntime_abi_f90.f90")
+with TemporaryDirectory() as output_dir:
+    build = build_fortran_extension(source, output_dir=output_dir)
+    print(build.module_name)
+    print(type(build).__module__ + "." + type(build).__name__)
 ```
 
-The functions return `prik.pipeline.build.WrapperBuildResult`. Import result
-models and native-build plan records from `prik.pipeline.build` only when you
-need to inspect or construct those advanced values.
+<!-- prik-doc-test-output -->
+```text
+fruntime_abi_f90
+prik.pipeline.build.WrapperBuildResult
+```
 
-## Advanced Package Imports
+Import `WrapperBuildResult` and the native-build plan records from
+`prik.pipeline.build` only when you need to inspect or construct them.
+
+## Advanced package imports
+
+Reach past the root facade when you need a single stage rather than a build.
 
 | Need | Import from | Main entrypoints |
 | --- | --- | --- |
 | Fortran source facts and diagnostics | `prik.parsers.fortran` | `parse_fortran_file`, `parse_fortran_project`, `FortranParser`, parser models, `FortranParseError` |
 | Raw semantic `.pyi` syntax | `prik.parsers.pyi` | `parse_pyi_text`, `parse_pyi_file` |
-| Semantic conversion | `prik.semantics.fortran2ir` or `prik.semantics.pyi2ir` | Fortran conversion helpers or `convert_pyi_to_ir` |
+| Semantic conversion | `prik.semantics.fortran2ir`, `prik.semantics.pyi2ir` | Fortran conversion helpers, `convert_pyi_to_ir` |
 | `.pyi` loading and stub emission | `prik.pipeline.pyi` | `pyi_*_to_semantic_module`, `emit_module_stubs` |
 | Build records and results | `prik.pipeline.build` | `WrapperBuildResult`, `NativeBuildPlan`, `NativeCompilationUnit`, `NativePrebuiltArtifact`, `NativeLinkItem` |
-| Target type probing | `prik.preprocessing.probes.fortran_types` | probe source, requirements, expressions, and report/error types |
+| Target type probing | `prik.preprocessing.probes.fortran_types` | probe source, requirements, expressions, report and error types |
 | Runtime descriptor handles | `prik.runtime.handles` | `NativeArrayHandleBase`, `AllocatableArray`, `PointerArray` |
 | Semantic `.pyi` vocabulary | `prik.contracts` | scalar, array, ownership, and native-call contract markers |
-| CLI implementation | `prik.cli` | `main()`; shell users should run `python3 -m prik` instead |
+| CLI implementation | `prik.cli` | `main()` — shell users should run `python3 -m prik` instead |
 
-The [Fortran wrapper reference](fortran-wrapper.md) documents the normal build
-functions. The [package guides](../../developer/packages/index.md) explain
-advanced module responsibilities and their focused tests.
+## Boundaries
 
-## Current Boundaries
-
-- Root imports are intentionally small and do not load parser or semantic
-  implementation modules.
+- Root imports stay small and do not load parser or semantic implementation
+  modules.
 - A parser success is only a source fact. Semantic conversion, policy
-  completion, planning, and generation are separate stages.
-- The C-input frontend is deferred from the published workflow. Its internal
-  parser package is not a root API.
+  completion, planning, and generation are separate stages that can each
+  reject input the parser accepted.
+- C source builds are limited to the documented direct-only primitive lane.
+  Other parser-accepted C forms fail before wrapper planning rather than using
+  a generated adapter.
+
+## Related pages
+
+- [CLI Commands](cli-commands.md) — the same workflows from a shell.
+- [Fortran Wrapper Reference](fortran-wrapper.md) — build options in depth.
+- [Package guides](../../developer/packages/index.md) — module responsibilities
+  and their focused tests.

@@ -13,8 +13,10 @@ publication: draft
 PRIK_C_DOCS_END -->
 
 <!-- PRIK_C_DOCS_START
-Use this recipe when you want source facts, semantic IR, or `.pyi`
-for a C header. This is an inspection workflow, not a runtime C wrapper build.
+Use this recipe when you want source facts, semantic IR, or a starter `.pyi`
+for a C header. The parser accepts a broader subset than the direct-only
+primitive C runtime lane, so inspection output is not itself a wrapper-support
+claim.
 PRIK_C_DOCS_END -->
 
 <!-- PRIK_C_DOCS_START

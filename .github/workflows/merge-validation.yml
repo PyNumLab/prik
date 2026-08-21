@@ -440,7 +440,7 @@ jobs:
           done
 
   native-libraries:
-    name: BLAS + LAPACK + FFTPACK + MINPACK · Ubuntu 24.04 · Python 3.12
+    name: BLAS + LAPACK + FFTPACK + MINPACK + BSPLINE-FORTRAN · Ubuntu 24.04 · Python 3.12
     needs: [unit-tests, unit-tests-macos]
     if: >-
       ${{ !contains(github.event.pull_request.labels.*.name, 'ignore-real-library-wrappers') }}
@@ -537,6 +537,13 @@ jobs:
         run: |
           source examples/minpack/build_all.sh
           python -m pytest -q examples/minpack/tests
+      - name: Run BSPLINE-FORTRAN full-surface audit
+        env:
+          PYTHONPATH: .
+          HYPOTHESIS_PROFILE: ci
+        run: |
+          source examples/bspline/build_all.sh
+          python -m pytest -q examples/bspline/tests
 
   documentation-benchmark:
     name: Documentation performance benchmark · Ubuntu 24.04 ARM64 · Python 3.12

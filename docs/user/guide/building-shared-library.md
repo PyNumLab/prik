@@ -10,8 +10,9 @@ publication: reviewed
 
 # Building the Shared Library
 
-prik turns Fortran source into a Python extension module. The final module is a
-native shared library that Python imports directly.
+prik turns Fortran source, and the documented direct-only primitive C lane,
+into a Python extension module. The final module is a native shared library
+that Python imports directly.
 
 This page continues with `scale.f90` from the
 [Common Beginner Workflow](../getting-started/beginner-workflow.md).
@@ -57,6 +58,35 @@ The executable may be an absolute path or a versioned name such as
 GNU, IFX, and Flang are tested on Linux. See
 [Compiler Toolchains](../getting-started/installation.md#compiler-toolchains)
 for versions and other recognized options.
+
+## Build a primitive C API directly
+
+The initial C lane is intentionally narrow: target-probed arithmetic values,
+`void` results, and completed one-level primitive-pointer contracts. It calls
+the user C symbol directly; no native C or Fortran adapter is generated.
+Select C explicitly rather than relying on a filename or compiler choice:
+
+```bash
+python3 -m prik --language c src/arithmetic.c --compiler cc --out-dir build/arithmetic
+```
+
+For an edited source-free semantic contract, `--language c` is the explicit
+C-native identity and `--native-c-sources` supplies implementation units:
+
+```bash
+python3 -m prik --language c contracts/arithmetic.pyi \
+  --native-c-sources src/arithmetic.c --compiler cc --out-dir build/arithmetic
+```
+
+C sources are preprocessed with the selected compiler before they are read, so
+ordinary `#include`, `#define`, and conditional directives work, and only the
+wrapped file's own declarations become public API.
+
+This does not enable callbacks, aggregates, variadics, strings, nullable or
+retained pointers, pointer returns, or multi-level pointers. Neither does it
+wrap C global variables, `enum` constants, or `struct`/`union` declarations
+written in the wrapped file. Those inputs fail with a named diagnostic before
+wrapper files or native compiler commands are produced.
 
 ## Import
 
@@ -122,6 +152,7 @@ most useful settings are near the top:
 | Setting | What it changes |
 | --- | --- |
 | `FC` | Fortran compiler |
+| `CC` | C compiler, including explicit C implementation sources |
 | `PRIK_LD` | Command that creates the shared library |
 | `PRIK_FFLAGS` | Extra Fortran compiler flags |
 | `PRIK_CFLAGS` | Extra C binding compiler flags |
@@ -142,3 +173,12 @@ example. This workflow requires GNU Make.
 The shared library is not universal. It must match the target machine's
 operating system and architecture, Python and NumPy, and required compiler
 libraries. Rebuilding it on the target machine is the safest choice.
+
+## Every build option
+
+This page covers the common build paths. For the complete option surface —
+native sources, objects, libraries, ordered link items, wrapper compiler flags,
+and manifest replay — see the
+[CLI commands reference](../reference/cli-commands.md), or run
+`python3 -m prik --help-build`. To drive the same builds from Python instead of
+a shell, see the [Python API reference](../reference/python-api.md).

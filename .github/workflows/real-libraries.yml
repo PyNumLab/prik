@@ -111,3 +111,10 @@ jobs:
         run: |
           source examples/minpack/build_all.sh
           python -m pytest -q examples/minpack/tests
+      - name: Run BSPLINE-FORTRAN abstract-hierarchy and interpolation audit
+        env:
+          PYTHONPATH: .
+          HYPOTHESIS_PROFILE: ci
+        run: |
+          source examples/bspline/build_all.sh
+          python -m pytest -q examples/bspline/tests

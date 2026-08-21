@@ -8,6 +8,8 @@ completed by earlier stages.
 from __future__ import annotations
 
 
+import textwrap
+
 from prik.codegen.nodes import (
     CAllowThreadsBegin,
     CAllowThreadsEnd,
@@ -96,7 +98,8 @@ class CSourcePrinter(ClassVisitor):
         """Render one C function definition with each body statement indented."""
         prefix = f"{node.storage} " if node.storage else ""
         body = "\n".join(self._indented(self.visit(statement)) for statement in node.body)
-        return f"{prefix}{self._signature(node.return_type, node.name, node.parameters)} {{\n{body}\n}}"
+        doc = "".join(f"/* {chunk} */\n" for line in node.doc for chunk in (textwrap.wrap(line, width=96) or [""]))
+        return f"{doc}{prefix}{self._signature(node.return_type, node.name, node.parameters)} {{\n{body}\n}}"
 
     def _visit_CFunctionPrototype(self, node: CFunctionPrototype) -> str:
         """Render one C prototype using the shared signature renderer."""

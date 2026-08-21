@@ -226,8 +226,8 @@ in Wrapping Derived Types.
 
 ## Limitations
 
-- Source generic interfaces are not inferred as constructors automatically.
-  Edited exact constructor overload sets are supported.
+- Only an interface named for a derived type becomes that type's constructor.
+  Any other generic interface stays an overloaded module function.
 - Polymorphic (`class(*)`) arguments and results are blocked.
 - Arrays of derived types and complex polymorphic cases are not supported yet.
 

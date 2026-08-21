@@ -4,18 +4,24 @@
 Fortran, including semantic `.pyi` wrapper builds and the generated
 Fortran/C/CPython implementation of that contract.
 
-The final organization is feature first and stage second:
+Language-feature evidence is feature first and stage second:
 
 ```text
-tests/fortran/<documented-feature>/<owning-stage>/
+tests/fortran/<language-feature>/<owning-stage>/
 ```
 
-Documented features are direct children of `tests/fortran/`; the
-`infrastructure/` directory remains the single container for internal
-cross-feature frameworks. Only create a feature or stage directory when it
-owns a real test or fixture.
+Cross-feature mechanisms use explicit infrastructure owners:
 
-## Documentation feature map
+```text
+tests/fortran/infrastructure/<mechanism>/
+```
+
+A documentation page does not by itself make a mechanism a language feature.
+Parsing, preprocessing, CLI, semantic representation and `.pyi` conversion,
+building, and shared policy are infrastructure. Only create a feature, stage,
+or infrastructure owner when it owns a real test or fixture.
+
+## Fortran language-feature map
 
 | Documentation | Final feature directory | Focused pytest command |
 | --- | --- | --- |
@@ -35,15 +41,6 @@ owns a real test or fixture.
 | [Enumerations](../../docs/user/guide/enumerations.md) | `enumerations/` | `python3 -m pytest -q tests/fortran/enumerations` |
 | [Raw Addresses](../../docs/user/guide/raw-addresses.md) | `raw_addresses/` | `python3 -m pytest -q tests/fortran/raw_addresses` |
 | [Error Handling](../../docs/user/guide/error-handling.md) | `error_handling/` | `python3 -m pytest -q tests/fortran/error_handling` |
-| [Building the Shared Library](../../docs/user/guide/building-shared-library.md) | `building_shared_library/` | `python3 -m pytest -q tests/fortran/building_shared_library` |
-| [Inspect a Fortran API](../../docs/user/examples/recipes/inspect-fortran-api.md) | `source_parsing/` | `python3 -m pytest -q tests/fortran/source_parsing` |
-| [Compiler Preprocessing](../../docs/user/examples/recipes/compiler-preprocessing.md) | `source_preprocessing/` | `python3 -m pytest -q tests/fortran/source_preprocessing` |
-| [CLI Commands](../../docs/user/reference/cli-commands.md) | `command_line_interface/` | `python3 -m pytest -q tests/fortran/command_line_interface` |
-| [Semantic IR](../../docs/user/reference/semantic-ir.md) | `semantic_ir/` | `python3 -m pytest -q tests/fortran/semantic_ir` |
-| [Semantic `.pyi` Format](../../docs/user/reference/semantic-pyi-format.md) | `semantic_pyi_format/` | `python3 -m pytest -q tests/fortran/semantic_pyi_format` |
-| [Exports and Modules](../../docs/user/reference/pyi-contracts/exports-and-modules.md) | `pyi_contracts/exports_and_modules/` | `python3 -m pytest -q tests/fortran/pyi_contracts/exports_and_modules` |
-| [Functions and Classes](../../docs/user/reference/pyi-contracts/functions-and-classes.md) | `pyi_contracts/functions_and_classes/` | `python3 -m pytest -q tests/fortran/pyi_contracts/functions_and_classes` |
-| [Calls and Results](../../docs/user/reference/pyi-contracts/calls-and-results.md) | `pyi_contracts/calls_and_results/` | `python3 -m pytest -q tests/fortran/pyi_contracts/calls_and_results` |
 
 Each feature uses only the stages it needs: `parsing`, `probes`,
 `preprocessing`, `semantics`, `policy`, `codegen`, `compiling`,
@@ -54,26 +51,43 @@ Array declaration-expression coverage is intentionally split by evidence:
 `arrays/policy/` proves completed dependency roles and named blockers, and
 `arrays/end_to_end/` compiles supported dimensions and logical array kinds.
 Cross-module editable-contract reconciliation remains under
-the semantic `.pyi` format stage, not under a code-generation test.
+`infrastructure/semantic_pyi/`, not under a language-feature code-generation
+test.
+
+## Cross-feature infrastructure map
+
+| Documentation or mechanism | Infrastructure owner | Focused pytest command |
+| --- | --- | --- |
+| [Inspect a Fortran API](../../docs/user/examples/recipes/inspect-fortran-api.md) | `infrastructure/parsing/` | `python3 -m pytest -q tests/fortran/infrastructure/parsing` |
+| [Compiler Preprocessing](../../docs/user/examples/recipes/compiler-preprocessing.md) | `infrastructure/preprocessing/` | `python3 -m pytest -q tests/fortran/infrastructure/preprocessing` |
+| [CLI Commands](../../docs/user/reference/cli-commands.md) | `infrastructure/cli/` | `python3 -m pytest -q tests/fortran/infrastructure/cli` |
+| [Semantic IR](../../docs/user/reference/semantic-ir.md) | `infrastructure/semantic_ir/` | `python3 -m pytest -q tests/fortran/infrastructure/semantic_ir` |
+| [Semantic `.pyi` Format](../../docs/user/reference/semantic-pyi-format.md) and [contract guides](../../docs/user/reference/pyi-contracts/index.md) | `infrastructure/semantic_pyi/` | `python3 -m pytest -q tests/fortran/infrastructure/semantic_pyi` |
+| [Building the Shared Library](../../docs/user/guide/building-shared-library.md) | `infrastructure/building/` | `python3 -m pytest -q tests/fortran/infrastructure/building` |
+| Completed ownership and wrapper-policy decisions | `infrastructure/policy/` | `python3 -m pytest -q tests/fortran/infrastructure/policy` |
 
 ## Infrastructure owners
 
-Infrastructure contains only internal cross-feature frameworks with no honest
-public-capability or documentation-feature owner. Tests of public parsing,
-preprocessing, command-line, semantic-IR, contract-printing, and build behavior
-belong to their named feature even when they span several lower-level
-mechanisms. Infrastructure tests normally start from completed internal models
-or synthetic implementation nodes; the starting representation is supporting
-evidence, not the ownership rule.
+Infrastructure contains every cross-feature mechanism, whether internal-only or
+user-invocable. A language feature stays feature-owned when it crosses parsing,
+policy, planning, and lowering. Infrastructure tests normally start from
+completed internal models or synthetic implementation nodes; the starting
+representation is supporting evidence, not the ownership rule.
 
 | Final directory | Owner |
 | --- | --- |
 | `infrastructure/runtime/` | Native runtime-support package contracts that have no public feature owner |
-| `infrastructure/semantics/` | Internal semantic ownership, policy completion, and completed wrapper-policy mechanics |
-| `infrastructure/codegen/` | Internal plan, planner, generator, binding, bridge, printer, docstring, advisory review, and visitor mechanics |
+| `infrastructure/parsing/` | Shared parser, source fixture, and parser-model behavior |
+| `infrastructure/preprocessing/` | Shared source preparation, compiler invocation, and source mapping behavior |
+| `infrastructure/cli/` | Shared command-line parsing and output behavior |
+| `infrastructure/semantic_ir/` | Source and parser-model conversion into semantic IR |
+| `infrastructure/semantic_pyi/` | Semantic `.pyi` parsing, conversion, contracts, and loading |
+| `infrastructure/building/` | Shared native build modes, compiler integration, and runtime ABI behavior |
+| `infrastructure/policy/` | Internal ownership, policy completion, and completed wrapper-policy mechanics |
+| `infrastructure/codegen/` | Internal plan, planner, generator, binding, bridge, docstring, advisory review, and visitor mechanics |
 | `infrastructure/naming/` | Internal generated-name and public-name policy owned by `prik/naming/` |
 | `infrastructure/pipeline/` | Generated-wrapper orchestration and transport owned by `prik/pipeline/` |
-| `infrastructure/types/` | Internal NumPy type mapping and target mapping-report mechanics |
+| `infrastructure/printers/` | Internal C and Fortran source serialization owned by `prik/printers/` |
 | `infrastructure/utilities/` | Internal string and class-visitor helpers owned by `prik/utilities/` |
 
 Each infrastructure test module has an explicit production owner. New internal
@@ -85,8 +99,8 @@ inheritance choices, field inventories, and incidental call structure remain
 review recommendations.
 
 Minimized real-source parser regressions live in
-`source_parsing/parsing/test_real_world_interaction_regressions.py`. A
-third-party project is a temporary discovery input, not a permanent fixture:
+`infrastructure/parsing/test_real_world_interaction_regressions.py`.
+A third-party project is a temporary discovery input, not a permanent fixture:
 extract its named parser facts, prove that the focused suite covers its unique
 lines and branches, then remove the snapshot. Parser regressions are never
 end-to-end or smoke evidence.
@@ -96,7 +110,7 @@ end-to-end or smoke evidence.
 Feature-specific fixtures stay beneath their feature. End-to-end projects use:
 
 ```text
-<feature>/end_to_end/fixtures/<case>/native/
+<owner>/end_to_end/fixtures/<case>/native/
 ```
 
 Generated build products always use pytest temporary directories. `_support/`
@@ -110,7 +124,7 @@ artifact-consumer, and support-consumer inventories live under
 
 ## Markers
 
-- Every pytest node below a feature `end_to_end/` carries
+- Every pytest node below a Fortran `end_to_end/` directory carries
   `fortran_end_to_end`, and no other node does.
 - Only the complete `examples/blas/` and `examples/lapack/` correctness
   projects and BLAS/LAPACK native-source integration nodes additionally carry

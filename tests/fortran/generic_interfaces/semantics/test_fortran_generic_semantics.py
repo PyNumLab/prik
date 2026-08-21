@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import pytest
 from prik.semantics.fortran2ir import (
     FortranToIRConverter,
     fortran_module_to_semantic_module,
@@ -86,7 +85,12 @@ end module generic_mod
     assert [candidate.metadata[BIND_TARGET_METADATA] for candidate in candidates] == ["shift", "shift"]
 
 
-def test_converter_rejects_generic_constructor_interfaces_during_semantic_conversion():
+def test_converter_projects_a_generic_constructor_onto_its_class():
+    """An interface named for a derived type is that type's constructor.
+
+    Its specifics become the class's own `__init__` overload set rather than a
+    module-level generic, so the type name stays the only public spelling.
+    """
     source = """
 module constructor_generic_mod
   type :: item
@@ -103,10 +107,13 @@ contains
 end module constructor_generic_mod
 """
 
-    with pytest.raises(ValueError, match="cannot represent generic constructor") as exc_info:
-        fortran_module_to_semantic_module(parse_fortran_source(source))
+    module = fortran_module_to_semantic_module(parse_fortran_source(source))
 
-    assert "constructor_generic_mod.item" in str(exc_info.value)
+    assert [overload.name for overload in module.overload_sets] == []
+    item = module.classes[0]
+    constructors = [overload for overload in item.overload_sets if overload.name == "__init__"]
+    assert len(constructors) == 1
+    assert [procedure.metadata["overload_target"] for procedure in constructors[0].procedures] == ["make_item"]
 
 
 def test_converter_preserves_defined_operators_assignment_and_type_bound_operators():

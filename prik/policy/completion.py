@@ -21,6 +21,7 @@ from prik.policy.ownership import (
     ObjectKind,
     SetterAction,
     default_ownership_policy,
+    is_character_descriptor_update,
     ownership_context_for_argument,
 )
 from prik.semantics.ownership_metadata import OWNERSHIP_POLICY_METADATA, POINTER_POLICY_METADATA
@@ -129,7 +130,65 @@ def complete_semantic_policies(
 
         # Resolve all remaining ownership and wrapper-facing semantic choices.
         _complete_ownership_policies(module, strict_wrapper_names=strict_wrapper_names)
+        _reject_ineligible_direct_c_operations(module)
     return modules
+
+
+def _reject_ineligible_direct_c_operations(module: models.SemanticModule) -> None:
+    """Raise C primitive-lane diagnostics before wrapper planning can begin.
+
+    The direct-only C lane has no adapter to fall back to, so an unsupported
+    declaration of the wrapped translation unit is an error rather than a
+    silently omitted export.  That covers module variables and class surfaces
+    too, because a C module has no generated accessor route for them.
+    """
+    declarations = [*module.functions]
+    declarations.extend(procedure for group in module.overload_sets for procedure in group.procedures)
+    declarations.extend(method for semantic_class in module.classes for method in semantic_class.methods)
+    for function in declarations:
+        if not _is_wrapped_c_declaration(module, function):
+            continue
+        policy = function.metadata.get(models.RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA)
+        if not isinstance(policy, FunctionWrapperPolicy) or policy.supported:
+            continue
+        details = "; ".join(policy.blockers) or "C_DIRECT_UNSUPPORTED_OPERATION"
+        raise ValueError(f"C direct operation {policy.owner_path!r} is unsupported before wrapper planning: {details}")
+    for variable in module.variables:
+        if not _is_wrapped_c_declaration(module, variable):
+            continue
+        raise ValueError(
+            f"C direct operation '{module.name}.{variable.name}' is unsupported before wrapper planning: "
+            f"{_c_module_variable_blocker(variable)}"
+        )
+    for semantic_class in module.classes:
+        if not _is_wrapped_c_declaration(module, semantic_class):
+            continue
+        raise ValueError(
+            f"C direct operation '{module.name}.{semantic_class.name}' is unsupported before wrapper planning: "
+            f"C_DIRECT_AGGREGATE_TYPE:{semantic_class.name}"
+        )
+
+
+def _c_module_variable_blocker(variable: models.SemanticVariable) -> str:
+    """Name the post-Goal-3 C surface one module variable would require."""
+    if variable.origin.source_kind == "enum_constant":
+        return f"C_DIRECT_ENUM_CONSTANT:{variable.name}"
+    if variable.origin.source_kind == "macro":
+        return f"C_DIRECT_MACRO_CONSTANT:{variable.name}"
+    return f"C_DIRECT_NATIVE_GLOBAL_STATE:{variable.name}"
+
+
+def _is_wrapped_c_declaration(module: models.SemanticModule, node) -> bool:
+    """Return whether one C declaration belongs to the wrapped translation unit.
+
+    A declaration expanded from an include keeps that file's provenance and is
+    never part of the generated public API, so the direct-only lane decides
+    only the declarations the wrapped unit wrote itself.
+    """
+    if node.origin.source_language != "c":
+        return False
+    filename = node.origin.source_location.get("filename") if isinstance(node.origin.source_location, dict) else None
+    return not (isinstance(filename, str) and filename != module.origin.native_name)
 
 
 # Entry export reachability
@@ -465,11 +524,15 @@ def _complete_class_method_policies(
     """
     type_bound_targets = _type_bound_target_names(module_functions)
     module_targets = {str(function.native_name or function.name) for function in module_functions}
+    private_module_targets = {
+        str(function.native_name or function.name) for function in module_functions if function.visibility == "private"
+    }
     for semantic_class in class_nodes:
         _complete_one_class_method_policy(
             semantic_class,
             type_bound_targets,
             module_targets,
+            private_module_targets,
             derived_types,
             polymorphic_variants,
         )
@@ -488,6 +551,7 @@ def _complete_one_class_method_policy(
     semantic_class: models.SemanticClass,
     type_bound_targets: set[str],
     module_targets: set[str],
+    private_module_targets: set[str],
     derived_types: dict[tuple[str, str], DerivedTypePolicy],
     polymorphic_variants: dict[tuple[str, str], tuple[tuple[str, str], ...]],
 ) -> None:
@@ -522,6 +586,7 @@ def _complete_one_class_method_policy(
         derived,
         type_bound_targets,
         module_targets,
+        private_module_targets,
         derived_types,
         polymorphic_variants,
     )
@@ -584,6 +649,7 @@ def _complete_class_overload_methods(
     derived: DerivedTypePolicy,
     type_bound_targets: set[str],
     module_targets: set[str],
+    private_module_targets: set[str],
     derived_types: dict[tuple[str, str], DerivedTypePolicy],
     polymorphic_variants: dict[tuple[str, str], tuple[tuple[str, str], ...]],
 ) -> None:
@@ -603,6 +669,7 @@ def _complete_class_overload_methods(
                 generic_bindings,
                 type_bound_targets,
                 module_targets,
+                private_module_targets,
                 derived_types,
                 polymorphic_variants,
             )
@@ -615,6 +682,7 @@ def _complete_one_class_overload_method(
     generic_bindings: dict[str, str],
     type_bound_targets: set[str],
     module_targets: set[str],
+    private_module_targets: set[str],
     derived_types: dict[tuple[str, str], DerivedTypePolicy],
     polymorphic_variants: dict[tuple[str, str], tuple[tuple[str, str], ...]],
 ) -> None:
@@ -636,12 +704,20 @@ def _complete_one_class_overload_method(
         else None,
     )
     overload_kind = str(procedure.metadata.get(models.OVERLOAD_KIND_METADATA, "generic"))
+    # An overload dispatches through a native generic only when its own name is
+    # one. `__init__` is a Python name with no native counterpart, so a
+    # constructor candidate falls back to the specific procedure it selects --
+    # or, when that specific is private and therefore unreachable by name, to
+    # the constructor generic Fortran names for the type itself.
+    dispatches_through_overload_name = overload_kind != "generic" and overload.name != "__init__"
+    if not bind_target and overload.name == "__init__" and native_name in private_module_targets:
+        bind_target = derived.native_type_name
     native_dispatch_name = (
         str(bind_target)
         if bind_target
         else (
             str(procedure.metadata.get(models.FORTRAN_GENERIC_NAME_METADATA, overload.name))
-            if overload_kind != "generic"
+            if dispatches_through_overload_name
             else None
         )
     )
@@ -888,8 +964,23 @@ def _polymorphic_variant_map(
         return candidate == base or any(extends(parent, base) for parent in bases.get(candidate, ()))
 
     identities = tuple(surface.type_identity for surface in surfaces)
+    # An abstract type has no instance, so it is never the dynamic type a caller
+    # can supply; it stays a dispatch base without becoming one of its own cases.
+    abstract_identities = {
+        surface.type_identity
+        for semantic_class, surface in zip(class_nodes, surfaces, strict=False)
+        if any(
+            str(attribute).casefold() == "abstract"
+            for attribute in semantic_class.metadata.get("fortran_type_attributes", ())
+        )
+    }
     return {
-        base: tuple(candidate for candidate in reversed(identities) if extends(candidate, base)) for base in identities
+        base: tuple(
+            candidate
+            for candidate in reversed(identities)
+            if extends(candidate, base) and candidate not in abstract_identities
+        )
+        for base in identities
     }
 
 
@@ -947,6 +1038,7 @@ def _complete_function(
             ownership_context_for_argument(function, argument),
             owner_path=f"{owner_path}.{argument.name}",
         )
+        _complete_update_result_ownership(argument)
     if function.return_type is not None:
         _validate_maybe_unallocated_return(function, owner_path)
         decision = default_ownership_policy.decide_semantic_type(function.return_type, OwnershipContext.result())
@@ -1436,9 +1528,7 @@ def _native_array_handle_operations(
         return ()
     if descriptor_kind == "allocatable":
         operations = {"allocated", "to_numpy"}
-        if handle_kind in {"borrowed_module_descriptor", "borrowed_field_descriptor", "owned_result_descriptor"} or (
-            context.is_argument and context.writes_argument
-        ):
+        if _handle_releases_its_own_storage(handle_kind, context):
             operations.add("deallocate")
             if not _is_deferred_character_array(semantic_type):
                 operations.add("resize")
@@ -1447,11 +1537,31 @@ def _native_array_handle_operations(
     pointer_policy = _pointer_policy_metadata(semantic_type)
     if _pointer_policy_allows_allocate(pointer_policy):
         operations.add("allocate")
-    if _pointer_policy_allows_deallocate(pointer_policy):
+    if _handle_releases_its_own_storage(handle_kind, context) or _pointer_policy_allows_deallocate(pointer_policy):
         operations.add("deallocate")
     if _pointer_policy_allows_resize(pointer_policy):
         operations.add("resize")
     return tuple(sorted(operations))
+
+
+def _handle_releases_its_own_storage(handle_kind: str, context: OwnershipContext) -> bool:
+    """Report whether one handle exposes manual release of the storage it names.
+
+    Releasing is offered wherever the equivalent Fortran is an ordinary
+    ``deallocate`` on the same entity: a result the wrapper received, a module
+    or field descriptor, and a mutable argument.  A read-only input is excluded,
+    because freeing storage the caller supplied is not the caller's intent.
+
+    The operation is manual in both handle families.  prik never releases native
+    storage on its own, so withholding the operation does not protect anything;
+    it only removes the caller's ability to free storage the native procedure
+    handed over, which is exactly what a Fortran caller would deallocate.
+    """
+    return handle_kind in {
+        "borrowed_module_descriptor",
+        "borrowed_field_descriptor",
+        "owned_result_descriptor",
+    } or (context.is_argument and context.writes_argument)
 
 
 def _is_deferred_character_array(semantic_type: models.SemanticType) -> bool:
@@ -1739,6 +1849,36 @@ def _complete_variable(
     variable.metadata[models.RESOLVED_OWNERSHIP_POLICY_METADATA] = decision
     _complete_prototype_reference_policy(variable.semantic_type, owner_path=owner_path or variable.name)
     _complete_native_array_handle_variable_policy(variable, context)
+
+
+def _complete_update_result_ownership(argument: models.SemanticArgument) -> None:
+    """Complete the projected result facet of one caller-supplied string update.
+
+    A ``character(len=:), allocatable, intent(inout)`` dummy owns two decisions:
+    the argument facet already resolved above converts the caller's ``str`` into
+    call-local native storage, and this facet describes the freshly allocated
+    value the native procedure leaves behind.  The result facet is resolved from
+    the same native output context an ``intent(out)`` dummy uses, so every later
+    stage validates and lowers it exactly like one hidden descriptor output.
+    Arguments outside that lane keep a single decision.
+    """
+    argument.metadata.pop(models.RESOLVED_UPDATE_RESULT_OWNERSHIP_POLICY_METADATA, None)
+    decision = argument.metadata.get(models.RESOLVED_OWNERSHIP_POLICY_METADATA)
+    if not isinstance(decision, OwnershipDecision):
+        return
+    if not is_character_descriptor_update(argument.semantic_type.metadata, decision):
+        return
+    argument.metadata[models.RESOLVED_UPDATE_RESULT_OWNERSHIP_POLICY_METADATA] = (
+        default_ownership_policy.decide_semantic_variable(
+            argument,
+            OwnershipContext.argument(
+                reads_argument=False,
+                writes_argument=True,
+                projects_result=True,
+                python_visible=False,
+            ),
+        )
+    )
 
 
 def _complete_accessor_policies(variable: models.SemanticVariable, context: OwnershipContext) -> None:

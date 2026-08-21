@@ -25,7 +25,7 @@ import numpy as np
 
 from prik import build_fortran_extension
 
-source = Path("tests/fortran/building_shared_library/end_to_end/fixtures/native/fruntime_abi_f90.f90")
+source = Path("tests/fortran/infrastructure/building/end_to_end/fixtures/native/fruntime_abi_f90.f90")
 with TemporaryDirectory() as output_dir:
     build = build_fortran_extension(source, output_dir=output_dir)
     module = build.import_module()

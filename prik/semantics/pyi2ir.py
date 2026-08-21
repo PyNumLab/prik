@@ -37,8 +37,10 @@ from prik.semantics.metadata import (
     ADDRESS_ROLE_PROJECTION,
     ADDRESS_ROLE_RAW,
     BIND_TARGET_METADATA,
+    DEFERRED_BINDING_METADATA,
     MAYBE_UNALLOCATED_METADATA,
     NATIVE_PROJECTION_METADATA,
+    NULLABLE_ANNOTATION_METADATA,
     OPTIONAL_ABSENT_HANDLE_METADATA,
     PROJECTED_OUTPUT_METADATA,
     SCALAR_STORAGE_CATEGORY,
@@ -164,6 +166,8 @@ class _Decorators:
     error_status_policy: dict[str, object] | None = None
     prototype: bool = False
     pure: bool = False
+    abstract: bool = False
+    abstract_method: bool = False
 
 
 @dataclass
@@ -174,6 +178,10 @@ class _PendingOverload:
     declaration: SemanticFunction
     target: str
     generic_name: str | None = None
+
+
+#: Sentinel for a projected result this comparison does not reconstruct.
+_UNCOMPARED_PROJECTED_RETURN = object()
 
 
 class _PyiAstParser:
@@ -431,6 +439,7 @@ class _PyiAstParser:
         *,
         visibility: str,
         native_type: dict[str, object] | None = None,
+        abstract: bool = False,
     ) -> SemanticClass:
         """Convert one class AST node, its body, and supported native metadata.
 
@@ -445,15 +454,19 @@ class _PyiAstParser:
             raise ValueError("Direct constructor bindings replace the generated field constructor; remove one __init__")
         base_classes = [self.base_class_name(base) for base in node.bases]
         origin = self._origin(
-            source_language="fortran" if body.constructor_from_fields or native_type is not None else None,
+            source_language=(
+                "fortran" if body.constructor_from_fields or native_type is not None or abstract else None
+            ),
             user_private=visibility == "private",
         )
         if not body.constructor_from_fields:
             origin.metadata[SUPPRESS_DEFAULT_CONSTRUCTOR_METADATA] = True
 
         metadata = self._class_metadata(base_classes)
+        if abstract:
+            metadata["fortran_type_attributes"] = [*metadata.get("fortran_type_attributes", []), "abstract"]
         if native_type is not None:
-            attributes = list(native_type.get("attributes", ()))
+            attributes = [*metadata.get("fortran_type_attributes", []), *native_type.get("attributes", ())]
             metadata["fortran_type_attributes"] = attributes
             normalized_attributes = {str(item).strip().casefold().replace(" ", "") for item in attributes}
             if "bind(c)" in normalized_attributes:
@@ -632,6 +645,7 @@ class _PyiAstParser:
         has_native_call: bool = False,
         release_gil: bool = False,
         error_status_policy: dict[str, object] | None = None,
+        deferred: bool = False,
     ) -> SemanticMethod:
         """Convert a class stub into a semantic method declaration.
 
@@ -648,6 +662,10 @@ class _PyiAstParser:
             drop_untyped_self=True,
         )
         metadata = {BIND_TARGET_METADATA: native_name} if native_name is not None else {}
+        if deferred:
+            if native_name is not None:
+                raise ValueError("A deferred binding has no native target; remove its bind decorator")
+            metadata[DEFERRED_BINDING_METADATA] = True
         if has_native_call:
             metadata[NATIVE_PROJECTION_METADATA] = True
         passed_object_name, passed_object_position = self._complete_method_passed_object(
@@ -846,12 +864,45 @@ class _PyiAstParser:
             "native_type": self._apply_native_type_decorator,
             "prototype": self._apply_prototype_decorator,
             "pure": self._apply_pure_decorator,
+            "abstract": self._apply_abstract_decorator,
+            "abstractmethod": self._apply_abstract_method_decorator,
             "raises": self._apply_raises_decorator,
         }
         handler = next((value for name, value in handlers.items() if self.matches_name(target, name)), None)
         if handler is None:
             raise ValueError(f"Unsupported {context} decorator: {ast.unparse(node)!r}")
         handler(parsed, node, context)
+
+    @staticmethod
+    def _reject_private_constructor(declaration_name: str, visibility: str) -> None:
+        """Refuse an accessibility marker that a constructor cannot express."""
+        if declaration_name == "__init__" and visibility == "private":
+            raise ValueError(
+                "A constructor is published or absent; remove @private from __init__. "
+                "Mark the specific procedure it selects private instead."
+            )
+
+    @staticmethod
+    def _apply_abstract_decorator(parsed: _Decorators, node: ast.expr, context: str) -> None:
+        """Mark a class as an abstract native type that cannot be constructed."""
+        if isinstance(node, ast.Call):
+            raise ValueError("abstract does not accept arguments")
+        if context != "class":
+            raise ValueError("abstract is only valid on a class declaration")
+        if parsed.abstract:
+            raise ValueError("Duplicate abstract decorator")
+        parsed.abstract = True
+
+    @staticmethod
+    def _apply_abstract_method_decorator(parsed: _Decorators, node: ast.expr, context: str) -> None:
+        """Mark a type-bound declaration as a deferred binding with no native target."""
+        if isinstance(node, ast.Call):
+            raise ValueError("abstractmethod does not accept arguments")
+        if context == "class":
+            raise ValueError("abstractmethod is only valid on a method declaration")
+        if parsed.abstract_method:
+            raise ValueError("Duplicate abstractmethod decorator")
+        parsed.abstract_method = True
 
     @staticmethod
     def _apply_prototype_decorator(parsed: _Decorators, node: ast.expr, context: str) -> None:
@@ -1181,11 +1232,16 @@ class _PyiAstParser:
         form.  A class overload may instead expose a projected bound-object
         return; every other mismatch raises ``ValueError``.
         """
-        visible_declaration_arguments = [_PyiAstParser._visible_overload_argument(arg) for arg in declaration.arguments]
-        visible_call_arguments = [_PyiAstParser._visible_overload_argument(arg) for arg in call_arguments]
+        projected_arguments = _PyiAstParser._projected_overload_arguments(target, call_arguments)
+        declared_arguments = _PyiAstParser._projected_overload_arguments(declaration, declaration.arguments)
+        visible_declaration_arguments = [_PyiAstParser._visible_overload_argument(arg) for arg in declared_arguments]
+        visible_call_arguments = [_PyiAstParser._visible_overload_argument(arg) for arg in projected_arguments]
+        target_return = _PyiAstParser._projected_overload_return_type(target)
         if visible_declaration_arguments == visible_call_arguments and (
             _PyiAstParser._visible_overload_type(declaration.return_type)
             == _PyiAstParser._visible_overload_type(target.return_type)
+            or target_return is _UNCOMPARED_PROJECTED_RETURN
+            or _PyiAstParser._matches_projected_return(declaration.return_type, target_return)
             or _PyiAstParser._matches_bound_projection_return(declaration, target, bound_position)
         ):
             return
@@ -1193,6 +1249,65 @@ class _PyiAstParser:
             f"Overload declaration {declaration.name!r} is incompatible with "
             f"specific procedure {target.native_name or target.name!r}"
         )
+
+    @staticmethod
+    def _matches_projected_return(declared, target_return) -> bool:
+        """Compare a declared result with a target's, ignoring result ownership."""
+        declared_type = _PyiAstParser._visible_overload_type(declared)
+        target_type = _PyiAstParser._visible_overload_type(target_return)
+        if declared_type is None or target_type is None:
+            return declared_type == target_type
+        expected = deepcopy(target_type)
+        expected.ownership = deepcopy(declared_type.ownership)
+        return declared_type == expected
+
+    @staticmethod
+    def _projected_overload_arguments(
+        function: SemanticFunction,
+        arguments: list[SemanticArgument],
+    ) -> list[SemanticArgument]:
+        """Return only the arguments one projected signature still accepts.
+
+        An output the projection turns into a result is not part of the public
+        signature, whether it is a native output argument on the specific or a
+        further returned value the declaration states.
+        """
+        hidden = {
+            mapping.native_name
+            for mapping in function.projection
+            if mapping.python_position is None and mapping.result_position is not None
+        }
+        if not hidden:
+            return list(arguments)
+        return [argument for argument in arguments if argument.name not in hidden]
+
+    @staticmethod
+    def _projected_overload_return_type(target: SemanticFunction):
+        """Return the result a projected target presents, or the uncompared marker.
+
+        A projection that supplies exactly one result replaces an absent native
+        return with that argument's type. Several results compose a tuple the
+        declaration states directly, which this comparison does not rebuild.
+        """
+        results = [mapping for mapping in target.projection if mapping.result_position is not None]
+        if not results:
+            return target.return_type
+        if target.return_type is not None or len(results) != 1:
+            # Several results compose a tuple the declaration states directly,
+            # and its extra members arrive as `return_position` arguments that
+            # the comparison above has already set aside.
+            return _UNCOMPARED_PROJECTED_RETURN
+        by_name = {argument.name: argument for argument in target.arguments}
+        projected = by_name.get(results[0].native_name)
+        if projected is None:
+            return _UNCOMPARED_PROJECTED_RETURN
+        # A projected output is declared as a native output argument; as a result
+        # it is an ordinary returned value, so its argument-passing storage is
+        # not part of the public type the declaration states.
+        returned = deepcopy(projected.semantic_type)
+        if returned.rank == 0 and returned.storage is not None and returned.storage.kind in {"address", "reference"}:
+            returned.storage = None
+        return returned
 
     @staticmethod
     def _visible_overload_argument(argument: SemanticArgument) -> SemanticArgument:
@@ -1253,18 +1368,33 @@ class _PyiAstParser:
     ) -> int | None:
         """Locate the unique native wrapped-object argument for a class overload.
 
-        Static methods need no bound object.  Instance methods must match one
-        target argument whose type is the owning class and whose removal leaves
-        the declared Python arguments in order; ambiguity is an error.
+        Static methods need no bound object.  A constructor candidate produces
+        the object instead of receiving one, so a specific whose result is the
+        owning class has no bound argument either.  Every other instance method
+        must match one target argument whose type is the owning class and whose
+        removal leaves the declared Python arguments in order; ambiguity is an
+        error.
         """
         if isinstance(declaration, SemanticMethod) and declaration.is_static:
             return None
-        remaining_names = [argument.name for argument in declaration.arguments]
+        if (
+            declaration.name == "__init__"
+            and target.return_type is not None
+            and target.return_type.name.casefold() == owner.name.casefold()
+        ):
+            return None
+        # Compare public signatures: an output either side projects into a result
+        # is not one of the arguments a caller supplies.
+        declared_names = [
+            argument.name
+            for argument in _PyiAstParser._projected_overload_arguments(declaration, declaration.arguments)
+        ]
+        visible_target_arguments = _PyiAstParser._projected_overload_arguments(target, target.arguments)
         matching = [
             index
             for index, argument in enumerate(target.arguments)
             if argument.semantic_type.name.casefold() == owner.name.casefold()
-            and [arg.name for pos, arg in enumerate(target.arguments) if pos != index] == remaining_names
+            and [item.name for item in visible_target_arguments if item is not argument] == declared_names
         ]
         if len(matching) == 1:
             return matching[0]
@@ -1743,11 +1873,8 @@ class _PyiAstParser:
             raise ValueError(f"Unsupported semantic type call: {ast.unparse(node)!r}")
 
         if isinstance(node, ast.Subscript) and self.matches_name(node.value, "String"):
-            if self._string_subscript_is_array_dimensions(node):
-                raise ValueError(
-                    "String[:] is ambiguous; use String for scalar non-fixed length, "
-                    "String[:][:] for an array of non-fixed strings, or String[n] for fixed length"
-                )
+            # One subscription after String is always the character length; an
+            # array adds its shape as a second subscription.
             return self._character_type(node)
         if self.is_subscript_of(node, "Allocatable"):
             return self._descriptor_type(node, "Allocatable")
@@ -1849,7 +1976,7 @@ class _PyiAstParser:
         """Load a bracketed scalar type as an array or fixed-length character contract."""
         if isinstance(node.value, ast.Subscript):
             if self.matches_name(node.value.value, "String"):
-                semantic_type = self._character_type(node.value, allow_deferred_length=True)
+                semantic_type = self._character_type(node.value)
                 return self._array_type_from_dimensions(
                     semantic_type.name,
                     self.array_dimension_texts(node),
@@ -1865,13 +1992,6 @@ class _PyiAstParser:
         return self._array_type_from_dimensions(
             self.type_name(node),
             self.array_dimension_texts(node),
-        )
-
-    def _string_subscript_is_array_dimensions(self, node: ast.Subscript) -> bool:
-        """Return whether ``String[...]`` is an array contract, not a length."""
-        return any(
-            isinstance(item, ast.Slice) or (isinstance(item, ast.Constant) and item.value is Ellipsis)
-            for item in self.subscript_items(node)
         )
 
     def array_dimension_texts(self, node: ast.Subscript) -> list[str]:
@@ -2037,22 +2157,26 @@ class _PyiAstParser:
             return None
         return "ORDER_C" if source_shape.index("*") == 0 else "ORDER_F"
 
-    def _character_type(self, node: ast.Subscript, *, allow_deferred_length: bool = False) -> SemanticType:
-        """Load a fixed or allowed deferred ``String`` length annotation."""
+    def _character_type(self, node: ast.Subscript) -> SemanticType:
+        """Load the character length from one ``String[...]`` subscription.
+
+        A ``String`` annotation carries its length in the first subscription and
+        its shape, if any, in the second.  ``String[8]`` and ``String[n]`` are
+        explicit lengths, ``String[:]`` is a deferred length established by
+        allocation, and ``String[...]`` is the assumed length that bare
+        ``String`` also spells.
+        """
         items = self.subscript_items(node)
-        if len(items) != 1 or (isinstance(items[0], ast.Constant) and items[0].value is Ellipsis):
-            raise ValueError("Fixed character types use String[length]; use String for non-fixed length")
-        if isinstance(items[0], ast.Slice):
-            length = self.dimension_text(items[0])
-            if allow_deferred_length and length == ":":
-                return SemanticType(
-                    name="String",
-                    dtype="String",
-                    metadata={"fortran_character_length": ":"},
-                )
+        if len(items) != 1:
+            raise ValueError("Character length uses one subscription: String[8], String[n], String[:], or String[...]")
+        if isinstance(items[0], ast.Constant) and items[0].value is Ellipsis:
+            return SemanticType(name="String", dtype="String", metadata={"fortran_character_length": "*"})
+        if isinstance(items[0], ast.Slice) and not self._is_deferred_length_slice(node, items[0]):
+            raw_items = self._source_dimension_items(node)
+            spelling = raw_items[0].strip() if raw_items and len(raw_items) == 1 else self.dimension_text(items[0])
             raise ValueError(
-                "String[:] is ambiguous; use String for scalar non-fixed length, "
-                "String[:][:] for an array of non-fixed strings, or String[n] for fixed length"
+                f"String[{spelling}] is not a character length; use String[:] for a deferred "
+                "length and a second subscription for array shape"
             )
         length = self.dimension_text(items[0])
         return SemanticType(
@@ -2060,6 +2184,20 @@ class _PyiAstParser:
             dtype="String",
             metadata={"fortran_character_length": length},
         )
+
+    def _is_deferred_length_slice(self, node: ast.Subscript, item: ast.Slice) -> bool:
+        """Report whether one ``String[...]`` slice spells exactly the deferred length ``:``.
+
+        Python parses ``[:]`` and ``[::]`` into the same AST, so the original
+        contract text decides: only a bare colon is a deferred length, while a
+        strided spelling belongs to the shape subscription.
+        """
+        if not (item.lower is None and item.upper is None and item.step is None):
+            return False
+        raw_items = self._source_dimension_items(node)
+        if raw_items is None or len(raw_items) != 1:
+            return True
+        return raw_items[0].strip() == ":"
 
     def apply_annotation_metadata(self, semantic_type: SemanticType, node: ast.expr) -> None:
         """Apply one ``Annotated`` metadata AST item to a semantic type in place.
@@ -2895,14 +3033,22 @@ class _PyiAstParser:
                 raise ValueError(
                     f"Scalar descriptor argument {arg.arg!r} must use a nullable annotation such as Float64 | None"
                 )
-        elif (optional_annotation := self._optional_union_item(annotation)) is not None:
+        nullable_annotation = False
+        if not nullable_descriptor and (optional_annotation := self._optional_union_item(annotation)) is not None:
             optional_type = self.semantic_type(optional_annotation)
             if self.contract_name(optional_annotation) is None and native_array_descriptor_kind(optional_type) is None:
                 annotation = optional_annotation
+                nullable_annotation = True
         visibility, semantic_type, original_name = self.visible_type(
             annotation,
             allow_optional_absent_handle=True,
         )
+        if nullable_annotation:
+            # Unwrapping keeps the established storage contract, but the author
+            # did write '| None'.  Recording it lets a language whose direct
+            # route cannot express a nullable actual reject the form instead of
+            # silently building a non-nullable one.
+            semantic_type.metadata[NULLABLE_ANNOTATION_METADATA] = True
         self._validate_optional_native_array_handle_argument(arg, default, semantic_type)
         writable = self._type_uses_writable_storage(semantic_type)
         semantic_type.ownership.mutable = writable
@@ -3269,7 +3415,9 @@ class _ClassBodyVisitor(ClassVisitor):
             has_native_call=decorators.has_native_call,
             release_gil=decorators.release_gil,
             error_status_policy=decorators.error_status_policy,
+            deferred=decorators.abstract_method,
         )
+        self.parser._reject_private_constructor(node.name, decorators.visibility)
         if node.name == "__init__" and decorators.bind_target is not None and decorators.overload_target is None:
             self.has_bound_constructor = True
         if decorators.overload_target is not None:
@@ -3331,6 +3479,7 @@ class _ClassBodyVisitor(ClassVisitor):
                 node,
                 visibility=decorators.visibility,
                 native_type=decorators.native_type,
+                abstract=decorators.abstract,
             )
         )
 
@@ -3395,6 +3544,7 @@ class _ModuleVisitor(ClassVisitor):
                 node,
                 visibility=decorators.visibility,
                 native_type=decorators.native_type,
+                abstract=decorators.abstract,
             )
         )
 

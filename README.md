@@ -59,7 +59,7 @@ python3 -m prik points.f90 --out geometry
 
 Create `points.f90`:
 
-<!-- prik-doc-source: tests/fortran/building_shared_library/end_to_end/fixtures/native/home_points.f90 -->
+<!-- prik-doc-source: tests/fortran/infrastructure/building/end_to_end/fixtures/native/home_points.f90 -->
 ```fortran
 module points
   implicit none
@@ -210,13 +210,29 @@ charts below come from the latest successfully deployed benchmark snapshot.
 
 ## Current limitations
 
-PRIK does not yet support:
+PRIK rejects these forms rather than wrapping them unsafely. Most fail before
+code generation with a diagnostic naming the boundary and the reason.
 
-- arrays of derived types;
-- procedure pointers, including procedure-pointer module variables and callbacks
-  retained after the wrapped call; or
-- polymorphic outputs, mutable polymorphic arguments, polymorphic arrays,
-  unlimited polymorphism (`class(*)`), abstract types, and deferred bindings.
+**Types and arrays**
+
+- arrays of derived types, and assumed-type `type(*)` arrays;
+- character arrays that cannot be represented as a fixed-width NumPy bytes
+  dtype, and `allocatable` and `pointer` character *fields*.
+- real and complex storage wider than the target's `long double`. NumPy's
+  `longdouble` is whatever the target C compiler provides, so `real(10)` and C
+  `long double` are supported while IEEE quad `real(16)` is refused on a target
+  whose `long double` is x87 extended precision. The diagnostic names the
+  measured mantissa width on both sides.
+
+**Procedures and polymorphism**
+
+- procedure-pointer module variables, and
+  callbacks retained after the wrapped call returns;
+- polymorphic outputs, mutable polymorphic arguments, polymorphic
+  `allocatable` and `pointer` scalars, and unlimited polymorphism (`class(*)`).
+
+The [language feature matrix](https://pynumlab.github.io/prik/user/language-support/feature-matrix/)
+records the full support status of every feature with its evidence.
 
 ## Installation & Quick Start
 
@@ -393,9 +409,7 @@ notice when redistributed.
 - **[User Guide](https://pynumlab.github.io/prik/user/guide/)** — Data types, functions, modules, arrays, derived types, callbacks, ownership, and runtime behavior
 - **[Changelog](CHANGELOG.md)** — User-visible changes by release
 <!--
-- **[Tutorials](docs/user/tutorials/index.md)** — Step-by-step walkthroughs
 - **[CLI Reference](docs/user/reference/cli-commands.md)** — Complete command-line documentation
 - **[Language Support](docs/user/language-support/index.md)** — What is supported, partially supported, or planned
 - **[FAQ](docs/user/faq/index.md)** — Concise answers to common questions
-- **[Troubleshooting](docs/user/troubleshooting/index.md)** — Solutions for installation, compiler, build, runtime, and platform issues
 -->

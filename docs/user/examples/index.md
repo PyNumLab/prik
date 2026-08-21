@@ -2,20 +2,20 @@
 title: Examples Gallery
 audience: users
 prerequisites: getting started
-related: ../tutorials/index.md, ../guide/building-shared-library.md
+related: ../guide/building-shared-library.md
 status: maintained
 publication: draft
 ---
 
 # Examples Gallery
 
-This section includes checked recipes and four complete real-library examples:
-BLAS, LAPACK, FFTPACK, and MINPACK. Each one provides build commands, Python
+This section includes checked recipes and five complete real-library examples:
+BLAS, LAPACK, FFTPACK, MINPACK, and BSPLINE-FORTRAN. Each one provides build commands, Python
 usage, and numerical checks for its public routines.
 
-The larger project examples below are placeholders for future complete runnable
-projects. Each one must include source, build command, import command, runtime
-check, limitations, and test evidence before it is marked maintained.
+Every page here is runnable. An example earns a place once it has source, a
+build command, an import command, a runtime check, its limitations, and test
+evidence.
 
 ## Choose a page
 
@@ -37,17 +37,4 @@ PRIK_C_DOCS_END -->
 | Build complete Reference LAPACK and validate 127 float64 routines | [LAPACK wrapper](lapack-wrapper.md) |
 | Wrap and validate all 31 FFTPACK procedures with NumPy and SciPy | [FFTPACK wrapper](fftpack-wrapper.md) |
 | Wrap all 22 MINPACK procedures and use Python callbacks | [MINPACK wrapper](minpack-wrapper.md) |
-
-## Planned Project Examples
-
-- [ODE solver](ode-solver.md)
-- [CFD mini-example](cfd-mini-example.md)
-- [Object-oriented Fortran example](object-oriented-fortran.md)
-- [MPI example](mpi-example.md)
-- [OpenMP example](openmp-example.md)
-
-## TODO
-
-- TODO: Add further runnable checked examples one at a time.
-- TODO: Keep examples with unavailable runtime support marked not yet
-  implemented.
+| Build and validate modern Fortran classes and 15 interpolation routines | [BSPLINE-FORTRAN wrapper](bspline-wrapper.md) |

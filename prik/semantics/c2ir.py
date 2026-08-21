@@ -368,6 +368,18 @@ class CToIRConverter(ClassVisitor):
             "specifiers": list(function.specifiers),
             "prototype_style": function.prototype_style,
             "is_definition": function.is_definition,
+            # This is source provenance, not a wrapper decision.  Policy
+            # consumes it later to choose an exact direct C declaration or a
+            # documented blocker before planning starts.
+            "c_abi": {
+                "calling_convention": "c",
+                "variadic": function.is_variadic,
+                "result": self._c_abi_type_facts(function.result_type),
+                "parameters": [
+                    self._c_abi_type_facts(parameter.declared_type or parameter.type, name=parameter.name)
+                    for parameter in function.parameters
+                ],
+            },
         }
         return SemanticFunction(
             name=function.name,
@@ -711,7 +723,10 @@ class CToIRConverter(ClassVisitor):
         return self._callback_placeholder(type_)
 
     def _visit_CUnknownType(self, type_: CUnknownType, *, owner: str | None = None, **_context) -> SemanticType:
-        """Preserve an unresolved C spelling as an explicit semantic type."""
+        """Resolve a probed standard typedef or preserve an unknown C spelling."""
+        standard = self._standard_semantic_type(type_.spelling)
+        if standard is not None:
+            return standard
         return self._unresolved_type(type_.spelling, owner=owner, source_type=self._type_text(type_))
 
     def _visit_CVoid(self, type_: CVoid, **_context) -> SemanticType:
@@ -1673,6 +1688,36 @@ class CToIRConverter(ClassVisitor):
         if isinstance(type_, CStruct | CUnion | CEnum | CTypedef):
             return type_.reference_name
         return type(type_).__name__
+
+    @classmethod
+    def _c_abi_type_facts(cls, type_: CType, *, name: str | None = None) -> dict[str, object]:
+        """Return the exact source facts needed by direct-C policy.
+
+        A declaration name is removed only from the final declarator position;
+        the preserved spelling retains all qualifiers, pointer levels, and C
+        complex/typedef spelling.  Arrays and function pointers stay marked as
+        source facts so policy can reject them without lowering a partial ABI.
+        """
+        source_spelling = cls._type_text(type_)
+        if name:
+            source_spelling = re.sub(
+                rf"\b{re.escape(name)}\b(?=\s*(?:\[[^]]*\]\s*)*$)",
+                "",
+                source_spelling,
+            ).strip()
+        components = list(type_.components) if isinstance(type_, CComposedType) else [type_]
+        pointer_components = [component for component in components if isinstance(component, CPointer)]
+        qualifiers = tuple(
+            qualifier.spelling for component in components for qualifier in getattr(component, "qualifiers", ())
+        )
+        return {
+            "source_spelling": source_spelling,
+            "pointer_depth": len(pointer_components),
+            "qualifiers": qualifiers,
+            "const": "const" in qualifiers,
+            "has_array_declarator": any(isinstance(component, CArray) for component in components),
+            "has_function_pointer": any(isinstance(component, CFunctionType) for component in components),
+        }
 
     @staticmethod
     def _type_metadata(type_: CType) -> dict[str, Any]:

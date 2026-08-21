@@ -19,9 +19,10 @@ from tests.fortran._support.wrapper_build import (
 )
 from prik import build_pyi_extension
 from prik.runtime.handles import _NativeArrayHandoff, AllocatableArray, PointerArray
+from tests.fortran._support.paths import FORTRAN_ROOT
 
 DATA_TYPE_CONTRACTS = Path(__file__).parent / "fixtures" / "baseline" / "contracts"
-ARRAY_CONTRACTS = Path(__file__).parents[2] / "arrays" / "end_to_end" / "fixtures" / "baseline" / "contracts"
+ARRAY_CONTRACTS = FORTRAN_ROOT / "arrays" / "end_to_end" / "fixtures" / "baseline" / "contracts"
 SCALAR_FIXED_SOURCE = wrapper_source("fmath.f")
 ARRAY_FIXED_SOURCE = wrapper_source("fmath_arrays.f")
 SCALAR_F90_SOURCE = wrapper_source("fmath_f90.f90")

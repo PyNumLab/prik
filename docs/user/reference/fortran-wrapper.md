@@ -34,12 +34,12 @@ is validated.
 PRIK_C_DOCS_END -->
 
 <!-- PRIK_C_DOCS_START
-This reference covers the implemented wrapper for Fortran source inputs. prik also
-parses C and produces C semantic IR and `.pyi`, but a
-runtime wrapper backend for user-supplied C libraries will be added later.
-The C source generated internally as part of a Fortran wrapper is an
-implementation detail of the current Fortran path, not the future C-input
-backend.
+This reference covers the implemented wrapper for Fortran source inputs. The
+separate [direct-only primitive C lane](../guide/building-shared-library.md#build-a-primitive-c-api-directly)
+supports only target-probed arithmetic values and completed one-level numeric
+pointer contracts; it is not general C wrapper support. The C source generated
+internally as part of a Fortran wrapper remains an implementation detail of the
+Fortran path.
 PRIK_C_DOCS_END -->
 
 ## Contents
@@ -94,7 +94,7 @@ PRIK_C_DOCS_END -->
 Build the checked scalar example:
 
 ```bash
-python3 -m prik tests/fortran/building_shared_library/end_to_end/fixtures/native/fruntime_abi_f90.f90 \
+python3 -m prik tests/fortran/infrastructure/building/end_to_end/fixtures/native/fruntime_abi_f90.f90 \
   --out-dir build/fruntime_abi
 ```
 
@@ -389,7 +389,7 @@ The equivalent Python entrypoint returns structured artifact paths:
 from prik import build_fortran_extension
 
 result = build_fortran_extension(
-    "tests/fortran/building_shared_library/end_to_end/fixtures/native/fruntime_abi_f90.f90",
+    "tests/fortran/infrastructure/building/end_to_end/fixtures/native/fruntime_abi_f90.f90",
     output_dir="build/fruntime_abi",
 )
 print(result.module_name)
@@ -1750,9 +1750,35 @@ PRIK_C_DOCS_END -->
 Character arrays use fixed-width NumPy bytes dtypes such as `S5`; the dtype
 itemsize is the Fortran element length. Deferred-length allocatable character
 arrays carry that length at runtime and return a fresh fixed-width bytes array.
-Python Unicode arrays, object arrays, mutable scalar deferred-length character
-storage, deferred-length character fields, and mutable character-buffer fields
-remain blocked until an explicit field and encoding policy exists.
+Python Unicode arrays, object arrays, `allocatable` and `pointer` character
+fields at any length, and mutable character-buffer fields remain blocked until
+an explicit field and encoding policy exists. Plain fixed-length character
+fields are supported.
+
+Character module variables are supported in every form. A declared-length
+scalar is readable and writable as `str` at exactly the declared byte width; an
+`allocatable` or `pointer` scalar reads as a detached `str`, or `None` when
+unallocated or unassociated. Character module arrays reach Python as
+fixed-width bytes arrays — `allocatable` and `pointer` ones through a handle,
+fixed-shape `target` ones as a live view, and `parameter` ones as a read-only
+snapshot copied at import. Each array accessor reports its own element width,
+so an assumed-length (`character(len=*)`) `parameter` array takes the dtype
+width its initializer implied.
+
+Only a declared-length non-descriptor scalar is writable by assignment
+(`module.label = "PYTHON!!"`, at exactly the declared byte width). An
+`allocatable` or `pointer` scalar reads as a detached snapshot and cannot be
+replaced, the same way a numeric descriptor module scalar cannot; a `parameter`
+is a constant, so assigning to it rebinds the Python name without reaching
+Fortran. Module arrays are mutated in place through their view or handle rather
+than rebound.
+
+A deferred-length `character(len=:), allocatable` module *array* does not build
+under GNU Fortran 11.4, which raises an internal compiler error on that
+declaration. Scalar
+`allocatable` and `pointer` character dummies and results are supported in
+every direction; see
+[Strings](../guide/strings.md#allocatable-and-pointer-scalar-strings).
 
 
 ## Scalar Types And Kind Coverage
@@ -2348,7 +2374,7 @@ wrappers:
 | Pointers | Scalar-derived pointer results without stable typed holder storage, expired-target results, and unproved reassociation or ownership-changing operations | Stable target lifetime, descriptor identity, typed holder storage, or explicit operation policy. |
 | Polymorphism | Results, mutable dummies, arrays, allocatable/pointer scalars, `class(*)` | Dynamic type, allocation, replacement, and ownership. |
 | Constructors | Incomplete or indistinguishable constructor overload sets | Every candidate needs a complete exact runtime signature and compatible owner lifecycle. |
-| Characters | Mutable scalar allocatable character dummies and deferred-length mutable fields | Allocation, encoding, replacement, and destruction. |
+| Characters | Deferred-length mutable character fields | Allocation, encoding, replacement, and destruction. |
 | Kinds | Real wider than 64 bits, complex wider than 128 bits, wider explicit logical storage | Portable NumPy round-trip without silent precision loss. |
 | Callbacks | Stored, optional, cross-thread, or procedure-pointer callbacks | Persistent ownership, thread, exception, nullability, and teardown. |
 

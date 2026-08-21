@@ -137,7 +137,9 @@ def test_dgesvd_reconstructs_matrix(prik_lapack, scipy_lapack, f2py_lapack):
         matrix.copy(order="F"), compute_uv=1, full_matrices=1, lwork=32
     )
 
-    assert prik_scalars == (3, 2, 3, 3, 2, 32, 0)
+    # LAPACK declares no intent on its dummies, so the conservative
+    # intent(inout) default returns every scalar, character selectors included.
+    assert prik_scalars == ("A", "A", 3, 2, 3, 3, 2, 32, 0)
     assert f2py_result is None
     assert scipy_info == 0
     for u, values, vt in (

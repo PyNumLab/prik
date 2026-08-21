@@ -194,7 +194,9 @@ def test_dpotrf_reconstructs_spd_matrix(prik_lapack, scipy_lapack, f2py_lapack):
     f2py_result = f2py_lapack.dpotrf(b"L", 2, f2py_a, 0)
     scipy_factor, scipy_info = scipy_lapack.dpotrf(stored.copy(order="F"), lower=1, clean=0)
 
-    assert prik_scalars == (2, 2, 0)
+    # LAPACK declares no intent on its dummies, so the conservative
+    # intent(inout) default returns every scalar, character selectors included.
+    assert prik_scalars == ("L", 2, 2, 0)
     assert f2py_result is None
     assert scipy_info == 0
     prik_lower = np.tril(prik_a)
@@ -344,7 +346,9 @@ def test_dpstf2_reconstructs_pivoted_cholesky(prik_lapack, scipy_lapack, f2py_la
 
     assert f2py_result is None
     assert prik_scalars[-1] == scipy_info == 0
-    assert prik_scalars[2] == scipy_rank == 1
+    # Character selectors are returned too, so the projected scalars sit at
+    # their native-argument positions in the returned tuple.
+    assert prik_scalars[3] == scipy_rank == 1
     assert_allclose_float64(prik_a.T @ prik_a, matrix)
     assert_allclose_float64(f2py_a.T @ f2py_a, matrix)
     assert_allclose_float64(scipy_a.T @ scipy_a, matrix)
@@ -365,7 +369,9 @@ def test_dpstrf_reconstructs_blocked_pivoted_cholesky(prik_lapack, scipy_lapack,
 
     assert f2py_result is None
     assert prik_scalars[-1] == scipy_info == 0
-    assert prik_scalars[2] == scipy_rank == 1
+    # Character selectors are returned too, so the projected scalars sit at
+    # their native-argument positions in the returned tuple.
+    assert prik_scalars[3] == scipy_rank == 1
     assert_allclose_float64(prik_a.T @ prik_a, matrix)
     assert_allclose_float64(f2py_a.T @ f2py_a, matrix)
     assert_allclose_float64(scipy_a.T @ scipy_a, matrix)
@@ -385,7 +391,9 @@ def test_dsfrk_updates_spd_matrix_in_rfp_storage(prik_lapack, scipy_lapack, f2py
     scipy_c = scipy_lapack.dsfrk(1, 2, 1.0, matrix, 1.0, np.array([1.0]))
 
     assert f2py_result is None
-    assert prik_scalars == (1, 2, 1.0, 1, 1.0)
+    # LAPACK declares no intent on its dummies, so the conservative
+    # intent(inout) default returns every scalar, character selectors included.
+    assert prik_scalars == ("N", "U", "N", 1, 2, 1.0, 1, 1.0)
     assert_allclose_float64(prik_c, expected, operation_size=2)
     assert_allclose_float64(f2py_c, expected, operation_size=2)
     assert_allclose_float64(scipy_c, expected, operation_size=2)

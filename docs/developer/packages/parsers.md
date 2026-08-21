@@ -246,11 +246,11 @@ conversion remains the next stage's responsibility.
 
 | Evidence | What it establishes |
 | --- | --- |
-| [Fortran parser suite](../../../tests/fortran/source_parsing/parsing/) | Source forms, units, declarations, scopes, diagnostics, project assembly, and parser models. |
-| [Public parser entrypoints](../../../tests/fortran/source_parsing/parsing/test_public_entrypoints.py) | File, project, and singular-unit entrypoint contracts. |
-| [Source forms and diagnostics](../../../tests/fortran/source_parsing/parsing/test_source_form_and_diagnostics_regressions.py) | Logical source preparation, unit boundaries, and public diagnostic metadata. |
-| [Parser CLI](../../../tests/fortran/command_line_interface/pipeline/test_stage_dispatch.py) | Module launcher, report modes, diagnostic presentation, and explicit semantic/`.pyi` inspection modes. |
-| [Semantic `.pyi` parsing](../../../tests/fortran/semantic_pyi_format/parsing/test_python_ast_contracts.py) | Raw `ast.Module` results and the AST-to-semantic-conversion handoff. |
+| [Fortran parser suite](../../../tests/fortran/infrastructure/parsing/) | Source forms, units, declarations, scopes, diagnostics, project assembly, and parser models. |
+| [Public parser entrypoints](../../../tests/fortran/infrastructure/parsing/test_public_entrypoints.py) | File, project, and singular-unit entrypoint contracts. |
+| [Source forms and diagnostics](../../../tests/fortran/infrastructure/parsing/test_source_form_and_diagnostics_regressions.py) | Logical source preparation, unit boundaries, and public diagnostic metadata. |
+| [Parser CLI](../../../tests/fortran/infrastructure/cli/pipeline/test_stage_dispatch.py) | Module launcher, report modes, diagnostic presentation, and explicit semantic/`.pyi` inspection modes. |
+| [Semantic `.pyi` parsing](../../../tests/fortran/infrastructure/semantic_pyi/parsing/test_python_ast_contracts.py) | Raw `ast.Module` results and the AST-to-semantic-conversion handoff. |
 
 ## Change Routes
 

@@ -1,11 +1,10 @@
 """Public native-binding support surface checks."""
 
-from pathlib import Path
+from tests.fortran._support.paths import REPO_ROOT
 
 
-ROOT = Path(__file__).resolve().parents[4]
-SUPPORT_HEADER = ROOT / "prik" / "runtime" / "native_support" / "prik_binding.h"
-SUPPORT_SOURCE = ROOT / "prik" / "runtime" / "native_support" / "prik_binding.c"
+SUPPORT_HEADER = REPO_ROOT / "prik" / "runtime" / "native_support" / "prik_binding.h"
+SUPPORT_SOURCE = REPO_ROOT / "prik" / "runtime" / "native_support" / "prik_binding.c"
 
 
 def test_native_binding_support_is_header_only_and_exposes_the_small_prik_api():

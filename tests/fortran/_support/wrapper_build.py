@@ -17,6 +17,7 @@ from types import ModuleType
 import numpy as np
 import pytest
 
+from tests.fortran._support.paths import REPO_ROOT
 from tests.fortran._support.pyi_fixtures import assert_generated_pyi_package_matches_fixture
 from tests.fortran._support.fmath_cases import fmath_cases
 from prik import build_pyi_extension
@@ -38,7 +39,6 @@ from prik.policy.completion import complete_semantic_policies
 from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import WrapperPlanner
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
 WRAPPER_TEST_ROOT = Path(__file__).resolve().parent
 WRAPPER_SOURCE_PATHS = {
     "c_order_flat_buffer.f90": REPO_ROOT
@@ -55,7 +55,7 @@ WRAPPER_SOURCE_PATHS = {
     "fmath_arrays_f90.f90": REPO_ROOT / "tests/fortran/arrays/end_to_end/fixtures/baseline/native/fmath_arrays_f90.f90",
     "fmath_f90.f90": REPO_ROOT / "tests/fortran/data_types/end_to_end/fixtures/baseline/native/fmath_f90.f90",
     "fnaming_f90.f90": REPO_ROOT
-    / "tests/fortran/pyi_contracts/exports_and_modules/end_to_end/fixtures/visibility/native/fnaming_f90.f90",
+    / "tests/fortran/infrastructure/semantic_pyi/contracts/exports_and_modules/end_to_end/fixtures/visibility/native/fnaming_f90.f90",
     "fopenmp_runtime_f90.f90": REPO_ROOT
     / "tests/fortran/error_handling/end_to_end/fixtures/runtime/native/fopenmp_runtime_f90.f90",
     "free_external.f90": REPO_ROOT / "tests/fortran/functions/end_to_end/fixtures/external/native/free_external.f90",
@@ -307,12 +307,18 @@ def _build_source_and_import(
     source_template: Path,
     workdir: Path,
     expected_generated_sources: set[str],
+    **build_options,
 ):
-    """Build one source entry through the canonical production generator."""
+    """Build one source entry through the canonical production generator.
+
+    ``build_options`` forwards public build arguments so a test can exercise an
+    optional wrapper behavior without duplicating the build and import steps.
+    """
     result = build_fortran_extension(
         source_template,
         output_dir=workdir,
         preprocessing=PreprocessingConfig(mode="compiler", compiler=_compiler()),
+        **build_options,
     )
     assert result.shared_library.exists()
     assert {path.name for path in result.generated_sources} == expected_generated_sources
@@ -511,15 +517,19 @@ def _assert_array_rejects_strided_views(module, function_name):
 
 
 def _assert_legacy_string_examples(module):
-    assert module.char_code_default("A") == ord("A")
-    assert module.char_code_star1(np.str_("B")) == ord("B")
-    assert module.string_len_star8("short   ") == 5
+    # Fixed-form sources predate the `intent` attribute, so every character
+    # dummy here reaches the conservative `intent(inout)` default and its
+    # unchanged value follows the result. `--assume-intent-in-scalars` is the
+    # documented way to drop it; see the assumed scalar-intent tests.
+    assert module.char_code_default("A") == (ord("A"), "A")
+    assert module.char_code_star1(np.str_("B")) == (ord("B"), "B")
+    assert module.string_len_star8("short   ") == (5, "short   ")
     with pytest.raises(TypeError, match="exactly 8 bytes"):
         module.string_len_star8("short")
     with pytest.raises(TypeError, match="exactly 8 bytes"):
         module.string_len_star8("too-long-value")
-    assert module.string_len_assumed("variable length") == 15
-    assert module.string_len_entity("python") == 6
+    assert module.string_len_assumed("variable length") == (15, "variable length")
+    assert module.string_len_entity("python") == (6, "python")
     assert module.char_result_default() == "L"
     assert module.string_result_star8() == "LEGACY!!"
     assert module.string_result_padded() == "PAD     "

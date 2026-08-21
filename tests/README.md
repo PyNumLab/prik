@@ -1,15 +1,16 @@
 # Test Suite Map
 
-Product-behavior tests are organized language first. Fortran tests are then
-organized by documented feature and pipeline stage:
+Product-behavior tests are organized language first. Within a language,
+documented language features use a feature-first, stage-second layout:
 
 ```text
-tests/fortran/<documented-feature>/<owning-stage>/
+tests/<language>/<language-feature>/<owning-stage>/
 ```
 
-Documentation is the top-level `tests/docs/` feature. Only other genuinely
-internal product behavior mirrors its production package below
-`tests/fortran/infrastructure/`. Maintainer tooling has the independent
+Parsing, preprocessing, command-line handling, semantic IR and `.pyi`
+conversion, build orchestration, and other cross-feature mechanisms are
+infrastructure. They live below `tests/<language>/infrastructure/`, even when
+they also have user documentation. Maintainer tooling has the independent
 `tests/tools/` owner, while exceptional automation-safety checks live under
 `tests/workflows/`.
 Generated C and CPython binding code used by a Fortran wrapper remains evidence
@@ -74,15 +75,17 @@ semantic tests preserve names, imports, and native callable provenance; the
 arrays policy tests classify dependency roles and unsupported native calls; and
 the arrays end-to-end tests compile representative dimensions, inquiry forms,
 reductions, conditionals, powers, and logical-kind arrays. Contract-batch
-reconciliation belongs with `tests/fortran/semantic_pyi_format/`, where
-editable `.pyi` imports and prototypes are exercised.
+reconciliation belongs with `tests/fortran/infrastructure/semantic_pyi/`,
+where editable `.pyi` imports and prototypes are exercised.
 
-Public cross-feature capabilities have explicit owners:
-`source_parsing/`, `source_preprocessing/`, `command_line_interface/`, and
-`semantic_ir/`. Only internal frameworks with no honest public-capability owner
-belong under `tests/fortran/infrastructure/`. A user-visible behavior stays
-with its feature even when its test crosses several pipeline stages. Minimized
-real-world parser interactions belong under `source_parsing/parsing/`; full
+Cross-feature mechanisms have explicit infrastructure owners. `parsing/`,
+`preprocessing/`, `cli/`, `semantic_ir/`, `semantic_pyi/`, and `building/` own
+shared pipeline behavior; the remaining owners mirror their production package
+(`policy/`, `codegen/`, `printers/`, `naming/`, `pipeline/`, `runtime/`,
+`utilities/`). `tests/fortran/README.md` and `tests/c/README.md` carry the
+complete per-language tables. A user-visible language behavior stays with its
+feature even when its test crosses several pipeline stages. Minimized
+real-world parser interactions belong under `infrastructure/parsing/`; full
 third-party snapshots are temporary analysis inputs, not permanent fixtures.
 
 ## Independent suite gates
@@ -117,7 +120,7 @@ selection:
 - `toolchain_smoke` selects only the bounded portable compiler-profile subset
   declared by `tests/fortran/conftest.py`.
 
-The smoke suite is eight exact nodes reused from ordinary feature end-to-end
+The smoke suite is eight exact nodes reused from ordinary Fortran end-to-end
 tests. Strict mode requires a resolved compiler, rejects skips and xfails, and
 prints the selected nodes with their mechanism and compilation fixture:
 
@@ -157,15 +160,16 @@ CLI/API diagnostic test only when propagation is itself public behavior.
 Feature-local fixtures live below their feature; cross-feature helpers require
 an explicit infrastructure owner.
 
-After choosing feature ownership, place genuinely internal mechanisms under
-their owning production package when that makes the invariant easier to find:
+First decide whether the invariant is a language feature or a cross-feature
+mechanism. For a cross-feature mechanism, place it under its infrastructure
+owner when that makes the invariant easier to find:
 
 ```text
 tests/fortran/infrastructure/<production-package>/test_<production-module>.py
 ```
 
 For example, `prik/policy/ownership.py` uses
-`infrastructure/semantics/test_ownership.py`, while
+`infrastructure/policy/test_ownership.py`, while
 `prik/planning/planner.py` uses `infrastructure/codegen/test_planner.py`;
 language source printers use `infrastructure/printers/` and the wrapper
 orchestrator uses `infrastructure/pipeline/test_wrapper_generator.py`.

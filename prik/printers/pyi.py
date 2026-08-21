@@ -30,6 +30,7 @@ from prik.semantics.metadata import (
     ADDRESS_ROLE_PROJECTION,
     ADDRESS_ROLE_RAW,
     BIND_TARGET_METADATA,
+    DEFERRED_BINDING_METADATA,
     MAYBE_UNALLOCATED_METADATA,
     NATIVE_PROJECTION_METADATA,
     OPTIONAL_ABSENT_HANDLE_METADATA,
@@ -75,6 +76,12 @@ _WRAPPED_CALLABLE_TYPE_METADATA = "pyi_wrapped_callable_type"
 _CONTRACT_MODULE = "prik.contracts"
 _CONTRACT_ALIAS_PREFIX = "prik_"
 _FLAT_DIMENSION_PRINT_SENTINEL = "@prik.Flat"
+
+
+# Type attributes the contract states through its own vocabulary rather than
+# through `native_type`: `public` is the default accessibility, `private` has a
+# marker, and `abstract` has one too.
+_IMPLIED_TYPE_ATTRIBUTES = frozenset({"public", "private", "abstract"})
 
 
 @dataclass(frozen=True)
@@ -388,6 +395,11 @@ class PyiPrinter(ClassVisitor):
                 indent = ""
             generic = self._overload_generic_argument(candidate, overload_set.name) if in_class else ""
             bind_target = candidate.metadata.get(BIND_TARGET_METADATA)
+            if self._constructor_binds_its_own_type(overload_set.name, bind_target, context):
+                # A constructor's native generic is named for its type, so the
+                # class already states the target the way an unrenamed method
+                # states its own.
+                bind_target = None
             if candidate.origin.native_abi == "c" and candidate.origin.native_symbol:
                 bind_target = (
                     candidate.origin.native_symbol
@@ -420,6 +432,8 @@ class PyiPrinter(ClassVisitor):
         decorators = []
         if self._is_private(cls):
             decorators.append(f"@{context.contract('private')}")
+        if self._is_abstract(cls):
+            decorators.append(f"@{context.contract('abstract')}")
         native_type = self._native_type_decorator(cls, context)
         if native_type:
             decorators.append(native_type)
@@ -437,11 +451,22 @@ class PyiPrinter(ClassVisitor):
         return context.contract_type(base)
 
     @staticmethod
+    def _is_abstract(cls: SemanticClass) -> bool:
+        """Return whether the native type is declared ``abstract``."""
+        return any(
+            str(attribute).casefold() == "abstract" for attribute in cls.metadata.get("fortran_type_attributes", ())
+        )
+
+    @staticmethod
     def _native_type_decorator(cls: SemanticClass, context: _PyiEmissionContext) -> str:
         """Emit native derived-type metadata when the class needs it."""
         if cls.origin.source_language != "fortran" or cls.origin.source_kind != "derived_type":
             return ""
-        attributes = tuple(str(item) for item in cls.metadata.get("fortran_type_attributes", ()))
+        attributes = tuple(
+            str(item)
+            for item in cls.metadata.get("fortran_type_attributes", ())
+            if str(item).casefold() not in _IMPLIED_TYPE_ATTRIBUTES
+        )
         finalizers = tuple(str(item) for item in cls.metadata.get("fortran_final_procedures", ()))
         parts = []
         if attributes:
@@ -525,17 +550,23 @@ class PyiPrinter(ClassVisitor):
         semantic_type: SemanticType,
         context: _PyiEmissionContext,
         *,
-        include_deferred_length: bool = False,
+        shape_follows: bool = False,
     ) -> str:
-        """Return the semantic dtype including fixed character length."""
+        """Return the semantic dtype, spelling a ``String`` character length.
+
+        A ``String`` annotation carries its length in the first subscription and
+        its shape, if any, in the second.  A scalar assumed length is the bare
+        ``String`` shorthand; when a shape subscription follows, the length slot
+        is always spelled so the two are never confused.
+        """
         if semantic_type.name != "String":
             return context.contract_type(semantic_type.name)
         length = semantic_type.metadata.get("fortran_character_length")
         string = context.contract("String")
         if length is None or str(length) in {"", "*"}:
-            return string
+            return f"{string}[...]" if shape_follows else string
         if str(length) == ":":
-            return f"{string}[:]" if include_deferred_length else string
+            return f"{string}[:]"
         return f"{string}[{length}]"
 
     @staticmethod
@@ -567,7 +598,7 @@ class PyiPrinter(ClassVisitor):
         base_type = self._semantic_base_type(
             semantic_type,
             context,
-            include_deferred_length=semantic_type.rank > 0,
+            shape_follows=semantic_type.rank > 0,
         )
         if semantic_type.rank <= 0:
             return base_type
@@ -587,11 +618,9 @@ class PyiPrinter(ClassVisitor):
         storage = semantic_type.storage
         array = storage.array if storage is not None else None
         if array is not None and array.category == SCALAR_STORAGE_CATEGORY:
-            return f"{self._semantic_base_type(semantic_type, context, include_deferred_length=True)}[()]"
+            return f"{self._semantic_base_type(semantic_type, context, shape_follows=True)}[()]"
         dimensions = self._array_dimensions(semantic_type, array, context)
-        base = (
-            f"{self._semantic_base_type(semantic_type, context, include_deferred_length=True)}[{', '.join(dimensions)}]"
-        )
+        base = f"{self._semantic_base_type(semantic_type, context, shape_follows=True)}[{', '.join(dimensions)}]"
 
         metadata = self._array_annotation_metadata(array, context)
         if metadata:
@@ -851,7 +880,7 @@ class PyiPrinter(ClassVisitor):
             and storage.array is not None
             and storage.array.category == SCALAR_STORAGE_CATEGORY
         ):
-            return self._semantic_base_type(semantic_type, context, include_deferred_length=True)
+            return self._semantic_base_type(semantic_type, context, shape_follows=False)
         if storage is not None and storage.kind in {"reference", "address", "pointer"}:
             return self._address_target_type(semantic_type, context)
         return self._visit(semantic_type, context)
@@ -1265,8 +1294,16 @@ class PyiPrinter(ClassVisitor):
         cls: SemanticClass,
         context: _PyiEmissionContext,
     ) -> str:
-        """Handle class constructor for the current generation context."""
-        if cls.origin.source_language != "fortran":
+        """Handle class constructor for the current generation context.
+
+        An abstract native type has no constructor: the type cannot be
+        instantiated, so the contract states no ``__init__`` for it.
+        """
+        if cls.origin.source_language != "fortran" or self._is_abstract(cls):
+            return ""
+        if any(overload.name == "__init__" for overload in cls.overload_sets):
+            # A generic constructor supplies every accepted signature, so the
+            # keyword-field form is not part of this class's surface.
             return ""
         arguments = [
             self._constructor_argument(field, context) for field in cls.fields if self._constructor_accepts_field(field)
@@ -1999,10 +2036,14 @@ class PyiPrinter(ClassVisitor):
     ) -> list[str]:
         """Emit visibility, method-kind, native-ABI, and link-name markers."""
         decorators = []
-        if self._is_private(func):
+        # A constructor is published or absent; the accessibility of the
+        # specific it selects is that procedure's own fact, not the class's.
+        if self._is_private(func) and emitted_name != "__init__":
             decorators.append(f"{indent}@{context.contract('private')}")
         if isinstance(func, SemanticMethod) and func.is_static:
             decorators.append(f"{indent}@staticmethod")
+        if func.metadata.get(DEFERRED_BINDING_METADATA):
+            decorators.append(f"{indent}@{context.contract('abstractmethod')}")
         is_native_c_abi = func.origin.source_language == "fortran" and func.origin.native_abi == "c"
         is_overload = bool(func.metadata.get(OVERLOAD_TARGET_METADATA))
         if is_native_c_abi and not is_overload:
@@ -2013,6 +2054,20 @@ class PyiPrinter(ClassVisitor):
         if bind_target and not is_overload:
             decorators.append(f"{indent}@{context.contract('bind')}({json.dumps(str(bind_target))})")
         return decorators
+
+    @staticmethod
+    def _constructor_binds_its_own_type(
+        overload_name: str,
+        bind_target: object | None,
+        context: _PyiEmissionContext,
+    ) -> bool:
+        """Return whether a constructor's link name simply repeats its class name."""
+        return bool(
+            bind_target
+            and overload_name == "__init__"
+            and context.public_namespace
+            and str(bind_target).casefold() == str(context.public_namespace[-1]).casefold()
+        )
 
     @staticmethod
     def _bind_target(

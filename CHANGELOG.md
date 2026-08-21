@@ -7,8 +7,361 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+### Fixed
+
+- A C translation unit's module variables, enum or macro constants, and
+  aggregate type declarations no longer reach wrapper planning. They previously
+  generated a Fortran adapter module for a C input and failed with a raw
+  compiler error after writing files; they now fail closed before planning with
+  `C_DIRECT_NATIVE_GLOBAL_STATE`, `C_DIRECT_ENUM_CONSTANT`,
+  `C_DIRECT_MACRO_CONSTANT`, or `C_DIRECT_AGGREGATE_TYPE` and leave no output.
+
+- A C declaration the parser cannot model — for example one carrying an
+  unsupported calling-convention attribute — is no longer dropped from a
+  wrapper build's public API. It raises `C_DIRECT_UNMODELED_DECLARATION`
+  instead of silently publishing a smaller or reinterpreted API.
+
+- `T[:] | None` and `T[()] | None` in a C semantic contract no longer build a
+  silently non-nullable wrapper. Nullable C pointers are outside the initial C
+  lane, so the contract now fails with `C_DIRECT_NULLABLE_POINTER`.
+
+- A route-neutral `@native_call` reorder in a C contract no longer converts one
+  argument's Python value using another argument's declared type.
+
+- An edited array contract can now derive its native extent from the buffer,
+  as `@native_call([Arg(0).shape[0], Arg(0)])`. A binding-owned extent, length,
+  or presence producer is no longer mistaken for the argument's own transport
+  slot, which had also lowered the promoted buffer as a by-value scalar.
+
+- Fortran `bind(C)` procedures that pass strings, derived objects, or callbacks
+  through their direct entrypoint build again. The new exact C declaration plan
+  is now built only for C-source operations.
+
+- The generated docstring for a call-local scalar address argument no longer
+  claims that native code updates the supplied storage in place. That update
+  lands in a call-local copy and is not visible in Python.
+
+- A `generate --makefile` build invoked with relative paths now produces a
+  Makefile that runs on a clean tree. The link rule demanded each user object
+  twice, once under a relative spelling that no rule produced, so `make` stopped
+  with "No rule to make target". This affected Fortran and C builds alike.
+
+- A C wrapper build now works when the C compiler is named `cc`. `cc` is the
+  documented default for the C lane, but its vendor was read from the
+  executable's filename, which names no vendor. That happened to work where
+  `cc` links to a vendor-named binary and failed everywhere it does not, such
+  as macOS. The driver's own `--version` banner now settles the vendor when the
+  name cannot.
+
+- The BLAS and LAPACK examples now expect the character selectors that the
+  conservative `intent(inout)` default returns. Their assertions still encoded
+  the older `intent(in)` assumption for `character` dummies, so the example
+  suites failed against the behavior the same release documents.
+
+- The semantic contract a C build saves beside its extension now describes only
+  the wrapped file's own API. Preprocessed system-header declarations stay
+  inspection facts instead of filling the contract with private entries that
+  the next build could not accept.
+
+- A C parameter or result written through a typedef now declares the exact
+  builtin type the compiler probe resolved it to. The generated binding writes
+  its own prototype, so a typedef name defined only by the wrapped source's
+  headers previously reached the compiler undeclared and failed the build after
+  files were written.
+
 ### Added
 
+- Added the initial direct-only C wrapper lane. `build_c_extension`, explicit
+  `native_c_sources`, and C-native semantic `.pyi` contracts compile, link,
+  import, and call supported target-probed primitive C symbols directly. The
+  lane covers arithmetic scalar values, `void`, completed scalar-reference and
+  primitive NumPy-pointer contracts, and fails closed before planning for
+  callbacks, aggregates, variadics, pointer results, multi-level or nullable
+  pointers, ownership-sensitive forms, and other unsupported C ABI features.
+  C wrapper builds preprocess their sources with the selected C compiler, so an
+  ordinary `#define`, `#ifdef`, or macro-defined declaration is read the same
+  way the C inspection routes read it, and only the wrapped translation unit's
+  own declarations become public API.
+
+- Every build now writes its semantic `.pyi` contract beside the extension, in a
+  `contracts/` package inside the build directory (`__prik__/contracts/` by
+  default). Reshaping the generated Python API no longer needs a separate
+  `generate --pyi` run: the contract describing the API a build just produced is
+  always there, and rebuilding from it works directly. It lives in its own
+  directory so its `__init__.pyi` cannot make the build directory look like a
+  Python package.
+
+- Generic constructors declared as `interface <typename>` are now wrapped from
+  Fortran source. Such an interface is that type's constructor, so its specifics
+  become the accepted signatures of one overloaded `__init__` rather than a
+  module-level generic, and a call matching none of them is refused instead of
+  guessed at. A specific that is `private` in its module is reached through the
+  public type name, which resolves to the same procedure. Because the interface
+  supplies every accepted signature, it replaces the keyword-field constructor,
+  and the generated contract states only the signatures the class accepts. The
+  three sources of a constructor are now: no user constructor keeps the
+  keyword-field `__init__`, an `interface <typename>` supplies the overload set,
+  and an edited `.pyi` declares exactly what it says. A constructor candidate
+  carries no `@bind`, because the class name already states the generic that
+  reaches it — the same reason an unrenamed method omits it — and `@private` is
+  refused on `__init__`, since a constructor is published or absent and the
+  accessibility of the specific it selects is that procedure's own fact.
+
+- Added the BSPLINE-FORTRAN example under `examples/bspline`. It wraps the
+  upstream sources unmodified and validates both public interfaces from Python:
+  the object-oriented classes over an abstract base with deferred bindings and
+  generic constructors, and the procedural interpolation routines. Numerical
+  checks use analytic values and `scipy.interpolate` as independent oracles. It
+  is the first example project written in modern Fortran rather than FORTRAN 77.
+
+- BSPLINE-FORTRAN now follows the maintained real-library example workflow:
+  its checked-in build instructions are verified with the documentation suite,
+  its full procedural and derived-type surface is exercised in the native
+  library CI job, and its inventory fails closed if generated exports or named
+  numerical tests drift. The example now calls all one- through six-dimensional
+  procedural setup and evaluation routines and constructs every concrete spline
+  class against an independent affine interpolation result.
+
+- Abstract Fortran derived types are now wrapped. A `type, abstract ::`
+  declaration becomes a Python class with no constructor — instantiating it
+  raises `TypeError` naming the concrete extensions to use instead — while its
+  extensions remain ordinary Python subclasses that inherit its implemented
+  bindings. A deferred binding (`procedure(iface), deferred ::`) is declared on
+  the base and resolved by the object's own type: the generated adapter converts
+  the address to the caller's concrete type and lets Fortran select the
+  override, so no Python-side dispatch is involved. An abstract type publishes
+  no component accessors of its own, because each extension already generates
+  one for every component it inherits, and it is excluded from the polymorphic
+  cases a caller can supply, since no object can have it as a dynamic type. In
+  semantic `.pyi` contracts the class carries `@abstract` and each deferred
+  binding carries `@abstractmethod`, both re-exported from `prik.contracts`;
+  a deferred binding never carries `@bind`, because it has no native symbol.
+
+### Changed
+
+- Reorganized the C and Fortran test suites around a strict ownership rule:
+  language features remain under `<feature>/<stage>`, while shared parsing,
+  preprocessing, CLI, semantic-representation, contract, build, and policy
+  evidence live under `infrastructure/`. Focused commands and documentation now
+  use the corresponding infrastructure owners.
+
+### Fixed
+
+- A `bind(C)` character dummy that is a pointer now declares deferred length,
+  as the Fortran standard requires. GNU Fortran 13 and newer reject the
+  declared-length spelling earlier releases emitted, so wrapping a
+  `character(len=N), pointer` module array failed to compile there. Pointer
+  assignment takes the length from its target, so the associated width is
+  unchanged. The matching allocatable descriptor consumer travels as an
+  assumed-length assumed-shape dummy, whose descriptor still carries the
+  element length.
+
+- A generic interface whose specifics project an `intent(out)` argument into a
+  result now reloads from its generated contract. The declaration states the
+  public signature, so an output the projection turned into a result is not one
+  of the arguments it accepts; comparing the declaration against the specific's
+  native argument list rejected every such generic — the common shape in
+  numerical Fortran — with "Overload declaration 'x' is incompatible with
+  specific procedure 'y'". The same comparison now drives a type-bound generic's
+  receiver search. Generated contracts for BSPLINE-FORTRAN's `db1ink`,
+  `db1val`, and `initialize` load again.
+
+- A module whose only procedures are `bind(C)` now installs the bundled native
+  support its derived-type accessors need. Compiled wrapper builds for such a
+  module previously failed to link with `undefined symbol:
+  prik_float64_to_numpy`, because native support was requested only for module
+  variables, for ordinary procedure arguments and results, and for array
+  components — and a `bind(C)` procedure supplies none of those. Every published
+  component converts through those helpers, so a type with any component now
+  requests them.
+
+- A derived type's `private` and `public` statements are now honored. The
+  statement before `contains` sets the default accessibility of components and
+  the statement after it sets the default for type-bound procedures; a
+  declaration that states its own accessibility still keeps it. The statement
+  after `contains` previously failed to parse at all, and the one before it
+  parsed but was discarded — so a type with private components reached the
+  Fortran compiler as generated accessors that read them, failing with
+  "Component 'x' is a PRIVATE component of 'y'". Private components and
+  bindings now simply stay off the generated Python class. Parsed derived types
+  additionally record `component_visibility` and `binding_visibility`, and each
+  type-bound binding records the `visibility` it resolves to, so the parser's
+  serialized form states the accessibility it read.
+
+- A `type, public ::` declaration is no longer hidden by a module-level
+  `private` default. The type's own declared accessibility is the most specific
+  statement about it, so it wins over the module default and over the module's
+  accessibility lists. Previously such a type — and every one of its methods —
+  was dropped from the extension silently, with the build still reporting
+  success.
+
+- A deferred type-bound binding (`procedure(iface), deferred :: name`) now
+  parses, so the decision about whether it can be wrapped is reported by policy
+  as an unsupported derived-type diagnostic naming the binding, rather than by
+  the parser as a syntax error. Abstract types and deferred bindings remain
+  unsupported; only the stage that owns the refusal has changed.
+
+- A named `block` construct (`main: block ... end block main`) is recognized as
+  the start of a procedure's execution part. A construct name prefix is now
+  stripped before a statement is classified, so named `do`, `if`, `select`,
+  `associate`, and `block` constructs are all read as executable rather than as
+  an unknown declaration.
+
+- The compiler type probe no longer emits a program it cannot compile. The
+  probe is a standalone program that cannot `use` a module from the project
+  being analyzed, because that module has not been compiled yet; an expression
+  naming a kind parameter declared elsewhere in the project — `storage_size(1_ip,
+  kind=ip)`, for example — is now left for the requirement report instead of
+  being compiled into the probe. Previously one such expression failed the whole
+  probe and with it the entire build.
+
+### Added
+
+- Added `--assume-intent-in-scalars`, which treats a primitive scalar dummy
+  that declares no `intent` as `intent(in)` instead of applying the
+  conservative `intent(inout)` default. Fortran permits an undeclared dummy to
+  be written, so prik returns its post-call value; for sources that predate the
+  `intent` attribute this fills the Python return with unmodified controls, and
+  reference BLAS `ddot` returns `(value, n, incx, incy)` rather than the value
+  alone. With the option, that call returns `32.0`. The choice is made once in
+  semantic conversion, where an absent `intent` is interpreted, so the build
+  and `generate --pyi` describe the same Python surface. It is deliberately
+  narrow: it covers the primitive and character scalars whose replacement is
+  otherwise returned, a declared `intent` always wins, and arrays,
+  derived-type objects, and allocatable or pointer scalars are unaffected. It is an
+  assertion about the source rather than a fact derived from it — prik does not
+  inspect the procedure body, so a procedure that does write such a dummy
+  loses that value, exactly as removing the result from the generated contract
+  by hand would. The option appears in the first `--help` screen because it
+  changes the default Python surface, and every command that produces semantic
+  IR accepts it — the build, `generate --pyi`, and `semantics`.
+  `--build-manifest` rejects it along with the other saved wrapper settings,
+  and a `.pyi` wrapper build rejects it because a contract already states its
+  own results.
+
+### Changed
+
+- Expanded the initial direct-only C adoption roadmap around one exact scope:
+  modeled primitive arithmetic scalars and their one-level pointer forms. It
+  now records the unresolved scalar-lowering matrix, requires C inputs to fail
+  direct-or-diagnostic before planning, and makes the ambiguous `T *` workflow
+  explicit: generated contracts default to one scalar address, while an array
+  API requires an authoritative `.pyi` edit of both the shaped annotation and
+  the `Addr(Arg(...))` projection. Broader C pointers, arrays, callbacks,
+  aggregates, ownership, and nullability remain follow-on work.
+
+- A scalar `character` dummy that declares no `intent` now uses the same
+  conservative `intent(inout)` default as every other scalar, so the value the
+  native procedure left behind is returned. It was silently assumed
+  `intent(in)`, which meant a procedure that wrote to such a dummy lost that
+  write with no diagnostic, while an `integer` dummy on the same call had its
+  write returned. The exception was undocumented and untested; the strings
+  guide already stated the uniform rule this change makes true. Wrapping
+  fixed-form sources, where `intent` cannot be declared, therefore returns
+  `(result, text)` where it previously returned `result` —
+  `--assume-intent-in-scalars` restores the shorter surface and now covers
+  character scalars along with primitive ones. An `allocatable` or `pointer`
+  character scalar with no `intent` likewise now matches its numeric
+  counterpart and returns a nullable snapshot; the option does not reach either
+  one, because a snapshot is not a replacement value the caller supplied.
+
+- Generated wrapper source is now readable. Each generated Fortran adapter and
+  each CPython binding function carries a short leading comment naming what it
+  is for — the native procedure an adapter wraps and the C symbol it exports,
+  the Python callable a binding serves and the entrypoint it calls, and what a
+  module accessor reads or writes — and an adapter additionally summarizes the
+  conversions it performs. Generated Fortran modules also separate their
+  procedures with a blank line instead of running them together. Comment prose
+  is wrapped well inside the free-form 132-column limit, and each backend
+  describes only its own plan facet, so the binding never names a Fortran
+  symbol and the bridge never names a Python one.
+
+### Fixed
+
+- Declared-length `character` module arrays (`character(len=4), allocatable ::
+  arr(:)`, and the `pointer` equivalent) no longer fail in the Fortran
+  compiler. The generated descriptor-consumer interface and descriptor ABI
+  parameter both spelled `character(len=:)` regardless of what the array
+  declared, and an allocatable or pointer dummy accepts a deferred-length
+  actual only when it declares one itself. Both now spell the declared width.
+  A deferred-length `character(len=:), allocatable` module *array* still fails
+  to compile under GNU Fortran 11.4 with an internal compiler error, which is a
+  compiler defect rather than a wrapper contract.
+
+### Added
+
+- Every `character` module-variable form is now wrapped. Declared-length
+  scalars are readable and writable as ordinary `str` properties, matching how
+  numeric module variables already behave; a character value has no by-value C
+  ABI, so the accessors copy through the same fixed-width buffer a character
+  field already used, and assignment requires exactly the declared byte width
+  rather than truncating or padding. `allocatable` and `pointer` scalars read
+  as a detached `str`, or `None` when unallocated or unassociated, through the
+  same nullable snapshot a descriptor numeric scalar uses, carrying the width
+  the descriptor holds at the time of the read. `character` `parameter` arrays
+  are copied once at import into a read-only fixed-width bytes array, the way
+  numeric parameter arrays already were. Character module arrays report their
+  own element width through their generated accessor rather than having it
+  restated by the binding, so an assumed-length (`character(len=*)`) parameter
+  array works too and takes the dtype width its initializer implied. An
+  assumed-length scalar still keeps its rejecting setter, having no storage
+  width to write into.
+
+- Fixed-shape `character` module arrays with the `target` attribute now expose
+  the same live fixed-width bytes view numeric module arrays already did, at
+  any rank. The live-view lane rejected them only because it required a
+  primitive numeric element type; a character element differs only in carrying
+  its Fortran element length as the dtype width. Native writes appear in the
+  view, and Python writes reach the storage Fortran reads. `target` is required
+  here exactly as it already was for numeric module arrays.
+
+- Pointer array handles now expose `deallocate()` without a `PointerPolicy`
+  annotation, matching what allocatable handles already offered. Release stays
+  manual and caller-driven — prik never frees a native target on its own, on
+  garbage collection or otherwise — so this is the same responsibility a
+  Fortran caller takes when writing `deallocate` for the same pointer.
+  Previously a wrapped procedure that returned freshly allocated pointer
+  storage leaked with no way to reclaim it from Python. `allocate` and `resize`
+  still require `PointerPolicy`, because they establish a new target rather
+  than releasing the one the handle already names.
+- Added wrapper support for `allocatable` and `pointer` scalar `character`
+  values in every direction: `intent(in)`, `intent(out)`, and `intent(inout)`
+  arguments, and function results, at both deferred (`len=:`) and declared
+  (`len=n`) length. Policy now completes the adapter-local storage each dummy
+  needs — its attribute, its length, and who releases it — instead of always
+  building a plain fixed-length temporary. The C ABI is unchanged: a scalar
+  character argument still crosses as a byte buffer and a length whatever the
+  dummy declares. Previously most of these forms either stopped at a policy
+  diagnostic or reached the Fortran compiler and failed there with
+  "Actual argument for 'x' must be ALLOCATABLE"; declared-length allocatable
+  and pointer forms additionally failed plan validation.
+- Added a character-length subscription to semantic `.pyi` contracts. The first
+  subscription after `String` is always the length — `String[...]` assumed,
+  `String[8]` or `String[n]` explicit, `String[:]` deferred — and an array adds
+  its shape as a second subscription. Deferred-length scalars therefore have a
+  contract spelling for the first time, so those procedures rebuild from their
+  generated contract; the one-subscription array spellings the printer used to
+  emit (`String[::]`, and `String[n]` for an extent) are replaced by
+  `String[...][::]` and `String[...][n]`, which the parser had rejected or read
+  as a scalar length.
+- Added wrapper support for mutable scalar character descriptor arguments
+  (`allocatable` or `pointer`, `intent(inout)`). The dummy stays a `str`
+  argument and additionally returns the value the native procedure left behind,
+  or `None` when it leaves the dummy unallocated or unassociated. Policy
+  completes two decisions for the one dummy — a call-local character-buffer
+  input and a nullable descriptor result — so the adapter copies back the local
+  the native procedure may have replaced rather than the caller's buffer. A
+  pointer dummy additionally records who releases the target the adapter
+  allocated: the adapter frees it only while the dummy still identifies it, so
+  storage the native procedure deallocated or replaced is left alone. The dummy
+  spells as `Allocatable(Arg(i))` or `Pointer(Arg(i))` with `String[:]` or
+  `String[n]` in a semantic `.pyi` contract, so these procedures also rebuild
+  from their generated contract.
+- Added wrapper support for `allocatable` scalar `character` function results.
+  The adapter moves the result out through an allocatable dummy rather than
+  assigning it, which makes allocation a testable fact, so an unallocated
+  result becomes `None`. Other allocatable scalar function results remain
+  blocked, because they have no such completed move.
 - Added a native-entrypoint adoption roadmap for selective direct Fortran
   `bind(C)` calls and the initial direct-only C wrapper backend, including
   conservative starter-contract defaults for ambiguous C pointers.

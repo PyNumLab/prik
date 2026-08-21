@@ -39,7 +39,21 @@ module m
 end module m
 """
     dt = parse_fortran_file(code).modules[0].derived_types[0]
-    assert {"name": "init => t_init", "attrs": ["pass(self)"]} in dt.procedure_bindings
-    assert {"name": "clear", "attrs": ["nopass"]} in dt.procedure_bindings
-    assert {"name": "assignment(=)", "targets": ["init"], "attrs": []} in dt.generic_bindings
-    assert {"name": "setup", "targets": ["init", "clear"], "attrs": ["public"]} in dt.generic_bindings
+    assert {
+        "name": "init => t_init",
+        "attrs": ["pass(self)"],
+        "visibility": "public",
+    } in dt.procedure_bindings
+    assert {"name": "clear", "attrs": ["nopass"], "visibility": "public"} in dt.procedure_bindings
+    assert {
+        "name": "assignment(=)",
+        "targets": ["init"],
+        "attrs": [],
+        "visibility": "public",
+    } in dt.generic_bindings
+    assert {
+        "name": "setup",
+        "targets": ["init", "clear"],
+        "attrs": ["public"],
+        "visibility": "public",
+    } in dt.generic_bindings

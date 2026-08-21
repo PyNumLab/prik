@@ -109,9 +109,11 @@ def emit_module_stubs(
     """Complete and render semantic modules plus opaque dependencies.
 
     Inputs are deep-copied before dependency insertion and policy completion,
-    so callers retain their original semantic modules. The returned mapping is
-    keyed by module name and is normally written into a generated contract
-    package by a pipeline stage.
+    so callers retain their original semantic modules. C-source modules are
+    starter-contract extraction: they preserve parser facts without invoking
+    direct-wrapper policy, which is only required by a build request. The
+    returned mapping is keyed by module name and is normally written into a
+    generated contract package by a pipeline stage.
     """
     source_modules = _module_list(modules)
     emitted_modules: dict[str, SemanticModule] = {}
@@ -128,7 +130,7 @@ def emit_module_stubs(
         existing = {cls.name for cls in target.classes}
         target.classes.extend(cls for cls in dependency.classes if cls.name not in existing)
 
-    complete_semantic_policies(emitted_modules.values())
+    complete_semantic_policies(module for module in emitted_modules.values() if module.origin.source_language != "c")
     return {
         module_name: emit_module(
             module,

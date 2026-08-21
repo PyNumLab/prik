@@ -7,6 +7,7 @@ provide the small runtime constructors documented by prik.
 
 from __future__ import annotations
 
+from abc import abstractmethod as abstractmethod
 from typing import Annotated as Annotated, Any as Any, Final as Final
 
 import numpy as np
@@ -233,6 +234,17 @@ Transfer = _expression
 Value = _expression
 Work = _expression
 
+
+def abstract(target):
+    """Mark a contract class as an abstract native type.
+
+    A class carrying this marker cannot be constructed: the native type is
+    declared ``abstract``, so only its concrete extensions have instances. It
+    is returned unchanged so the contract stays an ordinary Python stub.
+    """
+    return target
+
+
 bind = _decorator
 nogil = _decorator
 native_abi = _decorator
@@ -332,6 +344,8 @@ CONTRACT_SYMBOLS = frozenset(
         "Void",
         "Work",
         "WrappedType",
+        "abstract",
+        "abstractmethod",
         "bind",
         "nogil",
         "native_abi",

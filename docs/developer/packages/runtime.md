@@ -95,7 +95,7 @@ the compiler installs it into a generated `binding_support/` directory.
 | [Pointer runtime tests](../../../tests/fortran/pointers/runtime/) | Association, nullification, pointer descriptors, and views. |
 | [Memory-management runtime tests](../../../tests/fortran/memory_management/runtime/) | Owner retention, release, and array handoffs. |
 | [Native-support tests](../../../tests/fortran/infrastructure/runtime/) | Bundled payload discovery and installation inputs. |
-| [Compiled runtime compatibility](../../../tests/fortran/building_shared_library/end_to_end/test_runtime_compatibility.py) | The payload and Python runtime working through a real extension. |
+| [Compiled runtime compatibility](../../../tests/fortran/infrastructure/building/end_to_end/test_runtime_compatibility.py) | The payload and Python runtime working through a real extension. |
 
 An outstanding zero-copy NumPy view cannot be revoked after native
 reallocation, deallocation, or pointer reassociation. Users must discard or

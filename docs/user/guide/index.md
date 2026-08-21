@@ -64,4 +64,12 @@ the complete rules in one place.
 
 ---
 
+**Checking whether a feature is supported**
+
+Each page below documents its own limitations. For the complete picture in one
+table — including unsupported and partially supported forms — see the
+[language feature matrix](../language-support/feature-matrix.md).
+
+---
+
 Start with **[Data Types](data-types.md)**.

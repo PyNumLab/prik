@@ -12,10 +12,13 @@ from tests.fortran._support.wrapper_build import (
     _sole_native_module,
 )
 from prik import build_pyi_extension
+from tests.fortran._support.paths import FORTRAN_ROOT
 
 NATIVE_CALL_EXAMPLES_F90_SOURCE = (
-    Path(__file__).parents[2]
-    / "pyi_contracts"
+    FORTRAN_ROOT
+    / "infrastructure"
+    / "semantic_pyi"
+    / "contracts"
     / "calls_and_results"
     / "end_to_end"
     / "fixtures"

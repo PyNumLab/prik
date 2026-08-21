@@ -13,6 +13,7 @@ import time
 import numpy as np
 import pytest
 
+from tests.fortran._support.paths import REPO_ROOT
 from tests.fortran._support.wrapper_build import _import_from_build_dir
 from prik import build_pyi_extension
 
@@ -595,7 +596,7 @@ print("cleanup-complete")
             argument,
             poisoned_reader,
         ],
-        cwd=Path(__file__).parents[4],
+        cwd=REPO_ROOT,
         env=environment,
         check=False,
         capture_output=True,

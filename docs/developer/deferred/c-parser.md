@@ -19,8 +19,8 @@ Status: current reference for the partial C frontend. The `prik.parsers.c`
 package, typed parser models, explicit C CLI parse path, raw directive
 metadata, compiler-assisted preprocessing, source-location remapping, project
 indexes, legacy parser schema snapshots, C standard-type probe, first semantic IR conversion
-subset, semantic conversion path, and starter exact-contract C `.pyi`
-generation are implemented.
+subset, semantic conversion path, starter exact-contract C `.pyi` generation,
+and the initial direct-only primitive C wrapper lane are implemented.
 PRIK_C_DOCS_END &#45;&#45;>
 
 <!&#45;&#45; PRIK_C_DOCS_START
@@ -177,6 +177,9 @@ PRIK_C_DOCS_END &#45;&#45;>
   functions, const/mutable pointer storage contracts, declared arrays,
   structs/opaque structs, enums, numeric macro constants, local typedef
   chains, standard-type probe facts, and explicit semantic conversion errors
+- direct-only C wrapper builds for target-probed primitive values, `void`, and
+  author-selected one-level primitive-pointer scalar or NumPy contracts;
+  unsupported C forms receive a pre-planning diagnostic
 PRIK_C_DOCS_END &#45;&#45;>
 
 <!&#45;&#45; PRIK_C_DOCS_START
@@ -850,8 +853,8 @@ Useful local checks for the parse-only frontend:
 ```bash
 python -m prik tests/c/fixtures/native/general/math_api.h &#45;&#45;language c &#45;&#45;parse &#45;&#45;json
 python tests/c/fixtures/parser/generate_c_parser_goldens.py tests/c/fixtures/native/general/math_api.h
-pytest -q tests/c/parsing/test_c_declarations_and_declarators.py
-pytest -q tests/c/parsing/test_c_fixture_suite.py
+pytest -q tests/c/infrastructure/parsing/test_c_declarations_and_declarators.py
+pytest -q tests/c/infrastructure/parsing/test_c_fixture_suite.py
 pytest -q tests/c
 pytest -q
 ```
@@ -861,30 +864,32 @@ Focused test files by implementation area:
 
 <!&#45;&#45; PRIK_C_DOCS_START
 - Lexer, comments, continuations, raw directive handling:
-  `tests/c/parsing/test_c_lexer_preprocessor.py`
+  `tests/c/infrastructure/parsing/test_c_lexer_preprocessor.py`
 - Declaration specifiers, qualifiers, declarators, arrays, pointers,
   callbacks, and variables:
-  `tests/c/parsing/test_c_declarations_and_declarators.py`
+  `tests/c/infrastructure/parsing/test_c_declarations_and_declarators.py`
 - Function prototypes and definitions:
-  `tests/c/parsing/test_c_functions.py`
-- Structs, unions, enums, typedefs, and aggregate members:
-  `tests/c/parsing/test_c_structs_unions_enums_typedefs.py`
+  `tests/c/functions/parsing/test_c_functions.py`
+- Structs, unions, typedefs, and aggregate members:
+  `tests/c/records/parsing/test_c_structs_unions_typedefs.py`
+- Enum declarations and enumerator values:
+  `tests/c/enumerations/parsing/test_c_enum_syntax.py`
 - Project assembly, include graph facts, typedef/tag resolution, and
   redeclarations:
-  `tests/c/parsing/test_c_project_resolution.py`
+  `tests/c/infrastructure/parsing/test_c_project_resolution.py`
 - Compiler extension tolerance and diagnostics:
-  `tests/c/parsing/test_c_compiler_extensions.py`
+  `tests/c/infrastructure/parsing/test_c_compiler_extensions.py`
 - Corpus/third-party-style fixtures:
-  `tests/c/parsing/test_c_corpus.py`
+  `tests/c/infrastructure/parsing/test_c_corpus.py`
 - Project golden fixtures:
-  `tests/c/parsing/test_c_fixture_suite.py`
+  `tests/c/infrastructure/parsing/test_c_fixture_suite.py`
 - Parser JSON shape:
-  `tests/c/parsing/test_c_json_sanity.py`
+  `tests/c/infrastructure/parsing/test_c_json_sanity.py`
 - Fatal parser diagnostic goldens:
-  `tests/c/parsing/test_c_error_fixture_suite.py`
+  `tests/c/infrastructure/parsing/test_c_error_fixture_suite.py`
 - Public API and developer tutorial:
-  `tests/c/parsing/test_c_public_api_skeleton.py` and
-  `tests/c/parsing/test_c_parser_developer_tutorial.py`
+  `tests/c/infrastructure/parsing/test_c_public_api_skeleton.py` and
+  `tests/c/infrastructure/execution_examples/test_c_parser_developer_tutorial.py`
 PRIK_C_DOCS_END &#45;&#45;>
 
 <!&#45;&#45; PRIK_C_DOCS_START
@@ -962,7 +967,7 @@ PRIK_C_DOCS_END &#45;&#45;>
 <!&#45;&#45; PRIK_C_DOCS_START
 For an executable maintainer walkthrough of the parser gateway and
 preprocessed source path, read
-`tests/c/parsing/test_c_parser_developer_tutorial.py`.
+`tests/c/infrastructure/execution_examples/test_c_parser_developer_tutorial.py`.
 PRIK_C_DOCS_END &#45;&#45;>
 
 ## CLI Workflow
@@ -1054,7 +1059,8 @@ source path or source text
   -> CParser._assemble_project(...) or parse_c_project(...)
   -> CProject indexes and cross-file resolution facts
   -> semantics.c2ir conversion
-  -> policy completion and `.pyi`; a C-input runtime wrapper backend comes later
+  -> starter `.pyi` extraction, or completed direct-only primitive C policy
+  -> direct binding generation, C compilation/linking, import, and call
 ```
 PRIK_C_DOCS_END &#45;&#45;>
 
@@ -1069,6 +1075,10 @@ Keep these boundaries:
   they are not recursive parse roots unless supplied by the user.
 - Semantic conversion is the first place where parser-native facts become the
   shared language-neutral model.
+- The runtime lane is deliberately narrow and generates no C adapter.
+  Aggregates, callbacks, variadics, pointer results, nullable or retained
+  pointers, multi-level pointers, `volatile`/atomic access, and unsupported
+  calling conventions fail before planning.
 
 The parser algorithm should remain grammar-style:
 
@@ -1113,13 +1123,13 @@ Testing should grow in this order:
 
 Executable references:
 
-- Shared CLI behavior: `tests/fortran/command_line_interface/pipeline/`
+- Shared CLI behavior: `tests/fortran/infrastructure/cli/pipeline/`
 
 <!&#45;&#45; PRIK_C_DOCS_START
-- C parser walkthrough: `tests/c/parsing/test_c_parser_developer_tutorial.py`
-- C declaration coverage: `tests/c/parsing/test_c_declarations_and_declarators.py`
-- C project/golden workflow: `tests/c/parsing/test_c_fixture_suite.py`
-- C semantic handoff: `tests/c/semantics/conversion/`
+- C parser walkthrough: `tests/c/infrastructure/execution_examples/test_c_parser_developer_tutorial.py`
+- C declaration coverage: `tests/c/infrastructure/parsing/test_c_declarations_and_declarators.py`
+- C project/golden workflow: `tests/c/infrastructure/parsing/test_c_fixture_suite.py`
+- C semantic handoff: `tests/c/*/semantics/`
 PRIK_C_DOCS_END &#45;&#45;>
 
 Fixture layout should be separate from Fortran:
@@ -1159,7 +1169,7 @@ that Linux reference environment.
 The fixture suite also checks same-stem grouping order and representative raw
 preprocessing failures.
 Fatal diagnostic goldens are regenerated with
-`C_PARSER_UPDATE_GOLDENS=1 PYTHONPATH=. pytest -q tests/c/parsing/test_c_error_fixture_suite.py`.
+`C_PARSER_UPDATE_GOLDENS=1 PYTHONPATH=. pytest -q tests/c/infrastructure/parsing/test_c_error_fixture_suite.py`.
 The standalone error generator remains available for targeted refreshes.
 By policy, a paired project records source-to-header include edges but parses
 each supplied `.c`, `.h`, or `.i` member separately; include traversal is not

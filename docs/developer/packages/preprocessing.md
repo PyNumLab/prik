@@ -189,8 +189,8 @@ compiler, rather than PRIK, supplied the fact.
 
 | Evidence | What it establishes |
 | --- | --- |
-| [Fortran preprocessing](../../../tests/fortran/source_preprocessing/preprocessing/) | Adapters, recipes, mappings, native includes, diagnostics, and parser handoffs. |
-| [Parser boundaries](../../../tests/fortran/source_preprocessing/preprocessing/test_parser_boundaries.py) | Prepared source reaches parsing with preserved facts and unsupported raw constructs stop at the correct boundary. |
+| [Fortran preprocessing](../../../tests/fortran/infrastructure/preprocessing/) | Adapters, recipes, mappings, native includes, diagnostics, and parser handoffs. |
+| [Parser boundaries](../../../tests/fortran/infrastructure/preprocessing/test_parser_boundaries.py) | Prepared source reaches parsing with preserved facts and unsupported raw constructs stop at the correct boundary. |
 | [Fortran type probes](../../../tests/fortran/data_types/probes/test_fortran_type_probes.py) | Compiler facts, requirement evaluation, cache separation, and report validation. |
 
 ## Change Routes

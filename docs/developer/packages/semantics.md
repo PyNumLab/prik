@@ -283,11 +283,11 @@ before policy completion or any backend lowering begins.
 
 | Evidence | What it establishes |
 | --- | --- |
-| [Semantic IR conversion](../../../tests/fortran/semantic_ir/semantics/) | Fortran-model conversion, compile-time requirements, specialization, and semantic graph properties. |
+| [Semantic IR conversion](../../../tests/fortran/infrastructure/semantic_ir/semantics/) | Fortran-model conversion, compile-time requirements, specialization, and semantic graph properties. |
 | [Fortran datatype semantics](../../../tests/fortran/data_types/semantics/) | Stable scalar identities, storage facts, and compiler-measurement handoffs. |
-| [Semantic `.pyi` conversion](../../../tests/fortran/semantic_pyi_format/semantics/) | Contract constructs, imports, external references, projections, classes, overloads, and round trips. |
-| [Native array handles](../../../tests/fortran/infrastructure/semantics/test_native_array_handles.py) | Descriptor marking and separation of handle, data, and element facts. |
-| [Native contract validation](../../../tests/fortran/semantic_pyi_format/semantics/test_types_and_values.py) | Native-contract preparation, validation, and diagnostic ownership. |
+| [Semantic `.pyi` conversion](../../../tests/fortran/infrastructure/semantic_pyi/semantics/) | Contract constructs, imports, external references, projections, classes, overloads, and round trips. |
+| [Native array handles](../../../tests/fortran/infrastructure/policy/test_native_array_handles.py) | Descriptor marking and separation of handle, data, and element facts. |
+| [Native contract validation](../../../tests/fortran/infrastructure/semantic_pyi/semantics/test_types_and_values.py) | Native-contract preparation, validation, and diagnostic ownership. |
 
 ## Change Routes
 

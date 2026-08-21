@@ -52,6 +52,44 @@ _PROBE_ENVIRONMENT_VARIABLES = (
 _SAFE_EXPRESSION_RE = re.compile(r"^[A-Za-z0-9_+\-*/().,= :]+$")
 _TOKEN_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
 
+_PROBE_INTRINSIC_NAMES = frozenset(
+    {
+        # Numeric inquiry and kind-selection intrinsics that may appear in a
+        # constant kind or size expression.
+        "bit_size",
+        "digits",
+        "epsilon",
+        "huge",
+        "kind",
+        "len",
+        "maxexponent",
+        "minexponent",
+        "precision",
+        "radix",
+        "range",
+        "selected_char_kind",
+        "selected_int_kind",
+        "selected_real_kind",
+        "size",
+        "storage_size",
+        "tiny",
+        # Conversion and reduction intrinsics used to combine the above.
+        "abs",
+        "ceiling",
+        "floor",
+        "int",
+        "max",
+        "min",
+        "mod",
+        "modulo",
+        "nint",
+        "real",
+        # Constant operands that may appear as intrinsic arguments.
+        "false",
+        "true",
+    }
+)
+
 _ISO_FORTRAN_ENV_NAMES = {
     "int8",
     "int16",
@@ -180,7 +218,7 @@ def fortran_type_probe_expressions(
     seen: set[str] = set()
     for item in requirements:
         expression = str(item.get("expression") or "").strip()
-        if not expression:
+        if not expression or not probe_can_resolve_expression(expression):
             continue
         key = expression.lower()
         if key in seen:
@@ -188,6 +226,20 @@ def fortran_type_probe_expressions(
         seen.add(key)
         expressions.append(expression)
     return expressions
+
+
+def probe_can_resolve_expression(expression: str) -> bool:
+    """Return whether the standalone probe program can evaluate ``expression``.
+
+    The probe is a self-contained program: it can import intrinsic modules but
+    cannot ``use`` a module from the project being analyzed, whose compiled
+    interface does not exist yet. An expression naming a symbol declared
+    elsewhere in the project — a `wp` or `ip` kind parameter, for example — is
+    therefore left for the requirement report rather than compiled into a
+    program that cannot resolve it.
+    """
+    known = _PROBE_INTRINSIC_NAMES | _ISO_FORTRAN_ENV_NAMES | _ISO_C_BINDING_NAMES
+    return all(token.lower() in known for token in _TOKEN_RE.findall(expression))
 
 
 def build_fortran_type_probe_source(expressions: Sequence[str]) -> str:
@@ -718,8 +770,15 @@ def evaluate_fortran_type_facts(
     incomplete.
     """
     requirement_list = list(requirements)
-    expressions = [str(item.get("expression") or "").strip() for item in requirement_list]
-    expressions = [expression for expression in expressions if expression]
+    expressions = [
+        text
+        for item in requirement_list
+        for text in (
+            str(item.get("expression") or "").strip(),
+            str(item.get("precision_expression") or "").strip(),
+        )
+        if text
+    ]
     if not expressions:
         return {}
     active_report = _report_for_expressions(
@@ -742,12 +801,22 @@ def evaluate_fortran_type_facts(
         base_type = str(item.get("base_type") or "").lower()
         raw_kind = item.get("kind")
         kind = None if raw_kind is None else str(raw_kind).lower()
-        facts[(base_type, kind)] = {
+        fact: dict[str, object] = {
             "base_type": base_type,
             "kind": kind,
             "bits": value,
             "expression": expression,
         }
+        precision_expression = str(item.get("precision_expression") or "").strip()
+        if precision_expression:
+            digits = _value_for_expression(active_report.values, precision_expression)
+            if digits is None:
+                raise FortranTypeProbeError(
+                    f"Fortran type probe report is missing required expression {precision_expression!r}"
+                )
+            fact["digits"] = digits
+            fact["precision_expression"] = precision_expression
+        facts[(base_type, kind)] = fact
     return facts
 
 

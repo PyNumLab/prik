@@ -33,7 +33,9 @@ def test_dgemv_no_transpose(prik_blas, f2py_blas):
     assert_allclose_for_dtype(prik_y, expected_y, operation_size=2)
     assert_allclose_for_dtype(f2py_y, expected_y, operation_size=2)
     assert_allclose_for_dtype(prik_y, f2py_y, operation_size=2)
-    assert prik_scalars == (2, 2, alpha, 3, 1, beta, 1)
+    # DGEMV declares no intent on any dummy, so the conservative intent(inout)
+    # default returns every scalar, the TRANS selector included.
+    assert prik_scalars == ("N", 2, 2, alpha, 3, 1, beta, 1)
     assert f2py_result is None
     assert_storage_unchanged(prik_a, matrix)
     assert_storage_unchanged(f2py_a, matrix)

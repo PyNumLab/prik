@@ -61,7 +61,7 @@ It records includes as graph facts; it never follows includes to discover more
 parser inputs.
 
 Executable walkthroughs live in
-``tests/c/parsing/test_c_parser_developer_tutorial.py``.
+``tests/c/infrastructure/execution_examples/test_c_parser_developer_tutorial.py``.
 """
 
 from __future__ import annotations

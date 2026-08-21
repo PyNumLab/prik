@@ -10,7 +10,8 @@ from pathlib import Path
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from tests.fortran._support.paths import REPO_ROOT
+
 COMPILER_ENV = "PRIK_TEST_FORTRAN_COMPILER"
 COMPILER_OPTION = "--prik-fortran-compiler"
 
@@ -53,7 +54,7 @@ TOOLCHAIN_SMOKE_CASES = {
         "test_fortran_generic_interfaces_dispatch_in_generated_c_extension[source]"
     ): ToolchainSmokeCase("generic_overload_dispatch", "compiled_generic_module"),
     (
-        "tests/fortran/semantic_pyi_format/end_to_end/test_authoritative_contract_runtime.py::"
+        "tests/fortran/infrastructure/semantic_pyi/end_to_end/test_authoritative_contract_runtime.py::"
         "test_generated_contract_rebuilds_without_native_source_fallback"
     ): ToolchainSmokeCase("source_generated_pyi_rebuild", "compiled_contract_rebuild"),
 }
@@ -141,14 +142,9 @@ def _relative_test_path(item: pytest.Item) -> Path:
     return Path(str(item.path)).resolve().relative_to(REPO_ROOT)
 
 
-def _is_fortran_feature_end_to_end(item: pytest.Item) -> bool:
+def _is_fortran_end_to_end(item: pytest.Item) -> bool:
     parts = _relative_test_path(item).parts
-    return (
-        len(parts) >= 5
-        and parts[:2] == ("tests", "fortran")
-        and parts[2] not in {"_support", "infrastructure"}
-        and "end_to_end" in parts[3:-1]
-    )
+    return len(parts) >= 5 and parts[:2] == ("tests", "fortran") and "end_to_end" in parts[3:-1]
 
 
 def _is_platform_mark(name: str) -> bool:
@@ -159,8 +155,8 @@ def _validate_smoke_item(item: pytest.Item, errors: list[str]) -> None:
     marker = item.get_closest_marker("toolchain_smoke")
     if marker is None:
         return
-    if not _is_fortran_feature_end_to_end(item):
-        errors.append(f"toolchain_smoke is outside a feature end_to_end directory: {item.nodeid}")
+    if not _is_fortran_end_to_end(item):
+        errors.append(f"toolchain_smoke is outside a Fortran end_to_end directory: {item.nodeid}")
     if item.get_closest_marker("fortran_end_to_end") is None:
         errors.append(f"toolchain_smoke lacks fortran_end_to_end: {item.nodeid}")
     if marker.args or set(marker.kwargs) != {"mechanism", "build_fixture"}:
@@ -197,7 +193,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
     errors = []
     for item in items:
-        is_end_to_end = _is_fortran_feature_end_to_end(item)
+        is_end_to_end = _is_fortran_end_to_end(item)
         has_end_to_end_mark = item.get_closest_marker("fortran_end_to_end") is not None
         if is_end_to_end != has_end_to_end_mark:
             errors.append(

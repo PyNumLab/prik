@@ -22,6 +22,7 @@ ROOT = Path(__file__).parents[2]
 DOC_PATHS = [
     ROOT / "README.md",
     ROOT / "examples/blas/README.md",
+    ROOT / "examples/bspline/README.md",
     ROOT / "examples/fftpack/README.md",
     ROOT / "examples/lapack/README.md",
     ROOT / "examples/minpack/README.md",

@@ -39,7 +39,7 @@ python3 -m pip install prik
 
 Create `scale.f90`:
 
-<!-- prik-doc-source: tests/fortran/building_shared_library/end_to_end/fixtures/native/scale.f90 -->
+<!-- prik-doc-source: tests/fortran/infrastructure/building/end_to_end/fixtures/native/scale.f90 -->
 ```fortran
 real(8) function scale(value, factor) result(output)
   real(8), intent(in) :: value

@@ -23,7 +23,13 @@ extension initialization, and generated Python surfaces. The entrypoint view
 owns the C ABI prototype and call. The generator may select local names and
 the necessary C syntax, but never reads adapter-local conversion or original
 Fortran invocation facts and never chooses ownership, optionality, storage, or
-conversion policy.
+conversion policy. For a completed direct-C entrypoint, the plan supplies the
+preserved C declaration spelling for every parameter and result; binding emits
+that spelling and calls the user symbol directly. It does not rebuild a nearby
+C type from a NumPy dtype or emit a C adapter source. When the plan preserved
+no spelling — a source-free contract has no declaration text — the generator
+composes the canonical spelling from the completed scalar identity and pointer
+depth, and includes the standard header a preserved typedef spelling needs.
 
 Ordinary functions use their function-owned entrypoint. Every other externally
 linked generated call is looked up in the generated support procedure registry.
@@ -204,6 +210,8 @@ print(CSourcePrinter().doprint(wrapper))
 ```
 <!-- prik-doc-test-output -->
 ```text
+/* Python callable 'ping'. */
+/* Calls the native entrypoint 'bind_c_ping'. */
 static PyObject * wrap_ping(PyObject * self, PyObject * args, PyObject * kwargs) {
     static char * kwlist[] = {NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwargs, "", kwlist)) return NULL;
@@ -241,6 +249,8 @@ static PyObject * wrap_double_value(PyObject * self, PyObject * args, PyObject *
 #endif /* BINDING_DEMO_WRAPPER_H */
 
 Rendered C binding wrapper:
+/* Python callable 'double_value'. */
+/* Calls the native entrypoint 'bind_c_double_value'. */
 static PyObject * wrap_double_value(PyObject * self, PyObject * args, PyObject * kwargs) {
     static char * kwlist[] = {"value", NULL};
     PyObject * bound_value_obj;
@@ -260,7 +270,8 @@ static PyObject * wrap_double_value(PyObject * self, PyObject * args, PyObject *
 The header exposes the planned entrypoint prototype. The wrapper's rendered
 body shows the Python-to-entrypoint call and conversion back to a NumPy scalar
 result. Policy may route that forward call to an original Fortran `bind(C)`
-symbol or a generated Fortran adapter. Binding-owned callback trampolines are
+symbol, a generated Fortran adapter, or the completed user C symbol in the
+direct-only primitive lane. Binding-owned callback trampolines are
 reverse-call entrypoints used by adapter-local callback procedures.
 
 ## Change Routes And Evidence

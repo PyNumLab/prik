@@ -240,6 +240,7 @@ class CFunction(StageRecord):
         ...,
     ] = ()
     storage: str | None = None
+    doc: tuple[str, ...] = ()
 
 
 @dataclass
@@ -450,6 +451,7 @@ class FortranFunction(StageRecord):
     ] = ()
     is_subroutine: bool = False
     internal_procedures: tuple[FortranFunction, ...] = ()
+    doc: tuple[str, ...] = ()
 
 
 @dataclass

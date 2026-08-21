@@ -169,7 +169,10 @@ def test_raw_array_plan_edits_fail_before_backend_lowering(edit: str, diagnostic
     elif edit == "shape-role":
         argument.array.extent_reference_roles = (("edited.missing:value",),)
     elif edit == "element-family":
-        argument.semantic_type_name = "UInt8"
+        # A semantic scalar name policy knows but backend lowering has no
+        # spelling for. Unsigned widths became first-lane scalars, so this
+        # names one that is still unlowered.
+        argument.semantic_type_name = "Float16"
     elif edit == "character-length":
         argument.array.itemsize = None
     else:

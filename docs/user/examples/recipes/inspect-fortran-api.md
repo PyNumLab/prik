@@ -14,7 +14,7 @@ building a wrapper.
 
 ## Input
 
-<!-- prik-doc-source: tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90 -->
+<!-- prik-doc-source: tests/fortran/infrastructure/parsing/fixtures/general/basic_subroutine.f90 -->
 ```fortran
 module m1
 contains
@@ -29,14 +29,14 @@ end module m1
 
 <!-- prik-doc-test: exact -->
 ```bash
-python3 -m prik parse tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
+python3 -m prik parse tests/fortran/infrastructure/parsing/fixtures/general/basic_subroutine.f90
 ```
 
 Expected output:
 
 <!-- prik-doc-test-output -->
 ```text
-File: tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
+File: tests/fortran/infrastructure/parsing/fixtures/general/basic_subroutine.f90
   Modules: 1
     - module m1 (vars=0, uses=0)
       Procedures: 1
@@ -47,14 +47,14 @@ File: tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
 
 <!-- prik-doc-test: exact -->
 ```bash
-python3 -m prik generate --pyi tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
+python3 -m prik generate --pyi tests/fortran/infrastructure/parsing/fixtures/general/basic_subroutine.f90
 ```
 
 Expected output:
 
 <!-- prik-doc-test-output -->
 ```python
-File: tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
+File: tests/fortran/infrastructure/parsing/fixtures/general/basic_subroutine.f90
 Root contract: basic_subroutine/basic_subroutine.pyi
 from . import m1
 

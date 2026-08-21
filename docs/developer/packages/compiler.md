@@ -185,9 +185,9 @@ and conditional support installation.
 
 | Evidence | What it establishes |
 | --- | --- |
-| [Compiler profile and command construction](../../../tests/fortran/building_shared_library/compiling/test_compiler_verbose.py) | Coherent C/Fortran driver selection, explicit overrides, profile and user-flag order, optional-flag probing, record-only mode, and preserved link-input order. |
-| [Generated-wrapper build handoff](../../../tests/fortran/building_shared_library/pipeline/test_generated_wrapper_build.py) | Generated sources, conditional support installation, explicit C and Fortran object requests, and the final ordered link request passed from the pipeline. |
-| [Source build modes](../../../tests/fortran/building_shared_library/end_to_end/test_source_build_modes.py) | The selected source-build mode produces an importable native extension. |
+| [Compiler profile and command construction](../../../tests/fortran/infrastructure/building/compiling/test_compiler_verbose.py) | Coherent C/Fortran driver selection, explicit overrides, profile and user-flag order, optional-flag probing, record-only mode, and preserved link-input order. |
+| [Generated-wrapper build handoff](../../../tests/fortran/infrastructure/building/pipeline/test_generated_wrapper_build.py) | Generated sources, conditional support installation, explicit C and Fortran object requests, and the final ordered link request passed from the pipeline. |
+| [Source build modes](../../../tests/fortran/infrastructure/building/end_to_end/test_source_build_modes.py) | The selected source-build mode produces an importable native extension. |
 | [Native-support surface](../../../tests/fortran/infrastructure/runtime/test_native_support.py) | The bundled payload remains header-only and exposes the small native binding API expected by generated sources. |
 
 ## Change Routes

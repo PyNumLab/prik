@@ -19,7 +19,7 @@ need to inspect module variables and derived-type fields:
 
 <!-- prik-doc-test: run -->
 ```bash
-python3 -m prik parse tests/fortran/source_parsing/parsing/fixtures/general/modern_pyi_example.f90 \
+python3 -m prik parse tests/fortran/infrastructure/parsing/fixtures/general/modern_pyi_example.f90 \
   --show-vars
 ```
 
@@ -29,7 +29,7 @@ Use `--print-limit` to keep long reports readable while preserving totals:
 
 <!-- prik-doc-test: exact -->
 ```bash
-python3 -m prik parse tests/fortran/source_parsing/parsing/fixtures/general/modern_pyi_example.f90 \
+python3 -m prik parse tests/fortran/infrastructure/parsing/fixtures/general/modern_pyi_example.f90 \
   --show-vars --print-limit 1
 ```
 
@@ -37,7 +37,7 @@ Expected output:
 
 <!-- prik-doc-test-output -->
 ```text
-File: tests/fortran/source_parsing/parsing/fixtures/general/modern_pyi_example.f90
+File: tests/fortran/infrastructure/parsing/fixtures/general/modern_pyi_example.f90
   Modules: 1
     - module modern_math_physics (vars=2, uses=0)
       Variables: 2
@@ -60,7 +60,7 @@ Choose one inspection stage per command. For parser details, run:
 
 <!-- prik-doc-test: run -->
 ```bash
-python3 -m prik parse tests/fortran/source_parsing/parsing/fixtures/general/basic_subroutine.f90
+python3 -m prik parse tests/fortran/infrastructure/parsing/fixtures/general/basic_subroutine.f90
 ```
 
 ## Notes

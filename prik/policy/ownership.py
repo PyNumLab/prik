@@ -264,12 +264,15 @@ class AssignmentMode(str, Enum):
 
     Values:
         ``NONE`` emits no native assignment. ``VALUE_COPY`` copies the incoming
-        value into existing native storage. ``ALIAS`` associates the
+        value into existing native storage. ``CHARACTER_COPY`` copies an
+        incoming fixed-width byte buffer into existing native character
+        storage, which has no by-value C ABI. ``ALIAS`` associates the
         destination with existing storage rather than copying it.
     """
 
     NONE = "none"
     VALUE_COPY = "value_copy"
+    CHARACTER_COPY = "character_copy"
     ALIAS = "alias"
 
 
@@ -455,6 +458,7 @@ _STANDARD_SCALAR_TYPES = frozenset(
         "Char",
         "Complex64",
         "Complex128",
+        "Complex256",
         "Float16",
         "Float32",
         "Float64",
@@ -464,6 +468,7 @@ _STANDARD_SCALAR_TYPES = frozenset(
         "Int16",
         "Int32",
         "Int64",
+        "SizeT",
         "UInt",
         "UInt8",
         "UInt16",
@@ -617,6 +622,75 @@ def ownership_context_for_argument(function: Any, argument: Any) -> OwnershipCon
         writes_argument=writes_argument,
         projects_result=projects_result,
         python_visible=python_visible,
+    )
+
+
+def uses_deferred_character_length(metadata: Mapping[str, Any] | None) -> bool:
+    """Return whether one character value declares a deferred length parameter.
+
+    A ``character(len=:)`` dummy is not interoperable, so no ``bind(C)``
+    interface can declare it and the generated Fortran adapter must build the
+    local the native dummy requires.  Assumed length (``character(len=*)``) is
+    a different form and stays fixed-length here.
+    """
+    return bool(metadata) and metadata.get("fortran_character_length") == ":"
+
+
+def declared_character_length(metadata: Mapping[str, Any] | None) -> int | None:
+    """Return a positive fixed Fortran character length, normalizing accepted spellings.
+
+    A deferred (``:``) or assumed (``*``) length is not a declared width and
+    returns ``None``, as does any spelling that is not a positive integer.
+    """
+    value = (metadata or {}).get("fortran_character_length")
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    text = str(value).strip()
+    return int(text) if text.isdigit() and int(text) > 0 else None
+
+
+def _has_declared_character_length(variable: Any) -> bool:
+    """Return whether one character variable declares a positive fixed width."""
+    metadata = getattr(getattr(variable, "semantic_type", None), "metadata", None)
+    return declared_character_length(metadata) is not None
+
+
+def character_descriptor_kind(metadata: Mapping[str, Any] | None) -> str | None:
+    """Return the ``allocatable`` or ``pointer`` attribute one character value declares.
+
+    The attribute belongs to the native dummy, not to the C ABI: a scalar
+    character argument still crosses as a byte buffer and a length either way.
+    What it decides is the adapter local, which must carry the same attribute
+    before the original dummy will accept it.
+    """
+    values = metadata or {}
+    if values.get("fortran_allocatable"):
+        return "allocatable"
+    if values.get("fortran_pointer"):
+        return "pointer"
+    return None
+
+
+def is_character_descriptor_update(
+    metadata: Mapping[str, Any] | None,
+    decision: OwnershipDecision,
+) -> bool:
+    """Report whether one completed argument decision is the string update lane.
+
+    The lane is the shape that is both caller-supplied and returns native
+    storage the procedure may have replaced: an ``allocatable`` or ``pointer``
+    character dummy that native code reads and may reallocate or reassociate.
+    Its input stays an ordinary call-local character buffer, so the replaced
+    value needs a second completed decision for the projected result facet.
+    """
+    return bool(
+        character_descriptor_kind(metadata)
+        and decision.kind is ObjectKind.STRING
+        and decision.codegen_action is CodegenAction.CALL_LOCAL_INPUT
+        and decision.projects_result
+        and decision.python_visible
     )
 
 
@@ -927,7 +1001,7 @@ class OwnershipPolicyResolver:
             assignment_mode=(
                 AssignmentMode.ALIAS if storage.storage_mode is StorageMode.ALIAS else AssignmentMode.VALUE_COPY
             ),
-            setter_action=self._setter_action(storage, incoming, context),
+            setter_action=self._setter_action(storage, incoming, context, variable),
         )
 
     @staticmethod
@@ -935,6 +1009,7 @@ class OwnershipPolicyResolver:
         storage: OwnershipDecision,
         incoming: OwnershipDecision,
         context: OwnershipContext,
+        variable: Any = None,
     ) -> SetterAction:
         """Select Python setter exposure from completed storage and incoming policy.
 
@@ -947,6 +1022,15 @@ class OwnershipPolicyResolver:
                 return SetterAction.REJECT_REPLACEMENT
             return SetterAction.WRITE_THROUGH
         if storage.kind is ObjectKind.STRING and context.is_field:
+            return SetterAction.WRITE_THROUGH
+        # A character module variable is written through the same fixed-width
+        # buffer a field uses, so it needs a declared width to write into.
+        # An assumed length has none, and keeps the rejecting setter.
+        if (
+            storage.kind is ObjectKind.STRING
+            and context.is_module_variable
+            and _has_declared_character_length(variable)
+        ):
             return SetterAction.WRITE_THROUGH
         if storage.kind is ObjectKind.DERIVED_TYPE and context.is_module_variable:
             return SetterAction.REJECT_REPLACEMENT
@@ -1328,6 +1412,9 @@ class OwnershipPolicyResolver:
             return None
 
         storage = StorageMode.HEAP if facts.allocatable else StorageMode.ALIAS
+        update = OwnershipPolicyResolver._character_descriptor_update_decision(facts, context, storage)
+        if update is not None:
+            return update
         if context.is_result:
             return OwnershipDecision(
                 ObjectKind.STRING,
@@ -1356,6 +1443,48 @@ class OwnershipPolicyResolver:
                 reason="hidden scalar string descriptor output is copied before native descriptor release",
             )
         return None
+
+    @staticmethod
+    def _character_descriptor_update_decision(
+        facts: _StorageFacts,
+        context: OwnershipContext,
+        storage: StorageMode,
+    ) -> OwnershipDecision | None:
+        """Return update policy for one caller-supplied allocatable or pointer string.
+
+        A descriptor dummy that native code both reads and may replace cannot
+        travel as one caller buffer in each direction: an ``allocatable`` dummy
+        may be reallocated to a length the caller never sized, and a ``pointer``
+        dummy may be reassociated with storage the caller never supplied.  The
+        input therefore stays an ordinary call-local character buffer and the
+        projected result carries whatever the dummy holds afterwards, so the
+        Python caller supplies a ``str`` and receives the replaced value.  A
+        character dummy with no descriptor attribute keeps its copy-in/copy-out
+        replacement, whose single buffer is wide enough by construction.
+        """
+        if not (
+            context.is_argument
+            and (facts.allocatable or facts.pointer)
+            and context.reads_argument
+            and context.writes_argument
+            and context.projects_result
+            and context.python_visible
+        ):
+            return None
+        return OwnershipDecision(
+            ObjectKind.STRING,
+            OwnershipOwner.CALLER,
+            TransferMode.CALL_LOCAL,
+            DestructionPolicy.CALL_LOCAL,
+            storage_mode=storage,
+            boundary_storage_mode=storage,
+            mutates_native=True,
+            projects_result=True,
+            reason=(
+                "string descriptor update converts one call-local input and returns "
+                "the replaced value through a projected descriptor result"
+            ),
+        )
 
     @staticmethod
     def _scalar_string_storage_decision(context: OwnershipContext) -> OwnershipDecision:
@@ -2061,7 +2190,14 @@ class OwnershipPolicyResolver:
             # handoff policy.  Their association and writeback rules do not
             # use the older scalar/array descriptor projection lane below.
             return None
-        supported_scalar_write = facts.rank == 0 and decision.descriptor_boundary and context.projects_result
+        # A rank-zero pointer write is completed either as a hidden descriptor
+        # output or as the caller-supplied string update, which returns the
+        # possibly reassociated value through its own projected result.
+        supported_scalar_write = (
+            facts.rank == 0
+            and context.projects_result
+            and (decision.descriptor_boundary or decision.kind is ObjectKind.STRING)
+        )
         if context.writes_argument and not supported_scalar_write:
             return "pointer output and reassociation code generation is not implemented"
         if not context.writes_argument and decision.transfer is not TransferMode.CALL_LOCAL:

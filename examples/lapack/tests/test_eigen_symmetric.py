@@ -156,7 +156,9 @@ def test_dsbevx_selects_all_symmetric_band_eigenpairs(prik_lapack, scipy_lapack,
 
     assert f2py_result is None
     assert prik_scalars[-1] == scipy_info == 0
-    assert prik_scalars[10] == scipy_m == 2
+    # Character selectors are returned too, so the projected scalars sit at
+    # their native-argument positions in the returned tuple.
+    assert prik_scalars[12] == scipy_m == 2
     _assert_eigensystem(matrix, prik_w, prik_z)
     _assert_eigensystem(matrix, f2py_w, f2py_z)
     _assert_eigensystem(matrix, scipy_w, scipy_z)
@@ -216,8 +218,10 @@ def test_dstebz_bisects_tridiagonal_eigenvalues(prik_lapack, scipy_lapack, f2py_
 
     assert f2py_result is None
     assert prik_scalars[-1] == scipy_info == 0
-    prik_m = int(prik_scalars[6])
-    prik_nsplit = int(prik_scalars[7])
+    # Character selectors are returned too, so the projected scalars sit at
+    # their native-argument positions in the returned tuple.
+    prik_m = int(prik_scalars[8])
+    prik_nsplit = int(prik_scalars[9])
     assert prik_m == scipy_m == 2
     assert prik_nsplit == 1
     assert_allclose_float64(prik_w[:2], [2.0, 3.0])
@@ -344,7 +348,9 @@ def test_dstemr_computes_robust_tridiagonal_eigenpairs(prik_lapack, scipy_lapack
 
     assert f2py_result is None
     assert prik_scalars[-1] == scipy_info == 0
-    assert prik_scalars[5] == scipy_m == 2
+    # Character selectors are returned too, so the projected scalars sit at
+    # their native-argument positions in the returned tuple.
+    assert prik_scalars[7] == scipy_m == 2
     _assert_eigensystem(matrix, prik_w, prik_z)
     _assert_eigensystem(matrix, f2py_w, f2py_z)
     _assert_eigensystem(matrix, scipy_w, scipy_z)
@@ -427,7 +433,9 @@ def test_dsyev_returns_orthonormal_eigenvectors(prik_lapack, scipy_lapack, f2py_
     f2py_result = f2py_lapack.dsyev(b"V", b"U", 2, f2py_vectors, f2py_w, np.empty(16), 16, 0)
     scipy_w, scipy_vectors, scipy_info = scipy_lapack.dsyev(matrix.copy(order="F"), compute_v=1, lower=0, lwork=16)
 
-    assert prik_scalars == (2, 2, 16, 0)
+    # LAPACK declares no intent on its dummies, so the conservative
+    # intent(inout) default returns every scalar, character selectors included.
+    assert prik_scalars == ("V", "U", 2, 2, 16, 0)
     assert f2py_result is None
     assert scipy_info == 0
     for values, vectors in (
@@ -529,7 +537,9 @@ def test_dsyevr_selects_symmetric_eigenpairs_by_index(prik_lapack, scipy_lapack,
 
     assert f2py_result is None
     assert prik_scalars[-1] == scipy_info == 0
-    assert prik_scalars[8] == scipy_m == 2
+    # Character selectors are returned too, so the projected scalars sit at
+    # their native-argument positions in the returned tuple.
+    assert prik_scalars[10] == scipy_m == 2
     _assert_eigensystem(matrix, prik_w, prik_z)
     _assert_eigensystem(matrix, f2py_w, f2py_z)
     _assert_eigensystem(matrix, scipy_w, scipy_z)
@@ -590,7 +600,9 @@ def test_dsyevx_selects_symmetric_eigenpairs_by_value(prik_lapack, scipy_lapack,
 
     assert f2py_result is None
     assert prik_scalars[-1] == scipy_info == 0
-    assert prik_scalars[8] == scipy_m == 2
+    # Character selectors are returned too, so the projected scalars sit at
+    # their native-argument positions in the returned tuple.
+    assert prik_scalars[10] == scipy_m == 2
     _assert_eigensystem(matrix, prik_w, prik_z)
     _assert_eigensystem(matrix, f2py_w, f2py_z)
     _assert_eigensystem(matrix, scipy_w, scipy_z)

@@ -12,10 +12,9 @@ from tests.fortran._support.wrapper_build import (
     _sole_native_module,
 )
 from prik import build_pyi_extension
+from tests.fortran._support.paths import FORTRAN_ROOT
 
-FINALIZER_SOURCE = (
-    Path(__file__).parents[2] / "derived_types" / "end_to_end" / "fixtures" / "fborrowed_finalizer_f90.f90"
-)
+FINALIZER_SOURCE = FORTRAN_ROOT / "derived_types" / "end_to_end" / "fixtures" / "fborrowed_finalizer_f90.f90"
 FINALIZER_CONTRACT = Path(__file__).parent / "fixtures" / "edited_contracts" / "borrowed_owner" / "__init__.pyi"
 pytestmark = pytest.mark.fortran_end_to_end
 

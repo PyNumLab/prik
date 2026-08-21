@@ -224,6 +224,45 @@ print(points.point.__init__.__doc__)
 
 ---
 
+## Which Constructor You Get
+
+The Fortran source decides which constructor the generated class publishes:
+
+| Source | Generated Python constructor |
+| --- | --- |
+| No user constructor | Keyword-field `__init__` over the public components |
+| `interface <typename>` present | Overloaded `__init__` from its specific functions |
+| Edited `.pyi` | Exactly what the contract declares |
+
+An interface named for a derived type is that type's constructor, so its
+specifics become the accepted signatures:
+
+```fortran
+type, public :: box
+  integer(4) :: count = 0
+  real(8) :: value = 0.0d0
+end type box
+
+interface box
+  module procedure box_empty, box_from_count, box_from_value
+end interface box
+```
+
+```python
+box()                      # box_empty
+box(np.int32(7))           # box_from_count
+box(np.float64(2.5))       # box_from_value
+box("unsupported")         # TypeError: no matching overload for __init__
+```
+
+Each specific may be `private` in its module — the type name is public and
+resolves to the same procedure, so the generated wrapper calls through it.
+
+When a constructor interface exists it replaces the keyword-field form, and the
+generated contract states only the signatures the class actually accepts.
+
+---
+
 ## Custom Constructor
 
 The default constructor assigns public fields directly. If the native module
@@ -318,6 +357,40 @@ item.move(np.float64(2.0), np.float64(3.0))
 To expose only the method, import `private` and add `@private` to the
 module-level declaration.
 
+## What The Source Already Hides
+
+prik reads the accessibility a type declares and does not publish what the type
+keeps to itself, so a contract is not needed to hide internals:
+
+```fortran
+module solver
+  implicit none
+  private                      ! module default
+
+  type,public :: state         ! exported despite the module default
+    private                    ! components default to private
+    real(8) :: work(8) = 0.0d0 ! internal, not a Python attribute
+    integer(4),public :: steps = 0
+  contains
+    private                    ! bindings default to private
+    procedure :: advance_once  ! internal, not a Python method
+    procedure,public :: run => advance_once
+  end type state
+end module solver
+```
+
+The generated `state` class exposes `steps` and `run` only. Each rule is the
+Fortran one:
+
+| Declaration | Effect on the Python class |
+| --- | --- |
+| `type, public ::` | Exported, even when the module defaults to `private` |
+| `type, private ::` | Not exported, even when the module defaults to `public` |
+| `private` before `contains` | Components default to hidden |
+| `private` after `contains` | Type-bound procedures default to hidden |
+| `integer, public ::` on a component | Published regardless of the type default |
+| `procedure, public ::` on a binding | Published regardless of the type default |
+
 The class docstring now lists `move(dx, dy) -> None` under `Methods`.
 `points.point.move.__doc__` contains its complete parameter and return details.
 
@@ -395,6 +468,60 @@ print(shapes.describe_shape(shape))  # about 12.5664
 This polymorphic boundary is intentionally limited to required scalar inputs.
 Polymorphic outputs, mutable arguments, arrays, allocatable or pointer scalars,
 and unlimited polymorphism (`class(*)`) are not supported.
+
+---
+
+## Abstract Types And Deferred Bindings
+
+A `type, abstract ::` declaration has no instances, so its Python class has no
+constructor. Its extensions are ordinary Python subclasses, and a deferred
+binding resolves through the object you actually hold.
+
+```fortran
+type, public, abstract :: shape_base
+  private
+  integer(4) :: sides = 0
+contains
+  private
+  procedure(area_interface), deferred, public :: area
+  procedure, public, non_overridable :: side_count => shape_side_count
+end type shape_base
+
+type, extends(shape_base), public :: circle
+  real(8) :: radius = 1.0d0
+contains
+  procedure, public :: area => circle_area
+end type circle
+```
+
+```python
+import numpy as np
+import shapes.abstract_hierarchy as shapes
+
+shapes.shape_base()
+# TypeError: shape_base is an abstract native type and cannot be instantiated;
+#            create one of its concrete extensions instead
+
+circle = shapes.circle(radius=np.float64(2.0))
+print(circle.area())                       # 12.566370614
+print(circle.side_count())                 # 0, from the abstract base
+print(isinstance(circle, shapes.shape_base))  # True
+```
+
+The rules follow the Fortran declaration:
+
+| Fortran | Python |
+| --- | --- |
+| `type, abstract ::` | Class with no constructor; instantiating it raises `TypeError` |
+| `type, extends(base) ::` | Subclass of the base's generated class |
+| `procedure(iface), deferred ::` | Declared on the base, resolved by the object's own type |
+| `procedure, non_overridable ::` | Ordinary inherited method |
+| Component of an abstract type | Reached through the extension that inherits it |
+
+A deferred binding needs no Python-side dispatch: the generated adapter converts
+the object's address to its own concrete type and lets Fortran resolve the
+override. The same applies when a procedure takes `class(base)` — the boundary
+is still limited to required scalar inputs, as above.
 
 ---
 

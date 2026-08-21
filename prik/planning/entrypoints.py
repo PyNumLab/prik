@@ -34,6 +34,7 @@ from .models import (
     ArgumentTransferPlan,
     CallbackHandoffPlan,
     CallbackTransferPlan,
+    DatatypeFamily,
     DerivedFieldPlan,
     DerivedMemberPathPlan,
     DerivedTypePlan,
@@ -335,6 +336,7 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             pointer_depth=1,
             semantic_type_name=semantic_type_name,
             rank=handle.array.rank,
+            character_length=handle.array.itemsize if semantic_type_name == "String" else None,
             descriptor_kind=handle.descriptor_kind,
             intent=intent,
         )
@@ -568,6 +570,11 @@ class _GeneratedSupportProcedureEntrypointBuilder:
     ) -> tuple[GeneratedSupportProcedureEntrypointPlan, ...]:
         operations = []
         for derived in self.derived_types:
+            # An abstract type has no instance to address, so it publishes no
+            # accessor of its own; each concrete extension already generates one
+            # for every component it inherits.
+            if derived.abstract:
+                continue
             for field in derived.fields:
                 operations.extend(self._field_operations(derived, field, "direct"))
         for variable in self.variables:
@@ -906,10 +913,26 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                 ModuleGetterAction.BORROWED_ARRAY_VIEW,
                 ModuleGetterAction.NATIVE_CONSTANT_ARRAY_VALUE,
             }:
-                parameters = tuple(
-                    self._int64_parameter(f"extent_{axis}", reference=True, intent="out")
-                    for axis in range(variable.array.rank)
+                # A character element reports the width its own declaration
+                # carries, which for a parameter may come from an initializer.
+                width = (
+                    (self._int64_parameter("itemsize", reference=True, intent="out"),)
+                    if variable.datatype_family is DatatypeFamily.STRING
+                    else ()
                 )
+                parameters = (
+                    *width,
+                    *(
+                        self._int64_parameter(f"extent_{axis}", reference=True, intent="out")
+                        for axis in range(variable.array.rank)
+                    ),
+                )
+                result = self._opaque_result()
+            elif (
+                variable.bridge.native_getter_action is ModuleGetterAction.NULLABLE_SNAPSHOT
+                and variable.datatype_family is DatatypeFamily.STRING
+            ):
+                parameters = (self._int64_parameter("length", reference=True, intent="out"),)
                 result = self._opaque_result()
             elif variable.bridge.native_getter_action in {
                 ModuleGetterAction.NULLABLE_SNAPSHOT,
@@ -917,6 +940,19 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             }:
                 parameters = ()
                 result = self._opaque_result()
+            elif variable.bridge.native_getter_action is ModuleGetterAction.CHARACTER_VALUE:
+                # A character value has no by-value C ABI, so it copies out
+                # through the same fixed-width buffer a character field uses.
+                parameters = (
+                    self._value(
+                        "value",
+                        NativeEntrypointABIValueKind.CHARACTER,
+                        pointer_depth=1,
+                        character_length=variable.character_length,
+                        intent="out",
+                    ),
+                )
+                result = self._void_result()
             else:
                 parameters = ()
                 result = self._scalar_result(variable.semantic_type_name)
@@ -930,12 +966,23 @@ class _GeneratedSupportProcedureEntrypointBuilder:
                 )
             )
         if variable.entrypoint.setter_role is not None:
+            if variable.bridge.native_getter_action is ModuleGetterAction.CHARACTER_VALUE:
+                value = self._value(
+                    "value",
+                    NativeEntrypointABIValueKind.CHARACTER,
+                    pointer_depth=1,
+                    const=True,
+                    character_length=variable.character_length,
+                    intent="in",
+                )
+            else:
+                value = self._scalar_parameter(variable.semantic_type_name)
             operations.append(
                 self._operation(
                     variable.owner_path,
                     "module:set",
                     f"bind_c_set_{variable.symbol_name}",
-                    (self._scalar_parameter(variable.semantic_type_name),),
+                    (value,),
                 )
             )
         return tuple(operations)
