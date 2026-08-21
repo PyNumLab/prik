@@ -67,7 +67,9 @@ def test_dgges_computes_generalized_real_schur_form(prik_lapack, scipy_lapack):
     )
 
     assert prik_scalars[-1] == scipy_info == 0
-    assert prik_scalars[4] == scipy_sdim == 0
+    # Character selectors are returned too, so the projected scalars sit at
+    # their native-argument positions in the returned tuple.
+    assert prik_scalars[7] == scipy_sdim == 0
     for s, t, ar, ai, beta, q, z in (
         (prik_a, prik_b, prik_ar, prik_ai, prik_beta, prik_vsl, prik_vsr),
         (scipy_a, scipy_b, scipy_ar, scipy_ai, scipy_beta, scipy_vsl, scipy_vsr),
@@ -276,7 +278,9 @@ def test_dsygvx_selects_generalized_eigenpairs(prik_lapack, scipy_lapack, f2py_l
 
     assert f2py_result is None
     assert prik_scalars[-1] == scipy_info == 0
-    assert prik_scalars[9] == scipy_m == 2
+    # Character selectors are returned too, so the projected scalars sit at
+    # their native-argument positions in the returned tuple.
+    assert prik_scalars[12] == scipy_m == 2
     _assert_generalized_eigenpairs(a, b, prik_w, prik_z)
     _assert_generalized_eigenpairs(a, b, f2py_w, f2py_z)
     _assert_generalized_eigenpairs(a, b, scipy_w, scipy_z)

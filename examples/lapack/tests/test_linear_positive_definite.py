@@ -346,7 +346,9 @@ def test_dpstf2_reconstructs_pivoted_cholesky(prik_lapack, scipy_lapack, f2py_la
 
     assert f2py_result is None
     assert prik_scalars[-1] == scipy_info == 0
-    assert prik_scalars[2] == scipy_rank == 1
+    # Character selectors are returned too, so the projected scalars sit at
+    # their native-argument positions in the returned tuple.
+    assert prik_scalars[3] == scipy_rank == 1
     assert_allclose_float64(prik_a.T @ prik_a, matrix)
     assert_allclose_float64(f2py_a.T @ f2py_a, matrix)
     assert_allclose_float64(scipy_a.T @ scipy_a, matrix)
@@ -367,7 +369,9 @@ def test_dpstrf_reconstructs_blocked_pivoted_cholesky(prik_lapack, scipy_lapack,
 
     assert f2py_result is None
     assert prik_scalars[-1] == scipy_info == 0
-    assert prik_scalars[2] == scipy_rank == 1
+    # Character selectors are returned too, so the projected scalars sit at
+    # their native-argument positions in the returned tuple.
+    assert prik_scalars[3] == scipy_rank == 1
     assert_allclose_float64(prik_a.T @ prik_a, matrix)
     assert_allclose_float64(f2py_a.T @ f2py_a, matrix)
     assert_allclose_float64(scipy_a.T @ scipy_a, matrix)

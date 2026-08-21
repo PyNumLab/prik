@@ -14,10 +14,12 @@ pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
 def test_dlamch_reports_float64_machine_epsilon(prik_lapack, scipy_lapack, f2py_lapack):
     expected = np.finfo(np.float64).eps / 2.0
 
-    prik_value = prik_lapack.dlamch("E")
+    # DLAMCH declares no intent, so its CMACH selector is returned with the value.
+    prik_value, prik_cmach = prik_lapack.dlamch("E")
     f2py_value = f2py_lapack.dlamch(b"E")
     scipy_value = scipy_lapack.dlamch(b"E")
 
+    assert prik_cmach == "E"
     assert_allclose_float64(prik_value, expected)
     assert_allclose_float64(f2py_value, expected)
     assert_allclose_float64(scipy_value, expected)
@@ -36,7 +38,9 @@ def test_dlangb_computes_frobenius_norm_of_band_storage(prik_lapack, scipy_lapac
     f2py_value = f2py_lapack.dlangb(b"F", 3, 1, 1, f2py_ab, np.empty(3, dtype=np.float64))
     scipy_value = scipy_lapack.dlangb(b"F", 1, 1, scipy_ab)
 
-    assert prik_result[1:] == (3, 1, 1, 3)
+    # LAPACK declares no intent on its dummies, so the conservative
+    # intent(inout) default returns every scalar, character selectors included.
+    assert prik_result[1:] == ("F", 3, 1, 1, 3)
     assert_allclose_float64(prik_result[0], expected, operation_size=7)
     assert_allclose_float64(f2py_value, expected, operation_size=7)
     assert_allclose_float64(scipy_value, expected, operation_size=7)
@@ -51,7 +55,9 @@ def test_dlange_computes_one_norm(prik_lapack, scipy_lapack, f2py_lapack):
     f2py_value = f2py_lapack.dlange(b"1", 3, 2, matrix.copy(order="F"), work.copy())
     scipy_value = scipy_lapack.dlange(b"1", matrix.copy(order="F"))
 
-    assert prik_result[1:] == (3, 2, 3)
+    # LAPACK declares no intent on its dummies, so the conservative
+    # intent(inout) default returns every scalar, character selectors included.
+    assert prik_result[1:] == ("1", 3, 2, 3)
     assert_allclose_float64(prik_result[0], expected, operation_size=3)
     assert_allclose_float64(f2py_value, expected, operation_size=3)
     assert_allclose_float64(scipy_value, expected, operation_size=3)
@@ -68,7 +74,9 @@ def test_dlantr_ignores_unused_triangle_and_unit_diagonal(prik_lapack, scipy_lap
     f2py_value = f2py_lapack.dlantr(b"F", b"U", b"U", 3, 3, stored.copy(order="F"), work.copy())
     scipy_value = scipy_lapack.dlantr(b"F", stored.copy(order="F"), uplo=b"U", diag=b"U")
 
-    assert prik_result[1:] == (3, 3, 3)
+    # LAPACK declares no intent on its dummies, so the conservative
+    # intent(inout) default returns every scalar, character selectors included.
+    assert prik_result[1:] == ("F", "U", "U", 3, 3, 3)
     assert_allclose_float64(prik_result[0], expected, operation_size=6)
     assert_allclose_float64(f2py_value, expected, operation_size=6)
     assert_allclose_float64(scipy_value, expected, operation_size=6)

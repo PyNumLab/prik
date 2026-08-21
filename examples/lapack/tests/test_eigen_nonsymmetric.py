@@ -38,7 +38,9 @@ def test_dgebal_preserves_eigenvalues_while_balancing(prik_lapack, scipy_lapack,
 
     assert f2py_result is None
     assert prik_scalars[-1] == scipy_info == 0
-    assert prik_scalars[2:4] == (scipy_lo + 1, scipy_hi + 1)
+    # Character selectors are returned too, so the projected scalars sit at
+    # their native-argument positions in the returned tuple.
+    assert prik_scalars[3:5] == (scipy_lo + 1, scipy_hi + 1)
     expected_eigenvalues = np.sort(np.linalg.eigvals(matrix).real)
     assert_allclose_float64(np.sort(np.linalg.eigvals(prik_a).real), expected_eigenvalues, operation_size=2)
     assert_allclose_float64(np.sort(np.linalg.eigvals(f2py_a).real), expected_eigenvalues, operation_size=2)
@@ -78,7 +80,9 @@ def test_dgees_computes_real_schur_decomposition(prik_lapack, scipy_lapack):
     )
 
     assert prik_scalars[-1] == scipy_info == 0
-    assert prik_scalars[3] == scipy_sdim == 0
+    # Character selectors are returned too, so the projected scalars sit at
+    # their native-argument positions in the returned tuple.
+    assert prik_scalars[5] == scipy_sdim == 0
     expected_eigenvalues = np.sort(np.linalg.eigvals(matrix).real)
     for t, vs, wr, wi in (
         (prik_t, prik_vs, prik_wr, prik_wi),
@@ -251,7 +255,9 @@ def test_dtrsen_reorders_selected_schur_eigenvalue(prik_lapack, scipy_lapack, f2
 
     assert f2py_result is None
     assert prik_scalars[-1] == scipy_info == 0
-    assert prik_scalars[3] == scipy_m == 1
+    # Character selectors are returned too, so the projected scalars sit at
+    # their native-argument positions in the returned tuple.
+    assert prik_scalars[5] == scipy_m == 1
     for t, q, wr, wi in (
         (prik_t, prik_q, prik_wr, prik_wi),
         (f2py_t, f2py_q, f2py_wr, f2py_wi),
