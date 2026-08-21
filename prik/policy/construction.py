@@ -2220,64 +2220,19 @@ def _direct_c_operation_ineligibility(
     slots: tuple[NativeCallSlotPolicy, ...],
 ) -> tuple[str, ...]:
     """Return fail-closed blockers for the initial direct-only C lane."""
-    raw_abi = function.metadata.get("c_abi")
-    has_source_abi = isinstance(raw_abi, dict)
-    source_abi = raw_abi if has_source_abi else {}
-    reasons: list[str] = []
-    if has_source_abi:
-        if source_abi.get("calling_convention") != "c":
-            reasons.append("C_DIRECT_UNSUPPORTED_CALLING_CONVENTION")
-        if source_abi.get("variadic"):
-            reasons.append("C_DIRECT_VARIADIC_FUNCTION")
-    if "static" in function.metadata.get("storage", ()):
-        reasons.append("C_DIRECT_TRANSLATION_UNIT_LOCAL_SYMBOL")
-    if not (function.origin.native_symbol or function.origin.native_name or function.native_name or function.name):
-        reasons.append("C_DIRECT_MISSING_LINKABLE_SYMBOL")
-    if function.origin.native_abi not in {None, "c"}:
-        reasons.append("C_DIRECT_UNSUPPORTED_CALLING_CONVENTION")
-    if _c_direct_scalar_name(function.return_type) is None and function.return_type is not None:
-        reasons.append("C_DIRECT_UNRESOLVED_PRIMITIVE_ABI:return")
-    if function.return_type is not None and _c_source_pointer_depth(function, result=True) > 0:
-        reasons.append("C_DIRECT_POINTER_RESULT")
-    result_facts = source_abi.get("result") if isinstance(source_abi.get("result"), dict) else {}
-    if {"volatile", "_Atomic"} & set(result_facts.get("qualifiers", ())):
-        reasons.append("C_DIRECT_UNSUPPORTED_QUALIFIER:return")
-
     semantic_arguments = {argument.name: argument for argument in function.arguments}
-    for argument in arguments:
-        semantic_argument = semantic_arguments[argument.name]
-        source_type = _c_source_type_facts(function, argument.native_position)
-        if semantic_argument.semantic_type.name == "CFunctionPointer" or source_type.get("has_function_pointer"):
-            reasons.append(f"C_DIRECT_CALLBACK:{argument.name}")
-        if source_type.get("has_array_declarator"):
-            reasons.append(f"C_DIRECT_ARRAY_DECLARATOR:{argument.name}")
-        if {"volatile", "_Atomic"} & set(source_type.get("qualifiers", ())):
-            reasons.append(f"C_DIRECT_UNSUPPORTED_QUALIFIER:{argument.name}")
-        pointer_depth = int(source_type.get("pointer_depth", _c_pointer_depth(semantic_argument.semantic_type)))
-        if pointer_depth > 1:
-            reasons.append(f"C_DIRECT_POINTER_DEPTH:{argument.name}")
-        if argument.nullable or argument.optional:
-            reasons.append(f"C_DIRECT_NULLABLE_POINTER:{argument.name}")
-        if " | None" in semantic_argument.semantic_type.name or semantic_argument.semantic_type.metadata.get(
-            NULLABLE_ANNOTATION_METADATA
-        ):
-            reasons.append(f"C_DIRECT_NULLABLE_POINTER:{argument.name}")
-        storage = semantic_argument.semantic_type.storage
-        if storage is not None and storage.metadata.get("address_role") == "raw":
-            reasons.append(f"C_DIRECT_RAW_ADDRESS:{argument.name}")
-        if _c_direct_scalar_name(semantic_argument.semantic_type) is None:
-            reasons.append(f"C_DIRECT_UNRESOLVED_PRIMITIVE_ABI:{argument.name}")
-        if argument.rank > 0 and semantic_argument.semantic_type.name in {"Bool", "Bool8"}:
-            reasons.append(f"C_DIRECT_BOOL_ARRAY:{argument.name}")
-        if (
-            pointer_depth
-            and source_type.get("const")
-            and (argument.writable or argument.projects_result or argument.array_copy_out)
-        ):
-            reasons.append(f"C_DIRECT_CONST_POINTER_OUTPUT:{argument.name}")
-        if semantic_argument.semantic_type.metadata.get("c_type_fact_source") == "fallback":
-            reasons.append(f"C_DIRECT_UNPROBED_PRIMITIVE_ABI:{argument.name}")
-
+    reasons: list[str] = [
+        *_direct_c_callable_ineligibility(function),
+        *(
+            reason
+            for argument in arguments
+            for reason in _direct_c_argument_source_ineligibility(
+                function,
+                argument,
+                semantic_arguments[argument.name],
+            )
+        ),
+    ]
     if function.return_type is not None and function.return_type.metadata.get("c_type_fact_source") == "fallback":
         reasons.append("C_DIRECT_UNPROBED_PRIMITIVE_ABI:return")
     for argument in arguments:
@@ -2290,6 +2245,84 @@ def _direct_c_operation_ineligibility(
     for slot in slots:
         reasons.extend(_direct_slot_ineligibility(slot))
     return tuple(dict.fromkeys(reasons))
+
+
+def _direct_c_callable_ineligibility(function: models.SemanticFunction) -> tuple[str, ...]:
+    """Return the direct-C blockers owned by one operation's own declaration."""
+    raw_abi = function.metadata.get("c_abi")
+    source_abi = raw_abi if isinstance(raw_abi, dict) else {}
+    result_facts = source_abi.get("result") if isinstance(source_abi.get("result"), dict) else {}
+    reasons = []
+    if isinstance(raw_abi, dict):
+        if source_abi.get("calling_convention") != "c":
+            reasons.append("C_DIRECT_UNSUPPORTED_CALLING_CONVENTION")
+        if source_abi.get("variadic"):
+            reasons.append("C_DIRECT_VARIADIC_FUNCTION")
+    if "static" in function.metadata.get("storage", ()):
+        reasons.append("C_DIRECT_TRANSLATION_UNIT_LOCAL_SYMBOL")
+    if function.origin.native_abi not in {None, "c"}:
+        reasons.append("C_DIRECT_UNSUPPORTED_CALLING_CONVENTION")
+    if function.return_type is not None:
+        if _c_direct_scalar_name(function.return_type) is None:
+            reasons.append("C_DIRECT_UNRESOLVED_PRIMITIVE_ABI:return")
+        if _c_source_pointer_depth(function, result=True) > 0:
+            reasons.append("C_DIRECT_POINTER_RESULT")
+    if {"volatile", "_Atomic"} & set(result_facts.get("qualifiers", ())):
+        reasons.append("C_DIRECT_UNSUPPORTED_QUALIFIER:return")
+    return tuple(reasons)
+
+
+def _direct_c_argument_source_ineligibility(
+    function: models.SemanticFunction,
+    argument: ArgumentPolicy,
+    semantic_argument: models.SemanticArgument,
+) -> tuple[str, ...]:
+    """Return the direct-C blockers one argument's preserved source facts prove."""
+    semantic_type = semantic_argument.semantic_type
+    source_type = _c_source_type_facts(function, argument.native_position)
+    pointer_depth = int(source_type.get("pointer_depth", _c_pointer_depth(semantic_type)))
+    storage = semantic_type.storage
+    reasons = []
+    if semantic_type.name == "CFunctionPointer" or source_type.get("has_function_pointer"):
+        reasons.append(f"C_DIRECT_CALLBACK:{argument.name}")
+    if source_type.get("has_array_declarator"):
+        reasons.append(f"C_DIRECT_ARRAY_DECLARATOR:{argument.name}")
+    if {"volatile", "_Atomic"} & set(source_type.get("qualifiers", ())):
+        reasons.append(f"C_DIRECT_UNSUPPORTED_QUALIFIER:{argument.name}")
+    if pointer_depth > 1:
+        reasons.append(f"C_DIRECT_POINTER_DEPTH:{argument.name}")
+    if _argument_declares_nullable_c_pointer(argument, semantic_type):
+        reasons.append(f"C_DIRECT_NULLABLE_POINTER:{argument.name}")
+    if storage is not None and storage.metadata.get("address_role") == "raw":
+        reasons.append(f"C_DIRECT_RAW_ADDRESS:{argument.name}")
+    if _c_direct_scalar_name(semantic_type) is None:
+        reasons.append(f"C_DIRECT_UNRESOLVED_PRIMITIVE_ABI:{argument.name}")
+    if argument.rank > 0 and semantic_type.name in {"Bool", "Bool8"}:
+        reasons.append(f"C_DIRECT_BOOL_ARRAY:{argument.name}")
+    if pointer_depth and source_type.get("const") and _argument_requests_native_write(argument):
+        reasons.append(f"C_DIRECT_CONST_POINTER_OUTPUT:{argument.name}")
+    if semantic_type.metadata.get("c_type_fact_source") == "fallback":
+        reasons.append(f"C_DIRECT_UNPROBED_PRIMITIVE_ABI:{argument.name}")
+    return tuple(reasons)
+
+
+def _argument_declares_nullable_c_pointer(argument: ArgumentPolicy, semantic_type: models.SemanticType) -> bool:
+    """Return whether one C argument was written as a nullable value.
+
+    Subscripted storage loses its ``| None`` spelling during conversion, so the
+    recorded annotation fact stands in for it.
+    """
+    return bool(
+        argument.nullable
+        or argument.optional
+        or " | None" in semantic_type.name
+        or semantic_type.metadata.get(NULLABLE_ANNOTATION_METADATA)
+    )
+
+
+def _argument_requests_native_write(argument: ArgumentPolicy) -> bool:
+    """Return whether a completed contract expects native writes to be visible."""
+    return bool(argument.writable or argument.projects_result or argument.array_copy_out)
 
 
 def _c_direct_scalar_name(semantic_type: models.SemanticType | None) -> str | None:
