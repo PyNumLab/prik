@@ -559,18 +559,3 @@ def test_prik_c_compiler_source_loader_drives_semantics_and_pyi(tmp_path: Path, 
     semantics = prik_cli._semantic_report([str(header)], config, language="c")
     assert semantics[str(header)]["semantic_modules"][0]["functions"][0]["name"] == "add"
     assert calls == [header]
-
-
-def test_cli_c_default_build_rejects_the_unsupported_build_language(tmp_path: Path):
-    header = tmp_path / "api.h"
-    header.write_text("int add(int a, int b);\n", encoding="utf-8")
-
-    no_stage = subprocess.run(
-        [sys.executable, "-m", "prik", str(header), "--language", "c"],
-        capture_output=True,
-        text=True,
-    )
-    assert no_stage.returncode == 2
-    assert "argument --language: invalid choice: 'c'" in no_stage.stderr
-    assert "choose from" in no_stage.stderr
-    assert "fortran" in no_stage.stderr

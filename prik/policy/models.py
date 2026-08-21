@@ -63,6 +63,27 @@ class NativeEntrypointAction(str, Enum):
     GENERATED_FORTRAN_ADAPTER = "generated_fortran_adapter"
 
 
+@dataclass(frozen=True)
+class DirectCABITypePolicy:
+    """One preserved C declaration type selected before wrapper planning."""
+
+    source_spelling: str | None
+    scalar_type_name: str | None
+    pointer_depth: int
+    qualifiers: tuple[str, ...]
+    const: bool
+
+
+@dataclass(frozen=True)
+class DirectCABIPolicy:
+    """Exact direct-C function ABI facts owned by post-IR policy."""
+
+    calling_convention: str
+    result_transport: str
+    result: DirectCABITypePolicy | None
+    parameters: tuple[DirectCABITypePolicy, ...]
+
+
 class EntrypointPassingConvention(str, Enum):
     """Completed C-boundary transport for one parameter or result."""
 
@@ -1207,6 +1228,7 @@ class ArgumentPolicy:
     entrypoint_pass_descriptor_presence: bool = False
     entrypoint_pass_derived_transaction: bool = False
     entrypoint_pass_callback_parameter: bool = False
+    native_storage_c_type: str | None = None
 
     @property
     def projects_character_descriptor_update(self) -> bool:
@@ -1338,6 +1360,7 @@ class FunctionWrapperPolicy:
     entrypoint_action: NativeEntrypointAction | None = None
     entrypoint_symbol: str = ""
     entrypoint_diagnostics: tuple[str, ...] = ()
+    direct_c_abi: DirectCABIPolicy | None = None
 
 
 if __name__ == "__main__":

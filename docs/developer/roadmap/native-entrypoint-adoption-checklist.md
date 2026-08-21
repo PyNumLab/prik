@@ -938,65 +938,83 @@ can resolve the central pointer ambiguity; it does not claim the complete C
 array feature, returned arrays, `_Bool` array compatibility, or pointer
 ownership support.
 
-### Current Goal 3 Gap Audit (2026-08-20)
+### Goal 3 Implementation Record (2026-08-21, audited 2026-08-21)
 
-The C parser and source-to-semantic conversion are ahead of the wrapper path.
-The remaining work is not just compilation wiring:
+Goal 3 is implemented only for its documented direct-only primitive lane. C
+implementation sources and source-free C-native semantic contracts use
+explicit public inputs; policy either selects the user C symbol directly or
+raises a stable diagnostic before target ABI probing, generated files, or
+native build commands. Source preprocessing runs before parsing, exactly as it
+does on the C inspection routes, so it is the one compiler invocation that
+precedes that decision. The C scalar and one-level-pointer matrices have
+source and authoritative-contract compiled evidence under the named C feature
+owners.
 
-- C semantic inputs cannot currently enter `build_pyi_extension` or
-  `prik/pipeline/build.py` with C-native sources and a C compiler.
-- Entrypoint policy currently recognizes only Fortran operations carrying an
-  original `bind(C)` ABI fact. A C operation therefore misses the direct branch
-  and falls toward the generated-Fortran-adapter action, which Goal 3 must
-  replace with direct-or-diagnostic C policy.
-- The semantic converter models more C arithmetic types than the shared
-  first-lane policy and scalar codegen registry lower. Unsigned integers,
-  target-sized `Int`/`SizeT`, `long double`, and extended complex mappings need
-  an explicit resolution or blocker; “every primitive” cannot be checked while
-  those sets disagree.
-- The generated one-level-pointer default exists, but no focused fixture freezes
-  every starter-contract row and no compiled test proves either the default
-  scalar-reference path or the edited pointer-to-array path.
-- A generated `CFunctionPointer` placeholder is accepted by PRIK's own parser
-  but is not a public importable contract type. Initial Goal 3 should reject it
-  with a documented diagnostic instead of expanding callback scope.
-- There are no C-owned policy, codegen, compiling, or end-to-end evidence
-  directories yet, and the build/artifact assertions do not cover a C module
-  with no native adapter.
+This is not general C adoption. Callbacks, aggregates, variadics, unsupported
+calling conventions, ownership/retention or nullable pointer contracts, raw
+addresses, pointer results or reassociation, and Boolean array promotion stay
+fail-closed. Later C forms remain in the post-goal backlog below.
+
+The follow-up audit closed these defects, each with focused C evidence:
+
+- module variables, enum constants, and aggregate type declarations of a C
+  translation unit reached wrapper planning and generated a Fortran adapter
+  module; they now fail with `C_DIRECT_NATIVE_GLOBAL_STATE`,
+  `C_DIRECT_ENUM_CONSTANT`, `C_DIRECT_MACRO_CONSTANT`, and
+  `C_DIRECT_AGGREGATE_TYPE` before planning;
+- a declaration the C parser could not model was silently dropped from a
+  wrapper build's public API and now raises `C_DIRECT_UNMODELED_DECLARATION`;
+- `T[:] | None` and `T[()] | None` silently lost their nullable spelling and
+  now raise `C_DIRECT_NULLABLE_POINTER`;
+- a route-neutral reorder resolved each argument's Python conversion against
+  the wrong declared type;
+- the documented `Arg(i).shape[d]` array promotion was rejected, because a
+  binding-owned extent producer was mistaken for the argument's own transport
+  slot;
+- an exact C declaration plan was built for Fortran `bind(C)` operations too,
+  which broke every Goal 2 direct route carrying a string, derived object, or
+  callback; and
+- C wrapper builds did not preprocess their sources, so any directive other
+  than `#include` was unparseable.
 
 ### Stage 0 — C Language And Contract Inputs
 
-#### Current Stage 0 Status (2026-08-18)
+#### Current Stage 0 Status (2026-08-21)
 
-Stage 0 is **partially implemented**. The C frontend, semantic conversion, and
-language-owned test suite exist and pass (497 collected; 496 passed, one parked
-benchmark skip). Generated starter contracts match the defaults recorded below.
-No build path accepts a C input, so nothing compiles or imports a C-backed
-extension yet.
+Stage 0 is **implemented for the initial direct-only primitive lane**. The
+public `build_c_extension()` accepts explicit C implementation sources and a
+`preprocessing` configuration that defaults to the selected C compiler, so a
+wrapped translation unit is expanded before parsing and its include provenance
+decides what the wrapper may expose;
+`build_pyi_extension(..., native_language="c", native_c_sources=...)` marks
+source-free semantic contracts as C-native; and the CLI requires
+`--language c` for that identity. Native language is retained in compilation
+records, manifests, replay, verbose output, and Makefiles. C-only builds use a
+C toolchain, while mixed language link selection uses all recorded object
+languages. None of these routes infer C identity from a file suffix, compiler,
+missing Fortran source, or `@native_abi("c")`.
 
-Verified present: C source conversion in `prik/semantics/c2ir.py`;
-`source_language = "c"` on semantic modules, functions, and arguments;
-`native_language` validated as `"c"` or `"fortran"` in
-`prik/semantics/pyi2ir.py`; and `void` versus value returns, pointer depth,
-`const` provenance, structs, unions, opaque records, enum constants, and
-typedef-resolved scalars in generated contracts.
-
-Verified absent: any `native_language` or C-source parameter on
-`build_pyi_extension` and `prik/pipeline/build.py`; a C input route in the CLI;
-and `tests/c/<feature>/policy/`, `codegen/`, and `end_to_end/` evidence owners.
+C conversion preserves source language and C ABI provenance, including exact
+spellings, qualifiers, pointer depth, result transport, symbols, variadic and
+function-pointer facts. Starter contracts remain extraction output even when a
+form is not wrappable; completed policy blocks that form only when a wrapper is
+requested. C-owned policy, codegen, pipeline, and compiled end-to-end evidence
+now live under `tests/c/primitive_scalars`, `tests/c/primitive_pointers`, and
+`tests/c/infrastructure/building`.
 
 - [x] Add C source conversion preserving `source_language = "c"` on semantic
   modules, declarations, and arguments.
-- [ ] Emit authoritative source-free C semantic contracts for the initial
+- [x] Emit authoritative source-free C semantic contracts for the initial
   primitive lane. Function-pointer parameters currently serialize as the
   `CFunctionPointer` placeholder built by `prik/semantics/c2ir.py`, which
   `prik.contracts` does not export and the generated import line omits. Reject
   that operation with a documented out-of-scope diagnostic before wrapper
   planning; do not expand Goal 3 into callback adoption and do not leave a
   spelling that only PRIK's own `.pyi` parser accepts.
-- [ ] Preserve `source_language = "c"` on native inputs and build records.
-  `build_pyi_extension` accepts only `native_fortran_sources` with a Fortran
-  `input_compiler`, and the CLI documents Fortran inputs only.
+- [x] Preserve `source_language = "c"` on native inputs and build records.
+  `build_pyi_extension(..., native_language="c", native_c_sources=...)`
+  selects source-free C identity explicitly, with `input_c_compiler`; the CLI
+  exposes the same explicit C inputs.
 - [x] Treat a C procedure as C ABI by language identity. Do not require or
   synthesize `@native_abi("c")`; that decorator remains the source-free
   Fortran spelling for an original `bind(C)` procedure.
@@ -1005,14 +1023,20 @@ and `tests/c/<feature>/policy/`, `codegen/`, and `end_to_end/` evidence owners.
   by completed policy. Do not infer ownership, nullability, or aggregate layout
   merely from pointer or typedef syntax. Function-pointer facts are retained as
   origin provenance behind the placeholder named above.
-- [ ] Resolve each modeled arithmetic spelling to an exact target ABI fact and
+- [x] Resolve each modeled arithmetic spelling to an exact target ABI fact and
   a supported lowering identity before policy. Preserve signedness, width,
   complex representation, original compatible declaration facts, and typedef
   provenance. A semantic dtype mapping alone must not authorize a direct call.
-- [ ] Classify linkability and callable ABI facts before policy: reject
-  translation-unit-local symbols, unresolved external names, variadic
-  functions, unsupported calling conventions, and unsupported `volatile` or
-  atomic access with named diagnostics.
+- [x] Classify linkability and callable ABI facts before policy: reject
+  translation-unit-local symbols, variadic functions, and unsupported
+  `volatile` or atomic access with named diagnostics. A declaration whose
+  calling convention or other compiler attribute the parser cannot model is
+  rejected as `C_DIRECT_UNMODELED_DECLARATION` rather than being accepted with
+  the attribute discarded. An external name with no definition in any supplied
+  native input is **not** rejected: declaring an API here and linking its
+  implementation through `--native-objects` or `--native-library` is the
+  supported multi-input workflow, so an unresolved symbol stays a link-time or
+  import-time error.
 - [x] Add language-owned parsing, semantic-contract, and diagnostic tests
   under `tests/c/` without importing Fortran-specific fixture helpers.
 
@@ -1075,6 +1099,13 @@ from prik.contracts import Arg, Float64, native_call
 def scale(values: Float64[:]) -> None: ...
 ```
 
+A derived `Arg(i).shape[d]` extent is a binding-owned producer with its own
+completed `SizeT` identity, so this edit is exact only when the native count
+parameter is `size_t`. A native `int` count keeps its exact ABI by staying a
+visible argument — `def scale(values: Float64[n], n: Int32) -> None` — which is
+the form to use when the declaration is not `size_t`. Policy must never narrow
+or widen the extent to make one of these fit the other.
+
 The edit changes `Float64` to shaped storage **and** replaces
 `Addr(Arg(i))` with the array's ordinary `Arg(i)` data-pointer projection. It
 also decides rank, shape, C-order validation, mutability, and whether an extent
@@ -1109,15 +1140,15 @@ nullability, transfer, or result behavior remains unsafe or unsupported.
   element, so conversion emits the by-reference scalar and the user promotes it
   to an array in the semantic `.pyi`. Current conversion output already matches
   every row of the table above; the table was corrected to record the decision.
-- [ ] Add fixture evidence for every row of the table above. The present
+- [x] Add fixture evidence for every row of the table above. The present
   round-trip check re-parses generated text with PRIK's own `.pyi` parser, so
   it accepts a contract that a user could not import, and its unknown-type
   guard matches only the literal `Unknown`. A pointer-default change must fail
   a focused test instead of silently rewriting every generated C contract.
-- [ ] Add focused array-declarator evidence distinguishing effective pointer
+- [x] Add focused array-declarator evidence distinguishing effective pointer
   ABI from written array provenance. Prove that `[]`, `[n]`, and `[static n]`
   do not silently become the same exact-shape Python contract.
-- [ ] Prove the promotion path end to end once C builds exist: one fixture
+- [x] Prove the promotion path end to end once C builds exist: one fixture
   where a `T *` parameter stays a by-reference scalar, and one where an edited
   contract promotes the same native procedure to a NumPy array argument. This
   pair must assert the `Addr(Arg(i))`-to-`Arg(i)` projection edit, validation of
@@ -1127,64 +1158,77 @@ nullability, transfer, or result behavior remains unsafe or unsupported.
 
 ### Stage 1 — Direct-Only C Policy
 
-- [ ] Reuse `NativeEntrypointAction.DIRECT_C_ABI` for supported C operations
+- [x] Reuse `NativeEntrypointAction.DIRECT_C_ABI` for supported C operations
   and complete eligibility before `WrapperPlanner` starts. Do not introduce a
   C-adapter action or fallback.
-- [ ] Replace the present Fortran-only route test with language-aware completed
+- [x] Replace the present Fortran-only route test with language-aware completed
   policy. An ineligible Fortran operation may select its generated Fortran
   adapter; an ineligible C operation must instead become unsupported with a
   named diagnostic. It must never inherit
   `GENERATED_FORTRAN_ADAPTER` merely because it lacks a Fortran `bind(C)` fact.
-- [ ] Reuse the entrypoint passing conventions and route-neutral
+  This covers every wrapped surface of a C translation unit, not only its
+  callables: module variables, enum and macro constants, and aggregate type
+  declarations have no direct entrypoint, so they are rejected with named
+  diagnostics rather than lowered through generated Fortran accessors.
+- [x] Reuse the entrypoint passing conventions and route-neutral
   `@native_call` projections completed in Goal 2. A C operation that needs an
   unsupported conversion, ownership, lifetime, callback, aggregate, or result
   mechanism must fail with a documented policy diagnostic.
-- [ ] Complete the selected meaning of every one-level primitive pointer before
+- [x] Complete the selected meaning of every one-level primitive pointer before
   planning: call-local scalar address, caller-provided rank-zero storage,
   hidden output storage, or shaped primitive-array data. Record passing,
   mutation visibility, writeback, result projection, rank/shape/order, and
   lifetime from the semantic contract; do not rediscover the choice from
   pointer depth or `const` in planning or binding generation.
-- [ ] Preserve `const` on the exact native entrypoint prototype and forbid
+- [x] Preserve `const` on the exact native entrypoint prototype and forbid
   output/writeback contracts that contradict it. A non-`const` pointer permits
-  native writes but does not by itself make them Python-visible.
-- [ ] Keep C pointer nullability distinct from Fortran optional presence. A
+  native writes but does not by itself make them Python-visible. The
+  contradiction check reads preserved source declarations, so it applies to the
+  C-source route; a source-free contract has no `const` fact to contradict and
+  is authoritative on its own terms.
+- [x] Keep C pointer nullability distinct from Fortran optional presence. A
   nullable C pointer may receive `NULL`, but it does not imply a hidden
   presence convention or omitted native argument. Initial Goal 3 blocks this
   form; the rule governs its later adoption.
-- [ ] Define C `_Bool` through the same public `Bool` contract: accept Python
+- [x] Define C `_Bool` through the same public `Bool` contract: accept Python
   `bool` and `numpy.bool_`, return Python `bool`, and require an explicit safe
   mechanism before treating NumPy Boolean array storage as C `_Bool` array
   storage.
-- [ ] Complete all transfer, ownership, destruction, mutation, writeback,
+- [x] Complete all transfer, ownership, destruction, mutation, writeback,
   nullability, result projection, and release facts before planning, following
   the same policy boundary as Fortran.
 
 ### Stage 2 — Planning, Lowering, And Pipeline Reuse
 
-- [ ] Make supported C operations produce the same always-present entrypoint
+- [x] Make supported C operations produce the same always-present entrypoint
   facet and no bridge facet. The C binding consumes only binding plus
   entrypoint and calls the user C symbol directly.
-- [ ] Carry an exact C declaration plan for every direct parameter and result.
+- [x] Carry an exact C declaration plan for every direct parameter and result.
   C binding generation must not reconstruct a user prototype from a
   Fortran-oriented scalar spelling or width alone. It must use the completed C
   ABI type, signedness, qualifiers, pointer depth, function-result transport,
-  symbol, and calling convention selected before planning.
-- [ ] Reuse Goal 2 binding-local extraction, validation, temporary storage,
+  symbol, and calling convention selected before planning. Only a C-source
+  operation carries this plan: a Fortran `bind(C)` procedure keeps its
+  established backend-projected prototype, which remains the only direct route
+  that can lower strings, derived objects, and callbacks. Policy records the
+  preserved declaration text and resolved identity; the C binding generator
+  owns the canonical spelling a source-free contract does not preserve, and
+  emits the standard header a preserved typedef spelling needs.
+- [x] Reuse Goal 2 binding-local extraction, validation, temporary storage,
   passing-convention lowering, writeback, cleanup, and Python-result paths
   whenever the completed plans are identical. Add a new lowering mechanism
   only when a genuinely new planned C ABI action requires it.
-- [ ] Generate no native C adapter source or object. Verify that an
+- [x] Generate no native C adapter source or object. Verify that an
   adapter-required C operation fails before files are written or compiler
   commands run.
-- [ ] Compile and link C inputs through language-aware native build records.
+- [x] Compile and link C inputs through language-aware native build records.
   Select the final link driver and runtime dependencies from all input and
   generated object languages rather than from adapter presence.
-- [ ] Define one public build input for C implementation sources and one way to
+- [x] Define one public build input for C implementation sources and one way to
   mark a source-free semantic `.pyi` as C-native. Preserve that identity in
   saved manifests and rebuilds; do not infer it from a filename, compiler
   executable, absence of Fortran source, or `@native_abi("c")`.
-- [ ] Cover source-driven and source-free semantic-contract builds, saved
+- [x] Cover source-driven and source-free semantic-contract builds, saved
   generated artifacts, Makefiles, manifests, verbose output, and imports.
 
 ### Stage 3 — C Scalar Baseline
@@ -1206,24 +1250,24 @@ wrapper-support claim.
 | resolved standard scalar typedefs | Fixed-width integer aliases, `size_t`, and other probed arithmetic typedefs reuse the exact underlying ABI while retaining typedef provenance | `SizeT` has a backend spelling but is absent from current first-lane policy; unresolved or unsupported typedefs need pre-planning diagnostics. |
 | `void` | Function result only, producing Python `None` | C semantic conversion preserves it, but no direct C build proves the result path. |
 
-- [ ] Close every row of the primitive matrix or narrow the documented goal by
+- [x] Close every row of the primitive matrix or narrow the documented goal by
   an explicit user decision. “Initially supported” must not hide an accidental
   intersection of converter and codegen registries.
-- [ ] Add C scalar fixtures and compiled end-to-end tests for every adopted
+- [x] Add C scalar fixtures and compiled end-to-end tests for every adopted
   arithmetic spelling: by-value inputs, direct value returns, `void` returns,
   `const T *` call-local scalar inputs, mutable `T *` rank-zero storage, and
   contract-projected scalar outputs. Source conversion must not infer the
   output forms; authoritative edited contracts select and prove them.
-- [ ] Check Python boundary behavior, not only native call success: accepted
+- [x] Check Python boundary behavior, not only native call success: accepted
   Python and NumPy scalar inputs, overflow/range diagnostics, exact NumPy
   numeric result dtype, Python `bool` Boolean results, complex values, and
   mutation visibility for each pointer contract.
-- [ ] Cover renamed symbols and route-neutral projections, including reordered
+- [x] Cover renamed symbols and route-neutral projections, including reordered
   arguments, `Addr`, `Value`, hidden result storage, and typed literals where
   the C contract supports them.
-- [ ] Prove from generated artifacts and build records that the binding calls
+- [x] Prove from generated artifacts and build records that the binding calls
   the user symbol and no native C adapter source or object exists.
-- [ ] Add at least one parseable C operation whose unsupported ABI or transfer
+- [x] Add at least one parseable C operation whose unsupported ABI or transfer
   mechanism produces the documented pre-planning diagnostic.
 
 ### Stage 4 — Primitive Pointer Contracts And Array Promotion
@@ -1232,22 +1276,27 @@ This stage completes the promised one-level-pointer equivalent of the scalar
 lane. It does not infer pointee count from the C ABI and does not turn Goal 3
 into general pointer support.
 
-- [ ] For every adopted primitive, prove the generated `T *` default is a
+- [x] For every adopted primitive, prove the generated `T *` default is a
   Python-visible scalar plus `Addr(Arg(i))`, with one call-local native element.
-  Native mutation is not returned unless an edited contract requests it.
-- [ ] For every adopted primitive, prove an authoritative contract can expose
+  Native mutation is not returned unless an edited contract requests it, and
+  the generated docstring says so instead of promising an in-place update of
+  caller storage that does not exist.
+- [x] For every adopted primitive, prove an authoritative contract can expose
   caller-provided rank-zero storage with `T[()]` and can project a hidden scalar
   output with `Returns[...]`/`Return(...)`, with exact mutation and tuple-result
   behavior.
-- [ ] Preserve `const T *` in the generated C prototype and reject a
+- [x] Preserve `const T *` in the generated C prototype and reject a
   contradictory mutable/output contract. Preserve `restrict` as provenance;
   it must not invent ownership or an array shape.
-- [ ] Prove one native `T *` operation through both contract meanings: the
+- [x] Prove both edited array spellings compile and call the same user symbol:
+  a visible extent argument that keeps the native count's exact declared type,
+  and a derived `Arg(i).shape[d]` extent whose native count is `size_t`.
+- [x] Prove one native `T *` operation through both contract meanings: the
   conservative one-element scalar-reference form and an edited numeric NumPy
   array form. The array form must replace `Addr(Arg(i))` with `Arg(i)`, define
   rank/shape/C order and mutation, validate zero and nonzero extents, compile,
   call the same user symbol directly, and generate no C adapter.
-- [ ] Reject `T **`, returned `T *`, `T * | None`, retained pointers, raw owned
+- [x] Reject `T **`, returned `T *`, `T * | None`, retained pointers, raw owned
   addresses, pointer reassociation, and `_Bool *` array promotion with stable
   pre-planning diagnostics until their separate ownership, nullability,
   lifetime, or storage mechanisms are adopted.
@@ -1272,7 +1321,7 @@ mark it complete.
 | Overloads and generated dispatch | [ ] | Each selected C symbol owns an entrypoint action; dispatch owns no shared adapter route. |
 | Immediate callbacks | [ ] | Function-pointer ABI, callback argument/result conversion, GIL entry, exception handling, and call-scoped lifetime. |
 | Error/status projection and GIL release | [ ] | Call target remains independent of status checking, cleanup order, and GIL policy. |
-| Multi-source and external-library builds | [ ] | Native symbol scope, object/library order, dependencies, runtime requirements, and final link-driver selection. |
+| Multi-source and external-library builds | [ ] | Native symbol scope, object/library order, dependencies, runtime requirements, and final link-driver selection. Symbol scope includes ELF interposition: a direct call to a user symbol whose name is also exported by an already-loaded library (for example glibc's weak `step`) currently binds to that library, not to the wrapped definition. Deciding this needs a link-visibility policy that applies to both languages. |
 
 ### Goal 3 Required Evidence Owners
 
@@ -1297,22 +1346,22 @@ mark it complete.
 
 Initial direct-only C wrapper support is ready to claim only when:
 
-- [ ] every row in the Stage 3 primitive matrix has an exact supported ABI path
+- [x] every row in the Stage 3 primitive matrix has an exact supported ABI path
   or the goal was explicitly narrowed before implementation;
-- [ ] by-value scalars, value and `void` results, and the Stage 4 one-level
+- [x] by-value scalars, value and `void` results, and the Stage 4 one-level
   pointer forms pass through C source and authoritative source-free C semantic
   contracts;
-- [ ] the same `T *` native signature has compiled scalar-reference and edited
+- [x] the same `T *` native signature has compiled scalar-reference and edited
   NumPy-array contract evidence, including the required projection change;
-- [ ] supported C operations call their user symbols without a native adapter;
-- [ ] unsupported adapter-required operations fail at completed policy with a
+- [x] supported C operations call their user symbols without a native adapter;
+- [x] unsupported adapter-required operations fail at completed policy with a
   documented diagnostic and no partial generated artifacts;
-- [ ] every out-of-scope pointer, callback, aggregate, variadic, calling
+- [x] every out-of-scope pointer, callback, aggregate, variadic, calling
   convention, and unsupported scalar-ABI form named above fails before
   planning, files, or compiler execution;
-- [ ] zero-adapter compilation, linking, manifests, Makefiles, verbose output,
+- [x] zero-adapter compilation, linking, manifests, Makefiles, verbose output,
   and imports have focused evidence;
-- [ ] Goal 2 Fortran direct and adapted routes remain green after shared-path
+- [x] Goal 2 Fortran direct and adapted routes remain green after shared-path
   reuse; and
-- [ ] the user-facing language feature matrix lists only C rows proved by
+- [x] the user-facing language feature matrix lists only C rows proved by
   compiled runtime tests.

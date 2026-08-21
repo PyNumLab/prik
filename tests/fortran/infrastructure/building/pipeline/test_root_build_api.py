@@ -1,16 +1,23 @@
 """Public root-facade contract for normal wrapper builds."""
 
 import prik
-from prik.pipeline.build import build_fortran_extension, build_pyi_extension, build_pyi_extension_from_manifest
+from prik.pipeline.build import (
+    build_c_extension,
+    build_fortran_extension,
+    build_pyi_extension,
+    build_pyi_extension_from_manifest,
+)
 
 
 def test_root_facade_exposes_only_version_and_build_entrypoints():
     assert prik.__all__ == (
         "__version__",
+        "build_c_extension",
         "build_fortran_extension",
         "build_pyi_extension",
         "build_pyi_extension_from_manifest",
     )
+    assert prik.build_c_extension is build_c_extension
     assert prik.build_fortran_extension is build_fortran_extension
     assert prik.build_pyi_extension is build_pyi_extension
     assert prik.build_pyi_extension_from_manifest is build_pyi_extension_from_manifest

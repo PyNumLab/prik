@@ -19,8 +19,8 @@ Status: current reference for the partial C frontend. The `prik.parsers.c`
 package, typed parser models, explicit C CLI parse path, raw directive
 metadata, compiler-assisted preprocessing, source-location remapping, project
 indexes, legacy parser schema snapshots, C standard-type probe, first semantic IR conversion
-subset, semantic conversion path, and starter exact-contract C `.pyi`
-generation are implemented.
+subset, semantic conversion path, starter exact-contract C `.pyi` generation,
+and the initial direct-only primitive C wrapper lane are implemented.
 PRIK_C_DOCS_END &#45;&#45;>
 
 <!&#45;&#45; PRIK_C_DOCS_START
@@ -177,6 +177,9 @@ PRIK_C_DOCS_END &#45;&#45;>
   functions, const/mutable pointer storage contracts, declared arrays,
   structs/opaque structs, enums, numeric macro constants, local typedef
   chains, standard-type probe facts, and explicit semantic conversion errors
+- direct-only C wrapper builds for target-probed primitive values, `void`, and
+  author-selected one-level primitive-pointer scalar or NumPy contracts;
+  unsupported C forms receive a pre-planning diagnostic
 PRIK_C_DOCS_END &#45;&#45;>
 
 <!&#45;&#45; PRIK_C_DOCS_START
@@ -1056,7 +1059,8 @@ source path or source text
   -> CParser._assemble_project(...) or parse_c_project(...)
   -> CProject indexes and cross-file resolution facts
   -> semantics.c2ir conversion
-  -> policy completion and `.pyi`; a C-input runtime wrapper backend comes later
+  -> starter `.pyi` extraction, or completed direct-only primitive C policy
+  -> direct binding generation, C compilation/linking, import, and call
 ```
 PRIK_C_DOCS_END &#45;&#45;>
 
@@ -1071,6 +1075,10 @@ Keep these boundaries:
   they are not recursive parse roots unless supplied by the user.
 - Semantic conversion is the first place where parser-native facts become the
   shared language-neutral model.
+- The runtime lane is deliberately narrow and generates no C adapter.
+  Aggregates, callbacks, variadics, pointer results, nullable or retained
+  pointers, multi-level pointers, `volatile`/atomic access, and unsupported
+  calling conventions fail before planning.
 
 The parser algorithm should remain grammar-style:
 

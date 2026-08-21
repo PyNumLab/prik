@@ -40,6 +40,7 @@ from prik.semantics.metadata import (
     DEFERRED_BINDING_METADATA,
     MAYBE_UNALLOCATED_METADATA,
     NATIVE_PROJECTION_METADATA,
+    NULLABLE_ANNOTATION_METADATA,
     OPTIONAL_ABSENT_HANDLE_METADATA,
     PROJECTED_OUTPUT_METADATA,
     SCALAR_STORAGE_CATEGORY,
@@ -3032,14 +3033,22 @@ class _PyiAstParser:
                 raise ValueError(
                     f"Scalar descriptor argument {arg.arg!r} must use a nullable annotation such as Float64 | None"
                 )
-        elif (optional_annotation := self._optional_union_item(annotation)) is not None:
+        nullable_annotation = False
+        if not nullable_descriptor and (optional_annotation := self._optional_union_item(annotation)) is not None:
             optional_type = self.semantic_type(optional_annotation)
             if self.contract_name(optional_annotation) is None and native_array_descriptor_kind(optional_type) is None:
                 annotation = optional_annotation
+                nullable_annotation = True
         visibility, semantic_type, original_name = self.visible_type(
             annotation,
             allow_optional_absent_handle=True,
         )
+        if nullable_annotation:
+            # Unwrapping keeps the established storage contract, but the author
+            # did write '| None'.  Recording it lets a language whose direct
+            # route cannot express a nullable actual reject the form instead of
+            # silently building a non-nullable one.
+            semantic_type.metadata[NULLABLE_ANNOTATION_METADATA] = True
         self._validate_optional_native_array_handle_argument(arg, default, semantic_type)
         writable = self._type_uses_writable_storage(semantic_type)
         semantic_type.ownership.mutable = writable

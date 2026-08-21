@@ -524,10 +524,17 @@ static inline int prik_int32_unpack_exact(PyObject *value, int32_t *destination)
 
 static inline int prik_int64_unpack_exact(PyObject *value, int64_t *destination)
 {
+#if NPY_SIZEOF_LONG == 8
+    if (!PyArray_IsScalar(value, Long)) {
+        return -1;
+    }
+    *destination = (int64_t)PyArrayScalar_VAL(value, Long);
+#else
     if (!PyArray_IsScalar(value, Int64)) {
         return -1;
     }
     *destination = (int64_t)PyArrayScalar_VAL(value, Int64);
+#endif
     return 0;
 }
 
@@ -896,10 +903,17 @@ static inline PyObject *prik_uint32_to_numpy(const uint32_t *value)
 
 static inline int prik_uint64_unpack_exact(PyObject *value, uint64_t *destination)
 {
+#if NPY_SIZEOF_LONG == 8
+    if (!PyArray_IsScalar(value, ULong)) {
+        return -1;
+    }
+    *destination = (uint64_t)PyArrayScalar_VAL(value, ULong);
+#else
     if (!PyArray_IsScalar(value, ULongLong)) {
         return -1;
     }
     *destination = (uint64_t)PyArrayScalar_VAL(value, ULongLong);
+#endif
     return 0;
 }
 

@@ -20,7 +20,7 @@ import subprocess
 import threading
 import warnings
 
-from prik.compiler.compiler_profiles import available_compilers, fortran_compiler_family, vendors
+from prik.compiler.compiler_profiles import available_compilers, c_compiler_family, fortran_compiler_family, vendors
 from prik.compiler.objects import ObjectFile
 
 __all__ = ("Compiler", "get_condaless_search_path")
@@ -80,6 +80,28 @@ class Compiler:
             execute_commands=execute_commands,
             search_path=search_path,
             executables={"fortran": resolved_fortran, "c": resolved_c},
+        )
+
+    @classmethod
+    def from_c_executable(
+        cls,
+        executable: str = "cc",
+        *,
+        debug: bool = False,
+        execute_commands: bool = True,
+        search_path: str | None = None,
+    ) -> Compiler:
+        """Create a C-only toolchain without inventing a Fortran dependency."""
+        resolved_c = shutil.which(executable, path=search_path)
+        if resolved_c is None:
+            raise FileNotFoundError(f"Could not find compiler executable: {executable}")
+        _token, vendor = c_compiler_family(str(Path(resolved_c).resolve()))
+        return cls(
+            vendor,
+            debug=debug,
+            execute_commands=execute_commands,
+            search_path=search_path,
+            executables={"c": resolved_c},
         )
 
     def __init__(

@@ -9,7 +9,7 @@ re-derived from native declarations or backend output.
 
 from __future__ import annotations
 
-from prik.policy.ownership import OwnershipOwner, SetterAction, TransferMode
+from prik.policy.ownership import OwnershipOwner, PythonBarrierAction, SetterAction, TransferMode
 from prik.policy.models import (
     ClassConstructorKind,
     EntrypointOptionalityAction,
@@ -791,8 +791,9 @@ class WrapperDocstringBuilder:
         """Describe completed native mutation and copy-return projection behavior.
 
         Non-mutating arguments produce no note.  Copy returns, projected
-        updates, and in-place storage each retain their established wording;
-        the helper does not infer mutability from datatype or intent.
+        updates, call-local scalar addresses, and in-place storage each retain
+        their established wording; the helper does not infer mutability from
+        datatype or intent.
         """
         if not argument.mutates_native:
             return ()
@@ -803,6 +804,14 @@ class WrapperDocstringBuilder:
             )
         if argument.projects_result:
             return ("    Native code may update this value; the updated value is returned.",)
+        if argument.binding.python_action is PythonBarrierAction.SCALAR_VALUE:
+            # A Python scalar has no caller storage to write through: the
+            # completed plan converts it into a call-local native value, so a
+            # native write lands in that temporary and is never read back.
+            return (
+                "    Native code may update its call-local copy.",
+                "    The update is not visible in Python.",
+            )
         return ("    Native code may update the supplied storage in place.",)
 
     def _raise_lines(

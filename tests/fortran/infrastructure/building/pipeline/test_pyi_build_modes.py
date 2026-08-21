@@ -216,7 +216,7 @@ def test_pyi_makefile_manifest_and_replay_workflows(tmp_path: Path):
     assert manifest_path == build_dir / "prik-build.json"
     assert makefile_path == build_dir / "Makefile.prik"
     assert manifest == payload["manifest"]
-    assert manifest["schema_version"] == 3
+    assert manifest["schema_version"] == 4
     assert manifest["build_kind"] == "pyi-wrapper"
     assert manifest["compiler"]["input_executable"] == str(selected_compiler)
     assert manifest["compiler"]["fortran_flags"] == ["-O2", "-g0"]

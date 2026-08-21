@@ -67,6 +67,36 @@ def test_c2ir_converts_scalar_function_signatures_and_preserves_native_order():
         "specifiers": [],
         "prototype_style": "prototype",
         "is_definition": False,
+        "c_abi": {
+            "calling_convention": "c",
+            "variadic": False,
+            "result": {
+                "source_spelling": "int",
+                "pointer_depth": 0,
+                "qualifiers": (),
+                "const": False,
+                "has_array_declarator": False,
+                "has_function_pointer": False,
+            },
+            "parameters": [
+                {
+                    "source_spelling": "int",
+                    "pointer_depth": 0,
+                    "qualifiers": (),
+                    "const": False,
+                    "has_array_declarator": False,
+                    "has_function_pointer": False,
+                },
+                {
+                    "source_spelling": "int",
+                    "pointer_depth": 0,
+                    "qualifiers": (),
+                    "const": False,
+                    "has_array_declarator": False,
+                    "has_function_pointer": False,
+                },
+            ],
+        },
     }
     assert [asdict(mapping) for mapping in add.projection] == [
         {
@@ -196,6 +226,19 @@ def test_c2ir_converts_qualifiers_callbacks_bitfields_and_unspecified_functions(
         "specifiers": [],
         "prototype_style": "unspecified",
         "is_definition": False,
+        "c_abi": {
+            "calling_convention": "c",
+            "variadic": False,
+            "result": {
+                "source_spelling": "int",
+                "pointer_depth": 0,
+                "qualifiers": (),
+                "const": False,
+                "has_array_declarator": False,
+                "has_function_pointer": False,
+            },
+            "parameters": [],
+        },
     }
     assert qualified.name == "Int8"
     assert qualified.metadata["c_char_policy"] == "implementation-defined signed 8-bit code unit"

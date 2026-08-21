@@ -45,9 +45,11 @@ def test_dcabs1(prik_blas, f2py_blas):
 
 
 def test_lsame(prik_blas, f2py_blas):
-    prik_equal = prik_blas.lsame("n", "N")
+    # LSAME declares no intent on either character dummy, so the conservative
+    # intent(inout) default returns both selectors after the logical result.
+    prik_equal, prik_equal_ca, prik_equal_cb = prik_blas.lsame("n", "N")
     f2py_equal = f2py_blas.lsame(b"n", b"N")
-    prik_different = prik_blas.lsame("N", "T")
+    prik_different, prik_different_ca, prik_different_cb = prik_blas.lsame("N", "T")
     f2py_different = f2py_blas.lsame(b"N", b"T")
 
     assert prik_equal is True
@@ -56,6 +58,8 @@ def test_lsame(prik_blas, f2py_blas):
     assert prik_different is False
     assert f2py_different == 0
     assert bool(prik_different) == bool(f2py_different)
+    assert (prik_equal_ca, prik_equal_cb) == ("n", "N")
+    assert (prik_different_ca, prik_different_cb) == ("N", "T")
 
 
 def test_xerbla(prik_blas, f2py_blas):

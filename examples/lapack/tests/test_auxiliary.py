@@ -88,7 +88,9 @@ def test_dlarf_applies_householder_reflector_from_left(prik_lapack, scipy_lapack
     f2py_result = f2py_lapack.dlarf(b"L", 2, 2, vector, 1, tau, f2py_c, np.empty(2))
     scipy_c = scipy_lapack.dlarf(vector, tau, original.copy(order="F"), np.empty(2), side=b"L")
 
-    assert prik_scalars == (2, 2, 1, tau, 2)
+    # LAPACK declares no intent on its dummies, so the conservative
+    # intent(inout) default returns every scalar, character selectors included.
+    assert prik_scalars == ("L", 2, 2, 1, tau, 2)
     assert f2py_result is None
     assert_allclose_float64(prik_c, expected, operation_size=2)
     assert_allclose_float64(f2py_c, expected, operation_size=2)

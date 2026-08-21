@@ -49,15 +49,15 @@ selects it explicitly.
 
 ## Input selection
 
-The default build accepts either one or more Fortran source `INPUT` values, or
-exactly one semantic `.pyi` entry contract — never both. With
+The default build accepts either one or more Fortran or supported C source
+`INPUT` values, or exactly one semantic `.pyi` entry contract — never both. With
 `--build-manifest PATH`, omit positional input entirely.
 
 | Option | Purpose |
 | --- | --- |
 | `paths` | Source files, `.pyi` files, or directories. Omit only with `--build-manifest`. |
 | `--version` | Prints the installed PRIK version and exits. |
-| `--language fortran` | Selects the frontend explicitly when suffix inference is unavailable. |
+| `--language {fortran,c}` | Selects the source or source-free contract language explicitly. C builds require `c`. |
 | `--build-manifest PATH` | Replays a saved `prik-build.json`. It does not generate one. |
 | `--jobs N` | Limits concurrent compiler processes. The default uses available CPUs. |
 
@@ -65,9 +65,9 @@ exactly one semantic `.pyi` entry contract — never both. With
 | `&#45;&#45;language {fortran,c}` | Selects the frontend. Required for C inputs, directories, and unknown suffixes. |
 PRIK_C_DOCS_END -->
 
-Compiled wrapper builds are Fortran-only, so the default build advertises
-`--language {fortran}`. The `parse`, `semantics`, `generate --pyi`, and `probe`
-paths advertise `--language {fortran,c}` because they support both frontends.
+Compiled wrapper builds support Fortran and the documented direct-only C
+primitive lane. C paths require `--language c`; the parser also accepts more C
+forms than that runtime lane, which fail before wrapper planning.
 
 Directories are expanded recursively in deterministic path order.
 
@@ -78,22 +78,24 @@ PRIK_C_DOCS_END -->
 
 ## Wrapper builds
 
-A positional Fortran source is both a semantic input and a native
+A positional Fortran or C source is both a semantic input and a native
 implementation source. A `.pyi` is only the semantic contract, so it needs at
-least one explicit native input: `--native-fortran-sources`, `--native-objects`,
+least one explicit native input: `--native-fortran-sources`, `--native-c-sources`, `--native-objects`,
 `--native-library`, or `--native-link-item`.
 
 | Option | Purpose |
 | --- | --- |
 | `--out NAME` | Python module name, `PyInit_<name>` symbol, and stable `NAME.so` alias. Accepts `NAME` or `NAME.so`, and requires a value. |
 | `--out-dir DIR` | Where generated artifacts and the ABI-suffixed extension are built. Default `./__prik__`. |
-| `--compiler COMPILER` | The input-language compiler used for the whole build: preprocessing, datatype measurement, native and bridge compilation, and linking. Default `gfortran`. |
+| `--compiler COMPILER` | The input-language compiler used for preprocessing, datatype measurement, native compilation, and linking. Defaults to `gfortran` for Fortran and `cc` for C. |
 | `-I DIR`, `--include-dir DIR` | Build-wide include directory. Repeat to preserve search order. |
 | `--strict-wrapper-names` | Rejects Python names that would need escaping or a collision suffix. |
 | `&#45;&#45;assume-intent-in-scalars` | Treats a primitive scalar dummy that declares no `intent` as `intent(in)`, so its value is not returned. A declared `intent` always wins; arrays, derived-type objects, and `character` values are unaffected. Also accepted by `generate --pyi`, where it removes the same results from the generated contract, and by `semantics`. |
 | `--no-compile-input-sources` | Treats positional sources as semantic inputs only. Requires an explicit native input. |
 | `--native-fortran-sources PATH ...` | Compiles extra native sources without exposing them as public API. |
+| `--native-c-sources PATH ...` | Compiles extra C sources without exposing them as public API. |
 | `--native-compile-flags FLAG ...` | Flags for native implementation compilation. |
+| `--native-c-compile-flags FLAG ...` | Flags for extra C implementation compilation. |
 | `--native-objects PATH ...` | Links object files, static archives, or shared libraries. |
 | `--native-library NAME ...` | Links system libraries by name — `--native-library openblas` passes `-lopenblas`. |
 | `--native-link-item KIND:VALUE ...` | Ordered link items. `KIND` is `object`, `archive`, `shared-library`, `library`, or `arg`. |
@@ -121,10 +123,9 @@ Build rules worth knowing:
   behavior, native inputs, and link plan, so other flags are rejected rather
   than silently ignored.
 
-<!-- PRIK_C_DOCS_START
-- C source inspection is supported; runtime wrapping of user-supplied C
-  libraries is not part of this CLI surface yet.
-PRIK_C_DOCS_END -->
+- A source-free C `.pyi` contract is C-native only when `--language c` is
+  supplied. PRIK does not infer that identity from the contract filename,
+  compiler, native source list, or `@native_abi("c")`.
 
 ## Parse and semantics
 
@@ -276,8 +277,10 @@ for semantic `.pyi` builds the normalized replay `manifest`.
 | Print semantic IR | `python3 -m prik semantics path/to/file.f90` |
 | Emit a semantic `.pyi` contract directory | `python3 -m prik generate --pyi path/to/file.f90 --out contracts` |
 | Build a Fortran wrapper | `python3 -m prik path/to/file.f` |
+| Build a direct-only primitive C wrapper | `python3 -m prik --language c path/to/file.c --compiler cc` |
 | Build with native compiler and link flags | `python3 -m prik path/to/file.f90 --native-compile-flags="-O3 -fopenmp" --wrapper-c-flags=-fopenmp` |
 | Build from a semantic contract and native object | `python3 -m prik contracts/module.pyi --native-objects build/module.o -I build` |
+| Build a C-native semantic contract | `python3 -m prik --language c contracts/module.pyi --native-c-sources native/module.c --compiler cc` |
 | Build with an explicit module and `.so` name | `python3 -m prik path/to/file.f90 --out my_extension` |
 | Generate wrapper sources only | `python3 -m prik generate --sources dependency.f90 api.f90 --out-dir build` |
 | Generate an editable Makefile | `python3 -m prik generate --makefile dependency.f90 api.f90 --out-dir build` |

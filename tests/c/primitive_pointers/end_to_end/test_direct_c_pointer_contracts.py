@@ -1,0 +1,102 @@
+"""Compiled scalar-reference and NumPy-array contracts for one-level C pointers."""
+
+import shutil
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from prik import build_pyi_extension
+from tests.c._support.runtime import sole_native_module
+
+
+@pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")
+def test_c_pointer_supports_default_scalar_reference_and_edited_c_array_contracts(tmp_path: Path):
+    contract = tmp_path / "pointers.pyi"
+    contract.write_text(
+        """from prik.contracts import Addr, Arg, Float64, Int32, Returns, native_call
+
+@native_call([Addr(Arg(0))])
+def scale_scalar(value: Float64) -> Returns["value", Float64]: ...
+
+def scale_zero(value: Float64[()]) -> None: ...
+
+def scale_vector(values: Float64[n], n: Int32) -> None: ...
+
+def scale_matrix(values: Float64[2, 2]) -> None: ...
+""",
+        encoding="utf-8",
+    )
+    source = tmp_path / "pointers.c"
+    source.write_text(
+        """void scale_scalar(double *value) { *value *= 2.0; }
+void scale_zero(double *value) { *value += 1.0; }
+void scale_vector(double *values, int n) { for (int i = 0; i < n; ++i) values[i] *= 3.0; }
+void scale_matrix(double *values) { for (int i = 0; i < 4; ++i) values[i] += 1.0; }
+""",
+        encoding="utf-8",
+    )
+
+    result = build_pyi_extension(
+        contract,
+        native_language="c",
+        native_c_sources=[source],
+        output_dir=tmp_path / "build",
+    )
+    module = sole_native_module(result.import_module())
+
+    assert module.scale_scalar(np.float64(2.5)) == np.float64(5.0)
+    zero = np.array(4.0, dtype=np.float64)
+    assert module.scale_zero(zero) is None
+    assert zero[()] == np.float64(5.0)
+    values = np.array([1.0, 2.0, 3.0], dtype=np.float64)
+    assert module.scale_vector(values, np.int32(3)) is None
+    np.testing.assert_allclose(values, np.array([3.0, 6.0, 9.0]))
+    empty = np.empty(0, dtype=np.float64)
+    assert module.scale_vector(empty, np.int32(0)) is None
+    matrix = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float64, order="C")
+    assert module.scale_matrix(matrix) is None
+    np.testing.assert_allclose(matrix, np.array([[2.0, 3.0], [4.0, 5.0]]))
+    with pytest.raises(TypeError, match=r"expected ordering \(C\)"):
+        module.scale_matrix(np.asfortranarray(matrix))
+
+
+@pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")
+def test_edited_c_array_contract_can_derive_the_native_extent_from_its_shape(tmp_path: Path):
+    """The documented promotion hides the count behind ``Arg(0).shape[0]``.
+
+    The derived extent is a binding-owned producer, so it keeps its own
+    ``size_t`` identity while the promoted buffer crosses by address.
+    """
+    contract = tmp_path / "promotion.pyi"
+    contract.write_text(
+        """from prik.contracts import Arg, Float64, native_call
+
+@native_call([Arg(0).shape[0], Arg(0)])
+def scale(values: Float64[:]) -> None: ...
+""",
+        encoding="utf-8",
+    )
+    source = tmp_path / "promotion.c"
+    source.write_text(
+        """#include <stddef.h>
+void scale(size_t n, double *values) { for (size_t i = 0; i < n; ++i) values[i] *= 2.0; }
+""",
+        encoding="utf-8",
+    )
+
+    result = build_pyi_extension(
+        contract,
+        native_language="c",
+        native_c_sources=[source],
+        output_dir=tmp_path / "build",
+    )
+    module = sole_native_module(result.import_module())
+    binding = next(path.read_text(encoding="utf-8") for path in result.generated_sources if path.suffix == ".c")
+
+    assert "void scale(size_t shape_0, double * values);" in binding
+    assert all(path.suffix != ".f90" for path in result.generated_sources)
+    values = np.array([1.0, 2.0, 3.0], dtype=np.float64)
+    assert module.scale(values) is None
+    np.testing.assert_allclose(values, np.array([2.0, 4.0, 6.0]))
+    assert module.scale(np.empty(0, dtype=np.float64)) is None

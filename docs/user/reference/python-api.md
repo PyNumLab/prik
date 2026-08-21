@@ -10,7 +10,7 @@ publication: draft
 # Python API Reference
 
 `prik` is a small facade. The root package exposes the installed version and
-the three ways to build a wrapper — nothing else. Parser models, semantic
+the four ways to build a wrapper — nothing else. Parser models, semantic
 conversion, compiler probes, runtime handles, and plans are imported from the
 package that owns them.
 
@@ -23,7 +23,7 @@ print(sorted(prik.__all__))
 
 <!-- prik-doc-test-output -->
 ```text
-['__version__', 'build_fortran_extension', 'build_pyi_extension', 'build_pyi_extension_from_manifest']
+['__version__', 'build_c_extension', 'build_fortran_extension', 'build_pyi_extension', 'build_pyi_extension_from_manifest']
 ```
 
 ## Root API
@@ -31,6 +31,7 @@ print(sorted(prik.__all__))
 | Symbol | Use it for |
 | --- | --- |
 | `__version__` | The installed PRIK distribution version. |
+| `build_c_extension` | Build the documented direct-only primitive C source lane. |
 | `build_fortran_extension` | Build from Fortran source, plus optional native-only inputs. |
 | `build_pyi_extension` | Build from semantic `.pyi` contracts, plus explicit native implementation inputs. |
 | `build_pyi_extension_from_manifest` | Replay a saved `.pyi` build manifest, or generate its Makefile. |
@@ -86,7 +87,9 @@ Reach past the root facade when you need a single stage rather than a build.
 - A parser success is only a source fact. Semantic conversion, policy
   completion, planning, and generation are separate stages that can each
   reject input the parser accepted.
-- The C frontend is inspection-only and is not part of the root API.
+- C source builds are limited to the documented direct-only primitive lane.
+  Other parser-accepted C forms fail before wrapper planning rather than using
+  a generated adapter.
 
 ## Related pages
 

@@ -48,61 +48,73 @@ def prepare_pyi_native_contract(modules: Iterable[SemanticModule]) -> list[Seman
 
 def _prepare_module(module: SemanticModule) -> None:
     native_scope = module.name
-    module.origin.source_language = "fortran"
+    native_language = module.origin.source_language or "fortran"
+    if native_language not in {"c", "fortran"}:
+        raise ValueError(f"Unsupported semantic .pyi native language: {native_language!r}")
+    module.origin.source_language = native_language
     module.origin.native_name = native_scope
     module.origin.native_scope = native_scope
     module.origin.source_kind = "module"
 
     for variable in module.variables:
-        _set_origin(variable, native_scope, "variable")
+        _set_origin(variable, native_scope, "variable", native_language=native_language)
     for function in module.functions:
-        _prepare_function(function, native_scope)
+        _prepare_function(function, native_scope, native_language=native_language)
     for prototype in module.prototypes:
-        _prepare_prototype(prototype, native_scope)
+        _prepare_prototype(prototype, native_scope, native_language=native_language)
     for overload_set in module.overload_sets:
         for procedure in overload_set.procedures:
-            _prepare_function(procedure, native_scope)
+            _prepare_function(procedure, native_scope, native_language=native_language)
     for semantic_class in module.classes:
-        _prepare_class(semantic_class, native_scope)
+        _prepare_class(semantic_class, native_scope, native_language=native_language)
     for semantic_type in _module_semantic_types(module):
-        semantic_type.origin.source_language = "fortran"
+        semantic_type.origin.source_language = native_language
 
 
-def _set_origin(node, native_scope: str | None, source_kind: str) -> None:
-    node.origin.source_language = "fortran"
+def _set_origin(node, native_scope: str | None, source_kind: str, *, native_language: str) -> None:
+    node.origin.source_language = native_language
     node.origin.native_name = node.origin.native_name or getattr(node, "native_name", None) or node.name
     node.origin.native_scope = native_scope
     node.origin.source_kind = source_kind
 
 
-def _prepare_function(function: SemanticFunction, native_scope: str) -> None:
+def _prepare_function(function: SemanticFunction, native_scope: str, *, native_language: str) -> None:
+    # Preserve the established Fortran distinction: a declaration already
+    # marked as Fortran with no scope is external, while an ordinary `.pyi`
+    # declaration receives its contract module scope. C has no generated
+    # module adapter and therefore always preserves the user symbol directly.
     is_external = function.origin.source_language == "fortran" and function.origin.native_scope is None
     function_scope = None if is_external else native_scope
     source_kind = "function" if function.return_type is not None else "subroutine"
-    _set_origin(function, function_scope, source_kind)
+    _set_origin(function, function_scope, source_kind, native_language=native_language)
     function.origin.native_name = function.native_name or function.name
     for argument in function.arguments:
-        _set_origin(argument, function.origin.native_name, "argument")
+        _set_origin(argument, function.origin.native_name, "argument", native_language=native_language)
 
 
-def _prepare_prototype(prototype: SemanticPrototype, native_scope: str) -> None:
-    _set_origin(prototype, native_scope, "prototype")
+def _prepare_prototype(prototype: SemanticPrototype, native_scope: str, *, native_language: str) -> None:
+    _set_origin(prototype, native_scope, "prototype", native_language=native_language)
     prototype.origin.native_name = prototype.native_name or prototype.name
     for argument in prototype.arguments:
-        _set_origin(argument, prototype.origin.native_name, "prototype_argument")
+        _set_origin(
+            argument,
+            prototype.origin.native_name,
+            "prototype_argument",
+            native_language=native_language,
+        )
 
 
-def _prepare_class(semantic_class: SemanticClass, native_scope: str) -> None:
-    _set_origin(semantic_class, native_scope, "derived_type")
+def _prepare_class(semantic_class: SemanticClass, native_scope: str, *, native_language: str) -> None:
+    _set_origin(semantic_class, native_scope, "derived_type", native_language=native_language)
     for field in semantic_class.fields:
-        _set_origin(field, native_scope, "field")
+        _set_origin(field, native_scope, "field", native_language=native_language)
     for method in semantic_class.methods:
-        _prepare_function(method, native_scope)
+        _prepare_function(method, native_scope, native_language=native_language)
     for overload_set in semantic_class.overload_sets:
         for procedure in overload_set.procedures:
-            _prepare_function(procedure, native_scope)
+            _prepare_function(procedure, native_scope, native_language=native_language)
     for nested in semantic_class.classes:
-        _prepare_class(nested, native_scope)
+        _prepare_class(nested, native_scope, native_language=native_language)
 
 
 def native_contract_issues(module: SemanticModule) -> list[NativeContractIssue]:

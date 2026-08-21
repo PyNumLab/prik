@@ -24,6 +24,7 @@ from prik.semantics.metadata import (
     ADDRESS_ROLE_METADATA,
     ADDRESS_ROLE_RAW,
     BIND_TARGET_METADATA,
+    NULLABLE_ANNOTATION_METADATA,
     SCALAR_STORAGE_CATEGORY,
     SUPPRESS_DEFAULT_CONSTRUCTOR_METADATA,
 )
@@ -63,6 +64,8 @@ from prik.policy.models import (
     LOGICAL_SCALAR_KIND_COPY_REASON,
     LOGICAL_ARRAY_KIND_COPY_REASON,
     NativeEntrypointAction,
+    DirectCABITypePolicy,
+    DirectCABIPolicy,
     EntrypointPassingConvention,
     EntrypointOptionalityAction,
     EntrypointProjectionAction,
@@ -194,6 +197,15 @@ _PLAN_PRIMITIVE_SCALAR_TYPES = frozenset(
 # on the build target's ``long double``, so the decision reads measured facts
 # rather than the source language.
 _EXTENDED_PRECISION_SCALAR_TYPES = frozenset({"Float128", "Complex256"})
+
+# Binding-owned extent, length, presence, and workspace slots record the Python
+# position of the argument they are derived from, but they never transport it.
+_DERIVED_NATIVE_CALL_SLOT_KINDS = frozenset({"computed", "work"})
+
+# Qualifiers describe the native view of a pointee, not the call-local storage
+# that receives a converted Python value, so they are dropped whole rather than
+# by substring, which would corrupt a spelling that merely contains one.
+_C_POINTEE_QUALIFIER_WORDS = frozenset({"const", "restrict", "__restrict", "__restrict__", "volatile", "_Atomic"})
 
 _NUMPY_DTYPE_NAMES = {
     **dict.fromkeys(BOOLEAN_SEMANTIC_TYPE_NAMES, "bool"),
@@ -1297,6 +1309,9 @@ def completed_function_wrapper_policy(function: models.SemanticFunction) -> Func
             f"Semantic function {function.name!r} is missing completed wrapper policy; "
             "run complete_semantic_policies before wrapper planning"
         )
+    if not policy.supported:
+        details = "; ".join(policy.blockers) or "unsupported wrapper policy"
+        raise ValueError(f"Semantic function {policy.owner_path!r} has unsupported wrapper policy: {details}")
     if policy.entrypoint_action is None:
         raise ValueError(f"Semantic function {policy.owner_path!r} is missing completed native entrypoint action")
     if policy.entrypoint_action is NativeEntrypointAction.DIRECT_C_ABI and not policy.entrypoint_symbol:
@@ -1314,9 +1329,6 @@ def completed_function_wrapper_policy(function: models.SemanticFunction) -> Func
         raise ValueError(
             f"Semantic function {policy.owner_path!r} has incomplete native entrypoint slots {incomplete_slots}"
         )
-    if not policy.supported:
-        details = "; ".join(policy.blockers) or "unsupported wrapper policy"
-        raise ValueError(f"Semantic function {policy.owner_path!r} has unsupported wrapper policy: {details}")
     return policy
 
 
@@ -1666,6 +1678,13 @@ def build_function_wrapper_policy(
     # Complete result representation and declaration call targets, then bind
     # every array-extent producer to its immutable role.
     results, result_blockers = _result_policies(context)
+    if function.origin.source_language == "c":
+        arguments, results, native_call_slots = _normalize_c_direct_scalar_identities(
+            function,
+            arguments,
+            results,
+            native_call_slots,
+        )
     declaration_callables = _function_declaration_callable_policies(function, owner_path)
     arguments, results, native_call_slots = _complete_function_array_extent_policies(
         function,
@@ -1680,6 +1699,8 @@ def build_function_wrapper_policy(
         arguments,
         native_call_slots,
     )
+    if function.origin.source_language == "c":
+        arguments, native_call_slots = _complete_c_direct_array_layouts(arguments, native_call_slots)
     # Record ordered writeback, cleanup, and ownership-transfer lifecycle work.
     writeback_actions, lifecycle_blockers = _lifecycle_policies(arguments)
     cleanup_actions, release_actions = _derived_result_lifecycle_policies(results)
@@ -1713,6 +1734,17 @@ def build_function_wrapper_policy(
             slots=native_call_slots,
         )
     )
+    # Only a C-source operation carries an exact C declaration plan. A Fortran
+    # ``bind(C)`` procedure keeps its established backend-projected prototype,
+    # which is the only route that can lower strings, derived objects, and
+    # callbacks through the shared direct entrypoint.
+    direct_c_abi = (
+        _completed_direct_c_abi_policy(function, arguments, results, native_call_slots)
+        if entrypoint_action is NativeEntrypointAction.DIRECT_C_ABI and function.origin.source_language == "c"
+        else None
+    )
+    if function.origin.source_language == "c":
+        blockers = (*blockers, *entrypoint_diagnostics)
     return FunctionWrapperPolicy(
         owner_path=owner_path,
         python_exports=completed_python_exports(function, function.name),
@@ -1747,6 +1779,7 @@ def build_function_wrapper_policy(
         entrypoint_action=entrypoint_action,
         entrypoint_symbol=entrypoint_symbol,
         entrypoint_diagnostics=entrypoint_diagnostics,
+        direct_c_abi=direct_c_abi,
     )
 
 
@@ -1761,7 +1794,7 @@ def _complete_function_entrypoint_route(
 ) -> tuple[
     list[ArgumentPolicy],
     tuple[NativeCallSlotPolicy, ...],
-    NativeEntrypointAction,
+    NativeEntrypointAction | None,
     str,
     tuple[str, ...],
 ]:
@@ -1774,12 +1807,19 @@ def _complete_function_entrypoint_route(
         results=results,
         slots=slots,
     )
+    is_c_operation = function.origin.source_language == "c"
     entrypoint_action = (
         NativeEntrypointAction.DIRECT_C_ABI
         if not entrypoint_diagnostics
+        else None
+        if is_c_operation
         else NativeEntrypointAction.GENERATED_FORTRAN_ADAPTER
     )
-    arguments = [_complete_entrypoint_argument_route(argument, entrypoint_action) for argument in arguments]
+    # C policy errors deliberately have no adapter action.  The preliminary
+    # route below exists only to finish the policy record; planning rejects the
+    # completed unsupported record before it can emit an artifact.
+    completed_action = entrypoint_action or NativeEntrypointAction.DIRECT_C_ABI
+    arguments = [_complete_entrypoint_argument_route(argument, completed_action) for argument in arguments]
     optionality_by_position = {argument.native_position: argument.entrypoint_optionality for argument in arguments}
     slots = tuple(
         replace(slot, entrypoint_optionality=optionality_by_position[slot.native_position])
@@ -1793,6 +1833,92 @@ def _complete_function_entrypoint_route(
         else ""
     )
     return arguments, slots, entrypoint_action, entrypoint_symbol, entrypoint_diagnostics
+
+
+def _normalize_c_direct_scalar_identities(
+    function: models.SemanticFunction,
+    arguments: list[ArgumentPolicy],
+    results: tuple[ResultPolicy, ...],
+    slots: tuple[NativeCallSlotPolicy, ...],
+) -> tuple[list[ArgumentPolicy], tuple[ResultPolicy, ...], tuple[NativeCallSlotPolicy, ...]]:
+    """Copy target-resolved C scalar identities into completed lowering policy.
+
+    C's public ``Int`` spelling intentionally survives semantic conversion,
+    while the measured storage identity (for example ``Int32``) is what the
+    shared NumPy and binding path consumes.  This is policy normalization, not
+    backend inference; source spelling remains in ``c_abi`` provenance.
+    """
+    # Argument identity is keyed by name: a route-neutral projection may
+    # reorder native slots, so a positional map would resolve one argument's
+    # Python conversion against another argument's declared type.
+    by_name = {argument.name: _c_direct_scalar_name(argument.semantic_type) for argument in function.arguments}
+    semantic_by_name = {argument.name: argument for argument in function.arguments}
+    normalized_arguments = [
+        replace(
+            argument,
+            semantic_type_name=by_name.get(argument.name) or argument.semantic_type_name,
+            native_storage_c_type=_c_direct_argument_storage_type(
+                function,
+                argument.native_position,
+                semantic_argument=semantic_by_name.get(argument.name),
+            ),
+        )
+        for argument in arguments
+    ]
+    return_name = _c_direct_scalar_name(function.return_type)
+    normalized_results = tuple(
+        replace(
+            result,
+            semantic_type_name=return_name,
+            direct_result_abi=DirectResultABI.NATIVE_SCALAR,
+            bridge_data_action=BridgeDataAction.DIRECT_TRANSFER,
+            bridge_copy_reason=None,
+        )
+        if result.source_kind == "direct_return" and return_name is not None
+        else result
+        for result in results
+    )
+    # Only a slot that transports one visible argument inherits that argument's
+    # identity.  A binding-owned extent, length, presence, or literal slot owns
+    # its own completed type and must keep it.
+    normalized_slots = tuple(
+        replace(slot, semantic_type_name=by_name.get(slot.python_name) or slot.semantic_type_name)
+        if slot.python_name is not None
+        else slot
+        for slot in slots
+    )
+    return normalized_arguments, normalized_results, normalized_slots
+
+
+def _complete_c_direct_array_layouts(
+    arguments: list[ArgumentPolicy],
+    slots: tuple[NativeCallSlotPolicy, ...],
+) -> tuple[list[ArgumentPolicy], tuple[NativeCallSlotPolicy, ...]]:
+    """Select C-contiguous NumPy buffer validation for direct C arrays.
+
+    A semantic array contract is an author-selected view of a one-level C
+    pointer. The C entrypoint receives only its first element, so policy owns
+    rank, concrete-shape, writable, and C-layout requirements before planning.
+    """
+    completed = []
+    arrays_by_position: dict[int, ArrayHandoffPolicy] = {}
+    for argument in arguments:
+        if argument.rank <= 0 or argument.array is None:
+            completed.append(argument)
+            continue
+        array = replace(argument.array, order="ORDER_C", native_order="ORDER_C", contiguous=True)
+        actual = argument.native_array_actual
+        if actual is not None:
+            actual = replace(actual, order="C", require_contiguous=True)
+        completed.append(replace(argument, array=array, native_array_actual=actual))
+        arrays_by_position[argument.native_position] = array
+    completed_slots = tuple(
+        replace(slot, array=arrays_by_position[slot.native_position])
+        if slot.native_position in arrays_by_position
+        else slot
+        for slot in slots
+    )
+    return completed, completed_slots
 
 
 def _complete_entrypoint_argument_route(
@@ -1894,7 +2020,14 @@ def _argument_entrypoint_passing(
     """Complete one C parameter transport from already completed boundary facts."""
     if callback is not None:
         return EntrypointPassingConvention.RUNTIME_HANDLE
-    direct_c_abi = function.origin.source_language == "fortran" and function.origin.native_abi == "c"
+    if function.origin.source_language == "c" and _c_source_pointer_depth_for_argument(function, argument) == 1:
+        # Source C's conservative ``T *`` default is one scalar local whose
+        # address crosses the direct entrypoint. Array promotion is an edited
+        # semantic contract and arrives below through ARRAY_BUFFER instead.
+        return EntrypointPassingConvention.POINTER_REFERENCE
+    direct_c_abi = (function.origin.source_language == "fortran" and function.origin.native_abi == "c") or (
+        function.origin.source_language == "c"
+    )
     if boundary.handoff_mode is ArgumentHandoffMode.NATIVE_DESCRIPTOR:
         return EntrypointPassingConvention.C_DESCRIPTOR_POINTER
     if argument.optional:
@@ -1928,7 +2061,9 @@ def _argument_entrypoint_optionality(
         return EntrypointOptionalityAction.NULL_C_DESCRIPTOR_POINTER
     if _argument_passes_by_value(argument, slot):
         return EntrypointOptionalityAction.ADAPTER_SIDE_FORTRAN_OMISSION
-    if function.origin.source_language == "fortran" and function.origin.native_abi == "c":
+    if (function.origin.source_language == "fortran" and function.origin.native_abi == "c") or (
+        function.origin.source_language == "c"
+    ):
         return EntrypointOptionalityAction.NULL_POINTER
     return EntrypointOptionalityAction.ADAPTER_SIDE_FORTRAN_OMISSION
 
@@ -2035,7 +2170,9 @@ def _direct_c_abi_ineligibility(
     results: tuple[ResultPolicy, ...],
     slots: tuple[NativeCallSlotPolicy, ...],
 ) -> tuple[str, ...]:
-    """Return central reasons an operation must keep its generated Fortran adapter."""
+    """Return completed direct-route blockers without choosing an adapter."""
+    if function.origin.source_language == "c":
+        return _direct_c_operation_ineligibility(function, arguments=arguments, results=results, slots=slots)
     if function.origin.source_language != "fortran" or function.origin.native_abi != "c":
         return ("original procedure has no Fortran C ABI fact",)
 
@@ -2053,6 +2190,301 @@ def _direct_c_abi_ineligibility(
     for slot in slots:
         reasons.extend(_direct_slot_ineligibility(slot))
     return tuple(dict.fromkeys(reasons))
+
+
+def _direct_c_array_ineligibility(argument: ArgumentPolicy) -> tuple[str, ...]:
+    """Validate the selected one-level C-pointer NumPy-array mechanism."""
+    reasons = []
+    if argument.rank < 1 or argument.rank > 15:
+        reasons.append(f"C_DIRECT_ARRAY_RANK:{argument.name}")
+    if argument.handoff_mode is not ArgumentHandoffMode.ARRAY_BUFFER or argument.array is None:
+        reasons.append(f"C_DIRECT_ARRAY_CONTRACT:{argument.name}")
+    if argument.entrypoint_passing is not EntrypointPassingConvention.POINTER_REFERENCE:
+        reasons.append(f"C_DIRECT_ARRAY_PASSING:{argument.name}")
+    if argument.native_array_handle is not None or argument.derived is not None or argument.callback is not None:
+        reasons.append(f"C_DIRECT_ARRAY_CONTRACT:{argument.name}")
+    if argument.transformations:
+        reasons.append(f"C_DIRECT_ARRAY_TRANSFORMATION:{argument.name}")
+    if argument.entrypoint_optionality is not EntrypointOptionalityAction.REQUIRED:
+        reasons.append(f"C_DIRECT_NULLABLE_POINTER:{argument.name}")
+    if argument.array is not None and argument.array.order != "ORDER_C":
+        reasons.append(f"C_DIRECT_ARRAY_ORDER:{argument.name}")
+    return tuple(dict.fromkeys(reasons))
+
+
+def _direct_c_operation_ineligibility(
+    function: models.SemanticFunction,
+    *,
+    arguments: tuple[ArgumentPolicy, ...],
+    results: tuple[ResultPolicy, ...],
+    slots: tuple[NativeCallSlotPolicy, ...],
+) -> tuple[str, ...]:
+    """Return fail-closed blockers for the initial direct-only C lane."""
+    raw_abi = function.metadata.get("c_abi")
+    has_source_abi = isinstance(raw_abi, dict)
+    source_abi = raw_abi if has_source_abi else {}
+    reasons: list[str] = []
+    if has_source_abi:
+        if source_abi.get("calling_convention") != "c":
+            reasons.append("C_DIRECT_UNSUPPORTED_CALLING_CONVENTION")
+        if source_abi.get("variadic"):
+            reasons.append("C_DIRECT_VARIADIC_FUNCTION")
+    if "static" in function.metadata.get("storage", ()):
+        reasons.append("C_DIRECT_TRANSLATION_UNIT_LOCAL_SYMBOL")
+    if not (function.origin.native_symbol or function.origin.native_name or function.native_name or function.name):
+        reasons.append("C_DIRECT_MISSING_LINKABLE_SYMBOL")
+    if function.origin.native_abi not in {None, "c"}:
+        reasons.append("C_DIRECT_UNSUPPORTED_CALLING_CONVENTION")
+    if _c_direct_scalar_name(function.return_type) is None and function.return_type is not None:
+        reasons.append("C_DIRECT_UNRESOLVED_PRIMITIVE_ABI:return")
+    if function.return_type is not None and _c_source_pointer_depth(function, result=True) > 0:
+        reasons.append("C_DIRECT_POINTER_RESULT")
+    result_facts = source_abi.get("result") if isinstance(source_abi.get("result"), dict) else {}
+    if {"volatile", "_Atomic"} & set(result_facts.get("qualifiers", ())):
+        reasons.append("C_DIRECT_UNSUPPORTED_QUALIFIER:return")
+
+    semantic_arguments = {argument.name: argument for argument in function.arguments}
+    for argument in arguments:
+        semantic_argument = semantic_arguments[argument.name]
+        source_type = _c_source_type_facts(function, argument.native_position)
+        if semantic_argument.semantic_type.name == "CFunctionPointer" or source_type.get("has_function_pointer"):
+            reasons.append(f"C_DIRECT_CALLBACK:{argument.name}")
+        if source_type.get("has_array_declarator"):
+            reasons.append(f"C_DIRECT_ARRAY_DECLARATOR:{argument.name}")
+        if {"volatile", "_Atomic"} & set(source_type.get("qualifiers", ())):
+            reasons.append(f"C_DIRECT_UNSUPPORTED_QUALIFIER:{argument.name}")
+        pointer_depth = int(source_type.get("pointer_depth", _c_pointer_depth(semantic_argument.semantic_type)))
+        if pointer_depth > 1:
+            reasons.append(f"C_DIRECT_POINTER_DEPTH:{argument.name}")
+        if argument.nullable or argument.optional:
+            reasons.append(f"C_DIRECT_NULLABLE_POINTER:{argument.name}")
+        if " | None" in semantic_argument.semantic_type.name or semantic_argument.semantic_type.metadata.get(
+            NULLABLE_ANNOTATION_METADATA
+        ):
+            reasons.append(f"C_DIRECT_NULLABLE_POINTER:{argument.name}")
+        storage = semantic_argument.semantic_type.storage
+        if storage is not None and storage.metadata.get("address_role") == "raw":
+            reasons.append(f"C_DIRECT_RAW_ADDRESS:{argument.name}")
+        if _c_direct_scalar_name(semantic_argument.semantic_type) is None:
+            reasons.append(f"C_DIRECT_UNRESOLVED_PRIMITIVE_ABI:{argument.name}")
+        if argument.rank > 0 and semantic_argument.semantic_type.name in {"Bool", "Bool8"}:
+            reasons.append(f"C_DIRECT_BOOL_ARRAY:{argument.name}")
+        if (
+            pointer_depth
+            and source_type.get("const")
+            and (argument.writable or argument.projects_result or argument.array_copy_out)
+        ):
+            reasons.append(f"C_DIRECT_CONST_POINTER_OUTPUT:{argument.name}")
+        if semantic_argument.semantic_type.metadata.get("c_type_fact_source") == "fallback":
+            reasons.append(f"C_DIRECT_UNPROBED_PRIMITIVE_ABI:{argument.name}")
+
+    if function.return_type is not None and function.return_type.metadata.get("c_type_fact_source") == "fallback":
+        reasons.append("C_DIRECT_UNPROBED_PRIMITIVE_ABI:return")
+    for argument in arguments:
+        if argument.rank > 0:
+            reasons.extend(_direct_c_array_ineligibility(argument))
+        else:
+            reasons.extend(_direct_argument_ineligibility(argument))
+    for result in results:
+        reasons.extend(_direct_result_ineligibility(result))
+    for slot in slots:
+        reasons.extend(_direct_slot_ineligibility(slot))
+    return tuple(dict.fromkeys(reasons))
+
+
+def _c_direct_scalar_name(semantic_type: models.SemanticType | None) -> str | None:
+    """Return the resolved lowering identity without replacing public C spelling."""
+    if semantic_type is None:
+        return None
+    candidate = semantic_type.dtype or semantic_type.name
+    return str(candidate) if candidate in _PLAN_PRIMITIVE_SCALAR_TYPES else None
+
+
+def _c_source_type_facts(function: models.SemanticFunction, native_position: int) -> dict[str, object]:
+    raw_abi = function.metadata.get("c_abi")
+    if not isinstance(raw_abi, dict):
+        return {}
+    parameters = raw_abi.get("parameters")
+    if not isinstance(parameters, list) or not 0 <= native_position < len(parameters):
+        return {}
+    value = parameters[native_position]
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _c_source_pointer_depth(function: models.SemanticFunction, *, result: bool) -> int:
+    raw_abi = function.metadata.get("c_abi")
+    if not isinstance(raw_abi, dict):
+        return _c_pointer_depth(function.return_type) if result else 0
+    value = raw_abi.get("result") if result else None
+    return int(value.get("pointer_depth", 0)) if isinstance(value, dict) else 0
+
+
+def _c_source_pointer_depth_for_argument(
+    function: models.SemanticFunction,
+    argument: models.SemanticArgument,
+) -> int:
+    """Return one source C parameter's preserved pointer depth."""
+    position = argument.metadata.get("native_position")
+    if not isinstance(position, int):
+        return 0
+    return int(_c_source_type_facts(function, position).get("pointer_depth", 0))
+
+
+def _c_direct_argument_storage_type(
+    function: models.SemanticFunction,
+    native_position: int,
+    *,
+    semantic_argument: models.SemanticArgument | None = None,
+) -> str | None:
+    """Return the policy-selected local C scalar type for a source C argument.
+
+    The source declaration remains the direct entrypoint prototype, while this
+    spelling owns scalar storage passed through a pointer.  Matching it avoids
+    aliasing a normalized ``int64_t`` local as a distinct source type such as
+    ``long long``.  A type written through a typedef resolves to its underlying
+    builtin spelling, because the binding cannot declare a name that only the
+    user's headers define.  ``const`` and ``restrict`` qualify the native view,
+    not the temporary that receives Python input before the call.
+    """
+    resolved = _c_typedef_resolved_spelling(
+        semantic_argument.semantic_type if semantic_argument is not None else None,
+        pointer_depth=0,
+        const=False,
+    )
+    if resolved is not None:
+        return resolved
+    source_type = _c_source_type_facts(function, native_position)
+    spelling = source_type.get("source_spelling")
+    if not isinstance(spelling, str):
+        return None
+    base = spelling.split("*", maxsplit=1)[0]
+    words = [word for word in base.split() if word not in _C_POINTEE_QUALIFIER_WORDS]
+    return " ".join(words) or None
+
+
+def _c_pointer_depth(semantic_type: models.SemanticType | None) -> int:
+    return int(semantic_type.storage.pointer_depth) if semantic_type is not None and semantic_type.storage else 0
+
+
+def _completed_direct_c_abi_policy(
+    function: models.SemanticFunction,
+    arguments: list[ArgumentPolicy],
+    results: tuple[ResultPolicy, ...],
+    slots: tuple[NativeCallSlotPolicy, ...],
+) -> DirectCABIPolicy:
+    """Copy the selected C declaration facts into immutable policy output."""
+    raw_abi = function.metadata.get("c_abi")
+    source_abi = raw_abi if isinstance(raw_abi, dict) else {}
+    parameter_source = source_abi.get("parameters") if isinstance(source_abi.get("parameters"), list) else []
+    semantic_arguments_by_name = {argument.name: argument for argument in function.arguments}
+
+    def slot_semantic_type(slot: NativeCallSlotPolicy) -> models.SemanticType | None:
+        """Return the declared type of the argument one slot transports.
+
+        A binding-owned extent, length, presence, or literal slot names no
+        argument and keeps its own completed identity, so it returns ``None``
+        rather than borrowing the type of the argument it was derived from.
+        """
+        if slot.python_name is None:
+            return None
+        semantic_argument = semantic_arguments_by_name.get(slot.python_name)
+        return semantic_argument.semantic_type if semantic_argument is not None else None
+
+    parameters = tuple(
+        _direct_c_abi_type_policy(
+            parameter_source[slot.native_position]
+            if slot.native_position < len(parameter_source) and isinstance(parameter_source[slot.native_position], dict)
+            else None,
+            semantic_type=slot_semantic_type(slot),
+            semantic_type_name=slot.semantic_type_name,
+            pointer_depth=(0 if slot.entrypoint_passing is EntrypointPassingConvention.C_VALUE else 1),
+        )
+        for slot in sorted(slots, key=lambda item: item.native_position)
+    )
+    direct_result = next((result for result in results if result.source_kind == "direct_return"), None)
+    result_source = source_abi.get("result") if isinstance(source_abi.get("result"), dict) else None
+    result = (
+        _direct_c_abi_type_policy(
+            result_source,
+            semantic_type=function.return_type,
+            semantic_type_name=None,
+            pointer_depth=0,
+        )
+        if direct_result is not None and function.return_type is not None
+        else None
+    )
+    return DirectCABIPolicy(
+        calling_convention=str(source_abi.get("calling_convention", "c")),
+        result_transport="value" if result is not None else "void",
+        result=result,
+        parameters=parameters,
+    )
+
+
+def _direct_c_abi_type_policy(
+    source: dict[str, object] | None,
+    *,
+    semantic_type: models.SemanticType | None,
+    semantic_type_name: str | None,
+    pointer_depth: int,
+) -> DirectCABITypePolicy:
+    """Normalize preserved source facts or the canonical source-free C form."""
+    scalar_name = _c_direct_scalar_name(semantic_type) or semantic_type_name
+    if scalar_name is None:
+        raise ValueError("C direct ABI policy requires a resolved primitive scalar")
+    if scalar_name not in _PLAN_PRIMITIVE_SCALAR_TYPES:
+        raise ValueError(f"C direct ABI policy requires a supported scalar, not {scalar_name!r}")
+    source = source or {}
+    source_pointer_depth = int(source.get("pointer_depth", pointer_depth))
+    contract_spelling = semantic_type.metadata.get("c_abi_spelling") if semantic_type is not None else None
+    # A source-free contract preserves no declaration text, so policy records
+    # only the resolved identity and leaves the backend spelling to the C
+    # binding generator that owns scalar projection.
+    preserved = source.get("source_spelling") or (contract_spelling if not source_pointer_depth else None)
+    qualifiers = tuple(str(item) for item in source.get("qualifiers", ()))
+    const = bool(source.get("const", False))
+    declarable = _c_typedef_resolved_spelling(semantic_type, pointer_depth=source_pointer_depth, const=const)
+    return DirectCABITypePolicy(
+        source_spelling=declarable or (str(preserved) if preserved else None),
+        scalar_type_name=scalar_name,
+        pointer_depth=source_pointer_depth,
+        qualifiers=qualifiers,
+        const=const,
+    )
+
+
+def _c_typedef_resolved_spelling(
+    semantic_type: models.SemanticType | None,
+    *,
+    pointer_depth: int,
+    const: bool,
+) -> str | None:
+    """Return the underlying builtin spelling of a type written through a typedef.
+
+    The generated binding declares the entrypoint prototype itself, so a
+    typedef name that only the user's own headers define cannot appear there.
+    A typedef is exactly its underlying type, so substituting the probed
+    builtin spelling preserves width, signedness, and representation instead of
+    choosing a nearby one; the typedef chain stays recorded on the semantic
+    type as provenance.
+    """
+    if semantic_type is None or not semantic_type.metadata.get("c_typedefs"):
+        return None
+    primitive = semantic_type.metadata.get("c_primitive") or _c_underlying_type_spelling(semantic_type)
+    if not isinstance(primitive, str) or not primitive:
+        return None
+    declared = f"const {primitive}" if const else primitive
+    return f"{declared} {'*' * pointer_depth}" if pointer_depth else declared
+
+
+def _c_underlying_type_spelling(semantic_type: models.SemanticType) -> str | None:
+    """Return the probed builtin spelling recorded for a standard C typedef."""
+    for key in ("c_standard_type_fact", "c_type_fact"):
+        fact = semantic_type.metadata.get(key)
+        underlying = fact.get("underlying_c_type") if isinstance(fact, dict) else None
+        if isinstance(underlying, str) and underlying:
+            return underlying
+    return None
 
 
 def _direct_operation_ineligibility(
@@ -2315,8 +2747,21 @@ def _native_call_slot_for_python_position(
     slots: tuple[NativeCallSlotPolicy, ...],
     python_position: int,
 ) -> NativeCallSlotPolicy | None:
-    """Find the completed native-call slot owned by one visible argument."""
-    return next((slot for slot in slots if slot.python_position == python_position), None)
+    """Find the completed native-call slot owned by one visible argument.
+
+    A binding-owned producer such as ``Arg(i).shape[0]`` or ``Len(Arg(i))``
+    records the Python position of the argument it measures, so it is skipped
+    here.  Matching the first position-equal slot would otherwise hand an array
+    its own extent slot and lower the buffer as a by-value scalar.
+    """
+    return next(
+        (
+            slot
+            for slot in slots
+            if slot.python_position == python_position and slot.source_kind not in _DERIVED_NATIVE_CALL_SLOT_KINDS
+        ),
+        None,
+    )
 
 
 def _argument_policy(

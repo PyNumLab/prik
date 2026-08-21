@@ -62,7 +62,9 @@ def test_dgemm(prik_blas, f2py_blas):
     assert_allclose_for_dtype(prik_c[:2, :], f2py_c[:2, :], operation_size=2)
     np.testing.assert_array_equal(prik_c[2, :], original_c[2, :], strict=True)
     np.testing.assert_array_equal(f2py_c[2, :], original_c[2, :], strict=True)
-    assert prik_scalars == (2, 2, 2, alpha, 3, 3, beta, 3)
+    # DGEMM declares no intent on any dummy, so the conservative intent(inout)
+    # default returns every scalar, character selectors included.
+    assert prik_scalars == ("N", "N", 2, 2, 2, alpha, 3, 3, beta, 3)
     assert f2py_result is None
     assert_storage_unchanged(prik_a, a)
     assert_storage_unchanged(f2py_a, a)

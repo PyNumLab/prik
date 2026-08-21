@@ -142,7 +142,7 @@ File: empty.f90
         ({"parse": True, "print_limit": -1}, "--print-limit must be >= 0"),
         (
             {"paths": ["input.pyi"]},
-            "A .pyi wrapper build requires --native-fortran-sources, --native-objects, "
+            "A .pyi wrapper build requires --native-fortran-sources, --native-c-sources, --native-objects, "
             "--native-library, or --native-link-item",
         ),
         (
@@ -152,7 +152,7 @@ File: empty.f90
         ),
         (
             {"no_compile_input_sources": True},
-            "--no-compile-input-sources requires --native-fortran-sources, --native-objects, "
+            "--no-compile-input-sources requires --native-fortran-sources, --native-c-sources, --native-objects, "
             "--native-library, or --native-link-item",
         ),
         (
@@ -553,15 +553,16 @@ def test_prik_command_parsers_group_options_by_user_intent():
     assert "--native-link-item" in build_help
     assert "--jobs" in build_help
     assert "--wrapper-c-flags" in build_help
-    assert "Compiler used throughout the extension build" in build_help
+    assert "compiler used throughout the extension build" in normalized_build_help
     assert "Add a compiler include search directory" in build_help
     assert "default: gfortran" in normalized_build_help
     assert "default: ./__prik__" in normalized_build_help
     assert (
-        "Fortran source file(s), one source directory, or exactly one semantic .pyi contract" in normalized_build_help
+        "Fortran or C source file(s), one source directory, or exactly one semantic .pyi contract"
+        in normalized_build_help
     )
     assert "--no-compile-input-sources" in build_help
-    assert "Input language (default: fortran)" in normalized_build_help
+    assert "Input language (default: fortran; use c for direct C wrappers)" in normalized_build_help
     assert "Rebuild the extension from an existing prik-build.json" in normalized_build_help
     assert "Name the Python extension and stable NAME.so library" in normalized_build_help
     assert "Print build paths and metadata as JSON" in normalized_build_help
@@ -571,8 +572,7 @@ def test_prik_command_parsers_group_options_by_user_intent():
     assert "Build from a semantic contract:" in build_help
     assert "Replay a build manifest:" in build_help
     assert "Manifest overrides: --out, --compiler, -I/--include-dir, --jobs" in normalized_build_help
-    assert "--language {fortran}" in build_help
-    assert "--language {fortran,c}" not in build_help
+    assert "--language {fortran,c}" in build_help
     assert parse_help.startswith("usage: python3 -m prik parse INPUT [INPUT ...] [OPTIONS]")
     for heading in (
         "positional arguments:",

@@ -78,20 +78,9 @@ def test_prik_build_preprocessing_config_preserves_full_config_contract(monkeypa
     ]
 
 
-@pytest.mark.parametrize(
-    ("overrides", "expected"),
-    [
-        (
-            {"language": "c"},
-            "Compiled wrappers and generate --sources/--makefile currently require --language fortran",
-        ),
-        (
-            {"language": "c", "parse": True, "show_vars": True},
-            "--show-vars is Fortran-only and is not supported for --language c",
-        ),
-    ],
-)
-def test_prik_main_preserves_c_validation_diagnostics(monkeypatch, overrides, expected):
+def test_prik_main_rejects_fortran_only_c_parse_options(monkeypatch):
+    overrides = {"language": "c", "parse": True, "show_vars": True}
+    expected = "--show-vars is Fortran-only and is not supported for --language c"
     args = _main_args(**overrides)
     _install_main_parser(monkeypatch, args)
     monkeypatch.setattr(prik_cli, "_resolve_language", lambda paths, language, parser: language)

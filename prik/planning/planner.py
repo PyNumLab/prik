@@ -61,6 +61,7 @@ from prik.policy.models import (
     TransformationPolicy,
     WritebackPhase,
     NativeEntrypointAction,
+    DirectCABIPolicy,
 )
 from prik.policy.construction import (
     completed_class_surface_policy,
@@ -119,6 +120,8 @@ from prik.planning.models import (
     NativeEntrypointArgumentPlan,
     NativeEntrypointCallbackPlan,
     NativeEntrypointFunctionPlan,
+    DirectCABIPlan,
+    DirectCABITypePlan,
     NativeEntrypointModulePlan,
     NativeEntrypointModuleVariablePlan,
     NativeEntrypointParameterPlan,
@@ -1208,6 +1211,7 @@ class WrapperPlanner(ClassVisitor):
                 ),
                 results=entrypoint_results,
                 projected_slots=projected_slots,
+                direct_c_abi=self._direct_c_abi_plan(policy.direct_c_abi),
             ),
             bridge=(
                 BridgeFunctionPlan(
@@ -1235,6 +1239,28 @@ class WrapperPlanner(ClassVisitor):
             writeback_actions=writeback_actions,
             cleanup_actions=cleanup_actions,
             release_actions=release_actions,
+        )
+
+    @staticmethod
+    def _direct_c_abi_plan(policy: DirectCABIPolicy | None) -> DirectCABIPlan | None:
+        """Project already-completed exact C ABI facts without reinterpreting them."""
+        if policy is None:
+            return None
+
+        def project(value):
+            return DirectCABITypePlan(
+                source_spelling=value.source_spelling,
+                scalar_type_name=value.scalar_type_name,
+                pointer_depth=value.pointer_depth,
+                qualifiers=value.qualifiers,
+                const=value.const,
+            )
+
+        return DirectCABIPlan(
+            calling_convention=policy.calling_convention,
+            result_transport=policy.result_transport,
+            result=project(policy.result) if policy.result is not None else None,
+            parameters=tuple(project(item) for item in policy.parameters),
         )
 
     @staticmethod
@@ -1602,6 +1628,7 @@ class WrapperPlanner(ClassVisitor):
             bridge=(self._bridge_argument_plan(policy) if projected_slot.adapter is not None else None),
             projected_call_slot=projected_slot,
             transformations=tuple(self.visit(item) for item in policy.transformations),
+            native_storage_c_type=policy.native_storage_c_type,
         )
 
     def _callback_handoff_plan(

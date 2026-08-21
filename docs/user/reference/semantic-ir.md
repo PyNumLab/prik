@@ -18,9 +18,10 @@ PRIK_C_DOCS_END -->
 
 <!-- PRIK_C_DOCS_START
 Sections through [Deferred C Work](#deferred-c-work) describe current semantic
-behavior. The final self-contained C runtime-contract section is explicitly a
-design proposal and is not implemented C-input wrapper support. The current
-Fortran runtime contract is documented separately in
+behavior. PRIK now also has a direct-only C runtime lane for target-probed
+primitive values and completed one-level numeric-pointer contracts. The later
+self-contained C runtime-contract material remains design direction for forms
+outside that lane. The Fortran runtime contract is documented separately in
 [Fortran wrapper reference](fortran-wrapper.md).
 PRIK_C_DOCS_END -->
 
@@ -30,7 +31,7 @@ PRIK_C_DOCS_END -->
 This document records the shared scalar datatype policy used when C and Fortran
 parser facts are converted to semantic IR. The semantic names are the stable
 bridge between parser-native type spellings, `.pyi` output, policy completion,
-the implemented Fortran wrapper, and a future C-input wrapper backend.
+the implemented Fortran wrapper, and the direct-only primitive C backend.
 PRIK_C_DOCS_END -->
 
 ### Semantic Names
@@ -502,9 +503,10 @@ work includes:
 PRIK_C_DOCS_END -->
 
 <!-- PRIK_C_DOCS_START
-- C wrapper lowering;
-- C ownership, callback or pointer policy inference beyond facts already
-  present in exact contracts.
+- ownership, callback, aggregate, string, nullable-pointer, and retained-
+  pointer policy beyond the completed direct primitive lane;
+- array and pointer forms beyond selected one-level scalar/rank-zero/C-
+  contiguous numeric storage contracts.
 PRIK_C_DOCS_END -->
 
 <!-- PRIK_C_DOCS_START
@@ -520,12 +522,11 @@ PRIK_C_DOCS_END -->
 PRIK_C_DOCS_END -->
 
 <!-- PRIK_C_DOCS_START
-> **Status: design only, not implemented native binding support.** prik currently
-> parses C, converts the supported subset to semantic IR, emits and loads
-> semantic `.pyi`. It does not currently generate,
-> lower, compile, or execute C wrappers. Every runtime behavior, wrapper error,
-> and Phase 1/Phase 2 requirement below describes a proposed implementation
-> target unless an earlier current-contract section explicitly says otherwise.
+> **Status: later-scope design.** PRIK currently parses C, converts the
+> supported subset to semantic IR, emits starter `.pyi` contracts, and builds
+> the direct-only primitive lane. Every broader runtime behavior, wrapper error,
+> and Phase 1/Phase 2 requirement below remains a proposed target unless an
+> earlier current-contract section explicitly says otherwise.
 PRIK_C_DOCS_END -->
 
 <!-- PRIK_C_DOCS_START

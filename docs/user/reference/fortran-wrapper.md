@@ -34,12 +34,12 @@ is validated.
 PRIK_C_DOCS_END -->
 
 <!-- PRIK_C_DOCS_START
-This reference covers the implemented wrapper for Fortran source inputs. prik also
-parses C and produces C semantic IR and `.pyi`, but a
-runtime wrapper backend for user-supplied C libraries will be added later.
-The C source generated internally as part of a Fortran wrapper is an
-implementation detail of the current Fortran path, not the future C-input
-backend.
+This reference covers the implemented wrapper for Fortran source inputs. The
+separate [direct-only primitive C lane](../guide/building-shared-library.md#build-a-primitive-c-api-directly)
+supports only target-probed arithmetic values and completed one-level numeric
+pointer contracts; it is not general C wrapper support. The C source generated
+internally as part of a Fortran wrapper remains an implementation detail of the
+Fortran path.
 PRIK_C_DOCS_END -->
 
 ## Contents

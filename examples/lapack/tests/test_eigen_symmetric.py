@@ -427,7 +427,9 @@ def test_dsyev_returns_orthonormal_eigenvectors(prik_lapack, scipy_lapack, f2py_
     f2py_result = f2py_lapack.dsyev(b"V", b"U", 2, f2py_vectors, f2py_w, np.empty(16), 16, 0)
     scipy_w, scipy_vectors, scipy_info = scipy_lapack.dsyev(matrix.copy(order="F"), compute_v=1, lower=0, lwork=16)
 
-    assert prik_scalars == (2, 2, 16, 0)
+    # LAPACK declares no intent on its dummies, so the conservative
+    # intent(inout) default returns every scalar, character selectors included.
+    assert prik_scalars == ("V", "U", 2, 2, 16, 0)
     assert f2py_result is None
     assert scipy_info == 0
     for values, vectors in (

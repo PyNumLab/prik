@@ -130,7 +130,65 @@ def complete_semantic_policies(
 
         # Resolve all remaining ownership and wrapper-facing semantic choices.
         _complete_ownership_policies(module, strict_wrapper_names=strict_wrapper_names)
+        _reject_ineligible_direct_c_operations(module)
     return modules
+
+
+def _reject_ineligible_direct_c_operations(module: models.SemanticModule) -> None:
+    """Raise C primitive-lane diagnostics before wrapper planning can begin.
+
+    The direct-only C lane has no adapter to fall back to, so an unsupported
+    declaration of the wrapped translation unit is an error rather than a
+    silently omitted export.  That covers module variables and class surfaces
+    too, because a C module has no generated accessor route for them.
+    """
+    declarations = [*module.functions]
+    declarations.extend(procedure for group in module.overload_sets for procedure in group.procedures)
+    declarations.extend(method for semantic_class in module.classes for method in semantic_class.methods)
+    for function in declarations:
+        if not _is_wrapped_c_declaration(module, function):
+            continue
+        policy = function.metadata.get(models.RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA)
+        if not isinstance(policy, FunctionWrapperPolicy) or policy.supported:
+            continue
+        details = "; ".join(policy.blockers) or "C_DIRECT_UNSUPPORTED_OPERATION"
+        raise ValueError(f"C direct operation {policy.owner_path!r} is unsupported before wrapper planning: {details}")
+    for variable in module.variables:
+        if not _is_wrapped_c_declaration(module, variable):
+            continue
+        raise ValueError(
+            f"C direct operation '{module.name}.{variable.name}' is unsupported before wrapper planning: "
+            f"{_c_module_variable_blocker(variable)}"
+        )
+    for semantic_class in module.classes:
+        if not _is_wrapped_c_declaration(module, semantic_class):
+            continue
+        raise ValueError(
+            f"C direct operation '{module.name}.{semantic_class.name}' is unsupported before wrapper planning: "
+            f"C_DIRECT_AGGREGATE_TYPE:{semantic_class.name}"
+        )
+
+
+def _c_module_variable_blocker(variable: models.SemanticVariable) -> str:
+    """Name the post-Goal-3 C surface one module variable would require."""
+    if variable.origin.source_kind == "enum_constant":
+        return f"C_DIRECT_ENUM_CONSTANT:{variable.name}"
+    if variable.origin.source_kind == "macro":
+        return f"C_DIRECT_MACRO_CONSTANT:{variable.name}"
+    return f"C_DIRECT_NATIVE_GLOBAL_STATE:{variable.name}"
+
+
+def _is_wrapped_c_declaration(module: models.SemanticModule, node) -> bool:
+    """Return whether one C declaration belongs to the wrapped translation unit.
+
+    A declaration expanded from an include keeps that file's provenance and is
+    never part of the generated public API, so the direct-only lane decides
+    only the declarations the wrapped unit wrote itself.
+    """
+    if node.origin.source_language != "c":
+        return False
+    filename = node.origin.source_location.get("filename") if isinstance(node.origin.source_location, dict) else None
+    return not (isinstance(filename, str) and filename != module.origin.native_name)
 
 
 # Entry export reachability

@@ -91,6 +91,7 @@ from prik.planning.models import (
     DerivedHandoffPlan,
     DerivedMemberPathPlan,
     DerivedTypePlan,
+    DirectCABITypePlan,
     FunctionPlan,
     LifecycleActionPlan,
     ModulePlan,
@@ -713,6 +714,11 @@ class CBindingGenerator(ClassVisitor):
             CInclude("stdint.h"),
             CInclude("stdbool.h"),
             CInclude("complex.h"),
+            # A preserved direct-C declaration may spell a standard typedef such
+            # as ``size_t`` or ``ptrdiff_t``, so the entrypoint prototype needs
+            # its defining header rather than whatever ``Python.h`` happens to
+            # pull in on one platform.
+            *((CInclude("stddef.h"),) if self._module_declares_direct_c_entrypoints(plan) else ()),
             *((CInclude("stdatomic.h"),) if self._module_uses_derived_origin_ops(plan) else ()),
             *((CInclude("string.h"),) if self._module_uses_memory_copy(plan) else ()),
             *(
@@ -723,6 +729,15 @@ class CBindingGenerator(ClassVisitor):
             *(CInclude(header) for header in plan.required_headers),
             *self._module_native_support_includes(needs_native_support),
             CInclude(f"{plan.binding.owner_path}_wrapper.h", system=False),
+        )
+
+    @staticmethod
+    def _module_declares_direct_c_entrypoints(plan: ModulePlan) -> bool:
+        """Return whether any planned entrypoint carries preserved C declarations."""
+        return any(
+            function.entrypoint.direct_c_abi is not None
+            for namespace in plan.namespaces
+            for function in namespace.functions
         )
 
     def _module_uses_string_values(self, plan: ModulePlan) -> bool:
@@ -6545,6 +6560,26 @@ class CBindingGenerator(ClassVisitor):
         if scalar_type.numpy_type_macro is None:
             raise ValueError(f"Unsupported scalar input type {plan.semantic_type_name!r}")
         names = context.arguments[plan.owner_path]
+        storage_type = plan.native_storage_c_type or scalar_type.c_spelling
+        if storage_type != scalar_type.c_spelling:
+            converted_name = f"{names.value_name}_converted"
+            return (
+                CDeclaration(names.object_name, "PyObject *"),
+                CDeclaration(converted_name, scalar_type.c_spelling),
+                CDeclaration(names.value_name, storage_type),
+                self._scalar_exact_unpack_statement(
+                    scalar_type,
+                    names.object_name,
+                    converted_name,
+                    (
+                        f'PyErr_Format(PyExc_TypeError, "Expected an argument of type '
+                        f"{scalar_type.python_type_name} for argument {plan.binding.python_name}. "
+                        f"Received <class '%s'>\", Py_TYPE({names.object_name})->tp_name)"
+                    ),
+                    "NULL",
+                ),
+                CExpressionStatement(CodeExpression(f"{names.value_name} = ({storage_type}){converted_name}")),
+            )
         return (
             CDeclaration(names.object_name, "PyObject *"),
             CDeclaration(names.value_name, scalar_type.c_spelling),
@@ -10334,6 +10369,17 @@ class CBindingGenerator(ClassVisitor):
             for group in sorted(plan.entrypoint.parameters, key=lambda item: item.position)
             for parameter in self._entrypoint_parameter_declarations(plan, group)
         )
+        direct_c_abi = plan.entrypoint.direct_c_abi
+        if direct_c_abi is not None:
+            if len(parameters) != len(direct_c_abi.parameters):
+                raise ValueError(
+                    f"Direct C entrypoint {plan.owner_path!r} has {len(parameters)} planned parameters "
+                    f"but {len(direct_c_abi.parameters)} preserved C declarations"
+                )
+            parameters = tuple(
+                CParameter(parameter.name, self._direct_c_abi_declaration_type(abi_type))
+                for parameter, abi_type in zip(parameters, direct_c_abi.parameters, strict=True)
+            )
         return CFunctionPrototype(
             self._entrypoint_function_name(plan),
             self._entrypoint_return_type(plan),
@@ -10400,8 +10446,27 @@ class CBindingGenerator(ClassVisitor):
             )
         )
 
+    @staticmethod
+    def _direct_c_abi_declaration_type(abi_type: DirectCABITypePlan) -> str:
+        """Render one planned direct-C declaration type.
+
+        A preserved source spelling is emitted verbatim so the generated
+        prototype stays compatible with the user's declaration.  A source-free
+        contract preserves none, so the backend composes the canonical spelling
+        from the completed scalar identity and pointer depth.
+        """
+        if abi_type.source_spelling:
+            return abi_type.source_spelling
+        canonical = PrimitiveScalarTypeRegistry.type_for(abi_type.scalar_type_name).c_spelling
+        return f"{canonical} {'*' * abi_type.pointer_depth}" if abi_type.pointer_depth else canonical
+
     def _entrypoint_return_type(self, plan: FunctionPlan) -> str:
         """Return the direct entrypoint result type, or void for subroutines."""
+        direct_c_abi = plan.entrypoint.direct_c_abi
+        if direct_c_abi is not None:
+            if direct_c_abi.result is None:
+                return "void"
+            return self._direct_c_abi_declaration_type(direct_c_abi.result)
         result = self._direct_result(plan)
         if result is None:
             return "void"

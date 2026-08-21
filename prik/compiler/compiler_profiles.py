@@ -303,6 +303,15 @@ _FORTRAN_COMPILER_FAMILIES = (
     ("ifx", "intel", "icx"),
 )
 
+_C_COMPILER_FAMILIES = (
+    ("nvc", "nvidia"),
+    ("pgcc", "PGI"),
+    ("gcc", "GNU"),
+    ("clang", "LLVM"),
+    ("icx", "intel"),
+    ("icc", "intel"),
+)
+
 
 def fortran_compiler_family(executable: str) -> tuple[str, str, str]:
     """Return the compiler token, profile, and matching C executable name."""
@@ -312,6 +321,22 @@ def fortran_compiler_family(executable: str) -> tuple[str, str, str]:
             return token, vendor, c_executable
     supported = ", ".join(token for token, _vendor, _c_executable in _FORTRAN_COMPILER_FAMILIES)
     raise ValueError(f"Unknown Fortran compiler family for {executable!r}; expected one of: {supported}")
+
+
+def c_compiler_family(executable: str) -> tuple[str, str]:
+    """Return the C-driver token and compiler profile for ``executable``.
+
+    C-only extension builds deliberately choose this route instead of treating
+    a C executable as a misspelled Fortran driver.  Mixed-language builds keep
+    using :func:`fortran_compiler_family`, because the Fortran runtime then
+    owns the final link driver.
+    """
+    name = Path(executable).name
+    for token, vendor in _C_COMPILER_FAMILIES:
+        if re.search(rf"(?:^|-){re.escape(token)}(?:-|$)", name):
+            return token, vendor
+    supported = ", ".join(token for token, _vendor in _C_COMPILER_FAMILIES)
+    raise ValueError(f"Unknown C compiler family for {executable!r}; expected one of: {supported}")
 
 
 if __name__ == "__main__":

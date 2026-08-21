@@ -187,6 +187,27 @@ class GeneratedSupportProcedureEntrypointPlan(StageRecord):
     implementation_owner: GeneratedSupportProcedureImplementationOwner
 
 
+@dataclass
+class DirectCABITypePlan(StageRecord):
+    """One exact C declaration type copied from completed policy."""
+
+    source_spelling: str | None
+    scalar_type_name: str | None
+    pointer_depth: int
+    qualifiers: tuple[str, ...]
+    const: bool
+
+
+@dataclass
+class DirectCABIPlan(StageRecord):
+    """Direct C ABI declaration facts consumed by binding lowering only."""
+
+    calling_convention: str
+    result_transport: str
+    result: DirectCABITypePlan | None
+    parameters: tuple[DirectCABITypePlan, ...]
+
+
 # ============================================================================
 # Derived types and generated class surfaces
 # ============================================================================
@@ -792,6 +813,7 @@ class NativeEntrypointFunctionPlan(StageRecord):
     parameters: tuple[NativeEntrypointParameterPlan, ...]
     results: tuple[NativeEntrypointResultPlan, ...]
     projected_slots: tuple[NativeEntrypointProjectedSlotPlan, ...]
+    direct_c_abi: DirectCABIPlan | None = None
 
 
 @dataclass
@@ -1190,6 +1212,7 @@ class ArgumentTransferPlan(StageRecord):
     bridge: BridgeArgumentPlan | None
     projected_call_slot: NativeEntrypointProjectedSlotPlan
     transformations: tuple[TransformationPlan, ...] = ()
+    native_storage_c_type: str | None = None
 
     @property
     def projects_character_descriptor_update(self) -> bool:

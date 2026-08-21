@@ -35,7 +35,9 @@ def test_dtfsm_solves_with_rfp_triangular_factor(prik_lapack, scipy_lapack, f2py
     )
 
     assert f2py_result is None
-    assert prik_scalars == (2, 1, 1.0, 2)
+    # LAPACK declares no intent on its dummies, so the conservative
+    # intent(inout) default returns every scalar, character selectors included.
+    assert prik_scalars == ("N", "L", "U", "N", "N", 2, 1, 1.0, 2)
     assert_allclose_float64(prik_b, expected, operation_size=2)
     assert_allclose_float64(f2py_b, expected, operation_size=2)
     assert_allclose_float64(scipy_x, expected, operation_size=2)

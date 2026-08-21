@@ -7,7 +7,74 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+### Fixed
+
+- A C translation unit's module variables, enum or macro constants, and
+  aggregate type declarations no longer reach wrapper planning. They previously
+  generated a Fortran adapter module for a C input and failed with a raw
+  compiler error after writing files; they now fail closed before planning with
+  `C_DIRECT_NATIVE_GLOBAL_STATE`, `C_DIRECT_ENUM_CONSTANT`,
+  `C_DIRECT_MACRO_CONSTANT`, or `C_DIRECT_AGGREGATE_TYPE` and leave no output.
+
+- A C declaration the parser cannot model — for example one carrying an
+  unsupported calling-convention attribute — is no longer dropped from a
+  wrapper build's public API. It raises `C_DIRECT_UNMODELED_DECLARATION`
+  instead of silently publishing a smaller or reinterpreted API.
+
+- `T[:] | None` and `T[()] | None` in a C semantic contract no longer build a
+  silently non-nullable wrapper. Nullable C pointers are outside the initial C
+  lane, so the contract now fails with `C_DIRECT_NULLABLE_POINTER`.
+
+- A route-neutral `@native_call` reorder in a C contract no longer converts one
+  argument's Python value using another argument's declared type.
+
+- An edited array contract can now derive its native extent from the buffer,
+  as `@native_call([Arg(0).shape[0], Arg(0)])`. A binding-owned extent, length,
+  or presence producer is no longer mistaken for the argument's own transport
+  slot, which had also lowered the promoted buffer as a by-value scalar.
+
+- Fortran `bind(C)` procedures that pass strings, derived objects, or callbacks
+  through their direct entrypoint build again. The new exact C declaration plan
+  is now built only for C-source operations.
+
+- The generated docstring for a call-local scalar address argument no longer
+  claims that native code updates the supplied storage in place. That update
+  lands in a call-local copy and is not visible in Python.
+
+- A `generate --makefile` build invoked with relative paths now produces a
+  Makefile that runs on a clean tree. The link rule demanded each user object
+  twice, once under a relative spelling that no rule produced, so `make` stopped
+  with "No rule to make target". This affected Fortran and C builds alike.
+
+- The BLAS and LAPACK examples now expect the character selectors that the
+  conservative `intent(inout)` default returns. Their assertions still encoded
+  the older `intent(in)` assumption for `character` dummies, so the example
+  suites failed against the behavior the same release documents.
+
+- The semantic contract a C build saves beside its extension now describes only
+  the wrapped file's own API. Preprocessed system-header declarations stay
+  inspection facts instead of filling the contract with private entries that
+  the next build could not accept.
+
+- A C parameter or result written through a typedef now declares the exact
+  builtin type the compiler probe resolved it to. The generated binding writes
+  its own prototype, so a typedef name defined only by the wrapped source's
+  headers previously reached the compiler undeclared and failed the build after
+  files were written.
+
 ### Added
+
+- Added the initial direct-only C wrapper lane. `build_c_extension`, explicit
+  `native_c_sources`, and C-native semantic `.pyi` contracts compile, link,
+  import, and call supported target-probed primitive C symbols directly. The
+  lane covers arithmetic scalar values, `void`, completed scalar-reference and
+  primitive NumPy-pointer contracts, and fails closed before planning for
+  callbacks, aggregates, variadics, pointer results, multi-level or nullable
+  pointers, ownership-sensitive forms, and other unsupported C ABI features.
+  C wrapper builds preprocess their sources with the selected C compiler, so an
+  ordinary `#define`, `#ifdef`, or macro-defined declaration is read the same
+  way the C inspection routes read it, and only the wrapped translation unit's
+  own declarations become public API.
 
 - Every build now writes its semantic `.pyi` contract beside the extension, in a
   `contracts/` package inside the build directory (`__prik__/contracts/` by

@@ -270,7 +270,9 @@ def test_dpotrf_reconstructs_spd_matrix(prik_lapack, scipy_lapack, f2py_lapack):
     f2py_result = f2py_lapack.dpotrf(b"L", 2, f2py_a, 0)
     scipy_factor, scipy_info = scipy_lapack.dpotrf(stored.copy(order="F"), lower=1, clean=0)
 
-    assert prik_scalars == (2, 2, 0)
+    # LAPACK declares no intent on its dummies, so the conservative
+    # intent(inout) default returns every scalar, character selectors included.
+    assert prik_scalars == ("L", 2, 2, 0)
     assert f2py_result is None
     assert scipy_info == 0
     prik_lower = np.tril(prik_a)
