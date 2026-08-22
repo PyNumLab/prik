@@ -3785,7 +3785,9 @@ class WrapperGenerator:
         if array is None:
             return ()
         if plan.datatype_family is DatatypeFamily.STRING:
-            if array.itemsize is None or array.itemsize <= 0 or array.itemsize_role is None:
+            # The role is mandatory because the runtime width always crosses;
+            # the literal is optional, because a contract may leave it assumed.
+            if array.itemsize_role is None or (array.itemsize is not None and array.itemsize <= 0):
                 return (self._diagnostic(plan.owner_path, "invalid-array-itemsize", array.itemsize),)
             return ()
         if array.itemsize is not None or array.itemsize_role is not None:
@@ -4066,9 +4068,14 @@ class WrapperGenerator:
         plan: ArgumentTransferPlan,
         label: str,
     ) -> tuple[WrapperPlanDiagnostic, ...]:
-        """Require one fixed plan length and prohibit a runtime length ABI role."""
+        """Require a plan length and prohibit a runtime length ABI role.
+
+        Assumed-capacity rank-zero storage states no width, so the plan instead
+        records that the caller's itemsize travels beside the address.
+        """
         diagnostics = []
-        if plan.character_length is None or plan.character_length <= 0:
+        assumed_capacity = plan.character_length is None and plan.entrypoint.pass_character_length
+        if not assumed_capacity and (plan.character_length is None or plan.character_length <= 0):
             diagnostics.append(
                 self._diagnostic(plan.owner_path, f"invalid-string-{label}-length", plan.character_length)
             )

@@ -1862,6 +1862,10 @@ def _normalize_c_direct_scalar_identities(
                 argument.native_position,
                 semantic_argument=semantic_by_name.get(argument.name),
             ),
+            # A C payload is bytes plus whatever length the contract passes.
+            # Refusing an embedded NUL would impose a terminator convention
+            # that belongs to the C author, not to PRIK.
+            character_allows_embedded_nul=argument.semantic_type_name == "String",
         )
         for argument in arguments
     ]
@@ -1930,7 +1934,20 @@ def _complete_entrypoint_argument_route(
     return replace(
         argument,
         entrypoint_pass_character_length=(
-            uses_adapter and argument.handoff_mode is ArgumentHandoffMode.CHARACTER_BUFFER
+            uses_adapter
+            and (
+                argument.handoff_mode is ArgumentHandoffMode.CHARACTER_BUFFER
+                # Rank-zero NumPy string storage always reports the caller's
+                # itemsize beside the address, declared width or not, so the
+                # adapter has one shape to receive. A raw string address is the
+                # exception: the caller hands over a bare integer with no Python
+                # object to measure, so its width can only be the declared one.
+                or (
+                    argument.handoff_mode is ArgumentHandoffMode.OPAQUE_ADDRESS
+                    and argument.semantic_type_name == "String"
+                    and argument.native_barrier_action is NativeBarrierAction.PASS_STORAGE_ADDRESS
+                )
+            )
         ),
         entrypoint_pass_array_metadata=(uses_adapter and argument.handoff_mode is ArgumentHandoffMode.ARRAY_BUFFER),
         entrypoint_pass_descriptor_presence=(uses_adapter and argument.optional_mode is OptionalMode.DESCRIPTOR),
@@ -2236,14 +2253,59 @@ def _direct_c_operation_ineligibility(
     if function.return_type is not None and function.return_type.metadata.get("c_type_fact_source") == "fallback":
         reasons.append("C_DIRECT_UNPROBED_PRIMITIVE_ABI:return")
     for argument in arguments:
-        if argument.rank > 0:
+        if _is_c_string_argument(argument):
+            reasons.extend(_direct_c_string_ineligibility(argument))
+        elif argument.rank > 0:
             reasons.extend(_direct_c_array_ineligibility(argument))
         else:
             reasons.extend(_direct_argument_ineligibility(argument))
     for result in results:
+        if result.semantic_type_name == "String":
+            # Only argument character contracts are adopted. A projected string
+            # result would need the owned-allocation protocol the Fortran
+            # adapter provides, and C has no adapter to allocate it.
+            reasons.append(f"C_DIRECT_UNSUPPORTED_STRING_RESULT:{result.owner_path.rsplit('.', 1)[-1]}")
         reasons.extend(_direct_result_ineligibility(result))
     for slot in slots:
-        reasons.extend(_direct_slot_ineligibility(slot))
+        reasons.extend(
+            _direct_slot_ineligibility(
+                slot,
+                # Only a slot that transports one visible argument carries an
+                # adopted C character contract; a hidden output does not.
+                character_representation_is_binding_owned=slot.python_name is not None,
+            )
+        )
+    return tuple(dict.fromkeys(reasons))
+
+
+def _is_c_string_argument(argument: ArgumentPolicy) -> bool:
+    """Return whether one completed C argument carries a character contract."""
+    return argument.semantic_type_name == "String"
+
+
+def _direct_c_string_ineligibility(argument: ArgumentPolicy) -> tuple[str, ...]:
+    """Validate the adopted rank-zero C character forms.
+
+    A C ``char *`` is a pointer to bytes; the terminator convention belongs to
+    the C author.  ``String`` hands over Python's own NUL-terminated buffer for
+    a read-only input, and rank-zero string storage hands over the caller's
+    NumPy bytes untouched.  Anything else stays fail-closed.
+    """
+    reasons = []
+    if argument.rank != 0:
+        reasons.append(f"C_DIRECT_UNSUPPORTED_STRING_CONTRACT:{argument.name}")
+    if argument.handoff_mode not in {ArgumentHandoffMode.CHARACTER_BUFFER, ArgumentHandoffMode.OPAQUE_ADDRESS}:
+        reasons.append(f"C_DIRECT_UNSUPPORTED_STRING_CONTRACT:{argument.name}")
+    if argument.entrypoint_passing is not EntrypointPassingConvention.POINTER_REFERENCE:
+        reasons.append(f"C_DIRECT_UNSUPPORTED_STRING_CONTRACT:{argument.name}")
+    if argument.entrypoint_optionality is not EntrypointOptionalityAction.REQUIRED:
+        reasons.append(f"C_DIRECT_NULLABLE_POINTER:{argument.name}")
+    if argument.transformations or argument.derived is not None or argument.callback is not None:
+        reasons.append(f"C_DIRECT_UNSUPPORTED_STRING_CONTRACT:{argument.name}")
+    if argument.writable and argument.handoff_mode is not ArgumentHandoffMode.OPAQUE_ADDRESS:
+        # A borrowed Python payload is immutable and may be interned, so only
+        # caller-owned NumPy storage may be written through.
+        reasons.append(f"C_DIRECT_IMMUTABLE_STRING_WRITEBACK:{argument.name}")
     return tuple(dict.fromkeys(reasons))
 
 
@@ -2295,7 +2357,7 @@ def _direct_c_argument_source_ineligibility(
         reasons.append(f"C_DIRECT_NULLABLE_POINTER:{argument.name}")
     if storage is not None and storage.metadata.get("address_role") == "raw":
         reasons.append(f"C_DIRECT_RAW_ADDRESS:{argument.name}")
-    if _c_direct_scalar_name(semantic_type) is None:
+    if _c_direct_scalar_name(semantic_type) is None and not _is_c_string_argument(argument):
         reasons.append(f"C_DIRECT_UNRESOLVED_PRIMITIVE_ABI:{argument.name}")
     if argument.rank > 0 and semantic_type.name in {"Bool", "Bool8"}:
         reasons.append(f"C_DIRECT_BOOL_ARRAY:{argument.name}")
@@ -2431,6 +2493,8 @@ def _completed_direct_c_abi_policy(
             semantic_type=slot_semantic_type(slot),
             semantic_type_name=slot.semantic_type_name,
             pointer_depth=(0 if slot.entrypoint_passing is EntrypointPassingConvention.C_VALUE else 1),
+            # A hidden output slot is storage the callee writes into.
+            writes_output=slot.source_kind == "result",
         )
         for slot in sorted(slots, key=lambda item: item.native_position)
     )
@@ -2460,8 +2524,11 @@ def _direct_c_abi_type_policy(
     semantic_type: models.SemanticType | None,
     semantic_type_name: str | None,
     pointer_depth: int,
+    writes_output: bool = False,
 ) -> DirectCABITypePolicy:
     """Normalize preserved source facts or the canonical source-free C form."""
+    if semantic_type_name == "String":
+        return _direct_c_character_abi_type_policy(source, semantic_type=semantic_type, writes_output=writes_output)
     scalar_name = _c_direct_scalar_name(semantic_type) or semantic_type_name
     if scalar_name is None:
         raise ValueError("C direct ABI policy requires a resolved primitive scalar")
@@ -2483,6 +2550,34 @@ def _direct_c_abi_type_policy(
         pointer_depth=source_pointer_depth,
         qualifiers=qualifiers,
         const=const,
+    )
+
+
+def _direct_c_character_abi_type_policy(
+    source: dict[str, object] | None,
+    *,
+    semantic_type: models.SemanticType | None,
+    writes_output: bool = False,
+) -> DirectCABITypePolicy:
+    """Return the exact C declaration for one rank-zero character contract.
+
+    A borrowed Python payload is read-only, so it is declared ``const char *``.
+    Caller-owned NumPy storage may be written by the callee and is declared
+    ``char *``.  The contract states which one it is; PRIK never infers it from
+    a C declaration it cannot see.
+    """
+    source = source or {}
+    mutable = writes_output or bool(
+        semantic_type is not None and semantic_type.storage is not None and semantic_type.storage.mutable
+    )
+    preserved = source.get("source_spelling")
+    spelling = str(preserved) if isinstance(preserved, str) and preserved else ("char *" if mutable else "const char *")
+    return DirectCABITypePolicy(
+        source_spelling=spelling,
+        scalar_type_name="String",
+        pointer_depth=int(source.get("pointer_depth", 1)),
+        qualifiers=tuple(str(item) for item in source.get("qualifiers", ())),
+        const=bool(source.get("const", not mutable)),
     )
 
 
@@ -2626,16 +2721,27 @@ def _direct_result_ineligibility(result: ResultPolicy) -> tuple[str, ...]:
     return tuple(reasons)
 
 
-def _direct_slot_ineligibility(slot: NativeCallSlotPolicy) -> tuple[str, ...]:
-    """Return direct-route blockers owned by one completed call projection."""
+def _direct_slot_ineligibility(
+    slot: NativeCallSlotPolicy,
+    *,
+    character_representation_is_binding_owned: bool = False,
+) -> tuple[str, ...]:
+    """Return direct-route blockers owned by one completed call projection.
+
+    A Fortran character actual needs adapter-side representation work beyond a
+    single element.  A C character contract does not: the binding itself hands
+    over the caller's bytes, so its caller sets
+    ``character_representation_is_binding_owned``.
+    """
     reasons = []
     if slot.projection_action is EntrypointProjectionAction.BLOCKED:
         reasons.append(f"native-call slot {slot.native_position} has no binding projection action")
     if slot.entrypoint_passing is EntrypointPassingConvention.BLOCKED:
         reasons.append(f"native-call slot {slot.native_position} has no C passing convention")
-    if slot.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION and not (
-        slot.semantic_type_name == "String" and slot.character_length == 1
-    ):
+    character_slot = slot.semantic_type_name == "String" and (
+        character_representation_is_binding_owned or slot.character_length == 1
+    )
+    if slot.bridge_data_action is BridgeDataAction.COPY_REPRESENTATION and not character_slot:
         reasons.append(f"native-call slot {slot.native_position} requires adapter representation work")
     return tuple(reasons)
 
@@ -3449,6 +3555,7 @@ def _hidden_result_candidate(
             character_length=_character_length(argument.semantic_type),
             array=_array_handoff_policy(argument.semantic_type),
             source_kind="hidden_output",
+            python_returned=not argument.metadata.get(models.HIDDEN_NATIVE_OUTPUT_METADATA),
             native_name=mapping.native_name or argument.name,
             native_position=mapping.native_position,
             result_position=int(mapping.result_position),
@@ -5002,7 +5109,11 @@ def _string_address_ownership_blockers(
 ) -> tuple[str, ...]:
     """Validate ownership shared by fixed storage and raw-address forms."""
     blockers = []
-    if _character_length(argument.semantic_type) is None:
+    if _character_length(argument.semantic_type) is None and expected_storage is not StorageMode.ALIAS:
+        # Rank-zero string storage may leave the capacity assumed: the caller's
+        # NumPy buffer carries its own itemsize, which the binding hands to the
+        # boundary beside the address. Other address forms still need a
+        # declared length.
         blockers.append(f"argument {argument.name!r} {label} requires a fixed positive character length")
     if decision.owner is not OwnershipOwner.CALLER:
         blockers.append(f"argument {argument.name!r} {label} owner is {decision.owner.value}, not caller")
@@ -5587,7 +5698,14 @@ def _runtime_status_plan_blockers(policy: NativeStatusErrorPolicy | None) -> tup
     blockers = []
     if policy.status.semantic_type_name != "Int32":
         blockers.append("native status error projection requires an Int32 status in the current plan lane")
-    if policy.message is not None and policy.message.character_length is None:
+    if (
+        policy.message is not None
+        and policy.message.character_length is None
+        and policy.message.python_position is None
+    ):
+        # Only a hidden message is allocated by the binding, so only a hidden
+        # message needs the contract to state the width. A visible argument
+        # brings its own storage.
         blockers.append("native status error message requires a fixed positive character length")
     return tuple(blockers)
 
@@ -7125,6 +7243,7 @@ def _array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandoffPol
         flatten_python_storage=_array_handoff_flattens_python_storage(array),
         flat_axis=_array_handoff_flat_axis(array),
         itemsize=_array_handoff_itemsize(semantic_type),
+        character=semantic_type.name == "String",
         category=array.category,
         extent_references=tuple(declaration_extent_references(item) for item in shape),
     )
@@ -7200,8 +7319,10 @@ def _is_phase6_ordinary_array_type(semantic_type: models.SemanticType) -> bool:
     storage = semantic_type.storage
     array = storage.array if storage is not None else None
     scalar_storage = _is_scalar_storage_array_policy(array_policy)
+    # A character array may leave its width assumed: every element of a NumPy
+    # ``S`` array shares one itemsize, which already travels beside the buffer.
     supported_element = semantic_type.name in _PLAN_PRIMITIVE_SCALAR_TYPES or (
-        semantic_type.name == "String" and array_policy.itemsize is not None and not scalar_storage
+        semantic_type.name == "String" and not scalar_storage
     )
     supported_rank = array_policy.rank is None or 1 <= array_policy.rank <= 15 or scalar_storage
     return bool(
@@ -7263,6 +7384,7 @@ def _raw_array_handoff_policy(semantic_type: models.SemanticType) -> ArrayHandof
         native_order=order,
         contiguous=True,
         itemsize=_character_length(semantic_type) if semantic_type.name == "String" else None,
+        character=semantic_type.name == "String",
         category="raw_address",
         extent_references=tuple(declaration_extent_references(item) for item in shape),
     )

@@ -316,8 +316,8 @@ def test_runtime_status_policy_is_completed_before_wrapper_planning():
     module = parse_pyi_text(
         """
 @raises(status="status", message="message", success=0)
-@native_call([Addr(Arg(0)), Return("status", 0), Return("message", 1)])
-def solve(value: Int32) -> tuple[Int32, String[32]]: ...
+@native_call([Addr(Arg(0)), Hidden("status", Int32), Hidden("message", String[32])])
+def solve(value: Int32) -> None: ...
 """,
         module_name="runtime_status",
     )
@@ -558,10 +558,10 @@ def optional_fixed(label: String[8] = ...) -> Returns["label", String[8]] | None
 def optional_identity(label: String = ...) -> None: ...
 
 @raises(status="status", success=0)
-@native_call([Arg(0), Return("status", 1)])
+@native_call([Arg(0), Hidden("status", Int32)])
 def with_status(
     name: String[8]
-) -> tuple[Returns["name", String[8]], Returns["status", Int32]]: ...
+) -> Returns["name", String[8]]: ...
 """,
         module_name="blocked_string_writeback",
     )

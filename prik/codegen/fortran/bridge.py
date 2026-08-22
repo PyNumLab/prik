@@ -3378,7 +3378,18 @@ class FortranBridgeGenerator(ClassVisitor):
             case ArgumentHandoffMode.TYPED_REFERENCE:
                 return self._lower_argument_required_typed_reference(plan)
             case ArgumentHandoffMode.OPAQUE_ADDRESS:
-                return self._lower_argument_required_opaque_address(plan)
+                return (
+                    *self._lower_argument_required_opaque_address(plan),
+                    *(
+                        (
+                            FortranParameter(
+                                f"{plan.entrypoint.parameter_name}_length", "integer(c_int64_t)", ("value",)
+                            ),
+                        )
+                        if plan.entrypoint.pass_character_length
+                        else ()
+                    ),
+                )
             case ArgumentHandoffMode.CHARACTER_BUFFER:
                 return self._lower_argument_string_value(plan)
         raise ValueError(f"Unsupported Fortran argument handoff for {plan.owner_path!r}: {mode!r}")
@@ -4669,8 +4680,14 @@ class FortranBridgeGenerator(ClassVisitor):
         """Return the completed primitive or fixed-width character element type."""
         array = argument.array
         if argument.datatype_family is DatatypeFamily.STRING:
-            if array is None or array.itemsize is None or array.itemsize <= 0:
-                raise ValueError(f"Character array {argument.owner_path!r} has no fixed itemsize")
+            if array is None:
+                raise ValueError(f"Character array {argument.owner_path!r} has no shape plan")
+            if array.itemsize is None:
+                # Every element of the caller's array shares one width, which
+                # the ABI already reports beside the buffer.
+                return f"character(kind=c_char, len={argument.entrypoint.parameter_name}_itemsize)"
+            if array.itemsize <= 0:
+                raise ValueError(f"Character array {argument.owner_path!r} has a non-positive itemsize")
             return f"character(kind=c_char, len={array.itemsize})"
         return PrimitiveScalarTypeRegistry.type_for(argument.semantic_type_name).fortran_spelling
 
@@ -4747,11 +4764,21 @@ class FortranBridgeGenerator(ClassVisitor):
             and argument.bridge.data_action is BridgeDataAction.COPY_REPRESENTATION
         )
 
-    def _string_address_length(self, plan: ArgumentTransferPlan) -> int:
-        """Return the fixed extent already completed in the shared plan."""
+    def _string_address_length(self, plan: ArgumentTransferPlan) -> str:
+        """Return the extent expression completed in the shared plan.
+
+        A declared width is spelled as a literal. Assumed-capacity storage has
+        no compile-time width, so the plan asks for the caller's itemsize
+        alongside the address and the extent names that runtime dummy.
+        """
+        if plan.entrypoint.pass_character_length:
+            # NumPy-backed storage reports the caller's own itemsize.
+            return f"{plan.entrypoint.parameter_name}_length"
+        # A raw address carries no measurable width, so the contract's is all
+        # there is.
         if plan.character_length is None or plan.character_length <= 0:
             raise ValueError(f"String address {plan.owner_path!r} is missing a fixed character length")
-        return plan.character_length
+        return str(plan.character_length)
 
     # String value bridge storage.
     def _string_value_declarations(self, plan: FunctionPlan) -> tuple[FortranDeclaration, ...]:

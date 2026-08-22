@@ -13,11 +13,13 @@ publication: reviewed
 PRIK — **Python Runtime Interop Kit** — is an open-source project for exposing
 native libraries through natural Python APIs.
 
-Its first implemented target is **Fortran-to-Python interoperability**, with a
-focus on modern Fortran features and native behavior that traditional wrapper
-generators often cannot represent reliably. PRIK is for Python users who need
-native numerical, scientific, or systems code without having to design and
-maintain the entire language boundary themselves.
+PRIK supports **Fortran-to-Python and C-to-Python interoperability**, with a
+focus on native behavior that traditional wrapper generators often cannot
+represent reliably. In both languages, editable `.pyi` contracts let you shape
+the Python API. The [C support guide](language-support/c-support.md) describes
+its current coverage. PRIK is for Python users who need native numerical,
+scientific, or systems code without having to design and maintain the entire
+language boundary themselves.
 
 The broader goal is to offer the same clear workflow for more native languages
 without hiding the ownership, memory, and calling rules needed to keep that
@@ -64,13 +66,10 @@ retaining the information required to call the native code correctly.
 
 ## Current scope and direction
 
-PRIK is currently an **alpha project** focused on Fortran-to-Python
-interoperability. Current work is expanding modern Fortran support and
-strengthening compatibility across compilers, platforms, and architectures.
-
-The next major phase will focus on **C-to-Python interoperability**, extending
-PRIK's semantic model and wrapper-generation pipeline beyond Fortran while
-preserving the same high-level, user-friendly workflow.
+PRIK is currently an **alpha project** for Fortran-to-Python and
+C-to-Python interoperability. Current work is expanding modern Fortran
+support, broadening C beyond its documented ABI subset, and strengthening
+compatibility across compilers, platforms, and architectures.
 
 Longer term, PRIK is intended to support additional native languages and
 execution environments, including C++, CUDA, and other backends. These are

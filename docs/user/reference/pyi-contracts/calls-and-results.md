@@ -146,17 +146,20 @@ Use `@raises(...)` when a projected native status should become a Python
 exception:
 
 ```python
-from prik.contracts import Addr, Arg, Int32, Return, String, native_call, raises
+from prik.contracts import Addr, Arg, Hidden, Int32, String, native_call, raises
 
 @raises(status="status", message="message", success=0)
-@native_call([Addr(Arg(0)), Return("status", 0), Return("message", 1)])
-def solve(value: Int32) -> tuple[Int32, String[32]]: ...
+@native_call([Addr(Arg(0)), Hidden("status", Int32), Hidden("message", String[32])])
+def solve(value: Int32) -> None: ...
 ```
 
-The named status and optional message must exist in the projected results. A
-non-success status raises the generated exception before an ordinary result is
-returned. See [Error Handling](../../guide/error-handling.md#status-projection-example)
-for the Python behavior.
+Declare the status and any native-only message with `Hidden(name, T)`: it is
+produced by the native call but never reaches Python, so it does not appear in
+the return annotation. A message may instead name a visible rank-zero NumPy
+bytes buffer that the caller supplies. A non-success status raises the generated
+exception before an ordinary result is returned. See [Error
+Handling](../../guide/error-handling.md#status-projection-example) for the
+Python behavior.
 
 ## Release the GIL for a Native Call
 

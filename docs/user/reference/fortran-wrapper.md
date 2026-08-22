@@ -2234,12 +2234,13 @@ outputs. Native `stop` or `error stop` can terminate the Python process.
 An edited semantic `.pyi` can opt into status projection:
 
 ```python
-from prik.contracts import Float64, Int32, Returns, String, raises
+from prik.contracts import Arg, Float64, Hidden, Int32, String, native_call, raises
 
 @raises(status="status", message="message", success=0)
+@native_call([Arg(0), Hidden("status", Int32), Hidden("message", String[64])])
 def solve(
     x: Float64[:],
-) -> tuple[Returns["status", Int32], Returns["message", String]]: ...
+) -> None: ...
 ```
 
 ```python
@@ -2248,9 +2249,10 @@ solve(bad_values)        # raises RuntimeError(message) otherwise
 ```
 
 The status target must be a hidden scalar integer output. The optional message
-target must be a hidden string output. Annotated status and message values are
-consumed rather than returned. prik cannot recover from native termination,
-process abort, or a callback failure crossing a native callback boundary.
+may be a hidden string output or a visible rank-zero NumPy bytes buffer that the
+caller supplies. Hidden status and message values are consumed rather than
+returned. prik cannot recover from native termination, process abort, or a
+callback failure crossing a native callback boundary.
 
 ### GIL Policy
 

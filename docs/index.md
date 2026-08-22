@@ -1,6 +1,6 @@
 ---
 title: PRIK — Python Runtime Interop Kit
-description: PRIK generates native Python bindings from Fortran projects, producing importable extensions and editable .pyi contracts for Pythonic APIs.
+description: PRIK generates native Python bindings for Fortran and C code.
 audience: users
 prerequisites: none
 related: user/getting-started/index.md, user/getting-started/installation.md, user/performance.md, developer/architecture.md
@@ -14,16 +14,18 @@ publication: reviewed
        width="500">
 </p>
 
-**PRIK (Python Runtime Interop Kit)** generates native Python
-bindings for Fortran, with editable `.pyi` contracts for shaping
-Pythonic APIs.
+**PRIK (Python Runtime Interop Kit)** generates native Python bindings for
+Fortran and C code.
 
-**Project status: Alpha.** Core Fortran wrapper workflows are
-implemented and tested across supported compilers, but public APIs may still
-change before `1.0`.
+**Project status: Alpha.** Core Fortran workflows and the currently supported
+C wrapper features are implemented and tested across supported compilers, but
+public APIs may still change before `1.0`.
 
-**PRIK starts with Fortran-to-Python.** Its semantic contract model is designed
-to support more native languages over time.
+PRIK supports both languages. Fortran currently has the broader, more mature
+wrapper surface. C support currently includes primitive scalar types, pointers,
+and arrays. In both languages, editable `.pyi` contracts let you shape the
+Python API. See [C Support](user/language-support/c-support.md) for C examples
+and current limits.
 
 ---
 
@@ -276,6 +278,10 @@ values below `1.0×` favor f2py.
 
 [Install PRIK →](user/getting-started/installation.md){ .prik-primary-cta }
 [Read Getting Started →](user/getting-started/index.md){ .prik-primary-cta }
+
+**Wrapping a supported C API?**
+
+[Read C Support →](user/language-support/c-support.md){ .prik-primary-cta }
 
 **Working on PRIK itself?**
 

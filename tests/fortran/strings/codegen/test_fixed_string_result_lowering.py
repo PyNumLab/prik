@@ -185,8 +185,8 @@ def test_fixed_string_result_policy_blocks_status_error_until_failure_release_is
     module = parse_pyi_text(
         """
 @raises(status="status", success=0)
-@native_call([Return("label", 0), Return("status", 1)])
-def label() -> tuple[String[8], Int32]: ...
+@native_call([Return("label", 0), Hidden("status", Int32)])
+def label() -> String[8]: ...
 """,
         module_name="string_result_with_status",
     )

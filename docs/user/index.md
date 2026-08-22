@@ -9,9 +9,9 @@ publication: reviewed
 
 # User Documentation
 
-PRIK is the Python Runtime Interop Kit. Use these pages to install PRIK, verify your environment, build your first
-Fortran wrappers, and understand the supported behavior of generated Python
-extensions.
+PRIK is the Python Runtime Interop Kit. Use these pages to install PRIK, verify
+your environment, build Fortran and C wrappers, and understand the behavior of
+generated Python extensions. Current C coverage is documented in C Support.
 
 ## Start Here
 
@@ -27,8 +27,8 @@ f2py comparison.
 
 ## Then
 
-- [Language Support](language-support/index.md) — whether PRIK wraps a given
-  Fortran feature, with the evidence behind each claim.
+- [Language Support](language-support/index.md) — C and Fortran feature
+  coverage, including the evidence behind each claim.
 - [Reference](reference/index.md) — the exact CLI, Python API, generated-wrapper,
   and `.pyi` contract surfaces.
 - [Examples](examples/index.md) — complete wrappers for BLAS, LAPACK, FFTPACK,

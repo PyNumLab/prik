@@ -875,10 +875,13 @@ class NativeStatusOutputPolicy:
     name: str
     native_name: str
     native_position: int
-    result_position: int
+    result_position: int | None
     semantic_type_name: str
     rank: int
     character_length: int | None = None
+    # A visible message names a buffer the caller supplied, so the binding
+    # reads it through the argument instead of a projected native output.
+    python_position: int | None = None
 
 
 @dataclass(frozen=True)
@@ -945,6 +948,9 @@ class ArrayHandoffPolicy:
     flatten_python_storage: bool = False
     flat_axis: int | None = None
     itemsize: int | None = None
+    # Whether the buffer holds characters. A character array always reports its
+    # width at runtime, so the role exists even when ``itemsize`` is assumed.
+    character: bool = False
     category: str | None = None
     extent_references: tuple[tuple[str, ...], ...] = ()
     extent_reference_roles: tuple[tuple[str, ...], ...] = ()
@@ -1229,6 +1235,7 @@ class ArgumentPolicy:
     entrypoint_pass_derived_transaction: bool = False
     entrypoint_pass_callback_parameter: bool = False
     native_storage_c_type: str | None = None
+    character_allows_embedded_nul: bool = False
 
     @property
     def projects_character_descriptor_update(self) -> bool:
@@ -1273,6 +1280,9 @@ class ResultPolicy:
     character_length: int | None = None
     array: ArrayHandoffPolicy | None = None
     source_kind: str = "direct_return"
+    # Declared by a ``Hidden`` slot: the native call produces it exactly like
+    # any other output, but the binding never builds a Python value from it.
+    python_returned: bool = True
     native_name: str | None = None
     native_position: int | None = None
     result_position: int = 0

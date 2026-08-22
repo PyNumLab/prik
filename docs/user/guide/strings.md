@@ -344,8 +344,10 @@ def build() -> String[:] | None: ...
 ```
 
 Arrays keep the length in that same first slot and add their shape second, as in
-`String[8][:]` or `Allocatable[String[:][:]]`. See the
-[semantic `.pyi` format](../reference/semantic-pyi-format.md) for the full table.
+`String[8][:]` or `Allocatable[String[:][:]]`. Keep the native call and
+storage declarations accurate when editing; [Calls and
+Results](../reference/pyi-contracts/calls-and-results.md) explains the shared
+argument and result rules.
 
 ## Next
 

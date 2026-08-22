@@ -134,13 +134,18 @@ def complete_semantic_policies(
     return modules
 
 
+_C_DIRECT_DIAGNOSTIC_PREFIX = "C_DIRECT_"
+
+
 def _reject_ineligible_direct_c_operations(module: models.SemanticModule) -> None:
     """Raise C primitive-lane diagnostics before wrapper planning can begin.
 
-    The direct-only C lane has no adapter to fall back to, so an unsupported
-    declaration of the wrapped translation unit is an error rather than a
-    silently omitted export.  That covers module variables and class surfaces
-    too, because a C module has no generated accessor route for them.
+    The direct-only C lane has no adapter to fall back to, so a declaration of
+    the wrapped translation unit that this lane cannot reach is an error rather
+    than a silently omitted export.  That covers module variables and class
+    surfaces too, because a C module has no generated accessor route for them.
+    A blocker every language shares -- an unexported concrete procedure behind
+    an overload set, for example -- is left to planning.
     """
     declarations = [*module.functions]
     declarations.extend(procedure for group in module.overload_sets for procedure in group.procedures)
@@ -151,7 +156,13 @@ def _reject_ineligible_direct_c_operations(module: models.SemanticModule) -> Non
         policy = function.metadata.get(models.RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA)
         if not isinstance(policy, FunctionWrapperPolicy) or policy.supported:
             continue
-        details = "; ".join(policy.blockers) or "C_DIRECT_UNSUPPORTED_OPERATION"
+        if not any(blocker.startswith(_C_DIRECT_DIAGNOSTIC_PREFIX) for blocker in policy.blockers):
+            # A shared policy fact such as an unexported concrete procedure is
+            # not a C lane limitation.  Planning already decides those the same
+            # way it does for Fortran, so only this lane's own diagnostics stop
+            # the build here.
+            continue
+        details = "; ".join(policy.blockers)
         raise ValueError(f"C direct operation {policy.owner_path!r} is unsupported before wrapper planning: {details}")
     for variable in module.variables:
         if not _is_wrapped_c_declaration(module, variable):
@@ -1081,11 +1092,11 @@ def _complete_native_status_error_policy(function: models.SemanticFunction, owne
     message_name = raw_policy.get("message")
     message = None
     if message_name is not None:
-        message = _native_status_output(function, owner_path, message_name, subject="message")
+        message = _native_status_output(function, owner_path, message_name, subject="message", allow_visible=True)
         if message.rank != 0 or message.semantic_type_name != "String":
             raise ValueError(
                 f"Function {function.name!r} raises message target {message.name!r} "
-                "must be a scalar string hidden output"
+                "must be a scalar string hidden output or visible argument"
             )
         if message.owner_path == status.owner_path:
             raise ValueError(f"Function {function.name!r} raises status and message targets must be distinct")
@@ -1104,30 +1115,38 @@ def _native_status_output(
     output_name: object,
     *,
     subject: str,
+    allow_visible: bool = False,
 ) -> NativeStatusOutputPolicy:
-    """Return one completed hidden output selected by a runtime policy."""
+    """Return one completed output selected by a runtime policy.
+
+    A status is always a hidden projected output.  A message may instead name a
+    visible argument, which lets the caller supply the buffer the native code
+    writes into; the declared storage then carries its own capacity.
+    """
+    noun = "a hidden output or visible argument" if allow_visible else "a hidden output"
     if not isinstance(output_name, str) or not output_name:
-        raise ValueError(f"Function {function.name!r} raises {subject} target must name a hidden output")
+        raise ValueError(f"Function {function.name!r} raises {subject} target must name {noun}")
     mappings = tuple(
         mapping
         for mapping in function.projection
-        if (
-            mapping.python_position is None
-            and isinstance(mapping.result_position, int)
-            and output_name in {mapping.python_name, mapping.native_name}
+        if output_name in {mapping.python_name, mapping.native_name}
+        and (
+            (mapping.python_position is None and isinstance(mapping.result_position, int))
+            or (allow_visible and isinstance(mapping.python_position, int))
         )
     )
     if len(mappings) != 1:
-        raise ValueError(f"Function {function.name!r} raises {subject} target must name a hidden output")
+        raise ValueError(f"Function {function.name!r} raises {subject} target must name {noun}")
     mapping = mappings[0]
     argument = next((item for item in function.arguments if item.name == mapping.python_name), None)
     if argument is None or not isinstance(mapping.native_position, int):
-        raise ValueError(f"Function {function.name!r} raises {subject} target must name a hidden output")
+        raise ValueError(f"Function {function.name!r} raises {subject} target must name {noun}")
+    visible = isinstance(mapping.python_position, int)
     decision = argument.metadata.get(models.RESOLVED_OWNERSHIP_POLICY_METADATA)
-    if not isinstance(decision, OwnershipDecision) or not _is_compatible_status_handoff(decision):
+    if not isinstance(decision, OwnershipDecision) or not _is_compatible_status_handoff(decision, visible=visible):
         raise ValueError(
             f"Function {function.name!r} raises {subject} target {output_name!r} "
-            "has no compatible completed hidden-output handoff"
+            f"has no compatible completed {'visible-argument' if visible else 'hidden-output'} handoff"
         )
     semantic_type = argument.semantic_type
     return NativeStatusOutputPolicy(
@@ -1139,11 +1158,28 @@ def _native_status_output(
         semantic_type_name=semantic_type.name,
         rank=int(semantic_type.rank or 0),
         character_length=_fixed_character_length(semantic_type),
+        python_position=mapping.python_position if visible else None,
     )
 
 
-def _is_compatible_status_handoff(decision: OwnershipDecision) -> bool:
-    """Report whether a hidden scalar/string result has a valid status handoff action."""
+_VISIBLE_STATUS_STRING_ACTIONS = frozenset(
+    {
+        # A caller-supplied NumPy bytes buffer the native code writes in place.
+        CodegenAction.IN_PLACE_ARGUMENT,
+        # A borrowed Python ``str`` payload; the contract states what C expects.
+        CodegenAction.CALL_LOCAL_INPUT,
+    }
+)
+
+
+def _is_compatible_status_handoff(decision: OwnershipDecision, *, visible: bool = False) -> bool:
+    """Report whether a scalar/string argument has a valid status handoff action."""
+    if visible:
+        return bool(
+            decision.kind is ObjectKind.STRING
+            and decision.python_visible
+            and decision.codegen_action in _VISIBLE_STATUS_STRING_ACTIONS
+        )
     expected_action = {
         ObjectKind.SCALAR: CodegenAction.DIRECT_VALUE,
         ObjectKind.STRING: CodegenAction.COPY_OUT,

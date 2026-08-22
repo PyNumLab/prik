@@ -1,10 +1,10 @@
 ---
 title: CLI Commands Reference
-audience: users, developers
+audience: users
 prerequisites: installation
-related: python-api.md, fortran-wrapper.md
+related: python-api.md, ../language-support/c-support.md, ../guide/building-shared-library.md
 status: maintained
-publication: draft
+publication: reviewed
 ---
 
 # CLI Commands Reference
@@ -19,7 +19,7 @@ python3 -m prik {parse,semantics,generate,probe} [OPTIONS] ...
 
 | Command | Purpose |
 | --- | --- |
-| no subcommand | Builds one importable extension from Fortran source or a semantic `.pyi` contract. |
+| no subcommand | Builds one importable extension from Fortran source, a supported direct C source, or a semantic `.pyi` contract. |
 | `parse` | Prints parser facts and diagnostics. |
 | `semantics` | Prints language-neutral semantic IR as JSON. |
 | `generate` | Writes `.pyi` contracts, wrapper sources, or a Makefile without compiling. |
@@ -57,24 +57,17 @@ The default build accepts either one or more Fortran or supported C source
 | --- | --- |
 | `paths` | Source files, `.pyi` files, or directories. Omit only with `--build-manifest`. |
 | `--version` | Prints the installed PRIK version and exits. |
-| `--language {fortran,c}` | Selects the source or source-free contract language explicitly. C builds require `c`. |
+| `--language {fortran,c}` | Selects the source or source-free contract language explicitly. C source and C-native contracts require `c`. |
 | `--build-manifest PATH` | Replays a saved `prik-build.json`. It does not generate one. |
 | `--jobs N` | Limits concurrent compiler processes. The default uses available CPUs. |
-
-<!-- PRIK_C_DOCS_START
-| `&#45;&#45;language {fortran,c}` | Selects the frontend. Required for C inputs, directories, and unknown suffixes. |
-PRIK_C_DOCS_END -->
 
 Compiled wrapper builds support Fortran and the documented direct-only C
 primitive lane. C paths require `--language c`; the parser also accepts more C
 forms than that runtime lane, which fail before wrapper planning.
 
-Directories are expanded recursively in deterministic path order.
-
-<!-- PRIK_C_DOCS_START
-Fortran source files can usually be inferred from their suffix. C files,
-directories, and unknown suffixes require `&#45;&#45;language`.
-PRIK_C_DOCS_END -->
+Directories are expanded recursively in deterministic path order. Fortran
+source files can usually be inferred from their suffix. C files, directories,
+and unknown suffixes require `--language c`.
 
 ## Wrapper builds
 
@@ -95,7 +88,7 @@ least one explicit native input: `--native-fortran-sources`, `--native-c-sources
 | `--native-fortran-sources PATH ...` | Compiles extra native sources without exposing them as public API. |
 | `--native-c-sources PATH ...` | Compiles extra C sources without exposing them as public API. |
 | `--native-compile-flags FLAG ...` | Flags for native implementation compilation. |
-| `--native-c-compile-flags FLAG ...` | Flags for extra C implementation compilation. |
+| `--native-c-compile-flags FLAG ...` | C implementation compiler flags. |
 | `--native-objects PATH ...` | Links object files, static archives, or shared libraries. |
 | `--native-library NAME ...` | Links system libraries by name — `--native-library openblas` passes `-lopenblas`. |
 | `--native-link-item KIND:VALUE ...` | Ordered link items. `KIND` is `object`, `archive`, `shared-library`, `library`, or `arg`. |
@@ -146,6 +139,17 @@ beside each input source.
 Target datatype measurement happens automatically inside semantic conversion.
 Use `probe` only when you want to inspect those facts yourself.
 
+For C input, select the language on each command:
+
+```bash
+python3 -m prik parse path/to/api.h --language c --json
+python3 -m prik semantics path/to/api.c --language c
+```
+
+Parsing reports source declarations and diagnostics; it does not promise that
+the declaration fits the direct C wrapper contract. Read [C
+Support](../language-support/c-support.md) before building a C API.
+
 ## Generate
 
 `generate` requires exactly one output mode:
@@ -167,6 +171,12 @@ python3 -m prik generate --sources points.f90 --out-dir build
 python3 -m prik generate --makefile points.f90 --out-dir build
 ```
 
+For a C source contract, `--language c` is valid with `--pyi`:
+
+```bash
+python3 -m prik generate --pyi --language c path/to/api.c --out contracts
+```
+
 `--sources` and `--makefile` still run preprocessing and semantic policy to
 produce a valid wrapper plan; they skip object compilation and linking, and
 use `--out-dir`. `--pyi` uses `--out` for its contract package, and there
@@ -184,13 +194,8 @@ table.
 python3 -m prik probe --language {fortran,c} --compiler COMPILER [OPTIONS]
 
 python3 -m prik probe --language fortran --compiler gfortran-13
+python3 -m prik probe --language c --compiler cc --format markdown
 ```
-
-<!-- PRIK_C_DOCS_START
-```bash
-python3 -m prik probe &#45;&#45;language c &#45;&#45;compiler gcc-13 &#45;&#45;format markdown
-```
-PRIK_C_DOCS_END -->
 
 | Option | Purpose |
 | --- | --- |
@@ -214,43 +219,32 @@ These options control preprocessing before parsing.
 
 | Option | Purpose |
 | --- | --- |
-| `--preprocessor-adapter {auto,gnu-fortran,command-template}` | Selects the compiler adapter or a custom command template. |
-| `--compiler COMPILER` | An exact compiler or preprocessor executable. Defaults to `gfortran` for Fortran. |
+| `--preprocessor-adapter {auto,gcc-compatible-c,gnu-fortran,command-template}` | Selects the compiler adapter or a custom command template. |
+| `--compiler COMPILER` | An exact compiler or preprocessor executable. Defaults to `gfortran` for Fortran and `cc` for C. |
 | `--preprocess-template TEMPLATE` | Runs a custom command-template preprocessor. |
 | `-I DIR`, `--include-dir DIR` | Adds an include directory. |
 | `-D NAME[=VALUE]`, `--define NAME[=VALUE]` | Defines a preprocessing macro. |
 | `-U NAME`, `--undef NAME` | Undefines a preprocessing macro. |
-| `--std STANDARD` | Passes a language standard such as `f2008` or `f2018`. |
+| `--std STANDARD` | Passes a language standard such as `c11`, `c23`, `f2008`, or `f2018`. |
 | `--compiler-arg ARG` | Passes one raw compiler argument. Repeat for more. |
 
 Use the equals form when a value starts with `-`, for example
 `--compiler-arg=-target`.
 
-<!-- PRIK_C_DOCS_START
-The C frontend defaults to `cc` when `&#45;&#45;compiler` is omitted.
-PRIK_C_DOCS_END -->
+`--compile-commands PATH` reads per-file C preprocessing commands from a
+`compile_commands.json` database. It is available only for C input.
 
-<!-- PRIK_C_DOCS_START
-| `&#45;&#45;compile-commands PATH` | Reads project flags from a `compile_commands.json` database. |
-| `&#45;&#45;std STANDARD` | Passes a language standard such as `c11`, `c23`, `f2008`, or `f2018`. |
-| `&#45;&#45;preprocessor-adapter {auto,gcc-compatible-c,gnu-fortran,command-template}` | Selects the compiler adapter family. |
-PRIK_C_DOCS_END -->
-
-<!-- PRIK_C_DOCS_START
 ## C include exposure
-PRIK_C_DOCS_END -->
 
-<!-- PRIK_C_DOCS_START
-These options affect wrapper exposure for reachable included C files.
-PRIK_C_DOCS_END -->
+These C-only options decide which reachable project headers become public
+wrapper declarations. They affect parsing, semantic inspection, and generated
+C contracts—not whether the native compiler can find an include file.
 
-<!-- PRIK_C_DOCS_START
 | Option | Purpose |
-| &#45;&#45;- | &#45;&#45;- |
-| `&#45;&#45;include-exposure {reachable-project,roots-only}` | Selects whether reachable project includes are public by default or only root inputs are public. |
-| `&#45;&#45;public-include PATH_OR_PATTERN` | Forces matched included files to be public in wrapper output. |
-| `&#45;&#45;private-include PATH_OR_PATTERN` | Forces matched included files to be private in wrapper output. |
-PRIK_C_DOCS_END -->
+| --- | --- |
+| `--include-exposure {reachable-project,roots-only}` | Exposes reachable project headers by default, or only the root inputs. |
+| `--public-include PATH_OR_PATTERN` | Exposes declarations from matching included files. Repeat as needed. |
+| `--private-include PATH_OR_PATTERN` | Hides declarations from matching included files. Repeat as needed. |
 
 ## Output and diagnostics
 
@@ -277,7 +271,9 @@ for semantic `.pyi` builds the normalized replay `manifest`.
 | Print semantic IR | `python3 -m prik semantics path/to/file.f90` |
 | Emit a semantic `.pyi` contract directory | `python3 -m prik generate --pyi path/to/file.f90 --out contracts` |
 | Build a Fortran wrapper | `python3 -m prik path/to/file.f` |
-| Build a direct-only primitive C wrapper | `python3 -m prik --language c path/to/file.c --compiler cc` |
+| Build a supported C wrapper | `python3 -m prik --language c path/to/file.c --compiler cc` |
+| Parse a C header as JSON | `python3 -m prik parse path/to/api.h --language c --json` |
+| Parse C with the native project's preprocessing flags | `python3 -m prik parse path/to/api.h --language c --compiler clang -I include -D API_EXPORT= --std c11` |
 | Build with native compiler and link flags | `python3 -m prik path/to/file.f90 --native-compile-flags="-O3 -fopenmp" --wrapper-c-flags=-fopenmp` |
 | Build from a semantic contract and native object | `python3 -m prik contracts/module.pyi --native-objects build/module.o -I build` |
 | Build a C-native semantic contract | `python3 -m prik --language c contracts/module.pyi --native-c-sources native/module.c --compiler cc` |
@@ -287,11 +283,6 @@ for semantic `.pyi` builds the normalized replay `manifest`.
 | Generate a `.pyi` replay manifest and Makefile | `python3 -m prik generate --makefile contracts/module.pyi --native-fortran-sources native/module.f90 --out-dir build --json` |
 | Replay a `.pyi` manifest | `python3 -m prik --build-manifest build/prik-build.json` |
 
-<!-- PRIK_C_DOCS_START
-| Parse a C API | `python3 -m prik path/to/api.h &#45;&#45;language c &#45;&#45;parse &#45;&#45;json` |
-| Parse with compiler preprocessing | `python3 -m prik path/to/api.h &#45;&#45;language c &#45;&#45;parse &#45;&#45;compiler clang-18 -I include -D API_EXPORT= &#45;&#45;std c11` |
-PRIK_C_DOCS_END -->
-
 The `points.f90` examples reuse the source from the
 [derived-type guide](../guide/wrapping-derived-types.md#complete-example),
 which has a complete source, build, import, and result flow.
@@ -299,5 +290,6 @@ which has a complete source, build, import, and result flow.
 ## Related pages
 
 - [Python API Reference](python-api.md) — the same workflows from Python.
-- [Fortran Wrapper Reference](fortran-wrapper.md) — build workflows in depth.
-- [Semantic .pyi Format](semantic-pyi-format.md) — editing wrapper contracts.
+- [C Support](../language-support/c-support.md) — the direct C lane's complete
+  source, contract, build, and Python workflows.
+- [Editing `.pyi` Contracts](pyi-contracts/index.md) — supported contract edits.

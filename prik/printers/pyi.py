@@ -51,6 +51,7 @@ from prik.semantics.models import (
     PROTOTYPE_INTENT_METADATA,
     PROTOTYPE_REF_METADATA,
     RUNTIME_RELEASE_GIL_METADATA,
+    HIDDEN_NATIVE_OUTPUT_METADATA,
     RUNTIME_STATUS_ERROR_METADATA,
     ProjectionMapping,
     ProcedureOverloadSet,
@@ -1813,14 +1814,33 @@ class PyiPrinter(ClassVisitor):
         return f"tuple[{', '.join(parts)}]"
 
     @staticmethod
+    def _unreturned_output_names(func: SemanticFunction) -> frozenset[str]:
+        """Name the native outputs that never reach the Python return value.
+
+        These are declared as ``Hidden`` slots: either the contract said so
+        directly, or ``@raises`` consumes them into an exception. Both spell the
+        same fact, so both emit the same way.
+        """
+        names = {argument.name for argument in func.arguments if argument.metadata.get(HIDDEN_NATIVE_OUTPUT_METADATA)}
+        policy = func.metadata.get(RUNTIME_STATUS_ERROR_METADATA)
+        if isinstance(policy, dict):
+            names.update(
+                str(policy[key]) for key in ("status", "message") if isinstance(policy.get(key), str) and policy[key]
+            )
+        return frozenset(names)
+
+    @staticmethod
     def _projected_return_arguments(func: SemanticFunction) -> list[tuple[int, SemanticArgument, bool]]:
         """Handle projected return arguments for the current generation context."""
         by_name = {arg.name: arg for arg in func.arguments}
+        consumed = PyiPrinter._unreturned_output_names(func)
         returned = []
         for mapping in func.projection:
             if mapping.result_position is None:
                 continue
             arg_name = mapping.python_name or mapping.native_name
+            if arg_name in consumed:
+                continue
             arg = by_name.get(arg_name)
             if arg is not None:
                 returned.append(
@@ -2016,7 +2036,7 @@ class PyiPrinter(ClassVisitor):
             decorators.append(f"{indent}@{context.contract('standalone')}")
         if not func.metadata.get(OVERLOAD_TARGET_METADATA) and self._requires_native_call(func):
             decorators.append(
-                f"{indent}{self._native_call(self._pyi_projection(func), context, self._native_result_projection(func))}"
+                f"{indent}{self._native_call(self._pyi_projection(func), context, self._native_result_projection(func), func)}"
             )
         if isinstance(policy := func.metadata.get(RUNTIME_STATUS_ERROR_METADATA), dict):
             decorators.append(f"{indent}{self._raises(policy, context)}")
@@ -2273,10 +2293,11 @@ class PyiPrinter(ClassVisitor):
         projection: list[ProjectionMapping],
         context: _PyiEmissionContext,
         native_result: ProjectionMapping | None = None,
+        func: SemanticFunction | None = None,
     ) -> str:
         """Handle native call for the current generation context."""
         entries = ", ".join(
-            self._native_projection_entry(mapping, context)
+            self._native_projection_entry(mapping, context, func)
             for mapping in sorted(
                 projection, key=lambda item: item.native_position if item.native_position is not None else -1
             )
@@ -2290,17 +2311,38 @@ class PyiPrinter(ClassVisitor):
         self,
         mapping: ProjectionMapping,
         context: _PyiEmissionContext,
+        func: SemanticFunction | None = None,
     ) -> str:
         """Handle native projection entry for the current generation context."""
         if mapping.value_kind:
             return self._native_projection_value(mapping, context)
         if mapping.python_position is not None:
             return f"{context.contract('Arg')}({mapping.python_position})"
+        hidden = self._hidden_projection_entry(mapping, context, func)
+        if hidden is not None:
+            return hidden
         if mapping.result_position is not None:
             if mapping.native_name:
                 return f"{context.contract('Return')}({mapping.native_name!r}, {mapping.result_position})"
             return f"{context.contract('Return')}({mapping.result_position})"
         raise ValueError("native_call cannot represent a native-only projection entry")
+
+    def _hidden_projection_entry(
+        self,
+        mapping: ProjectionMapping,
+        context: _PyiEmissionContext,
+        func: SemanticFunction | None,
+    ) -> str | None:
+        """Spell one decorator-consumed output as a typed ``Hidden`` slot."""
+        if func is None or mapping.result_position is None:
+            return None
+        name = mapping.python_name or mapping.native_name
+        if name not in self._unreturned_output_names(func):
+            return None
+        argument = next((item for item in func.arguments if item.name == name), None)
+        if argument is None:
+            return None
+        return f"{context.contract('Hidden')}({name!r}, {self._visit(argument.semantic_type, context)})"
 
     def _native_projection_value(
         self,

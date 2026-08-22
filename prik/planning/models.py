@@ -651,6 +651,13 @@ class BindingStatusErrorPlan(StageRecord):
     message_role: str | None
     success: int
     exception_kind: PythonExceptionKind
+    # Owner path of the visible Python argument whose caller-supplied buffer
+    # carries the message. Mutually exclusive with ``message_role``, which names
+    # a projected native output the binding itself materialized.
+    message_argument: str | None = None
+    # Declared capacity of a hidden message, which bounds the binding's read of
+    # fixed-length native character storage.
+    message_character_length: int | None = None
 
 
 @dataclass
@@ -928,6 +935,10 @@ class NativeEntrypointResultPlan(StageRecord):
     scalar_descriptor: ScalarDescriptorResultPlan | None
     passing: EntrypointPassingConvention
     updates_argument: bool = False
+    # Set only on a direct-C hidden character output: the binding owns a buffer
+    # of this many bytes and passes ``char *``.  A bridged route leaves it None
+    # and keeps the adapter's owned-allocation protocol.
+    character_capacity: int | None = None
 
 
 @dataclass
@@ -1213,6 +1224,7 @@ class ArgumentTransferPlan(StageRecord):
     projected_call_slot: NativeEntrypointProjectedSlotPlan
     transformations: tuple[TransformationPlan, ...] = ()
     native_storage_c_type: str | None = None
+    character_allows_embedded_nul: bool = False
 
     @property
     def projects_character_descriptor_update(self) -> bool:
@@ -1251,6 +1263,9 @@ class ResultPlan(StageRecord):
     datatype_family: DatatypeFamily
     source_kind: str
     result_position: int
+    # False for a ``Hidden`` slot: the native call still produces the value, but
+    # the binding builds no Python object from it.
+    python_returned: bool
     character_length: int | None
     object_kind: ObjectKind
     ownership_owner: OwnershipOwner

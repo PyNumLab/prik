@@ -46,6 +46,66 @@ release tags add a leading `v` to the package version.
   twice, once under a relative spelling that no rule produced, so `make` stopped
   with "No rule to make target". This affected Fortran and C builds alike.
 
+- C contracts can now pass strings. `String` hands a C `const char *` the
+  Python object's own NUL-terminated buffer, and `String[...][()]` hands a
+  `char *` a rank-zero NumPy bytes buffer untouched, so native writes are
+  visible in place. A declared capacity such as `String[32][()]` additionally
+  checks the caller's itemsize. PRIK takes no position on whether the callee
+  reads to a terminator or takes a separate length: the contract states which
+  form the C code expects. `@raises(message=...)` works too when the projected
+  message declares a capacity, such as `Returns["message", String[64]]`: the
+  binding owns that buffer and passes it as `char *`, instead of the bridged
+  route's owned-allocation `char **`. Arrays of strings, pointer results, and
+  owned buffers stay fail-closed.
+
+- `@raises(message=...)` can now name a visible argument instead of a projected
+  hidden output, in both the C and Fortran lanes. The caller then supplies the
+  storage the native code writes into — a rank-zero NumPy bytes array for
+  `String[n][()]`, or a `str` payload for `String` — so no capacity has to be
+  declared, and the buffer survives the raise for inspection. Only the hidden
+  form still requires a fixed width, because there the binding allocates the
+  buffer and the size the native code assumes is not in the signature.
+
+- `Hidden(name, T)` declares a native output the Python signature never shows.
+  It is planned, passed, and released exactly like a returned output — the
+  bridge sees no difference — and only the binding skips building a Python
+  value from it. This makes `@raises` status and message one instance of a
+  general mechanism rather than a special case, and it works in both the C and
+  Fortran lanes.
+
+- `@raises` targets are now declared with `Hidden(name, T)` inside
+  `@native_call` instead of occupying a slot in the return annotation. A status
+  or message is produced by the native call but consumed into the exception, so
+  listing it as a returned value described a Python signature that never
+  existed: `-> tuple[Returns["root", Float64], Returns["status", Int32]]`
+  returned a bare `Float64`. Contracts now say what they mean, and the emitted
+  `.pyi` normalizes the old spelling to the new one.
+
+- Rank-zero character storage may now leave its width assumed in the Fortran
+  lane too: `String[...][()]` takes the width from the caller's NumPy array
+  instead of the contract, matching what the C lane already accepted. The same
+  now holds for character arrays, where `String[...][:]` takes every element's
+  width from the array's itemsize. A declared width still validates the
+  caller's itemsize; an assumed one accepts whatever the array carries.
+
+- Rank-zero character storage now always reports its width beside the address,
+  so a declared and an assumed width generate the same adapter shape instead of
+  baking a literal into the generated Fortran. A raw string address keeps the
+  declared width, because a bare caller-supplied address has no Python object
+  whose size could be measured.
+
+- A `@raises` message is now read within the capacity its storage declares
+  instead of by scanning for a terminator. Fortran blank-pads fixed-length
+  character storage and never writes a NUL, so the previous scan reported the
+  padding as part of the exception text — a `character(len=64)` message raised
+  `'negative'` followed by 56 spaces. When the native code did terminate, the
+  bytes are still taken exactly as written.
+
+- A `@private` declaration in a C semantic contract is no longer refused as an
+  unsupported C operation. Being unexported is a shared contract feature, not a
+  C-lane limit, so the documented `@overload` pattern — private concrete
+  candidates behind one public Python name — now works for C.
+
 - A C wrapper build now works when the C compiler is named `cc`. `cc` is the
   documented default for the C lane, but its vendor was read from the
   executable's filename, which names no vendor. That happened to work where
@@ -56,7 +116,10 @@ release tags add a leading `v` to the package version.
 - The BLAS and LAPACK examples now expect the character selectors that the
   conservative `intent(inout)` default returns. Their assertions still encoded
   the older `intent(in)` assumption for `character` dummies, so the example
-  suites failed against the behavior the same release documents.
+  suites failed against the behavior the same release documents. Positional
+  reads of a returned scalar tuple moved with the selectors; five LAPACK
+  assertions that had kept passing on a coincidentally equal value now index
+  the dummy they name.
 
 - The semantic contract a C build saves beside its extension now describes only
   the wrapped file's own API. Preprocessed system-header declarations stay
@@ -70,6 +133,13 @@ release tags add a leading `v` to the package version.
   files were written.
 
 ### Added
+
+- Added a published C support guide with executable source and semantic-contract
+  workflows, CLI and Python build APIs, supported primitive and NumPy-pointer
+  contracts, compiler preprocessing, and the direct lane's fail-closed limits.
+  Published the linked language-support, CLI, Python API, diagnostic, reference,
+  and examples landing pages after aligning their commands and public links with
+  the implemented surface.
 
 - Added the initial direct-only C wrapper lane. `build_c_extension`, explicit
   `native_c_sources`, and C-native semantic `.pyi` contracts compile, link,

@@ -52,6 +52,7 @@ from prik.utilities.visitor import ClassVisitor
 
 from prik.semantics.models import (
     EXTERNAL_TYPE_REF_METADATA,
+    HIDDEN_NATIVE_OUTPUT_METADATA,
     FORTRAN_GENERIC_NAME_METADATA,
     OVERLOAD_KIND_METADATA,
     OVERLOAD_TARGET_METADATA,
@@ -203,6 +204,10 @@ class _PyiAstParser:
         if native_language not in {"c", "fortran"}:
             raise ValueError(f"Unsupported semantic .pyi native language: {native_language!r}")
         self.module = SemanticModule(name=module_name, origin=SemanticOrigin(source_language=native_language))
+        # Types declared by ``Hidden(name, T)`` slots, keyed by the mapping they
+        # came from. They are consumed while the owning callable is built and
+        # never reach the semantic model.
+        self._hidden_output_types: dict[int, SemanticType] = {}
         self.source = source
         self.native_language = native_language
         self._pending_overloads: list[_PendingOverload] = []
@@ -1596,6 +1601,7 @@ class _PyiAstParser:
             "Len": self._native_len_projection_entry,
             "IsPresent": self._native_is_present_projection_entry,
             "Work": self._native_work_projection_entry,
+            "Hidden": self._native_hidden_projection_entry,
         }
         try:
             handler = handlers[helper]
@@ -1628,6 +1634,22 @@ class _PyiAstParser:
             native_position=native_position,
             result_position=int(ast.literal_eval(position_arg)),
         )
+
+    def _native_hidden_projection_entry(self, node: ast.Call, native_position: int) -> ProjectionMapping:
+        """Parse ``Hidden(name, T)`` into an output the Python signature never shows.
+
+        A hidden output is produced by the native call but consumed by a
+        decorator such as ``@raises``, so it declares its own type here instead
+        of occupying a slot in the return annotation.
+        """
+        if len(node.args) != 2:
+            raise ValueError("Hidden expects a name and a type")
+        name = str(ast.literal_eval(node.args[0]))
+        if not name:
+            raise ValueError("Hidden requires a non-empty output name")
+        mapping = ProjectionMapping(native_name=name, native_position=native_position)
+        self._hidden_output_types[id(mapping)] = self.semantic_type(node.args[1])
+        return mapping
 
     @staticmethod
     def _native_pass_projection_entry(node: ast.Call, native_position: int) -> ProjectionMapping:
@@ -2915,6 +2937,7 @@ class _PyiAstParser:
             optional_return_positions=optional_return_positions,
         )
         self._validate_callable_descriptor_return(return_type, native_result)
+        self._apply_hidden_native_outputs(return_type, returned_args, projection)
         return_type, returned_args = self._apply_native_call_returns(return_type, returned_args, projection)
         return_type = self._apply_native_result_projection(return_type, native_result)
 
@@ -3164,6 +3187,44 @@ class _PyiAstParser:
         body = node.body[0]
         if not (isinstance(body, ast.Expr) and isinstance(body.value, ast.Constant) and body.value.value is Ellipsis):
             raise ValueError(f"Unsupported function header: {_node_text(node)!r}")
+
+    def _apply_hidden_native_outputs(
+        self,
+        return_type: SemanticType | None,
+        returned_args: list[SemanticArgument],
+        projection: list[ProjectionMapping],
+    ) -> None:
+        """Turn ``Hidden(name, T)`` slots into projected outputs after the visible ones.
+
+        The result slots the annotation already claimed keep their positions, so
+        hidden outputs take the next free ones and reach the rest of the
+        pipeline exactly as an annotated projected result would.
+        """
+        hidden = [mapping for mapping in projection if id(mapping) in self._hidden_output_types]
+        if not hidden:
+            return
+        claimed = [mapping.result_position for mapping in projection]
+        claimed.extend(argument.metadata.get("return_position") for argument in returned_args)
+        # A direct return owns result slot 0 even though no mapping names it, so
+        # a hidden output must never claim that slot and displace it.
+        if return_type is not None:
+            claimed.append(0)
+        next_position = max((position for position in claimed if isinstance(position, int)), default=-1) + 1
+        for mapping in hidden:
+            semantic_type = self._hidden_output_types.pop(id(mapping))
+            _PyiAstParser._mark_projected_output(semantic_type)
+            mapping.result_position = next_position
+            returned_args.append(
+                SemanticArgument(
+                    name=mapping.native_name,
+                    semantic_type=semantic_type,
+                    metadata={
+                        "return_position": next_position,
+                        HIDDEN_NATIVE_OUTPUT_METADATA: True,
+                    },
+                )
+            )
+            next_position += 1
 
     @staticmethod
     def _apply_projected_returns(semantic_args: list[SemanticArgument], returned_args: list[SemanticArgument]) -> None:

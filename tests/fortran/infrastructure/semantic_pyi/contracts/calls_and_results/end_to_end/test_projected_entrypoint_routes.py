@@ -98,3 +98,30 @@ def test_adapted_projection_uses_the_same_binding_owned_actual_sequence(tmp_path
     assert "native_projected(right, left, literal_2)" in bridge
     assert "subroutine bind_c_projected_output(right, left, literal_2, output)" in bridge
     assert "native_projected_output(right, left, literal_2, output)" in bridge
+
+
+def test_matching_fortran_contract_name_uses_the_native_procedure_without_bind(tmp_path: Path):
+    """A Fortran contract needs ``@bind`` only when the names differ."""
+    module, result = _build_inline_pyi_contract_module(
+        tmp_path,
+        module_name="matching_fortran_name",
+        source_text="""
+module matching_fortran_name
+contains
+  subroutine increment(value)
+    integer, intent(inout) :: value
+    value = value + 1
+  end subroutine increment
+end module matching_fortran_name
+""",
+        contract_text="""
+from prik.contracts import Addr, Arg, Int32, Returns, native_call
+
+@native_call([Addr(Arg(0))])
+def increment(value: Int32) -> Returns[\"value\", Int32]: ...
+""",
+    )
+
+    assert module.increment(np.int32(4)) == np.int32(5)
+    bridge = (result.output_dir / "bind_c_matching_fortran_name_wrapper.f90").read_text(encoding="utf-8")
+    assert "call native_increment(value)" in bridge

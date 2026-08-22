@@ -228,6 +228,7 @@ Pass = _expression
 PointerAssociation = _expression
 PointerPolicy = _expression
 Range = _expression
+Hidden = _expression
 Return = _expression
 SourceName = _expression
 Transfer = _expression
@@ -355,6 +356,7 @@ CONTRACT_SYMBOLS = frozenset(
         "prototype",
         "pure",
         "private",
+        "Hidden",
         "raises",
         "standalone",
     }

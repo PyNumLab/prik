@@ -70,6 +70,34 @@ int native_increment(int value) { return value + 1; }
 
 
 @pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")
+def test_c_contract_defaults_matching_python_name_to_native_symbol(tmp_path: Path):
+    """A C contract needs ``@bind`` only when the names differ."""
+    contract = tmp_path / "matching_name.pyi"
+    contract.write_text(
+        """from prik.contracts import Int32
+
+def increment(value: Int32) -> Int32: ...
+""",
+        encoding="utf-8",
+    )
+    source = tmp_path / "matching_name.c"
+    source.write_text("int increment(int value) { return value + 1; }\n", encoding="utf-8")
+
+    result = build_pyi_extension(
+        contract,
+        native_language="c",
+        native_c_sources=[source],
+        output_dir=tmp_path / "build",
+    )
+    module = sole_native_module(result.import_module())
+
+    assert module.increment(np.int32(4)) == np.int32(5)
+    binding = next(path.read_text(encoding="utf-8") for path in result.generated_sources if path.suffix == ".c")
+    assert "int32_t increment(int32_t value);" in binding
+    assert "result = increment(bound_value);" in binding
+
+
+@pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")
 def test_c_contract_reuses_direct_projection_value_address_literal_and_hidden_output_paths(tmp_path: Path):
     contract = tmp_path / "projection.pyi"
     contract.write_text(
@@ -238,3 +266,45 @@ size_t total(size_t value) { return value + 1; }
     assert "size_t total(size_t value);" in binding
     assert "#include <stddef.h>" in binding
     assert module.total(np.uint64(4)) == np.uint64(5)
+
+
+@pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")
+def test_c_contract_supports_private_candidates_behind_one_overloaded_name(tmp_path: Path):
+    """An unexported concrete procedure is a shared contract feature, not a C limit."""
+    contract = tmp_path / "overloads.pyi"
+    contract.write_text(
+        """from prik.contracts import Float64, Int32, overload, private
+
+@private
+def scale_integer(value: Int32) -> Int32: ...
+
+@private
+def scale_real(value: Float64) -> Float64: ...
+
+@overload("scale_integer")
+def scale(value: Int32) -> Int32: ...
+
+@overload("scale_real")
+def scale(value: Float64) -> Float64: ...
+""",
+        encoding="utf-8",
+    )
+    source = tmp_path / "overloads.c"
+    source.write_text(
+        """int scale_integer(int value) { return value * 2; }
+double scale_real(double value) { return value * 2.0; }
+""",
+        encoding="utf-8",
+    )
+
+    result = build_pyi_extension(
+        contract,
+        native_language="c",
+        native_c_sources=[source],
+        output_dir=tmp_path / "build",
+    )
+    module = sole_native_module(result.import_module())
+
+    assert module.scale(np.int32(21)) == np.int32(42)
+    assert module.scale(np.float64(1.5)) == np.float64(3.0)
+    assert [name for name in dir(module) if not name.startswith("_")] == ["scale"]

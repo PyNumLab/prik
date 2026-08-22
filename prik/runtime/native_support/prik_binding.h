@@ -10,6 +10,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "numpy_version.h"
 
@@ -74,6 +75,26 @@ typedef struct {
 #endif
 
 /* Release descriptor payload and storage at most once while retaining the record. */
+/* Build a Python string from caller-supplied status-message storage.
+
+   The read never passes ``capacity`` because a native writer is not obliged to
+   terminate. When it did terminate, the bytes are taken exactly as written;
+   when it did not, the storage is fixed-length padded (Fortran blank-pads
+   ``character(len=n)``), so trailing blanks and NULs are dropped. */
+static inline PyObject *prik_status_message_text(const char *bytes, Py_ssize_t capacity)
+{
+    const char *terminator = (const char *)memchr(bytes, 0, (size_t)capacity);
+    Py_ssize_t length = capacity;
+    if (terminator != NULL) {
+        return PyUnicode_FromStringAndSize(bytes, (Py_ssize_t)(terminator - bytes));
+    }
+    while (length > 0 && (bytes[length - 1] == ' ' || bytes[length - 1] == '\0')) {
+        length -= 1;
+    }
+    return PyUnicode_FromStringAndSize(bytes, length);
+}
+
+
 static inline void prik_native_array_handle_release(prik_native_array_handle *handle)
 {
     void *descriptor;

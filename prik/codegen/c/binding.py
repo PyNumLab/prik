@@ -6690,11 +6690,17 @@ class CBindingGenerator(ClassVisitor):
                 CodeExpression(f"{payload_name} = PyUnicode_AsUTF8AndSize({names.object_name}, &{names.length_name})")
             ),
             CExpressionStatement(CodeExpression(f"if ({payload_name} == NULL) return NULL")),
-            CExpressionStatement(
-                CodeExpression(
-                    f"if ((Py_ssize_t)strlen({payload_name}) != {names.length_name}) {{ "
-                    f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} cannot contain '
-                    'embedded NUL"); return NULL; }'
+            *(
+                ()
+                if plan.character_allows_embedded_nul
+                else (
+                    CExpressionStatement(
+                        CodeExpression(
+                            f"if ((Py_ssize_t)strlen({payload_name}) != {names.length_name}) {{ "
+                            f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} cannot contain '
+                            'embedded NUL"); return NULL; }'
+                        )
+                    ),
                 )
             ),
         ]
@@ -7064,18 +7070,21 @@ class CBindingGenerator(ClassVisitor):
                 CExpressionStatement(CodeExpression(f"{names.runtime_rank_name} = (int64_t)PyArray_NDIM({array})"))
             )
         if handoff.itemsize_role is not None:
-            nodes.extend(
-                (
-                    CExpressionStatement(CodeExpression(f"{names.itemsize_name} = (int64_t)PyArray_ITEMSIZE({array})")),
+            nodes.append(
+                CExpressionStatement(CodeExpression(f"{names.itemsize_name} = (int64_t)PyArray_ITEMSIZE({array})"))
+            )
+            # An assumed width accepts whatever the caller's array declares; only
+            # a stated width is checked against it.
+            if handoff.itemsize is not None:
+                nodes.append(
                     CExpressionStatement(
                         CodeExpression(
                             f"if ({names.itemsize_name} != {handoff.itemsize}) {{ PyErr_SetString(PyExc_TypeError, "
                             f'"Argument {plan.binding.python_name} must have NumPy bytes dtype itemsize '
                             f'{handoff.itemsize}"); return NULL; }}'
                         )
-                    ),
+                    )
                 )
-            )
         if handoff.flatten_python_storage:
             nodes.extend(self._flat_array_extraction_nodes(handoff, names, array))
             return tuple(nodes)
@@ -7297,12 +7306,18 @@ class CBindingGenerator(ClassVisitor):
         plan: ArgumentTransferPlan,
         context: _CFunctionContext,
     ) -> tuple[CDeclaration | CExpressionStatement, ...]:
-        """Validate and borrow one rank-zero fixed-width NumPy bytes buffer."""
-        if plan.character_length is None or plan.character_length <= 0:
-            raise ValueError(f"String storage {plan.owner_path!r} is missing a fixed length")
+        """Validate and borrow one rank-zero NumPy bytes buffer.
+
+        A declared capacity is checked against the array's itemsize.  An
+        assumed capacity accepts any ``S`` width, because the caller's buffer
+        states its own size and the binding passes that storage untouched.
+        """
+        if plan.character_length is not None and plan.character_length <= 0:
+            raise ValueError(f"String storage {plan.owner_path!r} has a non-positive length")
         names = context.arguments[plan.owner_path]
         array = f"(PyArrayObject *){names.object_name}"
         length = plan.character_length
+        expected = f"S{length}" if length is not None else "S"
         return (
             CDeclaration(names.object_name, "PyObject *"),
             CDeclaration(names.value_name, "void *", CodeExpression("NULL")),
@@ -7310,17 +7325,23 @@ class CBindingGenerator(ClassVisitor):
                 CodeExpression(
                     f"if (!PyArray_Check({names.object_name}) || PyArray_TYPE({array}) != NPY_STRING || "
                     f"PyArray_NDIM({array}) != 0) {{ "
-                    f'PyErr_Format(PyExc_TypeError, "Expected a rank-zero numpy.ndarray with dtype S{length} '
+                    f'PyErr_Format(PyExc_TypeError, "Expected a rank-zero numpy.ndarray with dtype {expected} '
                     f"for argument {plan.binding.python_name}. Received <class '%s'>\", "
                     f"Py_TYPE({names.object_name})->tp_name); return NULL; }}"
                 )
             ),
-            CExpressionStatement(
-                CodeExpression(
-                    f"if (PyArray_ITEMSIZE({array}) != {length}) {{ "
-                    f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} must use itemsize '
-                    f'{length}"); return NULL; }}'
+            *(
+                (
+                    CExpressionStatement(
+                        CodeExpression(
+                            f"if (PyArray_ITEMSIZE({array}) != {length}) {{ "
+                            f'PyErr_SetString(PyExc_TypeError, "Argument {plan.binding.python_name} must use itemsize '
+                            f'{length}"); return NULL; }}'
+                        )
+                    ),
                 )
+                if length is not None
+                else ()
             ),
             CExpressionStatement(
                 CodeExpression(
@@ -8897,7 +8918,20 @@ class CBindingGenerator(ClassVisitor):
             nodes.extend(self._writeback_value_nodes(plan, action, context, tuple(converted)))
             converted.append(context.python_results[action.owner_path])
 
-        ordered = tuple(context.python_results[owner] for owner, _position in self._output_owners(plan))
+        # A ``Hidden`` result is lowered exactly like a published one so that
+        # every release the ordinary path performs still happens; only the
+        # Python object it produced is dropped instead of being aggregated.
+        for result in plan.results:
+            if not result.python_returned:
+                nodes.append(
+                    CExpressionStatement(CodeExpression(f"Py_DECREF({context.python_results[result.owner_path]})"))
+                )
+        hidden_owners = {result.owner_path for result in plan.results if not result.python_returned}
+        ordered = tuple(
+            context.python_results[owner]
+            for owner, _position in self._output_owners(plan)
+            if owner not in hidden_owners
+        )
         nodes.extend(self._python_result_aggregation_nodes(ordered, context))
         return tuple(nodes)
 
@@ -9227,6 +9261,11 @@ class CBindingGenerator(ClassVisitor):
         context: _CFunctionContext,
     ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
         """Return one object directly or assemble ordered tuple ownership."""
+        if not converted:
+            # Every output was hidden, so the call publishes nothing. The macro
+            # increfs before returning; a bare ``Py_None`` would leak a
+            # decrement onto the singleton.
+            return (CExpressionStatement(CodeExpression("Py_RETURN_NONE")),)
         if len(converted) == 1:
             return (CReturn(CodeExpression(converted[0])),)
         aggregate = context.python_result_name
@@ -9314,7 +9353,7 @@ class CBindingGenerator(ClassVisitor):
             context,
         )
         transformation_cleanup = self._binding_transformation_cleanup_nodes(plan, context)
-        if policy.message_role is None:
+        if policy.message_role is None and policy.message_argument is None:
             return (
                 CIf(
                     condition,
@@ -9331,24 +9370,96 @@ class CBindingGenerator(ClassVisitor):
                     ),
                 ),
             )
-        message_name = context.native_outputs[policy.message_role]
-        message_object = f"{message_name}_obj"
-        return (
-            CIf(
-                CodeExpression(f"{message_name} == NULL"),
-                body=(
-                    CExpressionStatement(CodeExpression("PyErr_NoMemory()")),
-                    *transformation_cleanup,
-                    *derived_cleanup,
-                    CReturn(CodeExpression("NULL")),
+        message_capacity: str | None = None
+        if policy.message_argument is not None:
+            # The caller supplied the buffer, so the binding neither owns nor
+            # frees it; it only reads what the native call left behind. The read
+            # is bounded by the caller's own capacity because a native writer is
+            # not obliged to terminate: Fortran blank-pads fixed-length
+            # character storage and never writes a NUL.
+            names = context.arguments[policy.message_argument]
+            message_name = names.value_name
+            message_plan = next(
+                argument for argument in plan.arguments if argument.owner_path == policy.message_argument
+            )
+            message_capacity = (
+                f"PyArray_ITEMSIZE((PyArrayObject *){names.object_name})"
+                if message_plan.binding.codegen_action is CodegenAction.IN_PLACE_ARGUMENT
+                else names.length_name
+            )
+            binding_owned = True
+        else:
+            message_name = context.native_outputs[policy.message_role]
+            # A binding-owned buffer is never NULL and is never freed here; only
+            # the adapter's owned-allocation protocol hands back memory the
+            # binding owns.
+            binding_owned = any(
+                result.character_capacity is not None and result.native_result_role == policy.message_role
+                for result in plan.entrypoint.results
+            )
+            # A hidden message occupies fixed-length native character storage,
+            # which Fortran blank-pads to the declared width. Bounding the read
+            # by that width drops the padding instead of reporting it.
+            if policy.message_character_length is not None:
+                message_capacity = str(policy.message_character_length)
+        # A visible argument already owns ``<name>_obj`` for its Python object,
+        # so the exception string needs a distinct local there.
+        message_object = f"{message_name}_status_text" if policy.message_argument is not None else f"{message_name}_obj"
+        if binding_owned:
+            # Nothing needs freeing, so the Python string is built only on the
+            # failure path instead of on every successful call.
+            message_value = (
+                f"PyUnicode_FromString((const char *){message_name})"
+                if message_capacity is None
+                else (f"prik_status_message_text((const char *){message_name}, (Py_ssize_t)({message_capacity}))")
+            )
+            return (
+                CIf(
+                    condition,
+                    body=(
+                        CDeclaration(
+                            message_object,
+                            "PyObject *",
+                            CodeExpression(message_value),
+                        ),
+                        CIf(
+                            CodeExpression(f"{message_object} == NULL"),
+                            body=(*transformation_cleanup, *derived_cleanup, CReturn(CodeExpression("NULL"))),
+                        ),
+                        CExpressionStatement(CodeExpression(f"PyErr_SetObject(PyExc_RuntimeError, {message_object})")),
+                        CExpressionStatement(CodeExpression(f"Py_DECREF({message_object})")),
+                        *transformation_cleanup,
+                        *derived_cleanup,
+                        CReturn(CodeExpression("NULL")),
+                    ),
                 ),
+            )
+        return (
+            *(
+                ()
+                if binding_owned
+                else (
+                    CIf(
+                        CodeExpression(f"{message_name} == NULL"),
+                        body=(
+                            CExpressionStatement(CodeExpression("PyErr_NoMemory()")),
+                            *transformation_cleanup,
+                            *derived_cleanup,
+                            CReturn(CodeExpression("NULL")),
+                        ),
+                    ),
+                )
             ),
             CDeclaration(
                 message_object,
                 "PyObject *",
-                CodeExpression(f"PyUnicode_FromString((const char *){message_name})"),
+                CodeExpression(
+                    f"PyUnicode_FromString((const char *){message_name})"
+                    if message_capacity is None
+                    else f"prik_status_message_text((const char *){message_name}, (Py_ssize_t)({message_capacity}))"
+                ),
             ),
-            CExpressionStatement(CodeExpression(f"free({message_name})")),
+            *(() if binding_owned else (CExpressionStatement(CodeExpression(f"free({message_name})")),)),
             CIf(
                 CodeExpression(f"{message_object} == NULL"),
                 body=(*transformation_cleanup, *derived_cleanup, CReturn(CodeExpression("NULL"))),
@@ -9780,6 +9891,13 @@ class CBindingGenerator(ClassVisitor):
                         CDeclaration(name, "CFI_cdesc_t *", CodeExpression("NULL")),
                         CDeclaration(f"{name}_owner_status", "int", CodeExpression("CFI_SUCCESS")),
                     )
+                )
+                continue
+            if result.character_capacity is not None:
+                # One extra byte so a callee that terminates its own output
+                # cannot write past the buffer the contract asked for.
+                declarations.append(
+                    CDeclaration(f"{name}[{result.character_capacity + 1}]", "char", CodeExpression("{0}"))
                 )
                 continue
             if result.object_kind in {ObjectKind.STRING, ObjectKind.NUMPY_ARRAY, ObjectKind.DERIVED_TYPE}:
@@ -10226,6 +10344,8 @@ class CBindingGenerator(ClassVisitor):
                 f"&{name}_itemsize",
                 *(f"&{name}_extent_{axis}" for axis in range(rank)),
             )
+        if result.character_capacity is not None:
+            return (name,)
         values = [name if self._is_owned_native_array_result(result) else f"&{name}"]
         if result.scalar_descriptor is not None:
             values.append(f"&{name}_present")
@@ -10303,6 +10423,12 @@ class CBindingGenerator(ClassVisitor):
         if plan.entrypoint.optional_mode is not OptionalMode.REQUIRED:
             return (names.nullable_name,)
         if plan.entrypoint.handoff_mode is ArgumentHandoffMode.OPAQUE_ADDRESS:
+            if plan.entrypoint.pass_character_length:
+                # Assumed-capacity storage reports the caller's own itemsize.
+                return (
+                    names.value_name,
+                    f"(int64_t)PyArray_ITEMSIZE((PyArrayObject *){names.object_name})",
+                )
             return (names.value_name,)
         if passing is EntrypointPassingConvention.C_VALUE:
             return (names.value_name,)
@@ -10569,6 +10695,8 @@ class CBindingGenerator(ClassVisitor):
                 parameters.append(CParameter(f"{name}_present", "void *"))
             return tuple(parameters)
         if argument.entrypoint.handoff_mode is ArgumentHandoffMode.OPAQUE_ADDRESS:
+            if argument.entrypoint.pass_character_length:
+                return (CParameter(name, "void *"), CParameter(f"{name}_length", "int64_t"))
             return (CParameter(name, "void *"),)
         scalar_type = self._scalar_entrypoint_argument_type(argument, passing=passing)
         if argument.entrypoint.pass_descriptor_presence:
@@ -10678,6 +10806,10 @@ class CBindingGenerator(ClassVisitor):
                     *(CParameter(f"{name}_extent_{axis}", "int64_t *") for axis in range(rank)),
                 )
             return (CParameter(name, "CFI_cdesc_t *"),)
+        if result.character_capacity is not None:
+            # Direct C: the binding owns the buffer, so the callee receives a
+            # plain ``char *`` rather than the adapter's owned-allocation slot.
+            return (CParameter(name, "char *"),)
         if result.object_kind in {ObjectKind.STRING, ObjectKind.NUMPY_ARRAY, ObjectKind.DERIVED_TYPE}:
             return (CParameter(name, "void **"),)
         scalar_type = PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name).c_spelling

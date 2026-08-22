@@ -1178,7 +1178,11 @@ class WrapperPlanner(ClassVisitor):
         projected_slots = self._projected_slot_plans(policy)
         arguments = self._argument_plans(policy, projected_slots)
         results = self._result_plans(policy, projected_slots)
-        entrypoint_results = self._entrypoint_result_plans(results, projected_slots)
+        entrypoint_results = self._entrypoint_result_plans(
+            results,
+            projected_slots,
+            direct_c_abi=policy.direct_c_abi is not None,
+        )
         declaration_callables = tuple(self._declaration_callable_plan(item) for item in policy.declaration_callables)
         status_error = self._status_error_plan(policy.status_error, projected_slots)
 
@@ -1335,11 +1339,13 @@ class WrapperPlanner(ClassVisitor):
         self,
         results: tuple[ResultPlan, ...],
         projected_slots: tuple[NativeEntrypointProjectedSlotPlan, ...],
+        *,
+        direct_c_abi: bool = False,
     ) -> tuple[NativeEntrypointResultPlan, ...]:
         """Collect every C-ABI result, including binding-private status outputs."""
         public = {result.owner_path: result.entrypoint for result in results}
         hidden = tuple(
-            public.get(slot.owner_path) or self._entrypoint_result_plan_from_slot(slot)
+            public.get(slot.owner_path) or self._entrypoint_result_plan_from_slot(slot, direct_c_abi=direct_c_abi)
             for slot in sorted(projected_slots, key=lambda item: item.native_position)
             if slot.source_kind == "result"
         )
@@ -1352,10 +1358,17 @@ class WrapperPlanner(ClassVisitor):
     @staticmethod
     def _entrypoint_result_plan_from_slot(
         slot: NativeEntrypointProjectedSlotPlan,
+        *,
+        direct_c_abi: bool = False,
     ) -> NativeEntrypointResultPlan:
         """Project one non-public hidden output into the shared C-ABI result view."""
         if slot.semantic_type_name is None or slot.datatype_family is None or slot.object_kind is None:
             raise ValueError(f"Hidden entrypoint result {slot.owner_path!r} has incomplete type facts")
+        character_capacity = (
+            slot.character_length
+            if direct_c_abi and slot.semantic_type_name == "String" and slot.character_length
+            else None
+        )
         return NativeEntrypointResultPlan(
             owner_path=slot.owner_path,
             parameter_name=slot.native_name.casefold(),
@@ -1371,6 +1384,7 @@ class WrapperPlanner(ClassVisitor):
             native_array_handle=slot.native_array_handle,
             scalar_descriptor=slot.scalar_descriptor,
             passing=slot.passing,
+            character_capacity=character_capacity,
         )
 
     @staticmethod
@@ -1629,6 +1643,7 @@ class WrapperPlanner(ClassVisitor):
             projected_call_slot=projected_slot,
             transformations=tuple(self.visit(item) for item in policy.transformations),
             native_storage_c_type=policy.native_storage_c_type,
+            character_allows_embedded_nul=policy.character_allows_embedded_nul,
         )
 
     def _callback_handoff_plan(
@@ -1952,6 +1967,7 @@ class WrapperPlanner(ClassVisitor):
             semantic_type_name=policy.semantic_type_name,
             datatype_family=datatype_family,
             source_kind=policy.source_kind,
+            python_returned=policy.python_returned,
             result_position=policy.result_position,
             character_length=policy.character_length,
             object_kind=policy.ownership.kind,
@@ -2405,8 +2421,12 @@ class WrapperPlanner(ClassVisitor):
         return f"{owner_path}:rank" if policy.rank is None else None
 
     def _array_itemsize_role(self, policy: ArrayHandoffPolicy, owner_path: str) -> str | None:
-        """Name the itemsize role only for fixed-width character arrays."""
-        return f"{owner_path}:itemsize" if policy.itemsize is not None else None
+        """Name the itemsize role for every character array.
+
+        The width crosses at runtime whether or not the contract declared it,
+        because each element of the caller's array shares one itemsize.
+        """
+        return f"{owner_path}:itemsize" if policy.character else None
 
     def _array_layout_roles(
         self,
@@ -2429,9 +2449,14 @@ class WrapperPlanner(ClassVisitor):
         if policy is None:
             return None
         roles = {slot.owner_path: slot.symbolic_role for slot in projected_slots}
+        # A visible message is read through its Python argument, so it has no
+        # projected slot to name.
+        visible_message = policy.message is not None and policy.message.python_position is not None
         try:
             status_role = roles[policy.status.owner_path]
-            message_role = roles[policy.message.owner_path] if policy.message is not None else None
+            message_role = (
+                roles[policy.message.owner_path] if policy.message is not None and not visible_message else None
+            )
         except KeyError as error:
             raise ValueError(f"Completed native status output {error.args[0]!r} has no native-call slot") from None
         return BindingStatusErrorPlan(
@@ -2439,6 +2464,10 @@ class WrapperPlanner(ClassVisitor):
             message_role=message_role,
             success=policy.success,
             exception_kind=policy.exception_kind,
+            message_argument=policy.message.owner_path if visible_message else None,
+            message_character_length=(
+                policy.message.character_length if policy.message is not None and not visible_message else None
+            ),
         )
 
     def _planned_bridge_slot(

@@ -10,9 +10,9 @@ publication: reviewed
 
 # Building the Shared Library
 
-prik turns Fortran source, and the documented direct-only primitive C lane,
-into a Python extension module. The final module is a native shared library
-that Python imports directly.
+prik turns Fortran and C source into Python extension modules. The final module
+is a native shared library that Python imports directly. The C workflow has its
+own documented support boundary.
 
 This page continues with `scale.f90` from the
 [Common Beginner Workflow](../getting-started/beginner-workflow.md).
@@ -61,32 +61,11 @@ for versions and other recognized options.
 
 ## Build a primitive C API directly
 
-The initial C lane is intentionally narrow: target-probed arithmetic values,
-`void` results, and completed one-level primitive-pointer contracts. It calls
-the user C symbol directly; no native C or Fortran adapter is generated.
-Select C explicitly rather than relying on a filename or compiler choice:
-
-```bash
-python3 -m prik --language c src/arithmetic.c --compiler cc --out-dir build/arithmetic
-```
-
-For an edited source-free semantic contract, `--language c` is the explicit
-C-native identity and `--native-c-sources` supplies implementation units:
-
-```bash
-python3 -m prik --language c contracts/arithmetic.pyi \
-  --native-c-sources src/arithmetic.c --compiler cc --out-dir build/arithmetic
-```
-
-C sources are preprocessed with the selected compiler before they are read, so
-ordinary `#include`, `#define`, and conditional directives work, and only the
-wrapped file's own declarations become public API.
-
-This does not enable callbacks, aggregates, variadics, strings, nullable or
-retained pointers, pointer returns, or multi-level pointers. Neither does it
-wrap C global variables, `enum` constants, or `struct`/`union` declarations
-written in the wrapped file. Those inputs fail with a named diagnostic before
-wrapper files or native compiler commands are produced.
+PRIK supports C source as well. Start with [C
+Support](../language-support/c-support.md) for complete source and
+semantic-contract examples, Python API, supported C and NumPy types, pointer
+contracts, preprocessing, generated Makefiles, and current limits. C input
+always requires `--language c`.
 
 ## Import
 

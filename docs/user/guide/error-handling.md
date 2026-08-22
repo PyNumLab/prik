@@ -113,14 +113,14 @@ python3 -m prik generate --pyi status_api.f90 --out contracts/status
 Add `@raises` to project the hidden native outputs into an exception:
 
 ```python
-from prik.contracts import Addr, Arg, Int32, Return, String, native_call, raises, standalone
+from prik.contracts import Addr, Arg, Hidden, Int32, String, native_call, raises, standalone
 
 @standalone
 @raises(status="status", message="message", success=0)
-@native_call([Addr(Arg(0)), Return("status", 0), Return("message", 1)])
+@native_call([Addr(Arg(0)), Hidden("status", Int32), Hidden("message", String[32])])
 def solve(
     value: Int32
-) -> tuple[Int32, String[32]]: ...
+) -> None: ...
 ```
 
 Build from the edited contract and native source:

@@ -2,37 +2,33 @@
 title: Examples Gallery
 audience: users
 prerequisites: getting started
-related: ../guide/building-shared-library.md
+related: ../guide/building-shared-library.md, ../language-support/c-support.md, ../reference/cli-commands.md, ../reference/python-api.md
 status: maintained
-publication: draft
+publication: reviewed
 ---
 
 # Examples Gallery
 
-This section includes checked recipes and five complete real-library examples:
-BLAS, LAPACK, FFTPACK, MINPACK, and BSPLINE-FORTRAN. Each one provides build commands, Python
-usage, and numerical checks for its public routines.
+This section includes five complete real-library examples: BLAS, LAPACK,
+FFTPACK, MINPACK, and BSPLINE-FORTRAN. Each one provides build commands,
+Python usage, and numerical checks for its public routines.
 
-Every page here is runnable. An example earns a place once it has source, a
-build command, an import command, a runtime check, its limitations, and test
-evidence.
+For a smaller first workflow, start with one of the checked guides below. Each
+links to a complete source, build, import, or result path, rather than a
+draft-only recipe.
 
 ## Choose a page
 
 | Goal | Page |
 | --- | --- |
 | Build and import a first extension | [First Wrapped Function](../getting-started/first-wrapped-function.md) |
+| Build a first Fortran module | [First Wrapped Module](../getting-started/first-wrapped-module.md) |
 | Build from several ordered sources | [Building the Shared Library](../guide/building-shared-library.md#multiple-source-files) |
 | Generate and edit `Makefile.prik` | [Building the Shared Library](../guide/building-shared-library.md#use-a-makefile) |
-| Build through Python code | [Build and import with the Python API](recipes/build-and-import-python-api.md) |
-| Inspect a Fortran API | [Inspect a Fortran API](recipes/inspect-fortran-api.md) |
-<!-- PRIK_C_DOCS_START
-| Inspect a C API | [Inspect a C API](recipes/inspect-c-api.md) |
-PRIK_C_DOCS_END -->
-| Work with semantic `.pyi` contracts | [Work with semantic `.pyi` contracts](recipes/semantic-pyi-contracts.md) |
-| Control command output | [Control CLI output](recipes/control-cli-output.md) |
-| Use inspection APIs from Python | [Use Python inspection APIs](recipes/use-python-inspection-apis.md) |
-| Pass compiler and preprocessing options | [Use compiler preprocessing options](recipes/compiler-preprocessing.md) |
+| Build through Python code | [Python API](../reference/python-api.md#building-an-extension) |
+| Inspect source or control command output | [CLI Commands](../reference/cli-commands.md#parse-and-semantics) |
+| Work with semantic `.pyi` contracts | [Editing `.pyi` Contracts](../reference/pyi-contracts/index.md) |
+| Build a supported C API | [C Support](../language-support/c-support.md) |
 | Build and validate the complete Reference BLAS | [BLAS wrapper](blas-wrapper.md) |
 | Build complete Reference LAPACK and validate 127 float64 routines | [LAPACK wrapper](lapack-wrapper.md) |
 | Wrap and validate all 31 FFTPACK procedures with NumPy and SciPy | [FFTPACK wrapper](fftpack-wrapper.md) |

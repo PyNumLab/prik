@@ -1,5 +1,5 @@
 site_name: PRIK — Bring Native Code to Python
-site_description: PRIK generates native Python bindings from Fortran projects, producing importable extensions and editable .pyi contracts for Pythonic APIs.
+site_description: PRIK generates native Python bindings for Fortran and C code.
 site_url: https://pynumlab.github.io/prik/
 repo_url: https://github.com/PyNumLab/prik
 repo_name: GitHub
@@ -104,6 +104,7 @@ nav:
           - Configuration Files: user/reference/configuration-files.md
       - Language Support:
           - Overview: user/language-support/index.md
+          - C: user/language-support/c-support.md
           - Feature Matrix: user/language-support/feature-matrix.md
   - Developer Documentation:
       - Overview: developer/index.md

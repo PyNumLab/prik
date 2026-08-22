@@ -676,7 +676,9 @@ class WrapperDocstringBuilder:
             for argument in arguments
             if argument.projects_result and argument.result_position is not None
         }
-        by_position.update((result.result_position, result) for result in results)
+        # A ``Hidden`` result is written by the native call but never published,
+        # so it is not part of the documented Python signature.
+        by_position.update((result.result_position, result) for result in results if result.python_returned)
         return tuple(by_position[position] for position in sorted(by_position))
 
     def _result_summary(self, outputs: tuple[ArgumentTransferPlan | ResultPlan, ...]) -> str:
