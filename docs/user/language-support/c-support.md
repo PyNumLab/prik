@@ -39,9 +39,9 @@ extension, and writes an editable contract alongside it.
 
 <div class="prik-example-tabs" data-prik-example-tabs markdown="1">
 <div class="prik-example-tablist" role="tablist" aria-label="C scalar workflow">
-<button class="prik-example-tab" id="c-scalar-source-tab" type="button" role="tab" aria-controls="c-scalar-source" aria-selected="true">1. Source and build</button>
-<button class="prik-example-tab" id="c-scalar-contract-tab" type="button" role="tab" aria-controls="c-scalar-contract" aria-selected="false" tabindex="-1">2. Generated contract</button>
-<button class="prik-example-tab" id="c-scalar-python-tab" type="button" role="tab" aria-controls="c-scalar-python" aria-selected="false" tabindex="-1">3. Python</button>
+<button class="prik-example-tab" id="c-scalar-source-tab" type="button" role="tab" aria-controls="c-scalar-source" aria-selected="true">Source and build</button>
+<button class="prik-example-tab" id="c-scalar-contract-tab" type="button" role="tab" aria-controls="c-scalar-contract" aria-selected="false" tabindex="-1">Generated contract</button>
+<button class="prik-example-tab" id="c-scalar-python-tab" type="button" role="tab" aria-controls="c-scalar-python" aria-selected="false" tabindex="-1">Python</button>
 </div>
 
 <div class="prik-example-panel" id="c-scalar-source" role="tabpanel" aria-labelledby="c-scalar-source-tab" tabindex="0" markdown="1">
@@ -121,9 +121,9 @@ authored `.pyi` contract.
 
 <div class="prik-example-tabs" data-prik-example-tabs markdown="1">
 <div class="prik-example-tablist" role="tablist" aria-label="C array workflow">
-<button class="prik-example-tab" id="c-array-source-tab" type="button" role="tab" aria-controls="c-array-source" aria-selected="true">1. C source</button>
-<button class="prik-example-tab" id="c-array-contract-tab" type="button" role="tab" aria-controls="c-array-contract" aria-selected="false" tabindex="-1">2. Contract and build</button>
-<button class="prik-example-tab" id="c-array-python-tab" type="button" role="tab" aria-controls="c-array-python" aria-selected="false" tabindex="-1">3. Python</button>
+<button class="prik-example-tab" id="c-array-source-tab" type="button" role="tab" aria-controls="c-array-source" aria-selected="true">C source</button>
+<button class="prik-example-tab" id="c-array-contract-tab" type="button" role="tab" aria-controls="c-array-contract" aria-selected="false" tabindex="-1">Contract and build</button>
+<button class="prik-example-tab" id="c-array-python-tab" type="button" role="tab" aria-controls="c-array-python" aria-selected="false" tabindex="-1">Python</button>
 </div>
 
 <div class="prik-example-panel" id="c-array-source" role="tabpanel" aria-labelledby="c-array-source-tab" tabindex="0" markdown="1">
@@ -235,11 +235,15 @@ An authored contract can present an existing C ABI under a better Python name
 and argument order. It names the real C symbol, then states each native
 argument explicitly.
 
+When the Python declaration and C symbol have the same name, omit `@bind`:
+that name is the default native target. Use `@bind("native_name")` only for a
+different C symbol. The same default applies to Fortran semantic contracts.
+
 <div class="prik-example-tabs" data-prik-example-tabs markdown="1">
 <div class="prik-example-tablist" role="tablist" aria-label="C projection workflow">
-<button class="prik-example-tab" id="c-projection-source-tab" type="button" role="tab" aria-controls="c-projection-source" aria-selected="true">1. C source</button>
-<button class="prik-example-tab" id="c-projection-contract-tab" type="button" role="tab" aria-controls="c-projection-contract" aria-selected="false" tabindex="-1">2. Contract and build</button>
-<button class="prik-example-tab" id="c-projection-python-tab" type="button" role="tab" aria-controls="c-projection-python" aria-selected="false" tabindex="-1">3. Python</button>
+<button class="prik-example-tab" id="c-projection-source-tab" type="button" role="tab" aria-controls="c-projection-source" aria-selected="true">C source</button>
+<button class="prik-example-tab" id="c-projection-contract-tab" type="button" role="tab" aria-controls="c-projection-contract" aria-selected="false" tabindex="-1">Contract and build</button>
+<button class="prik-example-tab" id="c-projection-python-tab" type="button" role="tab" aria-controls="c-projection-python" aria-selected="false" tabindex="-1">Python</button>
 </div>
 
 <div class="prik-example-panel" id="c-projection-source" role="tabpanel" aria-labelledby="c-projection-source-tab" tabindex="0" markdown="1">
@@ -318,9 +322,9 @@ become part of the Python return value.
 
 <div class="prik-example-tabs" data-prik-example-tabs markdown="1">
 <div class="prik-example-tablist" role="tablist" aria-label="C multiple-output workflow">
-<button class="prik-example-tab" id="c-stats-source-tab" type="button" role="tab" aria-controls="c-stats-source" aria-selected="true">1. C source</button>
-<button class="prik-example-tab" id="c-stats-contract-tab" type="button" role="tab" aria-controls="c-stats-contract" aria-selected="false" tabindex="-1">2. Contract and build</button>
-<button class="prik-example-tab" id="c-stats-python-tab" type="button" role="tab" aria-controls="c-stats-python" aria-selected="false" tabindex="-1">3. Python</button>
+<button class="prik-example-tab" id="c-stats-source-tab" type="button" role="tab" aria-controls="c-stats-source" aria-selected="true">C source</button>
+<button class="prik-example-tab" id="c-stats-contract-tab" type="button" role="tab" aria-controls="c-stats-contract" aria-selected="false" tabindex="-1">Contract and build</button>
+<button class="prik-example-tab" id="c-stats-python-tab" type="button" role="tab" aria-controls="c-stats-python" aria-selected="false" tabindex="-1">Python</button>
 </div>
 
 <div class="prik-example-panel" id="c-stats-source" role="tabpanel" aria-labelledby="c-stats-source-tab" tabindex="0" markdown="1">
@@ -405,9 +409,9 @@ itemsize the caller supplies.
 
 <div class="prik-example-tabs" data-prik-example-tabs markdown="1">
 <div class="prik-example-tablist" role="tablist" aria-label="C string workflow">
-<button class="prik-example-tab" id="c-string-source-tab" type="button" role="tab" aria-controls="c-string-source" aria-selected="true">1. C source</button>
-<button class="prik-example-tab" id="c-string-contract-tab" type="button" role="tab" aria-controls="c-string-contract" aria-selected="false" tabindex="-1">2. Contract and build</button>
-<button class="prik-example-tab" id="c-string-python-tab" type="button" role="tab" aria-controls="c-string-python" aria-selected="false" tabindex="-1">3. Python</button>
+<button class="prik-example-tab" id="c-string-source-tab" type="button" role="tab" aria-controls="c-string-source" aria-selected="true">C source</button>
+<button class="prik-example-tab" id="c-string-contract-tab" type="button" role="tab" aria-controls="c-string-contract" aria-selected="false" tabindex="-1">Contract and build</button>
+<button class="prik-example-tab" id="c-string-python-tab" type="button" role="tab" aria-controls="c-string-python" aria-selected="false" tabindex="-1">Python</button>
 </div>
 
 <div class="prik-example-panel" id="c-string-source" role="tabpanel" aria-labelledby="c-string-source-tab" tabindex="0" markdown="1">
@@ -492,9 +496,9 @@ particularly useful for status values and diagnostic messages consumed by
 
 <div class="prik-example-tabs" data-prik-example-tabs markdown="1">
 <div class="prik-example-tablist" role="tablist" aria-label="C status workflow">
-<button class="prik-example-tab" id="c-status-source-tab" type="button" role="tab" aria-controls="c-status-source" aria-selected="true">1. C source</button>
-<button class="prik-example-tab" id="c-status-contract-tab" type="button" role="tab" aria-controls="c-status-contract" aria-selected="false" tabindex="-1">2. Contract and build</button>
-<button class="prik-example-tab" id="c-status-python-tab" type="button" role="tab" aria-controls="c-status-python" aria-selected="false" tabindex="-1">3. Python</button>
+<button class="prik-example-tab" id="c-status-source-tab" type="button" role="tab" aria-controls="c-status-source" aria-selected="true">C source</button>
+<button class="prik-example-tab" id="c-status-contract-tab" type="button" role="tab" aria-controls="c-status-contract" aria-selected="false" tabindex="-1">Contract and build</button>
+<button class="prik-example-tab" id="c-status-python-tab" type="button" role="tab" aria-controls="c-status-python" aria-selected="false" tabindex="-1">Python</button>
 </div>
 
 <div class="prik-example-panel" id="c-status-source" role="tabpanel" aria-labelledby="c-status-source-tab" tabindex="0" markdown="1">
@@ -524,9 +528,8 @@ void checked_sqrt(double value, double *root, int *status, char *message) {
 Create `checked.pyi`:
 
 ```python
-from prik.contracts import Arg, Float64, Hidden, Int32, Return, Returns, String, bind, native_call, raises
+from prik.contracts import Arg, Float64, Hidden, Int32, Return, Returns, String, native_call, raises
 
-@bind("checked_sqrt")
 @raises(status="status", message="message", success=0)
 @native_call([Arg(0), Return("root", 0), Hidden("status", Int32), Hidden("message", String[64])])
 def checked_sqrt(value: Float64) -> Returns["root", Float64]: ...
@@ -593,9 +596,9 @@ Python name. Mark the concrete candidates `@private`, then name them with
 
 <div class="prik-example-tabs" data-prik-example-tabs markdown="1">
 <div class="prik-example-tablist" role="tablist" aria-label="C overload workflow">
-<button class="prik-example-tab" id="c-overload-source-tab" type="button" role="tab" aria-controls="c-overload-source" aria-selected="true">1. C source</button>
-<button class="prik-example-tab" id="c-overload-contract-tab" type="button" role="tab" aria-controls="c-overload-contract" aria-selected="false" tabindex="-1">2. Contract and build</button>
-<button class="prik-example-tab" id="c-overload-python-tab" type="button" role="tab" aria-controls="c-overload-python" aria-selected="false" tabindex="-1">3. Python</button>
+<button class="prik-example-tab" id="c-overload-source-tab" type="button" role="tab" aria-controls="c-overload-source" aria-selected="true">C source</button>
+<button class="prik-example-tab" id="c-overload-contract-tab" type="button" role="tab" aria-controls="c-overload-contract" aria-selected="false" tabindex="-1">Contract and build</button>
+<button class="prik-example-tab" id="c-overload-python-tab" type="button" role="tab" aria-controls="c-overload-python" aria-selected="false" tabindex="-1">Python</button>
 </div>
 
 <div class="prik-example-panel" id="c-overload-source" role="tabpanel" aria-labelledby="c-overload-source-tab" tabindex="0" markdown="1">

@@ -70,6 +70,41 @@ print(result)  # 7.5
 No manual binding code is required. PRIK derives the native wrapper and a
 readable Python signature from the Fortran source.
 
+## From C to Python in one command
+
+Create `native_math.c`:
+
+```c
+double add(double left, double right) {
+    return left + right;
+}
+```
+
+Build an importable extension:
+
+```bash
+python3 -m prik --language c native_math.c \
+  --compiler cc \
+  --out native_math \
+  --out-dir build
+```
+
+Call the generated Python API:
+
+```python
+import sys
+
+import numpy as np
+
+sys.path.insert(0, "build")
+import native_math
+
+print(native_math.add(np.float64(3.0), np.float64(2.5)))  # 5.5
+```
+
+This source build also writes an editable contract. For C pointers, arrays,
+and authored contracts, see [C Support](user/language-support/c-support.md).
+
 ## Shape the Python API
 
 For a richer API, PRIK lets you reshape the generated Python surface without
@@ -190,15 +225,15 @@ class point:
     @native_call([Pass(), Addr(Arg(0)), Addr(Arg(1))])
     def translate(self, dx: Float64, dy: Float64) -> None: ...
 
-    @bind("norm_squared")
     @native_call([Pass()])
     def norm_squared(self) -> Float64: ...
 ```
 
-`@bind("move")` keeps the original native target while the declaration's
-placement and name define the Python-facing API. `Pass()` supplies the
-receiver (`self`) to the native call; `Addr(Arg(...))` passes the remaining
-arguments by address as required by the native calling convention.
+`@bind("move")` maps the Python-facing `translate` method to the native
+`move` procedure. `norm_squared` needs no `@bind` because its Python and
+native names already match. `Pass()` supplies the receiver (`self`) to the
+native call; `Addr(Arg(...))` passes the remaining arguments by address as
+required by the native calling convention.
 
 Build from the contract:
 
