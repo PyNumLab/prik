@@ -9,6 +9,14 @@ examples, build or CI workflows, benchmark methodology, or documented
 limitations. Keep entries concise and outcome-focused; do not add release
 notes for internal cleanup that has no visible effect.
 
+Treat developer documentation as durable guides, not as per-change
+implementation logs. Do not update developer pages merely because code changed,
+and do not add incidental low-level details that are unnecessary for following
+the documented architecture or maintainer workflow. Update them only when a
+documented contract, ownership boundary, workflow, or limitation changes; keep
+routine implementation findings in the review summary or a concise CHANGELOG
+entry when appropriate.
+
 Ignore:
 - *.f90
 - *.f95

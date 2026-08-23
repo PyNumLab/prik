@@ -82,8 +82,9 @@ def test_required_array_buffer_dispatches_through_named_binding_and_bridge_metho
     assert "bound_values = bound_values_actual.data;" in c_source
     assert "bound_values_extent_0 = bound_values_actual.extents[0];" in c_source
     assert "if (PyArray_Check(bound_values_obj)) {" in c_source
+    assert c_source.count("PyArray_Check(bound_values_obj)") == 1
     assert (
-        "prik_array_validate(bound_values_obj, NPY_FLOAT64, 1, 1, "
+        "prik_array_validate((PyArrayObject *)bound_values_obj, NPY_FLOAT64, 1, 1, "
         'PRIK_ARRAY_LAYOUT_ANY_CONTIGUOUS, 1, 1, "numpy.float64", "values")'
     ) in c_source
     assert "bound_values = PyArray_DATA((PyArrayObject *)bound_values_obj);" in c_source

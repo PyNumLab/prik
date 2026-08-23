@@ -15,6 +15,22 @@ release tags add a leading `v` to the package version.
 
 ### Fixed
 
+- Common scalar and string conversions in C bindings with several Python
+  outputs now share one linear reference-cleanup path instead of repeating
+  every earlier `Py_DECREF` at each failure site. Large wrappers retain the
+  same result ownership and diagnostics while generating smaller C
+  control-flow graphs.
+
+- Ordinary NumPy-array arguments no longer repeat `PyArray_Check` inside the
+  validation helper after the generated fast-path branch has already performed
+  that check. Dtype, rank, layout, byte-order, alignment, and mutability
+  validation remain unchanged.
+
+- Built-in release compiler profiles no longer force loop unrolling in
+  generated wrappers and native sources. Release builds retain `-O3`, and
+  callers can still request vendor unrolling flags explicitly; optimized
+  large-wrapper builds therefore avoid the hidden compilation cost by default.
+
 - Real Libraries Portability now exposes the matching GNU C driver beside its
   selected GNU Fortran driver. Generated C bindings therefore use GCC on
   macOS, including its `ISO_Fortran_binding.h` search path, instead of

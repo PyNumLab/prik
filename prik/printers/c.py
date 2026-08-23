@@ -22,9 +22,11 @@ from prik.codegen.nodes import (
     CFunction,
     CFunctionPointerType,
     CFunctionPrototype,
+    CGoto,
     CHeader,
     CIf,
     CInclude,
+    CLabel,
     CMacroDefinition,
     CMethodDefEntry,
     CMethodDefTable,
@@ -289,6 +291,14 @@ class CSourcePrinter(ClassVisitor):
     def _visit_CExpressionStatement(self, node: CExpressionStatement) -> str:
         """Render one C expression statement and add its terminating semicolon."""
         return f"{node.expression.text};"
+
+    def _visit_CGoto(self, node: CGoto) -> str:
+        """Render one jump to a function-local cleanup label."""
+        return f"goto {node.label};"
+
+    def _visit_CLabel(self, node: CLabel) -> str:
+        """Render one function-local cleanup label."""
+        return f"{node.name}:"
 
     def _visit_CAllowThreadsBegin(self, _node: CAllowThreadsBegin) -> str:
         """Render the opening CPython thread-release macro without a semicolon."""

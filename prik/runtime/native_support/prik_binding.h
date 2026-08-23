@@ -403,7 +403,7 @@ PRIK_NO_INLINE static int prik_array_actual_unpack(
  * call-local shape and ABI-field lowering.
  */
 static inline int prik_array_validate(
-    PyObject *value,
+    PyArrayObject *array,
     int numpy_type,
     int minimum_rank,
     int maximum_rank,
@@ -413,7 +413,6 @@ static inline int prik_array_validate(
     const char *python_type,
     const char *argument_name)
 {
-    PyArrayObject *array;
     int axis;
     int rank;
     const char *expected_order;
@@ -426,16 +425,6 @@ static inline int prik_array_validate(
         PyErr_SetString(PyExc_RuntimeError, "prik generated invalid NumPy-array validation selectors");
         return -1;
     }
-    if (!PyArray_Check(value)) {
-        PyErr_Format(
-            PyExc_TypeError,
-            "Expected a compatible numpy.ndarray of dtype %s for argument %s. Received <class '%s'>",
-            python_type,
-            argument_name,
-            Py_TYPE(value)->tp_name);
-        return -1;
-    }
-    array = (PyArrayObject *)value;
     rank = PyArray_NDIM(array);
     if (PyArray_TYPE(array) != numpy_type || rank < minimum_rank || rank > maximum_rank) {
         PyErr_Format(
@@ -443,7 +432,7 @@ static inline int prik_array_validate(
             "Expected a compatible numpy.ndarray of dtype %s for argument %s. Received <class '%s'>",
             python_type,
             argument_name,
-            Py_TYPE(value)->tp_name);
+            Py_TYPE((PyObject *)array)->tp_name);
         return -1;
     }
     if (layout == PRIK_ARRAY_LAYOUT_POSITIVE_STRIDED_F) {

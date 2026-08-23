@@ -38,7 +38,7 @@ def test_user_compile_flags_follow_default_profile_flags(monkeypatch, tmp_path: 
         source=tmp_path / "source.c",
         object_path=tmp_path / "source.o",
         language="c",
-        flags=("-O0", "-g0"),
+        flags=("-O0", "-g0", "-funroll-loops"),
     )
 
     compiler.compile_object(object_file)
@@ -46,6 +46,8 @@ def test_user_compile_flags_follow_default_profile_flags(monkeypatch, tmp_path: 
     command = compiler.command_log[0]
     assert command.index("-O3") < command.index("-O0")
     assert command.index("-DNDEBUG") < command.index("-g0")
+    assert command.index("-O3") < command.index("-funroll-loops")
+    assert command.count("-funroll-loops") == 1
 
 
 def test_input_language_executable_override_controls_compilation_and_linking(tmp_path: Path):
@@ -65,13 +67,13 @@ def test_input_language_executable_override_controls_compilation_and_linking(tmp
 
 
 @pytest.mark.parametrize(
-    ("fortran_name", "c_name", "vendor", "fortran_flag", "c_flag"),
+    ("fortran_name", "c_name", "vendor", "fortran_flag"),
     (
-        ("x86_64-linux-gnu-gfortran-15", "x86_64-linux-gnu-gcc-15", "GNU", "-J", "-funroll-loops"),
-        ("ifx", "icx", "intel", "-module", "-funroll-loops"),
-        ("flang-22", "clang-22", "LLVM", "-J", "-funroll-loops"),
-        ("nvfortran", "nvc", "nvidia", "-module", "-Munroll"),
-        ("pgfortran", "pgcc", "PGI", "-module", "-Munroll"),
+        ("x86_64-linux-gnu-gfortran-15", "x86_64-linux-gnu-gcc-15", "GNU", "-J"),
+        ("ifx", "icx", "intel", "-module"),
+        ("flang-22", "clang-22", "LLVM", "-J"),
+        ("nvfortran", "nvc", "nvidia", "-module"),
+        ("pgfortran", "pgcc", "PGI", "-module"),
     ),
 )
 def test_fortran_selection_uses_one_coherent_vendor_profile(
@@ -80,7 +82,6 @@ def test_fortran_selection_uses_one_coherent_vendor_profile(
     c_name: str,
     vendor: str,
     fortran_flag: str,
-    c_flag: str,
 ):
     fortran = tmp_path / fortran_name
     c_compiler = tmp_path / c_name
@@ -108,7 +109,7 @@ def test_fortran_selection_uses_one_coherent_vendor_profile(
     assert compiler.command_log[0][0] == str(fortran)
     assert fortran_flag in compiler.command_log[0]
     assert compiler.command_log[1][0] == str(c_compiler)
-    assert c_flag in compiler.command_log[1]
+    assert "-O3" in compiler.command_log[1]
     assert compiler.command_log[2][0] == str(fortran)
 
 
@@ -306,6 +307,9 @@ def test_builtin_toolchains_keep_c_and_fortran_stage_definitions():
             assert config["exec"]
             assert config["debug_flags"]
             assert config["release_flags"]
+            assert "-O3" in config["release_flags"]
+            assert "-funroll-loops" not in config["release_flags"]
+            assert "-Munroll" not in config["release_flags"]
             assert config["general_flags"]
         assert toolchain["fortran"]["module_output_flag"]
         assert toolchain["c"]["python"]["shared_suffix"]

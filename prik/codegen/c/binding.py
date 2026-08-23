@@ -63,9 +63,11 @@ from prik.codegen.nodes import (
     CFunction,
     CFunctionPointerType,
     CFunctionPrototype,
+    CGoto,
     CHeader,
     CIf,
     CInclude,
+    CLabel,
     CMacroDefinition,
     CMethodDefEntry,
     CMethodDefTable,
@@ -193,6 +195,7 @@ class CBindingGenerator(ClassVisitor):
 
     _SHARD_MIN_FUNCTIONS = 128
     _SHARD_TARGET_FUNCTIONS = 32
+    _SHARED_OUTPUT_CLEANUP_MIN_RESULTS = 4
 
     def require_supported(self, plan: ModulePlan) -> None:
         """Preflight primitive spellings needed by an already-validated plan.
@@ -7010,7 +7013,8 @@ class CBindingGenerator(ClassVisitor):
         layout = self._array_layout_selector(handoff)
         return CExpressionStatement(
             CodeExpression(
-                f"if (prik_array_validate({names.object_name}, {numpy_type}, {minimum_rank}, {maximum_rank}, "
+                f"if (prik_array_validate((PyArrayObject *){names.object_name}, {numpy_type}, "
+                f"{minimum_rank}, {maximum_rank}, "
                 f'{layout}, {int(handoff.contiguous is True)}, {int(plan.binding.writable)}, "{python_type}", '
                 f'"{plan.binding.python_name}") < 0) return NULL'
             )
@@ -8165,15 +8169,17 @@ class CBindingGenerator(ClassVisitor):
         *,
         context: _CFunctionContext,
         failure_cleanup: tuple[str, ...] = (),
+        failure_label: str | None = None,
     ) -> tuple[CExpressionStatement | CDeclaration | CIf, ...]:
         """Lower one result through its completed binding action."""
-        return self._lower_result(plan, context, failure_cleanup)
+        return self._lower_result(plan, context, failure_cleanup, failure_label)
 
     def _lower_result(
         self,
         plan: ResultPlan,
         context: _CFunctionContext,
         failure_cleanup: tuple[str, ...],
+        failure_label: str | None,
     ) -> tuple[CExpressionStatement | CDeclaration | CIf, ...]:
         """Dispatch one completed binding result action explicitly."""
         if plan.scalar_descriptor is not None:
@@ -8187,7 +8193,7 @@ class CBindingGenerator(ClassVisitor):
                 return self._lower_result_fixed_string(plan, context, failure_cleanup)
             case ObjectKind.SCALAR:
                 if plan.binding.codegen_action is CodegenAction.DIRECT_VALUE:
-                    return self._lower_result_direct_value(plan, context, failure_cleanup)
+                    return self._lower_result_direct_value(plan, context, failure_cleanup, failure_label)
                 raise ValueError(
                     f"Unsupported C scalar result action for {plan.owner_path!r}: {plan.binding.codegen_action!r}"
                 )
@@ -8890,15 +8896,17 @@ class CBindingGenerator(ClassVisitor):
         plan: ResultPlan,
         context: _CFunctionContext,
         failure_cleanup: tuple[str, ...],
+        failure_label: str | None = None,
     ) -> tuple[CExpressionStatement | CDeclaration | CIf, ...]:
         """Lower result direct value from the supplied completed binding records without inferring semantic policy."""
-        return self._lower_result_value(plan, context, failure_cleanup)
+        return self._lower_result_value(plan, context, failure_cleanup, failure_label)
 
     def _lower_result_value(
         self,
         plan: ResultPlan,
         context: _CFunctionContext,
         failure_cleanup: tuple[str, ...],
+        failure_label: str | None = None,
     ) -> tuple[CExpressionStatement | CDeclaration | CIf, ...]:
         """Convert one native result into its binding-owned Python consumer."""
         scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
@@ -8926,10 +8934,7 @@ class CBindingGenerator(ClassVisitor):
             ),
             CIf(
                 CodeExpression(f"{python_name} == NULL"),
-                body=(
-                    *(CExpressionStatement(CodeExpression(f"Py_DECREF({name})")) for name in failure_cleanup),
-                    CReturn(CodeExpression("NULL")),
-                ),
+                body=self._output_failure_nodes(failure_cleanup, failure_label),
             ),
         )
 
@@ -8971,16 +8976,32 @@ class CBindingGenerator(ClassVisitor):
         self,
         plan: FunctionPlan,
         context: _CFunctionContext,
-    ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
+    ) -> tuple[CDeclaration | CExpressionStatement | CGoto | CIf | CLabel | CReturn, ...]:
         """Convert every public output once, then aggregate by completed position."""
         published, ordinary_writebacks, derived_results, scalar_results = self._output_conversion_groups(plan)
+        output_count = sum(len(group) for group in (published, ordinary_writebacks, derived_results, scalar_results))
+        shared_cleanup = output_count >= self._SHARED_OUTPUT_CLEANUP_MIN_RESULTS
         converted: list[str] = []
         nodes = []
+
+        def failure_label() -> str | None:
+            """Name the suffix that owns the already-converted prefix."""
+            if not shared_cleanup or not converted:
+                return None
+            return self._output_cleanup_label(len(converted))
 
         # Published temporaries are converted first so every later failure owns
         # an ordinary Python reference that can be released uniformly.
         for action in published:
-            nodes.extend(self._writeback_value_nodes(plan, action, context, tuple(converted)))
+            nodes.extend(
+                self._writeback_value_nodes(
+                    plan,
+                    action,
+                    context,
+                    tuple(converted),
+                    failure_label=failure_label(),
+                )
+            )
             converted.append(context.python_results[action.owner_path])
 
         for position, result in enumerate(derived_results):
@@ -8989,11 +9010,26 @@ class CBindingGenerator(ClassVisitor):
             converted.append(context.python_results[result.owner_path])
 
         for result in scalar_results:
-            nodes.extend(self.visit(result, context=context, failure_cleanup=tuple(converted)))
+            nodes.extend(
+                self.visit(
+                    result,
+                    context=context,
+                    failure_cleanup=tuple(converted),
+                    failure_label=failure_label(),
+                )
+            )
             converted.append(context.python_results[result.owner_path])
 
         for action in ordinary_writebacks:
-            nodes.extend(self._writeback_value_nodes(plan, action, context, tuple(converted)))
+            nodes.extend(
+                self._writeback_value_nodes(
+                    plan,
+                    action,
+                    context,
+                    tuple(converted),
+                    failure_label=failure_label(),
+                )
+            )
             converted.append(context.python_results[action.owner_path])
 
         # A ``Hidden`` result is lowered exactly like a published one so that
@@ -9004,13 +9040,27 @@ class CBindingGenerator(ClassVisitor):
                 nodes.append(
                     CExpressionStatement(CodeExpression(f"Py_DECREF({context.python_results[result.owner_path]})"))
                 )
+                if shared_cleanup:
+                    nodes.append(
+                        CExpressionStatement(CodeExpression(f"{context.python_results[result.owner_path]} = NULL"))
+                    )
         hidden_owners = {result.owner_path for result in plan.results if not result.python_returned}
         ordered = tuple(
             context.python_results[owner]
             for owner, _position in self._output_owners(plan)
             if owner not in hidden_owners
         )
-        nodes.extend(self._python_result_aggregation_nodes(ordered, context))
+        aggregate_failure_label = self._output_cleanup_label(len(converted)) if shared_cleanup and converted else None
+        nodes.extend(
+            self._python_result_aggregation_nodes(
+                ordered,
+                context,
+                failure_cleanup=tuple(converted),
+                failure_label=aggregate_failure_label,
+            )
+        )
+        if shared_cleanup:
+            nodes.extend(self._output_cleanup_chain(tuple(converted)))
         return tuple(nodes)
 
     def _output_conversion_groups(
@@ -9036,6 +9086,7 @@ class CBindingGenerator(ClassVisitor):
         action: LifecycleActionPlan,
         context: _CFunctionContext,
         converted: tuple[str, ...],
+        failure_label: str | None = None,
     ) -> tuple:
         """Convert one projected fixed string without terminating aggregation."""
         source = self._argument_for_role(plan, action.source_role)
@@ -9043,11 +9094,13 @@ class CBindingGenerator(ClassVisitor):
             raise ValueError(f"Mixed output {action.owner_path!r} is not a fixed string")
         names = context.arguments[source.owner_path]
         target = context.python_results[action.owner_path]
-        cleanup = tuple(CExpressionStatement(CodeExpression(f"Py_DECREF({name})")) for name in converted)
         conversion = CExpressionStatement(
             CodeExpression(f'{target} = Py_BuildValue("s", (const char *){names.value_name})')
         )
-        failure = CIf(CodeExpression(f"{target} == NULL"), body=(*cleanup, CReturn(CodeExpression("NULL"))))
+        failure = CIf(
+            CodeExpression(f"{target} == NULL"),
+            body=self._output_failure_nodes(converted, failure_label),
+        )
         if source.binding.optional_mode is OptionalMode.REQUIRED:
             return (
                 CDeclaration(target, "PyObject *", CodeExpression("NULL")),
@@ -9337,7 +9390,10 @@ class CBindingGenerator(ClassVisitor):
         self,
         converted: tuple[str, ...],
         context: _CFunctionContext,
-    ) -> tuple[CDeclaration | CExpressionStatement | CIf | CReturn, ...]:
+        *,
+        failure_cleanup: tuple[str, ...] | None = None,
+        failure_label: str | None = None,
+    ) -> tuple[CDeclaration | CExpressionStatement | CGoto | CIf | CReturn, ...]:
         """Return one object directly or assemble ordered tuple ownership."""
         if not converted:
             # Every output was hidden, so the call publishes nothing. The macro
@@ -9349,14 +9405,12 @@ class CBindingGenerator(ClassVisitor):
         aggregate = context.python_result_name
         if aggregate is None:
             raise ValueError("Multiple Python results have no aggregate binding role")
+        cleanup = converted if failure_cleanup is None else failure_cleanup
         return (
             CDeclaration(aggregate, "PyObject *", CodeExpression(f"PyTuple_New({len(converted)})")),
             CIf(
                 CodeExpression(f"{aggregate} == NULL"),
-                body=(
-                    *(CExpressionStatement(CodeExpression(f"Py_DECREF({name})")) for name in converted),
-                    CReturn(CodeExpression("NULL")),
-                ),
+                body=self._output_failure_nodes(cleanup, failure_label),
             ),
             *(
                 CExpressionStatement(CodeExpression(f"PyTuple_SET_ITEM({aggregate}, {position}, {name})"))
@@ -9565,6 +9619,8 @@ class CBindingGenerator(ClassVisitor):
         action: LifecycleActionPlan,
         context: _CFunctionContext,
         converted: tuple[str, ...],
+        *,
+        failure_label: str | None = None,
     ) -> tuple[CDeclaration | CExpressionStatement | CIf, ...]:
         """Convert one planned writeback without terminating output aggregation."""
         if action.binding is None:
@@ -9576,8 +9632,20 @@ class CBindingGenerator(ClassVisitor):
             return self._identity_writeback_value_nodes(source, action, context, converted)
         if action.binding.codegen_action is CodegenAction.COPY_IN_OUT:
             if action.binding.datatype_family is DatatypeFamily.STRING:
-                return self._mixed_string_writeback_nodes(plan, action, context, converted)
-            return self._scalar_writeback_value_nodes(source, action, context, converted)
+                return self._mixed_string_writeback_nodes(
+                    plan,
+                    action,
+                    context,
+                    converted,
+                    failure_label=failure_label,
+                )
+            return self._scalar_writeback_value_nodes(
+                source,
+                action,
+                context,
+                converted,
+                failure_label=failure_label,
+            )
         raise ValueError(f"Unsupported C writeback action for {action.owner_path!r}: {action.binding.codegen_action!r}")
 
     def _identity_writeback_value_nodes(
@@ -9621,17 +9689,21 @@ class CBindingGenerator(ClassVisitor):
         action: LifecycleActionPlan,
         context: _CFunctionContext,
         converted: tuple[str, ...],
+        *,
+        failure_label: str | None = None,
     ) -> tuple[CDeclaration | CExpressionStatement | CIf, ...]:
         """Convert one mutated scalar storage value for combined aggregation."""
         names = context.arguments[source.owner_path]
         scalar_type = PrimitiveScalarTypeRegistry.type_for(action.binding.semantic_type_name)
         target = context.python_results[action.owner_path]
-        cleanup = tuple(CExpressionStatement(CodeExpression(f"Py_DECREF({name})")) for name in converted)
         value_name, contract_conversion = self._scalar_writeback_contract_storage(source, names, scalar_type)
         conversion = CExpressionStatement(
             CodeExpression(f"{target} = {self._scalar_result_expression(scalar_type, f'&{value_name}')}")
         )
-        failure = CIf(CodeExpression(f"{target} == NULL"), body=(*cleanup, CReturn(CodeExpression("NULL"))))
+        failure = CIf(
+            CodeExpression(f"{target} == NULL"),
+            body=self._output_failure_nodes(converted, failure_label),
+        )
         if source.entrypoint.descriptor_output_presence_role is None:
             return (
                 CDeclaration(target, "PyObject *", CodeExpression("NULL")),
@@ -10281,6 +10353,39 @@ class CBindingGenerator(ClassVisitor):
     def _decref_names(names: tuple[str, ...]) -> tuple[CExpressionStatement, ...]:
         """Release already-created Python result objects on a later failure."""
         return tuple(CExpressionStatement(CodeExpression(f"Py_DECREF({name})")) for name in names)
+
+    def _output_failure_nodes(
+        self,
+        names: tuple[str, ...],
+        failure_label: str | None,
+    ) -> tuple[CExpressionStatement | CGoto | CReturn, ...]:
+        """Exit one failed output conversion through inline or shared cleanup."""
+        if failure_label is not None:
+            return (CGoto(failure_label),)
+        return (*self._decref_names(names), CReturn(CodeExpression("NULL")))
+
+    @staticmethod
+    def _output_cleanup_label(converted_count: int) -> str:
+        """Name the cleanup suffix for one successfully converted prefix."""
+        if converted_count < 1:
+            raise ValueError("Output cleanup labels require at least one converted result")
+        return f"prik_output_cleanup_{converted_count}"
+
+    def _output_cleanup_chain(
+        self,
+        converted: tuple[str, ...],
+    ) -> tuple[CLabel | CExpressionStatement | CReturn, ...]:
+        """Release a converted prefix through one fallthrough cleanup chain."""
+        nodes: list[CLabel | CExpressionStatement | CReturn] = []
+        for count in range(len(converted), 0, -1):
+            nodes.extend(
+                (
+                    CLabel(self._output_cleanup_label(count)),
+                    CExpressionStatement(CodeExpression(f"Py_XDECREF({converted[count - 1]})")),
+                )
+            )
+        nodes.append(CReturn(CodeExpression("NULL")))
+        return tuple(nodes)
 
     @staticmethod
     def _is_owned_native_array_result(result: ResultPlan | NativeEntrypointResultPlan) -> bool:

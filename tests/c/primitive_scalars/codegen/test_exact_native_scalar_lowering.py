@@ -121,5 +121,5 @@ def update(values: {annotation}[:]) -> None: ...
     assert function.binding.docstring is not None
     assert f"Accepts exact {numpy_name} element storage" in function.binding.docstring
     assert f"void update({c_type} * values);" in binding
-    assert f"prik_array_validate(bound_values_obj, {numpy_macro}," in binding
+    assert f"prik_array_validate((PyArrayObject *)bound_values_obj, {numpy_macro}," in binding
     assert f'"{numpy_name}", "values")' in binding

@@ -17,6 +17,13 @@ SOURCE = """void tally(int n, int *doubled, int *squared) {
     *doubled = n * 2;
     *squared = n * n;
 }
+
+void split_four(int n, int *doubled, int *tripled, int *quadrupled, int *quintupled) {
+    *doubled = n * 2;
+    *tripled = n * 3;
+    *quadrupled = n * 4;
+    *quintupled = n * 5;
+}
 """
 
 
@@ -73,3 +80,35 @@ def tally(n: Int32) -> Returns["doubled", Int32]: ...
     assert "void tally(int32_t n, int32_t * doubled, int32_t * squared);" in binding
     assert module.tally(np.int32(5)) == np.int32(10)
     assert module.tally.__doc__.splitlines()[0] == "tally(n) -> int32"
+
+
+@pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")
+def test_four_returned_outputs_compile_and_use_shared_failure_cleanup(tmp_path: Path):
+    """A linear cleanup suffix preserves the successful four-result surface."""
+    result = _build(
+        tmp_path,
+        """from prik.contracts import Arg, Int32, Return, Returns, bind, native_call
+
+@bind("split_four")
+@native_call([
+    Arg(0),
+    Return("doubled", 0),
+    Return("tripled", 1),
+    Return("quadrupled", 2),
+    Return("quintupled", 3),
+])
+def split_four(n: Int32) -> tuple[
+    Returns["doubled", Int32],
+    Returns["tripled", Int32],
+    Returns["quadrupled", Int32],
+    Returns["quintupled", Int32],
+]: ...
+""",
+        "four_returned",
+    )
+    module = sole_native_module(result.import_module())
+    binding = next(path.read_text(encoding="utf-8") for path in result.generated_sources if path.suffix == ".c")
+
+    assert module.split_four(np.int32(5)) == tuple(np.int32(value) for value in (10, 15, 20, 25))
+    assert "goto prik_output_cleanup_4;" in binding
+    assert binding.count("Py_XDECREF(result_0_obj);") == 1
