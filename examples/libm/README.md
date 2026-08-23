@@ -45,6 +45,11 @@ the reviewed ISO C99 functions and excludes implementation internals, macros,
 constants, and unsupported pointer or string forms. Unknown names fail the
 build instead of producing a smaller module silently.
 
+Private system-header context is still parsed before export selection. That
+includes compiler compatibility declarations such as fallback `_Float32`
+typedefs; accepting those declarations does not export them or add them to the
+direct-wrapper scalar lane.
+
 The build keeps included headers private with `--include-exposure roots-only`,
 then promotes only the allowlisted functions with `--export-symbols`. It also
 removes implementation parameter names from the Python API and isolates every

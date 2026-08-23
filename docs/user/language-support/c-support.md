@@ -692,6 +692,12 @@ not change a wrapper. An attribute that may change the ABI, symbol identity, or
 layout—such as a calling convention or alignment attribute—stops the build
 instead of being ignored.
 
+Compiler-preprocessed system headers may define an unavailable extended
+floating spelling, such as `_Float32`, through a compatibility `typedef`.
+PRIK accepts those declarations as parsing context so that an unrelated private
+header declaration does not block a reviewed public surface. This tolerance
+does not add direct-wrapper support for the extended floating type itself.
+
 ## Exact native scalar identities
 
 Generated C contracts are target-specific and representation-based. Distinct C

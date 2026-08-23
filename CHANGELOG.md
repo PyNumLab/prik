@@ -9,6 +9,10 @@ release tags add a leading `v` to the package version.
 
 ### Fixed
 
+- Compiler-preprocessed C headers that provide fallback `_FloatN` typedefs now
+  parse successfully. This keeps private glibc compatibility declarations from
+  blocking an allowlisted public API when Clang preprocesses `<math.h>`.
+
 - An exact native C type around a NumPy-backed `Arg(...)` now requires its
   matching NumPy C storage type. For example, `CLongLong(Arg(0))` accepts
   `numpy.longlong` and rejects a distinct `numpy.int64` buffer instead of
@@ -255,6 +259,11 @@ release tags add a leading `v` to the package version.
   a deferred binding never carries `@bind`, because it has no native symbol.
 
 ### Changed
+
+- Temporarily skip the pull-request Linux and macOS unit-test jobs and start
+  Real Libraries Portability independently while the libm Clang portability
+  fix is revalidated. The aggregate merge gate continues to reject the skipped
+  results so this temporary mode cannot satisfy merge validation.
 
 - Reorganized the C and Fortran test suites around a strict ownership rule:
   language features remain under `<feature>/<stage>`, while shared parsing,

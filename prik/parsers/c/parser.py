@@ -173,7 +173,10 @@ _EXTENDED_SCALAR_NORMALIZATIONS = {
 }
 _COMPILER_KEYWORD_NORMALIZATIONS.update(_EXTENDED_SCALAR_NORMALIZATIONS)
 _EXTENDED_SCALAR_SPELLINGS = {normalized: spelling for spelling, normalized in _EXTENDED_SCALAR_NORMALIZATIONS.items()}
-_EXTENDED_SCALAR_WORDS = set(_EXTENDED_SCALAR_SPELLINGS)
+_FALLBACK_FLOAT_TYPEDEF_SPELLINGS = {
+    spelling for spelling in _EXTENDED_SCALAR_NORMALIZATIONS if spelling.startswith("_Float")
+}
+_EXTENDED_SCALAR_WORDS = set(_EXTENDED_SCALAR_SPELLINGS) | _FALLBACK_FLOAT_TYPEDEF_SPELLINGS
 _TAG_KINDS = {"struct", "union", "enum"}
 _UNSUPPORTED_DECLARATION_MARKERS = (
     "__attribute__",
@@ -1561,6 +1564,10 @@ class CParser:
                 continue
             word, word_end = identifier
 
+            if word in _FALLBACK_FLOAT_TYPEDEF_SPELLINGS:
+                index = word_end
+                continue
+
             if word in _COMPILER_KEYWORD_NORMALIZATIONS:
                 self._replace_span(
                     characters,
@@ -1754,6 +1761,7 @@ class CParser:
         spec_end = 0
         consumed_type = False
         consumed_typedef_name = False
+        declares_typedef = False
 
         while True:
             index = self._skip_whitespace(text, index)
@@ -1775,16 +1783,29 @@ class CParser:
                     spec_end = index
                     continue
 
-            if (
-                self._canonical_storage_class(word) is not None
-                or self._canonical_type_qualifier(word) is not None
-                or self._canonical_function_specifier(word) is not None
-            ):
+            storage_class = self._canonical_storage_class(word)
+            if storage_class is not None:
+                declares_typedef = declares_typedef or storage_class == "typedef"
                 index = end
                 spec_end = end
                 continue
 
-            if self._canonical_primitive_word(word) in _PRIMITIVE_WORDS or word in _EXTENDED_SCALAR_WORDS:
+            if self._canonical_type_qualifier(word) is not None or self._canonical_function_specifier(word) is not None:
+                index = end
+                spec_end = end
+                continue
+
+            if self._canonical_primitive_word(word) in _PRIMITIVE_WORDS:
+                consumed_type = True
+                index = end
+                spec_end = end
+                continue
+
+            if word in _EXTENDED_SCALAR_WORDS:
+                suffix_start = self._skip_whitespace(text, end)
+                begins_declarator = suffix_start >= len(text) or text[suffix_start] in "[,(=;"
+                if declares_typedef and consumed_type and begins_declarator:
+                    break
                 consumed_type = True
                 index = end
                 spec_end = end

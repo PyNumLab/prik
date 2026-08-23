@@ -241,6 +241,32 @@ _Float128 wide_float;
     ]
 
 
+def test_system_header_fallback_extended_scalar_typedefs_remain_parseable():
+    from prik.parsers.c import CDouble, CFloat, CLongDouble, parse_c_file
+
+    parsed = parse_c_file(
+        """
+# 214 "/usr/include/bits/floatn-common.h" 1 3 4
+typedef float _Float32;
+typedef double _Float64;
+typedef double _Float32x;
+typedef long double _Float64x;
+# 1 "math_api.h" 2
+double exported_sin(double value);
+""",
+        filename="math_api.i",
+        preprocessing="compiler",
+    )
+
+    typedefs = {typedef.name: typedef.type for typedef in parsed.typedefs}
+    assert isinstance(typedefs["_Float32"], CFloat)
+    assert isinstance(typedefs["_Float64"], CDouble)
+    assert isinstance(typedefs["_Float32x"], CDouble)
+    assert isinstance(typedefs["_Float64x"], CLongDouble)
+    assert [function.name for function in parsed.functions] == ["exported_sin"]
+    assert parsed.diagnostics == []
+
+
 def test_preprocessed_extension_diagnostics_and_declarations_use_linemarkers():
     from prik.parsers.c import parse_c_file
 
