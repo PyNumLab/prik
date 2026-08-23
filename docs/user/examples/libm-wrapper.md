@@ -311,13 +311,12 @@ python3 -m pytest -q examples/libm/tests/test_numerical.py::test_precision
 
 ## CI portability coverage
 
-The Real Libraries Portability workflow runs every maintained example on
-Linux x86-64, Linux Arm64, macOS Intel, and macOS Arm64. Within each machine
-job, libm runs with GCC and Clang on Linux and with Apple Clang and GNU GCC on
-macOS. Together the lanes exercise system `math.h`, native libm, target scalar
-probes, generated contracts, collision adapters, two operating systems, both
-hosted architectures, and both compiler families. Native Windows/MSVC remains
-outside PRIK's current POSIX C build lane.
+The shared [Real Libraries Portability coverage](index.md#ci-portability) runs
+every maintained example on four hosted targets. libm runs twice per target:
+GCC 13 and Clang 18 on Linux, GNU GCC 13 and Apple Clang on macOS. These lanes
+exercise the target's own `math.h`, libm, scalar probe, generated contract, and
+collision adapter. Native Windows/MSVC remains outside PRIK's current POSIX C
+build lane.
 
 ## Source provenance
 

@@ -914,46 +914,46 @@ def _native_plan_link_languages(plan: NativeBuildPlan) -> tuple[str, ...]:
 
 @dataclass(frozen=True)
 class _CompiledObject:
-    """Store the recorded compiler command and elapsed time for one object."""
+    """Store the elapsed time for one completed object compilation."""
 
-    command: tuple[str, ...] | None
     elapsed: float
 
 
-def _compile_one_object(compiler: Compiler, object_file: ObjectFile) -> _CompiledObject:
-    """Compile one object and return its command record plus elapsed time.
+def _compile_one_object(
+    compiler: Compiler,
+    object_file: ObjectFile,
+    *,
+    verbose: bool | int,
+) -> _CompiledObject:
+    """Compile one object and return its elapsed time.
 
     The supplied ``compiler`` performs the compile and may create the object
-    file.  A tuple command is retained for Makefile generation; other compiler
-    return values are represented as ``None``.
+    file.
     """
     started = time.perf_counter()
-    command = compiler.compile_object(object_file, verbose=False)
-    return _CompiledObject(
-        command=command if isinstance(command, tuple) else None,
-        elapsed=time.perf_counter() - started,
-    )
+    compiler.compile_object(object_file, verbose=verbose)
+    return _CompiledObject(elapsed=time.perf_counter() - started)
 
 
-def _report_compiled_object(
+def _report_compilation_timing(result: _CompiledObject, *, verbose: bool | int) -> None:
+    """Print the completion timing for one verbose object compilation.
+
+    The compiler prints its command before starting it. This report records the
+    elapsed time after a successful compilation.
+    """
+    if not verbose:
+        return
+    _print_verbose_timing(verbose, result.elapsed)
+
+
+def _announce_object_compilation(
     object_file: ObjectFile,
-    result: _CompiledObject,
     *,
     label: str,
     verbose: bool | int,
 ) -> None:
-    """Print verbose diagnostics for one completed object compilation.
-
-    Receives the object and timing record produced by ``_compile_one_object``.
-    When ``verbose`` is false it changes nothing; otherwise it writes the
-    labelled source-to-object mapping, command, and duration to standard out.
-    """
-    if not verbose:
-        return
+    """Print one object boundary before its compiler command can execute."""
     _print_verbose_step(verbose, f"{label}: {object_file.source} -> {object_file.object_path}")
-    if result.command is not None:
-        print(shlex.join(result.command))
-    _print_verbose_timing(verbose, result.elapsed)
 
 
 def _compile_object_stage(
@@ -965,39 +965,49 @@ def _compile_object_stage(
 ) -> None:
     """Compile one named object group and expose that boundary in verbose logs."""
     for object_file in object_files:
-        result = _compile_one_object(compiler, object_file)
-        _report_compiled_object(object_file, result, label=label, verbose=verbose)
+        _announce_object_compilation(object_file, label=label, verbose=verbose)
+        result = _compile_one_object(compiler, object_file, verbose=verbose)
+        _report_compilation_timing(result, verbose=verbose)
 
 
 def _submit_object_stage(
     executor: ThreadPoolExecutor,
     compiler: Compiler,
     object_files: Iterable[ObjectFile],
+    *,
+    label: str,
+    verbose: bool | int,
 ) -> tuple[tuple[ObjectFile, Future[_CompiledObject]], ...]:
-    """Submit one independent compilation group to an executor.
+    """Announce and submit one independent compilation group to an executor.
 
-    Each input object produces one ``(object_file, future)`` pair.  The helper
-    schedules work but does not wait for it or report verbose output.
+    Each command is announced before submission; the compiler then prints its
+    replayable argv immediately before execution in the worker.
     """
-    return tuple(
-        (object_file, executor.submit(_compile_one_object, compiler, object_file)) for object_file in object_files
-    )
+    pending = []
+    for object_file in object_files:
+        _announce_object_compilation(object_file, label=label, verbose=verbose)
+        pending.append(
+            (
+                object_file,
+                executor.submit(_compile_one_object, compiler, object_file, verbose=verbose),
+            )
+        )
+    return tuple(pending)
 
 
 def _finish_object_stage(
     pending: Iterable[tuple[ObjectFile, Future[_CompiledObject]]],
     *,
-    label: str,
     verbose: bool | int,
 ) -> None:
     """Wait for a submitted compilation group and report each result.
 
-    ``pending`` comes from ``_submit_object_stage``.  Calling ``future.result``
-    propagates compiler failures; successful objects are reported in input
-    order when verbose output is enabled.
+    ``pending`` comes from ``_submit_object_stage``. Calling ``future.result``
+    propagates compiler failures; successful objects report completion timing
+    in input order when verbose output is enabled.
     """
-    for object_file, future in pending:
-        _report_compiled_object(object_file, future.result(), label=label, verbose=verbose)
+    for _, future in pending:
+        _report_compilation_timing(future.result(), verbose=verbose)
 
 
 def _compile_extension_objects(
@@ -1021,13 +1031,31 @@ def _compile_extension_objects(
         return
 
     with ThreadPoolExecutor(max_workers=jobs, thread_name_prefix="prik-compile") as executor:
-        binding_futures = _submit_object_stage(executor, compiler, bindings)
+        binding_futures = _submit_object_stage(
+            executor,
+            compiler,
+            bindings,
+            label="Compile binding source",
+            verbose=verbose,
+        )
         for batch in native_groups:
-            native_futures = _submit_object_stage(executor, compiler, batch)
-            _finish_object_stage(native_futures, label="Compile native source", verbose=verbose)
-        bridge_futures = _submit_object_stage(executor, compiler, bridges)
-        _finish_object_stage(bridge_futures, label="Compile bridge source", verbose=verbose)
-        _finish_object_stage(binding_futures, label="Compile binding source", verbose=verbose)
+            native_futures = _submit_object_stage(
+                executor,
+                compiler,
+                batch,
+                label="Compile native source",
+                verbose=verbose,
+            )
+            _finish_object_stage(native_futures, verbose=verbose)
+        bridge_futures = _submit_object_stage(
+            executor,
+            compiler,
+            bridges,
+            label="Compile bridge source",
+            verbose=verbose,
+        )
+        _finish_object_stage(bridge_futures, verbose=verbose)
+        _finish_object_stage(binding_futures, verbose=verbose)
 
 
 def _build_generated_wrapper_extension(

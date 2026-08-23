@@ -7,7 +7,7 @@ native compiler mechanisms.
 | File | Owns |
 | --- | --- |
 | `pyi.py` | Semantic `.pyi` loading, package assembly, and reference reconciliation. |
-| `type_mapping_report.py` | Compiler-target facts converted through semantic IR and backend NumPy projection into inspection Markdown. |
+| `type_mapping_report.py` | Compiler-target facts converted through semantic IR and backend NumPy projection into a measured inspection record, rendered as Markdown on request. |
 | `wrapper.py` | One completed-plan-to-rendered-wrapper generation workflow. |
 | `build.py` | Generated-source output, native compilation, linking, and extension results. |
 

@@ -744,3 +744,68 @@ def test_prik_probe_subcommand_dispatches_one_flag_driven_probe(monkeypatch, cap
     assert calls[0].language == "fortran"
     assert calls[0].compiler == "gfortran-13"
     assert calls[0].expressions == ["storage_size(0)"]
+
+
+def _probe_args(**overrides):
+    defaults = {
+        "language": "fortran",
+        "compiler": "gfortran",
+        "format": "json",
+        "expressions": [],
+        "include_dirs": [],
+        "defines": [],
+        "undefs": [],
+        "std": None,
+        "compiler_args": [],
+        "runner": [],
+        "cache_dir": None,
+        "refresh": False,
+    }
+    return types.SimpleNamespace(**{**defaults, **overrides})
+
+
+@pytest.mark.parametrize("language", ["c", "fortran"])
+def test_probe_without_expressions_reports_the_measured_type_mapping(monkeypatch, language):
+    """Omitting --expr selects the mapping report rather than an empty measurement."""
+    measured = {"report": "type_mapping", "language": language, "target_profile": "t", "types": []}
+    monkeypatch.setattr(prik_cli, "c_type_mapping_report", lambda **options: measured)
+    monkeypatch.setattr(prik_cli, "fortran_type_mapping_report", lambda **options: measured)
+
+    assert json.loads(prik_cli._probe_output(_probe_args(language=language))) == measured
+
+
+@pytest.mark.parametrize("output_format", ["json", "markdown"])
+def test_probe_renders_each_report_in_both_formats(monkeypatch, output_format):
+    """--format selects a rendering; it must not select a different report."""
+    measured = {"report": "type_mapping", "language": "fortran", "target_profile": "t", "types": []}
+    monkeypatch.setattr(prik_cli, "fortran_type_mapping_report", lambda **options: measured)
+    monkeypatch.setattr(prik_cli, "type_mapping_markdown", lambda report: f"MD:{report['language']}")
+
+    output = prik_cli._probe_output(_probe_args(format=output_format))
+
+    assert output == ("MD:fortran" if output_format == "markdown" else json.dumps(measured, indent=2))
+
+
+def test_probe_expressions_render_as_markdown(monkeypatch):
+    """--expr is a report selector, so it must work with --format markdown too."""
+    measured = object()
+    monkeypatch.setattr(prik_cli, "probe_fortran_type_expressions_cached", lambda *args, **options: measured)
+    monkeypatch.setattr(prik_cli, "expression_probe_markdown", lambda report: "EXPR-TABLE")
+
+    output = prik_cli._probe_output(_probe_args(format="markdown", expressions=["kind(1.0d0)"]))
+
+    assert output == "EXPR-TABLE"
+
+
+@pytest.mark.parametrize(
+    "option", [{"include_dirs": ["inc"]}, {"defines": ["A=1"]}, {"undefs": ["A"]}, {"std": "f2018"}]
+)
+def test_probe_mapping_report_rejects_preprocessing_options(option):
+    """The mapping inventory is fixed, so preprocessing options cannot affect it."""
+    with pytest.raises(ValueError, match="add --expr to probe preprocessed expressions"):
+        prik_cli._probe_output(_probe_args(**option))
+
+
+def test_probe_expressions_are_fortran_only():
+    with pytest.raises(ValueError, match="--expr is supported only for --language fortran"):
+        prik_cli._probe_output(_probe_args(language="c", expressions=["kind(1.0)"]))

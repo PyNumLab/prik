@@ -13,6 +13,14 @@ This section includes six complete real-library examples: BLAS, LAPACK,
 FFTPACK, MINPACK, BSPLINE-FORTRAN, and libm. Each one provides build commands,
 Python usage, and numerical checks for its public routines.
 
+## CI portability
+
+The **Real Libraries Portability** workflow runs every example on Linux
+x86-64, Linux Arm64, macOS Intel, and macOS Arm64 with Python 3.12. GNU
+Fortran 13 and GCC 13 build the Fortran examples. libm is tested with GCC 13
+and Clang 18 on Linux, and GNU GCC 13 and Apple Clang on macOS. BLAS and LAPACK
+add full-surface audits on Linux x86-64.
+
 For a smaller first workflow, start with one of the checked guides below. Each
 links to a complete source, build, import, or result path, rather than a
 draft-only recipe.

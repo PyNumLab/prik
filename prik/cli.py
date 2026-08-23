@@ -27,7 +27,12 @@ from prik.preprocessing.probes.fortran_types import (
     FortranTypeProbeReport,
     probe_fortran_type_expressions_cached,
 )
-from prik.pipeline.type_mapping_report import c_type_mapping_markdown, fortran_type_mapping_markdown
+from prik.pipeline.type_mapping_report import (
+    c_type_mapping_report,
+    expression_probe_markdown,
+    fortran_type_mapping_report,
+    type_mapping_markdown,
+)
 from prik.preprocessing import (
     PreprocessingConfig,
     PreprocessingError,
@@ -157,6 +162,10 @@ _PROBE_HELP_EPILOG = (
     "  Human-readable mapping table:\n"
     "    python3 -m prik probe --language fortran --compiler gfortran-13 \\\n"
     "      --format markdown\n"
+    "\n"
+    "  Measure specific Fortran expressions in either format:\n"
+    "    python3 -m prik probe --language fortran --compiler gfortran-13 \\\n"
+    '      --expr "selected_real_kind(15,307)" --format markdown\n'
     "\n"
     "  Probe flags that change default kinds:\n"
     "    python3 -m prik probe --language fortran --compiler gfortran-13 \\\n"
@@ -1138,11 +1147,37 @@ def _validate_pyi_generation_options(args: argparse.Namespace, parser: argparse.
         parser.error(f"generate --pyi cannot use {', '.join(invalid)}")
 
 
+def _validate_semantic_stage_source_inputs(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """Require source-stage commands to receive at least one source file.
+
+    Wrapper builds separately accept a semantic ``.pyi`` contract.  The
+    ``semantics`` and ``generate --pyi`` commands instead create their output
+    from native source, so filtering a contract out of their source list must
+    be a diagnostic rather than an empty report.
+    """
+    if not (args.semantics or args.pyi):
+        return
+
+    source_suffixes = _SOURCE_SUFFIXES_BY_LANGUAGE[args.language]
+    unsupported = tuple(
+        Path(raw) for raw in args.paths if not Path(raw).is_dir() and Path(raw).suffix.lower() not in source_suffixes
+    )
+    command = "semantics" if args.semantics else "generate --pyi"
+    if unsupported:
+        parser.error(
+            f"{command} expects recognized {args.language} source suffixes; unsupported input: {unsupported[0]}"
+        )
+
+    if not _source_paths_for_semantic_pipeline(args.paths, language=args.language):
+        parser.error(f"{command} found no recognized {args.language} sources in the supplied inputs")
+
+
 def _validate_main_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int | None:
     if not args.paths and getattr(args, "build_manifest", None) is None:
         parser.error("Source input is required unless --build-manifest is used")
 
     _validate_pyi_generation_options(args, parser)
+    _validate_semantic_stage_source_inputs(args, parser)
     _validate_wrapper_build_options(args, parser)
     _validate_c_main_options(args, parser)
 
@@ -2588,7 +2623,7 @@ def _probe_parser(argv: list[str]) -> argparse.ArgumentParser:
         "--format",
         choices=("json", "markdown"),
         default="json",
-        help="Output measured JSON facts or a Markdown type mapping table",
+        help="Render the measured report as JSON or as a Markdown table",
     )
     target.add_argument(
         "--expr",
@@ -2597,7 +2632,7 @@ def _probe_parser(argv: list[str]) -> argparse.ArgumentParser:
         action="append",
         default=[],
         metavar="EXPR",
-        help="Evaluate a Fortran integer expression in JSON output; repeat as needed",
+        help="Measure a Fortran integer expression instead of the mapping table; repeat as needed",
     )
     compiler = parser.add_argument_group("execution options")
     compiler.add_argument(
@@ -2681,19 +2716,14 @@ def _argv_uses_option(argv: list[str], option: str) -> bool:
     return any(value == option or value.startswith(f"{option}=") for value in argv)
 
 
-def _probe_output(args: argparse.Namespace) -> str:
-    target_options = {
-        "runner": args.runner or None,
-        "cache_dir": args.cache_dir,
-        "refresh": args.refresh,
-    }
-    if args.format == "markdown":
-        unsupported = bool(args.include_dirs or args.defines or args.undefs or args.std or args.expressions)
-        if unsupported:
-            raise ValueError("--format markdown accepts compiler, compiler arguments, runner, cache, and refresh only")
-        generator = c_type_mapping_markdown if args.language == "c" else fortran_type_mapping_markdown
-        return generator(compiler=args.compiler, compiler_args=args.compiler_args, **target_options)
+def _probe_expression_output(args: argparse.Namespace, target_options: dict[str, object]) -> str:
+    """Measure the requested Fortran expressions and render the chosen format.
 
+    Preprocessing options apply here because each expression is compiled from
+    generated source. The measured report is the record; Markdown converts it.
+    """
+    if args.language == "c":
+        raise ValueError("--expr is supported only for --language fortran")
     config = PreprocessingConfig(
         mode="compiler",
         compiler=args.compiler,
@@ -2703,13 +2733,45 @@ def _probe_output(args: argparse.Namespace) -> str:
         std=args.std,
         compiler_args=args.compiler_args,
     )
-    if args.language == "c":
-        if args.expressions:
-            raise ValueError("--expr is supported only for --language fortran")
-        report = probe_c_standard_types_cached(config, **target_options)
-    else:
-        report = probe_fortran_type_expressions_cached(config, args.expressions, **target_options)
+    report = probe_fortran_type_expressions_cached(config, args.expressions, **target_options)
+    if args.format == "markdown":
+        return expression_probe_markdown(report)
     return json.dumps(report.to_dict(), indent=2)
+
+
+def _probe_mapping_output(args: argparse.Namespace, target_options: dict[str, object]) -> str:
+    """Measure the standard type mapping table and render the chosen format.
+
+    The mapping inventory is fixed, so preprocessing options cannot affect it
+    and are rejected instead of silently ignored. The measured report is the
+    record; Markdown converts it.
+    """
+    if args.include_dirs or args.defines or args.undefs or args.std:
+        raise ValueError(
+            "the type mapping report accepts compiler, compiler arguments, runner, cache, "
+            "and refresh only; add --expr to probe preprocessed expressions"
+        )
+    builder = c_type_mapping_report if args.language == "c" else fortran_type_mapping_report
+    report = builder(compiler=args.compiler, compiler_args=args.compiler_args, **target_options)
+    if args.format == "markdown":
+        return type_mapping_markdown(report)
+    return json.dumps(report, indent=2)
+
+
+def _probe_output(args: argparse.Namespace) -> str:
+    """Select the probe report and serialize it in the requested format.
+
+    ``--expr`` selects the measured expression report; without it the standard
+    type mapping table is measured. Both reports support both formats.
+    """
+    target_options = {
+        "runner": args.runner or None,
+        "cache_dir": args.cache_dir,
+        "refresh": args.refresh,
+    }
+    if args.expressions:
+        return _probe_expression_output(args, target_options)
+    return _probe_mapping_output(args, target_options)
 
 
 def _run_probe_command(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:

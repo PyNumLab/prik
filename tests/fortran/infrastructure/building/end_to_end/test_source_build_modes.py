@@ -95,6 +95,33 @@ def test_verbose_mode_prints_full_direct_build_commands(tmp_path: Path):
     assert "Built extension:" in result.stdout
 
 
+def test_verbose_mode_prints_failing_compiler_command_before_execution(tmp_path: Path):
+    source = tmp_path / "verbose_api.f90"
+    shutil.copyfile(VERBOSE_SOURCE, source)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "prik",
+            str(source),
+            "--verbose",
+            "--out-dir",
+            str(tmp_path),
+            "--wrapper-c-flags=-fprik-invalid-option",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 1
+    command = next(line for line in result.stdout.splitlines() if "verbose_api_wrapper.c" in line and "-c" in line)
+    assert "-fprik-invalid-option" in shlex.split(command)
+    assert "Native compiler command failed:" in result.stderr
+
+
 def test_verbose_mode_prints_custom_wrapper_flags(tmp_path: Path):
     source = tmp_path / SCALE_SOURCE.name
     shutil.copyfile(SCALE_SOURCE, source)

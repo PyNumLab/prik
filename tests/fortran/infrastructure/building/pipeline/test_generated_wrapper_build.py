@@ -189,8 +189,8 @@ def scale(x: Float64) -> Float64: ...
         f"Write binding source: {binding_source}",
         f"Write binding header: {header}",
         f"Write native support: {build_dir / 'binding_support'}",
-        f"Compile bridge source: {bridge_source} -> {bridge_obj.object_path}",
         f"Compile binding source: {binding_source} -> {binding_obj.object_path}",
+        f"Compile bridge source: {bridge_source} -> {bridge_obj.object_path}",
         f"Create shared library: {result.shared_library}",
     ]
 

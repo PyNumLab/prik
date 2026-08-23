@@ -217,6 +217,34 @@ def test_cli_semantics_without_json_output():
     assert "semantic_modules" in payload[str(TEST_FILE)]
 
 
+@pytest.mark.parametrize(
+    ("command", "description"),
+    [
+        (("semantics",), "semantics"),
+        (("generate", "--pyi"), "generate --pyi"),
+    ],
+)
+def test_cli_source_stage_rejects_pyi_contract_instead_of_printing_empty_output(
+    tmp_path: Path,
+    command: tuple[str, ...],
+    description: str,
+):
+    contract = tmp_path / "contract.pyi"
+    contract.write_text("def add1(value: int) -> int: ...\n", encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "prik", *command, str(contract)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert f"{description} expects recognized fortran source suffixes" in result.stderr
+    assert str(contract) in result.stderr
+
+
 def test_cli_pyi_output():
     cmd = [sys.executable, "-m", "prik", "generate", "--pyi", str(TEST_FILE)]
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)

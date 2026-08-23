@@ -13,7 +13,30 @@ release tags add a leading `v` to the package version.
   secondary missing-source diagnostic. This makes the maintained 127-routine
   example build consistently on Linux and both hosted macOS architectures.
 
+### Changed
+
+- `probe` now selects its report from `--expr` and uses `--format` only to
+  render it. Without `--expr` both formats measure the standard datatype
+  mapping table, so `--format json` reports that table instead of an empty
+  measurement; with `--expr` both formats report the measured expressions, so
+  `--expr` now works with `--format markdown`. The Markdown tables are
+  unchanged, and the JSON mapping report adds the structured `target_fact`
+  measurement, `recipe`, and `source_text` alongside the displayed text. The
+  mapping report now rejects `-I`, `-D`, `-U`, and `--std` instead of accepting
+  options its fixed inventory cannot use.
+
+- `prik.pipeline.type_mapping_report` now exposes `c_type_mapping_report()` and
+  `fortran_type_mapping_report()` returning measured records, plus
+  `type_mapping_markdown()` and `expression_probe_markdown()` renderers,
+  replacing `c_type_mapping_markdown()` and `fortran_type_mapping_markdown()`.
+
 ### Fixed
+
+- Verbose wrapper builds now print each compiler command before it starts, so
+  failed invocations remain directly replayable.
+
+- `semantics` and `generate --pyi` now reject non-source inputs instead of
+  emitting an empty report.
 
 - Ordinary array arguments now preserve their non-array type check before
   accessing NumPy storage. Native-handle-capable branches still avoid repeating

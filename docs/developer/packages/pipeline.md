@@ -58,7 +58,7 @@ prik/pipeline/
 | Module | Main entrypoints and contents | Change it when |
 | --- | --- | --- |
 | [`prik/pipeline/pyi.py`](../../../prik/pipeline/pyi.py) | `pyi_*_to_semantic_module()` loads text, files, or path sets into semantic modules. `emit_module_stubs()` completes copied modules and renders `.pyi` stubs. | Contract loading, external-type reconciliation, per-operation cache behavior, or stub output. |
-| [`prik/pipeline/type_mapping_report.py`](../../../prik/pipeline/type_mapping_report.py) | Converts compiler probe facts through semantic conversion and backend dtype projection into a Markdown report. | Datatype-report content or its cross-stage evidence. |
+| [`prik/pipeline/type_mapping_report.py`](../../../prik/pipeline/type_mapping_report.py) | Converts compiler probe facts through semantic conversion and backend dtype projection into a measured report record, then renders it as Markdown. | Datatype-report content or its cross-stage evidence. |
 | [`prik/pipeline/wrapper.py`](../../../prik/pipeline/wrapper.py) | `WrapperGenerator.generate()` freezes and validates a `ModulePlan`, delegates backend generation and printing, and returns an in-memory `GeneratedWrapper`. | Plan-to-rendered-wrapper orchestration. |
 | [`prik/pipeline/build.py`](../../../prik/pipeline/build.py) | `build_fortran_extension()`, `build_c_extension()`, `build_pyi_extension()`, and `build_pyi_extension_from_manifest()` write artifacts, prepare native inputs, compile/link, and return `WrapperBuildResult`. `NativeBuildPlan` records those native inputs. | Public build behavior, artifact layout, build modes, manifests, scheduling, linking, or extension import. |
 
@@ -78,7 +78,9 @@ prik/pipeline/
   when both groups share one physical Fortran payload.
 - **`type_mapping_report.py` is inspection only.** Its fixed C and Fortran
   inventories pass through the normal target probes, semantic converters, and
-  NumPy dtype registry before Markdown rendering. It does not create a wrapper.
+  NumPy dtype registry into a measured record. `type_mapping_markdown()` is the
+  only Markdown path for that record, so the table cannot drift from the JSON
+  form. It does not create a wrapper.
 
 ## `build.py` Navigation
 

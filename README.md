@@ -157,19 +157,23 @@ without changing the underlying Fortran implementation.
 
 ## Proven on real libraries
 
-The maintained projects build real numerical libraries with PRIK and validate
-their Python behavior, not just whether the generated wrapper compiles.
+PRIK builds and numerically tests six maintained libraries, not just generated
+wrappers.
 
-| Project | Validated surface | Capabilities demonstrated |
-| --- | --- | --- |
-| [BLAS](examples/blas/README.md) | All 155 discovered routines | Scalar, vector, and matrix operations; increments and leading dimensions; in-place updates; independent expectations and f2py comparisons |
-| [LAPACK](examples/lapack/README.md) | Complete implementation corpus with 127 reviewed double-precision routines | Linear solves, factorizations, eigenproblems, singular values, work arrays, and large multi-source linking |
-| [FFTPACK](examples/fftpack/README.md) | All 31 public procedures | Fourier, cosine, and sine transforms; low-level workspaces; in-place arrays; allocatable results; NumPy and SciPy oracles |
-| [MINPACK](examples/minpack/README.md) | All 22 public procedures | Python callbacks; nonlinear and least-squares solvers; Jacobian and workspace writeback; immutable module constants |
+| Project | Validated surface |
+| --- | --- |
+| [BLAS](examples/blas/README.md) | 155 routines: vectors, matrices, in-place updates, and f2py comparisons |
+| [LAPACK](examples/lapack/README.md) | 127 float64 routines: solves, factorizations, eigenproblems, and SVD |
+| [FFTPACK](examples/fftpack/README.md) | 31 Fourier, cosine, and sine transform procedures |
+| [MINPACK](examples/minpack/README.md) | 22 nonlinear and least-squares procedures, including callbacks |
+| [BSPLINE-FORTRAN](examples/bspline/README.md) | 15 interpolation routines and modern Fortran classes |
+| [libm](examples/libm/README.md) | 60 target-generated ISO C99 math functions |
 
-Together they exercise arrays, callbacks, workspaces, in-place mutation,
-allocatable results, module constants, and multi-file linking. The dedicated
-Real Libraries CI lane builds and tests all four projects.
+The **Real Libraries Portability** workflow runs all six on Linux x86-64,
+Linux Arm64, macOS Intel, and macOS Arm64 with Python 3.12. The Fortran
+examples use GNU Fortran 13 and GCC 13. libm runs twice on every target: GCC
+13 and Clang 18 on Linux; GNU GCC 13 and Apple Clang on macOS. BLAS and LAPACK
+also receive their full-surface audits on Linux x86-64.
 
 ## Key Features
 
