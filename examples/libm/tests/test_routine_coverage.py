@@ -21,7 +21,7 @@ TEST_FILES = tuple(sorted(path for path in Path(__file__).parent.glob("test_*.py
 
 
 def _test_sources() -> dict[str, str]:
-    """Return the source text of every explicitly named public-routine test."""
+    """Return the source text of every grouped public-routine test."""
     sources: dict[str, str] = {}
     for path in TEST_FILES:
         text = path.read_text(encoding="utf-8")
@@ -34,7 +34,7 @@ def _test_sources() -> dict[str, str]:
     return sources
 
 
-def test_every_reviewed_libm_routine_has_one_visible_numerical_test():
+def test_every_reviewed_libm_routine_is_visibly_exercised():
     sources = _test_sources()
     assert len(ALL_ROUTINES) == len(set(ALL_ROUTINES))
     assert set(ALL_ROUTINES) == PRIK_TESTED_ROUTINES

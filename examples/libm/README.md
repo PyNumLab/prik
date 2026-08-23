@@ -114,9 +114,9 @@ part of the ISO C99 selection.
 
 ## What is validated
 
-Every inventory entry has one visibly named numerical test. The audits verify
-that the generated contract, built module, inventory, and tests all expose the
-same 60 functions.
+Every inventory entry is visibly invoked by one of four grouped numerical
+tests. The audits verify that the generated contract, built module, inventory,
+and tests all expose the same 60 functions.
 
 The numerical oracles are mixed: Python's `math` module where it matches,
 independent identities for error and gamma functions, target-aware rounding
@@ -126,9 +126,9 @@ and a fused-rounding check for `fma`.
 Run focused groups with:
 
 ```bash
-python3 -m pytest -q examples/libm/tests/test_special.py
-python3 -m pytest -q examples/libm/tests/test_rounding.py::test_llrint
-python3 -m pytest -q examples/libm/tests/test_precision.py
+python3 -m pytest -q examples/libm/tests/test_numerical.py::test_special
+python3 -m pytest -q examples/libm/tests/test_numerical.py::test_rounding
+python3 -m pytest -q examples/libm/tests/test_numerical.py::test_precision
 ```
 
 ## Portability boundary
@@ -140,7 +140,7 @@ when the compiler probe reports a scalar representation outside its supported
 contract widths.
 
 Set `PRIK_LIBM_CC` to select another compiler executable; it defaults to `cc`.
-The dedicated examples-portability workflow runs every maintained example on
+The Real Libraries Portability workflow runs every maintained example on
 Linux x86-64, Linux Arm64, macOS Intel, and macOS Arm64. Within those four
 machine jobs, libm runs with GCC and Clang on Linux and with Apple Clang and GNU
 GCC on macOS. This exercises the target's own declarations, scalar ABI, C

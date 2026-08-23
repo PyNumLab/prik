@@ -43,4 +43,17 @@ ROUTINE_GROUPS: dict[str, tuple[str, ...]] = {
 ALL_ROUTINES = tuple(routine for group in ROUTINE_GROUPS.values() for routine in group)
 PRIK_TESTED_ROUTINES = frozenset(ALL_ROUTINES)
 UNSUPPORTED_ROUTINES: dict[str, str] = {}
-EXPLICIT_TEST_NAMES = {routine: f"test_{routine}" for routine in ALL_ROUTINES}
+EXPLICIT_TEST_NAMES = {
+    routine: test_name
+    for test_name, groups in (
+        (
+            "test_elementary",
+            ("Trigonometric", "Hyperbolic", "Exponential and logarithmic", "Power and roots"),
+        ),
+        ("test_rounding", ("Rounding, truncation, and remainder", "Floating-point manipulation")),
+        ("test_special", ("Error and gamma functions",)),
+        ("test_precision", ("Single and extended precision",)),
+    )
+    for group in groups
+    for routine in ROUTINE_GROUPS[group]
+}

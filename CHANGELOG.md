@@ -146,9 +146,10 @@ release tags add a leading `v` to the package version.
   build and validates every exported routine with a named numerical test. The
   contract records exact native scalar casts without changing its NumPy-facing
   signatures, and its dtype assertions follow the active `long` and `long
-  double` ABIs. A dedicated examples-portability workflow runs all maintained
-  examples on Linux x86-64, Linux Arm64, macOS Intel, and macOS Arm64; libm
-  additionally runs with GCC and Clang on each platform.
+  double` ABIs. A dedicated Real Libraries Portability workflow, reused by the
+  pull-request gate, runs all maintained examples on Linux x86-64, Linux Arm64,
+  macOS Intel, and macOS Arm64; libm additionally runs with GCC and Clang on
+  each platform, and Linux x86-64 retains the deep BLAS and LAPACK audits.
 
 - `--positional-only` exposes every wrapper whose arguments are all required as
   positional-only, renaming them `arg0`..`argN` in the signature, docstring, and

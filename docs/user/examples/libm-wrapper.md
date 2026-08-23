@@ -208,15 +208,54 @@ The inventory contains exactly 60 routines:
 ## 6. See how results are validated
 
 Tests compare Python's `math` module where it has the same operation and use
-independent identities elsewhere. For example, `erf(x) + erfc(x)` is checked
-against 1 and `tgamma(n + 1)` against `n!`.
+independent identities elsewhere. The complete elementary group demonstrates
+the NumPy scalar boundary, tolerance-based transcendental comparisons, exact
+results where the operation permits them, and the precision benefit of
+specialized operations such as `expm1`:
 
-This test also exercises the target-sized C `long` input path:
-
-<!-- prik-doc-source: examples/libm/tests/test_rounding.py::test_scalbln -->
+<!-- prik-doc-source: examples/libm/tests/test_numerical.py::test_elementary -->
 ```python
-def test_scalbln(libm):
-    assert libm.scalbln(F(1.5), L(3)) == 12.0
+def test_elementary(libm):
+    assert np.isclose(libm.sin(np.float64(1.0)), math.sin(1.0), rtol=DOUBLE_TOLERANCE, atol=DOUBLE_TOLERANCE)
+    assert np.isclose(libm.cos(np.float64(1.0)), math.cos(1.0), rtol=DOUBLE_TOLERANCE, atol=DOUBLE_TOLERANCE)
+    assert np.isclose(libm.tan(np.float64(0.5)), math.tan(0.5), rtol=DOUBLE_TOLERANCE, atol=DOUBLE_TOLERANCE)
+    assert np.isclose(libm.asin(np.float64(0.5)), math.asin(0.5), rtol=DOUBLE_TOLERANCE, atol=DOUBLE_TOLERANCE)
+    assert np.isclose(libm.acos(np.float64(0.5)), math.acos(0.5), rtol=DOUBLE_TOLERANCE, atol=DOUBLE_TOLERANCE)
+    assert np.isclose(libm.atan(np.float64(0.5)), math.atan(0.5), rtol=DOUBLE_TOLERANCE, atol=DOUBLE_TOLERANCE)
+    assert np.isclose(
+        libm.atan2(np.float64(1.0), np.float64(2.0)),
+        math.atan2(1.0, 2.0),
+        rtol=DOUBLE_TOLERANCE,
+        atol=DOUBLE_TOLERANCE,
+    )
+    assert np.isclose(libm.sinh(np.float64(0.75)), math.sinh(0.75), rtol=DOUBLE_TOLERANCE, atol=DOUBLE_TOLERANCE)
+    assert np.isclose(libm.cosh(np.float64(0.75)), math.cosh(0.75), rtol=DOUBLE_TOLERANCE, atol=DOUBLE_TOLERANCE)
+    assert np.isclose(libm.tanh(np.float64(0.75)), math.tanh(0.75), rtol=DOUBLE_TOLERANCE, atol=DOUBLE_TOLERANCE)
+    assert np.isclose(libm.asinh(np.float64(0.75)), math.asinh(0.75), rtol=DOUBLE_TOLERANCE, atol=DOUBLE_TOLERANCE)
+    assert np.isclose(libm.acosh(np.float64(1.75)), math.acosh(1.75), rtol=DOUBLE_TOLERANCE, atol=DOUBLE_TOLERANCE)
+    assert np.isclose(libm.atanh(np.float64(0.75)), math.atanh(0.75), rtol=DOUBLE_TOLERANCE, atol=DOUBLE_TOLERANCE)
+    assert np.isclose(libm.exp(np.float64(1.0)), math.e, rtol=DOUBLE_TOLERANCE, atol=DOUBLE_TOLERANCE)
+
+    # exp2 is exact on a whole exponent, so no tolerance is needed.
+    assert libm.exp2(np.float64(10.0)) == 1024.0
+
+    # expm1 keeps the precision that exp(x) - 1 loses for small x.
+    assert np.isclose(
+        libm.expm1(np.float64(1e-9)),
+        math.expm1(1e-9),
+        rtol=DOUBLE_TOLERANCE,
+        atol=DOUBLE_TOLERANCE,
+    )
+    assert libm.expm1(np.float64(1e-9)) != math.exp(1e-9) - 1.0
+
+    assert np.isclose(libm.log(np.float64(math.e)), 1.0, rtol=DOUBLE_TOLERANCE, atol=DOUBLE_TOLERANCE)
+    assert libm.log2(np.float64(1024.0)) == 10.0
+    assert np.isclose(libm.log10(np.float64(1000.0)), 3.0, rtol=DOUBLE_TOLERANCE, atol=DOUBLE_TOLERANCE)
+    assert np.isclose(libm.log1p(np.float64(1e-9)), math.log1p(1e-9), rtol=DOUBLE_TOLERANCE, atol=DOUBLE_TOLERANCE)
+    assert libm.pow(np.float64(2.0), np.float64(10.0)) == 1024.0
+    assert libm.sqrt(np.float64(144.0)) == 12.0
+    assert np.isclose(libm.cbrt(np.float64(27.0)), 3.0, rtol=DOUBLE_TOLERANCE, atol=DOUBLE_TOLERANCE)
+    assert libm.hypot(np.float64(3.0), np.float64(4.0)) == 5.0
 ```
 
 Precision is asserted rather than assumed. The suite checks `float` results as
@@ -231,10 +270,9 @@ is checked for one fused rounding.
 ## 7. Run focused examples
 
 ```bash
-python3 -m pytest -q examples/libm/tests/test_special.py
-python3 -m pytest -q \
-  examples/libm/tests/test_rounding.py::test_llrint
-python3 -m pytest -q examples/libm/tests/test_precision.py
+python3 -m pytest -q examples/libm/tests/test_numerical.py::test_special
+python3 -m pytest -q examples/libm/tests/test_numerical.py::test_rounding
+python3 -m pytest -q examples/libm/tests/test_numerical.py::test_precision
 ```
 
 - Platform declaration probe →
@@ -264,7 +302,7 @@ python3 -m pytest -q examples/libm/tests/test_precision.py
 
 ## CI portability coverage
 
-The dedicated examples-portability workflow runs every maintained example on
+The Real Libraries Portability workflow runs every maintained example on
 Linux x86-64, Linux Arm64, macOS Intel, and macOS Arm64. Within each machine
 job, libm runs with GCC and Clang on Linux and with Apple Clang and GNU GCC on
 macOS. Together the lanes exercise system `math.h`, native libm, target scalar

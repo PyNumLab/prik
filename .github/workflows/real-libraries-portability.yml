@@ -1,8 +1,7 @@
-name: Examples Portability
+name: Real Libraries Portability
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  workflow_call:
   push:
     branches:
       - main
@@ -13,12 +12,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: examples-portability-${{ github.workflow }}-${{ github.ref }}
+  group: real-libraries-portability-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   examples:
-    name: Examples · ${{ matrix.target }} · Python 3.12
+    name: Real Libraries Portability · ${{ matrix.target }} · Python 3.12
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     strategy:
@@ -26,33 +25,33 @@ jobs:
       matrix:
         include:
           - target: Linux x86-64
-            cache-key: linux-x86-64
+            cache_key: linux-x86-64
             runner: ubuntu-24.04
-            fortran-compiler: gfortran-13
-            primary-c-compiler: gcc-13
-            secondary-c-compiler: clang-18
+            fortran_compiler: gfortran-13
+            primary_c_compiler: gcc-13
+            secondary_c_compiler: clang-18
           - target: Linux ARM64
-            cache-key: linux-arm64
+            cache_key: linux-arm64
             runner: ubuntu-24.04-arm
-            fortran-compiler: gfortran-13
-            primary-c-compiler: gcc-13
-            secondary-c-compiler: clang-18
+            fortran_compiler: gfortran-13
+            primary_c_compiler: gcc-13
+            secondary_c_compiler: clang-18
           - target: macOS Intel
-            cache-key: macos-intel
+            cache_key: macos-intel
             runner: macos-15-intel
-            fortran-compiler: gfortran-13
-            primary-c-compiler: clang
-            secondary-c-compiler: gcc-13
+            fortran_compiler: gfortran-13
+            primary_c_compiler: clang
+            secondary_c_compiler: gcc-13
           - target: macOS ARM64
-            cache-key: macos-arm64
+            cache_key: macos-arm64
             runner: macos-15
-            fortran-compiler: gfortran-13
-            primary-c-compiler: clang
-            secondary-c-compiler: gcc-13
+            fortran_compiler: gfortran-13
+            primary_c_compiler: clang
+            secondary_c_compiler: gcc-13
     env:
-      PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR: ${{ runner.temp }}/prik-example-native
       PRIK_REAL_LIBRARY_NATIVE_JOBS: "8"
       PYTHONPATH: .
+      HYPOTHESIS_PROFILE: ci
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -70,8 +69,8 @@ jobs:
       - name: Ensure macOS GNU compilers are available
         if: runner.os == 'macOS'
         run: |
-          if ! command -v "${{ matrix.fortran-compiler }}" >/dev/null 2>&1 || \
-             ! command -v "${{ matrix.secondary-c-compiler }}" >/dev/null 2>&1; then
+          if ! command -v "${{ matrix.fortran_compiler }}" >/dev/null 2>&1 || \
+             ! command -v "${{ matrix.secondary_c_compiler }}" >/dev/null 2>&1; then
             brew install gcc@13
           fi
       - name: Configure GNU Fortran
@@ -79,8 +78,9 @@ jobs:
         run: |
           compiler_dir="$RUNNER_TEMP/prik-example-compilers"
           mkdir -p "$compiler_dir"
-          ln -sf "$(command -v "${{ matrix.fortran-compiler }}")" "$compiler_dir/gfortran"
+          ln -sf "$(command -v "${{ matrix.fortran_compiler }}")" "$compiler_dir/gfortran"
           echo "$compiler_dir" >> "$GITHUB_PATH"
+          echo "PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR=$RUNNER_TEMP/prik-example-native" >> "$GITHUB_ENV"
       - name: Install example dependencies
         run: |
           python -m pip install --upgrade pip
@@ -93,23 +93,23 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/prik-example-native
-          key: examples-${{ matrix.cache-key }}-gfortran13-${{ hashFiles('examples/native_library.py', 'examples/blas/native/**', 'examples/lapack/native/**') }}
+          key: real-libraries-portability-${{ matrix.cache_key }}-gfortran13-${{ hashFiles('examples/native_library.py', 'examples/blas/native/**', 'examples/lapack/native/**') }}
       - name: Show target and compilers
         run: |
           uname -a
           python --version
           gfortran --version
-          "${{ matrix.primary-c-compiler }}" --version
-          "${{ matrix.secondary-c-compiler }}" --version
-      - name: Run libm with ${{ matrix.primary-c-compiler }}
+          "${{ matrix.primary_c_compiler }}" --version
+          "${{ matrix.secondary_c_compiler }}" --version
+      - name: Run libm with ${{ matrix.primary_c_compiler }}
         env:
-          PRIK_LIBM_CC: ${{ matrix.primary-c-compiler }}
+          PRIK_LIBM_CC: ${{ matrix.primary_c_compiler }}
         run: |
           source examples/libm/build_all.sh
           python -m pytest -q examples/libm/tests
-      - name: Run libm with ${{ matrix.secondary-c-compiler }}
+      - name: Run libm with ${{ matrix.secondary_c_compiler }}
         env:
-          PRIK_LIBM_CC: ${{ matrix.secondary-c-compiler }}
+          PRIK_LIBM_CC: ${{ matrix.secondary_c_compiler }}
         run: |
           source examples/libm/build_all.sh
           python -m pytest -q examples/libm/tests
@@ -117,10 +117,16 @@ jobs:
         run: |
           source examples/blas/build_all.sh
           python -m pytest -q examples/blas/tests
+      - name: Run BLAS CI full-surface audit
+        if: matrix.target == 'Linux x86-64'
+        run: python -m pytest -q examples/blas/ci/full_surface.py
       - name: Run LAPACK example
         run: |
           source examples/lapack/build_all.sh
           python -m pytest -q examples/lapack/tests
+      - name: Run LAPACK CI full-surface audit
+        if: matrix.target == 'Linux x86-64'
+        run: python -m pytest -q examples/lapack/ci/full_surface.py
       - name: Run FFTPACK example
         run: |
           source examples/fftpack/build_all.sh
