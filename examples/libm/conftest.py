@@ -7,13 +7,13 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from numpy import float64
 
+float128 = np.longdouble
 
 _PUBLIC_REAL_TYPES = {
-    "Float64": np.float64,
-    # NumPy's portable extended-precision name. On platforms that provide
-    # ``np.float128``, it is an alias of this scalar class.
-    "Float128": np.longdouble,
+    "Float64": float64,
+    "Float128": float128,
 }
 
 
