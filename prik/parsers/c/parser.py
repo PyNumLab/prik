@@ -171,11 +171,17 @@ _EXTENDED_SCALAR_NORMALIZATIONS = {
     "_Decimal64": "_xd64",
     "_Decimal128": "_xd128",
 }
-_COMPILER_KEYWORD_NORMALIZATIONS.update(_EXTENDED_SCALAR_NORMALIZATIONS)
-_EXTENDED_SCALAR_SPELLINGS = {normalized: spelling for spelling, normalized in _EXTENDED_SCALAR_NORMALIZATIONS.items()}
 _FALLBACK_FLOAT_TYPEDEF_SPELLINGS = {
     spelling for spelling in _EXTENDED_SCALAR_NORMALIZATIONS if spelling.startswith("_Float")
 }
+_COMPILER_KEYWORD_NORMALIZATIONS.update(
+    {
+        spelling: normalized
+        for spelling, normalized in _EXTENDED_SCALAR_NORMALIZATIONS.items()
+        if spelling not in _FALLBACK_FLOAT_TYPEDEF_SPELLINGS
+    }
+)
+_EXTENDED_SCALAR_SPELLINGS = {normalized: spelling for spelling, normalized in _EXTENDED_SCALAR_NORMALIZATIONS.items()}
 _EXTENDED_SCALAR_WORDS = set(_EXTENDED_SCALAR_SPELLINGS) | _FALLBACK_FLOAT_TYPEDEF_SPELLINGS
 _TAG_KINDS = {"struct", "union", "enum"}
 _UNSUPPORTED_DECLARATION_MARKERS = (
@@ -1564,10 +1570,6 @@ class CParser:
                 continue
             word, word_end = identifier
 
-            if word in _FALLBACK_FLOAT_TYPEDEF_SPELLINGS:
-                index = word_end
-                continue
-
             if word in _COMPILER_KEYWORD_NORMALIZATIONS:
                 self._replace_span(
                     characters,
@@ -1749,6 +1751,22 @@ class CParser:
                     return index
         return None
 
+    def _starts_fallback_float_typedef_declarator(
+        self,
+        text: str,
+        word: str,
+        end: int,
+        *,
+        consumed_type: bool,
+    ) -> bool:
+        """Recognize ``_FloatN`` as a fallback typedef name after a complete type."""
+        if not consumed_type or word not in _FALLBACK_FLOAT_TYPEDEF_SPELLINGS:
+            return False
+        if "typedef" not in _IDENTIFIER_RE.findall(text[:end]):
+            return False
+        suffix_start = self._skip_whitespace(text, end)
+        return suffix_start >= len(text) or text[suffix_start] in "[,(=;"
+
     def _split_declaration_specifiers(self, text: str) -> tuple[str, str]:
         """Split a declaration into specifier prefix and declarator tail.
 
@@ -1761,7 +1779,6 @@ class CParser:
         spec_end = 0
         consumed_type = False
         consumed_typedef_name = False
-        declares_typedef = False
 
         while True:
             index = self._skip_whitespace(text, index)
@@ -1783,28 +1800,22 @@ class CParser:
                     spec_end = index
                     continue
 
-            storage_class = self._canonical_storage_class(word)
-            if storage_class is not None:
-                declares_typedef = declares_typedef or storage_class == "typedef"
+            if (
+                self._canonical_storage_class(word) is not None
+                or self._canonical_type_qualifier(word) is not None
+                or self._canonical_function_specifier(word) is not None
+            ):
                 index = end
                 spec_end = end
                 continue
 
-            if self._canonical_type_qualifier(word) is not None or self._canonical_function_specifier(word) is not None:
-                index = end
-                spec_end = end
-                continue
-
-            if self._canonical_primitive_word(word) in _PRIMITIVE_WORDS:
-                consumed_type = True
-                index = end
-                spec_end = end
-                continue
-
-            if word in _EXTENDED_SCALAR_WORDS:
-                suffix_start = self._skip_whitespace(text, end)
-                begins_declarator = suffix_start >= len(text) or text[suffix_start] in "[,(=;"
-                if declares_typedef and consumed_type and begins_declarator:
+            if self._canonical_primitive_word(word) in _PRIMITIVE_WORDS or word in _EXTENDED_SCALAR_WORDS:
+                if self._starts_fallback_float_typedef_declarator(
+                    text,
+                    word,
+                    end,
+                    consumed_type=consumed_type,
+                ):
                     break
                 consumed_type = True
                 index = end
