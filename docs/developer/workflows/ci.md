@@ -20,11 +20,6 @@ contributors need to administer.
 | Real Libraries Portability | BLAS, LAPACK, FFTPACK, MINPACK, BSPLINE-FORTRAN, and libm suites on Linux x86-64, Linux Arm64, macOS Intel, and macOS Arm64; libm additionally uses GCC and Clang, while Linux x86-64 retains the deep BLAS and LAPACK full-surface audits. |
 | Documentation and benchmarks | Required performance benchmark and generated snapshot, documentation tests, and a strict site build. |
 
-Temporary validation mode: the Linux and macOS unit-test jobs are skipped while
-the libm Clang portability fix is revalidated. Real Libraries Portability starts
-without waiting for those jobs. The aggregate merge gate still rejects the
-skipped unit-test results, so restore the jobs before merging.
-
 Run the applicable local checks from [Quality Assurance](quality-assurance.md)
 before opening a pull request. If CI fails, start with the named failing test
 or check and fix the owning behavior. Do not change workflow configuration

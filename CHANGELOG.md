@@ -295,11 +295,6 @@ release tags add a leading `v` to the package version.
 
 ### Changed
 
-- Temporarily skip the pull-request Linux and macOS unit-test jobs and start
-  Real Libraries Portability independently while the libm Clang portability
-  fix is revalidated. The aggregate merge gate continues to reject the skipped
-  results so this temporary mode cannot satisfy merge validation.
-
 - Reorganized the C and Fortran test suites around a strict ownership rule:
   language features remain under `<feature>/<stage>`, while shared parsing,
   preprocessing, CLI, semantic-representation, contract, build, and policy

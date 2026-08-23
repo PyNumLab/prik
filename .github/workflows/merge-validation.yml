@@ -239,8 +239,6 @@ jobs:
   unit-tests:
     name: ${{ matrix.display_name }}
     needs: [compiler-smoke, compiler-smoke-macos]
-    # TEMPORARY: restore after the libm Clang portability fix is revalidated.
-    if: ${{ false }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -360,8 +358,6 @@ jobs:
   unit-tests-macos:
     name: Unit tests · macOS 15 ARM64 · Python 3.12
     needs: [compiler-smoke, compiler-smoke-macos]
-    # TEMPORARY: restore after the libm Clang portability fix is revalidated.
-    if: ${{ false }}
     runs-on: macos-15
     timeout-minutes: 120
     permissions:
@@ -445,7 +441,7 @@ jobs:
 
   real-libraries-portability:
     name: Real Libraries Portability
-    # TEMPORARY: run immediately while the libm Clang portability fix is revalidated.
+    needs: [unit-tests, unit-tests-macos]
     if: >-
       ${{ !contains(github.event.pull_request.labels.*.name, 'ignore-real-library-wrappers') }}
     uses: ./.github/workflows/real-libraries-portability.yml
