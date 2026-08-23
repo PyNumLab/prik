@@ -28,24 +28,28 @@ jobs:
             cache_key: linux-x86-64
             runner: ubuntu-24.04
             fortran_compiler: gfortran-13
+            fortran_c_compiler: gcc-13
             primary_c_compiler: gcc-13
             secondary_c_compiler: clang-18
           - target: Linux ARM64
             cache_key: linux-arm64
             runner: ubuntu-24.04-arm
             fortran_compiler: gfortran-13
+            fortran_c_compiler: gcc-13
             primary_c_compiler: gcc-13
             secondary_c_compiler: clang-18
           - target: macOS Intel
             cache_key: macos-intel
             runner: macos-15-intel
             fortran_compiler: gfortran-13
+            fortran_c_compiler: gcc-13
             primary_c_compiler: clang
             secondary_c_compiler: gcc-13
           - target: macOS ARM64
             cache_key: macos-arm64
             runner: macos-15
             fortran_compiler: gfortran-13
+            fortran_c_compiler: gcc-13
             primary_c_compiler: clang
             secondary_c_compiler: gcc-13
     env:
@@ -70,15 +74,16 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           if ! command -v "${{ matrix.fortran_compiler }}" >/dev/null 2>&1 || \
-             ! command -v "${{ matrix.secondary_c_compiler }}" >/dev/null 2>&1; then
+             ! command -v "${{ matrix.fortran_c_compiler }}" >/dev/null 2>&1; then
             brew install gcc@13
           fi
-      - name: Configure GNU Fortran
+      - name: Configure GNU Fortran and C
         shell: bash
         run: |
           compiler_dir="$RUNNER_TEMP/prik-example-compilers"
           mkdir -p "$compiler_dir"
           ln -sf "$(command -v "${{ matrix.fortran_compiler }}")" "$compiler_dir/gfortran"
+          ln -sf "$(command -v "${{ matrix.fortran_c_compiler }}")" "$compiler_dir/gcc"
           echo "$compiler_dir" >> "$GITHUB_PATH"
           echo "PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR=$RUNNER_TEMP/prik-example-native" >> "$GITHUB_ENV"
       - name: Install example dependencies
@@ -99,6 +104,7 @@ jobs:
           uname -a
           python --version
           gfortran --version
+          gcc --version
           "${{ matrix.primary_c_compiler }}" --version
           "${{ matrix.secondary_c_compiler }}" --version
       - name: Run libm with ${{ matrix.primary_c_compiler }}

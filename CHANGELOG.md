@@ -15,6 +15,11 @@ release tags add a leading `v` to the package version.
 
 ### Fixed
 
+- Real Libraries Portability now exposes the matching GNU C driver beside its
+  selected GNU Fortran driver. Generated C bindings therefore use GCC on
+  macOS, including its `ISO_Fortran_binding.h` search path, instead of
+  accidentally resolving Apple's unrelated `gcc`-named Clang driver.
+
 - The copied BLAS and LAPACK examples now give GNU Fortran a positional archive
   input when creating a macOS dynamic library. Apple `ld` still receives the
   targeted `-force_load` option, while the compiler driver no longer aborts
