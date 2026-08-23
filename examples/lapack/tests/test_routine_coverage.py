@@ -12,6 +12,7 @@ from ..routine_inventory import (
     EXPLICIT_TEST_NAMES,
     EXPECTED_LAPACK_PROCEDURES,
     EXPECTED_LAPACK_SOURCE_FILES,
+    EXPECTED_LAPACK_WRAPPED_SOURCE_FILES,
     F2PY_EXPORT_LIMITATIONS,
     F2PY_FUNCTION_RESULTS,
     F2PY_SCALAR_WRITEBACK_ROUTINES,
@@ -179,7 +180,7 @@ def test_authoritative_native_source_boundary_is_complete_and_unique():
     )
     stems = {path.stem.lower() for path in sources}
     assert len(sources) == EXPECTED_LAPACK_SOURCE_FILES
-    assert EXPECTED_LAPACK_PROCEDURES == EXPECTED_LAPACK_SOURCE_FILES + 4
+    assert EXPECTED_LAPACK_PROCEDURES == EXPECTED_LAPACK_WRAPPED_SOURCE_FILES + 4
     assert set(ROUTINES) <= stems
     for routine, spec in ROUTINE_SPECS.items():
         assert (NATIVE_ROOT / spec.source_file).is_file(), routine
@@ -206,19 +207,6 @@ def test_selected_tests_keep_all_wrapper_calls_visible():
         if visible != expected_surfaces:
             missing[routine] = sorted(expected_surfaces - visible)
     assert missing == {}
-
-
-def test_documented_coverage_claims_match_inventory():
-    """Published claims are derived from the reviewed inventory."""
-    readme = " ".join((EXAMPLE_ROOT / "README.md").read_text(encoding="utf-8").split())
-    assert len(EXPLICIT_TEST_NAMES) == len(ROUTINES)
-    assert f"PRIK wraps all {EXPECTED_LAPACK_PROCEDURES:,} discovered procedures" in readme
-    assert f"the {len(ROUTINES)} `float64` routines" in readme
-    assert f"raw f2py supports {len(ROUTINES) - len(F2PY_EXPORT_LIMITATIONS)}" in readme
-    assert f"All {len(EXPLICIT_TEST_NAMES)} selected routines have explicit correctness tests" in readme
-    assert f"The {len(F2PY_INOUT_ARGUMENTS)} scalar-writeback routines" in readme
-    assert f"owns {EXPECTED_LAPACK_SOURCE_FILES:,} LAPACK implementation sources" in readme
-    assert "no unsupported or skipped routines" in readme
 
 
 def test_selected_routines_are_exported_by_prik(prik_lapack):

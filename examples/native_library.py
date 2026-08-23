@@ -18,14 +18,12 @@ from collections.abc import Sequence
 EXAMPLES_ROOT = Path(__file__).resolve().parent
 BLAS_SOURCE_ROOT = EXAMPLES_ROOT / "blas" / "native"
 LAPACK_SOURCE_ROOT = EXAMPLES_ROOT / "lapack" / "native"
+LAPACK_SUPPORT_ROOT = EXAMPLES_ROOT / "lapack" / "support"
+LAPACK_XBLAS_SOURCE_LIST = EXAMPLES_ROOT / "lapack" / "xblas_sources.txt"
 NATIVE_CACHE_ENV = "PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR"
 NATIVE_JOBS_ENV = "PRIK_REAL_LIBRARY_NATIVE_JOBS"
-NATIVE_CACHE_VERSION = "copyable-examples-v3-link-dependencies"
+NATIVE_CACHE_VERSION = "copyable-examples-v4-default-lapack-sources"
 NATIVE_MODULE_SOURCE_STEMS = frozenset({"la_constants", "la_xisnan"})
-NATIVE_LINK_DEPENDENCIES = {
-    "blas": (),
-    "lapack": ("-llapack", "-lblas"),
-}
 DEFAULT_NATIVE_COMPILE_JOB_LIMIT = 8
 FORTRAN_SUFFIXES = frozenset({".f", ".f90", ".f95", ".f03", ".f08", ".for", ".f77", ".ftn"})
 SUPPORTED_LIBRARIES = ("blas", "lapack")
@@ -40,6 +38,7 @@ class NativeLibrary:
     archive: Path
     cache_dir: Path
     module_dir: Path
+    wrapper_source_root: Path
     sources: tuple[Path, ...]
     compiler: str
 
@@ -64,12 +63,40 @@ def compiler_identity(compiler: str) -> str:
     return f"{Path(compiler).resolve()}: {first_line}"
 
 
+def _fortran_sources(root: Path) -> tuple[Path, ...]:
+    return tuple(sorted(path for path in root.iterdir() if path.is_file() and path.suffix.lower() in FORTRAN_SUFFIXES))
+
+
 def library_sources(library: str) -> tuple[Path, ...]:
-    """Return the authoritative implementation sources for one named library."""
+    """Return the authoritative implementation snapshot for one named library."""
     if library not in SUPPORTED_LIBRARIES:
         raise ValueError(f"unknown reference library {library!r}; choose from {', '.join(SUPPORTED_LIBRARIES)}")
     root = BLAS_SOURCE_ROOT if library == "blas" else LAPACK_SOURCE_ROOT
-    return tuple(sorted(path for path in root.iterdir() if path.is_file() and path.suffix.lower() in FORTRAN_SUFFIXES))
+    return _fortran_sources(root)
+
+
+def _lapack_xblas_source_names() -> frozenset[str]:
+    names = tuple(
+        line
+        for raw_line in LAPACK_XBLAS_SOURCE_LIST.read_text(encoding="utf-8").splitlines()
+        if (line := raw_line.strip()) and not line.startswith("#")
+    )
+    if len(names) != len(set(names)):
+        raise RuntimeError(f"duplicate source names in {LAPACK_XBLAS_SOURCE_LIST}")
+    available = {source.name for source in library_sources("lapack")}
+    unknown = sorted(set(names) - available)
+    if unknown:
+        raise RuntimeError(f"unknown XBLAS-only LAPACK sources: {', '.join(unknown)}")
+    return frozenset(names)
+
+
+def wrapper_sources(library: str) -> tuple[Path, ...]:
+    """Return the source surface compiled and exposed by one example wrapper."""
+    sources = library_sources(library)
+    if library == "blas":
+        return sources
+    excluded = _lapack_xblas_source_names()
+    return tuple(source for source in sources if source.name not in excluded)
 
 
 def native_sources(library: str) -> tuple[Path, ...]:
@@ -77,8 +104,8 @@ def native_sources(library: str) -> tuple[Path, ...]:
     if library not in SUPPORTED_LIBRARIES:
         return library_sources(library)
     if library == "blas":
-        return library_sources("blas")
-    lapack_sources = library_sources("lapack")
+        return wrapper_sources("blas")
+    lapack_sources = wrapper_sources("lapack")
     module_sources = tuple(
         source
         for source in (
@@ -91,7 +118,7 @@ def native_sources(library: str) -> tuple[Path, ...]:
     lapack_rest = tuple(source for source in lapack_sources if source not in module_source_set)
     lapack_stems = {source.stem.lower() for source in lapack_sources}
     blas_dependencies = tuple(source for source in library_sources("blas") if source.stem.lower() not in lapack_stems)
-    return (*module_sources, *lapack_rest, *blas_dependencies)
+    return (*module_sources, *lapack_rest, *_fortran_sources(LAPACK_SUPPORT_ROOT), *blas_dependencies)
 
 
 def native_cache_root() -> Path:
@@ -247,6 +274,30 @@ def _cached_archive(cache_dir: Path, library: str, objects: tuple[Path, ...], ar
     return archive
 
 
+def _cached_wrapper_source_root(cache_dir: Path, sources: tuple[Path, ...]) -> Path:
+    source_root = cache_dir / "wrapper_sources"
+    complete = cache_dir / "wrapper_sources.complete"
+    expected_names = {source.name for source in sources}
+    if len(expected_names) != len(sources):
+        raise RuntimeError("wrapper source filenames must be unique")
+    if (
+        complete.is_file()
+        and source_root.is_dir()
+        and {path.name for path in source_root.iterdir() if path.is_file()} == expected_names
+    ):
+        return source_root
+
+    temporary_root = cache_dir / f"wrapper_sources.{os.getpid()}.tmp"
+    shutil.rmtree(temporary_root, ignore_errors=True)
+    temporary_root.mkdir()
+    for source in sources:
+        (temporary_root / source.name).symlink_to(source.resolve())
+    shutil.rmtree(source_root, ignore_errors=True)
+    temporary_root.rename(source_root)
+    complete.write_text(f"{NATIVE_CACHE_VERSION}\n", encoding="utf-8")
+    return source_root
+
+
 def _cached_shared_library(cache_dir: Path, library: str, archive: Path, compiler: str) -> Path:
     suffix = ".dylib" if sys.platform == "darwin" else ".so"
     shared_library = cache_dir / f"libprik_full_{library}{suffix}"
@@ -264,7 +315,6 @@ def _cached_shared_library(cache_dir: Path, library: str, archive: Path, compile
             f"-Wl,-install_name,{shared_library}",
             "-Wl,-force_load",
             str(archive),
-            *NATIVE_LINK_DEPENDENCIES[library],
         )
     else:
         command = (
@@ -275,7 +325,6 @@ def _cached_shared_library(cache_dir: Path, library: str, archive: Path, compile
             "-Wl,--whole-archive",
             str(archive),
             "-Wl,--no-whole-archive",
-            *NATIVE_LINK_DEPENDENCIES[library],
         )
     subprocess.run(  # nosec B603 - explicit compiler and compiled example archive
         command,
@@ -297,6 +346,7 @@ def build_reference_library(
     """Build on a cache miss and return one complete reusable native library."""
     selected_compiler = compiler or require_tool("gfortran")
     selected_archiver = archiver or require_tool("ar")
+    selected_wrapper_sources = wrapper_sources(library)
     selected_sources = native_sources(library)
     selected_jobs = jobs if jobs is not None else native_compile_jobs()
     if selected_jobs < 1:
@@ -304,6 +354,7 @@ def build_reference_library(
     selected_cache_root = (cache_root or native_cache_root()).resolve()
     cache_dir = selected_cache_root / f"{library}-{_native_cache_key(library, selected_compiler, selected_sources)}"
     cache_dir.mkdir(parents=True, exist_ok=True)
+    wrapper_source_root = _cached_wrapper_source_root(cache_dir, selected_wrapper_sources)
     objects = _cached_objects(cache_dir, selected_sources, selected_compiler, selected_jobs)
     archive = _cached_archive(cache_dir, library, objects, selected_archiver)
     shared_library = _cached_shared_library(cache_dir, library, archive, selected_compiler)
@@ -313,6 +364,7 @@ def build_reference_library(
         archive=archive,
         cache_dir=cache_dir,
         module_dir=cache_dir / "modules",
+        wrapper_source_root=wrapper_source_root,
         sources=selected_sources,
         compiler=selected_compiler,
     )

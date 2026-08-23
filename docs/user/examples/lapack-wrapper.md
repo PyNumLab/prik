@@ -90,10 +90,11 @@ export LAPACK_SHARED_LIBRARY="$(
     --jobs 8
 )"
 export LAPACK_MODULE_DIR="$(dirname "$LAPACK_SHARED_LIBRARY")/modules"
+export LAPACK_SOURCE_ROOT="$(dirname "$LAPACK_SHARED_LIBRARY")/wrapper_sources"
 
 mkdir -p "$LAPACK_BUILD_ROOT/prik/generated"
 cd "$LAPACK_BUILD_ROOT/prik"
-python -m prik "$EXAMPLE_WORKSPACE/examples/lapack/native" \
+python -m prik "$LAPACK_SOURCE_ROOT" \
   --out prik_reference_lapack_example \
   --out-dir "$LAPACK_BUILD_ROOT/prik/generated" \
   --compiler "$(command -v gfortran)" \
@@ -340,11 +341,15 @@ The official versioned archive is
 
 The repository boundary is precise:
 
-- [`examples/lapack/native/`](../../../examples/lapack/native/) owns 2,062 implementation sources.
+- [`examples/lapack/native/`](../../../examples/lapack/native/) owns the complete 2,062-file source snapshot.
   Of those, 2,061 are byte-for-byte the upstream `SRC/` directory; the repository adds its project-local `dlamch.f` machine-parameter implementation.
+- The official default build excludes the 130 sources in [`examples/lapack/xblas_sources.txt`](../../../examples/lapack/xblas_sources.txt), which require the separately distributed XBLAS library.
+  PRIK and the reusable native library use the remaining 1,932 sources and expose 1,936 procedures.
+- [`examples/lapack/support/`](../../../examples/lapack/support/) owns the two `INSTALL/` workspace-rounding helpers required by that default source set.
 - Upstream test programs, timing programs, examples and matrix generators are **not** part of the library source set.
 - [`examples/blas/native/`](../../../examples/blas/native/) separately owns the 155 Reference BLAS sources.
   They are consumed as dependencies and are not copied into the LAPACK directory.
+- Installed LAPACK and BLAS libraries provide support routines outside the copied default source set.
 
 To independently audit the official archive:
 

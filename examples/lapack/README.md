@@ -4,8 +4,9 @@ Build the complete Reference LAPACK once, wrap it with PRIK and NumPy f2py, and
 validate a reviewed double-precision surface against SciPy and independent
 numerical checks.
 
-PRIK wraps all 2,066 discovered procedures. For focused validation, the suite
-selects the 127 `float64` routines exposed by SciPy 1.18.0; raw f2py supports
+PRIK wraps all 1,936 procedures in the Reference LAPACK default, non-XBLAS
+source set. For focused validation, the suite selects the 127 `float64`
+routines exposed by SciPy 1.18.0; raw f2py supports
 125 of those source interfaces. All 127 selected routines have explicit
 correctness tests, with no unsupported or skipped routines.
 
@@ -66,10 +67,11 @@ export LAPACK_SHARED_LIBRARY="$(
     --jobs 8
 )"
 export LAPACK_MODULE_DIR="$(dirname "$LAPACK_SHARED_LIBRARY")/modules"
+export LAPACK_SOURCE_ROOT="$(dirname "$LAPACK_SHARED_LIBRARY")/wrapper_sources"
 
 mkdir -p "$LAPACK_BUILD_ROOT/prik/generated"
 cd "$LAPACK_BUILD_ROOT/prik"
-python -m prik "$EXAMPLE_WORKSPACE/examples/lapack/native" \
+python -m prik "$LAPACK_SOURCE_ROOT" \
   --out prik_reference_lapack_example \
   --out-dir "$LAPACK_BUILD_ROOT/prik/generated" \
   --compiler "$(command -v gfortran)" \
@@ -81,7 +83,9 @@ python -m prik "$EXAMPLE_WORKSPACE/examples/lapack/native" \
   --wrapper-c-flags="-O0 -g0"
 ```
 
-PRIK reads the complete source tree to generate its Python API.
+PRIK reads the same default, non-XBLAS source set compiled into the reusable
+library. The complete upstream `SRC/` snapshot remains available under
+`examples/lapack/native` for provenance and parser inspection.
 `--no-compile-input-sources` makes it reuse `LAPACK_SHARED_LIBRARY` instead of
 compiling those native sources again.
 
@@ -146,9 +150,15 @@ Schur decompositions.
 
 ## Sources and license
 
-[`native/`](native/) owns 2,062 LAPACK implementation sources: 2,061 from
-Netlib LAPACK 3.12.1 plus the project-local `dlamch.f`. BLAS dependencies come
-from [`../blas/native/`](../blas/native/) and are not duplicated here. The
+[`native/`](native/) owns the complete 2,062-file LAPACK source snapshot: 2,061
+files from Netlib LAPACK 3.12.1 plus the project-local `dlamch.f`. The official
+default build excludes the 130 files listed in
+[`xblas_sources.txt`](xblas_sources.txt), which require the separately
+distributed XBLAS library. The reusable library and PRIK wrapper therefore use
+the remaining 1,932 sources. Two required build helpers from upstream
+`INSTALL/` live under [`support/`](support/), and BLAS dependencies come from
+[`../blas/native/`](../blas/native/). Installed LAPACK and BLAS libraries
+provide support routines outside the copied default source set. The
 audited upstream archive has SHA-256
 `37b00c90947488521f475b5a187fff4da4a5cfe61b525efcacf7a97f39a45ec6`.
 See the [Reference LAPACK site](https://www.netlib.org/lapack/) and its

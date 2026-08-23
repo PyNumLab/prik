@@ -6,7 +6,8 @@ from dataclasses import dataclass
 
 SCIPY_VERSION = "1.18.0"
 EXPECTED_LAPACK_SOURCE_FILES = 2062
-EXPECTED_LAPACK_PROCEDURES = 2066
+EXPECTED_LAPACK_WRAPPED_SOURCE_FILES = 1932
+EXPECTED_LAPACK_PROCEDURES = 1936
 F2PY_SCALAR_WRITEBACK_ROUTINES = frozenset(
     {"dlarfg", "dlartg", "dgbcon", "dgecon", "dgtcon", "dpocon", "dppcon", "dsycon", "dtrcon"}
 )

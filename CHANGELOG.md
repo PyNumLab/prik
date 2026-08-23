@@ -7,6 +7,11 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- The copied LAPACK example now mirrors Reference LAPACK's default source
+  selection: XBLAS-only routines are excluded, the two required `INSTALL/`
+  workspace helpers are bundled. This makes the maintained 127-routine example
+  build consistently on Linux and both hosted macOS architectures.
+
 ### Fixed
 
 - The copied BLAS and LAPACK examples now give GNU Fortran a positional archive

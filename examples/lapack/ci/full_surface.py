@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
 
-from ..routine_inventory import EXPECTED_LAPACK_PROCEDURES
+from ..routine_inventory import EXPECTED_LAPACK_PROCEDURES, EXPECTED_LAPACK_WRAPPED_SOURCE_FILES
 from examples.lapack.tests.helpers import assert_runtime_smoke
 from prik.parsers.fortran.parser import parse_fortran_file
 from prik.preprocessing import PreprocessingConfig, preprocess_source
 
 
 pytestmark = [pytest.mark.fortran_end_to_end, pytest.mark.real_library]
-NATIVE_ROOT = Path(__file__).resolve().parents[1] / "native"
+NATIVE_ROOT = Path(os.environ["LAPACK_SOURCE_ROOT"])
 FORTRAN_SUFFIXES = {".f", ".f90", ".f95", ".f03", ".f08", ".for", ".f77", ".ftn"}
 PREPROCESSED_FORTRAN_SUFFIXES = {suffix.upper() for suffix in FORTRAN_SUFFIXES}
 
@@ -42,6 +43,9 @@ def _source_procedure_exports() -> set[tuple[str | None, str]]:
 
 def test_ci_complete_prik_surface_reuses_example_extension(prik_lapack):
     expected = _source_procedure_exports()
+    assert len(tuple(path for path in NATIVE_ROOT.iterdir() if path.suffix.lower() in FORTRAN_SUFFIXES)) == (
+        EXPECTED_LAPACK_WRAPPED_SOURCE_FILES
+    )
     assert len(expected) == EXPECTED_LAPACK_PROCEDURES
     assert all(getattr(prik_lapack, name, None) is not None for name in ("la_constants", "la_xisnan"))
 

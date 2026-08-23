@@ -93,7 +93,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/prik-example-native
-          key: real-libraries-portability-${{ matrix.cache_key }}-gfortran13-${{ hashFiles('examples/native_library.py', 'examples/blas/native/**', 'examples/lapack/native/**') }}
+          key: real-libraries-portability-${{ matrix.cache_key }}-gfortran13-${{ hashFiles('examples/native_library.py', 'examples/blas/native/**', 'examples/lapack/native/**', 'examples/lapack/support/**', 'examples/lapack/xblas_sources.txt') }}
       - name: Show target and compilers
         run: |
           uname -a

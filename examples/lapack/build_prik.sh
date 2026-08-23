@@ -6,10 +6,11 @@ export LAPACK_SHARED_LIBRARY="$(
     --jobs 8
 )"
 export LAPACK_MODULE_DIR="$(dirname "$LAPACK_SHARED_LIBRARY")/modules"
+export LAPACK_SOURCE_ROOT="$(dirname "$LAPACK_SHARED_LIBRARY")/wrapper_sources"
 
 mkdir -p "$LAPACK_BUILD_ROOT/prik/generated"
 cd "$LAPACK_BUILD_ROOT/prik"
-python -m prik "$EXAMPLE_WORKSPACE/examples/lapack/native" \
+python -m prik "$LAPACK_SOURCE_ROOT" \
   --out prik_reference_lapack_example \
   --out-dir "$LAPACK_BUILD_ROOT/prik/generated" \
   --compiler "$(command -v gfortran)" \

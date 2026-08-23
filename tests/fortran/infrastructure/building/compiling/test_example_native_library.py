@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from examples import native_library
+from examples.lapack.routine_inventory import EXPECTED_LAPACK_WRAPPED_SOURCE_FILES
 
 
 @pytest.mark.parametrize("example", ("blas", "lapack"))
@@ -67,20 +68,19 @@ def test_native_cache_preserves_module_files_for_wrapper_compilation(tmp_path: P
 
 
 @pytest.mark.parametrize(
-    ("platform", "library", "expected_dependencies", "suffix"),
+    ("platform", "library", "suffix"),
     (
-        ("linux", "blas", (), ".so"),
-        ("linux", "lapack", ("-llapack", "-lblas"), ".so"),
-        ("darwin", "blas", (), ".dylib"),
-        ("darwin", "lapack", ("-llapack", "-lblas"), ".dylib"),
+        ("linux", "blas", ".so"),
+        ("linux", "lapack", ".so"),
+        ("darwin", "blas", ".dylib"),
+        ("darwin", "lapack", ".dylib"),
     ),
 )
-def test_shared_example_library_links_its_native_dependencies(
+def test_shared_example_library_links_only_the_self_contained_archive(
     tmp_path: Path,
     monkeypatch,
     platform: str,
     library: str,
-    expected_dependencies: tuple[str, ...],
     suffix: str,
 ) -> None:
     commands = []
@@ -116,9 +116,35 @@ def test_shared_example_library_links_its_native_dependencies(
             "-o",
             str(tmp_path / f"{shared_library.name}.{os.getpid()}.tmp"),
             *expected_link_flags,
-            *expected_dependencies,
         )
     ]
+
+
+def test_lapack_wrapper_sources_follow_the_upstream_default_non_xblas_boundary() -> None:
+    wrapper_sources = native_library.wrapper_sources("lapack")
+    wrapped_names = {source.name for source in wrapper_sources}
+    xblas_names = native_library._lapack_xblas_source_names()
+
+    assert len(wrapper_sources) == EXPECTED_LAPACK_WRAPPED_SOURCE_FILES
+    assert len(xblas_names) == 130
+    assert wrapped_names.isdisjoint(xblas_names)
+    assert {"dgesv.f", "dgesdd.f"} <= wrapped_names
+    assert {"dgerfsx.f", "dgesvxx.f"} <= xblas_names
+
+    native_names = {source.name for source in native_library.native_sources("lapack")}
+    assert {"sroundup_lwork.f", "droundup_lwork.f"} <= native_names
+
+
+def test_cached_wrapper_source_root_exposes_only_selected_sources(tmp_path: Path) -> None:
+    sources = (
+        native_library.LAPACK_SOURCE_ROOT / "dgesv.f",
+        native_library.LAPACK_SOURCE_ROOT / "dgesdd.f",
+    )
+
+    source_root = native_library._cached_wrapper_source_root(tmp_path, sources)
+
+    assert {path.name for path in source_root.iterdir()} == {source.name for source in sources}
+    assert all((source_root / source.name).resolve() == source.resolve() for source in sources)
 
 
 @pytest.mark.parametrize(
