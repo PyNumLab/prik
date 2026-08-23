@@ -82,8 +82,9 @@ from prik.contracts import Arg, CLongLong, Float64, Int64, native_call
 def accumulate(count: Int64, scale: Float64) -> None: ...
 ```
 
-The user passes a normal NumPy `int64`. The binding extracts it into
-`int64_t`, then emits the native call as:
+The public annotation is authoritative: the user passes a NumPy `int64`, not a
+`numpy.longlong` merely because `CLongLong` appears in `@native_call`. The
+binding extracts the public value into `int64_t`, then emits the native call as:
 
 ```c
 accumulate((long long)contract_count, contract_scale);
@@ -120,7 +121,9 @@ def update(value: Int64) -> Int64: ...
 
 This converts the extracted `int64_t` into a `long long` call-local and passes
 that local's address, so the callee receives a genuine `long long *`. It never
-casts `int64_t *` to an incompatible pointer type.
+casts `int64_t *` to an incompatible pointer type. If the updated scalar is a
+Python result, the binding converts that call-local back into the public
+`Int64` dtype; Python scalar inputs themselves are immutable.
 
 For a ranked argument, the same operator selects the exact NumPy storage that
 can cross the pointer boundary without a cast:

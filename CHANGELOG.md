@@ -9,6 +9,25 @@ release tags add a leading `v` to the package version.
 
 ### Fixed
 
+- The Linux x86-64 BLAS and LAPACK full-surface CI audits now run in the same
+  shell steps as their example builds, so they reuse the temporary extensions
+  instead of losing their exported import paths at a GitHub Actions step
+  boundary.
+
+- The portable libm tests now read and call `long double` routines through the
+  public dtype selected by the target-generated contract. Apple ARM64 uses
+  `numpy.float64`, while targets with wider C `long double` storage use
+  `numpy.longdouble`.
+
+- An exact native C scalar passed by address and projected back to Python now
+  converts its native call-local into the public contract storage type before
+  constructing the NumPy result. This removes an incompatible-pointer handoff
+  such as `long long *` to an `int64_t` result helper.
+
+- Compiler-preprocessed C prototypes with an unnamed builtin parameter, such
+  as Apple `<math.h>`'s `long rinttol(double)`, are no longer mistaken for
+  unsupported K&R definitions.
+
 - Compiler-preprocessed C headers that provide fallback `_FloatN` typedefs now
   parse successfully. This keeps private glibc compatibility declarations from
   blocking an allowlisted public API when Clang preprocesses `<math.h>`.

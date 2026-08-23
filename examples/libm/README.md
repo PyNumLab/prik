@@ -109,6 +109,15 @@ handles ABI identity; `--collision-adapter-all` separately prevents a selected
 `math.h` declaration such as `remainder` from colliding with a declaration in a
 binding header. LTO is not required, so this example does not use `--lto`.
 
+When C `long double` has the same 64-bit storage width as `double`, as on Apple
+ARM64, its public contract is `Float64` and callers pass `numpy.float64`.
+Targets with wider `long double` storage use `Float128` and
+`numpy.longdouble`. In both cases the native call still retains the exact C
+`long double` identity. The generated `.pyi` is the authority for the public
+dtype; `CLongDouble` in `@native_call` directs the private scalar conversion and
+does not add a second accepted Python dtype. The example tests read the public
+annotation instead of independently inferring the choice from NumPy's sizes.
+
 Macros are intentionally outside the example. Expose a macro through an
 ordinary native function when an API needs one.
 

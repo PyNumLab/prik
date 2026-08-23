@@ -9627,12 +9627,18 @@ class CBindingGenerator(ClassVisitor):
         scalar_type = PrimitiveScalarTypeRegistry.type_for(action.binding.semantic_type_name)
         target = context.python_results[action.owner_path]
         cleanup = tuple(CExpressionStatement(CodeExpression(f"Py_DECREF({name})")) for name in converted)
+        value_name, contract_conversion = self._scalar_writeback_contract_storage(source, names, scalar_type)
         conversion = CExpressionStatement(
-            CodeExpression(f"{target} = {self._scalar_result_expression(scalar_type, f'&{names.value_name}')}")
+            CodeExpression(f"{target} = {self._scalar_result_expression(scalar_type, f'&{value_name}')}")
         )
         failure = CIf(CodeExpression(f"{target} == NULL"), body=(*cleanup, CReturn(CodeExpression("NULL"))))
         if source.entrypoint.descriptor_output_presence_role is None:
-            return (CDeclaration(target, "PyObject *", CodeExpression("NULL")), conversion, failure)
+            return (
+                CDeclaration(target, "PyObject *", CodeExpression("NULL")),
+                *contract_conversion,
+                conversion,
+                failure,
+            )
         return (
             CDeclaration(target, "PyObject *", CodeExpression("NULL")),
             CIf(
@@ -9641,7 +9647,26 @@ class CBindingGenerator(ClassVisitor):
                     CExpressionStatement(CodeExpression("Py_INCREF(Py_None)")),
                     CExpressionStatement(CodeExpression(f"{target} = Py_None")),
                 ),
-                else_body=(conversion, failure),
+                else_body=(*contract_conversion, conversion, failure),
+            ),
+        )
+
+    @staticmethod
+    def _scalar_writeback_contract_storage(
+        source: ArgumentTransferPlan,
+        names: _CArgumentNames,
+        scalar_type,
+    ) -> tuple[str, tuple[CDeclaration, ...]]:
+        """Convert an exact native scalar local back to public contract storage."""
+        storage_type = source.native_storage_c_type or scalar_type.c_spelling
+        if storage_type == scalar_type.c_spelling:
+            return names.value_name, ()
+        contract_name = f"{names.value_name}_contract"
+        return contract_name, (
+            CDeclaration(
+                contract_name,
+                scalar_type.c_spelling,
+                CodeExpression(f"({scalar_type.c_spelling}){names.value_name}"),
             ),
         )
 

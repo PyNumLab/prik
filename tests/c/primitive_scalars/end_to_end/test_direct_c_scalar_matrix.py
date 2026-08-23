@@ -82,3 +82,6 @@ void no_result(void) {}
     assert module.no_result() is None
     with pytest.raises(TypeError, match=r"numpy\.uint8"):
         module.unsigned_char_identity(np.uint16(256))
+    if np.dtype(np.int64).num != np.dtype(np.longlong).num:
+        with pytest.raises(TypeError, match=r"numpy\.int64"):
+            module.long_long_identity(np.longlong(1))

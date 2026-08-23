@@ -265,6 +265,15 @@ Precision is asserted rather than assumed. The suite checks `float` results as
 active floating-point mode, transcendental results use tolerances, and `fma`
 is checked for one fused rounding.
 
+On Apple ARM64, C `long double` has the same 64-bit storage width as `double`,
+so the generated public contract uses `Float64` and the example passes
+`numpy.float64`. A target with wider `long double` storage instead uses
+`Float128` and `numpy.longdouble`; the native declaration remains `long double`
+in either case. The generated `.pyi` is the authority for that public dtype,
+while `CLongDouble` in `@native_call` directs the private scalar conversion and
+does not add a second accepted Python dtype. The numerical tests use the dtype
+named by the generated `sinl` annotation.
+
 ---
 
 ## 7. Run focused examples

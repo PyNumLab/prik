@@ -2163,6 +2163,73 @@ class CParser:
             return False
         return all(re.fullmatch(r"[A-Za-z_]\w*", item.strip()) for item in top_level_split(stripped, ","))
 
+    def _old_style_signature_name(self, line: str) -> re.Match[str] | None:
+        """Return a possible K&R function name from one declaration line."""
+        text = line.strip()
+        if text.startswith("#"):
+            return None
+        parameter_bounds = self._find_parameter_list(text)
+        if parameter_bounds is None:
+            return None
+        open_index, close_index = parameter_bounds
+        before_parameters = text[:open_index].strip()
+        name_match = self._last_identifier(before_parameters)
+        if name_match is None or name_match.group(0) in {"if", "for", "while", "switch"}:
+            return None
+        return_spec = before_parameters[: name_match.start()].strip()
+        if not return_spec or "(" in return_spec or ")" in return_spec:
+            return None
+
+        parameters_text = text[open_index + 1 : close_index].strip()
+        if not parameters_text or parameters_text == "void":
+            return None
+        parameters = [part.strip() for part in parameters_text.split(",")]
+        if not parameters or not all(re.fullmatch(r"[A-Za-z_]\w*", part) for part in parameters):
+            return None
+        if any(self._unambiguously_names_parameter_type(part) for part in parameters):
+            return None
+        return name_match
+
+    def _unambiguously_names_parameter_type(self, word: str) -> bool:
+        """Return whether one bare parameter token is a builtin type, not a K&R name."""
+        return self._canonical_primitive_word(word) in _PRIMITIVE_WORDS or word in _EXTENDED_SCALAR_WORDS
+
+    @staticmethod
+    def _has_old_style_declaration_tail(stripped_lines: list[str], index: int) -> bool:
+        """Recognize declarations or a body following a possible K&R signature."""
+        saw_old_style_declaration = False
+        for follow in stripped_lines[index + 1 :]:
+            stripped = follow.strip()
+            if not stripped:
+                continue
+            if stripped.startswith("{"):
+                return True
+            if stripped.endswith(";"):
+                saw_old_style_declaration = True
+                continue
+            break
+        return saw_old_style_declaration
+
+    @staticmethod
+    def _raise_old_style_definition_error(
+        line: str,
+        index: int,
+        name_match: re.Match[str],
+        line_mappings,
+        filename: str | None,
+    ) -> None:
+        """Raise the stable K&R diagnostic at its original source location."""
+        mapping = line_mappings[index] if index < len(line_mappings) else None
+        source_line = mapping.source_line if mapping is not None and mapping.source_line is not None else line
+        raise CParseError(
+            "K&R style function definitions are not supported",
+            filename=mapping.filename if mapping is not None else filename,
+            line_number=mapping.line if mapping is not None else index + 1,
+            column=max(line.find(name_match.group(0)) + 1, 1),
+            source_line=source_line,
+            code="CPARSE_UNSUPPORTED_KNR_DEFINITION",
+        )
+
     def _raise_for_unsupported_old_style_definitions(
         self,
         source: str,
@@ -2183,65 +2250,10 @@ class CParser:
         )
 
         for index, line in enumerate(stripped_lines):
-            text = line.strip()
-            if text.startswith("#"):
+            name_match = self._old_style_signature_name(line)
+            if name_match is None or not self._has_old_style_declaration_tail(stripped_lines, index):
                 continue
-            parameter_bounds = self._find_parameter_list(text)
-            if parameter_bounds is None:
-                continue
-            open_index, close_index = parameter_bounds
-            before_parameters = text[:open_index].strip()
-            name_match = self._last_identifier(before_parameters)
-            if name_match is None:
-                continue
-            if name_match.group(0) in {"if", "for", "while", "switch"}:
-                continue
-            return_spec = before_parameters[: name_match.start()].strip()
-            if not return_spec or "(" in return_spec or ")" in return_spec:
-                continue
-
-            parameters_text = text[open_index + 1 : close_index].strip()
-            if not parameters_text or parameters_text == "void":
-                continue
-
-            parameters = [part.strip() for part in parameters_text.split(",")]
-            if not parameters or not all(re.fullmatch(r"[A-Za-z_]\w*", part) for part in parameters):
-                continue
-
-            saw_old_style_declaration = False
-            for follow in stripped_lines[index + 1 :]:
-                stripped = follow.strip()
-                if not stripped:
-                    continue
-                if stripped.startswith("{"):
-                    mapping = line_mappings[index] if index < len(line_mappings) else None
-                    source_line = (
-                        mapping.source_line if mapping is not None and mapping.source_line is not None else line
-                    )
-                    raise CParseError(
-                        "K&R style function definitions are not supported",
-                        filename=mapping.filename if mapping is not None else filename,
-                        line_number=mapping.line if mapping is not None else index + 1,
-                        column=max(line.find(name_match.group(0)) + 1, 1),
-                        source_line=source_line,
-                        code="CPARSE_UNSUPPORTED_KNR_DEFINITION",
-                    )
-                if stripped.endswith(";"):
-                    saw_old_style_declaration = True
-                    continue
-                break
-
-            if saw_old_style_declaration:
-                mapping = line_mappings[index] if index < len(line_mappings) else None
-                source_line = mapping.source_line if mapping is not None and mapping.source_line is not None else line
-                raise CParseError(
-                    "K&R style function definitions are not supported",
-                    filename=mapping.filename if mapping is not None else filename,
-                    line_number=mapping.line if mapping is not None else index + 1,
-                    column=max(line.find(name_match.group(0)) + 1, 1),
-                    source_line=source_line,
-                    code="CPARSE_UNSUPPORTED_KNR_DEFINITION",
-                )
+            self._raise_old_style_definition_error(line, index, name_match, line_mappings, filename)
 
     def _prototype_style(self, parameters_text: str) -> str:
         """Classify empty `()` versus prototype-style parameter lists."""

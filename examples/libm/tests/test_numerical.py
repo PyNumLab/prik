@@ -55,7 +55,7 @@ def test_elementary(libm):
     assert libm.hypot(np.float64(3.0), np.float64(4.0)) == 5.0
 
 
-def test_precision(libm):
+def test_precision(libm, public_long_double_dtype):
     result = libm.sinf(np.float32(1.0))
     assert result.dtype == np.float32
     assert np.isclose(result, np.float32(math.sin(1.0)), rtol=FLOAT32_TOLERANCE, atol=0.0)
@@ -76,16 +76,16 @@ def test_precision(libm):
     assert result.dtype == np.float32
     assert result == np.float32(12.0)
 
-    result = libm.sinl(np.longdouble(1.0))
-    assert result.dtype == np.dtype(np.longdouble)
+    result = libm.sinl(public_long_double_dtype.type(1.0))
+    assert result.dtype == public_long_double_dtype
     assert np.isclose(result, math.sin(1.0), rtol=DOUBLE_TOLERANCE, atol=DOUBLE_TOLERANCE)
 
-    result = libm.sqrtl(np.longdouble(2))
-    assert result.dtype == np.dtype(np.longdouble)
+    result = libm.sqrtl(public_long_double_dtype.type(2))
+    assert result.dtype == public_long_double_dtype
     assert np.isclose(result, math.sqrt(2.0), rtol=1e-15, atol=1e-15)
 
 
-def test_rounding(libm):
+def test_rounding(libm, public_long_double_dtype):
     assert libm.ceil(np.float64(2.1)) == 3.0
     assert libm.floor(np.float64(2.9)) == 2.0
     assert libm.trunc(np.float64(-2.9)) == -2.0
@@ -146,7 +146,7 @@ def test_rounding(libm):
     assert libm.scalbn(np.float64(1.5), np.intc(3)) == 12.0
     assert libm.scalbln(np.float64(1.5), np.long(3)) == 12.0
     assert libm.nextafter(np.float64(1.0), np.float64(2.0)) == math.nextafter(1.0, 2.0)
-    assert libm.nexttoward(np.float64(1.0), np.longdouble(2.0)) == math.nextafter(1.0, 2.0)
+    assert libm.nexttoward(np.float64(1.0), public_long_double_dtype.type(2.0)) == math.nextafter(1.0, 2.0)
     assert libm.logb(np.float64(8.0)) == 3.0
     result = libm.ilogb(np.float64(8.0))
     assert result == np.intc(3)

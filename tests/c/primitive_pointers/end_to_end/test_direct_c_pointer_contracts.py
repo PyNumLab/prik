@@ -1,6 +1,7 @@
 """Compiled scalar-reference and NumPy-array contracts for one-level C pointers."""
 
 import shutil
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -103,10 +104,13 @@ void scale(size_t n, double *values) { for (size_t i = 0; i < n; ++i) values[i] 
 
 
 @pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")
-def test_exact_long_long_pointer_requires_numpy_longlong_storage(tmp_path: Path):
+def test_exact_long_long_scalar_address_converts_while_arrays_require_native_storage(tmp_path: Path):
     contract = tmp_path / "exact_long_long.pyi"
     contract.write_text(
-        """from prik.contracts import Arg, CLongLong, Int32, Int64, native_call
+        """from prik.contracts import Addr, Arg, CLongLong, Int32, Int64, Returns, native_call
+
+@native_call([Addr(CLongLong(Arg(0)))])
+def increment_scalar(value: Int64) -> Returns["value", Int64]: ...
 
 @native_call([CLongLong(Arg(0)), Arg(1)])
 def increment(values: Int64[:], count: Int32) -> None: ...
@@ -118,7 +122,8 @@ def increment_zero(value: Int64[()]) -> None: ...
     )
     source = tmp_path / "exact_long_long.c"
     source.write_text(
-        """void increment(long long *values, int count) {
+        """void increment_scalar(long long *value) { *value += 1; }
+void increment(long long *values, int count) {
     for (int i = 0; i < count; ++i) values[i] += 1;
 }
 void increment_zero(long long *value) { *value += 1; }
@@ -126,13 +131,19 @@ void increment_zero(long long *value) { *value += 1; }
         encoding="utf-8",
     )
 
-    result = build_pyi_extension(
-        contract,
-        native_language="c",
-        native_c_sources=[source],
-        output_dir=tmp_path / "build",
-    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        result = build_pyi_extension(
+            contract,
+            native_language="c",
+            native_c_sources=[source],
+            output_dir=tmp_path / "build",
+        )
     module = sole_native_module(result.import_module())
+
+    scalar = module.increment_scalar(np.int64(4))
+    assert scalar == np.int64(5)
+    assert scalar.dtype == np.dtype(np.int64)
 
     values = np.array([1, 2, 3], dtype=np.longlong)
     assert module.increment(values, np.int32(values.size)) is None

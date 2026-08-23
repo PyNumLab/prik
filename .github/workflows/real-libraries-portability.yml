@@ -117,16 +117,16 @@ jobs:
         run: |
           source examples/blas/build_all.sh
           python -m pytest -q examples/blas/tests
-      - name: Run BLAS CI full-surface audit
-        if: matrix.target == 'Linux x86-64'
-        run: python -m pytest -q examples/blas/ci/full_surface.py
+          if [[ "${{ matrix.target }}" == "Linux x86-64" ]]; then
+            python -m pytest -q examples/blas/ci/full_surface.py
+          fi
       - name: Run LAPACK example
         run: |
           source examples/lapack/build_all.sh
           python -m pytest -q examples/lapack/tests
-      - name: Run LAPACK CI full-surface audit
-        if: matrix.target == 'Linux x86-64'
-        run: python -m pytest -q examples/lapack/ci/full_surface.py
+          if [[ "${{ matrix.target }}" == "Linux x86-64" ]]; then
+            python -m pytest -q examples/lapack/ci/full_surface.py
+          fi
       - name: Run FFTPACK example
         run: |
           source examples/fftpack/build_all.sh

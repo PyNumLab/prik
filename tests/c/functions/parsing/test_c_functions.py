@@ -106,6 +106,23 @@ int a;
     assert error.source_line == "__extension__ int exported(a)"
 
 
+def test_unnamed_builtin_parameter_prototype_is_not_an_old_style_definition():
+    from prik.parsers.c import CDouble, parse_c_file
+
+    parsed = parse_c_file(
+        """# 764 "/Applications/Xcode.app/SDKs/MacOSX.sdk/usr/include/math.h" 1 3 4
+extern long int rinttol(double)
+;
+""",
+        filename="math.i",
+        preprocessing="preprocessed",
+    )
+
+    assert [function.name for function in parsed.functions] == ["rinttol"]
+    assert parsed.functions[0].parameters[0].name is None
+    assert isinstance(parsed.functions[0].parameters[0].type, CDouble)
+
+
 def test_modern_prototype_before_old_style_definition_does_not_stop_knr_detection():
     from prik.parsers.c import CParseError, CParser, parse_c_file
 

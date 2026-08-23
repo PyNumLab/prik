@@ -41,9 +41,9 @@ def convert(value: Int64) -> Int64: ...
 
 def test_exact_address_argument_materializes_native_storage_before_taking_its_address():
     binding = _binding(
-        """from prik.contracts import Addr, Arg, CLongLong, Int64, native_call
+        """from prik.contracts import Addr, Arg, CLongLong, Int64, Returns, native_call
 @native_call([Addr(CLongLong(Arg(0)))])
-def update(value: Int64) -> None: ...
+def update(value: Int64) -> Returns["value", Int64]: ...
 """
     )
 
@@ -51,6 +51,8 @@ def update(value: Int64) -> None: ...
     assert "long long bound_value;" in binding
     assert "bound_value = (long long)bound_value_converted;" in binding
     assert "update(&bound_value);" in binding
+    assert "int64_t bound_value_contract = (int64_t)bound_value;" in binding
+    assert "prik_int64_to_numpy(&bound_value_contract)" in binding
 
 
 def test_exact_output_parameter_uses_native_storage_then_converts_the_python_result():

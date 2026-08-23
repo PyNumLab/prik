@@ -697,6 +697,9 @@ floating spelling, such as `_Float32`, through a compatibility `typedef`.
 PRIK accepts those declarations as parsing context so that an unrelated private
 header declaration does not block a reviewed public surface. This tolerance
 does not add direct-wrapper support for the extended floating type itself.
+Prototype parameters may also omit their names: a declaration such as
+`long rinttol(double)` remains a modern prototype and is not treated as a K&R
+definition. Actual K&R definitions remain unsupported.
 
 ## Exact native scalar identities
 
@@ -713,8 +716,10 @@ def llround(value: Float64) -> Int64: ...
 ```
 
 The public signature continues to use ordinary NumPy contract types. Scalars
-are converted directionally, while ranked arguments require the corresponding
-exact NumPy element storage so the pointer path remains zero-copy. See
+and scalar addresses accept exactly that public dtype and are converted
+directionally; the native C spelling does not add a second accepted Python
+scalar type. Ranked arguments instead require the corresponding exact NumPy
+element storage so the pointer path remains zero-copy. See
 [Calls and Results: Preserve an Exact C Scalar at the Native
 Call](../reference/pyi-contracts/calls-and-results.md#preserve-an-exact-c-scalar-at-the-native-call)
 for arguments, addresses, results, arrays, and the supported exact-storage
