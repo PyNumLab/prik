@@ -290,6 +290,7 @@ class ProjectionMapping:
     result_position: int | None = None
     value_kind: str = ""
     value: Any = None
+    native_cast: str | None = None
 
 
 # ============================================================
@@ -544,6 +545,7 @@ def _projection_key(
             mapping.result_position,
             mapping.value_kind,
             _native_projection_value_key(mapping.value, name_map),
+            mapping.native_cast,
         )
         for mapping in projection
         if _requires_explicit_projection_mapping(mapping)
@@ -551,6 +553,8 @@ def _projection_key(
 
 
 def _requires_explicit_projection_mapping(mapping: ProjectionMapping) -> bool:
+    if mapping.native_cast is not None:
+        return True
     if mapping.value_kind:
         return True
     if mapping.result_position is not None:

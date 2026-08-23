@@ -52,10 +52,12 @@ from prik.semantics.fortran2ir import (
     collect_semantic_compile_time_requirements,
     fortran_project_to_semantic_modules,
 )
-from prik.semantics.c2ir import CToIRConverter, c_file_to_semantic_modules
+from prik.semantics.c2ir import CToIRConverter, c_file_to_semantic_modules, select_c_export_functions
+from prik.semantics.metadata import EXPLICIT_C_EXPORT_METADATA
 from prik.semantics.models import (
     PYTHON_EXPORTS_METADATA,
     PYTHON_EXPORTS_PREPARED_METADATA,
+    RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA,
     ProcedureOverloadSet,
     SemanticClass,
     SemanticFunction,
@@ -71,6 +73,7 @@ from prik.policy.native_array_handles import (
     native_array_handle_build_requirements,
 )
 from prik.policy.completion import complete_semantic_policies
+from prik.policy.models import FunctionWrapperPolicy, NativeEntrypointAction
 from prik.pipeline.pyi import _PyiSemanticModuleCache
 from prik.semantics.pyi_metadata import PYI_LOADED_METADATA
 from prik.planning import NativeGeneratedCodeGroupPlan, WrapperPlanner
@@ -544,6 +547,8 @@ def _wrapped_c_translation_unit(module: SemanticModule) -> SemanticModule:
     """
 
     def is_owned(node) -> bool:
+        if node.metadata.get(EXPLICIT_C_EXPORT_METADATA):
+            return True
         location = node.origin.source_location
         filename = location.get("filename") if isinstance(location, dict) else None
         return not (isinstance(filename, str) and filename != module.origin.native_name)
@@ -1180,9 +1185,14 @@ def _render_wrapper_plan(
     module: SemanticModule,
     *,
     progress: Callable[[str, float | None], None] | None = None,
+    collision_adapters: Iterable[str] = (),
+    collision_adapter_all: bool = False,
 ) -> GeneratedWrapper:
     """Render one policy-completed module through the canonical generator."""
-    plan = WrapperPlanner().build(module)
+    plan = WrapperPlanner(
+        collision_adapters=collision_adapters,
+        collision_adapter_all=collision_adapter_all,
+    ).build(module)
     return WrapperGenerator().generate(plan, progress=progress)
 
 
@@ -1191,12 +1201,25 @@ def _generate_wrapper(
     *,
     strict_wrapper_names: bool,
     verbose: bool | int = False,
+    collision_adapters: Iterable[str] = (),
+    collision_adapter_all: bool = False,
+    positional_only: bool = False,
 ) -> GeneratedWrapper:
     """Complete policy and generate the one production wrapper representation."""
+    collision_adapter_names = tuple(collision_adapters)
     _print_verbose_step(verbose, "Complete wrapper policies")
     policy_started = time.perf_counter()
-    complete_semantic_policies(module, strict_wrapper_names=strict_wrapper_names)
+    complete_semantic_policies(
+        module,
+        strict_wrapper_names=strict_wrapper_names,
+        positional_only=positional_only,
+    )
     _print_verbose_timing(verbose, time.perf_counter() - policy_started)
+    _validate_collision_adapter_selection(
+        module,
+        collision_adapters=collision_adapter_names,
+        collision_adapter_all=collision_adapter_all,
+    )
 
     def render_progress(label: str, elapsed: float | None) -> None:
         """Translate generator progress events into this build's verbose output.
@@ -1210,7 +1233,59 @@ def _generate_wrapper(
             return
         _print_verbose_timing(verbose, elapsed)
 
-    return _render_wrapper_plan(module, progress=render_progress)
+    return _render_wrapper_plan(
+        module,
+        progress=render_progress,
+        collision_adapters=collision_adapter_names,
+        collision_adapter_all=collision_adapter_all,
+    )
+
+
+def _validate_collision_adapter_selection(
+    module: SemanticModule,
+    *,
+    collision_adapters: Iterable[str],
+    collision_adapter_all: bool,
+) -> None:
+    """Reject named collision-adapter selections that no C symbol can satisfy.
+
+    ``--collision-adapter-all`` names nothing, so it selects whatever is
+    eligible and stays silent about the rest; an explicitly named symbol that
+    is unknown or ineligible is a mistake worth stopping the build for.
+    """
+    requested = frozenset(collision_adapters)
+    if not requested:
+        return
+    missing = sorted(requested - _direct_c_entrypoint_symbols(module))
+    if missing:
+        raise ValueError(
+            "Collision adapters require existing direct C symbols; unknown or ineligible names: " + ", ".join(missing)
+        )
+
+
+def _direct_c_entrypoint_symbols(module: SemanticModule) -> frozenset[str]:
+    """Return every entrypoint symbol reached through a C-source direct call.
+
+    Only a C-source operation carries the exact C declaration plan the adapter
+    unit reconstructs, so a Fortran ``bind(C)`` procedure is not eligible even
+    though it also reaches a direct entrypoint.
+    """
+    functions = list(module.functions)
+    for overload_set in module.overload_sets:
+        functions.extend(overload_set.procedures)
+    classes = list(module.classes)
+    for semantic_class in classes:
+        functions.extend(semantic_class.methods)
+        for overload_set in semantic_class.overload_sets:
+            functions.extend(overload_set.procedures)
+        classes.extend(semantic_class.classes)
+    return frozenset(
+        policy.entrypoint_symbol
+        for policy in (function.metadata.get(RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA) for function in functions)
+        if isinstance(policy, FunctionWrapperPolicy)
+        and policy.entrypoint_action is NativeEntrypointAction.DIRECT_C_ABI
+        and policy.direct_c_abi is not None
+    )
 
 
 def _preflight_intrinsic_c_direct_policy(
@@ -2431,6 +2506,9 @@ def _pyi_build_manifest(
     input_compiler: str,
     input_c_compiler: str,
     native_language: str,
+    collision_adapters: tuple[str, ...],
+    collision_adapter_all: bool,
+    positional_only: bool,
     native_fortran_flags: tuple[str, ...],
     native_c_flags: tuple[str, ...],
     wrapper_compiler_debug: bool,
@@ -2457,6 +2535,9 @@ def _pyi_build_manifest(
             "requested_name": requested_output_name,
             "module_name": module_name,
             "native_language": native_language,
+            "collision_adapters": list(collision_adapters),
+            "collision_adapter_all": collision_adapter_all,
+            "positional_only": positional_only,
         },
         "output": {
             "output_dir": _manifest_path(output_dir, base=manifest_dir),
@@ -2500,6 +2581,9 @@ def _with_pyi_manifest(
     input_compiler: str,
     input_c_compiler: str,
     native_language: str,
+    collision_adapters: tuple[str, ...],
+    collision_adapter_all: bool,
+    positional_only: bool,
     native_fortran_flags: tuple[str, ...],
     native_c_flags: tuple[str, ...],
     wrapper_compiler_debug: bool,
@@ -2518,6 +2602,9 @@ def _with_pyi_manifest(
         input_compiler=input_compiler,
         input_c_compiler=input_c_compiler,
         native_language=native_language,
+        collision_adapters=collision_adapters,
+        collision_adapter_all=collision_adapter_all,
+        positional_only=positional_only,
         native_fortran_flags=native_fortran_flags,
         native_c_flags=native_c_flags,
         wrapper_compiler_debug=wrapper_compiler_debug,
@@ -3144,6 +3231,9 @@ def build_fortran_extension(
     output_name: str | None = None,
     preprocessing: PreprocessingConfig | None = None,
     strict_wrapper_names: bool = False,
+    collision_adapters: Iterable[str] | None = None,
+    collision_adapter_all: bool = False,
+    positional_only: bool = False,
     assume_intent_in_scalars: bool = False,
     fortran_type_report=None,
     fortran_type_probe_runner: list[str] | None = None,
@@ -3292,10 +3382,14 @@ def build_fortran_extension(
     )
 
     # 3. Complete wrapper policy and generate the canonical wrapper.
+    collision_adapter_names = tuple(collision_adapters or ())
     generated_wrapper = _generate_wrapper(
         module,
         strict_wrapper_names=strict_wrapper_names,
         verbose=verbose,
+        collision_adapters=collision_adapter_names,
+        collision_adapter_all=collision_adapter_all,
+        positional_only=positional_only,
     )
 
     # 4. Prepare native compilation, dependency batches, and link inputs.
@@ -3351,6 +3445,7 @@ def build_c_extension(
     preprocessing: PreprocessingConfig | None = None,
     c_type_report=None,
     c_type_probe_runner: list[str] | None = None,
+    export_symbols: Iterable[str] | None = None,
     native_c_sources: Iterable[str | Path] | None = None,
     native_c_flags: Iterable[str] | None = None,
     native_fortran_sources: Iterable[str | Path] | None = None,
@@ -3362,6 +3457,9 @@ def build_c_extension(
     native_library_dirs: Iterable[str | Path] | None = None,
     native_include_dirs: Iterable[str | Path] | None = None,
     strict_wrapper_names: bool = False,
+    collision_adapters: Iterable[str] | None = None,
+    collision_adapter_all: bool = False,
+    positional_only: bool = False,
     makefile: bool = False,
     generate_sources: bool = False,
     jobs: int | None = None,
@@ -3376,9 +3474,12 @@ def build_c_extension(
     C declarations are parsed from ``sources`` and converted using a probe of
     ``input_c_compiler``. Their C ABI facts select the direct binding route;
     unsupported operations raise a documented completed-policy diagnostic
-    before planning, generated files, or compiler commands. No C adapter is
-    generated. ``native_c_sources`` adds separately compiled C inputs, while
-    explicit Fortran inputs are supported only as ordinary link dependencies.
+    before planning, generated files, or compiler commands. A selected genuine
+    identifier collision may use a separate C forwarder translation unit.
+    ``export_symbols`` restricts semantic conversion to those exact reachable
+    C functions and can explicitly select declarations from included headers.
+    ``native_c_sources`` adds separately compiled C inputs, while explicit
+    Fortran inputs are supported only as ordinary link dependencies.
 
     ``preprocessing`` supplies the C preprocessing configuration used to expand
     ``sources`` before parsing; the default runs ``input_c_compiler``.  Without
@@ -3392,6 +3493,7 @@ def build_c_extension(
         verbose=verbose,
     )
     build_started = time.perf_counter()
+    selected_exports = None if export_symbols is None else tuple(export_symbols)
     source_paths = _c_source_paths(sources)
     output_path, shared_library_output_path = _wrapper_output_paths(output_dir)
     supplemental_c_paths = tuple(Path(path) for path in (native_c_sources or ()))
@@ -3413,6 +3515,8 @@ def build_c_extension(
     # ABI probe, generated files, or native build commands. A supported source
     # may still need the probe to resolve target-sized arithmetic facts.
     preflight_modules = tuple(c_file_to_semantic_modules(parsed)[0] for parsed in parsed_sources)
+    if selected_exports is not None:
+        preflight_modules = tuple(select_c_export_functions(preflight_modules, selected_exports))
     _preflight_intrinsic_c_direct_policy(
         preflight_modules,
         strict_wrapper_names=strict_wrapper_names,
@@ -3428,9 +3532,18 @@ def build_c_extension(
     source_modules = tuple(
         c_file_to_semantic_modules(parsed, standard_type_report=c_report)[0] for parsed in parsed_sources
     )
+    if selected_exports is not None:
+        source_modules = tuple(select_c_export_functions(source_modules, selected_exports))
     module_name = _validated_wrapper_module_name(output_name, source_paths[0].stem)
     module = _merge_wrapper_modules(list(source_modules), name=module_name)
-    generated_wrapper = _generate_wrapper(module, strict_wrapper_names=strict_wrapper_names, verbose=verbose)
+    generated_wrapper = _generate_wrapper(
+        module,
+        strict_wrapper_names=strict_wrapper_names,
+        verbose=verbose,
+        collision_adapters=collision_adapters or (),
+        collision_adapter_all=collision_adapter_all,
+        positional_only=positional_only,
+    )
     output_path.mkdir(parents=True, exist_ok=True)
     native_source_objects, native_build_plan = _prepare_native_build_plan(native_inputs, output_path=output_path)
     wrapper_fortran_flags = _compiler_flags(wrapper_fortran_flags)
@@ -3496,6 +3609,9 @@ def build_pyi_extension(
     output_name: str | None = None,
     output_dir: str | Path | None = None,
     strict_wrapper_names: bool = False,
+    collision_adapters: Iterable[str] | None = None,
+    collision_adapter_all: bool = False,
+    positional_only: bool = False,
     makefile: bool = False,
     generate_sources: bool = False,
     jobs: int | None = None,
@@ -3619,10 +3735,14 @@ def build_pyi_extension(
         )
     module_name = _validated_wrapper_module_name(output_name, _bundle_output_name(bundle))
     module = _merge_wrapper_modules(modules, name=module_name)
+    collision_adapter_names = tuple(collision_adapters or ())
     generated_wrapper = _generate_wrapper(
         module,
         strict_wrapper_names=strict_wrapper_names,
         verbose=verbose,
+        collision_adapters=collision_adapter_names,
+        collision_adapter_all=collision_adapter_all,
+        positional_only=positional_only,
     )
     output_path.mkdir(parents=True, exist_ok=True)
 
@@ -3661,6 +3781,9 @@ def build_pyi_extension(
         input_compiler=input_compiler,
         input_c_compiler=input_c_compiler,
         native_language=native_language,
+        collision_adapters=collision_adapter_names,
+        collision_adapter_all=collision_adapter_all,
+        positional_only=positional_only,
         native_fortran_flags=native_inputs.fortran_source_flags,
         native_c_flags=native_inputs.c_source_flags,
         wrapper_compiler_debug=wrapper_compiler_debug,
@@ -3764,6 +3887,9 @@ def build_pyi_extension_from_manifest(
     if requested_name is not None and not isinstance(requested_name, str):
         raise ValueError("Wrapper build manifest extension.requested_name must be a string or null")
     native_language = _native_contract_language(_manifest_string(extension_section, "native_language"))
+    collision_adapters = _manifest_string_list(extension_section, "collision_adapters")
+    collision_adapter_all = _manifest_bool(extension_section, "collision_adapter_all")
+    positional_only = _manifest_bool(extension_section, "positional_only")
 
     # 2. Restore native include paths and compiler selection from the manifest.
     manifest_module_dirs = _manifest_path_list(native_section, "module_dirs", base=base)
@@ -3795,6 +3921,9 @@ def build_pyi_extension_from_manifest(
         output_name=requested_name,
         output_dir=output_path,
         strict_wrapper_names=strict_wrapper_names,
+        collision_adapters=collision_adapters,
+        collision_adapter_all=collision_adapter_all,
+        positional_only=positional_only,
         makefile=makefile,
         generate_sources=generate_sources,
         jobs=jobs,

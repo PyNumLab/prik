@@ -18,12 +18,14 @@ import numpy
 
 from immutabledict import immutabledict
 
+from prik.contracts import NATIVE_C_SCALAR_CASTS
 from prik.naming import NamingPolicy
 from prik.semantics import models
 from prik.semantics.metadata import (
     ADDRESS_ROLE_METADATA,
     ADDRESS_ROLE_RAW,
     BIND_TARGET_METADATA,
+    NATIVE_C_SCALAR_CAST_METADATA,
     NULLABLE_ANNOTATION_METADATA,
     SCALAR_STORAGE_CATEGORY,
     SUPPRESS_DEFAULT_CONSTRUCTOR_METADATA,
@@ -1853,14 +1855,27 @@ def _normalize_c_direct_scalar_identities(
     # Python conversion against another argument's declared type.
     by_name = {argument.name: _c_direct_scalar_name(argument.semantic_type) for argument in function.arguments}
     semantic_by_name = {argument.name: argument for argument in function.arguments}
+    slots_by_name = {slot.python_name: slot for slot in slots if slot.python_name is not None}
     normalized_arguments = [
         replace(
             argument,
             semantic_type_name=by_name.get(argument.name) or argument.semantic_type_name,
-            native_storage_c_type=_c_direct_argument_storage_type(
-                function,
-                argument.native_position,
-                semantic_argument=semantic_by_name.get(argument.name),
+            native_storage_c_type=(
+                _c_direct_argument_storage_type(
+                    function,
+                    argument.native_position,
+                    semantic_argument=semantic_by_name.get(argument.name),
+                )
+                or (
+                    slots_by_name[argument.name].native_scalar_c_type
+                    if argument.name in slots_by_name and slots_by_name[argument.name].value_kind == "addr"
+                    else None
+                )
+            ),
+            native_array_element_c_type=(
+                slots_by_name[argument.name].native_scalar_c_type
+                if argument.ownership.kind is ObjectKind.NUMPY_ARRAY and argument.name in slots_by_name
+                else None
             ),
             # A C payload is bytes plus whatever length the contract passes.
             # Refusing an embedded NUL would impose a terminator convention
@@ -2253,6 +2268,8 @@ def _direct_c_operation_ineligibility(
     if function.return_type is not None and function.return_type.metadata.get("c_type_fact_source") == "fallback":
         reasons.append("C_DIRECT_UNPROBED_PRIMITIVE_ABI:return")
     for argument in arguments:
+        if argument.native_array_element_c_type == "_Bool":
+            reasons.append(f"C_DIRECT_BOOL_ARRAY:{argument.name}")
         if _is_c_string_argument(argument):
             reasons.extend(_direct_c_string_ineligibility(argument))
         elif argument.rank > 0:
@@ -2472,6 +2489,7 @@ def _completed_direct_c_abi_policy(
     source_abi = raw_abi if isinstance(raw_abi, dict) else {}
     parameter_source = source_abi.get("parameters") if isinstance(source_abi.get("parameters"), list) else []
     semantic_arguments_by_name = {argument.name: argument for argument in function.arguments}
+    argument_policies_by_name = {argument.name: argument for argument in arguments}
 
     def slot_semantic_type(slot: NativeCallSlotPolicy) -> models.SemanticType | None:
         """Return the declared type of the argument one slot transports.
@@ -2495,6 +2513,14 @@ def _completed_direct_c_abi_policy(
             pointer_depth=(0 if slot.entrypoint_passing is EntrypointPassingConvention.C_VALUE else 1),
             # A hidden output slot is storage the callee writes into.
             writes_output=slot.source_kind == "result",
+            native_scalar_c_type=slot.native_scalar_c_type,
+            converts_to_contract_storage=(
+                slot.native_scalar_c_type is not None
+                and (
+                    slot.python_name not in argument_policies_by_name
+                    or argument_policies_by_name[slot.python_name].native_array_element_c_type is None
+                )
+            ),
         )
         for slot in sorted(slots, key=lambda item: item.native_position)
     )
@@ -2506,6 +2532,7 @@ def _completed_direct_c_abi_policy(
             semantic_type=function.return_type,
             semantic_type_name=None,
             pointer_depth=0,
+            native_scalar_c_type=_native_scalar_c_type(function.return_type),
         )
         if direct_result is not None and function.return_type is not None
         else None
@@ -2525,6 +2552,8 @@ def _direct_c_abi_type_policy(
     semantic_type_name: str | None,
     pointer_depth: int,
     writes_output: bool = False,
+    native_scalar_c_type: str | None = None,
+    converts_to_contract_storage: bool | None = None,
 ) -> DirectCABITypePolicy:
     """Normalize preserved source facts or the canonical source-free C form."""
     if semantic_type_name == "String":
@@ -2540,7 +2569,14 @@ def _direct_c_abi_type_policy(
     # A source-free contract preserves no declaration text, so policy records
     # only the resolved identity and leaves the backend spelling to the C
     # binding generator that owns scalar projection.
-    preserved = source.get("source_spelling") or (contract_spelling if not source_pointer_depth else None)
+    native_spelling = None
+    if native_scalar_c_type is not None:
+        native_spelling = (
+            f"{native_scalar_c_type} {'*' * source_pointer_depth}" if source_pointer_depth else native_scalar_c_type
+        )
+    preserved = (
+        source.get("source_spelling") or native_spelling or (contract_spelling if not source_pointer_depth else None)
+    )
     qualifiers = tuple(str(item) for item in source.get("qualifiers", ()))
     const = bool(source.get("const", False))
     declarable = _c_typedef_resolved_spelling(semantic_type, pointer_depth=source_pointer_depth, const=const)
@@ -2550,6 +2586,9 @@ def _direct_c_abi_type_policy(
         pointer_depth=source_pointer_depth,
         qualifiers=qualifiers,
         const=const,
+        converts_to_contract_storage=(
+            native_scalar_c_type is not None if converts_to_contract_storage is None else converts_to_contract_storage
+        ),
     )
 
 
@@ -2579,6 +2618,12 @@ def _direct_c_character_abi_type_policy(
         qualifiers=tuple(str(item) for item in source.get("qualifiers", ())),
         const=bool(source.get("const", not mutable)),
     )
+
+
+def _native_scalar_c_type(semantic_type: models.SemanticType | None) -> str | None:
+    """Resolve one semantic native-call cast marker to its exact C spelling."""
+    marker = semantic_type.metadata.get(NATIVE_C_SCALAR_CAST_METADATA) if semantic_type is not None else None
+    return NATIVE_C_SCALAR_CASTS.get(marker) if isinstance(marker, str) else None
 
 
 def _c_typedef_resolved_spelling(
@@ -3795,6 +3840,7 @@ def _projected_argument_slot(
             python_name=mapping.python_name or argument.name,
             native_name=mapping.native_name or argument.name,
             value_kind=value_kind,
+            native_scalar_c_type=NATIVE_C_SCALAR_CASTS.get(mapping.native_cast),
             native_barrier_action=native_barrier_action,
             codegen_action=codegen_action,
             bridge_data_action=bridge_data_action,
@@ -3882,6 +3928,7 @@ def _hidden_result_native_call_slot_policy(
                 python_name=mapping.python_name,
                 native_name=mapping.native_name or f"result_{native_position}",
                 value_kind=mapping.value_kind,
+                native_scalar_c_type=NATIVE_C_SCALAR_CASTS.get(mapping.native_cast),
                 native_barrier_action=NativeBarrierAction.BLOCKED,
                 codegen_action=CodegenAction.BLOCKED,
                 bridge_data_action=BridgeDataAction.BLOCKED,
@@ -3902,6 +3949,7 @@ def _hidden_result_native_call_slot_policy(
                 python_name=argument.name,
                 native_name=mapping.native_name or argument.name,
                 value_kind=mapping.value_kind,
+                native_scalar_c_type=NATIVE_C_SCALAR_CASTS.get(mapping.native_cast),
                 native_barrier_action=NativeBarrierAction.BLOCKED,
                 codegen_action=CodegenAction.BLOCKED,
                 bridge_data_action=BridgeDataAction.BLOCKED,
@@ -3948,6 +3996,7 @@ def _hidden_result_native_call_slot_policy(
             python_name=argument.name,
             native_name=mapping.native_name or argument.name,
             value_kind=mapping.value_kind,
+            native_scalar_c_type=NATIVE_C_SCALAR_CASTS.get(mapping.native_cast),
             native_barrier_action=decision.native_barrier_action,
             codegen_action=decision.codegen_action,
             bridge_data_action=bridge_data_action,
@@ -5669,6 +5718,11 @@ def _function_shape_blockers(
         blockers.append("function locals are outside the first scalar lane")
     if function.contracts:
         blockers.append("function contracts are outside the first scalar lane")
+    has_native_c_scalar_cast = any(mapping.native_cast is not None for mapping in function.projection) or bool(
+        function.return_type is not None and function.return_type.metadata.get(NATIVE_C_SCALAR_CAST_METADATA)
+    )
+    if has_native_c_scalar_cast and function.origin.source_language != "c":
+        blockers.append("native C scalar casts require a C native contract")
     return tuple(blockers)
 
 

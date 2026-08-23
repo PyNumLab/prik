@@ -100,3 +100,50 @@ void scale(size_t n, double *values) { for (size_t i = 0; i < n; ++i) values[i] 
     assert module.scale(values) is None
     np.testing.assert_allclose(values, np.array([2.0, 4.0, 6.0]))
     assert module.scale(np.empty(0, dtype=np.float64)) is None
+
+
+@pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")
+def test_exact_long_long_pointer_requires_numpy_longlong_storage(tmp_path: Path):
+    contract = tmp_path / "exact_long_long.pyi"
+    contract.write_text(
+        """from prik.contracts import Arg, CLongLong, Int32, Int64, native_call
+
+@native_call([CLongLong(Arg(0)), Arg(1)])
+def increment(values: Int64[:], count: Int32) -> None: ...
+
+@native_call([CLongLong(Arg(0))])
+def increment_zero(value: Int64[()]) -> None: ...
+""",
+        encoding="utf-8",
+    )
+    source = tmp_path / "exact_long_long.c"
+    source.write_text(
+        """void increment(long long *values, int count) {
+    for (int i = 0; i < count; ++i) values[i] += 1;
+}
+void increment_zero(long long *value) { *value += 1; }
+""",
+        encoding="utf-8",
+    )
+
+    result = build_pyi_extension(
+        contract,
+        native_language="c",
+        native_c_sources=[source],
+        output_dir=tmp_path / "build",
+    )
+    module = sole_native_module(result.import_module())
+
+    values = np.array([1, 2, 3], dtype=np.longlong)
+    assert module.increment(values, np.int32(values.size)) is None
+    np.testing.assert_array_equal(values, np.array([2, 3, 4], dtype=np.longlong))
+
+    zero = np.array(4, dtype=np.longlong)
+    assert module.increment_zero(zero) is None
+    assert zero[()] == np.longlong(5)
+
+    if np.dtype(np.int64).num != np.dtype(np.longlong).num:
+        with pytest.raises(TypeError, match=r"numpy\.longlong"):
+            module.increment(np.array([1, 2, 3], dtype=np.int64), np.int32(3))
+        with pytest.raises(TypeError, match=r"numpy\.longlong"):
+            module.increment_zero(np.array(4, dtype=np.int64))

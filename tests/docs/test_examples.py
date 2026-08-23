@@ -25,6 +25,7 @@ DOC_PATHS = [
     ROOT / "examples/bspline/README.md",
     ROOT / "examples/fftpack/README.md",
     ROOT / "examples/lapack/README.md",
+    ROOT / "examples/libm/README.md",
     ROOT / "examples/minpack/README.md",
     *sorted(path for path in (ROOT / "docs").rglob("*.md") if "old_docs" not in path.parts),
 ]

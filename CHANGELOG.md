@@ -9,6 +9,13 @@ release tags add a leading `v` to the package version.
 
 ### Fixed
 
+- An exact native C type around a NumPy-backed `Arg(...)` now requires its
+  matching NumPy C storage type. For example, `CLongLong(Arg(0))` accepts
+  `numpy.longlong` and rejects a distinct `numpy.int64` buffer instead of
+  passing that buffer to `long long *` through an incompatible pointer. The
+  rule covers all supported exact C types with matching NumPy storage; scalar
+  value arguments keep their existing conversion behavior.
+
 - A C translation unit's module variables, enum or macro constants, and
   aggregate type declarations no longer reach wrapper planning. They previously
   generated a Fortran adapter module for a C input and failed with a raw
@@ -133,6 +140,43 @@ release tags add a leading `v` to the package version.
   files were written.
 
 ### Added
+
+- Added a portable libm example that regenerates its target-specific semantic
+  `.pyi` from a reviewed 60-function ISO C99 `math.h` selection before every
+  build and validates every exported routine with a named numerical test. The
+  contract records exact native scalar casts without changing its NumPy-facing
+  signatures, and its dtype assertions follow the active `long` and `long
+  double` ABIs. A dedicated CI step runs it beside the Fortran examples.
+
+- `--positional-only` exposes every wrapper whose arguments are all required as
+  positional-only, renaming them `arg0`..`argN` in the signature, docstring, and
+  argument diagnostics. A native declaration's parameter names then stay out of
+  the Python API, which matters for a system header that spells them `__x` or
+  omits them entirely. A function with an optional argument keeps its keywords,
+  and a module with overload sets is rejected because overload dispatch selects
+  a candidate by keyword.
+
+- `--lto` adds `-flto` to generated and native compilation and to the extension
+  link. A collision adapter is emitted with hidden visibility, so link-time
+  optimization can inline the forwarder and drop its definition rather than
+  exporting it from the extension.
+
+- Target-specific C contracts now preserve exact scalar call identities with
+  sparse expressions such as `CLongLong(Arg(0))` and typed native-result
+  projections. Public annotations remain ordinary NumPy types; policy completes
+  the conversion before planning and the binding reuses its exact native scalar
+  storage and direct-result path. Native C scalar names are rejected outside
+  `@native_call`.
+
+- `--collision-adapter NAME` and `--collision-adapter-all` now isolate genuine
+  C identifier collisions only. The separate translation unit includes no
+  `Python.h`, reconstructs the completed exact native declaration, and emits a
+  hidden pure forwarder defined once per native symbol even when several Python
+  callables name it. Only a C-source function is eligible: an explicitly named
+  symbol that is unknown or ineligible fails before wrapper planning, while
+  `--collision-adapter-all` passes over Fortran `bind(C)` entrypoints instead
+  of failing the build. Saved build manifests retain the selected adapter mode
+  when replayed.
 
 - Added a published C support guide with executable source and semantic-contract
   workflows, CLI and Python build APIs, supported primitive and NumPy-pointer
@@ -286,6 +330,23 @@ release tags add a leading `v` to the package version.
   probe and with it the entire build.
 
 ### Added
+
+- Added the C-only `--export-symbols FILE` allowlist for source builds,
+  `semantics`, and `generate --pyi`, with resolved-name parity through
+  `build_c_extension(export_symbols=...)`. It promotes exactly the named
+  reachable functions even from private system headers, excludes every
+  unlisted declaration, and fails closed for malformed, repeated, missing,
+  non-function, or ambiguous selections. This lets maintained examples parse
+  platform headers without publishing their implementation-specific surface.
+
+- The libm portability audit now reuses the Linux x86-64 and macOS Arm64 CI
+  jobs and adds one focused Linux Arm64 job. All three regenerate from the
+  target `math.h` and run the complete 60-function suite without repeating the
+  heavyweight Fortran real-library matrix.
+
+- The libm example now stops immediately when contract generation or wrapper
+  compilation fails, instead of exporting a broken build environment to a
+  later test command.
 
 - Added `--assume-intent-in-scalars`, which treats a primitive scalar dummy
   that declares no `intent` as `intent(in)` instead of applying the

@@ -9,6 +9,7 @@ re-derived from native declarations or backend output.
 
 from __future__ import annotations
 
+from prik.codegen.primitive_scalar_types import NativeCArrayStorageRegistry
 from prik.policy.ownership import OwnershipOwner, PythonBarrierAction, SetterAction, TransferMode
 from prik.policy.models import (
     ClassConstructorKind,
@@ -718,6 +719,7 @@ class WrapperDocstringBuilder:
         nullable = optional or argument.binding.nullable
         lines = [f"{argument.binding.python_name} : {self._type(argument, nullable=nullable, signature=False)}"]
         lines.extend(self._array_lines(argument.array))
+        lines.extend(self._native_c_array_storage_lines(argument))
         lines.extend(self._optional_lines(argument))
         lines.extend(self._mutation_lines(argument))
         if argument.datatype_family is DatatypeFamily.DERIVED or argument.array is not None:
@@ -725,6 +727,15 @@ class WrapperDocstringBuilder:
         if argument.native_array_handle is not None:
             lines.append(f"    Descriptor ownership: {argument.native_array_handle.descriptor_ownership.value}.")
         return tuple(lines)
+
+    @staticmethod
+    def _native_c_array_storage_lines(argument: ArgumentTransferPlan) -> tuple[str, ...]:
+        """Document an exact NumPy dtype already selected by completed policy."""
+        c_type = argument.binding.native_array_element_c_type
+        if c_type is None:
+            return ()
+        storage = NativeCArrayStorageRegistry.type_for(c_type, argument.semantic_type_name)
+        return (f"    Accepts exact {storage.python_type_name} element storage for the native C {c_type} pointer.",)
 
     def _output_lines(
         self,

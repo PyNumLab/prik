@@ -692,6 +692,72 @@ not change a wrapper. An attribute that may change the ABI, symbol identity, or
 layout—such as a calling convention or alignment attribute—stops the build
 instead of being ignored.
 
+## Exact native scalar identities
+
+Generated C contracts are target-specific and representation-based. Distinct C
+types such as `long` and `long long` may therefore use the same public NumPy
+contract type. When their exact identity matters to the call, generation keeps
+it as a sparse operator inside `@native_call(...)`:
+
+```python
+from prik.contracts import Arg, CLongLong, Float64, Int64, Return, native_call
+
+@native_call([Arg(0)], result=CLongLong(Return(0)))
+def llround(value: Float64) -> Int64: ...
+```
+
+The public signature continues to use ordinary NumPy contract types. Scalars
+are converted directionally, while ranked arguments require the corresponding
+exact NumPy element storage so the pointer path remains zero-copy. See
+[Calls and Results: Preserve an Exact C Scalar at the Native
+Call](../reference/pyi-contracts/calls-and-results.md#preserve-an-exact-c-scalar-at-the-native-call)
+for arguments, addresses, results, arrays, and the supported exact-storage
+rules.
+
+## Symbols your binding's own headers declare
+
+Exact native scalar casts make compatible duplicate declarations harmless, but
+they cannot resolve a genuine identifier collision: a header included by the
+binding may already declare the same name for a different API. Name that symbol
+to isolate it from `Python.h`:
+
+```bash
+python3 -m prik --language c vendor.pyi \
+  --native-library vendor \
+  --collision-adapter evaluate \
+  --out vendor_api --out-dir build
+```
+
+The build writes a separate adapter translation unit that includes no Python
+header. Its signature is reconstructed from the completed exact native C types
+and it only forwards to the original symbol:
+
+```c
+long long evaluate(double x);
+
+long long prik_collision_adapter_evaluate(double x) {
+    return (evaluate)(x);
+}
+```
+
+The adapter targets a real function symbol; PRIK does not expose macros. The
+forwarder has hidden visibility, so it is not part of the extension's exported
+ABI. It is correct with or without the shared `--lto` build optimization. Use
+`--collision-adapter-all` to adapt every eligible function instead of naming
+each one. Only C-source functions are eligible; generated Fortran bridge
+symbols and Fortran `bind(C)` procedures are not.
+
+This isolates a declaration collision inside the binding translation unit. It
+does not choose between two different linked libraries that both export the
+same external symbol; normal target linker and loader resolution must already
+select the intended implementation.
+
+A source-free `.pyi` must preserve every exact native scalar identity needed by
+the declaration. A target-generated contract does this automatically; an
+edited contract uses the same `@native_call` operators explicitly. See [CLI
+Commands](../reference/cli-commands.md#wrapper-builds) for complete selection,
+validation, and LTO behavior.
+
 ## Current limits
 
 PRIK rejects these forms rather than guessing their ABI or memory contract:
@@ -752,6 +818,35 @@ the native link without becoming Python API declarations.
 For headers and conditional source, pass the same preprocessing information as
 the native project: `-I`, `-D`, `--std`, and, when available,
 `--compile-commands build/compile_commands.json`.
+
+To wrap a reviewed subset of a broad or system header, keep included files
+private and select the exact reachable functions from a file:
+
+```bash
+python3 -m prik generate --pyi --language c api_probe.h \
+  --include-exposure roots-only \
+  --export-symbols reviewed_functions.txt \
+  --out contracts/api.pyi
+```
+
+The export file names the reviewed functions that become public, including
+functions declared by an otherwise-private system header. Every unlisted
+declaration is excluded. This selects the semantic API rather than linker
+exports: selected functions still need native link inputs and a signature the
+direct C lane supports. See [CLI Commands: C include
+exposure](../reference/cli-commands.md#c-include-exposure) for the file format
+and fail-closed validation rules.
+
+The Python build API accepts the already-resolved names instead of a CLI text
+file:
+
+```python
+build = build_c_extension(
+    "api_probe.c",
+    export_symbols=("evaluate", "normalize"),
+    native_libraries=("vendor",),
+)
+```
 
 ### Inspect a broader C API
 

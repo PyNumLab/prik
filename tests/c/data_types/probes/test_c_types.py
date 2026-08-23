@@ -48,6 +48,7 @@ def test_c_standard_type_probe_source_queries_standard_headers_without_layout_cl
     assert 'PRIK_PRINT_COMPLEX("long double _Complex"' in source
     assert 'PRIK_PRINT_ARITHMETIC("int"' in source
     assert 'PRIK_PRINT_ARITHMETIC("size_t"' in source
+    assert 'PRIK_PRINT_ARITHMETIC("int64_t"' in source
     assert 'PRIK_PRINT_ARITHMETIC("uint32_t"' in source
     assert 'PRIK_PRINT_ARITHMETIC("time_t"' in source
     assert "sizeof(FILE *)" in source
@@ -203,6 +204,21 @@ def test_c_standard_type_probe_reports_semantic_facts_from_native_compiler():
         assert uint32_t["kind"] == "integer"
         assert uint32_t["signed"] is False
         assert uint32_t["bits"] == 32
+
+    for name, signed, bits in (
+        ("int8_t", True, 8),
+        ("int16_t", True, 16),
+        ("int32_t", True, 32),
+        ("int64_t", True, 64),
+        ("uint8_t", False, 8),
+        ("uint16_t", False, 16),
+        ("uint64_t", False, 64),
+    ):
+        fact = report.types[name]
+        if fact["available"]:
+            assert fact["kind"] == "integer"
+            assert fact["signed"] is signed
+            assert fact["bits"] == bits
 
     time_t = report.types["time_t"]
     assert time_t["available"] is True

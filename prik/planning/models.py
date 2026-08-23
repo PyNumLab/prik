@@ -196,6 +196,10 @@ class DirectCABITypePlan(StageRecord):
     pointer_depth: int
     qualifiers: tuple[str, ...]
     const: bool
+    # Scalar values whose native declaration differs from canonical contract
+    # storage are converted at the call boundary. Exact NumPy storage already
+    # has the native representation, so its completed decision remains false.
+    converts_to_contract_storage: bool = False
 
 
 @dataclass
@@ -795,6 +799,9 @@ class BindingFunctionPlan(StageRecord):
     status_error: BindingStatusErrorPlan | None
     argument_conversion_order: tuple[str, ...]
     public: bool = True
+    # A positional-only binding parses its arguments from the call tuple alone,
+    # so it declares no keyword list and installs no METH_KEYWORDS entry.
+    accepts_keyword_arguments: bool = True
 
 
 @dataclass
@@ -821,6 +828,10 @@ class NativeEntrypointFunctionPlan(StageRecord):
     results: tuple[NativeEntrypointResultPlan, ...]
     projected_slots: tuple[NativeEntrypointProjectedSlotPlan, ...]
     direct_c_abi: DirectCABIPlan | None = None
+    # A selected symbol is reached through a forwarder defined in a separate
+    # translation unit that never includes Python.h, so the binding's own
+    # declaration of ``symbol_name`` cannot collide with a header declaration.
+    collision_adapter_symbol: str | None = None
 
 
 @dataclass
@@ -868,6 +879,7 @@ class BindingArgumentPlan(StageRecord):
     nullable: bool
     writable: bool
     descriptor_boundary: bool
+    native_array_element_c_type: str | None = None
 
 
 @dataclass
@@ -934,6 +946,7 @@ class NativeEntrypointResultPlan(StageRecord):
     native_array_handle: NativeArrayHandlePlan | None
     scalar_descriptor: ScalarDescriptorResultPlan | None
     passing: EntrypointPassingConvention
+    native_scalar_c_type: str | None = None
     updates_argument: bool = False
     # Set only on a direct-C hidden character output: the binding owns a buffer
     # of this many bytes and passes ``char *``.  A bridged route leaves it None
@@ -1001,6 +1014,7 @@ class NativeEntrypointProjectedSlotPlan(StageRecord):
     value_kind: str
     symbolic_role: str
     object_kind: ObjectKind | None
+    native_scalar_c_type: str | None = None
     scalar_logical_abi: ScalarLogicalABI = ScalarLogicalABI.NOT_APPLICABLE
     scalar_native_type: str | None = None
     array_logical_abi: ArrayLogicalABI = ArrayLogicalABI.NOT_APPLICABLE

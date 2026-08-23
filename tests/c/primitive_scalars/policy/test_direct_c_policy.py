@@ -24,6 +24,61 @@ def test_supported_c_scalar_policy_selects_direct_c_abi_without_a_bridge_facet()
     assert tuple(item.source_spelling for item in policy.direct_c_abi.parameters) == ("double", "double")
 
 
+def test_source_free_exact_scalar_contract_completes_native_and_contract_storage_types():
+    module = pyi_text_to_semantic_module(
+        """from prik.contracts import Arg, CLongLong, Int64, Return, native_call
+@native_call([CLongLong(Arg(0))], result=CLongLong(Return(0)))
+def convert(value: Int64) -> Int64: ...
+""",
+        module_name="exact",
+        native_language="c",
+    )
+    validate_pyi_native_contract([module])
+    complete_semantic_policies(module)
+
+    policy = module.functions[0].metadata["resolved_function_wrapper_policy"]
+
+    assert policy.native_call_slots[0].native_scalar_c_type == "long long"
+    assert policy.direct_c_abi.parameters[0].source_spelling == "long long"
+    assert policy.direct_c_abi.result.source_spelling == "long long"
+    assert policy.direct_c_abi.result.converts_to_contract_storage is True
+
+
+def test_source_free_exact_array_contract_requires_native_numpy_element_storage():
+    module = pyi_text_to_semantic_module(
+        """from prik.contracts import Arg, CLongLong, Int64, native_call
+@native_call([CLongLong(Arg(0))])
+def update(values: Int64[:]) -> None: ...
+""",
+        module_name="exact_array",
+        native_language="c",
+    )
+    validate_pyi_native_contract([module])
+    complete_semantic_policies(module)
+
+    policy = module.functions[0].metadata["resolved_function_wrapper_policy"]
+
+    assert policy.arguments[0].native_array_element_c_type == "long long"
+    assert policy.native_call_slots[0].native_scalar_c_type == "long long"
+    assert policy.direct_c_abi.parameters[0].source_spelling == "long long *"
+    assert policy.direct_c_abi.parameters[0].converts_to_contract_storage is False
+
+
+def test_exact_c_bool_rank_zero_storage_fails_before_planning():
+    module = pyi_text_to_semantic_module(
+        """from prik.contracts import Arg, Bool, CBool, native_call
+@native_call([CBool(Arg(0))])
+def update(value: Bool[()]) -> None: ...
+""",
+        module_name="exact_bool_array",
+        native_language="c",
+    )
+    validate_pyi_native_contract([module])
+
+    with pytest.raises(ValueError, match="C_DIRECT_BOOL_ARRAY:value"):
+        complete_semantic_policies(module)
+
+
 @pytest.mark.parametrize(
     ("source", "diagnostic"),
     [

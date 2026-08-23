@@ -241,6 +241,7 @@ class WrapperGenerator:
             started = time.perf_counter()
         c_modules = self._c_generator.binding_modules(plan)
         c_sources = tuple(self._c_printer.doprint(module) for module in c_modules)
+        c_module_names = tuple(module.name for module in c_modules)
         if progress is not None:
             progress("Generate binding source", time.perf_counter() - started)
 
@@ -269,6 +270,7 @@ class WrapperGenerator:
         return self._generated_wrapper(
             plan.owner_path,
             c_sources,
+            c_module_names,
             c_header_source,
             fortran_source,
             native_support_keys=(("binding_support",) if self._c_generator.requires_native_support(plan) else ()),
@@ -5652,6 +5654,7 @@ class WrapperGenerator:
         self,
         module_name: str,
         c_sources: tuple[str, ...],
+        c_module_names: tuple[str, ...],
         c_header: str,
         fortran_source: str | None,
         native_support_keys: tuple[str, ...],
@@ -5661,16 +5664,14 @@ class WrapperGenerator:
     ) -> GeneratedWrapper:
         """Package rendered source text with the filenames owned by build integration.
 
-        Binding translation-unit paths preserve the primary file followed by
-        zero-padded worker shards. The returned wrapper places bridge, C
+        Each binding translation unit is named for the C module it renders, so
+        the primary file is followed by its zero-padded worker shards and then
+        any collision-adapter unit. The returned wrapper places bridge, C
         sources, and header text in that stable order; this helper does not
         write files or freeze the newly assembled source records.
         """
         # Name bridge, binding, and header files before pairing each with rendered text.
-        binding_sources = (
-            Path(f"{module_name}_wrapper.c"),
-            *(Path(f"{module_name}_wrapper_{index:03d}.c") for index in range(1, len(c_sources))),
-        )
+        binding_sources = tuple(Path(f"{name}.c") for name in c_module_names)
         bridge_sources = tuple(
             dict.fromkeys(
                 Path(path)

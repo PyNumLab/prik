@@ -36,6 +36,7 @@ class particle:
         "result_position": None,
         "value_kind": None,
         "value": None,
+        "native_cast": None,
     }
     emitted = emit_module(module)
     assert "    @private\n    def reset(self) -> Int32: ..." in emitted

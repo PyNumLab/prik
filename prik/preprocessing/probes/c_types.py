@@ -227,10 +227,52 @@ int main(void) {
     printf(",");
     PRIK_PRINT_ARITHMETIC("size_t", "stddef.h", size_t);
     printf(",");
+#ifdef INT8_MAX
+    PRIK_PRINT_ARITHMETIC("int8_t", "stdint.h", int8_t);
+#else
+    printf("\"int8_t\":{\"header\":\"stdint.h\",\"available\":false}");
+#endif
+    printf(",");
+#ifdef INT16_MAX
+    PRIK_PRINT_ARITHMETIC("int16_t", "stdint.h", int16_t);
+#else
+    printf("\"int16_t\":{\"header\":\"stdint.h\",\"available\":false}");
+#endif
+    printf(",");
+#ifdef INT32_MAX
+    PRIK_PRINT_ARITHMETIC("int32_t", "stdint.h", int32_t);
+#else
+    printf("\"int32_t\":{\"header\":\"stdint.h\",\"available\":false}");
+#endif
+    printf(",");
+#ifdef INT64_MAX
+    PRIK_PRINT_ARITHMETIC("int64_t", "stdint.h", int64_t);
+#else
+    printf("\"int64_t\":{\"header\":\"stdint.h\",\"available\":false}");
+#endif
+    printf(",");
+#ifdef UINT8_MAX
+    PRIK_PRINT_ARITHMETIC("uint8_t", "stdint.h", uint8_t);
+#else
+    printf("\"uint8_t\":{\"header\":\"stdint.h\",\"available\":false}");
+#endif
+    printf(",");
+#ifdef UINT16_MAX
+    PRIK_PRINT_ARITHMETIC("uint16_t", "stdint.h", uint16_t);
+#else
+    printf("\"uint16_t\":{\"header\":\"stdint.h\",\"available\":false}");
+#endif
+    printf(",");
 #ifdef UINT32_MAX
     PRIK_PRINT_ARITHMETIC("uint32_t", "stdint.h", uint32_t);
 #else
     printf("\"uint32_t\":{\"header\":\"stdint.h\",\"available\":false}");
+#endif
+    printf(",");
+#ifdef UINT64_MAX
+    PRIK_PRINT_ARITHMETIC("uint64_t", "stdint.h", uint64_t);
+#else
+    printf("\"uint64_t\":{\"header\":\"stdint.h\",\"available\":false}");
 #endif
     printf(",");
     PRIK_PRINT_ARITHMETIC("time_t", "time.h", time_t);

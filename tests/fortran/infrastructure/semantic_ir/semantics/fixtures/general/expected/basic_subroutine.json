@@ -203,7 +203,8 @@
               "python_position": 0,
               "result_position": null,
               "value_kind": "",
-              "value": null
+              "value": null,
+              "native_cast": null
             },
             {
               "python_name": "x",
@@ -212,7 +213,8 @@
               "python_position": 1,
               "result_position": null,
               "value_kind": "",
-              "value": null
+              "value": null,
+              "native_cast": null
             }
           ],
           "metadata": {},

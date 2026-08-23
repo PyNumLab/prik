@@ -30,6 +30,7 @@ from prik.semantics.metadata import (
     ADDRESS_ROLE_PROJECTION,
     ADDRESS_ROLE_RAW,
     BIND_TARGET_METADATA,
+    EXPLICIT_C_EXPORT_METADATA,
     MAYBE_UNALLOCATED_METADATA,
     OPTIONAL_ABSENT_HANDLE_METADATA,
     PROJECTED_OUTPUT_METADATA,
@@ -105,6 +106,7 @@ def complete_semantic_policies(
     semantic_ir: models.SemanticModule | Iterable[models.SemanticModule],
     *,
     strict_wrapper_names: bool = False,
+    positional_only: bool = False,
 ) -> list[models.SemanticModule]:
     """Complete policy decisions for semantic modules after parser-to-IR conversion.
 
@@ -112,8 +114,10 @@ def complete_semantic_policies(
     either one module or any iterable of modules, mutates each in place, and
     returns an ordered list of those same objects for pipeline chaining.
     ``strict_wrapper_names`` is forwarded to export and class-surface policy
-    validation.  Invalid or incomplete semantic contracts raise ``ValueError``
-    rather than leaving a lower stage to choose a fallback.
+    validation.  ``positional_only`` completes a keyword-free Python surface
+    where every argument is required.  Invalid or incomplete semantic contracts
+    raise ``ValueError`` rather than leaving a lower stage to choose a
+    fallback.
 
     This shared post-IR boundary completes entry export reachability, ownership,
     transfer, destruction, mutability/writeback, projection, nullability,
@@ -131,7 +135,44 @@ def complete_semantic_policies(
         # Resolve all remaining ownership and wrapper-facing semantic choices.
         _complete_ownership_policies(module, strict_wrapper_names=strict_wrapper_names)
         _reject_ineligible_direct_c_operations(module)
+        if positional_only:
+            _complete_positional_only_surface(module)
     return modules
+
+
+def _complete_positional_only_surface(module: models.SemanticModule) -> None:
+    """Complete a keyword-free Python surface for one module.
+
+    A positional-only callable exposes no argument names, so the names a native
+    declaration happens to use -- reserved spellings such as ``__x``, or none at
+    all -- stop being part of the Python API.  Policy therefore renames the
+    visible arguments to their position and records that the binding takes no
+    keywords.  A function with an optional argument keeps keywords, because
+    skipping one still requires naming the rest.
+    """
+    if module.overload_sets or any(semantic_class.overload_sets for semantic_class in module.classes):
+        raise ValueError("A positional-only surface does not support overload sets, which dispatch on keywords")
+    declarations = [*module.functions]
+    declarations.extend(method for semantic_class in module.classes for method in semantic_class.methods)
+    for function in declarations:
+        policy = function.metadata.get(models.RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA)
+        if not isinstance(policy, FunctionWrapperPolicy) or not _accepts_positional_only_call(policy):
+            continue
+        function.metadata[models.RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA] = replace(
+            policy,
+            arguments=tuple(
+                replace(argument, python_name=f"arg{argument.python_position}") for argument in policy.arguments
+            ),
+            accepts_keyword_arguments=False,
+        )
+
+
+def _accepts_positional_only_call(policy: FunctionWrapperPolicy) -> bool:
+    """Report whether every visible argument of one function must be supplied."""
+    return all(argument.optional_mode in _REQUIRED_ARGUMENT_MODES for argument in policy.arguments)
+
+
+_REQUIRED_ARGUMENT_MODES = frozenset({OptionalMode.REQUIRED, OptionalMode.REQUIRED_DESCRIPTOR})
 
 
 _C_DIRECT_DIAGNOSTIC_PREFIX = "C_DIRECT_"
@@ -192,12 +233,15 @@ def _c_module_variable_blocker(variable: models.SemanticVariable) -> str:
 def _is_wrapped_c_declaration(module: models.SemanticModule, node) -> bool:
     """Return whether one C declaration belongs to the wrapped translation unit.
 
-    A declaration expanded from an include keeps that file's provenance and is
-    never part of the generated public API, so the direct-only lane decides
-    only the declarations the wrapped unit wrote itself.
+    A declaration expanded from an include is normally inspection-only. An
+    export-symbol selection marks the exact included functions the user chose,
+    making those declarations part of the direct C surface without changing
+    their source provenance.
     """
     if node.origin.source_language != "c":
         return False
+    if node.metadata.get(EXPLICIT_C_EXPORT_METADATA):
+        return True
     filename = node.origin.source_location.get("filename") if isinstance(node.origin.source_location, dict) else None
     return not (isinstance(filename, str) and filename != module.origin.native_name)
 
@@ -1126,20 +1170,11 @@ def _native_status_output(
     noun = "a hidden output or visible argument" if allow_visible else "a hidden output"
     if not isinstance(output_name, str) or not output_name:
         raise ValueError(f"Function {function.name!r} raises {subject} target must name {noun}")
-    mappings = tuple(
-        mapping
-        for mapping in function.projection
-        if output_name in {mapping.python_name, mapping.native_name}
-        and (
-            (mapping.python_position is None and isinstance(mapping.result_position, int))
-            or (allow_visible and isinstance(mapping.python_position, int))
-        )
-    )
-    if len(mappings) != 1:
+    mapping = _sole_status_output_mapping(function, output_name, allow_visible=allow_visible)
+    if mapping is None or not isinstance(mapping.native_position, int):
         raise ValueError(f"Function {function.name!r} raises {subject} target must name {noun}")
-    mapping = mappings[0]
     argument = next((item for item in function.arguments if item.name == mapping.python_name), None)
-    if argument is None or not isinstance(mapping.native_position, int):
+    if argument is None:
         raise ValueError(f"Function {function.name!r} raises {subject} target must name {noun}")
     visible = isinstance(mapping.python_position, int)
     decision = argument.metadata.get(models.RESOLVED_OWNERSHIP_POLICY_METADATA)
@@ -1160,6 +1195,33 @@ def _native_status_output(
         character_length=_fixed_character_length(semantic_type),
         python_position=mapping.python_position if visible else None,
     )
+
+
+def _is_status_output_mapping(mapping: models.ProjectionMapping, *, allow_visible: bool) -> bool:
+    """Report whether one mapping projects a status output this policy accepts.
+
+    A hidden projected output carries a result position and no Python position.
+    A visible argument is accepted only where the caller may supply the buffer.
+    """
+    if mapping.python_position is None and isinstance(mapping.result_position, int):
+        return True
+    return allow_visible and isinstance(mapping.python_position, int)
+
+
+def _sole_status_output_mapping(
+    function: models.SemanticFunction,
+    output_name: str,
+    *,
+    allow_visible: bool,
+) -> models.ProjectionMapping | None:
+    """Return the one projection mapping named by a status target, if unambiguous."""
+    mappings = tuple(
+        mapping
+        for mapping in function.projection
+        if output_name in {mapping.python_name, mapping.native_name}
+        and _is_status_output_mapping(mapping, allow_visible=allow_visible)
+    )
+    return mappings[0] if len(mappings) == 1 else None
 
 
 _VISIBLE_STATUS_STRING_ACTIONS = frozenset(

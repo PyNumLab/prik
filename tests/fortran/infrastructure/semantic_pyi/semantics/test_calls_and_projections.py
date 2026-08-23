@@ -313,7 +313,10 @@ def wrapper(
 
     projection = module.functions[0].projection
 
-    assert [asdict(mapping) for mapping in projection] == [
+    # Exact C scalar casts are orthogonal to these Fortran hidden-value facts.
+    assert [
+        {name: value for name, value in asdict(mapping).items() if name != "native_cast"} for mapping in projection
+    ] == [
         {
             "python_name": "x",
             "native_name": "x",

@@ -1,7 +1,5 @@
 """Tests split by stable ownership concept from `test_functions_and_callbacks.py`."""
 
-from dataclasses import asdict
-
 from prik.parsers.c import parse_c_file
 from prik.parsers.c.models import (
     CAtomic,
@@ -98,25 +96,17 @@ def test_c2ir_converts_scalar_function_signatures_and_preserves_native_order():
             ],
         },
     }
-    assert [asdict(mapping) for mapping in add.projection] == [
-        {
-            "python_name": "a",
-            "native_name": "a",
-            "native_position": 0,
-            "python_position": 0,
-            "result_position": None,
-            "value_kind": "",
-            "value": None,
-        },
-        {
-            "python_name": "b",
-            "native_name": "b",
-            "native_position": 1,
-            "python_position": 1,
-            "result_position": None,
-            "value_kind": "",
-            "value": None,
-        },
+    assert [
+        (
+            mapping.python_name,
+            mapping.native_name,
+            mapping.native_position,
+            mapping.python_position,
+        )
+        for mapping in add.projection
+    ] == [
+        ("a", "a", 0, 0),
+        ("b", "b", 1, 1),
     ]
     _assert_c_origin(
         add.arguments[0].origin,

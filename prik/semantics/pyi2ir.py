@@ -20,7 +20,7 @@ import re
 from copy import deepcopy
 from dataclasses import dataclass, field
 
-from prik.contracts import CONTRACT_SYMBOLS, CONTRACT_TYPE_NAMES
+from prik.contracts import CONTRACT_SYMBOLS, CONTRACT_TYPE_NAMES, NATIVE_C_SCALAR_CASTS
 from prik.utilities.declaration_expressions import (
     declaration_expression_calls,
     is_declaration_expression_helper,
@@ -39,6 +39,7 @@ from prik.semantics.metadata import (
     BIND_TARGET_METADATA,
     DEFERRED_BINDING_METADATA,
     MAYBE_UNALLOCATED_METADATA,
+    NATIVE_C_SCALAR_CAST_METADATA,
     NATIVE_PROJECTION_METADATA,
     NULLABLE_ANNOTATION_METADATA,
     OPTIONAL_ABSENT_HANDLE_METADATA,
@@ -1052,8 +1053,15 @@ class _PyiAstParser:
         return projection, native_result
 
     def native_result_projection(self, node: ast.AST) -> ProjectionMapping:
-        """Parse the nullable scalar descriptor returned by a native function."""
+        """Parse an exact scalar cast or nullable descriptor native result."""
         mapping = self.native_projection_entry(node, native_position=-1)
+        if mapping.native_cast is not None:
+            if mapping.result_position is None or mapping.python_position is not None or mapping.value_kind:
+                raise ValueError("native_call scalar result expects CScalar(Return(0))")
+            mapping.native_position = None
+            if mapping.result_position != 0:
+                raise ValueError("native scalar function result must map to Python result slot 0")
+            return mapping
         if mapping.value_kind in {"allocatable", "pointer"} and mapping.python_position is not None:
             raise ValueError("native_call result must reference Return(i), not Arg(i)")
         if mapping.value_kind not in {"allocatable", "pointer"} or mapping.result_position is None:
@@ -1533,6 +1541,8 @@ class _PyiAstParser:
             return self.native_address_projection_entry(node, native_position)
 
         descriptor = self.contract_name(node.func)
+        if descriptor in NATIVE_C_SCALAR_CASTS:
+            return self.native_scalar_cast_projection_entry(node, native_position, descriptor)
         if descriptor == "Value":
             return self.native_value_projection_entry(node, native_position)
         if descriptor in {"Allocatable", "Pointer"}:
@@ -1544,6 +1554,23 @@ class _PyiAstParser:
 
         helper = self.required_name(node.func)
         return self._native_helper_projection_entry(helper, node, native_position)
+
+    def native_scalar_cast_projection_entry(
+        self,
+        node: ast.Call,
+        native_position: int,
+        native_cast: str,
+    ) -> ProjectionMapping:
+        """Attach one exact C scalar identity to an argument or result reference."""
+        if len(node.args) != 1 or node.keywords:
+            raise ValueError(f"{native_cast} expects one Arg(...) or Return(...) reference")
+        mapping = self.native_projection_entry(node.args[0], native_position)
+        if mapping.native_cast is not None:
+            raise ValueError("native_call scalar casts cannot be nested")
+        if mapping.value_kind:
+            raise ValueError(f"{native_cast} expects Arg(...) or Return(...), not a projection wrapper")
+        mapping.native_cast = native_cast
+        return mapping
 
     def native_value_projection_entry(
         self,
@@ -1742,11 +1769,19 @@ class _PyiAstParser:
             raise ValueError("Addr projection expects one Arg(...), Return(...), or Work(...) reference")
         if self._addr_depth(node.func) != 1:
             raise ValueError("native_call address projection only supports Addr(...)")
-        value = self.native_value_ref(node.args[0])
+        native_cast = None
+        reference = node.args[0]
+        if isinstance(reference, ast.Call) and self.contract_name(reference.func) in NATIVE_C_SCALAR_CASTS:
+            native_cast = self.contract_name(reference.func)
+            if len(reference.args) != 1 or reference.keywords:
+                raise ValueError(f"{native_cast} expects one Arg(...) or Return(...) reference")
+            reference = reference.args[0]
+        value = self.native_value_ref(reference)
         mapping = ProjectionMapping(
             native_position=native_position,
             value_kind="addr",
             value=value,
+            native_cast=native_cast,
         )
         if value["kind"] == "arg":
             mapping.python_position = int(value["position"])
@@ -1876,6 +1911,8 @@ class _PyiAstParser:
         unimported contract spellings raise ``ValueError``.
         """
         self._reject_unimported_contract_type(node)
+        if self.contract_name(node) in NATIVE_C_SCALAR_CASTS:
+            raise ValueError("Native C scalar names are valid only inside @native_call")
         optional_item = self._optional_union_item(node)
         if optional_item is not None:
             semantic_type = self.semantic_type(optional_item)
@@ -3013,7 +3050,7 @@ class _PyiAstParser:
             for mapping in projection
             if mapping.result_position is not None and mapping.python_position is None
         }
-        if native_result is None or native_result.result_position is None:
+        if native_result is None or native_result.result_position is None or native_result.native_cast is not None:
             return positions
         if native_result.result_position in positions:
             raise ValueError(
@@ -3167,6 +3204,9 @@ class _PyiAstParser:
             return return_type
         if return_type is None:
             raise ValueError("native_call result requires a native function result in Python result slot 0")
+        if native_result.native_cast is not None:
+            return_type.metadata[NATIVE_C_SCALAR_CAST_METADATA] = native_result.native_cast
+            return return_type
         if not return_type.metadata.pop(_PYI_OPTIONAL_RETURN_METADATA, False):
             raise ValueError("native scalar descriptor function result must use a nullable T | None annotation")
         self._apply_scalar_descriptor_kind(return_type, native_result.value_kind)

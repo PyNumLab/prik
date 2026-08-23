@@ -80,6 +80,7 @@ from prik.codegen.nodes import (
     CodeExpression,
 )
 from prik.codegen.overloads import OverloadPlanQueries
+from prik.naming.native_symbols import COLLISION_ADAPTER_STORAGE
 from prik.planning.models import (
     ArrayHandoffPlan,
     ArgumentTransferPlan,
@@ -110,7 +111,7 @@ from prik.planning.models import (
     OverloadPlan,
     ResultPlan,
 )
-from prik.codegen.primitive_scalar_types import PrimitiveScalarTypeRegistry
+from prik.codegen.primitive_scalar_types import NativeCArrayStorageRegistry, PrimitiveScalarTypeRegistry
 from prik.codegen.visitor import ClassVisitor
 
 
@@ -400,9 +401,66 @@ class CBindingGenerator(ClassVisitor):
         """
         module = self.binding_module(plan)
         function_groups = self._binding_function_shards(plan)
-        if not function_groups:
-            return (module,)
-        return self._sharded_binding_modules(plan, module, function_groups)
+        modules = (module,) if not function_groups else self._sharded_binding_modules(plan, module, function_groups)
+        adapters = self._collision_adapter_module(plan)
+        return (*modules, adapters) if adapters is not None else modules
+
+    def _collision_adapter_module(self, plan: ModulePlan) -> CModule | None:
+        """Build the translation unit that forwards collision-adapted symbols.
+
+        The unit deliberately includes no Python header, so its declaration of
+        each native symbol is the only one in scope and cannot conflict with a
+        declaration ``Python.h`` would otherwise have brought in.
+        """
+        adapted = self._collision_adapted_functions(plan)
+        if not adapted:
+            return None
+        return CModule(
+            name=f"{plan.binding.owner_path}_adapters",
+            includes=(
+                CInclude("stdint.h"),
+                CInclude("stdbool.h"),
+                CInclude("complex.h"),
+                CInclude("stddef.h"),
+            ),
+            declarations=tuple(self._collision_adapter_native_prototype(function) for function in adapted),
+            functions=tuple(self._collision_adapter_function(function) for function in adapted),
+        )
+
+    def _collision_adapted_functions(self, plan: ModulePlan) -> tuple[FunctionPlan, ...]:
+        """Return one function per adapted symbol, in stable emission order.
+
+        Several Python callables may name the same native symbol, so the
+        forwarder is defined once per symbol rather than once per callable.
+        """
+        adapted: dict[str, FunctionPlan] = {}
+        for function in self._functions(plan):
+            symbol = function.entrypoint.collision_adapter_symbol
+            if symbol is not None:
+                adapted.setdefault(symbol, function)
+        return tuple(adapted.values())
+
+    def _collision_adapter_native_prototype(self, plan: FunctionPlan) -> CFunctionPrototype:
+        """Declare the native symbol under its own name inside the adapter unit."""
+        return replace(self._entrypoint_prototype(plan), name=plan.entrypoint.symbol_name)
+
+    def _collision_adapter_function(self, plan: FunctionPlan) -> CFunction:
+        """Define the forwarder the binding calls in place of the native symbol."""
+        prototype = self._entrypoint_prototype(plan)
+        call = CodeExpression(
+            f"({plan.entrypoint.symbol_name})({', '.join(parameter.name for parameter in prototype.parameters)})"
+        )
+        body = (CExpressionStatement(call),) if prototype.return_type == "void" else (CReturn(call),)
+        return CFunction(
+            name=prototype.name,
+            return_type=prototype.return_type,
+            parameters=prototype.parameters,
+            body=body,
+            # A hidden forwarder is not part of the extension's exported ABI, so
+            # link-time optimization may inline it and drop the definition. An
+            # exported one is interposable and must survive the link.
+            storage=COLLISION_ADAPTER_STORAGE,
+        )
 
     def _sharded_binding_modules(
         self,
@@ -6043,10 +6101,10 @@ class CBindingGenerator(ClassVisitor):
             name=self._binding_function_name(plan),
             doc=self._binding_function_doc(plan),
             return_type="PyObject *",
-            parameters=self._binding_parameters(),
+            parameters=self._binding_parameters(plan),
             storage="static",
             body=(
-                self._keyword_declaration(plan),
+                *self._keyword_declarations(plan),
                 *argument_declarations,
                 *alias_declarations,
                 *self._callback_context_declarations(plan),
@@ -6966,6 +7024,17 @@ class CBindingGenerator(ClassVisitor):
         """Return compact helper dtype selectors from completed array facts."""
         if plan.datatype_family is DatatypeFamily.STRING:
             return "NPY_STRING", f"numpy.bytes_[{handoff.itemsize}]"
+        return CBindingGenerator._numeric_array_dtype_selectors(plan)
+
+    @staticmethod
+    def _numeric_array_dtype_selectors(plan: ArgumentTransferPlan) -> tuple[str, str]:
+        """Return canonical or policy-selected exact native NumPy storage."""
+        if plan.binding.native_array_element_c_type is not None:
+            native = NativeCArrayStorageRegistry.type_for(
+                plan.binding.native_array_element_c_type,
+                plan.semantic_type_name,
+            )
+            return native.numpy_type_macro, native.python_type_name
         scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
         if scalar_type.numpy_type_macro is None or scalar_type.python_type_name is None:
             raise ValueError(f"Unsupported array element type {plan.semantic_type_name!r}")
@@ -7254,19 +7323,16 @@ class CBindingGenerator(ClassVisitor):
         context: _CFunctionContext,
     ) -> tuple[CDeclaration | CExpressionStatement, ...]:
         """Validate and borrow one rank-zero NumPy scalar data address."""
-        scalar_type = PrimitiveScalarTypeRegistry.type_for(plan.semantic_type_name)
-        if scalar_type.numpy_type_macro is None:
-            raise ValueError(f"Unsupported scalar storage type {plan.semantic_type_name!r}")
+        numpy_type, expected = self._numeric_array_dtype_selectors(plan)
         names = context.arguments[plan.owner_path]
         array = f"(PyArrayObject *){names.object_name}"
-        expected = scalar_type.python_type_name
         nodes = [
             CDeclaration(names.object_name, "PyObject *"),
             CDeclaration(names.value_name, "void *", CodeExpression("NULL")),
             CExpressionStatement(
                 CodeExpression(
                     f"if (!PyArray_Check({names.object_name}) || PyArray_TYPE({array}) != "
-                    f"{scalar_type.numpy_type_macro} || PyArray_NDIM({array}) != 0) {{ "
+                    f"{numpy_type} || PyArray_NDIM({array}) != 0) {{ "
                     f'PyErr_Format(PyExc_TypeError, "Expected a rank-zero numpy.ndarray of type '
                     f"{expected} for argument {plan.binding.python_name}. Received <class '%s'>\", "
                     f"Py_TYPE({names.object_name})->tp_name); return NULL; }}"
@@ -8840,11 +8906,23 @@ class CBindingGenerator(ClassVisitor):
         python_name = context.python_results.get(plan.owner_path)
         if scalar_type.python_result_kind is None or python_name is None:
             raise ValueError(f"Unsupported scalar result type {plan.semantic_type_name!r}")
+        converted_name = native_name
+        conversion = ()
+        if plan.entrypoint.native_scalar_c_type is not None:
+            converted_name = f"{native_name}_contract"
+            conversion = (
+                CDeclaration(
+                    converted_name,
+                    scalar_type.c_spelling,
+                    CodeExpression(f"({scalar_type.c_spelling}){native_name}"),
+                ),
+            )
         return (
+            *conversion,
             CDeclaration(
                 python_name,
                 "PyObject *",
-                CodeExpression(self._scalar_result_expression(scalar_type, f"&{native_name}")),
+                CodeExpression(self._scalar_result_expression(scalar_type, f"&{converted_name}")),
             ),
             CIf(
                 CodeExpression(f"{python_name} == NULL"),
@@ -9300,6 +9378,10 @@ class CBindingGenerator(ClassVisitor):
             or direct_result.object_kind is not ObjectKind.SCALAR
             or direct_result.scalar_descriptor is not None
         ):
+            direct_c_result = plan.entrypoint.direct_c_abi.result if plan.entrypoint.direct_c_abi is not None else None
+            if direct_c_result is not None and direct_c_result.converts_to_contract_storage:
+                contract_type = PrimitiveScalarTypeRegistry.type_for(direct_result.semantic_type_name)
+                call = f"({contract_type.c_spelling}){call}"
             expression = f"{context.result_name} = {call}"
         else:
             raise ValueError(f"Scalar result {direct_result.owner_path!r} has no completed direct-result ABI")
@@ -9768,6 +9850,12 @@ class CBindingGenerator(ClassVisitor):
             f"{local}_polymorphic",
         )
 
+    def _keyword_declarations(self, plan: FunctionPlan) -> tuple[CDeclaration, ...]:
+        """Return the keyword table one wrapper needs, or nothing when it takes none."""
+        if not plan.binding.accepts_keyword_arguments:
+            return ()
+        return (self._keyword_declaration(plan),)
+
     def _keyword_declaration(self, plan: FunctionPlan) -> CDeclaration:
         """Build keyword declaration from the supplied completed binding records; emitted nodes only project completed binding actions."""
         keywords = ", ".join(
@@ -9786,6 +9874,8 @@ class CBindingGenerator(ClassVisitor):
         units = "O" * len(required) + ("|" if optional else "") + "O" * len(optional)
         targets = ", ".join(f"&{context.arguments[item.owner_path].object_name}" for item in arguments)
         suffix = f", {targets}" if targets else ""
+        if not plan.binding.accepts_keyword_arguments:
+            return CExpressionStatement(CodeExpression(f'if (!PyArg_ParseTuple(args, "{units}"{suffix})) return NULL'))
         return CExpressionStatement(
             CodeExpression(f'if (!PyArg_ParseTupleAndKeywords(args, kwargs, "{units}", kwlist{suffix})) return NULL')
         )
@@ -9904,7 +9994,7 @@ class CBindingGenerator(ClassVisitor):
                 declarations.append(CDeclaration(name, "void *", CodeExpression("NULL")))
                 continue
             scalar_type = PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name)
-            declarations.append(CDeclaration(name, scalar_type.c_spelling))
+            declarations.append(CDeclaration(name, result.native_scalar_c_type or scalar_type.c_spelling))
         return tuple(declarations)
 
     def _native_call_setup_nodes(
@@ -10216,6 +10306,8 @@ class CBindingGenerator(ClassVisitor):
                 values.append(names.present_name)
             if argument.entrypoint.descriptor_output_role is not None:
                 values.extend((f"&{names.value_name}", f"&{self._descriptor_output_present_name(names)}"))
+            if slot.native_scalar_c_type is not None and slot.passing is EntrypointPassingConvention.C_VALUE:
+                values[0] = f"({slot.native_scalar_c_type}){values[0]}"
             return tuple(values)
         if parameter.source_kind == "projected_slot":
             return self._projected_slot_values(
@@ -10888,7 +10980,7 @@ class CBindingGenerator(ClassVisitor):
         return CFunctionPrototype(
             self._binding_function_name(plan),
             "PyObject *",
-            self._binding_parameters(),
+            self._binding_parameters(plan),
             None if external else "static",
         )
 
@@ -11185,7 +11277,7 @@ class CBindingGenerator(ClassVisitor):
                     CMethodDefEntry(
                         function.binding.python_name,
                         self._binding_function_name(function),
-                        "METH_VARARGS | METH_KEYWORDS",
+                        self._binding_method_flags(function),
                         function.binding.docstring,
                     )
                     for function in namespace.functions
@@ -11204,6 +11296,13 @@ class CBindingGenerator(ClassVisitor):
                 *self._derived_private_method_entries(namespace),
             ),
         )
+
+    @staticmethod
+    def _binding_method_flags(plan: FunctionPlan) -> str:
+        """Return the CPython call convention selected for one wrapper."""
+        if plan.binding.accepts_keyword_arguments:
+            return "METH_VARARGS | METH_KEYWORDS"
+        return "METH_VARARGS"
 
     def _overload_method_entries(self, namespace: NamespacePlan) -> tuple[CMethodDefEntry, ...]:
         """Install public module dispatchers and private class dispatchers."""
@@ -12122,21 +12221,25 @@ class CBindingGenerator(ClassVisitor):
         number = complex(value)
         return f"({number.real!r} + {number.imag!r} * I)"
 
-    def _binding_parameters(self) -> tuple[CParameter, ...]:
+    def _binding_parameters(self, plan: FunctionPlan | None = None) -> tuple[CParameter, ...]:
         """Build binding parameters from the supplied local lowering values; emitted nodes only project completed binding actions."""
-        return (
-            CParameter("self", "PyObject *"),
-            CParameter("args", "PyObject *"),
-            CParameter("kwargs", "PyObject *"),
-        )
+        parameters = (CParameter("self", "PyObject *"), CParameter("args", "PyObject *"))
+        if plan is not None and not plan.binding.accepts_keyword_arguments:
+            return parameters
+        return (*parameters, CParameter("kwargs", "PyObject *"))
 
     def _binding_function_name(self, plan: FunctionPlan) -> str:
         """Return the binding-local binding function name derived from the supplied completed binding records; this helper preserves completed policy."""
         return f"wrap_{plan.symbol_name}"
 
     def _entrypoint_function_name(self, plan: FunctionPlan) -> str:
-        """Return the shared C-ABI function symbol selected by planning."""
-        return plan.entrypoint.symbol_name
+        """Return the symbol the binding declares and calls for one entrypoint.
+
+        Planning selects a collision-adapter forwarder when the binding must
+        not declare the native symbol itself; the forwarder is defined in the
+        separate adapter translation unit built by :meth:`binding_modules`.
+        """
+        return plan.entrypoint.collision_adapter_symbol or plan.entrypoint.symbol_name
 
     def _module_getter_name(self, plan: ModuleVariablePlan) -> str:
         """Return the binding-local module getter name derived from the supplied completed binding records; this helper preserves completed policy."""

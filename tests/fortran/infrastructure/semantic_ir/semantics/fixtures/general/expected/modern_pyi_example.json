@@ -469,7 +469,8 @@
               "python_position": 0,
               "result_position": null,
               "value_kind": "",
-              "value": null
+              "value": null,
+              "native_cast": null
             },
             {
               "python_name": "pid",
@@ -478,7 +479,8 @@
               "python_position": 1,
               "result_position": null,
               "value_kind": "",
-              "value": null
+              "value": null,
+              "native_cast": null
             },
             {
               "python_name": "mass",
@@ -487,7 +489,8 @@
               "python_position": 2,
               "result_position": null,
               "value_kind": "",
-              "value": null
+              "value": null,
+              "native_cast": null
             },
             {
               "python_name": "x",
@@ -496,7 +499,8 @@
               "python_position": 3,
               "result_position": null,
               "value_kind": "",
-              "value": null
+              "value": null,
+              "native_cast": null
             },
             {
               "python_name": "y",
@@ -505,7 +509,8 @@
               "python_position": 4,
               "result_position": null,
               "value_kind": "",
-              "value": null
+              "value": null,
+              "native_cast": null
             },
             {
               "python_name": "z",
@@ -514,7 +519,8 @@
               "python_position": 5,
               "result_position": null,
               "value_kind": "",
-              "value": null
+              "value": null,
+              "native_cast": null
             }
           ],
           "metadata": {},
@@ -883,7 +889,8 @@
               "python_position": 0,
               "result_position": null,
               "value_kind": "",
-              "value": null
+              "value": null,
+              "native_cast": null
             },
             {
               "python_name": "vx",
@@ -892,7 +899,8 @@
               "python_position": 1,
               "result_position": null,
               "value_kind": "",
-              "value": null
+              "value": null,
+              "native_cast": null
             },
             {
               "python_name": "vy",
@@ -901,7 +909,8 @@
               "python_position": 2,
               "result_position": null,
               "value_kind": "",
-              "value": null
+              "value": null,
+              "native_cast": null
             },
             {
               "python_name": "vz",
@@ -910,7 +919,8 @@
               "python_position": 3,
               "result_position": null,
               "value_kind": "",
-              "value": null
+              "value": null,
+              "native_cast": null
             }
           ],
           "metadata": {},
@@ -1127,7 +1137,8 @@
               "python_position": 0,
               "result_position": null,
               "value_kind": "",
-              "value": null
+              "value": null,
+              "native_cast": null
             },
             {
               "python_name": "alpha",
@@ -1136,7 +1147,8 @@
               "python_position": 1,
               "result_position": null,
               "value_kind": "",
-              "value": null
+              "value": null,
+              "native_cast": null
             }
           ],
           "metadata": {},
@@ -1423,7 +1435,8 @@
               "python_position": 0,
               "result_position": null,
               "value_kind": "",
-              "value": null
+              "value": null,
+              "native_cast": null
             },
             {
               "python_name": "b",
@@ -1432,7 +1445,8 @@
               "python_position": 1,
               "result_position": null,
               "value_kind": "",
-              "value": null
+              "value": null,
+              "native_cast": null
             }
           ],
           "metadata": {},
@@ -1584,7 +1598,8 @@
               "python_position": 0,
               "result_position": null,
               "value_kind": "",
-              "value": null
+              "value": null,
+              "native_cast": null
             }
           ],
           "metadata": {},
@@ -1692,7 +1707,8 @@
               "python_position": 0,
               "result_position": null,
               "value_kind": "",
-              "value": null
+              "value": null,
+              "native_cast": null
             }
           ],
           "metadata": {},
@@ -1800,7 +1816,8 @@
               "python_position": 0,
               "result_position": null,
               "value_kind": "",
-              "value": null
+              "value": null,
+              "native_cast": null
             }
           ],
           "metadata": {},

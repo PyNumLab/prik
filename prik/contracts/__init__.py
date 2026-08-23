@@ -236,6 +236,47 @@ Value = _expression
 Work = _expression
 
 
+NATIVE_C_SCALAR_CASTS: Final[dict[str, str]] = {
+    "CBool": "_Bool",
+    "CChar": "char",
+    "CSignedChar": "signed char",
+    "CUnsignedChar": "unsigned char",
+    "CShort": "short",
+    "CUnsignedShort": "unsigned short",
+    "CInt": "int",
+    "CUnsignedInt": "unsigned int",
+    "CLong": "long",
+    "CUnsignedLong": "unsigned long",
+    "CLongLong": "long long",
+    "CUnsignedLongLong": "unsigned long long",
+    "CFloat": "float",
+    "CDouble": "double",
+    "CLongDouble": "long double",
+    "CFloatComplex": "float _Complex",
+    "CDoubleComplex": "double _Complex",
+    "CLongDoubleComplex": "long double _Complex",
+}
+
+CBool = _expression
+CChar = _expression
+CSignedChar = _expression
+CUnsignedChar = _expression
+CShort = _expression
+CUnsignedShort = _expression
+CInt = _expression
+CUnsignedInt = _expression
+CLong = _expression
+CUnsignedLong = _expression
+CLongLong = _expression
+CUnsignedLongLong = _expression
+CFloat = _expression
+CDouble = _expression
+CLongDouble = _expression
+CFloatComplex = _expression
+CDoubleComplex = _expression
+CLongDoubleComplex = _expression
+
+
 def abstract(target):
     """Mark a contract class as an abstract native type.
 
@@ -283,6 +324,7 @@ CONTRACT_SYMBOLS = frozenset(
         "Bool64",
         "Bounded",
         "Byte",
+        *NATIVE_C_SCALAR_CASTS,
         "CAnonymous",
         "CAnonymousMember",
         "CEnum",

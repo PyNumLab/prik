@@ -17,7 +17,7 @@ from prik.parsers.c.parser import CParser
 from prik.parsers.fortran.cli import _format_report
 from prik.parsers.fortran.models import FortranParseError
 from prik.parsers.fortran.parser import FortranParser
-from prik.semantics.c2ir import c_project_to_semantic_modules
+from prik.semantics.c2ir import c_project_to_semantic_modules, select_c_export_functions
 from prik.semantics.fortran2ir import fortran_file_to_semantic_modules
 from prik.preprocessing.probes.c_types import (
     CStandardTypeProbeError,
@@ -359,10 +359,18 @@ def _parse_report(paths: list[str], preprocessing: PreprocessingConfig | None = 
     return out
 
 
-def _convert_c_project(project, *, c_standard_type_report: dict[str, object] | None):
-    if c_standard_type_report is None:
-        return c_project_to_semantic_modules(project)
-    return c_project_to_semantic_modules(project, standard_type_report=c_standard_type_report)
+def _convert_c_project(
+    project,
+    *,
+    c_standard_type_report: dict[str, object] | None,
+    export_symbols: tuple[str, ...] | None = None,
+):
+    modules = (
+        c_project_to_semantic_modules(project)
+        if c_standard_type_report is None
+        else c_project_to_semantic_modules(project, standard_type_report=c_standard_type_report)
+    )
+    return modules if export_symbols is None else select_c_export_functions(modules, export_symbols)
 
 
 def _c_standard_type_report(
@@ -409,6 +417,7 @@ class _SemanticPipelineContext:
     fortran_type_probe_cache_dir: str | None = None
     refresh_fortran_type_probe: bool = False
     assume_intent_in_scalars: bool = False
+    export_symbols: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -443,6 +452,7 @@ def _converted_semantic_files(
     fortran_type_probe_cache_dir: str | None = None,
     refresh_fortran_type_probe: bool = False,
     assume_intent_in_scalars: bool = False,
+    export_symbols: tuple[str, ...] | None = None,
 ) -> list[tuple[Path, list[object]]]:
     context = _SemanticPipelineContext(
         paths=paths,
@@ -457,6 +467,7 @@ def _converted_semantic_files(
         fortran_type_probe_cache_dir=fortran_type_probe_cache_dir,
         refresh_fortran_type_probe=refresh_fortran_type_probe,
         assume_intent_in_scalars=assume_intent_in_scalars,
+        export_symbols=export_symbols,
     )
     pipeline = _SOURCE_SEMANTIC_PIPELINES[language]
     parsed = pipeline.parser(context)
@@ -474,6 +485,7 @@ def _semantic_report(
     fortran_type_probe_cache_dir: str | None = None,
     refresh_fortran_type_probe: bool = False,
     assume_intent_in_scalars: bool = False,
+    export_symbols: tuple[str, ...] | None = None,
 ) -> dict[str, dict]:
     preprocessing = preprocessing or PreprocessingConfig()
     converted_files = _converted_semantic_files(
@@ -486,6 +498,7 @@ def _semantic_report(
         fortran_type_probe_cache_dir=fortran_type_probe_cache_dir,
         refresh_fortran_type_probe=refresh_fortran_type_probe,
         assume_intent_in_scalars=assume_intent_in_scalars,
+        export_symbols=export_symbols,
     )
     return _semantic_payload_for_converted_files(converted_files)
 
@@ -530,7 +543,11 @@ def _convert_c_semantic_sources(
         c_standard_type_report = _c_standard_type_report(context.preprocessing)
     modules_by_source = {
         module.origin.native_name: [module]
-        for module in _convert_c_project(parsed_sources.parsed, c_standard_type_report=c_standard_type_report)
+        for module in _convert_c_project(
+            parsed_sources.parsed,
+            c_standard_type_report=c_standard_type_report,
+            export_symbols=context.export_symbols,
+        )
     }
     return [(path, modules_by_source[str(path)]) for path in parsed_sources.source_paths]
 
@@ -935,6 +952,11 @@ def _validate_pyi_wrapper_options(args: argparse.Namespace, parser: argparse.Arg
             "--assume-intent-in-scalars interprets a missing Fortran intent; a semantic .pyi contract "
             "already states its own results, so edit the contract instead"
         )
+    if getattr(args, "export_symbols", None):
+        parser.error(
+            "--export-symbols selects declarations while reading C source; a semantic .pyi contract "
+            "already states its public functions"
+        )
     if not (
         getattr(args, "native_fortran_sources", None)
         or getattr(args, "native_c_sources", None)
@@ -972,6 +994,7 @@ def _validate_manifest_wrapper_options(args: argparse.Namespace, parser: argpars
     if (
         getattr(args, "strict_wrapper_names", False)
         or getattr(args, "assume_intent_in_scalars", False)
+        or getattr(args, "export_symbols", None)
         or _wrapper_compile_options_used(args)
     ):
         parser.error("--build-manifest replays saved wrapper behavior and compiler flags")
@@ -1041,9 +1064,57 @@ def _validate_wrapper_build_options(args: argparse.Namespace, parser: argparse.A
 
 def _validate_c_main_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
     if args.language != "c":
+        if getattr(args, "export_symbols", None):
+            parser.error("--export-symbols is supported only with --language c")
         return
     if args.command == "parse" and args.show_vars:
         parser.error("--show-vars is Fortran-only and is not supported for --language c")
+
+
+def _read_c_export_symbols(path: str | Path) -> tuple[str, ...]:
+    """Read one fail-closed C function allowlist from a UTF-8 text file."""
+    source = Path(path)
+    try:
+        lines = source.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as exc:
+        raise ValueError(f"Cannot read --export-symbols file {source}: {exc}") from exc
+
+    symbols = []
+    locations: dict[str, int] = {}
+    for line_number, raw_line in enumerate(lines, start=1):
+        symbol = raw_line.split("#", 1)[0].strip()
+        if not symbol:
+            continue
+        valid = (
+            symbol.isascii()
+            and (symbol[0].isalpha() or symbol[0] == "_")
+            and all(character.isalnum() or character == "_" for character in symbol)
+        )
+        if not valid:
+            raise ValueError(f"Invalid C identifier in --export-symbols file {source}:{line_number}: {symbol!r}")
+        previous = locations.get(symbol)
+        if previous is not None:
+            raise ValueError(
+                f"Repeated C function name in --export-symbols file {source}:{line_number}: "
+                f"{symbol!r} first appeared on line {previous}"
+            )
+        locations[symbol] = line_number
+        symbols.append(symbol)
+    if not symbols:
+        raise ValueError(f"--export-symbols file contains no C function names: {source}")
+    return tuple(symbols)
+
+
+def _complete_c_export_symbol_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    """Resolve the CLI file once for every downstream semantic/build path."""
+    path = getattr(args, "export_symbols", None)
+    args._resolved_export_symbols = None
+    if path is None:
+        return
+    try:
+        args._resolved_export_symbols = _read_c_export_symbols(path)
+    except ValueError as exc:
+        parser.error(str(exc))
 
 
 def _validate_output_options(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
@@ -1076,6 +1147,7 @@ def _validate_main_options(args: argparse.Namespace, parser: argparse.ArgumentPa
     _validate_c_main_options(args, parser)
 
     _validate_output_options(args, parser)
+    _complete_c_export_symbol_options(args, parser)
     return args.print_limit
 
 
@@ -1095,6 +1167,8 @@ def _semantic_stage_options(
         options["c_standard_type_report"] = c_standard_type_report
     if getattr(args, "assume_intent_in_scalars", False):
         options["assume_intent_in_scalars"] = True
+    if getattr(args, "_resolved_export_symbols", None) is not None:
+        options["export_symbols"] = args._resolved_export_symbols
     return options
 
 
@@ -1171,6 +1245,17 @@ def _cli_wrapper_fortran_flags(raw_flags: list[str] | None) -> tuple[str, ...]:
 
 def _cli_wrapper_c_flags(raw_flags: list[str] | None) -> tuple[str, ...]:
     return _cli_compiler_flags(raw_flags, option_name="--wrapper-c-flags")
+
+
+def _with_link_time_optimization(flags: tuple[str, ...], args) -> tuple[str, ...]:
+    """Append ``-flto`` when the build asked for link-time optimization.
+
+    Requested flags follow the compiler profile, so this adds LTO without
+    replacing the selected optimization profile.
+    """
+    if not getattr(args, "lto", False) or "-flto" in flags:
+        return flags
+    return (*flags, "-flto")
 
 
 def _wrapper_shared_library_alias_path(result, raw_out: str | None) -> Path:
@@ -1310,9 +1395,13 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
             input_c_compiler=(preprocessing.compiler or "cc") if args.language == "c" else "cc",
             native_language=args.language,
             native_fortran_sources=getattr(args, "native_fortran_sources", None),
-            native_fortran_flags=_cli_native_compile_flags(getattr(args, "native_compile_flags", None)),
+            native_fortran_flags=_with_link_time_optimization(
+                _cli_native_compile_flags(getattr(args, "native_compile_flags", None)), args
+            ),
             native_c_sources=getattr(args, "native_c_sources", None),
-            native_c_flags=_cli_native_c_compile_flags(getattr(args, "native_c_compile_flags", None)),
+            native_c_flags=_with_link_time_optimization(
+                _cli_native_c_compile_flags(getattr(args, "native_c_compile_flags", None)), args
+            ),
             native_objects=getattr(args, "native_objects", None),
             native_libraries=_cli_native_libraries(getattr(args, "native_libraries", None)),
             native_link_items=_cli_native_link_items(getattr(args, "native_link_items", None)),
@@ -1321,13 +1410,20 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
             output_name=_wrapper_output_name(args),
             output_dir=getattr(args, "out_dir", None),
             strict_wrapper_names=getattr(args, "strict_wrapper_names", False),
+            collision_adapters=getattr(args, "collision_adapters", None),
+            collision_adapter_all=getattr(args, "collision_adapter_all", False),
+            positional_only=getattr(args, "positional_only", False),
             makefile=getattr(args, "makefile", False),
             generate_sources=getattr(args, "generate_sources", False),
             jobs=getattr(args, "jobs", None),
             verbose=1 if getattr(args, "verbose", False) else 0,
             wrapper_compiler_debug=getattr(args, "wrapper_compiler_debug", False),
-            wrapper_fortran_flags=_cli_wrapper_fortran_flags(getattr(args, "wrapper_fortran_flags", None)),
-            wrapper_c_flags=_cli_wrapper_c_flags(getattr(args, "wrapper_c_flags", None)),
+            wrapper_fortran_flags=_with_link_time_optimization(
+                _cli_wrapper_fortran_flags(getattr(args, "wrapper_fortran_flags", None)), args
+            ),
+            wrapper_c_flags=_with_link_time_optimization(
+                _cli_wrapper_c_flags(getattr(args, "wrapper_c_flags", None)), args
+            ),
             _on_total_build_time=total_build_time_reporter,
         )
         return _copy_wrapper_shared_library_alias(args, result)
@@ -1339,24 +1435,36 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
             output_name=_wrapper_output_name(args),
             input_c_compiler=preprocessing.compiler or "cc",
             preprocessing=preprocessing,
+            export_symbols=getattr(args, "_resolved_export_symbols", None),
             input_compiler="gfortran",
             native_c_sources=getattr(args, "native_c_sources", None),
-            native_c_flags=_cli_native_c_compile_flags(getattr(args, "native_c_compile_flags", None)),
+            native_c_flags=_with_link_time_optimization(
+                _cli_native_c_compile_flags(getattr(args, "native_c_compile_flags", None)), args
+            ),
             native_fortran_sources=getattr(args, "native_fortran_sources", None),
-            native_fortran_flags=_cli_native_compile_flags(getattr(args, "native_compile_flags", None)),
+            native_fortran_flags=_with_link_time_optimization(
+                _cli_native_compile_flags(getattr(args, "native_compile_flags", None)), args
+            ),
             native_objects=getattr(args, "native_objects", None),
             native_libraries=_cli_native_libraries(getattr(args, "native_libraries", None)),
             native_link_items=_cli_native_link_items(getattr(args, "native_link_items", None)),
             native_library_dirs=getattr(args, "native_library_dirs", None),
             native_include_dirs=_cli_build_include_dirs(args),
             strict_wrapper_names=getattr(args, "strict_wrapper_names", False),
+            collision_adapters=getattr(args, "collision_adapters", None),
+            collision_adapter_all=getattr(args, "collision_adapter_all", False),
+            positional_only=getattr(args, "positional_only", False),
             makefile=getattr(args, "makefile", False),
             generate_sources=getattr(args, "generate_sources", False),
             jobs=getattr(args, "jobs", None),
             verbose=1 if getattr(args, "verbose", False) else 0,
             wrapper_compiler_debug=getattr(args, "wrapper_compiler_debug", False),
-            wrapper_fortran_flags=_cli_wrapper_fortran_flags(getattr(args, "wrapper_fortran_flags", None)),
-            wrapper_c_flags=_cli_wrapper_c_flags(getattr(args, "wrapper_c_flags", None)),
+            wrapper_fortran_flags=_with_link_time_optimization(
+                _cli_wrapper_fortran_flags(getattr(args, "wrapper_fortran_flags", None)), args
+            ),
+            wrapper_c_flags=_with_link_time_optimization(
+                _cli_wrapper_c_flags(getattr(args, "wrapper_c_flags", None)), args
+            ),
             _on_total_build_time=total_build_time_reporter,
         )
         return _copy_wrapper_shared_library_alias(args, result)
@@ -1367,12 +1475,19 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
         output_name=_wrapper_output_name(args),
         preprocessing=preprocessing,
         strict_wrapper_names=getattr(args, "strict_wrapper_names", False),
+        collision_adapters=getattr(args, "collision_adapters", None),
+        collision_adapter_all=getattr(args, "collision_adapter_all", False),
+        positional_only=getattr(args, "positional_only", False),
         assume_intent_in_scalars=getattr(args, "assume_intent_in_scalars", False),
         compile_input_sources=not getattr(args, "no_compile_input_sources", False),
         native_fortran_sources=getattr(args, "native_fortran_sources", None),
-        native_fortran_flags=_cli_native_compile_flags(getattr(args, "native_compile_flags", None)),
+        native_fortran_flags=_with_link_time_optimization(
+            _cli_native_compile_flags(getattr(args, "native_compile_flags", None)), args
+        ),
         native_c_sources=getattr(args, "native_c_sources", None),
-        native_c_flags=_cli_native_c_compile_flags(getattr(args, "native_c_compile_flags", None)),
+        native_c_flags=_with_link_time_optimization(
+            _cli_native_c_compile_flags(getattr(args, "native_c_compile_flags", None)), args
+        ),
         native_objects=getattr(args, "native_objects", None),
         native_libraries=_cli_native_libraries(getattr(args, "native_libraries", None)),
         native_link_items=_cli_native_link_items(getattr(args, "native_link_items", None)),
@@ -1383,8 +1498,12 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
         jobs=getattr(args, "jobs", None),
         verbose=1 if getattr(args, "verbose", False) else 0,
         wrapper_compiler_debug=getattr(args, "wrapper_compiler_debug", False),
-        wrapper_fortran_flags=_cli_wrapper_fortran_flags(getattr(args, "wrapper_fortran_flags", None)),
-        wrapper_c_flags=_cli_wrapper_c_flags(getattr(args, "wrapper_c_flags", None)),
+        wrapper_fortran_flags=_with_link_time_optimization(
+            _cli_wrapper_fortran_flags(getattr(args, "wrapper_fortran_flags", None)), args
+        ),
+        wrapper_c_flags=_with_link_time_optimization(
+            _cli_wrapper_c_flags(getattr(args, "wrapper_c_flags", None)), args
+        ),
         _on_total_build_time=total_build_time_reporter,
     )
     return _copy_wrapper_shared_library_alias(args, result)
@@ -1866,6 +1985,11 @@ def _add_semantic_interpretation_options(
             "conservative intent(inout) default, so its value is not returned; a declared intent always wins"
         ),
     )
+    group.add_argument(
+        "--export-symbols",
+        metavar="FILE",
+        help="Select exact reachable C functions from a UTF-8 name file; C semantic commands only",
+    )
 
 
 def _add_wrapper_behavior_options(
@@ -1987,6 +2111,29 @@ def _add_extension_link_options(group: argparse._ArgumentGroup) -> None:
         metavar="DIR",
         help="Library search and runtime directories",
     )
+    group.add_argument(
+        "--lto",
+        action="store_true",
+        help="Add -flto to generated and native compilation and to the extension link",
+    )
+    group.add_argument(
+        "--collision-adapter",
+        dest="collision_adapters",
+        action="extend",
+        nargs="+",
+        metavar="NAME",
+        help="Call native symbol NAME through a forwarder defined outside the binding unit",
+    )
+    group.add_argument(
+        "--collision-adapter-all",
+        action="store_true",
+        help="Call every direct C symbol through a forwarder, not only selected names",
+    )
+    group.add_argument(
+        "--positional-only",
+        action="store_true",
+        help="Expose wrappers whose arguments are all required as positional-only arg0..argN",
+    )
 
 
 def _add_output_options(
@@ -2043,6 +2190,10 @@ _PIPELINE_DEFAULTS = {
     "native_link_items": None,
     "native_library_dirs": None,
     "strict_wrapper_names": False,
+    "lto": False,
+    "collision_adapters": None,
+    "collision_adapter_all": False,
+    "positional_only": False,
     "assume_intent_in_scalars": False,
     "wrapper_compiler_debug": False,
     "wrapper_fortran_flags": None,
@@ -2057,6 +2208,7 @@ _PIPELINE_DEFAULTS = {
     "compile_commands": None,
     "public_includes": None,
     "private_includes": None,
+    "export_symbols": None,
 }
 
 
@@ -2175,6 +2327,38 @@ def _add_top_level_arguments(parser: argparse.ArgumentParser) -> None:
         nargs="+",
         metavar="NAME",
         help=("Link against NAME; for example, --native-library openblas passes -lopenblas to the linker"),
+    )
+    build_group.add_argument(
+        "--lto",
+        action="store_true",
+        help=(
+            "Add -flto to generated and native compilation and to the extension link, "
+            "so a collision adapter can be inlined away"
+        ),
+    )
+    build_group.add_argument(
+        "--collision-adapter",
+        dest="collision_adapters",
+        action="extend",
+        nargs="+",
+        metavar="NAME",
+        help=(
+            "Call native symbol NAME through a forwarder in a separate translation unit, "
+            "so the binding never declares a name Python.h already declares"
+        ),
+    )
+    build_group.add_argument(
+        "--collision-adapter-all",
+        action="store_true",
+        help="Apply --collision-adapter to every direct C symbol",
+    )
+    build_group.add_argument(
+        "--positional-only",
+        action="store_true",
+        help=(
+            "Expose wrappers whose arguments are all required as positional-only, naming them "
+            "arg0..argN so a native declaration's parameter names stay out of the Python API"
+        ),
     )
     build_group.add_argument(
         "--assume-intent-in-scalars",

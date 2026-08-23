@@ -93,6 +93,10 @@ least one explicit native input: `--native-fortran-sources`, `--native-c-sources
 | `--native-library NAME ...` | Links system libraries by name — `--native-library openblas` passes `-lopenblas`. |
 | `--native-link-item KIND:VALUE ...` | Ordered link items. `KIND` is `object`, `archive`, `shared-library`, `library`, or `arg`. |
 | `--native-library-dir DIR ...` | Library search directories and runtime paths. |
+| `--lto` | Enables link-time optimization for Fortran and C builds by adding `-flto` to generated and native compilation and to the extension link. |
+| `--collision-adapter NAME ...` | Calls native symbol `NAME` through a forwarder defined in a separate translation unit, so the binding never declares an identifier its own headers already declare. |
+| `--collision-adapter-all` | Applies `--collision-adapter` to every direct C symbol in the build. |
+| `--positional-only` | For Fortran and C, exposes every wrapper whose arguments are all required as positional-only, renaming them `arg0`..`argN`. |
 | `--wrapper-compiler-debug` | Uses the compiler debug profile instead of release. |
 | `--wrapper-fortran-flags FLAG ...` | Flags for generated Fortran bridge compilation. |
 | `--wrapper-c-flags FLAG ...` | Flags for generated binding compilation and extension linking. |
@@ -119,6 +123,28 @@ Build rules worth knowing:
 - A source-free C `.pyi` contract is C-native only when `--language c` is
   supplied. PRIK does not infer that identity from the contract filename,
   compiler, native source list, or `@native_abi("c")`.
+
+- `--lto` is an optional build optimization for both Fortran and C. It applies
+  to native sources, generated bridge and binding compilation, and the final
+  extension link. Collision adapters remain correct without it.
+
+- `--positional-only` applies equally to Fortran and C. It removes argument
+  names from the Python API of any function whose arguments are all required,
+  so a native declaration's parameter names stop being part of the contract.
+  Use it when source parameter names should not become public keywords; a
+  system header may spell them `__x`, or omit them entirely. A function with an
+  optional argument keeps its keywords because skipping one still requires
+  naming the rest, and a module containing overload sets is rejected because
+  overload dispatch selects a candidate by keyword.
+
+- `--collision-adapter` is for a genuine identifier collision with a header
+  included by the generated binding. The adapter unit includes no Python
+  header and reconstructs the exact native declaration from completed
+  `@native_call` types. Width-normalized `long` and `long long` distinctions do
+  not by themselves require an adapter. Only a C-source function is eligible;
+  a Fortran `bind(C)` procedure and a generated bridge symbol are not.
+  The adapter isolates the binding's declaration; it does not disambiguate two
+  linked libraries that export the same symbol.
 
 ## Parse and semantics
 
@@ -245,6 +271,18 @@ C contracts—not whether the native compiler can find an include file.
 | `--include-exposure {reachable-project,roots-only}` | Exposes reachable project headers by default, or only the root inputs. |
 | `--public-include PATH_OR_PATTERN` | Exposes declarations from matching included files. Repeat as needed. |
 | `--private-include PATH_OR_PATTERN` | Hides declarations from matching included files. Repeat as needed. |
+| `--export-symbols FILE` | Selects the exact reachable C functions named by FILE and makes those declarations public, including declarations from otherwise-private system headers. |
+
+`--export-symbols` is a function-only allowlist for commands that produce
+semantic IR: source builds, `semantics`, and `generate --pyi`. The UTF-8 file
+contains one ASCII C identifier per line; blank lines and text after `#` are ignored.
+Every listed name must resolve to exactly one reachable function. Empty files,
+invalid or repeated names, unknown names, names of non-function declarations,
+and ambiguous declarations fail the command. All declarations not selected by
+the file are removed from that semantic surface. This makes the allowlist the
+explicit exception to `roots-only`, system-header privacy, and matching
+`--private-include` rules; it does not change native linking or make an
+unsupported selected signature buildable.
 
 ## Output and diagnostics
 

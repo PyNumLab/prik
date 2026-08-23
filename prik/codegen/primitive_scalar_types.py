@@ -11,12 +11,75 @@ infers a scalar type from source syntax or a backend condition.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import ClassVar
 
 from prik.codegen.nodes import BackendScalarType
+from prik.contracts import NATIVE_C_SCALAR_CASTS
 from prik.semantics.scalar_types import BOOLEAN_SEMANTIC_TYPE_NAMES
+
+
+@dataclass(frozen=True)
+class NativeCArrayStorageType:
+    """Exact NumPy storage corresponding to one native C element type."""
+
+    numpy_type_macro: str
+    python_type_name: str
+
+
+class NativeCArrayStorageRegistry:
+    """Resolve a completed exact C element identity into NumPy C storage.
+
+    Policy decides that an array requires exact native storage. This registry
+    owns only the backend spellings used to validate that storage; it never
+    promotes a scalar marker into array policy or selects a nearby dtype.
+    """
+
+    _BY_CONTRACT_NAME: ClassVar[Mapping[str, NativeCArrayStorageType]] = MappingProxyType(
+        {
+            "CSignedChar": NativeCArrayStorageType("NPY_BYTE", "numpy.byte"),
+            "CUnsignedChar": NativeCArrayStorageType("NPY_UBYTE", "numpy.ubyte"),
+            "CShort": NativeCArrayStorageType("NPY_SHORT", "numpy.short"),
+            "CUnsignedShort": NativeCArrayStorageType("NPY_USHORT", "numpy.ushort"),
+            "CInt": NativeCArrayStorageType("NPY_INT", "numpy.intc"),
+            "CUnsignedInt": NativeCArrayStorageType("NPY_UINT", "numpy.uintc"),
+            "CLong": NativeCArrayStorageType("NPY_LONG", "numpy.long"),
+            "CUnsignedLong": NativeCArrayStorageType("NPY_ULONG", "numpy.ulong"),
+            "CLongLong": NativeCArrayStorageType("NPY_LONGLONG", "numpy.longlong"),
+            "CUnsignedLongLong": NativeCArrayStorageType("NPY_ULONGLONG", "numpy.ulonglong"),
+            "CFloat": NativeCArrayStorageType("NPY_FLOAT", "numpy.single"),
+            "CDouble": NativeCArrayStorageType("NPY_DOUBLE", "numpy.double"),
+            "CLongDouble": NativeCArrayStorageType("NPY_LONGDOUBLE", "numpy.longdouble"),
+            "CFloatComplex": NativeCArrayStorageType("NPY_CFLOAT", "numpy.csingle"),
+            "CDoubleComplex": NativeCArrayStorageType("NPY_CDOUBLE", "numpy.cdouble"),
+            "CLongDoubleComplex": NativeCArrayStorageType("NPY_CLONGDOUBLE", "numpy.clongdouble"),
+        }
+    )
+    TYPES: ClassVar[Mapping[str, NativeCArrayStorageType]] = MappingProxyType(
+        {NATIVE_C_SCALAR_CASTS[name]: storage for name, storage in _BY_CONTRACT_NAME.items()}
+    )
+    _CHAR_TYPES: ClassVar[Mapping[str, NativeCArrayStorageType]] = MappingProxyType(
+        {
+            "Int8": NativeCArrayStorageType("NPY_BYTE", "numpy.byte"),
+            "UInt8": NativeCArrayStorageType("NPY_UBYTE", "numpy.ubyte"),
+        }
+    )
+
+    @classmethod
+    def type_for(cls, c_spelling: str, semantic_type_name: str) -> NativeCArrayStorageType:
+        """Return exact NumPy storage or fail instead of reinterpreting a buffer."""
+        if c_spelling == "_Bool":
+            raise ValueError("C _Bool has no exact NumPy array storage type")
+        if c_spelling == "char":
+            try:
+                return cls._CHAR_TYPES[semantic_type_name]
+            except KeyError:
+                raise ValueError(f"C char array storage requires Int8 or UInt8, not {semantic_type_name!r}") from None
+        try:
+            return cls.TYPES[c_spelling]
+        except KeyError:
+            raise ValueError(f"Unsupported exact native C array element type {c_spelling!r}") from None
 
 
 class NumpyDtypeRegistry:
@@ -261,6 +324,8 @@ class PrimitiveScalarTypeRegistry:
 
 
 __all__ = (
+    "NativeCArrayStorageRegistry",
+    "NativeCArrayStorageType",
     "NumpyDtypeRegistry",
     "PrimitiveScalarTypeRegistry",
 )

@@ -29,6 +29,7 @@ def _main_args(**overrides):
         "include_exposure": "reachable-project",
         "public_includes": [],
         "private_includes": [],
+        "export_symbols": None,
         "show_vars": False,
         "print_limit": None,
         "vars_limit": None,

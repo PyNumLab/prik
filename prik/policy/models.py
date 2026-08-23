@@ -72,6 +72,10 @@ class DirectCABITypePolicy:
     pointer_depth: int
     qualifiers: tuple[str, ...]
     const: bool
+    # Scalar values whose native declaration differs from canonical contract
+    # storage are converted at the call boundary. Exact NumPy storage already
+    # has the native representation, so its completed decision remains false.
+    converts_to_contract_storage: bool = False
 
 
 @dataclass(frozen=True)
@@ -1235,6 +1239,7 @@ class ArgumentPolicy:
     entrypoint_pass_derived_transaction: bool = False
     entrypoint_pass_callback_parameter: bool = False
     native_storage_c_type: str | None = None
+    native_array_element_c_type: str | None = None
     character_allows_embedded_nul: bool = False
 
     @property
@@ -1314,6 +1319,7 @@ class NativeCallSlotPolicy:
     bridge_data_action: BridgeDataAction
     bridge_copy_reason: str | None
     object_kind: ObjectKind | None
+    native_scalar_c_type: str | None = None
     scalar_logical_abi: ScalarLogicalABI = ScalarLogicalABI.NOT_APPLICABLE
     scalar_native_type: str | None = None
     array_logical_abi: ArrayLogicalABI = ArrayLogicalABI.NOT_APPLICABLE
@@ -1371,6 +1377,11 @@ class FunctionWrapperPolicy:
     entrypoint_symbol: str = ""
     entrypoint_diagnostics: tuple[str, ...] = ()
     direct_c_abi: DirectCABIPolicy | None = None
+    # A positional-only surface takes no keyword arguments, so its argument
+    # names are not part of the Python API. Policy renames them to ``arg0``
+    # upward, because a native declaration's parameter names are an
+    # implementation detail that need not agree across targets.
+    accepts_keyword_arguments: bool = True
 
 
 if __name__ == "__main__":
