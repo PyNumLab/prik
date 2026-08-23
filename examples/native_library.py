@@ -248,14 +248,25 @@ def _cached_archive(cache_dir: Path, library: str, objects: tuple[Path, ...], ar
 
 
 def _cached_shared_library(cache_dir: Path, library: str, archive: Path, compiler: str) -> Path:
-    shared_library = cache_dir / f"libprik_full_{library}.so"
+    suffix = ".dylib" if sys.platform == "darwin" else ".so"
+    shared_library = cache_dir / f"libprik_full_{library}{suffix}"
     complete = cache_dir / "shared.complete"
     if complete.is_file() and shared_library.is_file():
         return shared_library
     temporary_shared = cache_dir / f"{shared_library.name}.{os.getpid()}.tmp"
     temporary_shared.unlink(missing_ok=True)
-    subprocess.run(  # nosec B603 - explicit compiler and compiled example archive
-        (
+    if sys.platform == "darwin":
+        command = (
+            compiler,
+            "-dynamiclib",
+            "-o",
+            str(temporary_shared),
+            f"-Wl,-install_name,{shared_library}",
+            f"-Wl,-force_load,{archive}",
+            *NATIVE_LINK_DEPENDENCIES[library],
+        )
+    else:
+        command = (
             compiler,
             "-shared",
             "-o",
@@ -264,7 +275,9 @@ def _cached_shared_library(cache_dir: Path, library: str, archive: Path, compile
             str(archive),
             "-Wl,--no-whole-archive",
             *NATIVE_LINK_DEPENDENCIES[library],
-        ),
+        )
+    subprocess.run(  # nosec B603 - explicit compiler and compiled example archive
+        command,
         check=True,
     )
     os.replace(temporary_shared, shared_library)
@@ -307,9 +320,10 @@ def build_reference_library(
 def linker_name(shared_library: Path) -> str:
     """Return the `-l` name for a shared library produced by this module."""
     name = shared_library.name
-    if not name.startswith("lib") or ".so" not in name:
-        raise ValueError(f"expected a lib*.so native library, got {shared_library}")
-    return name[3 : name.index(".so")]
+    suffix = next((candidate for candidate in (".so", ".dylib") if name.endswith(candidate)), None)
+    if not name.startswith("lib") or suffix is None:
+        raise ValueError(f"expected a lib*.so or lib*.dylib native library, got {shared_library}")
+    return name[3 : -len(suffix)]
 
 
 def main(argv: Sequence[str] | None = None) -> int:

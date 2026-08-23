@@ -264,12 +264,13 @@ python3 -m pytest -q examples/libm/tests/test_precision.py
 
 ## CI portability coverage
 
-CI reuses its existing Linux x86-64 and macOS Arm64 jobs and adds one focused
-15-minute Linux Arm64 job. Each target runs only this 60-routine example for
-its libm coverage, so the full real-library suite is not repeated. Together
-they exercise system `math.h`, native libm, target scalar probes, generated
-contracts, collision adapters, GCC-compatible compilers, and Apple Clang.
-Native Windows/MSVC remains outside PRIK's current POSIX C build lane.
+The dedicated examples-portability workflow runs every maintained example on
+Linux x86-64, Linux Arm64, macOS Intel, and macOS Arm64. Within each machine
+job, libm runs with GCC and Clang on Linux and with Apple Clang and GNU GCC on
+macOS. Together the lanes exercise system `math.h`, native libm, target scalar
+probes, generated contracts, collision adapters, two operating systems, both
+hosted architectures, and both compiler families. Native Windows/MSVC remains
+outside PRIK's current POSIX C build lane.
 
 ## Source provenance
 

@@ -140,11 +140,13 @@ when the compiler probe reports a scalar representation outside its supported
 contract widths.
 
 Set `PRIK_LIBM_CC` to select another compiler executable; it defaults to `cc`.
-CI reuses the existing Linux x86-64 and macOS Arm64 jobs, then adds one focused
-15-minute Linux Arm64 job. Each target runs only this example for its libm
-coverage, so the full real-library suite is not repeated across architectures.
-The lanes cover GCC-compatible and Apple Clang toolchains. Native Windows/MSVC
-is outside PRIK's current POSIX C build lane.
+The dedicated examples-portability workflow runs every maintained example on
+Linux x86-64, Linux Arm64, macOS Intel, and macOS Arm64. Within those four
+machine jobs, libm runs with GCC and Clang on Linux and with Apple Clang and GNU
+GCC on macOS. This exercises the target's own declarations, scalar ABI, C
+compiler, linker, and math library instead of reusing a contract generated on
+another target. Native Windows/MSVC is outside PRIK's current POSIX C build
+lane.
 
 There are no vendored implementation sources or copied prototypes. The
 extension parses and calls the math library supplied by the active platform.

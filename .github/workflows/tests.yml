@@ -99,13 +99,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[qa]"
-      - name: Run libm portability audit with Apple Clang
-        env:
-          PYTHONPATH: .
-          PRIK_LIBM_CC: clang
-        run: |
-          source examples/libm/build_all.sh
-          python -m pytest -q examples/libm/tests
       - name: Configure GNU Fortran and GCC 13
         shell: bash
         run: |

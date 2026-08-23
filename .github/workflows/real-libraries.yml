@@ -12,7 +12,7 @@ env:
 
 jobs:
   real-library-wrappers:
-    name: BLAS + LAPACK + FFTPACK + MINPACK + libm · Ubuntu 24.04 · Python 3.12
+    name: BLAS + LAPACK + FFTPACK + MINPACK + BSPLINE-FORTRAN · Ubuntu 24.04 · Python 3.12
     if: >-
       ${{
         github.event_name != 'pull_request' ||
@@ -40,13 +40,6 @@ jobs:
             "meson==1.11.2" \
             "ninja==1.13.0" \
             "scipy==1.18.0"
-      - name: Run libm 60-routine target-generated C-lane audit
-        env:
-          PYTHONPATH: .
-          PRIK_LIBM_CC: gcc
-        run: |
-          source examples/libm/build_all.sh
-          python -m pytest -q examples/libm/tests
       - name: Install pinned GFortran and LAPACK link dependencies
         shell: bash
         run: |
@@ -125,32 +118,3 @@ jobs:
         run: |
           source examples/bspline/build_all.sh
           python -m pytest -q examples/bspline/tests
-
-  libm-linux-arm64:
-    name: libm · Ubuntu 24.04 ARM64 · system GCC · Python 3.12
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install focused libm test dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e . "numpy==2.5.1" "pytest>=8"
-      - name: Show target and compiler
-        run: |
-          uname -a
-          gcc --version
-      - name: Build and test the complete libm surface
-        env:
-          PYTHONPATH: .
-          PRIK_LIBM_CC: gcc
-        run: |
-          source examples/libm/build_all.sh
-          python -m pytest -q examples/libm/tests

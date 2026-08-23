@@ -67,14 +67,21 @@ def test_native_cache_preserves_module_files_for_wrapper_compilation(tmp_path: P
 
 
 @pytest.mark.parametrize(
-    ("library", "expected_dependencies"),
-    (("blas", ()), ("lapack", ("-llapack", "-lblas"))),
+    ("platform", "library", "expected_dependencies", "suffix"),
+    (
+        ("linux", "blas", (), ".so"),
+        ("linux", "lapack", ("-llapack", "-lblas"), ".so"),
+        ("darwin", "blas", (), ".dylib"),
+        ("darwin", "lapack", ("-llapack", "-lblas"), ".dylib"),
+    ),
 )
 def test_shared_example_library_links_its_native_dependencies(
     tmp_path: Path,
     monkeypatch,
+    platform: str,
     library: str,
     expected_dependencies: tuple[str, ...],
+    suffix: str,
 ) -> None:
     commands = []
 
@@ -84,21 +91,38 @@ def test_shared_example_library_links_its_native_dependencies(
         Path(command[3]).touch()
 
     monkeypatch.setattr(native_library.subprocess, "run", run)
+    monkeypatch.setattr(native_library.sys, "platform", platform)
     archive = tmp_path / f"libprik_full_{library}.a"
     archive.touch()
 
     shared_library = native_library._cached_shared_library(tmp_path, library, archive, "gfortran")
 
     assert shared_library.is_file()
+    assert shared_library.suffix == suffix
+    if platform == "darwin":
+        expected_link_flags = (
+            f"-Wl,-install_name,{shared_library}",
+            f"-Wl,-force_load,{archive}",
+        )
+        shared_mode = "-dynamiclib"
+    else:
+        expected_link_flags = ("-Wl,--whole-archive", str(archive), "-Wl,--no-whole-archive")
+        shared_mode = "-shared"
     assert commands == [
         (
             "gfortran",
-            "-shared",
+            shared_mode,
             "-o",
             str(tmp_path / f"{shared_library.name}.{os.getpid()}.tmp"),
-            "-Wl,--whole-archive",
-            str(archive),
-            "-Wl,--no-whole-archive",
+            *expected_link_flags,
             *expected_dependencies,
         )
     ]
+
+
+@pytest.mark.parametrize(
+    ("filename", "expected"),
+    (("libprik_full_blas.so", "prik_full_blas"), ("libprik_full_lapack.dylib", "prik_full_lapack")),
+)
+def test_example_linker_name_accepts_linux_and_macos_shared_libraries(filename: str, expected: str) -> None:
+    assert native_library.linker_name(Path(filename)) == expected

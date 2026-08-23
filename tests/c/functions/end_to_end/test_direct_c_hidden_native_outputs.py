@@ -1,4 +1,4 @@
-"""``Hidden`` declares native storage the Python signature never promises back.
+"""Direct C ``Hidden`` storage never becomes part of the Python result.
 
 A hidden slot is passed to the native call like any other output, but it is not
 a Python result, so the return annotation states exactly what the caller gets.
