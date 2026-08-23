@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -20,6 +21,26 @@ def test_aggregate_example_build_restores_the_workspace(example: str) -> None:
     restore_workspace = lines.index('cd "$EXAMPLE_WORKSPACE"')
     python_path_export = next(index for index, line in enumerate(lines) if line.startswith("export PYTHONPATH="))
     assert f2py_build < restore_workspace < python_path_export
+
+
+def test_lapack_build_script_stops_when_the_native_library_build_fails(tmp_path: Path) -> None:
+    for executable in ("python", "gfortran"):
+        path = tmp_path / executable
+        path.write_text("#!/bin/sh\nexit 23\n", encoding="utf-8")
+        path.chmod(0o755)
+    environment = os.environ | {"PATH": f"{tmp_path}:{os.environ['PATH']}"}
+
+    result = subprocess.run(  # nosec B603 - fixed shell and repository-owned example script
+        ("bash", "-e", "-c", "source examples/lapack/build_prik.sh"),
+        cwd=native_library.EXAMPLES_ROOT.parent,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 23
+    assert "wrapper_sources" not in result.stderr
 
 
 def test_native_cache_preserves_module_files_for_wrapper_compilation(tmp_path: Path, monkeypatch) -> None:
@@ -68,19 +89,20 @@ def test_native_cache_preserves_module_files_for_wrapper_compilation(tmp_path: P
 
 
 @pytest.mark.parametrize(
-    ("platform", "library", "suffix"),
+    ("platform", "library", "expected_dependencies", "suffix"),
     (
-        ("linux", "blas", ".so"),
-        ("linux", "lapack", ".so"),
-        ("darwin", "blas", ".dylib"),
-        ("darwin", "lapack", ".dylib"),
+        ("linux", "blas", (), ".so"),
+        ("linux", "lapack", ("-llapack", "-lblas"), ".so"),
+        ("darwin", "blas", (), ".dylib"),
+        ("darwin", "lapack", ("-llapack", "-lblas"), ".dylib"),
     ),
 )
-def test_shared_example_library_links_only_the_self_contained_archive(
+def test_shared_example_library_links_its_native_dependencies(
     tmp_path: Path,
     monkeypatch,
     platform: str,
     library: str,
+    expected_dependencies: tuple[str, ...],
     suffix: str,
 ) -> None:
     commands = []
@@ -116,6 +138,7 @@ def test_shared_example_library_links_only_the_self_contained_archive(
             "-o",
             str(tmp_path / f"{shared_library.name}.{os.getpid()}.tmp"),
             *expected_link_flags,
+            *expected_dependencies,
         )
     ]
 

@@ -84,11 +84,12 @@ libraries for companion support symbols:
 ```bash
 export EXAMPLE_WORKSPACE="$PWD"
 export LAPACK_BUILD_ROOT="$(mktemp -d)"
-export LAPACK_SHARED_LIBRARY="$(
+LAPACK_SHARED_LIBRARY="$(
   python -m examples.native_library lapack \
     --compiler "$(command -v gfortran)" \
     --jobs 8
 )"
+export LAPACK_SHARED_LIBRARY
 export LAPACK_MODULE_DIR="$(dirname "$LAPACK_SHARED_LIBRARY")/modules"
 export LAPACK_SOURCE_ROOT="$(dirname "$LAPACK_SHARED_LIBRARY")/wrapper_sources"
 

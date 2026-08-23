@@ -24,6 +24,10 @@ NATIVE_CACHE_ENV = "PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR"
 NATIVE_JOBS_ENV = "PRIK_REAL_LIBRARY_NATIVE_JOBS"
 NATIVE_CACHE_VERSION = "copyable-examples-v4-default-lapack-sources"
 NATIVE_MODULE_SOURCE_STEMS = frozenset({"la_constants", "la_xisnan"})
+NATIVE_LINK_DEPENDENCIES = {
+    "blas": (),
+    "lapack": ("-llapack", "-lblas"),
+}
 DEFAULT_NATIVE_COMPILE_JOB_LIMIT = 8
 FORTRAN_SUFFIXES = frozenset({".f", ".f90", ".f95", ".f03", ".f08", ".for", ".f77", ".ftn"})
 SUPPORTED_LIBRARIES = ("blas", "lapack")
@@ -315,6 +319,7 @@ def _cached_shared_library(cache_dir: Path, library: str, archive: Path, compile
             f"-Wl,-install_name,{shared_library}",
             "-Wl,-force_load",
             str(archive),
+            *NATIVE_LINK_DEPENDENCIES[library],
         )
     else:
         command = (
@@ -325,6 +330,7 @@ def _cached_shared_library(cache_dir: Path, library: str, archive: Path, compile
             "-Wl,--whole-archive",
             str(archive),
             "-Wl,--no-whole-archive",
+            *NATIVE_LINK_DEPENDENCIES[library],
         )
     subprocess.run(  # nosec B603 - explicit compiler and compiled example archive
         command,
