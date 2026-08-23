@@ -262,7 +262,8 @@ def _cached_shared_library(cache_dir: Path, library: str, archive: Path, compile
             "-o",
             str(temporary_shared),
             f"-Wl,-install_name,{shared_library}",
-            f"-Wl,-force_load,{archive}",
+            "-Wl,-force_load",
+            str(archive),
             *NATIVE_LINK_DEPENDENCIES[library],
         )
     else:

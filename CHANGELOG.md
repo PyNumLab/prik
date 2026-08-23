@@ -9,6 +9,11 @@ release tags add a leading `v` to the package version.
 
 ### Fixed
 
+- The copied BLAS and LAPACK examples now give GNU Fortran a positional archive
+  input when creating a macOS dynamic library. Apple `ld` still receives the
+  targeted `-force_load` option, while the compiler driver no longer aborts
+  with "no input files" on either hosted macOS architecture.
+
 - The Linux x86-64 BLAS and LAPACK full-surface CI audits now run in the same
   shell steps as their example builds, so they reuse the temporary extensions
   instead of losing their exported import paths at a GitHub Actions step

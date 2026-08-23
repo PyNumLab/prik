@@ -102,7 +102,8 @@ def test_shared_example_library_links_its_native_dependencies(
     if platform == "darwin":
         expected_link_flags = (
             f"-Wl,-install_name,{shared_library}",
-            f"-Wl,-force_load,{archive}",
+            "-Wl,-force_load",
+            str(archive),
         )
         shared_mode = "-dynamiclib"
     else:
