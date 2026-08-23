@@ -2,7 +2,7 @@
 title: Active Roadmaps
 audience: developers, maintainers, contributors
 prerequisites: contributor architecture guide, current support matrix
-related: ../../user/language-support/feature-matrix.md, native-entrypoint-adoption-checklist.md, semantic-pyi-wrapper-checklist.md, fortran-test-suite-cleanup-checklist.md, documentation-content-checklist.md
+related: ../../user/language-support/feature-matrix.md, semantic-pyi-wrapper-checklist.md, fortran-test-suite-cleanup-checklist.md, documentation-content-checklist.md
 status: active-roadmap
 publication: draft
 ---
@@ -16,7 +16,6 @@ decisions and evidence routes have moved to canonical documentation.
 ## Active Work
 
 - [Semantic `.pyi` wrapper completion](semantic-pyi-wrapper-checklist.md)
-- [Native entrypoint and adapter adoption](native-entrypoint-adoption-checklist.md)
 - [Language-first test suite and remaining compiler/CI work](fortran-test-suite-cleanup-checklist.md)
 - [Remaining documentation content](documentation-content-checklist.md)
 

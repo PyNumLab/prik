@@ -17,9 +17,10 @@ semantic-`.pyi` frontend returns a standard Python AST. A parser reports what
 its input says; it does not assign stable semantic types, choose ownership,
 decide wrapper support, or emit a Python API.
 
-The `c/` directory is early work for a future C frontend. C support is not yet
-complete and is outside the current Fortran-wrapper route, so this guide covers
-only the supported Fortran and semantic-`.pyi` parsers.
+The `c/` frontend preserves C declarations, types, locations, directives, and
+project relationships before semantic conversion. Its detailed parser model is
+documented in the [C parser reference](../deferred/c-parser.md); the public
+wrapping surface belongs to [C support](../../user/language-support/c-support.md).
 
 ## Inputs And Results
 
@@ -60,7 +61,7 @@ prik/parsers/
 ├── pyi/
 │   ├── __init__.py
 │   └── parser.py
-└── c/                         incomplete future C frontend
+└── c/                         C parser models and project assembly
 ```
 
 ## Directory Tour

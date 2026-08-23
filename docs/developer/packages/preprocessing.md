@@ -17,10 +17,11 @@ compiler invocation, source provenance, native `INCLUDE` expansion, and
 target probes. It does not parse declarations, construct semantic IR, choose
 semantic scalar identities, or complete wrapper policy.
 
-The package contains early C-frontend modules: `c.py` collects raw directive
-metadata and `probes/c_types.py` measures C ABI facts. C support is not yet
-complete; a future C frontend may build on them. They do not participate in
-the current Fortran wrapper path.
+For C inputs, `c.py` records raw directive metadata and prepares compiler-
+preprocessed parser input, while `probes/c_types.py` measures target ABI facts.
+The [C parser reference](../deferred/c-parser.md) owns the detailed frontend
+workflow and [C support](../../user/language-support/c-support.md) owns the
+public wrapping boundary.
 
 ## A Fortran Source Through This Stage
 

@@ -28,8 +28,9 @@ def test_native_binding_support_is_header_only_and_exposes_the_small_prik_api():
         assert name in header
     assert "PRIK_NO_INLINE static int prik_array_actual_unpack(" in header
     assert "static inline int prik_array_validate(" in header
+    assert "static inline int prik_array_validate_ndarray(" in header
     assert "PyArrayObject *array," in header
-    assert "PyArray_Check(value)" not in header
+    assert header.count("PyArray_Check(value)") == 1
     assert "PRIK_ARRAY_LAYOUT_POSITIVE_STRIDED_F" in header
     assert "prik_array_actual" in header
 

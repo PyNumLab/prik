@@ -6858,7 +6858,7 @@ class CBindingGenerator(ClassVisitor):
         prefix = names.value_name
         array_object = f"(PyArrayObject *){names.object_name}"
         direct_nodes = (
-            self._array_validation_statement(plan, names),
+            self._array_validation_statement(plan, names, object_kind_checked=True),
             *self._array_shape_checks(plan, context, array_object),
             *self._array_extraction_nodes(plan, names, array_object),
         )
@@ -7003,6 +7003,8 @@ class CBindingGenerator(ClassVisitor):
         self,
         plan: ArgumentTransferPlan,
         names: _CArgumentNames,
+        *,
+        object_kind_checked: bool = False,
     ) -> CExpressionStatement:
         """Call compact validation with selectors from the completed plan."""
         handoff = plan.array
@@ -7011,9 +7013,11 @@ class CBindingGenerator(ClassVisitor):
         numpy_type, python_type = self._array_dtype_selectors(plan, handoff)
         minimum_rank, maximum_rank = self._array_rank_bounds(handoff)
         layout = self._array_layout_selector(handoff)
+        helper = "prik_array_validate_ndarray" if object_kind_checked else "prik_array_validate"
+        value = f"(PyArrayObject *){names.object_name}" if object_kind_checked else names.object_name
         return CExpressionStatement(
             CodeExpression(
-                f"if (prik_array_validate((PyArrayObject *){names.object_name}, {numpy_type}, "
+                f"if ({helper}({value}, {numpy_type}, "
                 f"{minimum_rank}, {maximum_rank}, "
                 f'{layout}, {int(handoff.contiguous is True)}, {int(plan.binding.writable)}, "{python_type}", '
                 f'"{plan.binding.python_name}") < 0) return NULL'

@@ -402,7 +402,7 @@ PRIK_NO_INLINE static int prik_array_actual_unpack(
  * generated wrapper supplies completed policy selectors and retains its
  * call-local shape and ABI-field lowering.
  */
-static inline int prik_array_validate(
+static inline int prik_array_validate_ndarray(
     PyArrayObject *array,
     int numpy_type,
     int minimum_rank,
@@ -488,6 +488,39 @@ static inline int prik_array_validate(
         return -1;
     }
     return 0;
+}
+
+/* Validate an arbitrary Python argument before entering the shared ndarray core. */
+static inline int prik_array_validate(
+    PyObject *value,
+    int numpy_type,
+    int minimum_rank,
+    int maximum_rank,
+    int layout,
+    int require_contiguous,
+    int require_writeable,
+    const char *python_type,
+    const char *argument_name)
+{
+    if (!PyArray_Check(value)) {
+        PyErr_Format(
+            PyExc_TypeError,
+            "Expected a compatible numpy.ndarray of dtype %s for argument %s. Received <class '%s'>",
+            python_type,
+            argument_name,
+            Py_TYPE(value)->tp_name);
+        return -1;
+    }
+    return prik_array_validate_ndarray(
+        (PyArrayObject *)value,
+        numpy_type,
+        minimum_rank,
+        maximum_rank,
+        layout,
+        require_contiguous,
+        require_writeable,
+        python_type,
+        argument_name);
 }
 
 /* Exact typed scalar input conversion. A mismatch deliberately sets no error. */

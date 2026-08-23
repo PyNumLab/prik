@@ -116,19 +116,11 @@ interoperable dummies use a nullable C pointer, while optional `VALUE` dummies
 remain adapter-backed.
 
 A C-source or explicitly C-native `.pyi` operation instead selects
-`DIRECT_C_ABI` only for the initial primitive lane. Its completed policy carries
-the exact C result and parameter spellings, qualifiers, pointer depth,
-transport, calling convention, and user symbol. A type written through a
-typedef records the underlying builtin spelling, because the binding declares
-the prototype itself and cannot name a typedef only the user's headers define;
-a spelling policy did not preserve is left for the binding generator's
-canonical scalar projection. An ineligible C operation has no entrypoint
-action: completion raises its stable `C_DIRECT_*` diagnostic before
-`WrapperPlanner` runs. It never selects `GENERATED_FORTRAN_ADAPTER`. The same
-rule reaches every wrapped surface of a C translation unit — module variables,
-enum and macro constants, and aggregate type declarations have no direct
-entrypoint and are rejected rather than lowered through generated Fortran
-accessors.
+`DIRECT_C_ABI` only when completed direct-C policy supports its ABI and
+contract. The policy carries the native declaration identity, transport, and
+user symbol required downstream. An ineligible C operation raises its stable
+diagnostic before `WrapperPlanner` runs and never falls back to
+`GENERATED_FORTRAN_ADAPTER`.
 
 An immediate callback is directly interoperable only when both the containing
 procedure and its named callback prototype retain the Fortran C ABI marker,

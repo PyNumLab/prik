@@ -15,6 +15,10 @@ release tags add a leading `v` to the package version.
 
 ### Fixed
 
+- Ordinary array arguments now preserve their non-array type check before
+  accessing NumPy storage. Native-handle-capable branches still avoid repeating
+  that check after selecting their NumPy fast path.
+
 - Common scalar and string conversions in C bindings with several Python
   outputs now share one linear reference-cleanup path instead of repeating
   every earlier `Py_DECREF` at each failure site. Large wrappers retain the
@@ -430,15 +434,6 @@ release tags add a leading `v` to the package version.
 
 ### Changed
 
-- Expanded the initial direct-only C adoption roadmap around one exact scope:
-  modeled primitive arithmetic scalars and their one-level pointer forms. It
-  now records the unresolved scalar-lowering matrix, requires C inputs to fail
-  direct-or-diagnostic before planning, and makes the ambiguous `T *` workflow
-  explicit: generated contracts default to one scalar address, while an array
-  API requires an authoritative `.pyi` edit of both the shaped annotation and
-  the `Addr(Arg(...))` projection. Broader C pointers, arrays, callbacks,
-  aggregates, ownership, and nullability remain follow-on work.
-
 - A scalar `character` dummy that declares no `intent` now uses the same
   conservative `intent(inout)` default as every other scalar, so the value the
   native procedure left behind is returned. It was silently assumed
@@ -551,9 +546,6 @@ release tags add a leading `v` to the package version.
   assigning it, which makes allocation a testable fact, so an unallocated
   result becomes `None`. Other allocatable scalar function results remain
   blocked, because they have no such completed move.
-- Added a native-entrypoint adoption roadmap for selective direct Fortran
-  `bind(C)` calls and the initial direct-only C wrapper backend, including
-  conservative starter-contract defaults for ambiguous C pointers.
 - Added `@native_abi("c")` to semantic `.pyi` contracts so Fortran `bind(C)`
   procedures retain their ABI and optional link label through generated and
   source-free contract workflows.

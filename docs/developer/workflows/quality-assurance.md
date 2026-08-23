@@ -96,9 +96,5 @@ Minimize an actionable fuzz failure and retain it as a focused regression.
 Native changes need focused codegen evidence and relevant end-to-end coverage.
 Ordinary local runs exclude `real_library`. BLAS, FFTPACK, and MINPACK have
 their own example workflows; leave LAPACK wrapper tests to GitHub Actions
-unless explicitly requested. The Real Libraries Portability workflow runs
-every maintained example across the supported Linux and macOS hosted
-architectures and retains the deep BLAS and LAPACK audits on Linux x86-64. The
-pull-request gate calls that same workflow instead of maintaining another
-example-job copy. See [Pull request checks](ci.md) for hosted coverage,
-compiler, example, benchmark, and documentation evidence.
+unless explicitly requested. See [Pull request checks](ci.md) for hosted
+coverage, compiler, real-library, benchmark, and documentation evidence.

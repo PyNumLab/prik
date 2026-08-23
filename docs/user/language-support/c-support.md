@@ -678,6 +678,8 @@ Candidates must remain distinguishable by their supported dtype and rank.
 - Rank-zero C string inputs and storage, hidden outputs, status projection,
   symbol renaming, reordered arguments, typed literals, and derived lengths or
   shapes.
+- Overload sets whose candidates are distinguishable by supported dtype and
+  rank.
 - `@nogil` calls that do not access Python state.
 - Ordinary compiler preprocessing, including standard includes and macros.
 
@@ -789,34 +791,12 @@ as a build promise.
 
 ## Build and inspect APIs
 
-Use the CLI for normal builds and the Python API when the build belongs in an
-application or test:
-
-| Task | CLI | Python |
-| --- | --- | --- |
-| Build from C source | `python3 -m prik --language c api.c --out-dir build` | `build_c_extension("api.c", output_dir="build")` |
-| Build an authored contract | `python3 -m prik --language c api.pyi --native-c-sources impl.c --out-dir build` | `build_pyi_extension("api.pyi", native_language="c", native_c_sources=["impl.c"], output_dir="build")` |
-| Write a contract without compiling | `python3 -m prik generate --pyi --language c api.c --out api.pyi` | Use the generated `build/contracts/*.pyi` from a source build. |
-| Write a reproducible Makefile | `python3 -m prik generate --makefile --language c api.c --out-dir build` | Pass `makefile=True` to either build function. |
-
-The source-build equivalent of the first CLI route is:
-
-```python
-import numpy as np
-
-from prik import build_c_extension
-
-build = build_c_extension(
-    "native_math.c",
-    output_name="native_math",
-    output_dir="build",
-)
-native_math = build.import_module()
-print(native_math.add(np.float64(3.0), np.float64(2.5)))
-```
-
-`build.import_module()` imports the extension that was just built. Makefile
-mode writes `build/Makefile.prik`; run it with `make -f build/Makefile.prik`.
+The examples above use the CLI. For application and test code, use
+`build_c_extension()` for source builds or `build_pyi_extension()` for authored
+contracts, then import the returned `WrapperBuildResult`. See the
+[Python API](../reference/python-api.md) for those calls and [CLI
+Commands](../reference/cli-commands.md) for build, generation, Makefile, and
+inspection options.
 
 ### Native dependencies
 
@@ -882,19 +862,5 @@ python3 -m prik parse --language c include/library.h \
 ```
 
 Only declarations in the wrapped translation unit become a source build's
-public API; headers supply declarations and preprocessing context. See [CLI
-Commands](../reference/cli-commands.md) for the complete build-option
-reference. For the broader Fortran wrapper surface, start with the [User
-Guide](../guide/index.md).
-
-## What works today
-
-| C surface | Python contract |
-| --- | --- |
-| Arithmetic scalar functions | Target-probed signed and unsigned integers, floating-point and C99 complex values, and `size_t`; exact NumPy scalar dtypes, `None` for `void`, and Python `bool` for C Boolean values. |
-| One-level primitive pointers | A scalar address, rank-zero NumPy storage, a projected scalar result, or a C-contiguous primitive NumPy array. |
-| Strings | `String` for a read-only `const char *`; rank-zero NumPy bytes storage for a writable `char *`. |
-| C call reshaping | Exact symbol names, reordered or addressed arguments, typed literals, derived lengths and shapes, and hidden outputs. |
-| C overloads | Several C symbols can appear under one Python name when dtype and rank distinguish them. |
-| Status errors | `@raises` turns a hidden C `int` status and optional message into a Python exception. |
-| Preprocessed source | Standard includes, macros, and conditional compilation supplied to the compiler. |
+public API; headers supply declarations and preprocessing context. For the
+broader Fortran wrapper surface, start with the [User Guide](../guide/index.md).

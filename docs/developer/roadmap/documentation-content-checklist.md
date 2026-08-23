@@ -95,9 +95,8 @@ were removed after their stable facts moved to these owners.
 
 ### Examples
 
-The reserved tutorial, troubleshooting, and project-example pages were removed
-rather than carried as empty placeholders. A page returns here only when its
-runnable content is ready, so this queue tracks pages that exist.
+Only runnable pages belong in this queue. Add a tutorial, troubleshooting page,
+or project example when its checked content is ready.
 
 - [ ] `docs/user/examples/blas-wrapper.md`: add the minimal BLAS-style
   runtime example or document the external dependency, with build, import, and

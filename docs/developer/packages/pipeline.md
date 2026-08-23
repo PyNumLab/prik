@@ -21,12 +21,11 @@ commands.
 
 The source-first public entrypoints are `build_fortran_extension` and
 `build_c_extension`. Both delegate each transformation to their owner, then
-carry resulting objects forward. The C route is direct-only: a primitive
-operation either has a completed C entrypoint policy or raises before planning
-and artifact materialization.
+carry resulting objects forward. The C route consumes a completed direct
+entrypoint policy or raises before planning and artifact materialization.
 
 ```text
-Fortran or supported primitive C source
+Fortran or C source
   -> preprocessing, parsing, and semantic conversion
   -> policy completion
   -> WrapperPlanner
@@ -109,12 +108,10 @@ combines retained native-language requirements with generated and caller-native
 object languages, so absence of a generated adapter never implies absence of
 the Fortran runtime.
 
-Native implementation language is explicit data. `native_c_sources` identifies
-C implementation units, `native_fortran_sources` identifies Fortran units, and
-a source-free `.pyi` build selects `native_language="c"` or `"fortran"`.
-Compilation records, manifests, replay, verbose commands, and Makefile recipes
-retain that identity. The build never infers C-native identity from a filename,
-compiler executable, missing Fortran source, or `@native_abi("c")`.
+Native implementation language is explicit throughout the build and manifest
+paths. C and Fortran source collections remain distinct, and a source-free
+`.pyi` build selects its native language explicitly rather than deriving it
+from a compiler or ABI decorator.
 
 The same rule applies when a source-free direct Fortran contract resolves its
 symbol from a prebuilt object, static archive, or shared library. Those inputs

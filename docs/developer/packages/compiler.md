@@ -83,11 +83,6 @@ adds include paths, and adds the vendor-specific Fortran module-output flag.
 It then records the exact argv and either executes it or returns it in
 record-only mode.
 
-Built-in release profiles select `-O3` without forcing loop unrolling. More
-aggressive transformations remain explicit request flags, so callers can opt
-in without imposing their compile-time and code-size cost on every generated
-wrapper and native source.
-
 `link_extension()` requires a nonempty ordered object list. It selects the
 linker for the requested language, adds shared-library, profile, Python, and
 library inputs, preserves the supplied object and link-argument order, and

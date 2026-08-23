@@ -17,9 +17,10 @@ and public identities, shapes, storage contracts, projections, provenance, and
 raw contract metadata. It does not complete ownership, choose lowering
 actions, plan wrappers, or emit source.
 
-`c2ir.py` is preparatory work for a future C frontend. C support is not yet
-complete and is outside the current Fortran-wrapper route, so this guide covers
-the supported Fortran and semantic-`.pyi` paths.
+`c2ir.py` converts modeled C declarations into the same semantic graph. The
+[C parser reference](../deferred/c-parser.md) owns that frontend handoff and
+[C support](../../user/language-support/c-support.md) owns the supported public
+surface.
 
 ## Inputs And Shared Representation
 
@@ -67,14 +68,14 @@ prik/semantics/
 ├── ownership_metadata.py
 ├── native_array_handles.py
 ├── native_contract.py
-└── c2ir.py                     incomplete future C frontend
+└── c2ir.py                     C parser-model conversion
 ```
 
 ## Directory Tour
 
 | Module | Public boundary and result | Change it when |
 | --- | --- | --- |
-| [`prik/semantics/__init__.py`](../../../prik/semantics/__init__.py) | Re-exports frontend-conversion helpers. Its C exports are preparatory, not a supported C wrapper route. | The semantic-conversion import surface changes. |
+| [`prik/semantics/__init__.py`](../../../prik/semantics/__init__.py) | Re-exports frontend-conversion helpers for Fortran, C, and semantic `.pyi` inputs. | The semantic-conversion import surface changes. |
 | [`prik/semantics/models.py`](../../../prik/semantics/models.py) | Defines the shared `SemanticModule` graph, its declarations, types, contracts, projections, origins, and equality rules. | A later stage needs a new language-neutral fact. |
 | [`prik/semantics/scalar_types.py`](../../../prik/semantics/scalar_types.py) | `SemanticScalarSpec` and the scalar catalogue define stable scalar identities, families, and intrinsic storage widths without backend spellings. | Stable scalar vocabulary or intrinsic scalar facts change. |
 | [`prik/semantics/fortran2ir.py`](../../../prik/semantics/fortran2ir.py) | `FortranToIRConverter` and file/module/project helpers convert parser models with optional compiler facts into semantic modules. | A Fortran source fact needs different semantic meaning. |
