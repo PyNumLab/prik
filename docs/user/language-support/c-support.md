@@ -29,7 +29,7 @@ To see the C types and NumPy dtypes selected for a particular compiler target,
 run:
 
 ```bash
-python3 -m prik probe --language c --compiler cc --format markdown
+python3 -m prik probe --language c --compiler cc
 ```
 
 ## Build a scalar C function

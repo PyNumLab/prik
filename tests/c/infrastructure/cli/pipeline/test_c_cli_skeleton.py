@@ -209,7 +209,7 @@ def test_cli_c_parse_json_out_writes_file_and_suppresses_stdout(tmp_path: Path):
     assert "parser_status" not in payload[str(header)]
 
 
-def test_cli_c_parse_out_without_json_writes_json_and_suppresses_stdout(tmp_path: Path):
+def test_cli_c_parse_out_with_json_writes_json_and_suppresses_stdout(tmp_path: Path):
     header = tmp_path / "api.h"
     output = tmp_path / "report.json"
     header.write_text("int run(void);\n", encoding="utf-8")
@@ -221,6 +221,7 @@ def test_cli_c_parse_out_without_json_writes_json_and_suppresses_stdout(tmp_path
         str(header),
         "--language",
         "c",
+        "--json",
         "--out",
         str(output),
     ]
@@ -237,7 +238,11 @@ def test_cli_c_semantics_stdout_for_header(tmp_path: Path):
     header.write_text("int add(int a, int b);\n", encoding="utf-8")
     cmd = [sys.executable, "-m", "prik", "semantics", str(header), "--language", "c"]
 
-    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    summary = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    assert summary.stdout.startswith(f"File: {header}")
+    assert "- add(a: Int32 in, b: Int32 in) -> Int32" in summary.stdout
+
+    res = subprocess.run([*cmd, "--json"], capture_output=True, text=True, check=True)
     payload = json.loads(res.stdout)
     semantic_modules = payload[str(header)]["semantic_modules"]
 

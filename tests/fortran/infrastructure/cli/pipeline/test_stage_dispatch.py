@@ -750,7 +750,7 @@ def _probe_args(**overrides):
     defaults = {
         "language": "fortran",
         "compiler": "gfortran",
-        "format": "json",
+        "json": False,
         "expressions": [],
         "include_dirs": [],
         "defines": [],
@@ -771,28 +771,28 @@ def test_probe_without_expressions_reports_the_measured_type_mapping(monkeypatch
     monkeypatch.setattr(prik_cli, "c_type_mapping_report", lambda **options: measured)
     monkeypatch.setattr(prik_cli, "fortran_type_mapping_report", lambda **options: measured)
 
-    assert json.loads(prik_cli._probe_output(_probe_args(language=language))) == measured
+    assert json.loads(prik_cli._probe_output(_probe_args(language=language, json=True))) == measured
 
 
-@pytest.mark.parametrize("output_format", ["json", "markdown"])
-def test_probe_renders_each_report_in_both_formats(monkeypatch, output_format):
-    """--format selects a rendering; it must not select a different report."""
+@pytest.mark.parametrize("as_json", [False, True])
+def test_probe_renders_each_report_in_both_formats(monkeypatch, as_json):
+    """--json selects a rendering; it must not select a different report."""
     measured = {"report": "type_mapping", "language": "fortran", "target_profile": "t", "types": []}
     monkeypatch.setattr(prik_cli, "fortran_type_mapping_report", lambda **options: measured)
     monkeypatch.setattr(prik_cli, "type_mapping_markdown", lambda report: f"MD:{report['language']}")
 
-    output = prik_cli._probe_output(_probe_args(format=output_format))
+    output = prik_cli._probe_output(_probe_args(json=as_json))
 
-    assert output == ("MD:fortran" if output_format == "markdown" else json.dumps(measured, indent=2))
+    assert output == (json.dumps(measured, indent=2) if as_json else "MD:fortran")
 
 
 def test_probe_expressions_render_as_markdown(monkeypatch):
-    """--expr is a report selector, so it must work with --format markdown too."""
+    """--expr is a report selector, so its table is the default human rendering."""
     measured = object()
     monkeypatch.setattr(prik_cli, "probe_fortran_type_expressions_cached", lambda *args, **options: measured)
     monkeypatch.setattr(prik_cli, "expression_probe_markdown", lambda report: "EXPR-TABLE")
 
-    output = prik_cli._probe_output(_probe_args(format="markdown", expressions=["kind(1.0d0)"]))
+    output = prik_cli._probe_output(_probe_args(expressions=["kind(1.0d0)"]))
 
     assert output == "EXPR-TABLE"
 

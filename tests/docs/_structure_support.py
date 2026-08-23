@@ -81,7 +81,6 @@ CLI_REFERENCE_OPTIONS = [
     "--native-library",
     "--native-link-item",
     "--native-library-dir",
-    "--format",
     "--expr",
     "--runner",
     "--cache-dir",

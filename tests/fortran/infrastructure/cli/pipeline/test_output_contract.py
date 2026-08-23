@@ -153,15 +153,27 @@ def test_cli_json_out(tmp_path: Path):
 
 
 def test_cli_out_without_filename_uses_source_basename_json(tmp_path: Path):
+    """--out with no path writes one sibling file per source in the selected format."""
     f90 = tmp_path / "mini.f90"
     f90.write_text("subroutine work(n)\n  integer, intent(in) :: n\nend subroutine work\n", encoding="utf-8")
-    cmd = [sys.executable, "-m", "prik", "parse", str(f90), "--out"]
+    cmd = [sys.executable, "-m", "prik", "parse", str(f90), "--json", "--out"]
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
     assert res.stdout == ""
     out = tmp_path / "mini.json"
     assert out.exists()
     file_payload = json.loads(out.read_text())
     assert str(f90) in file_payload
+
+
+def test_cli_out_without_json_writes_the_human_report_beside_each_source(tmp_path: Path):
+    """--out selects only the destination, so without --json it writes the report text."""
+    f90 = tmp_path / "mini.f90"
+    f90.write_text("subroutine work(n)\n  integer, intent(in) :: n\nend subroutine work\n", encoding="utf-8")
+    cmd = [sys.executable, "-m", "prik", "parse", str(f90), "--out"]
+    res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    assert res.stdout == ""
+    assert not (tmp_path / "mini.json").exists()
+    assert f"File: {f90}" in (tmp_path / "mini.txt").read_text(encoding="utf-8")
 
 
 def test_cli_json_output_without_out():
@@ -199,7 +211,7 @@ end subroutine bad
 
 def test_cli_semantics_out_writes_json_without_stdout(tmp_path: Path):
     out = tmp_path / "prik.semantics.json"
-    cmd = [sys.executable, "-m", "prik", "semantics", str(TEST_FILE), "--out", str(out)]
+    cmd = [sys.executable, "-m", "prik", "semantics", str(TEST_FILE), "--json", "--out", str(out)]
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
 
     assert res.stdout == ""
@@ -210,8 +222,13 @@ def test_cli_semantics_out_writes_json_without_stdout(tmp_path: Path):
 
 
 def test_cli_semantics_without_json_output():
+    """semantics prints the human summary by default and the record under --json."""
     cmd = [sys.executable, "-m", "prik", "semantics", str(TEST_FILE)]
     res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    assert res.stdout.startswith(f"File: {TEST_FILE}")
+    assert "Semantic modules:" in res.stdout
+
+    res = subprocess.run([*cmd, "--json"], capture_output=True, text=True, check=True)
     payload = json.loads(res.stdout)
     assert str(TEST_FILE) in payload
     assert "semantic_modules" in payload[str(TEST_FILE)]
@@ -478,7 +495,7 @@ def test_prik_main_preserves_explicit_and_adjacent_json_write_contracts(monkeypa
     )
 
     explicit_payload = {"input.f90": {"node": 1}}
-    explicit_args = _main_args(parse=True, out="/tmp/report.json")
+    explicit_args = _main_args(parse=True, json=True, out="/tmp/report.json")
     _install_main_parser(monkeypatch, explicit_args)
     _patch_main_report_payloads(monkeypatch, parse_payload=explicit_payload)
     assert prik_cli.main() == 0
@@ -487,7 +504,7 @@ def test_prik_main_preserves_explicit_and_adjacent_json_write_contracts(monkeypa
         "/tmp/first.f90": {"node": 1},
         "/tmp/empty.f90": {},
     }
-    adjacent_args = _main_args(parse=True, out="")
+    adjacent_args = _main_args(parse=True, json=True, out="")
     _install_main_parser(monkeypatch, adjacent_args)
     _patch_main_report_payloads(monkeypatch, parse_payload=adjacent_payload)
     assert prik_cli.main() == 0
@@ -507,7 +524,7 @@ def test_prik_main_preserves_stdout_mode_matrix(monkeypatch, capsys):
     parse_payload = {"parse": {"node": 1}}
     semantic_payload = {"semantic": {"node": 2}}
     scenarios = [
-        ({"semantics": True}, json.dumps(semantic_payload, indent=2) + "\n", []),
+        ({"semantics": True}, "SEMANTIC\n", [("semantic-format", semantic_payload, {"print_limit": None})]),
         ({"parse": True, "json": True}, json.dumps(parse_payload, indent=2) + "\n", []),
         ({"pyi": True}, "", [("pyi-format", semantic_payload), ("pyi-output", "PYI")]),
         (
@@ -530,6 +547,13 @@ def test_prik_main_preserves_stdout_mode_matrix(monkeypatch, capsys):
             prik_cli,
             "_format_report",
             lambda payload, _formats=formats, **kwargs: _formats.append(("parse-format", payload, kwargs)) or "PARSE",
+        )
+        monkeypatch.setattr(
+            prik_cli,
+            "_format_semantic_report",
+            lambda payload, _formats=formats, **kwargs: (
+                _formats.append(("semantic-format", payload, kwargs)) or "SEMANTIC"
+            ),
         )
         monkeypatch.setattr(
             prik_cli,

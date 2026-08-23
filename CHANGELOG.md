@@ -15,15 +15,35 @@ release tags add a leading `v` to the package version.
 
 ### Changed
 
-- `probe` now selects its report from `--expr` and uses `--format` only to
-  render it. Without `--expr` both formats measure the standard datatype
-  mapping table, so `--format json` reports that table instead of an empty
-  measurement; with `--expr` both formats report the measured expressions, so
-  `--expr` now works with `--format markdown`. The Markdown tables are
-  unchanged, and the JSON mapping report adds the structured `target_fact`
-  measurement, `recipe`, and `source_text` alongside the displayed text. The
-  mapping report now rejects `-I`, `-D`, `-U`, and `--std` instead of accepting
-  options its fixed inventory cannot use.
+- Report commands now share one output rule: **`--json` selects the format and
+  `--out` selects the destination, and neither changes the other.** Without
+  `--json` every report command prints a human-readable report; with `--json`
+  it emits the complete record. `--out PATH` writes whichever format was
+  selected, and bare `--out` writes one file beside each input source, using
+  `.json` for the record and `.txt` for the report.
+
+  This changes three commands:
+
+  - `parse --out PATH` previously wrote JSON regardless of `--json`; it now
+    writes the human-readable report unless `--json` is given. Use
+    `parse --json --out PATH` to keep the previous output.
+  - `semantics` gains `--json` and `--print-limit`, and now prints a
+    human-readable summary by default instead of the complete JSON record. Use
+    `semantics --json` to keep the previous standard-output behavior. The
+    summary reports each module's functions with their semantic signatures and
+    every argument's semantic dtype, rank, ownership, and mutability.
+  - `probe` replaces `--format {json,markdown}` with `--json`. The Markdown
+    mapping table is now the default standard-output rendering, and the
+    Markdown output itself is unchanged.
+
+- `probe` now selects its report from `--expr` rather than from the output
+  format. Without `--expr` it measures the standard datatype mapping table, so
+  the bare command reports that table instead of an empty measurement; with
+  `--expr` it measures the named expressions, which now render in both formats.
+  The JSON mapping report adds the structured `target_fact` measurement,
+  `recipe`, and `source_text` alongside the displayed text. The mapping report
+  now rejects `-I`, `-D`, `-U`, and `--std` instead of accepting options its
+  fixed inventory cannot use.
 
 - `prik.pipeline.type_mapping_report` now exposes `c_type_mapping_report()` and
   `fortran_type_mapping_report()` returning measured records, plus

@@ -156,13 +156,20 @@ python3 -m prik semantics INPUT [INPUT ...] [OPTIONS]
 | Option | Purpose |
 | --- | --- |
 | `--show-vars` | Includes module, submodule, program, and block-data variables in human-readable parse reports. |
-| `--print-limit N` | Shows at most `N` items per repeated section in human-readable parse reports. |
+| `--print-limit N` | Shows at most `N` items per repeated section in human-readable reports. |
+| `--json` | Emits the complete JSON record instead of the human-readable report. |
 
-`semantics` always emits the complete JSON report. With no `--out` it prints
-that report to standard output, where an editor or JSON tool can browse its
-nested details. `--out PATH` writes the combined report to `PATH`; bare
-`--out` writes one `.json` beside each input source. The command accepts source
-inputs only; use a source file rather than a generated `.pyi` contract.
+Both commands follow the same rule: **`--json` selects the format and `--out`
+selects the destination, and neither changes the other.** With no `--json` the
+command prints a human-readable report; with `--json` it prints the complete
+record. With no `--out` that goes to standard output; `--out PATH` writes it to
+`PATH`, and bare `--out` writes one file beside each input source, using
+`.json` for the record and `.txt` for the report.
+
+`semantics` reports each module's functions with their semantic signatures, and
+every argument's semantic dtype, rank, ownership, and mutability — the policy
+decisions a parse report cannot show. It accepts source inputs only; use a
+source file rather than a generated `.pyi` contract.
 
 Target datatype measurement happens automatically inside semantic conversion.
 Use `probe` only when you want to inspect those facts yourself.
@@ -218,29 +225,29 @@ generates `<out-dir>/Makefile.prik` from that manifest.
 
 `probe` measures one of two reports. Without `--expr` it measures the standard
 datatype mapping table; with `--expr` it measures exactly the Fortran integer
-expressions you name. `--format` then selects how that measurement is
-rendered: JSON is the complete record and Markdown is a table converted from
-it, so both formats always describe the same measurement.
+expressions you name. `--json` then selects how that measurement is
+rendered: the JSON record is complete and the default Markdown table is
+converted from it, so both formats always describe the same measurement.
 
 ```bash
 python3 -m prik probe --language {fortran,c} --compiler COMPILER [OPTIONS]
 
 python3 -m prik probe --language fortran --compiler gfortran-13
-python3 -m prik probe --language c --compiler cc --format markdown
+python3 -m prik probe --language c --compiler cc --json
 python3 -m prik probe --language fortran --compiler gfortran-13 \
-    --expr "selected_real_kind(15,307)" --format markdown
+    --expr "selected_real_kind(15,307)"
 ```
 
 | Option | Purpose |
 | --- | --- |
 | `--language {fortran,c}` | Selects the target probe. |
 | `--compiler COMPILER` | The exact native or cross compiler. |
-| `--format {json,markdown}` | Renders the measured report as JSON or a table. |
+| `--json` | Emits the complete JSON record instead of the Markdown table. |
 | `--expr EXPR` | Measures one Fortran integer expression instead of the mapping table. Repeat for more. |
 | `--runner ARG` | Adds one cross-target runner command item. Repeat for more. |
 | `--cache-dir PATH` | Reusable probe storage. |
 | `--refresh` | Ignores reusable results and probes again. |
-| `--out PATH` | Writes the report instead of printing it. |
+| `--out PATH` | Writes the selected format instead of printing it. |
 
 Pass each raw compiler flag separately, for example
 `--compiler-arg=-fdefault-real-8 --compiler-arg=-fdefault-integer-8`. The
@@ -298,8 +305,8 @@ unsupported selected signature buildable.
 
 | Option | Purpose |
 | --- | --- |
-| `--json` | Selects JSON where both formats exist. Semantic reports are always JSON and do not expose this flag. |
-| `--out [PATH]` | Command output, generated `.pyi` package directory, or the wrapper module and final `.so`. |
+| `--json` | Selects the complete JSON record instead of the human-readable report. Available on `parse`, `semantics`, `probe`, and wrapper builds. |
+| `--out [PATH]` | Destination for the selected format, generated `.pyi` package directory, or the wrapper module and final `.so`. It never changes which format is produced. |
 | `--out-dir DIR` | Wrapper build output directory. Default `./__prik__`. |
 | `--verbose` | Announces each generation, artifact, and compile step. It prints every compiler or linker command before starting it, times each operation, and reports total build time last. |
 | `--no-color` | Disables ANSI color in parse diagnostics. |

@@ -603,14 +603,16 @@ def test_prik_command_parsers_group_options_by_user_intent():
     assert "native and bridge compilation" not in normalized_parse_help
     assert "default: gfortran; cc with --language c" in normalized_parse_help
     assert semantics_help.startswith("usage: python3 -m prik semantics INPUT [INPUT ...] [OPTIONS]")
-    assert "--json" not in semantics_help
-    assert "Write combined JSON to PATH" in semantics_help
+    assert "--json" in semantics_help
+    assert "--print-limit" in semantics_help
+    assert "Write the report to PATH" in semantics_help
     assert "Define a preprocessing macro" in semantics_help
     for heading in (
         "positional arguments:",
         "input options:",
         "preprocessing options:",
         "C include options:",
+        "report options:",
         "output options:",
         "diagnostic options:",
     ):
@@ -622,6 +624,7 @@ def test_prik_command_parsers_group_options_by_user_intent():
         "input options:",
         "preprocessing options:",
         "C include options:",
+        "report options:",
         "output options:",
         "diagnostic options:",
     )
@@ -675,7 +678,8 @@ def test_prik_command_parsers_group_options_by_user_intent():
         "output options:",
         "diagnostic options:",
     )
-    assert "--format {json,markdown}" in probe_help
+    assert "--json" in probe_help
+    assert "--format" not in probe_help
     assert "Probe compiler-target datatype sizes, alignment, and ABI facts." in probe_help
     assert "Probe flags that change default kinds:" in probe_help
     assert "--compiler-arg=-fdefault-real-8 --compiler-arg=-fdefault-integer-8" in probe_help
@@ -737,11 +741,21 @@ def test_cli_help_places_a_clear_purpose_below_usage(parser_factory, purpose):
         ),
         (
             prik_cli._parse_parser,
-            ("Basic Fortran inspection:", "Detailed Fortran report:", "C header as JSON:"),
+            (
+                "Basic Fortran inspection:",
+                "Detailed Fortran report:",
+                "C header as JSON:",
+                "--json picks the format, --out picks the destination:",
+            ),
         ),
         (
             prik_cli._semantics_parser,
-            ("Basic Fortran conversion:", "C header:", "Save semantic IR:"),
+            (
+                "Basic Fortran conversion:",
+                "C header:",
+                "Complete semantic IR as JSON on standard output:",
+                "--json picks the format, --out picks the destination:",
+            ),
         ),
         (
             prik_cli._generate_parser,
@@ -750,8 +764,9 @@ def test_cli_help_places_a_clear_purpose_below_usage(parser_factory, purpose):
         (
             prik_cli._probe_parser,
             (
-                "Basic target probes:",
-                "Human-readable mapping table:",
+                "Target datatype mapping table:",
+                "Complete measured report as JSON:",
+                "--json picks the format, --out picks the destination:",
                 "Probe flags that change default kinds:",
                 "Cross-target probe:",
             ),

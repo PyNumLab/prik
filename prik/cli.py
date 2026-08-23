@@ -14,7 +14,7 @@ from prik import __version__
 from prik.parsers.c.cli import attach_preprocessing_recipe, expand_c_paths, format_c_report, parse_c_report
 from prik.parsers.c.models import CParseError
 from prik.parsers.c.parser import CParser
-from prik.parsers.fortran.cli import _format_report
+from prik.parsers.fortran.cli import _format_report, _limit_items
 from prik.parsers.fortran.models import FortranParseError
 from prik.parsers.fortran.parser import FortranParser
 from prik.semantics.c2ir import c_project_to_semantic_modules, select_c_export_functions
@@ -126,7 +126,11 @@ _PARSE_HELP_EPILOG = (
     "    python3 -m prik parse points.f90 --show-vars --print-limit 50\n"
     "\n"
     "  C header as JSON:\n"
-    "    python3 -m prik parse path/to/api.h --language c --json\n\n"
+    "    python3 -m prik parse path/to/api.h --language c --json\n"
+    "\n"
+    "  --json picks the format, --out picks the destination:\n"
+    "    python3 -m prik parse points.f90 --out report.txt\n"
+    "    python3 -m prik parse points.f90 --json --out report.json\n\n"
     f"{_POINTS_EXAMPLE_HELP}"
 )
 _SEMANTICS_HELP_EPILOG = (
@@ -137,8 +141,15 @@ _SEMANTICS_HELP_EPILOG = (
     "  C header:\n"
     "    python3 -m prik semantics path/to/api.h --language c\n"
     "\n"
-    "  Save semantic IR:\n"
-    "    python3 -m prik semantics points.f90 --out semantics.json\n\n"
+    "  Shorten a large human-readable summary:\n"
+    "    python3 -m prik semantics points.f90 --print-limit 20\n"
+    "\n"
+    "  Complete semantic IR as JSON on standard output:\n"
+    "    python3 -m prik semantics points.f90 --json\n"
+    "\n"
+    "  --json picks the format, --out picks the destination:\n"
+    "    python3 -m prik semantics points.f90 --out summary.txt\n"
+    "    python3 -m prik semantics points.f90 --json --out semantics.json\n\n"
     f"{_POINTS_EXAMPLE_HELP}"
 )
 _GENERATE_HELP_EPILOG = (
@@ -155,17 +166,20 @@ _GENERATE_HELP_EPILOG = (
 )
 _PROBE_HELP_EPILOG = (
     f"{_HELP_DIVIDER}\n\n"
-    "  Basic target probes:\n"
+    "  Target datatype mapping table:\n"
     "    python3 -m prik probe --language fortran --compiler gfortran-13\n"
     "    python3 -m prik probe --language c --compiler gcc-13\n"
     "\n"
-    "  Human-readable mapping table:\n"
-    "    python3 -m prik probe --language fortran --compiler gfortran-13 \\\n"
-    "      --format markdown\n"
+    "  Complete measured report as JSON:\n"
+    "    python3 -m prik probe --language fortran --compiler gfortran-13 --json\n"
     "\n"
     "  Measure specific Fortran expressions in either format:\n"
     "    python3 -m prik probe --language fortran --compiler gfortran-13 \\\n"
-    '      --expr "selected_real_kind(15,307)" --format markdown\n'
+    '      --expr "selected_real_kind(15,307)"\n'
+    "\n"
+    "  --json picks the format, --out picks the destination:\n"
+    "    python3 -m prik probe --language c --compiler cc --out types.md\n"
+    "    python3 -m prik probe --language c --compiler cc --json --out types.json\n"
     "\n"
     "  Probe flags that change default kinds:\n"
     "    python3 -m prik probe --language fortran --compiler gfortran-13 \\\n"
@@ -1571,6 +1585,116 @@ def _run_wrap_build_with_diagnostics(args: argparse.Namespace, preprocessing: Pr
     return None
 
 
+def _semantic_rank_text(rank: int) -> str:
+    """Render an argument rank as an index suffix, or nothing for a scalar."""
+    return f"[{','.join([':'] * rank)}]" if rank > 0 else ""
+
+
+def _semantic_argument_text(argument: dict) -> str:
+    """Render one completed semantic argument for the human report.
+
+    The mode reflects the policy decision the wrapper will implement, not the
+    declared Fortran intent, and ownership appears only when it is not the
+    ordinary borrowed case.
+    """
+    semantic_type = argument.get("semantic_type") or {}
+    ownership = semantic_type.get("ownership") or {}
+    dtype = semantic_type.get("dtype") or semantic_type.get("name") or "?"
+    parts = [f"{dtype}{_semantic_rank_text(int(semantic_type.get('rank') or 0))}"]
+    if ownership.get("ownership") and ownership["ownership"] != "borrowed":
+        parts.append(str(ownership["ownership"]))
+    parts.append("inout" if ownership.get("mutable") else "in")
+    if argument.get("optional"):
+        parts.append("optional")
+    return f"{argument.get('name', '?')}: {' '.join(parts)}"
+
+
+def _semantic_function_line(function: dict) -> str:
+    """Render one semantic function signature line."""
+    arguments = ", ".join(_semantic_argument_text(item) for item in function.get("arguments") or [])
+    return_type = function.get("return_type") or {}
+    result = f" -> {return_type.get('dtype') or return_type.get('name')}" if return_type else ""
+    return f"        - {function.get('name', '?')}({arguments}){result}"
+
+
+def _semantic_module_lines(module: dict, print_limit: int | None) -> list[str]:
+    """Render one semantic module block with its functions and classes."""
+    functions = module.get("functions") or []
+    classes = module.get("classes") or []
+    variables = module.get("variables") or []
+    lines = [
+        f"    - module {module.get('name', '?')} "
+        f"(functions={len(functions)}, classes={len(classes)}, variables={len(variables)})"
+    ]
+    if functions:
+        lines.append(f"      Functions: {len(functions)}")
+        visible, hidden = _limit_items(functions, print_limit)
+        lines.extend(_semantic_function_line(function) for function in visible)
+        if hidden > 0:
+            lines.append(f"        ... {hidden} more functions")
+    if classes:
+        lines.append(f"      Classes: {len(classes)}")
+        visible, hidden = _limit_items(classes, print_limit)
+        for item in visible:
+            fields = len(item.get("fields") or [])
+            methods = len(item.get("methods") or [])
+            lines.append(f"        - class {item.get('name', '?')} (fields={fields}, methods={methods})")
+        if hidden > 0:
+            lines.append(f"        ... {hidden} more classes")
+    return lines
+
+
+def _format_semantic_report(semantic_report: dict[str, dict], *, print_limit: int | None = None) -> str:
+    """Format the per-file semantic IR report as a stable, human-readable tree.
+
+    This is the default ``semantics`` rendering; ``--json`` remains the
+    complete record. Each argument shows its semantic dtype, rank, ownership,
+    and mutability, which are the policy decisions a parse report cannot show.
+    """
+    lines: list[str] = []
+    for fname, payload in semantic_report.items():
+        lines.append(f"File: {fname}")
+        modules = payload.get("semantic_modules") or []
+        lines.append(f"  Semantic modules: {len(modules)}")
+        visible, hidden = _limit_items(modules, print_limit)
+        for module in visible:
+            lines.extend(_semantic_module_lines(module, print_limit))
+        if hidden > 0:
+            lines.append(f"    ... {hidden} more modules")
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
+def _format_main_report(
+    args: argparse.Namespace,
+    payload: dict,
+    parse_payload: dict[str, dict] | None,
+    semantic_payload: dict[str, dict] | None,
+    print_limit: int | None,
+) -> str:
+    """Render the active stage selection in the requested format.
+
+    ``--json`` selects the complete record for every stage; otherwise each
+    stage renders its own human-readable report. The result is identical
+    whether it is printed or written with ``--out``.
+    """
+    if args.json:
+        return json.dumps(payload, indent=2)
+    if args.pyi:
+        return _format_pyi_report(semantic_payload or {})
+    if args.semantics:
+        return _format_semantic_report(semantic_payload or {}, print_limit=print_limit)
+    if args.parse:
+        if args.language == "c":
+            return format_c_report(parse_payload or {}, print_limit=print_limit)
+        return _format_report(
+            parse_payload or {},
+            show_vars=args.show_vars or args.vars_limit is not None,
+            print_limit=print_limit,
+        )
+    return json.dumps(payload, indent=2)
+
+
 def _select_main_payload(args: argparse.Namespace, parse_payload, semantic_payload):
     if args.parse:
         return parse_payload or {}
@@ -1698,34 +1822,52 @@ def _write_json_output(args: argparse.Namespace, payload: dict) -> None:
         Path(fname).with_suffix(".json").write_text(json.dumps({fname: report}, indent=2), encoding="utf-8")
 
 
+def _write_text_output(
+    args: argparse.Namespace,
+    payload: dict,
+    parse_payload: dict[str, dict] | None,
+    semantic_payload: dict[str, dict] | None,
+    print_limit: int | None,
+) -> None:
+    """Write the human-readable report to ``--out``.
+
+    With a path the whole report is written there; with no path each input
+    source receives a sibling ``.txt`` file holding only its own report.
+    """
+    if args.out:
+        text = _format_main_report(args, payload, parse_payload, semantic_payload, print_limit)
+        Path(args.out).write_text(text + "\n", encoding="utf-8")
+        return
+    for fname, report in payload.items():
+        one_file = {fname: report}
+        text = _format_main_report(args, one_file, one_file, one_file, print_limit)
+        Path(fname).with_suffix(".txt").write_text(text + "\n", encoding="utf-8")
+
+
 def _write_main_output(
     args: argparse.Namespace,
     parser: argparse.ArgumentParser,
     payload: dict,
+    parse_payload: dict[str, dict] | None,
     semantic_payload: dict[str, dict] | None,
+    print_limit: int | None,
 ) -> bool:
+    """Write the selected format to ``--out``, or report that stdout owns it.
+
+    ``--out`` chooses only the destination: the rendered content is whatever
+    ``--json`` and the active stage already selected.
+    """
     if args.out is None:
         return False
     if args.json and args.pyi:
         parser.error("--out cannot be used with both --json and --pyi")
     if args.pyi:
         _write_pyi_output(args, semantic_payload or {})
-    else:
+    elif args.json:
         _write_json_output(args, payload)
+    else:
+        _write_text_output(args, payload, parse_payload, semantic_payload, print_limit)
     return True
-
-
-def _print_parse_output(args: argparse.Namespace, parse_payload: dict, print_limit: int | None) -> None:
-    if args.language == "c":
-        print(format_c_report(parse_payload, print_limit=print_limit))
-        return
-    print(
-        _format_report(
-            parse_payload,
-            show_vars=args.show_vars or args.vars_limit is not None,
-            print_limit=print_limit,
-        )
-    )
 
 
 def _print_main_output(
@@ -1735,12 +1877,11 @@ def _print_main_output(
     semantic_payload: dict[str, dict] | None,
     print_limit: int | None,
 ) -> None:
+    text = _format_main_report(args, payload, parse_payload, semantic_payload, print_limit)
     if args.pyi and not args.json:
-        print_pyi_output(_format_pyi_report(semantic_payload or {}))
-    elif args.parse and not (args.semantics or args.json or args.pyi):
-        _print_parse_output(args, parse_payload or {}, print_limit)
-    else:
-        print(json.dumps(payload, indent=2))
+        print_pyi_output(text)
+        return
+    print(text)
 
 
 def _print_wrap_build_output(args: argparse.Namespace, result) -> None:
@@ -2479,7 +2620,7 @@ def _parse_parser(argv: list[str]) -> argparse.ArgumentParser:
     _add_output_options(
         output_group,
         json_help="Print the parse report as JSON instead of human-readable text",
-        out_help="Write combined JSON to PATH; with no PATH, write one .json file beside each input source",
+        out_help="Write the report to PATH; with no PATH, write one file beside each input source",
         out_metavar="PATH",
     )
     diagnostic_group = parser.add_argument_group("diagnostic options")
@@ -2517,11 +2658,18 @@ def _semantics_parser(argv: list[str]) -> argparse.ArgumentParser:
     )
     _add_include_exposure_options(parser, group_title="C include options")
     _add_semantic_interpretation_options(parser)
+    report_group = parser.add_argument_group("report options")
+    report_group.add_argument(
+        "--print-limit",
+        type=int,
+        metavar="N",
+        help="Show at most N items in each repeated human-readable report section",
+    )
     output_group = parser.add_argument_group("output options")
     _add_output_options(
         output_group,
-        allow_json=False,
-        out_help=("Write combined JSON to PATH; with no PATH, write one .json file beside each input source"),
+        json_help="Print the semantic report as JSON instead of human-readable text",
+        out_help=("Write the report to PATH; with no PATH, write one file beside each input source"),
         out_metavar="PATH",
     )
     diagnostic_group = parser.add_argument_group("diagnostic options")
@@ -2620,12 +2768,6 @@ def _probe_parser(argv: list[str]) -> argparse.ArgumentParser:
         help="Native or cross compiler used to build the probe",
     )
     target.add_argument(
-        "--format",
-        choices=("json", "markdown"),
-        default="json",
-        help="Render the measured report as JSON or as a Markdown table",
-    )
-    target.add_argument(
         "--expr",
         "--expression",
         dest="expressions",
@@ -2685,6 +2827,11 @@ def _probe_parser(argv: list[str]) -> argparse.ArgumentParser:
     compiler.add_argument("--cache-dir", metavar="DIR", help="Read and write reusable probe results under DIR")
     compiler.add_argument("--refresh", action="store_true", help="Ignore reusable results and probe again")
     output = parser.add_argument_group("output options")
+    output.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the measured report as JSON instead of the human-readable table",
+    )
     output.add_argument("--out", metavar="PATH", help="Write the probe report to PATH instead of standard output")
     diagnostic = parser.add_argument_group("diagnostic options")
     _add_diagnostic_controls(diagnostic)
@@ -2734,9 +2881,9 @@ def _probe_expression_output(args: argparse.Namespace, target_options: dict[str,
         compiler_args=args.compiler_args,
     )
     report = probe_fortran_type_expressions_cached(config, args.expressions, **target_options)
-    if args.format == "markdown":
-        return expression_probe_markdown(report)
-    return json.dumps(report.to_dict(), indent=2)
+    if args.json:
+        return json.dumps(report.to_dict(), indent=2)
+    return expression_probe_markdown(report)
 
 
 def _probe_mapping_output(args: argparse.Namespace, target_options: dict[str, object]) -> str:
@@ -2753,9 +2900,9 @@ def _probe_mapping_output(args: argparse.Namespace, target_options: dict[str, ob
         )
     builder = c_type_mapping_report if args.language == "c" else fortran_type_mapping_report
     report = builder(compiler=args.compiler, compiler_args=args.compiler_args, **target_options)
-    if args.format == "markdown":
-        return type_mapping_markdown(report)
-    return json.dumps(report, indent=2)
+    if args.json:
+        return json.dumps(report, indent=2)
+    return type_mapping_markdown(report)
 
 
 def _probe_output(args: argparse.Namespace) -> str:
@@ -2817,7 +2964,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     parse_payload, semantic_payload = reports
     payload = _select_main_payload(args, parse_payload, semantic_payload)
-    if _write_main_output(args, parser, payload, semantic_payload):
+    if _write_main_output(args, parser, payload, parse_payload, semantic_payload, print_limit):
         return 0
     _print_main_output(args, payload, parse_payload, semantic_payload, print_limit)
     return 0
