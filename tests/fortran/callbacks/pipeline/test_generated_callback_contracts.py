@@ -16,7 +16,7 @@ FIXTURES = Path(__file__).parents[1] / "end_to_end" / "fixtures"
 CASES = tuple(
     GeneratedContractCase(
         name=name,
-        inputs=(FIXTURES / f"{name}.f90",),
+        inputs=(FIXTURES / "native" / f"{name}.f90",),
         expected_package=FIXTURES / "contracts" / name,
     )
     for name in ("fcallback_all_f90", "fcallback_array_f90", "fcallback_scalar_f90")

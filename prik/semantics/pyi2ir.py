@@ -73,6 +73,7 @@ from prik.semantics.models import (
     SemanticArrayContract,
     SemanticClass,
     SemanticConstraint,
+    SemanticDestructor,
     SemanticExpressionCallable,
     SemanticField,
     SemanticFunction,
@@ -161,7 +162,6 @@ class _Decorators:
     overload_generic: str | None = None
     bind_target: str | None = None
     native_abi: str | None = None
-    native_type: dict[str, object] | None = None
     standalone: bool = False
     is_static: bool = False
     release_gil: bool = False
@@ -170,6 +170,7 @@ class _Decorators:
     pure: bool = False
     abstract: bool = False
     abstract_method: bool = False
+    destroy: bool = False
 
 
 @dataclass
@@ -444,15 +445,16 @@ class _PyiAstParser:
         node: ast.ClassDef,
         *,
         visibility: str,
-        native_type: dict[str, object] | None = None,
+        native_abi: str | None = None,
         abstract: bool = False,
     ) -> SemanticClass:
         """Convert one class AST node, its body, and supported native metadata.
 
-        The class-body visitor supplies fields, methods, nested classes, and
-        delayed overload declarations.  This method records those overloads on
-        parser state, preserves field-constructor rules, and returns the new
-        ``SemanticClass`` without inserting it into the module itself.
+        The class-body visitor supplies fields, methods, destructors, nested
+        classes, and delayed overload declarations. This method records those
+        overloads on parser state, preserves field-constructor rules, and
+        returns the new ``SemanticClass`` without inserting it into the module
+        itself.
         """
         body = _ClassBodyVisitor(self, class_name=node.name)
         body._walk_nodes(node.body)
@@ -460,33 +462,25 @@ class _PyiAstParser:
             raise ValueError("Direct constructor bindings replace the generated field constructor; remove one __init__")
         base_classes = [self.base_class_name(base) for base in node.bases]
         origin = self._origin(
-            source_language=(
-                "fortran" if body.constructor_from_fields or native_type is not None or abstract else None
-            ),
+            source_language=("fortran" if body.constructor_from_fields or native_abi is not None or abstract else None),
             user_private=visibility == "private",
         )
+        origin.native_abi = native_abi
         if not body.constructor_from_fields:
             origin.metadata[SUPPRESS_DEFAULT_CONSTRUCTOR_METADATA] = True
 
         metadata = self._class_metadata(base_classes)
         if abstract:
             metadata["fortran_type_attributes"] = [*metadata.get("fortran_type_attributes", []), "abstract"]
-        if native_type is not None:
-            attributes = [*metadata.get("fortran_type_attributes", []), *native_type.get("attributes", ())]
-            metadata["fortran_type_attributes"] = attributes
-            normalized_attributes = {str(item).strip().casefold().replace(" ", "") for item in attributes}
-            if "bind(c)" in normalized_attributes:
-                metadata["fortran_bind_c"] = True
-            if "sequence" in normalized_attributes:
-                metadata["fortran_sequence"] = True
-            finalizers = list(native_type.get("finalizers", ()))
-            if finalizers:
-                metadata["fortran_final_procedures"] = finalizers
+        if native_abi == "c":
+            metadata["fortran_type_attributes"] = [*metadata.get("fortran_type_attributes", []), "bind(c)"]
+            metadata["fortran_bind_c"] = True
         semantic_class = SemanticClass(
             name=node.name,
             native_name=node.name,
             fields=body.fields,
             methods=body.methods,
+            destructors=body.destructors,
             classes=body.classes,
             base_classes=base_classes,
             metadata=metadata,
@@ -707,6 +701,28 @@ class _PyiAstParser:
             passed_object_position=passed_object_position,
         )
 
+    def destroy_def(self, node: ast.FunctionDef, *, native_name: str | None = None) -> SemanticDestructor:
+        """Convert the restricted class-body destroy declaration shape."""
+        self._validate_stub_callable(node)
+        args = node.args
+        valid_self = all(
+            (
+                len(args.args) == 1,
+                bool(args.args) and args.args[0].arg == "self",
+                bool(args.args) and args.args[0].annotation is None,
+                not args.defaults,
+                not args.posonlyargs,
+                not args.kwonlyargs,
+                not args.kw_defaults,
+                args.vararg is None,
+                args.kwarg is None,
+            )
+        )
+        returns_none = isinstance(node.returns, ast.Constant) and node.returns.value is None
+        if not valid_self or not returns_none:
+            raise ValueError("destroy declaration must have the form 'def name(self) -> None: ...'")
+        return SemanticDestructor(name=node.name, native_name=native_name or node.name)
+
     def _complete_method_passed_object(
         self,
         node: ast.FunctionDef,
@@ -828,6 +844,8 @@ class _PyiAstParser:
         parsed = _Decorators()
         for node in nodes:
             self._apply_decorator(parsed, node, context=context)
+        if parsed.destroy and len(nodes) != 1 + int(parsed.bind_target is not None):
+            raise ValueError("destroy can only be combined with bind")
         if parsed.overload_target is not None and parsed.has_native_call:
             raise ValueError("overload cannot be combined with native_call; put native_call on the specific procedure")
         if parsed.pure and not parsed.prototype:
@@ -840,8 +858,8 @@ class _PyiAstParser:
                 )
             if parsed.has_native_call or parsed.overload_target is not None:
                 raise ValueError("prototype cannot be combined with native_call or overload")
-            if parsed.release_gil or parsed.error_status_policy is not None or parsed.native_type is not None:
-                raise ValueError("prototype cannot carry wrapper or native-type decorators")
+            if parsed.release_gil or parsed.error_status_policy is not None:
+                raise ValueError("prototype cannot carry wrapper decorators")
             if parsed.visibility != "public" or parsed.is_static:
                 raise ValueError("prototype cannot be private or static")
         return parsed
@@ -867,11 +885,11 @@ class _PyiAstParser:
             "standalone": self._apply_standalone_decorator,
             "nogil": self._apply_nogil_decorator,
             "native_call": self._apply_native_call_decorator,
-            "native_type": self._apply_native_type_decorator,
             "prototype": self._apply_prototype_decorator,
             "pure": self._apply_pure_decorator,
             "abstract": self._apply_abstract_decorator,
             "abstractmethod": self._apply_abstract_method_decorator,
+            "destroy": self._apply_destroy_decorator,
             "raises": self._apply_raises_decorator,
         }
         handler = next((value for name, value in handlers.items() if self.matches_name(target, name)), None)
@@ -909,6 +927,17 @@ class _PyiAstParser:
         if parsed.abstract_method:
             raise ValueError("Duplicate abstractmethod decorator")
         parsed.abstract_method = True
+
+    @staticmethod
+    def _apply_destroy_decorator(parsed: _Decorators, node: ast.expr, context: str) -> None:
+        """Mark one class-body declaration as non-callable native teardown."""
+        if isinstance(node, ast.Call):
+            raise ValueError("destroy does not accept arguments")
+        if context != "class body":
+            raise ValueError("destroy is only valid on a class-body declaration")
+        if parsed.destroy:
+            raise ValueError("Duplicate destroy decorator")
+        parsed.destroy = True
 
     @staticmethod
     def _apply_prototype_decorator(parsed: _Decorators, node: ast.expr, context: str) -> None:
@@ -969,11 +998,11 @@ class _PyiAstParser:
         parsed.bind_target = self._required_string_decorator_argument(node, "bind")
 
     def _apply_native_abi_decorator(self, parsed: _Decorators, node: ast.expr, context: str) -> None:
-        """Retain the C ABI declared by an original Fortran procedure."""
+        """Retain the C ABI declared by an original Fortran declaration."""
         if parsed.native_abi is not None:
             raise ValueError(f"Duplicate {context} native_abi decorator")
         if self.native_language != "fortran":
-            raise ValueError("native_abi is only valid for Fortran semantic .pyi procedures")
+            raise ValueError("native_abi is only valid for Fortran semantic .pyi declarations")
         value = self._required_string_decorator_argument(node, "native_abi")
         if value.casefold() != "c":
             raise ValueError('native_abi accepts only "c"')
@@ -996,26 +1025,6 @@ class _PyiAstParser:
         if parsed.standalone:
             raise ValueError(f"Duplicate {context} standalone decorator")
         parsed.standalone = True
-
-    @staticmethod
-    def _apply_native_type_decorator(parsed: _Decorators, node: ast.expr, context: str) -> None:
-        """Validate and store class-level native type attributes and finalizers."""
-        if parsed.native_type is not None:
-            raise ValueError(f"Duplicate {context} native_type decorator")
-        if not isinstance(node, ast.Call) or node.args:
-            raise ValueError("native_type accepts keyword arguments only")
-        allowed = {"attributes", "finalizers"}
-        values: dict[str, object] = {}
-        for keyword in node.keywords:
-            if keyword.arg not in allowed:
-                raise ValueError(f"native_type got unsupported keyword {keyword.arg!r}")
-            if keyword.arg in values:
-                raise ValueError(f"native_type repeats {keyword.arg!r}")
-            value = ast.literal_eval(keyword.value)
-            if not isinstance(value, tuple) or not all(isinstance(item, str) and item for item in value):
-                raise ValueError(f"native_type {keyword.arg} must be a tuple of non-empty strings")
-            values[keyword.arg] = value
-        parsed.native_type = values
 
     def _apply_native_call_decorator(self, parsed: _Decorators, node: ast.expr, context: str) -> None:
         """Parse ``native_call`` projection facts into decorator state."""
@@ -3465,6 +3474,7 @@ class _ClassBodyVisitor(ClassVisitor):
         self.class_name = class_name
         self.fields: list[SemanticField] = []
         self.methods: list[SemanticMethod] = []
+        self.destructors: list[SemanticDestructor] = []
         self.pending_overloads: list[tuple[SemanticMethod, str, str | None]] = []
         self.classes: list[SemanticClass] = []
         self.constructor_from_fields = False
@@ -3486,10 +3496,18 @@ class _ClassBodyVisitor(ClassVisitor):
     def _visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         """Convert a method, constructor, or overload declaration."""
         decorators = self.parser.decorators(node.decorator_list, context="class body")
+        if decorators.destroy:
+            if any(item.name == node.name for item in self.destructors):
+                raise ValueError(f"Duplicate destroy declaration {node.name!r}")
+            self.destructors.append(
+                self.parser.destroy_def(
+                    node,
+                    native_name=decorators.bind_target,
+                )
+            )
+            return
         if decorators.standalone:
             raise ValueError("standalone is not valid for a class method")
-        if decorators.native_type is not None:
-            raise ValueError("native_type is only valid for classes")
         if not node.decorator_list and self._is_generated_constructor(node):
             self.constructor_from_fields = True
             return
@@ -3564,7 +3582,6 @@ class _ClassBodyVisitor(ClassVisitor):
             or decorators.release_gil
             or decorators.error_status_policy is not None
             or decorators.standalone
-            or decorators.native_abi is not None
         ):
             raise ValueError(f"Unsupported class body decorator: {ast.unparse(node.decorator_list[-1])!r}")
         if (
@@ -3579,7 +3596,7 @@ class _ClassBodyVisitor(ClassVisitor):
             self.parser.class_def(
                 node,
                 visibility=decorators.visibility,
-                native_type=decorators.native_type,
+                native_abi=decorators.native_abi,
                 abstract=decorators.abstract,
             )
         )
@@ -3629,7 +3646,6 @@ class _ModuleVisitor(ClassVisitor):
             or decorators.release_gil
             or decorators.error_status_policy is not None
             or decorators.standalone
-            or decorators.native_abi is not None
         ):
             raise ValueError(f"Unsupported class decorator: {ast.unparse(node.decorator_list[-1])!r}")
         if (
@@ -3644,7 +3660,7 @@ class _ModuleVisitor(ClassVisitor):
             self.parser.class_def(
                 node,
                 visibility=decorators.visibility,
-                native_type=decorators.native_type,
+                native_abi=decorators.native_abi,
                 abstract=decorators.abstract,
             )
         )
@@ -3652,8 +3668,6 @@ class _ModuleVisitor(ClassVisitor):
     def _visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         """Convert a function or overload declaration."""
         decorators = self.parser.decorators(node.decorator_list, context=".pyi")
-        if decorators.native_type is not None:
-            raise ValueError("native_type is only valid for classes")
         if decorators.prototype:
             self.parser.module.prototypes.append(
                 self.parser.prototype_def(

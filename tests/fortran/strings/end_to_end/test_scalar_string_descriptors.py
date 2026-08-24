@@ -8,7 +8,7 @@ import pytest
 from tests.fortran._support.wrapper_build import _build_source_or_generated_pyi_and_import
 
 FIXTURES = Path(__file__).parent / "fixtures"
-DESCRIPTOR_SOURCE = FIXTURES / "fstring_descriptors_f90.f90"
+DESCRIPTOR_SOURCE = FIXTURES / "native" / "fstring_descriptors_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 
 pytestmark = pytest.mark.fortran_end_to_end

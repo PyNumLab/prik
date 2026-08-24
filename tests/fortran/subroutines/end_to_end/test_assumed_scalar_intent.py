@@ -11,7 +11,7 @@ from tests.fortran._support.wrapper_build import _build_source_and_import
 
 pytestmark = pytest.mark.fortran_end_to_end
 
-SOURCE = Path(__file__).parent / "fixtures" / "assumed_scalar_intent.f90"
+SOURCE = Path(__file__).parent / "fixtures" / "native" / "assumed_scalar_intent.f90"
 GENERATED = {
     "bind_c_assumed_scalar_intent_wrapper.f90",
     "assumed_scalar_intent_wrapper.c",

@@ -9,7 +9,7 @@ from prik.runtime.handles import AllocatableArray
 from tests.fortran._support.wrapper_build import _build_source_or_generated_pyi_and_import
 
 FIXTURES = Path(__file__).parent / "fixtures"
-DERIVED_ALIAS_F90_SOURCE = FIXTURES / "fmodule_derived_alias_f90.f90"
+DERIVED_ALIAS_F90_SOURCE = FIXTURES / "native" / "fmodule_derived_alias_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
 

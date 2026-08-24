@@ -15,7 +15,7 @@ from prik.policy.construction import (
     completed_function_wrapper_policy,
 )
 
-FMATH_CONTRACT = Path("tests/fortran/data_types/end_to_end/fixtures/baseline/contracts/fmath/__init__.pyi")
+FMATH_CONTRACT = Path("tests/fortran/data_types/end_to_end/fixtures/contracts/fmath/__init__.pyi")
 
 
 CALLS_NATIVE = (

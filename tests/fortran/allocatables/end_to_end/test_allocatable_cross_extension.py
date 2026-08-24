@@ -16,7 +16,7 @@ from tests.fortran._support.wrapper_build import (
 from prik.contracts import Allocatable, Float64
 
 FIXTURES = Path(__file__).parent / "fixtures"
-SOURCE = FIXTURES / "fallocatable_views_f90.f90"
+SOURCE = FIXTURES / "native" / "fallocatable_views_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
 

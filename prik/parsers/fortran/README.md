@@ -21,7 +21,8 @@ re-export parser functions or models.
 ## Tests And Docs
 
 - Package reference: `docs/developer/packages/parsers.md`
-- User recipe: `docs/user/examples/recipes/inspect-fortran-api.md`
+- User API reference: `docs/user/reference/python-api.md`
+- CLI reference: `docs/user/reference/cli-commands.md`
 - Source navigation: `docs/developer/codebase-map.md`, `docs/developer/feature-to-code-map.md`
 - Parser tests: `tests/fortran/infrastructure/parsing/`
 - Fixture suite: `tests/fortran/infrastructure/parsing/test_fortran_fixture_suite.py`

@@ -18,8 +18,8 @@ Evidence is split by the stage that establishes it:
 The runtime tests deliberately reuse the native module sources and reviewed
 generated base contracts owned by `modules/`. Only the edited
 contracts live here. Contract import-graph loading and diagnostics remain
-owned by `semantic_pyi_format/`; class, method, constructor, and
-overload edits remain owned by the later `pyi_contracts` features.
+owned by the parent `semantic_pyi/` feature; class, method, constructor, and
+overload edits remain owned by the sibling features under `contracts/`.
 
 Run the focused feature with:
 

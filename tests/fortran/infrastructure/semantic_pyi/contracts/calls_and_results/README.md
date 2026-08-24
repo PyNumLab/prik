@@ -17,7 +17,7 @@ Evidence is split by the stage that establishes it:
   replacements, and hidden array allocation.
 
 The complete `@native_call` grammar and its loader diagnostics remain with
-`semantic_pyi_format/`. Dtype, rank, layout, writeability, byte-order,
+the parent `semantic_pyi/` owner. Dtype, rank, layout, writeability, byte-order,
 alignment, zero-size, and optional-state matrices remain with Arrays and
 Optional Arguments. Status-to-exception and GIL behavior reuse Error Handling;
 descriptor, pointer, and callback projections reuse their respective feature

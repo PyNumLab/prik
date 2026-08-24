@@ -11,7 +11,7 @@ from tests.fortran._support.wrapper_build import (
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
-ARRAY_RESULTS_F90_SOURCE = FIXTURES / "farray_results_f90.f90"
+ARRAY_RESULTS_F90_SOURCE = FIXTURES / "native" / "farray_results_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 _MAX_WRAPPER_TEST_RANK = 15
 

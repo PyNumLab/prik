@@ -1,6 +1,6 @@
 ---
 title: Data Types
-description: How prik maps Fortran types to Python, NumPy dtypes, and semantic contracts
+description: How PRIK maps Fortran types to Python, NumPy dtypes, and semantic contracts
 audience: users
 prerequisites: common beginner workflow
 related: arrays.md, strings.md, wrapping-derived-types.md
@@ -10,7 +10,7 @@ publication: reviewed
 
 # Data Types
 
-prik resolves Fortran types using the selected compiler, then generates an
+PRIK resolves Fortran types using the selected compiler, then generates an
 explicit semantic contract (`.pyi`). Inspect that contract before calling the
 wrapper because kind numbers are compiler-dependent.
 
@@ -86,7 +86,8 @@ python3 -m prik numeric_types.f90 --out-dir build/numeric-types
 
 ## Generated Contract
 
-The generated `numeric_types.pyi` is:
+On a GNU/Linux x86-64 target where `long double` uses x87 extended precision,
+the generated `numeric_types.pyi` is:
 
 ```python
 from prik.contracts import Addr, Arg, Bool8, Complex128, Complex256, Float128, Float64, Int32, native_call
@@ -163,7 +164,7 @@ print(invert(True))                                          # False
 </div>
 </div>
 
-Result:
+Result on that same target:
 
 ```text
 5
@@ -173,6 +174,12 @@ Result:
 (1-2j)
 False
 ```
+
+This is a target snapshot, not a portable promise that the extended routines
+always use `Float128`, `Complex256`, or extra precision. On a target where C
+`long double` has the same mantissa width as `double`, PRIK selects
+`Float64`/`Complex128` and the corresponding NumPy dtypes instead. The mapping
+table below explains the target-mantissa rule.
 
 ## Scalar Type Mapping
 
@@ -195,7 +202,7 @@ False
 `Float128` and `Complex256` mean the target's `long double`, not a fixed
 128-bit format. On x86-64 that is x87 extended precision, so `real(10)` and
 `complex(10)` map to it and `real(16)` does not; on a target whose `long
-double` is IEEE quad, `real(16)` maps to it instead. prik decides from the
+double` is IEEE quad, `real(16)` maps to it instead. PRIK decides from the
 mantissa width the compiler reports, never from storage size — see
 [Unsupported Widths And Forms](#unsupported-widths-and-forms).
 
@@ -247,7 +254,7 @@ their own default constructors, described in their later user-guide pages.
   are Python `bool` values.
 - Plain Python `float` and `int` values raise `TypeError` for numeric scalar
   arguments.
-- prik resolves kinds using the selected compiler (`gfortran` by default).
+- PRIK resolves kinds using the selected compiler (`gfortran` by default).
 - Inspect the contract with `generate --pyi` whenever you change compiler flags or architecture.
 
 ---
@@ -276,7 +283,7 @@ exposes as `longdouble` and `clongdouble`. Storage size alone cannot identify
 that format: on x86-64 both x87 extended precision and IEEE binary128 occupy
 128 bits and differ only in mantissa width.
 
-prik therefore compares the compiler-measured mantissa against the target's
+PRIK therefore compares the compiler-measured mantissa against the target's
 `long double` rather than trusting the declaration. On a target whose `long
 double` is x87 extended precision this accepts C `long double` and Fortran
 `real(10)`, and refuses `real(16)` with a diagnostic naming both widths --

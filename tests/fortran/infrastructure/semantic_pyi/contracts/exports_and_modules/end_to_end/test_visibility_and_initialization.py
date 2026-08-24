@@ -15,7 +15,7 @@ from tests.fortran._support.paths import FORTRAN_ROOT
 
 MODULE_FIXTURES = FORTRAN_ROOT / "modules" / "end_to_end" / "fixtures"
 FEATURE_FIXTURES = Path(__file__).parent / "fixtures"
-MODULE_VARIABLE_SOURCE = MODULE_FIXTURES / "fmodule_vars_f90.f90"
+MODULE_VARIABLE_SOURCE = MODULE_FIXTURES / "native" / "fmodule_vars_f90.f90"
 MODIFIED_CONTRACT = FEATURE_FIXTURES / "edited_contracts" / "module_variables_visibility" / "__init__.pyi"
 pytestmark = pytest.mark.fortran_end_to_end
 

@@ -2,9 +2,9 @@
 
 This feature owns the executable contract for source and semantic `.pyi`
 wrapper builds described by the
-[Building the shared library](../../../../../docs/user/guide/building-shared-library.md)
+[Building the shared library](../../../../docs/user/guide/building-shared-library.md)
 guide and the build sections of the
-[Fortran wrapper reference](../../../../../docs/user/reference/fortran-wrapper.md).
+[Fortran wrapper reference](../../../../docs/user/reference/fortran-wrapper.md).
 
 Evidence is split by the stage that establishes it:
 

@@ -15,7 +15,12 @@ from prik.planning import DatatypeFamily, WrapperPlanner
 
 
 RUNTIME_POLICY_CONTRACT = (
-    Path(__file__).resolve().parents[1] / "end_to_end" / "fixtures" / "edited_contract" / "fruntime_policy_f90.pyi"
+    Path(__file__).resolve().parents[1]
+    / "end_to_end"
+    / "fixtures"
+    / "edited_contracts"
+    / "runtime_policy"
+    / "fruntime_policy_f90.pyi"
 )
 
 

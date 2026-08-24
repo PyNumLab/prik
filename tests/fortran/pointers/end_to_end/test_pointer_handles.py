@@ -24,7 +24,7 @@ from prik.runtime.handles import AllocatableArray, PointerArray
 pytestmark = pytest.mark.fortran_end_to_end
 
 FIXTURES = Path(__file__).parent / "fixtures"
-POINTERS_F90_SOURCE = FIXTURES / "fpointers_f90.f90"
+POINTERS_F90_SOURCE = FIXTURES / "native" / "fpointers_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 POINTER_CROSS_A_SOURCE = """\
 module fpointer_cross_a

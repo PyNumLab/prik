@@ -103,29 +103,21 @@ source or .pyi contract plus native inputs
                           -> manifest serialization or replay
 ```
 
-Generated wrapper membership is data, not a filename convention. The build
-materializes and compiles only the paths listed by `GeneratedWrapper`; an empty
-bridge-source tuple is a complete all-direct result. Link-driver selection
-combines retained native-language requirements with generated and caller-native
-object languages, so absence of a generated adapter never implies absence of
-the Fortran runtime.
-
-Native implementation language is explicit throughout the build and manifest
-paths. C and Fortran source collections remain distinct, and a source-free
-`.pyi` build selects its native language explicitly rather than deriving it
-from a compiler or ABI decorator.
-
-The same rule applies when a source-free direct Fortran contract resolves its
-symbol from a prebuilt object, static archive, or shared library. Those inputs
-remain ordered `NativeLinkItem` records; direct routing changes generated
-adapter membership, not caller-supplied artifact order or the required Fortran
-link runtime.
+Two invariants keep that hub honest. First, generated-wrapper membership is
+data, not a filename convention: the build materializes and compiles only the
+paths listed by `GeneratedWrapper`, so an empty bridge-source tuple is a
+complete all-direct result, and link-driver selection combines retained
+native-language requirements with generated and caller-native object languages.
+An absent generated adapter therefore never implies an absent Fortran runtime.
+Second, native implementation language is explicit everywhere: C and Fortran
+source collections stay distinct, a source-free `.pyi` build states its native
+language instead of deriving it from a compiler or ABI decorator, and prebuilt
+objects, archives, and libraries stay ordered `NativeLinkItem` records.
 
 `WrapperBuildResult` and saved `.pyi` manifests report each generated native
-group's kind, language, member keys, and physical source paths. This makes
-zero-source, adapter-only, support-only, and mixed output factual in direct
-builds, source-only output, Makefiles, and manifest replay. Progress and
-compiler records are emitted only for physical sources that are present.
+group's kind, language, member keys, and source paths, so zero-source,
+adapter-only, support-only, and mixed output stay factual across direct builds,
+source-only output, Makefiles, and manifest replay.
 
 The source file groups helpers around build configuration, generated-wrapper
 materialization, native compilation scheduling, `.pyi` contract loading and
@@ -213,6 +205,9 @@ measured fact, semantic identity, and NumPy projection separate.
 | [Build pipeline](../../../tests/fortran/infrastructure/building/pipeline/) | Artifact output, manifests, build modes, and build-plan handoffs. |
 | [Compilation integration](../../../tests/fortran/infrastructure/building/compiling/) | Native command integration. |
 | [End-to-end builds](../../../tests/fortran/infrastructure/building/end_to_end/) | Build, import, and generated-extension behavior. |
+| [Direct-C build pipeline](../../../tests/c/infrastructure/building/pipeline/) | C-only compiler selection, source and contract builds, manifests, Makefiles, explicit artifacts, and pre-artifact rejections. |
+| [Direct-C runtime features](../../../tests/c/primitive_scalars/end_to_end/) | C source reaches an imported extension through binding-only lowering and calls the selected native symbol. |
+| [Collision-forwarder pipeline](../../../tests/c/symbol_collisions/) | Optional forwarder selection, separate generated C membership, compilation, and runtime behavior. |
 
 ## Change Routes
 

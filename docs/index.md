@@ -278,13 +278,16 @@ Same Fortran source, but a more natural Python API: module procedures become met
 - **Clear limits:** unsupported contracts fail before wrapper generation with
   actionable diagnostics.
 
-## Proven on real Fortran libraries
+## Proven on real libraries
 
-The maintained examples wrap and numerically validate
+Five maintained Fortran examples wrap and numerically validate
 [BLAS](user/examples/blas-wrapper.md),
 [LAPACK](user/examples/lapack-wrapper.md),
 [FFTPACK](user/examples/fftpack-wrapper.md), and
-[MINPACK](user/examples/minpack-wrapper.md). The reproducible
+[MINPACK](user/examples/minpack-wrapper.md), plus the object-oriented
+[BSPLINE-FORTRAN](user/examples/bspline-wrapper.md) API. The direct-C
+[libm example](user/examples/libm-wrapper.md) validates the supported C lane
+against the platform math library. The reproducible
 [performance comparison](user/performance.md) measures PRIK and NumPy's f2py
 against the same Fortran kernels.
 

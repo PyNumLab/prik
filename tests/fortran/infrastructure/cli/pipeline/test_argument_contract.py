@@ -495,7 +495,9 @@ def test_prik_command_parsers_group_options_by_user_intent():
     assert top_help.startswith("usage: python3 -m prik INPUT [INPUT ...] [BUILD OPTIONS]")
     assert "python3 -m prik {parse,semantics,generate,probe} [OPTIONS] ..." in top_help
     assert "python3 -m prik --version" in top_help
-    assert "Build Python extensions from Fortran and inspect native interface artifacts." in top_help
+    assert (
+        "Build Python extensions from Fortran or supported C APIs and inspect native interface artifacts." in top_help
+    )
     assert prik_cli._HELP_DIVIDER in top_help
     assert "Basic wrapper build:" in top_help
     assert "Name the Python extension:" in top_help
@@ -519,9 +521,11 @@ def test_prik_command_parsers_group_options_by_user_intent():
     for common_option in (
         "--out",
         "--out-dir",
+        "--language",
         "--compiler",
         "--include-dir",
         "--native-compile-flags",
+        "--native-c-compile-flags",
         "--jobs",
         "--native-library",
         "--verbose",
@@ -530,6 +534,7 @@ def test_prik_command_parsers_group_options_by_user_intent():
     ):
         assert common_option in top_help
     assert "Input-language compiler used throughout the extension" in top_help
+    assert "Input language (default: fortran; use c for direct C wrappers)" in normalized_top_help
     assert "default: gfortran" in normalized_top_help
     assert "Add an include directory used throughout the extension" in top_help
     assert "Compiler used for preprocessing and internal datatype measurement" not in top_help
@@ -698,11 +703,11 @@ def test_prik_command_parsers_group_options_by_user_intent():
     [
         (
             prik_cli._top_level_parser,
-            "Build Python extensions from Fortran and inspect native interface artifacts.",
+            "Build Python extensions from Fortran or supported C APIs and inspect native interface artifacts.",
         ),
         (
             prik_cli._build_parser,
-            "Build a Python extension from Fortran source or a semantic .pyi contract.",
+            "Build a Python extension from Fortran source, a supported C API, or a semantic .pyi contract.",
         ),
         (
             prik_cli._parse_parser,

@@ -58,8 +58,8 @@ test.
 
 | Documentation or mechanism | Infrastructure owner | Focused pytest command |
 | --- | --- | --- |
-| [Inspect a Fortran API](../../docs/user/examples/recipes/inspect-fortran-api.md) | `infrastructure/parsing/` | `python3 -m pytest -q tests/fortran/infrastructure/parsing` |
-| [Compiler Preprocessing](../../docs/user/examples/recipes/compiler-preprocessing.md) | `infrastructure/preprocessing/` | `python3 -m pytest -q tests/fortran/infrastructure/preprocessing` |
+| [Python API](../../docs/user/reference/python-api.md#advanced-package-imports) | `infrastructure/parsing/` | `python3 -m pytest -q tests/fortran/infrastructure/parsing` |
+| [Compiler Preprocessing](../../docs/user/reference/cli-commands.md#compiler-preprocessing) | `infrastructure/preprocessing/` | `python3 -m pytest -q tests/fortran/infrastructure/preprocessing` |
 | [CLI Commands](../../docs/user/reference/cli-commands.md) | `infrastructure/cli/` | `python3 -m pytest -q tests/fortran/infrastructure/cli` |
 | [Semantic IR](../../docs/user/reference/semantic-ir.md) | `infrastructure/semantic_ir/` | `python3 -m pytest -q tests/fortran/infrastructure/semantic_ir` |
 | [Semantic `.pyi` Format](../../docs/user/reference/semantic-pyi-format.md) and [contract guides](../../docs/user/reference/pyi-contracts/index.md) | `infrastructure/semantic_pyi/` | `python3 -m pytest -q tests/fortran/infrastructure/semantic_pyi` |
@@ -107,28 +107,37 @@ end-to-end or smoke evidence.
 
 ## Fixtures and helpers
 
-Feature-specific fixtures stay beneath their feature. End-to-end projects use:
+Feature-specific fixtures stay beneath their feature. Every Fortran feature
+uses the same end-to-end layout:
 
 ```text
-<owner>/end_to_end/fixtures/<case>/native/
+<owner>/end_to_end/fixtures/
+├── native/                     # permanent Fortran inputs
+├── contracts/<case>/           # reviewed generated `.pyi` packages
+├── edited_contracts/<case>/    # intentionally modified `.pyi` inputs
+└── routing/
+    ├── native/                 # direct/mixed route inputs
+    └── contracts/<case>/       # matching route contracts
 ```
 
+Create only the directories a feature needs. Do not introduce scenario folders
+such as `baseline/`, `external/`, or `runtime/`; the test and case names carry
+that meaning while native inputs and contracts retain one predictable home.
 Generated build products always use pytest temporary directories. `_support/`
 contains only helpers used by several Fortran features; it contains no pytest
 modules, feature sources, or checked contracts.
 
 The permanent evidence index is
-[`CONTRACT_COVERAGE.md`](CONTRACT_COVERAGE.md). Temporary legacy-node,
-artifact-consumer, and support-consumer inventories live under
-[`../_migration/`](../_migration/) until the final migration gate.
+[`CONTRACT_COVERAGE.md`](CONTRACT_COVERAGE.md).
 
 ## Markers
 
 - Every pytest node below a Fortran `end_to_end/` directory carries
   `fortran_end_to_end`, and no other node does.
-- Only the complete `examples/blas/` and `examples/lapack/` correctness
-  projects and BLAS/LAPACK native-source integration nodes additionally carry
-  `real_library`.
+- The repository-wide `real_library` marker covers the maintained BLAS,
+  LAPACK, FFTPACK, MINPACK, BSPLINE-FORTRAN, and direct-C libm projects. Within
+  the Fortran suite, focused FFTPACK and MINPACK native-source integration nodes
+  carry it as well.
 - `toolchain_smoke` will select exact portable rows from the completed ordinary
   end-to-end suite; it is not a separate directory.
 
@@ -138,6 +147,5 @@ Run all migrated Fortran evidence with:
 python3 -m pytest -q tests/fortran
 ```
 
-Run the BLAS project by sourcing `examples/blas/build_all.sh`, then running
-`python3 -m pytest -q examples/blas/tests`. Never run LAPACK locally without an
-explicit request.
+Each project has its own `examples/<project>/build_all.sh` and test directory.
+Never run LAPACK locally without an explicit request.

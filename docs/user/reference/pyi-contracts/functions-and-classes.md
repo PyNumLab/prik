@@ -1,5 +1,5 @@
 ---
-title: .pyi Functions and Classes
+title: Editing Fortran Functions and Classes
 audience: users, advanced users
 prerequisites: editing .pyi contracts overview
 related: index.md, exports-and-modules.md, calls-and-results.md, ../semantic-pyi-format.md, ../../guide/wrapping-derived-types.md, ../../guide/generic-interfaces.md
@@ -7,7 +7,7 @@ status: maintained
 publication: reviewed
 ---
 
-# Functions and Classes
+# Editing Fortran Functions and Classes
 
 Declarations may be moved into a more useful Python shape while still calling
 the same native procedures.
@@ -79,8 +79,12 @@ selects the native call target.
 
 ## Replace the Constructor
 
-Generated classes have either a field-keyword constructor or a no-argument
-native constructor. Replace it with one concrete native initializer by editing
+Without a source type-named constructor interface, generated classes have either
+a field-keyword constructor or a no-argument native constructor. A Fortran
+`interface <typename>` instead generates an overloaded constructor; see [Which
+Constructor You
+Get](../../guide/wrapping-derived-types.md#which-constructor-you-get). Replace
+the generated surface with one concrete native initializer by editing
 `__init__`:
 
 ```python
@@ -98,6 +102,31 @@ native argument must accept `state`.
 
 Remove the old generated `__init__` when replacing it. Deleting `__init__`
 without adding another one makes public construction unavailable.
+
+## Declare Native Destruction
+
+Use `@destroy` for a native teardown operation that belongs to the class
+lifecycle but is not a public Python method:
+
+```python
+from prik.contracts import destroy
+
+class owned_buffer:
+    @destroy
+    def release_owned_buffer(self) -> None: ...
+```
+
+The declaration must take only `self` and return `None`. PRIK retains it as
+native lifecycle metadata and excludes it from the callable class surface. The
+completed ownership policy decides how destruction occurs; application code
+does not call the decorated declaration.
+
+The role is language-neutral. Generated Fortran contracts use it for procedures
+named by a type's `FINAL` declaration, which Fortran invokes during native
+deallocation.
+
+Use an ordinary method instead when cleanup is optional, repeatable, or must
+report a recoverable status to Python.
 
 ## Type-Bound and Magic Methods
 

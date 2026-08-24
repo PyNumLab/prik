@@ -185,6 +185,7 @@
             }
           ],
           "methods": [],
+          "destructors": [],
           "overload_sets": [],
           "base_classes": [],
           "contracts": [],
@@ -413,6 +414,7 @@
             }
           ],
           "methods": [],
+          "destructors": [],
           "overload_sets": [],
           "base_classes": [],
           "contracts": [],

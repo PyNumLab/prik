@@ -76,6 +76,7 @@ from prik.semantics.models import (
     SemanticArrayContract,
     SemanticClass,
     SemanticConstraint,
+    SemanticDestructor,
     SemanticExpressionCallable,
     SemanticField,
     SemanticFunction,
@@ -1023,8 +1024,6 @@ class FortranToIRConverter(ClassVisitor):
         if deferred_bindings:
             metadata["fortran_deferred_bindings"] = deferred_bindings
         final_procedures = list(getattr(dtype, "final_procedures", []))
-        if final_procedures:
-            metadata["fortran_final_procedures"] = final_procedures
         declaration_arrays = self._array_expression_sources(dtype.fields)
         return SemanticClass(
             name=dtype.name,
@@ -1041,6 +1040,19 @@ class FortranToIRConverter(ClassVisitor):
                 for field in dtype.fields
             ],
             methods=methods,
+            destructors=[
+                SemanticDestructor(
+                    name=name,
+                    native_name=name,
+                    origin=SemanticOrigin(
+                        source_language="fortran",
+                        native_name=name,
+                        native_scope=dtype.module,
+                        source_kind="destructor",
+                    ),
+                )
+                for name in final_procedures
+            ],
             overload_sets=overload_sets,
             base_classes=self._base_classes(dtype),
             metadata=metadata,
@@ -1048,6 +1060,7 @@ class FortranToIRConverter(ClassVisitor):
             origin=SemanticOrigin(
                 source_language="fortran",
                 native_name=dtype.name,
+                native_abi="c" if "bind(c)" in type_attributes else None,
                 native_scope=dtype.module,
                 source_kind="derived_type",
             ),

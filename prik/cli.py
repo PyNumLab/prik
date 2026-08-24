@@ -73,7 +73,7 @@ _POINTS_EXAMPLE_HELP = (
     "    https://pynumlab.github.io/prik/#see-it-in-action\n"
 )
 _CLI_HELP_DESCRIPTION = (
-    "Build Python extensions from Fortran and inspect native interface artifacts.\n\n"
+    "Build Python extensions from Fortran or supported C APIs and inspect native interface artifacts.\n\n"
     "commands:\n"
     "  parse       Inspect source declarations and parser facts\n"
     "  semantics   Convert source code to language-neutral semantic IR\n"
@@ -2000,7 +2000,9 @@ def _add_paths(
     if help_text is None:
         help_text = "Source file(s) or a source directory"
         if build_inputs:
-            help_text = "Fortran source file(s) or one semantic .pyi contract; omit with --build-manifest"
+            help_text = (
+                "Fortran or supported C source file(s), or one semantic .pyi contract; omit with --build-manifest"
+            )
         elif allow_manifest:
             help_text = "Source file(s), one .pyi contract, or a source directory; omit with --build-manifest"
     parser.add_argument(
@@ -2455,10 +2457,16 @@ def _add_top_level_arguments(parser: argparse.ArgumentParser) -> None:
         "paths",
         nargs="*",
         metavar="INPUT",
-        help="Fortran source file(s) or one semantic .pyi contract",
+        help="Fortran or supported C source file(s), or one semantic .pyi contract",
     )
 
     build_group = parser.add_argument_group("build options")
+    build_group.add_argument(
+        "--language",
+        choices=("fortran", "c"),
+        metavar="{fortran,c}",
+        help="Input language (default: fortran; use c for direct C wrappers)",
+    )
     build_group.add_argument(
         "--out",
         metavar="NAME",
@@ -2472,7 +2480,7 @@ def _add_top_level_arguments(parser: argparse.ArgumentParser) -> None:
     build_group.add_argument(
         "--compiler",
         metavar="COMPILER",
-        help="Input-language compiler used throughout the extension build; default: gfortran",
+        help="Input-language compiler used throughout the extension build; default: gfortran, or cc with --language c",
     )
     build_group.add_argument(
         "-I",
@@ -2488,7 +2496,15 @@ def _add_top_level_arguments(parser: argparse.ArgumentParser) -> None:
         action="extend",
         nargs="+",
         metavar="FLAG",
-        help="Native implementation compiler flags, for example --native-compile-flags=-O3",
+        help="Fortran implementation compiler flags, for example --native-compile-flags=-O3",
+    )
+    build_group.add_argument(
+        "--native-c-compile-flags",
+        dest="native_c_compile_flags",
+        action="extend",
+        nargs="+",
+        metavar="FLAG",
+        help="C implementation compiler flags, for example --native-c-compile-flags=-O3",
     )
     build_group.add_argument(
         "--jobs",
@@ -2569,7 +2585,7 @@ def _build_parser(argv: list[str]) -> argparse.ArgumentParser:
     parser = _new_cli_parser(
         prog="python3 -m prik",
         usage=_BUILD_USAGE,
-        description="Build a Python extension from Fortran source or a semantic .pyi contract.",
+        description="Build a Python extension from Fortran source, a supported C API, or a semantic .pyi contract.",
         epilog=_BUILD_HELP_EPILOG,
         argv=argv,
     )

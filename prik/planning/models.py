@@ -325,7 +325,7 @@ class DerivedMemberPathPlan(StageRecord):
 class DerivedTypePlan(StageRecord):
     """Describe one namespace-owned runtime wrapper type for a native derived type.
 
-    The planner supplies identity, native naming, fields, and finalizers;
+    The planner supplies identity, native naming, fields, and destructors;
     generated class assembly uses this record as the authoritative type shape.
     """
 
@@ -337,9 +337,8 @@ class DerivedTypePlan(StageRecord):
     native_scope: str
     python_names: tuple[str, ...]
     fields: tuple[DerivedFieldPlan, ...]
-    finalizers: tuple[str, ...]
+    destructors: tuple[str, ...]
     bind_c: bool
-    sequence: bool
     abstract: bool = False
     deferred_bindings: tuple[str, ...] = ()
 

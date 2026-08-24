@@ -27,16 +27,16 @@ DOC_PATHS = [
     ROOT / "examples/lapack/README.md",
     ROOT / "examples/libm/README.md",
     ROOT / "examples/minpack/README.md",
-    *sorted(path for path in (ROOT / "docs").rglob("*.md") if "old_docs" not in path.parts),
+    *sorted((ROOT / "docs").rglob("*.md")),
 ]
 AUDITED_PYTHON_DOC_PATHS = [
     ROOT / "README.md",
-    *sorted((ROOT / "docs/user/getting-started").glob("*.md")),
-    *sorted((ROOT / "docs/user/guide").glob("*.md")),
+    *sorted((ROOT / "docs").rglob("*.md")),
 ]
 DEVELOPER_PACKAGE_DOC_PATHS = sorted((ROOT / "docs/developer/packages").rglob("*.md"))
 TEST_MARKER = re.compile(r"^\s*<!--\s*prik-doc-test:\s*(run|exact)(?:\s+([a-z0-9_-]+))?\s*-->\s*$")
 OUTPUT_MARKER = re.compile(r"^\s*<!--\s*prik-doc-test-output\s*-->\s*$")
+INVALID_CONTRACT_MARKER = re.compile(r"^\s*<!--\s*prik-doc-contract:\s*invalid\s*-->\s*$")
 SOURCE_MARKER = re.compile(r"^\s*<!--\s*prik-doc-source:\s*(.+?)\s*-->\s*$")
 FENCE_MARKER = re.compile(r"^\s*(`{3,}|~{3,})")
 DIRECT_PRODUCTION_COMMAND = re.compile(r"^python3 (?P<path>prik/(?:[A-Za-z0-9_]+/)*[A-Za-z0-9_]+\.py)$")
@@ -48,9 +48,6 @@ DISALLOWED_OPTIONS = {
     "--out",
     "--preprocess-template",
 }
-C_DOCS_START = "<!-- PRIK_C_DOCS_START"
-C_DOCS_END = "PRIK_C_DOCS_END -->"
-C_DOCS_DISABLED = "<!-- PRIK_C_DOCS_DISABLED:"
 TARGET_DEPENDENT_EXAMPLES = {
     "prik/pipeline/type_mapping_report.py",
     "prik/preprocessing/probes/fortran_types.py",
@@ -96,6 +93,7 @@ class DocumentedPythonBlock:
     path: Path
     line: int
     source: str
+    expects_contract_error: bool = False
 
     @property
     def test_id(self) -> str:
@@ -112,6 +110,13 @@ def _next_nonempty_line(lines: list[str], start: int) -> int:
     index = start
     while index < len(lines) and not lines[index].strip():
         index += 1
+    return index
+
+
+def _previous_nonempty_line(lines: list[str], start: int) -> int:
+    index = start
+    while index >= 0 and not lines[index].strip():
+        index -= 1
     return index
 
 
@@ -138,27 +143,8 @@ def _logical_command(command_block: str, *, location: str) -> str:
     return command
 
 
-def _visible_documentation_lines(path: Path) -> list[str]:
-    lines = path.read_text(encoding="utf-8").splitlines()
-    visible: list[str] = []
-    hidden = False
-    for line in lines:
-        if line.strip() == C_DOCS_START:
-            hidden = True
-            visible.append("")
-        elif line.strip() == C_DOCS_END:
-            hidden = False
-            visible.append("")
-        elif hidden or line.lstrip().startswith(C_DOCS_DISABLED):
-            visible.append("")
-        else:
-            visible.append(line)
-    assert not hidden, f"{path.relative_to(ROOT)}: unclosed deferred documentation comment"
-    return visible
-
-
 def _documented_content_from_path(path: Path) -> tuple[list[DocumentationExample], list[DocumentedSource]]:
-    lines = _visible_documentation_lines(path)
+    lines = path.read_text(encoding="utf-8").splitlines()
     examples: list[DocumentationExample] = []
     sources: list[DocumentedSource] = []
     index = 0
@@ -237,7 +223,7 @@ def _documented_content_from_path(path: Path) -> tuple[list[DocumentationExample
 
 def _developer_package_examples(path: Path) -> list[DocumentationExample]:
     """Discover production-file command/result pairs from one package guide."""
-    lines = _visible_documentation_lines(path)
+    lines = path.read_text(encoding="utf-8").splitlines()
     examples: list[DocumentationExample] = []
     index = 0
 
@@ -305,8 +291,14 @@ DOCUMENTED_SOURCES = [source for _examples, sources in DOCUMENTATION_CONTENT for
 
 
 def _documented_python_blocks(path: Path) -> list[DocumentedPythonBlock]:
-    """Collect every visible Python fence for syntax and contract validation."""
-    lines = _visible_documentation_lines(path)
+    """Collect every visible Python fence for syntax and contract validation.
+
+    A fence introduced by ``prik-doc-test-output`` holds captured command
+    output rather than Python source, so it is skipped.  One introduced by
+    ``prik-doc-contract: invalid`` is a negative example whose documented
+    behavior is that loading it fails.
+    """
+    lines = path.read_text(encoding="utf-8").splitlines()
     blocks = []
     index = 0
     while index < len(lines):
@@ -314,7 +306,17 @@ def _documented_python_blocks(path: Path) -> list[DocumentedPythonBlock]:
             index += 1
             continue
         source, after_block, _language = _fenced_block(lines, index, language="python")
-        blocks.append(DocumentedPythonBlock(path=path, line=index + 1, source=source))
+        marker_index = _previous_nonempty_line(lines, index - 1)
+        marker = lines[marker_index] if marker_index >= 0 else ""
+        if not OUTPUT_MARKER.match(marker):
+            blocks.append(
+                DocumentedPythonBlock(
+                    path=path,
+                    line=index + 1,
+                    source=source,
+                    expects_contract_error=bool(INVALID_CONTRACT_MARKER.match(marker)),
+                )
+            )
         index = after_block
     return blocks
 
@@ -425,13 +427,21 @@ def test_documented_source_input(source: DocumentedSource):
 def test_documented_python_block_is_valid(block: DocumentedPythonBlock):
     """Keep Python examples parseable and semantic contract examples loadable."""
     ast.parse(block.source, filename=block.test_id)
-    if "from prik.contracts import" in block.source:
-        pyi_text_to_semantic_module(block.source, module_name="documentation_example")
+    if "from prik.contracts import" not in block.source:
+        assert not block.expects_contract_error, (
+            f"{block.test_id}: prik-doc-contract: invalid marks a block that loads no contract"
+        )
+        return
+    if block.expects_contract_error:
+        with pytest.raises(ValueError):
+            pyi_text_to_semantic_module(block.source, module_name="documentation_example")
+        return
+    pyi_text_to_semantic_module(block.source, module_name="documentation_example")
 
 
 @pytest.mark.parametrize("path", DOC_PATHS, ids=lambda path: str(path.relative_to(ROOT)))
 def test_documented_expected_output_labels_are_automatically_verified(path: Path):
-    lines = _visible_documentation_lines(path)
+    lines = path.read_text(encoding="utf-8").splitlines()
     for index, line in enumerate(lines):
         if line.strip() not in {"Expected output:", "Output:"}:
             continue

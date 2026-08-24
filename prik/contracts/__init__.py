@@ -287,11 +287,20 @@ def abstract(target):
     return target
 
 
+def destroy(target):
+    """Mark a class-body declaration as a native destruction operation.
+
+    The declaration is semantic lifecycle metadata rather than a Python-callable
+    method. It is returned unchanged so the contract remains an ordinary Python
+    stub when imported by documentation or tooling.
+    """
+    return target
+
+
 bind = _decorator
 nogil = _decorator
 native_abi = _decorator
 native_call = _decorator
-native_type = _decorator
 overload = _decorator
 prototype = _decorator
 pure = _decorator
@@ -390,10 +399,10 @@ CONTRACT_SYMBOLS = frozenset(
         "abstract",
         "abstractmethod",
         "bind",
+        "destroy",
         "nogil",
         "native_abi",
         "native_call",
-        "native_type",
         "overload",
         "prototype",
         "pure",

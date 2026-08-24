@@ -9,7 +9,7 @@ publication: reviewed
 
 # CLI Commands Reference
 
-With no subcommand, prik builds a wrapper. Four subcommands expose the earlier
+With no subcommand, PRIK builds a wrapper. Four subcommands expose the earlier
 stages without building one.
 
 ```bash
@@ -21,7 +21,7 @@ python3 -m prik {parse,semantics,generate,probe} [OPTIONS] ...
 | --- | --- |
 | no subcommand | Builds one importable extension from Fortran source, a supported direct C source, or a semantic `.pyi` contract. |
 | `parse` | Prints parser facts and diagnostics. |
-| `semantics` | Prints language-neutral semantic IR as JSON. |
+| `semantics` | Prints a human-readable semantic-IR report; `--json` selects the complete JSON record. |
 | `generate` | Writes `.pyi` contracts, wrapper sources, or a Makefile without compiling. |
 | `probe` | Prints compiler-target datatype and ABI facts. |
 
@@ -41,7 +41,7 @@ flags such as `--compiler` and `-I`.
 `prik --version` and `python3 -m prik --version` print the same value as
 `prik.__version__`.
 
-When `rich-argparse` is installed, prik uses its colored help formatter
+When `rich-argparse` is installed, PRIK uses its colored help formatter
 automatically. Install it with `python3 -m pip install 'prik[pretty]'`, or from
 an editable checkout with `python3 -m pip install -e '.[pretty]'`. Plain
 `argparse` help is the deterministic fallback; `--no-color` or `NO_COLOR`
@@ -61,13 +61,18 @@ The default build accepts either one or more Fortran or supported C source
 | `--build-manifest PATH` | Replays a saved `prik-build.json`. It does not generate one. |
 | `--jobs N` | Limits concurrent compiler processes. The default uses available CPUs. |
 
-Compiled wrapper builds support Fortran and the documented direct-only C
-primitive lane. C paths require `--language c`; the parser also accepts more C
-forms than that runtime lane, which fail before wrapper planning.
+Compiled wrapper builds support Fortran and the documented direct-C subset —
+scalars, one-level primitive pointers, arrays, rank-zero strings, hidden
+outputs, and status projection. C paths require `--language c`; the parser
+accepts more C forms than that runtime subset, and those fail before wrapper
+planning. [C Support](../language-support/c-support.md#what-is-supported)
+records the exact boundary.
 
 Directories are expanded recursively in deterministic path order. Fortran
-source files can usually be inferred from their suffix. C files, directories,
-and unknown suffixes require `--language c`.
+source files can usually be inferred from their suffix;
+[Fortran Support](../language-support/fortran-support.md#source-forms) lists the
+accepted ones. C files, directories, and unknown suffixes require
+`--language c`.
 
 ## Wrapper builds
 
@@ -83,7 +88,7 @@ least one explicit native input: `--native-fortran-sources`, `--native-c-sources
 | `--compiler COMPILER` | The input-language compiler used for preprocessing, datatype measurement, native compilation, and linking. Defaults to `gfortran` for Fortran and `cc` for C. |
 | `-I DIR`, `--include-dir DIR` | Build-wide include directory. Repeat to preserve search order. |
 | `--strict-wrapper-names` | Rejects Python names that would need escaping or a collision suffix. |
-| `&#45;&#45;assume-intent-in-scalars` | Treats a primitive scalar dummy that declares no `intent` as `intent(in)`, so its value is not returned. A declared `intent` always wins; arrays, derived-type objects, and `character` values are unaffected. Also accepted by `generate --pyi`, where it removes the same results from the generated contract, and by `semantics`. |
+| `--assume-intent-in-scalars` | Treats a primitive or non-descriptor character scalar dummy that declares no `intent` as `intent(in)`, so its value is not returned. A declared `intent` always wins; arrays, derived-type objects, and descriptor character scalars are unaffected. Also accepted by `generate --pyi`, where it removes the same results from the generated contract, and by `semantics`. |
 | `--no-compile-input-sources` | Treats positional sources as semantic inputs only. Requires an explicit native input. |
 | `--native-fortran-sources PATH ...` | Compiles extra native sources without exposing them as public API. |
 | `--native-c-sources PATH ...` | Compiles extra C sources without exposing them as public API. |
@@ -103,7 +108,7 @@ least one explicit native input: `--native-fortran-sources`, `--native-c-sources
 
 Build rules worth knowing:
 
-- prik selects the generated binding compiler from its own profile;
+- PRIK selects the generated binding compiler from its own profile;
   `--compiler` controls the input-language side.
 - `--native-compile-flags` also applies to internal datatype measurement for
   source builds, so target-changing flags such as `-fdefault-integer-8` affect
@@ -218,7 +223,7 @@ use `--out-dir`. With no `--out`, `generate --pyi` prints every generated
 contract. `--pyi` uses `--out` to write its contract package, and there
 `--compiler` and `-I` affect only preprocessing and datatype measurement.
 
-In `.pyi` Makefile mode, prik writes `<out-dir>/prik-build.json` first, then
+In `.pyi` Makefile mode, PRIK writes `<out-dir>/prik-build.json` first, then
 generates `<out-dir>/Makefile.prik` from that manifest.
 
 ## Probe
@@ -273,6 +278,36 @@ These options control preprocessing before parsing.
 
 Use the equals form when a value starts with `-`, for example
 `--compiler-arg=-target`.
+
+### Command templates
+
+`--preprocessor-adapter command-template` with `--preprocess-template` runs an
+arbitrary preprocessing command, for a compiler family PRIK has no adapter for.
+The template must expand to a command that writes preprocessed source to
+standard output. PRIK substitutes these placeholders:
+
+| Placeholder | Expands to |
+| --- | --- |
+| `{source}` | The source file being preprocessed. |
+| `{compiler}` | The `--compiler` value, or an empty string. |
+| `{language}` | `c` or `fortran`. |
+| `{include_dirs}` | Each `-I` directory, in order, as `-Idir`. |
+| `{defines}` | Each `-D` macro, in order, as `-Dname[=value]`. |
+| `{undefs}` | Each `-U` macro, in order, as `-Uname`. |
+| `{standard}` | `-std=<value>` when `--std` is given; nothing otherwise. |
+| `{compiler_args}` | Each `--compiler-arg` value, in order. |
+
+```bash
+python3 -m prik parse include/api.h --language c \
+  --preprocessor-adapter command-template \
+  --preprocess-template \
+  'cc -E {include_dirs} {defines} {undefs} {standard} {compiler_args} {source}'
+```
+
+A collection placeholder must be its own template token; it expands to zero or
+more arguments. The scalar placeholders may also appear inside a larger token.
+This adapter reports no dependencies, macro dumps, or line markers, so source
+locations come from the template's own output.
 
 `--compile-commands PATH` reads per-file C preprocessing commands from a
 `compile_commands.json` database. It is available only for C input.

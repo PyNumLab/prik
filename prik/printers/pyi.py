@@ -60,6 +60,7 @@ from prik.semantics.models import (
     SemanticArrayContract,
     SemanticClass,
     SemanticConstraint,
+    SemanticDestructor,
     SemanticFunction,
     SemanticImport,
     SemanticImportItem,
@@ -78,12 +79,6 @@ _WRAPPED_CALLABLE_TYPE_METADATA = "pyi_wrapped_callable_type"
 _CONTRACT_MODULE = "prik.contracts"
 _CONTRACT_ALIAS_PREFIX = "prik_"
 _FLAT_DIMENSION_PRINT_SENTINEL = "@prik.Flat"
-
-
-# Type attributes the contract states through its own vocabulary rather than
-# through `native_type`: `public` is the default accessibility, `private` has a
-# marker, and `abstract` has one too.
-_IMPLIED_TYPE_ATTRIBUTES = frozenset({"public", "private", "abstract"})
 
 
 @dataclass(frozen=True)
@@ -436,9 +431,8 @@ class PyiPrinter(ClassVisitor):
             decorators.append(f"@{context.contract('private')}")
         if self._is_abstract(cls):
             decorators.append(f"@{context.contract('abstract')}")
-        native_type = self._native_type_decorator(cls, context)
-        if native_type:
-            decorators.append(native_type)
+        if self._class_uses_c_abi(cls):
+            decorators.append(f'@{context.contract("native_abi")}("c")')
         decorator_text = "\n".join(decorators)
         if decorator_text:
             decorator_text += "\n"
@@ -460,22 +454,11 @@ class PyiPrinter(ClassVisitor):
         )
 
     @staticmethod
-    def _native_type_decorator(cls: SemanticClass, context: _PyiEmissionContext) -> str:
-        """Emit native derived-type metadata when the class needs it."""
-        if cls.origin.source_language != "fortran" or cls.origin.source_kind != "derived_type":
-            return ""
-        attributes = tuple(
-            str(item)
-            for item in cls.metadata.get("fortran_type_attributes", ())
-            if str(item).casefold() not in _IMPLIED_TYPE_ATTRIBUTES
+    def _class_uses_c_abi(cls: SemanticClass) -> bool:
+        """Return whether a Fortran class represents a ``bind(C)`` derived type."""
+        return cls.origin.source_language == "fortran" and (
+            cls.origin.native_abi == "c" or bool(cls.metadata.get("fortran_bind_c"))
         )
-        finalizers = tuple(str(item) for item in cls.metadata.get("fortran_final_procedures", ()))
-        parts = []
-        if attributes:
-            parts.append(f"attributes={attributes!r}")
-        if finalizers:
-            parts.append(f"finalizers={finalizers!r}")
-        return f"@{context.contract('native_type')}({', '.join(parts)})" if parts else ""
 
     def _visit_SemanticModule(
         self,
@@ -1268,6 +1251,10 @@ class PyiPrinter(ClassVisitor):
         if constructor:
             body_parts.append(constructor)
 
+        destructors = "\n\n".join(self._emit_destroy(item, context) for item in cls.destructors)
+        if destructors:
+            body_parts.append(destructors)
+
         fields = "\n".join(
             f"    {self._emit_data_member(field, context)}" for field in self._contract_items(cls.fields)
         )
@@ -1290,6 +1277,14 @@ class PyiPrinter(ClassVisitor):
         if not body_parts:
             return "    pass"
         return "\n\n".join(body_parts)
+
+    @staticmethod
+    def _emit_destroy(item: SemanticDestructor, context: _PyiEmissionContext) -> str:
+        """Emit one non-callable native destruction declaration."""
+        decorators = [f"    @{context.contract('destroy')}"]
+        if item.native_name and item.native_name != item.name:
+            decorators.append(f"    @{context.contract('bind')}({json.dumps(item.native_name)})")
+        return "\n".join([*decorators, f"    def {item.name}(self) -> None: ..."])
 
     def _class_constructor(
         self,

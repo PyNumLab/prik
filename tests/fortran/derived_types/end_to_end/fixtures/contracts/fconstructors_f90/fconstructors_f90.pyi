@@ -1,6 +1,5 @@
-from prik.contracts import Float64, Int32, native_type
+from prik.contracts import Float64, Int32, destroy
 
-@native_type(finalizers=('cleanup_initialized',))
 class initialized:
     def __init__(
         self,
@@ -8,6 +7,9 @@ class initialized:
         id: Int32 = 7,
         scale: Float64 = 2.5
     ) -> None: ...
+
+    @destroy
+    def cleanup_initialized(self) -> None: ...
 
     id: Int32 = 7
     scale: Float64 = 2.5

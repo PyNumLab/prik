@@ -143,8 +143,8 @@ from prik.contracts import Int32
 counter: Int32 = 41
 ```
 
-prik sets the module variable when the extension is imported. It remains
-writable. This works only when prik can write that native variable, and the
+PRIK sets the module variable when the extension is imported. It remains
+writable. This works only when PRIK can write that native variable, and the
 initializer must be a literal rather than a call, name, or expression.
 
 Use `Final[...]` only for a true read-only constant:

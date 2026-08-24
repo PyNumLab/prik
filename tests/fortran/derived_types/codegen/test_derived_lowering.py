@@ -21,11 +21,11 @@ from prik.pipeline.wrapper import WrapperGenerator
 from prik.planning import WrapperPlanner
 
 
-def _value_module(*, attributes: tuple[str, ...] = ()):
-    decorator = f"@native_type(attributes={attributes!r})" if attributes else ""
+def _value_module(*, bind_c: bool = False):
+    decorator = '@native_abi("c")' if bind_c else ""
     module = parse_pyi_text(
         f"""
-from prik.contracts import Arg, Float64, Value, native_call, native_type
+from prik.contracts import Arg, Float64, Value, native_abi, native_call
 
 {decorator}
 class point:
@@ -51,9 +51,9 @@ def _sources(plan):
     return c_source, bridge_source
 
 
-@pytest.mark.parametrize("attributes", [(), ("sequence",), ("bind(c)",)])
-def test_exact_typed_value_policy_projects_shared_canonical_derived_handoff(attributes):
-    module = _value_module(attributes=attributes)
+@pytest.mark.parametrize("bind_c", [False, True])
+def test_exact_typed_value_policy_projects_shared_canonical_derived_handoff(bind_c):
+    module = _value_module(bind_c=bind_c)
     function_policy = module.functions[0].metadata[RESOLVED_FUNCTION_WRAPPER_POLICY_METADATA]
     policy = function_policy.arguments[0]
     plan = WrapperPlanner().build(module)

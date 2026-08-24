@@ -1,6 +1,6 @@
 ---
 title: Optional Arguments
-description: How prik handles Fortran `optional` arguments — inputs, outputs, arrays, and None behavior
+description: How PRIK handles Fortran `optional` arguments — inputs, outputs, arrays, and None behavior
 audience: users
 prerequisites: wrapping subroutines, data types
 related: generic-interfaces.md, arrays.md, error-handling.md
@@ -10,7 +10,7 @@ publication: reviewed
 
 # Optional Arguments
 
-prik supports optional scalars, arrays, strings, derived types, and outputs.
+PRIK supports optional scalars, arrays, strings, derived types, and outputs.
 It preserves native `present(...)` semantics.
 
 ---
@@ -205,7 +205,7 @@ association. If its updated value is returned, Python receives a scalar or
 ## Limitations
 
 - Optional procedure pointers and passed procedures are not yet supported.
-- prik does not invent default values. The Fortran procedure handles missing
+- PRIK does not invent default values. The Fortran procedure handles missing
   arguments.
 
 ---

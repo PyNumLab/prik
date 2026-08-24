@@ -16,7 +16,7 @@ FIXTURES = Path(__file__).parents[1] / "end_to_end" / "fixtures"
 CASES = (
     GeneratedContractCase(
         name="fpointers_f90",
-        inputs=(FIXTURES / "fpointers_f90.f90",),
+        inputs=(FIXTURES / "native" / "fpointers_f90.f90",),
         expected_package=FIXTURES / "contracts" / "fpointers_f90",
     ),
 )

@@ -17,10 +17,10 @@ CONTRACT_ROOT = FIXTURE_ROOT / "contracts"
 CASES = tuple(
     GeneratedContractCase(source.stem, (source,), CONTRACT_ROOT / source.stem)
     for source in (
-        FIXTURE_ROOT / "fcharacter_edges_f90.f90",
-        FIXTURE_ROOT / "fstring_descriptors_f90.f90",
-        FIXTURE_ROOT / "fstrings.f",
-        FIXTURE_ROOT / "fstrings_f90.f90",
+        FIXTURE_ROOT / "native" / "fcharacter_edges_f90.f90",
+        FIXTURE_ROOT / "native" / "fstring_descriptors_f90.f90",
+        FIXTURE_ROOT / "native" / "fstrings.f",
+        FIXTURE_ROOT / "native" / "fstrings_f90.f90",
     )
 )
 

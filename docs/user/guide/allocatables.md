@@ -1,6 +1,6 @@
 ---
 title: Allocatables
-description: How prik handles Fortran `allocatable` variables, arrays, and descriptors
+description: How PRIK handles Fortran `allocatable` variables, arrays, and descriptors
 audience: users, advanced users
 prerequisites: arrays
 related: arrays.md, pointers.md, memory-management.md
@@ -152,7 +152,7 @@ assert h.shape == (5,)
 ### Function Results
 
 An allocatable-array function result becomes an `AllocatableArray` with its own
-descriptor storage, which prik releases automatically:
+descriptor storage, which PRIK releases automatically:
 
 ```python
 values = api.make_values(3)

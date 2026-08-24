@@ -84,9 +84,9 @@ def inspect(
 def test_value_projection_round_trips_as_argument_specific_native_transport():
     module = parse_pyi_text(
         """
-from prik.contracts import Arg, Float64, Value, native_call, native_type
+from prik.contracts import Arg, Float64, Value, native_abi, native_call
 
-@native_type(attributes=("bind(c)",))
+@native_abi("c")
 class point:
     x: Float64
 

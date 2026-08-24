@@ -1,6 +1,6 @@
 ---
 title: Generic Interfaces (Overloading)
-description: How prik supports Fortran named generic interfaces and exact overload dispatch
+description: How PRIK supports Fortran named generic interfaces and exact overload dispatch
 audience: users, advanced users
 prerequisites: wrapping functions, wrapping subroutines, data types
 related: optional-arguments.md, wrapping-derived-types.md, error-handling.md
@@ -10,7 +10,7 @@ publication: reviewed
 
 # Generic Interfaces (Overloading)
 
-prik turns a Fortran generic interface into one Python callable. The callable
+PRIK turns a Fortran generic interface into one Python callable. The callable
 dispatches to a concrete native procedure by exact dtype, rank, and generated
 class. It does not apply implicit numeric coercion.
 

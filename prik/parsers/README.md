@@ -13,6 +13,5 @@ APIs are imported from their owning language package, not from the `prik` root
 facade.
 
 See `docs/developer/packages/parsers.md`, `docs/developer/codebase-map.md`,
-`docs/developer/feature-to-code-map.md`,
-`docs/developer/deferred/c-parser.md`, and
+`docs/developer/feature-to-code-map.md`, and
 `docs/user/reference/semantic-pyi-format.md` for maintained behavior.

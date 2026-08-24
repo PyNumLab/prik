@@ -9,7 +9,7 @@ from prik.semantics.fortran2ir import (
 from prik.semantics.metadata import BIND_TARGET_METADATA
 from prik.parsers.fortran import parse_fortran_file as parse_fortran_source
 
-OPERATOR_F90_SOURCE = Path(__file__).parents[1] / "end_to_end" / "fixtures" / "foperators_f90.f90"
+OPERATOR_F90_SOURCE = Path(__file__).parents[1] / "end_to_end" / "fixtures" / "native" / "foperators_f90.f90"
 
 
 def test_converter_preserves_module_and_type_bound_generic_overload_sets():

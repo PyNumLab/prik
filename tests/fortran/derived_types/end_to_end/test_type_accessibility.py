@@ -11,7 +11,7 @@ from tests.fortran._support.wrapper_build import _build_source_and_import
 
 pytestmark = pytest.mark.fortran_end_to_end
 
-SOURCE = Path(__file__).parent / "fixtures" / "type_accessibility.f90"
+SOURCE = Path(__file__).parent / "fixtures" / "native" / "type_accessibility.f90"
 GENERATED = {
     "bind_c_type_accessibility_wrapper.f90",
     "type_accessibility_wrapper.c",

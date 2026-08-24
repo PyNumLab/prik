@@ -46,6 +46,93 @@ class particle:
     assert emit_module(reparsed) == emitted
 
 
+@pytest.mark.parametrize("native_language", ["fortran", "c"])
+def test_destroy_is_language_neutral_lifecycle_metadata(native_language: str):
+    module = parse_pyi_text(
+        """
+class owned_buffer:
+    @destroy
+    def release_owned_buffer(self) -> None: ...
+
+    @destroy
+    @bind("release_owned_buffer_array")
+    def release_array(self) -> None: ...
+""",
+        module_name="edited",
+        native_language=native_language,
+    )
+
+    cls = module.classes[0]
+    assert cls.methods == []
+    assert [(item.name, item.native_name) for item in cls.destructors] == [
+        ("release_owned_buffer", "release_owned_buffer"),
+        ("release_array", "release_owned_buffer_array"),
+    ]
+    emitted = emit_module(module)
+    assert "    @destroy\n    def release_owned_buffer(self) -> None: ..." in emitted
+    assert (
+        '    @destroy\n    @bind("release_owned_buffer_array")\n    def release_array(self) -> None: ...'
+    ) in emitted
+    assert (
+        parse_pyi_text(
+            emitted,
+            module_name="edited",
+            native_language=native_language,
+        )
+        == module
+    )
+
+
+@pytest.mark.parametrize(
+    ("source", "message"),
+    [
+        (
+            """
+@destroy
+def release_owned_buffer(self) -> None: ...
+""",
+            "destroy is only valid on a class-body declaration",
+        ),
+        (
+            """
+class owned_buffer:
+    @destroy()
+    def release_owned_buffer(self) -> None: ...
+""",
+            "destroy does not accept arguments",
+        ),
+        (
+            """
+class owned_buffer:
+    @private
+    @destroy
+    def release_owned_buffer(self) -> None: ...
+""",
+            "destroy can only be combined with bind",
+        ),
+        (
+            """
+class owned_buffer:
+    @destroy
+    def release_owned_buffer(self, status: Int32) -> None: ...
+""",
+            "destroy declaration must have the form",
+        ),
+        (
+            """
+class owned_buffer:
+    @destroy
+    def release_owned_buffer(self) -> Int32: ...
+""",
+            "destroy declaration must have the form",
+        ),
+    ],
+)
+def test_invalid_destroy_contracts_are_rejected(source: str, message: str):
+    with pytest.raises(ValueError, match=re.escape(message)):
+        parse_pyi_text(source, module_name="edited")
+
+
 def test_generated_and_linked_constructors_remain_distinct():
     generated = parse_pyi_text(
         """

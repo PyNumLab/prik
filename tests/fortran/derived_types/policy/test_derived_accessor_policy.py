@@ -6,6 +6,7 @@ from prik.semantics.models import (
     RESOLVED_SETTER_OWNERSHIP_POLICY_METADATA,
     SemanticClass,
     SemanticConstraint,
+    SemanticDestructor,
     SemanticField,
     SemanticModule,
     SemanticVariable,
@@ -54,6 +55,19 @@ def test_abstract_type_completes_as_a_non_instantiable_derived_policy():
     assert policy.blockers == ()
     assert policy.abstract is True
     assert policy.deferred_bindings == ("area",)
+
+
+def test_native_destructor_reaches_completed_derived_type_policy():
+    semantic_class = SemanticClass(
+        "owned_buffer",
+        destructors=[SemanticDestructor("release_owned_buffer")],
+    )
+    module = SemanticModule("buffers", classes=[semantic_class])
+
+    complete_semantic_policies(module)
+
+    policy = semantic_class.metadata[RESOLVED_DERIVED_TYPE_POLICY_METADATA]
+    assert policy.destructors == ("release_owned_buffer",)
 
 
 def test_deferred_binding_without_an_abstract_type_is_refused():

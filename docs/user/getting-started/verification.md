@@ -1,6 +1,6 @@
 ---
 title: Verification
-description: Verify that prik, NumPy, and the native toolchain are working correctly
+description: Verify that PRIK, NumPy, and the native toolchain are working correctly
 audience: users, contributors
 prerequisites: installation
 related: first-wrapped-function.md
@@ -72,7 +72,7 @@ missing, install it or add its `bin` directory to `PATH`.
 
 | Failure Type                    | Recommended Action                          |
 |--------------------------------|---------------------------------------------|
-| Cannot import prik / NumPy     | Check active virtual environment            |
+| Cannot import PRIK / NumPy     | Check active virtual environment            |
 | A header directory is missing  | Reinstall Python development files or NumPy |
 | Compiler not found             | Fix `PATH` or install both executables from a supported pair |
 

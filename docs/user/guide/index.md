@@ -1,6 +1,6 @@
 ---
 title: User Guide
-description: Detailed guides for wrapping Fortran code with prik
+description: Detailed guides for wrapping Fortran code with PRIK
 audience: users
 prerequisites: getting started
 related: data-types.md

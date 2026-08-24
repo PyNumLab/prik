@@ -11,7 +11,7 @@ from tests.fortran._support.wrapper_build import _build_source_and_import
 
 pytestmark = pytest.mark.fortran_end_to_end
 
-SOURCE = Path(__file__).parent / "fixtures" / "generic_constructor.f90"
+SOURCE = Path(__file__).parent / "fixtures" / "native" / "generic_constructor.f90"
 GENERATED = {
     "bind_c_generic_constructor_wrapper.f90",
     "generic_constructor_wrapper.c",

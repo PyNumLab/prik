@@ -599,9 +599,8 @@ class DerivedTypePolicy:
     python_exports: tuple[PythonExportPolicy, ...]
     python_names: tuple[str, ...]
     fields: tuple[DerivedFieldPolicy, ...]
-    finalizers: tuple[str, ...]
+    destructors: tuple[str, ...]
     bind_c: bool
-    sequence: bool
     supported: bool
     blockers: tuple[str, ...] = ()
     abstract: bool = False

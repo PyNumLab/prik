@@ -17,17 +17,17 @@ CONTRACT_ROOT = FIXTURES / "contracts"
 CASES = (
     GeneratedContractCase(
         "fcommon_block_f90",
-        (FIXTURES / "fcommon_block_f90.f90",),
+        (FIXTURES / "native" / "fcommon_block_f90.f90",),
         CONTRACT_ROOT / "fcommon_block_f90",
     ),
     GeneratedContractCase(
         "fmodule_vars_f90",
-        (FIXTURES / "fmodule_vars_f90.f90",),
+        (FIXTURES / "native" / "fmodule_vars_f90.f90",),
         CONTRACT_ROOT / "fmodule_vars_f90",
     ),
     GeneratedContractCase(
         "module_exports",
-        (FIXTURES / "module_exports.f90",),
+        (FIXTURES / "native" / "module_exports.f90",),
         CONTRACT_ROOT / "module_exports",
     ),
 )

@@ -33,8 +33,6 @@ markdown_extensions:
   - md_in_html
   - toc:
       permalink: true
-exclude_docs: |
-  old_docs/**
 nav:
   - Home: index.md
   - About: user/about.md
@@ -75,14 +73,6 @@ nav:
           - MINPACK Wrapper: user/examples/minpack-wrapper.md
           - BSPLINE-FORTRAN Wrapper: user/examples/bspline-wrapper.md
           - libm Wrapper: user/examples/libm-wrapper.md
-          - Recipes:
-              - Build and Import With the Python API: user/examples/recipes/build-and-import-python-api.md
-              - Inspect a Fortran API: user/examples/recipes/inspect-fortran-api.md
-              # PRIK_C_DOCS: - Inspect a C API: user/examples/recipes/inspect-c-api.md
-              - Work With Semantic .pyi Contracts: user/examples/recipes/semantic-pyi-contracts.md
-              - Control CLI Output: user/examples/recipes/control-cli-output.md
-              - Use Python Inspection APIs: user/examples/recipes/use-python-inspection-apis.md
-              - Use Compiler Preprocessing Options: user/examples/recipes/compiler-preprocessing.md
       - Troubleshooting:
           - Compiler Issues: user/troubleshooting/compiler-issues.md
       - FAQ: user/faq/index.md
@@ -105,6 +95,7 @@ nav:
           - Configuration Files: user/reference/configuration-files.md
       - Language Support:
           - Overview: user/language-support/index.md
+          - Fortran: user/language-support/fortran-support.md
           - C: user/language-support/c-support.md
           - Feature Matrix: user/language-support/feature-matrix.md
   - Developer Documentation:
@@ -136,9 +127,3 @@ nav:
           - Quality Assurance: developer/workflows/quality-assurance.md
           - Pull Request Checks: developer/workflows/ci.md
           - Documentation Maintenance: developer/workflows/documentation.md
-      # PRIK_C_DOCS: - Deferred C Parser Reference: developer/deferred/c-parser.md
-      - Roadmaps:
-          - Overview: developer/roadmap/index.md
-          - Language-First Test Suite and Fortran Cleanup: developer/roadmap/fortran-test-suite-cleanup-checklist.md
-          - Documentation Content: developer/roadmap/documentation-content-checklist.md
-          - Semantic .pyi Wrapper: developer/roadmap/semantic-pyi-wrapper-checklist.md

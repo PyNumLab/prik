@@ -41,26 +41,23 @@ from prik.planning import WrapperPlanner
 
 WRAPPER_TEST_ROOT = Path(__file__).resolve().parent
 WRAPPER_SOURCE_PATHS = {
-    "c_order_flat_buffer.f90": REPO_ROOT
-    / "tests/fortran/arrays/end_to_end/fixtures/baseline/native/c_order_flat_buffer.f90",
-    "daxpy_like.f90": REPO_ROOT / "tests/fortran/functions/end_to_end/fixtures/external/native/daxpy_like.f90",
-    "ddot_like.f90": REPO_ROOT / "tests/fortran/functions/end_to_end/fixtures/external/native/ddot_like.f90",
-    "external_bundle.f90": REPO_ROOT
-    / "tests/fortran/functions/end_to_end/fixtures/external/native/external_bundle.f90",
-    "fbind_value_f90.f90": REPO_ROOT
-    / "tests/fortran/data_types/end_to_end/fixtures/baseline/native/fbind_value_f90.f90",
-    "fixed_external.f": REPO_ROOT / "tests/fortran/functions/end_to_end/fixtures/external/native/fixed_external.f",
-    "fmath.f": REPO_ROOT / "tests/fortran/data_types/end_to_end/fixtures/baseline/native/fmath.f",
-    "fmath_arrays.f": REPO_ROOT / "tests/fortran/arrays/end_to_end/fixtures/baseline/native/fmath_arrays.f",
-    "fmath_arrays_f90.f90": REPO_ROOT / "tests/fortran/arrays/end_to_end/fixtures/baseline/native/fmath_arrays_f90.f90",
-    "fmath_f90.f90": REPO_ROOT / "tests/fortran/data_types/end_to_end/fixtures/baseline/native/fmath_f90.f90",
+    "c_order_flat_buffer.f90": REPO_ROOT / "tests/fortran/functions/end_to_end/fixtures/native/c_order_flat_buffer.f90",
+    "daxpy_like.f90": REPO_ROOT / "tests/fortran/functions/end_to_end/fixtures/native/daxpy_like.f90",
+    "ddot_like.f90": REPO_ROOT / "tests/fortran/functions/end_to_end/fixtures/native/ddot_like.f90",
+    "external_bundle.f90": REPO_ROOT / "tests/fortran/functions/end_to_end/fixtures/native/external_bundle.f90",
+    "fbind_value_f90.f90": REPO_ROOT / "tests/fortran/data_types/end_to_end/fixtures/native/fbind_value_f90.f90",
+    "fixed_external.f": REPO_ROOT / "tests/fortran/functions/end_to_end/fixtures/native/fixed_external.f",
+    "fmath.f": REPO_ROOT / "tests/fortran/data_types/end_to_end/fixtures/native/fmath.f",
+    "fmath_arrays.f": REPO_ROOT / "tests/fortran/arrays/end_to_end/fixtures/native/fmath_arrays.f",
+    "fmath_arrays_f90.f90": REPO_ROOT / "tests/fortran/arrays/end_to_end/fixtures/native/fmath_arrays_f90.f90",
+    "fmath_f90.f90": REPO_ROOT / "tests/fortran/data_types/end_to_end/fixtures/native/fmath_f90.f90",
     "fnaming_f90.f90": REPO_ROOT
     / "tests/fortran/infrastructure/semantic_pyi/contracts/exports_and_modules/end_to_end/fixtures/visibility/native/fnaming_f90.f90",
     "fopenmp_runtime_f90.f90": REPO_ROOT
-    / "tests/fortran/error_handling/end_to_end/fixtures/runtime/native/fopenmp_runtime_f90.f90",
-    "free_external.f90": REPO_ROOT / "tests/fortran/functions/end_to_end/fixtures/external/native/free_external.f90",
+    / "tests/fortran/error_handling/end_to_end/fixtures/native/fopenmp_runtime_f90.f90",
+    "free_external.f90": REPO_ROOT / "tests/fortran/functions/end_to_end/fixtures/native/free_external.f90",
     "fruntime_recursion_f90.f90": REPO_ROOT
-    / "tests/fortran/error_handling/end_to_end/fixtures/runtime/native/fruntime_recursion_f90.f90",
+    / "tests/fortran/error_handling/end_to_end/fixtures/native/fruntime_recursion_f90.f90",
 }
 
 

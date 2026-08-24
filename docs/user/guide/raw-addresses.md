@@ -11,7 +11,7 @@ publication: reviewed
 # Raw Addresses
 
 `Addr(T)` makes an integer address part of the Python API.
-prik casts the address and passes it to native code without owning the memory.
+PRIK casts the address and passes it to native code without owning the memory.
 
 Use this boundary only when the API must expose an address. Prefer checked
 scalar storage, arrays, and strings for normal wrappers.
@@ -36,7 +36,7 @@ These spellings describe different boundaries:
 
 - `Addr(T)` means the Python caller passes an integer address.
 - Inside `@native_call(...)`, `Arg(i)` selects Python argument `i`, and
-  `Addr(Arg(i))` tells prik to pass that converted scalar by address.
+  `Addr(Arg(i))` tells PRIK to pass that converted scalar by address.
 
 The `@native_call(...)` decorator records how Python arguments are placed in
 the native call. Arrays, rank-zero storage, strings, and raw addresses already
@@ -257,7 +257,7 @@ b'Xlpha   '
 - Use writable memory when native code may modify it.
 - Treat address zero as null only when the native routine allows null.
 
-prik cannot validate the addressed memory's lifetime, dtype, size, shape, order,
+PRIK cannot validate the addressed memory's lifetime, dtype, size, shape, order,
 alignment, ownership, or writeability. A wrong address can crash the process.
 
 ## Next

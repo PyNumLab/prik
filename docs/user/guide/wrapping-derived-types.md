@@ -1,6 +1,6 @@
 ---
 title: Wrapping Derived Types
-description: How prik wraps Fortran derived types as Python classes with methods, fields, constructors, and ownership rules
+description: How PRIK wraps Fortran derived types as Python classes with methods, fields, constructors, and ownership rules
 audience: users, advanced users
 prerequisites: wrapping modules, data types
 related: memory-management.md, generic-interfaces.md
@@ -359,7 +359,7 @@ module-level declaration.
 
 ## What The Source Already Hides
 
-prik reads the accessibility a type declares and does not publish what the type
+PRIK reads the accessibility a type declares and does not publish what the type
 keeps to itself, so a contract is not needed to hide internals:
 
 ```fortran

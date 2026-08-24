@@ -1,6 +1,6 @@
 ---
 title: Strings
-description: Immutable strings, mutable character storage, and NumPy byte arrays in prik
+description: Immutable strings, mutable character storage, and NumPy byte arrays in PRIK
 audience: users
 prerequisites: data types, arrays
 related: data-types.md, arrays.md, raw-addresses.md
@@ -10,7 +10,7 @@ publication: reviewed
 
 # Strings
 
-prik uses Python `str` for scalar character values.
+PRIK uses Python `str` for scalar character values.
 Mutable character storage uses fixed-width NumPy bytes arrays.
 
 The contract decides whether native mutation becomes a new `str` or changes
@@ -305,12 +305,14 @@ procedure's decision, and PRIK follows it:
 | nullifies it | `None` | orphaned by the procedure |
 | reassociates it elsewhere | the new target's value | orphaned by the procedure |
 
-PRIK copies the value out of whatever the dummy ends up holding and never frees
-native storage, because it cannot know whether that storage is a static target,
-a fresh allocation, or something the library still owns. Two consequences are
-worth planning for: a procedure that reassociates or nullifies the dummy
-orphans the target PRIK allocated for that call, and a procedure that returns a
-freshly allocated pointer each call leaks unless it also frees it. Prefer an
+PRIK copies the value out of whatever the dummy ends up holding. It then frees
+the target it allocated for that call, but only while it can still prove the
+dummy points at it. Anything else it leaves alone, because it cannot tell a
+static target from a fresh allocation or from storage the library still owns.
+Two consequences are worth planning for: a procedure that reassociates or
+nullifies the dummy orphans the target PRIK allocated for that call, and a
+procedure that returns a freshly allocated pointer each call leaks unless it
+also frees it. Prefer an
 `allocatable` dummy, whose release is unambiguous, when you control the Fortran
 side.
 

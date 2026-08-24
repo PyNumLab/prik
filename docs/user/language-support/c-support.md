@@ -11,8 +11,13 @@ publication: reviewed
 # C Support
 
 PRIK builds a supported subset of C APIs as importable Python extensions. The
-generated binding calls your exported C symbol directly; there is no generated
-C or Fortran adapter in between.
+generated binding calls your exported C symbol directly; there is no
+ABI-conversion adapter and no Fortran bridge in between. Every extension has a
+generated CPython binding translation unit. The only optional additional C
+translation unit between that binding and your API is the opt-in forwarder for
+a symbol that your headers and `Python.h` both declare, described in [Symbols
+your binding's own headers
+declare](#symbols-your-bindings-own-headers-declare).
 
 The C lane is best for standalone numerical functions with primitive values,
 NumPy buffers, and explicit output storage. It is deliberately fail-closed:

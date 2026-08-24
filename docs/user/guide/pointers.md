@@ -1,6 +1,6 @@
 ---
 title: Pointers
-description: How prik handles Fortran `pointer` variables, results, fields, and descriptors
+description: How PRIK handles Fortran `pointer` variables, results, fields, and descriptors
 audience: advanced users
 prerequisites: arrays, allocatables
 related: allocatables.md, memory-management.md
@@ -448,7 +448,7 @@ view = p.to_numpy()
 value = view[0]  # NOT OK without native synchronization
 ```
 
-prik does not lock native pointer association or track outstanding NumPy views.
+PRIK does not lock native pointer association or track outstanding NumPy views.
 The application must synchronize concurrent native changes.
 
 ---

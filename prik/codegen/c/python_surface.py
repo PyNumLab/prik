@@ -583,9 +583,8 @@ if __name__ == "__main__":
         native_scope="state",
         python_names=("State",),
         fields=(),
-        finalizers=(),
+        destructors=(),
         bind_c=False,
-        sequence=False,
     )
     example_surface = ClassSurfacePlan(
         owner_path="state.State",

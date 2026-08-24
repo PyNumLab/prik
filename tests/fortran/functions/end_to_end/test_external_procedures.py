@@ -27,10 +27,10 @@ C_ORDER_FLAT_BUFFER = wrapper_source("c_order_flat_buffer.f90")
 BLAS_LIKE_FILENAMES = ("daxpy_like.f90", "ddot_like.f90")
 BLAS_LIKE_SOURCES = tuple(wrapper_source(filename) for filename in BLAS_LIKE_FILENAMES)
 BASIC_SOURCE = REPO_ROOT / "tests/fortran/infrastructure/parsing/fixtures/general/basic_subroutine.f90"
-CONTRACT_FIXTURES = Path(__file__).parent / "fixtures" / "external" / "contracts"
+CONTRACT_FIXTURES = Path(__file__).parent / "fixtures" / "contracts"
 C_ORDER_FLAT_CONTRACT = (
     REPO_ROOT
-    / "tests/fortran/arrays/end_to_end/fixtures/baseline/edited_contracts/c_order_flat_buffer/c_order_flat_buffer.pyi"
+    / "tests/fortran/functions/end_to_end/fixtures/edited_contracts/c_order_flat_buffer/c_order_flat_buffer.pyi"
 )
 pytestmark = pytest.mark.fortran_end_to_end
 

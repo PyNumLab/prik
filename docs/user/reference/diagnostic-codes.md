@@ -9,7 +9,7 @@ publication: reviewed
 
 # Diagnostic Codes
 
-When prik rejects your source, it prints a stable code in brackets. Look that
+When PRIK rejects your source, it prints a stable code in brackets. Look that
 code up here to find out what class of problem it is.
 
 ```text
@@ -47,7 +47,7 @@ cannot appear where it does.
 
 ### Duplicate names
 
-The same name is declared twice where prik needs one definition.
+The same name is declared twice where PRIK needs one definition.
 
 | Code | Meaning |
 | --- | --- |
@@ -62,7 +62,7 @@ The same name is declared twice where prik needs one definition.
 
 ### Unresolved types
 
-prik could not determine a datatype it needs. Adding an explicit declaration
+PRIK could not determine a datatype it needs. Adding an explicit declaration
 usually fixes these.
 
 | Code | Meaning |

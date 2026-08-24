@@ -53,8 +53,6 @@ def _publication_states(docs_dir: Path) -> tuple[dict[str, str | None], set[str]
             continue
         relative_path = path.relative_to(docs_dir).as_posix()
         known_paths.add(relative_path)
-        if relative_path.startswith("old_docs/"):
-            continue
         states[relative_path] = _front_matter_value(path, _PUBLICATION_KEY)
     return states, known_paths
 

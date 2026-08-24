@@ -15,7 +15,7 @@ from tests.fortran._support.wrapper_build import (
 from prik.runtime.handles import _NativeArrayHandoff, AllocatableArray, PointerArray
 
 FIXTURES = Path(__file__).parent / "fixtures"
-OPTIONAL_F90_SOURCE = FIXTURES / "foptional_f90.f90"
+OPTIONAL_F90_SOURCE = FIXTURES / "native" / "foptional_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
 
@@ -77,9 +77,9 @@ def _optional_descriptor_handle(value: np.ndarray | None, *, pointer: bool):
 
 
 def test_optional_scalar_descriptors_distinguish_omitted_none_and_value(tmp_path: Path):
-    source = FIXTURES / "optional_scalar_descriptors.f90"
+    source = FIXTURES / "native" / "optional_scalar_descriptors.f90"
     native_object = _compile_native_object(source, tmp_path / "native")
-    entry = FIXTURES / "edited_contracts" / "scalar_optional_descriptors.pyi"
+    entry = FIXTURES / "edited_contracts" / "scalar_optional_descriptors" / "scalar_optional_descriptors.pyi"
 
     result = build_pyi_extension(
         entry,
@@ -110,9 +110,9 @@ def test_optional_scalar_descriptors_distinguish_omitted_none_and_value(tmp_path
 
 def test_optional_array_descriptors_preserve_presence_and_storage_state(tmp_path: Path):
     """Distinguish omitted/None from present absent-state descriptor handles."""
-    source = FIXTURES / "optional_array_descriptors.f90"
+    source = FIXTURES / "native" / "optional_array_descriptors.f90"
     native_object = _compile_native_object(source, tmp_path / "native_array_descriptors")
-    contract = FIXTURES / "edited_contracts" / "optional_array_descriptors.pyi"
+    contract = FIXTURES / "edited_contracts" / "optional_array_descriptors" / "optional_array_descriptors.pyi"
 
     result = build_pyi_extension(
         contract,

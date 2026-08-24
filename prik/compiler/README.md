@@ -57,6 +57,13 @@ profile:
 | NVIDIA `nvfortran` | NVIDIA `nvc` |
 | Legacy PGI `pgfortran` | PGI `pgcc` |
 
+A direct-C build instead enters through `Compiler.from_c_executable()`. It
+resolves and classifies the selected C driver without inventing a Fortran
+dependency, then uses that driver for native C, generated binding, optional
+collision-forwarder, and extension-link commands. If the explicit native build
+inputs also contain Fortran, pipeline build-language records select the paired
+Fortran-led toolchain and link driver.
+
 Versioned and target-prefixed executable names retain their corresponding
 prefix or version when a matching sibling C executable exists. Selection fails
 when the Fortran family is unknown or its matching C compiler cannot be found;
@@ -91,3 +98,4 @@ policy completion. Those decisions happen before generated sources reach this pa
 - Source navigation: `docs/developer/codebase-map.md`, `docs/developer/feature-to-code-map.md`
 - Build-mode tests: `tests/fortran/infrastructure/building/end_to_end/test_source_build_modes.py`
 - Runtime ABI tests: `tests/fortran/infrastructure/building/end_to_end/test_runtime_compatibility.py`
+- Direct-C build tests: `tests/c/infrastructure/building/pipeline/test_c_build_cli.py`

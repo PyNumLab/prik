@@ -611,6 +611,21 @@ def _canonical_expression_text(text: str, name_map: dict[str, str]) -> str:
 
 
 @dataclass
+class SemanticDestructor:
+    """One native teardown operation owned by a semantic class.
+
+    Destructors are lifecycle declarations, not members of the Python-callable
+    method surface. Their native-language mechanism is selected by completed
+    policy after the frontend records the operation's identity.
+    """
+
+    name: str
+    native_name: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    origin: SemanticOrigin = field(default_factory=SemanticOrigin, compare=False)
+
+
+@dataclass
 class SemanticClass:
     name: str
 
@@ -619,6 +634,8 @@ class SemanticClass:
     fields: list[SemanticField] = field(default_factory=list)
 
     methods: list[SemanticMethod] = field(default_factory=list)
+
+    destructors: list[SemanticDestructor] = field(default_factory=list)
 
     overload_sets: list[ProcedureOverloadSet] = field(default_factory=list)
 

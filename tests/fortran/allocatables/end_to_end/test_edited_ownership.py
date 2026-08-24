@@ -15,7 +15,7 @@ from tests.fortran._support.wrapper_build import (
 from prik import build_pyi_extension
 
 FIXTURES = Path(__file__).parent / "fixtures"
-NATIVE_SOURCE = FIXTURES / "fallocatable_views_f90.f90"
+NATIVE_SOURCE = FIXTURES / "native" / "fallocatable_views_f90.f90"
 OWNERSHIP_CONTRACT = FIXTURES / "edited_contracts" / "explicit_ownership" / "__init__.pyi"
 pytestmark = pytest.mark.fortran_end_to_end
 

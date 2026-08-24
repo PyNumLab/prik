@@ -11,14 +11,14 @@ publication: reviewed
 
 ## Purpose And Boundaries
 
-`prik/semantics/` converts Fortran parser models or semantic-`.pyi` AST into a
-shared, language-neutral `SemanticModule` graph. It owns stable types, native
-and public identities, shapes, storage contracts, projections, provenance, and
-raw contract metadata. It does not complete ownership, choose lowering
-actions, plan wrappers, or emit source.
+`prik/semantics/` converts Fortran or C parser models, or a semantic-`.pyi` AST,
+into a shared, language-neutral `SemanticModule` graph. It owns stable types,
+native and public identities, shapes, storage contracts, projections,
+provenance, and raw contract metadata. It does not complete ownership, choose
+lowering actions, plan wrappers, or emit source.
 
-`c2ir.py` converts modeled C declarations into the same semantic graph. The
-[C parser reference](../deferred/c-parser.md) owns that frontend handoff and
+`c2ir.py` converts modeled C declarations into the same semantic graph, so
+both source languages reach policy through one vocabulary.
 [C support](../../user/language-support/c-support.md) owns the supported public
 surface.
 
@@ -29,6 +29,11 @@ FortranFile or FortranProject
   -> collect unresolved kind and storage requirements when needed
   -> preprocessing probes provide compile-time values and type facts
   -> FortranToIRConverter
+  -> SemanticModule graph
+
+CFile or CProject
+  -> target C type facts when required
+  -> CToIRConverter
   -> SemanticModule graph
 
 parsed semantic .pyi ast.Module
@@ -42,7 +47,7 @@ SemanticModule graph + raw metadata
   -> policy completion
 ```
 
-Both frontend routes produce the same vocabulary. `SemanticModule` contains
+All three frontend routes produce the same vocabulary. `SemanticModule` contains
 functions, prototypes, overload sets, classes, variables, imports, and module
 origin. `SemanticType` carries a stable type identity, rank, shape, storage,
 constraints, metadata, and source origin. `SemanticFunction`, `SemanticClass`,
@@ -79,6 +84,7 @@ prik/semantics/
 | [`prik/semantics/models.py`](../../../prik/semantics/models.py) | Defines the shared `SemanticModule` graph, its declarations, types, contracts, projections, origins, and equality rules. | A later stage needs a new language-neutral fact. |
 | [`prik/semantics/scalar_types.py`](../../../prik/semantics/scalar_types.py) | `SemanticScalarSpec` and the scalar catalogue define stable scalar identities, families, and intrinsic storage widths without backend spellings. | Stable scalar vocabulary or intrinsic scalar facts change. |
 | [`prik/semantics/fortran2ir.py`](../../../prik/semantics/fortran2ir.py) | `FortranToIRConverter` and file/module/project helpers convert parser models with optional compiler facts into semantic modules. | A Fortran source fact needs different semantic meaning. |
+| [`prik/semantics/c2ir.py`](../../../prik/semantics/c2ir.py) | `CToIRConverter` and file/project helpers convert C parser models and target type facts into semantic modules; export selection narrows the public callable set without making wrapper policy. | A C source fact, target identity, or explicit export selection needs different semantic meaning. |
 | [`prik/semantics/pyi2ir.py`](../../../prik/semantics/pyi2ir.py) | `convert_pyi_to_ir()` interprets one parsed contract; `reconcile_external_type_refs()` resolves a converted batch's cross-module references. | A supported `.pyi` construct or cross-contract reference needs different meaning. |
 | [`prik/semantics/metadata.py`](../../../prik/semantics/metadata.py) | Defines generic cross-stage metadata keys. | A generic semantic metadata key or its canonical spelling changes. |
 | [`prik/semantics/pyi_metadata.py`](../../../prik/semantics/pyi_metadata.py) | Defines `.pyi` loading-state metadata keys. | A `.pyi` loading-state key changes. |
@@ -114,6 +120,15 @@ target-dependent conversion: they identify the expressions that preprocessing
 must measure. Pass the resulting values and type facts back to conversion.
 `resolve_semantic_compile_time_values()` is separate: it copies already-built
 IR and substitutes known symbolic text without mutating the original.
+
+### `c2ir.py`: C parser facts to semantic modules
+
+`c_file_to_semantic_modules()` and `c_project_to_semantic_modules()` preserve
+translation-unit ownership while converting modeled C functions, values,
+constants, arrays, pointers, and aggregate declarations. Target-probed scalar
+facts retain exact C identities where native spelling matters. Explicit export
+selection can narrow the callable set, but runtime support remains a post-IR
+policy decision; parser or semantic acceptance alone is not a build claim.
 
 ### `pyi2ir.py`: contract AST to semantic modules
 
@@ -206,7 +221,7 @@ It looks up one fixed-width real and one target-dependent integer identity.
 The final line is the boundary: language-specific spelling is deliberately a
 later code-generation concern.
 
-The two frontend converters reach the same kind of semantic declaration:
+The source and contract converters reach the same kind of semantic declaration:
 
 ```bash
 python3 prik/semantics/fortran2ir.py
@@ -224,10 +239,18 @@ python3 prik/semantics/pyi2ir.py
 math.scale(value): Float64 -> Float64
 ```
 
-The Fortran example converts a parser-level declaration; the `.pyi` example
-converts a parsed contract declaration. Their matching `math.scale` records
-show the two frontends converging on the same semantic vocabulary, while their
-source-specific details remain attached as provenance and metadata.
+```bash
+python3 prik/semantics/c2ir.py
+```
+
+```text
+math.scale(value): Int <- Int
+```
+
+The Fortran and C examples convert parser-level declarations; the `.pyi`
+example converts a parsed contract declaration. Their matching `math.scale`
+records show the frontends converging on the same semantic vocabulary, while
+their source-specific details remain attached as provenance and metadata.
 
 Raw ownership and pointer requests remain distinct from completed policy:
 
@@ -285,6 +308,7 @@ before policy completion or any backend lowering begins.
 | Evidence | What it establishes |
 | --- | --- |
 | [Semantic IR conversion](../../../tests/fortran/infrastructure/semantic_ir/semantics/) | Fortran-model conversion, compile-time requirements, specialization, and semantic graph properties. |
+| [C semantic IR conversion](../../../tests/c/infrastructure/semantic_ir/semantics/) | C-model conversion, exact target identities, export selection, and semantic graph properties. |
 | [Fortran datatype semantics](../../../tests/fortran/data_types/semantics/) | Stable scalar identities, storage facts, and compiler-measurement handoffs. |
 | [Semantic `.pyi` conversion](../../../tests/fortran/infrastructure/semantic_pyi/semantics/) | Contract constructs, imports, external references, projections, classes, overloads, and round trips. |
 | [Native array handles](../../../tests/fortran/infrastructure/policy/test_native_array_handles.py) | Descriptor marking and separation of handle, data, and element facts. |

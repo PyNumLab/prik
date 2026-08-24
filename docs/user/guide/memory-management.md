@@ -1,6 +1,6 @@
 ---
 title: Memory Management
-description: Ownership, live views, copies, and safe cleanup in prik
+description: Ownership, live views, copies, and safe cleanup in PRIK
 audience: users, advanced users
 prerequisites: arrays
 related: allocatables.md, pointers.md, wrapping-derived-types.md
@@ -10,7 +10,7 @@ publication: reviewed
 
 # Memory Management
 
-prik can give Python direct access to storage created by Fortran. This avoids
+PRIK can give Python direct access to storage created by Fortran. This avoids
 unnecessary copies, but Python must not use that storage after its owner
 releases or replaces it.
 
@@ -43,7 +43,7 @@ Common cases are:
 | Ordinary Python value or independently created NumPy array | Python |
 | `view.copy()` | Python |
 | Fortran module variable | The Fortran module |
-| Derived-type object constructed or returned by prik | Its generated Python wrapper |
+| Derived-type object constructed or returned by PRIK | Its generated Python wrapper |
 | Derived-type field that exposes native storage | Usually its parent object |
 | Allocatable or pointer handle | Depends on where the handle came from and how its current storage was created |
 
@@ -135,10 +135,10 @@ The resource released by `close()` depends on the handle:
 ## Sharing Handles Between Extensions
 
 The same allocatable or pointer handle can be passed between separately built
-prik extensions. Their matching arguments must have the same descriptor kind,
+PRIK extensions. Their matching arguments must have the same descriptor kind,
 element type, and rank.
 
-The handoff does not copy array data. Both extensions must use compatible prik
+The handoff does not copy array data. Both extensions must use compatible PRIK
 versions, the same Fortran compiler toolchain, and compatible Fortran
 runtimes. An incompatible handle is rejected. Sharing a pointer handle does
 not extend the lifetime of its target.

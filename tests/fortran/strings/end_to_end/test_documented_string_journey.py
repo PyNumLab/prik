@@ -12,7 +12,7 @@ from prik import build_pyi_extension
 
 pytestmark = pytest.mark.fortran_end_to_end
 
-SOURCE = Path(__file__).parent / "fixtures" / "documented_strings_api.f90"
+SOURCE = Path(__file__).parent / "fixtures" / "native" / "documented_strings_api.f90"
 
 
 def test_documented_edited_pyi_distinguishes_values_scalar_storage_and_string_arrays(

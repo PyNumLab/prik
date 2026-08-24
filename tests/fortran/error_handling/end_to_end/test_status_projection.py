@@ -17,7 +17,7 @@ from prik import build_pyi_extension
 
 FIXTURES = Path(__file__).parent / "fixtures"
 RUNTIME_POLICY_SOURCE = FIXTURES / "native" / "fruntime_policy_f90.f90"
-EDITED_POLICY_CONTRACT = FIXTURES / "edited_contract" / "fruntime_policy_f90.pyi"
+EDITED_POLICY_CONTRACT = FIXTURES / "edited_contracts" / "runtime_policy" / "fruntime_policy_f90.pyi"
 pytestmark = pytest.mark.fortran_end_to_end
 
 

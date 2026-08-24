@@ -75,7 +75,7 @@ This creates an importable `scale` extension module in the `build/first-function
 
 ## Inspect the Generated Docstring
 
-prik creates NumPy-style docstrings from the same contract. Import the built
+PRIK creates NumPy-style docstrings from the same contract. Import the built
 extension and inspect the function:
 
 ```python

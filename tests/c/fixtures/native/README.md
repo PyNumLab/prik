@@ -20,7 +20,7 @@ Directories:
 - `scientific/`: future scientific C API fixtures.
 
 The C parser is still partial. Fixtures may contain constructs that are not
-fully parsed yet when they are useful roadmap examples.
+fully parsed yet when they are useful future-design examples.
 
 The third-party regression inputs do not replace the planned pinned corpus
 layout. Before corpus tests claim library coverage, exact provenance and

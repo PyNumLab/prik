@@ -21,7 +21,7 @@ language.
 | --- | --- | --- |
 | [`tests/docs/`](docs/README.md) | Documentation publication, link integrity, executable examples, and public reference synchronization | `python3 -m pytest -q tests/docs` |
 | [`tests/fortran/`](fortran/README.md) | Fortran input, semantic `.pyi` wrapper contracts, generated bridge/binding behavior, and Fortran runtime features | `python3 -m pytest -q tests/fortran` |
-| [`tests/c/`](c/README.md) | C input-language inspection behavior | `python3 -m pytest -q tests/c` |
+| [`tests/c/`](c/README.md) | C input-language parsing, semantics, direct policy, codegen, build integration, and compiled runtime behavior; parser coverage is broader than runtime support | `python3 -m pytest -q tests/c` |
 | [`tests/tools/`](tools/README.md) | Maintainer commands and CI support scripts | `python3 -m pytest -q tests/tools` |
 | [`tests/workflows/`](workflows/README.md) | Exceptional safety properties for repository automation | `python3 -m pytest -q tests/workflows` |
 
@@ -32,9 +32,7 @@ locally; activate it once per clone with `git config core.hooksPath .githooks`.
 GitHub Actions runs the checks again as the shared enforcement boundary.
 
 The Fortran feature index maps each maintained User Guide and semantic `.pyi`
-page to its final directory and focused command. The cleanup contract and
-progress gates live in
-[`../docs/developer/roadmap/fortran-test-suite-cleanup-checklist.md`](../docs/developer/roadmap/fortran-test-suite-cleanup-checklist.md).
+page to its final directory and focused command.
 
 ## Ownership contract
 
@@ -100,11 +98,12 @@ python3 -m pytest -q tests/tools
 python3 -m pytest -q tests/workflows
 ```
 
-The full-library BLAS/LAPACK integration nodes and the complete correctness
-projects in `examples/blas/` and `examples/lapack/` remain in the dedicated
-real-library job. The BLAS and LAPACK sources are owned by
-`examples/blas/native/` and `examples/lapack/native/`; LAPACK is not part of
-the default local verification command.
+The maintained BLAS, LAPACK, FFTPACK, MINPACK, BSPLINE-FORTRAN, and libm
+projects remain in the dedicated real-library job. Their complete correctness
+tests live under the corresponding `examples/<project>/tests/` owner; focused
+FFTPACK and MINPACK native-source integration also lives under
+`tests/fortran/infrastructure/building/end_to_end/real_libraries/`. LAPACK is
+not part of the default local verification command.
 
 ## Markers
 
@@ -113,8 +112,9 @@ selection:
 
 - `fortran_end_to_end` selects every compiled, imported, and called Fortran
   feature test, and nothing else;
-- `real_library` selects only the dedicated BLAS correctness example and
-  BLAS/LAPACK native-source end-to-end integration tests;
+- `real_library` selects the maintained BLAS, LAPACK, FFTPACK, MINPACK,
+  BSPLINE-FORTRAN, and direct-C libm projects, plus their focused native-source
+  integration nodes;
 - `property`, `regression`, `benchmark`, and `slow` retain their ordinary
   meanings; and
 - `toolchain_smoke` selects only the bounded portable compiler-profile subset

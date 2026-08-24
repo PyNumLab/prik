@@ -110,6 +110,9 @@ def _prepare_class(semantic_class: SemanticClass, native_scope: str, *, native_l
         _set_origin(field, native_scope, "field", native_language=native_language)
     for method in semantic_class.methods:
         _prepare_function(method, native_scope, native_language=native_language)
+    for destructor in semantic_class.destructors:
+        _set_origin(destructor, native_scope, "destructor", native_language=native_language)
+        destructor.origin.native_name = destructor.native_name or destructor.name
     for overload_set in semantic_class.overload_sets:
         for procedure in overload_set.procedures:
             _prepare_function(procedure, native_scope, native_language=native_language)

@@ -31,8 +31,8 @@ f2py comparison.
   coverage, including the evidence behind each claim.
 - [Reference](reference/index.md) — the exact CLI, Python API, generated-wrapper,
   and `.pyi` contract surfaces.
-- [Examples](examples/index.md) — complete wrappers for BLAS, LAPACK, FFTPACK,
-  and MINPACK.
+- [Examples](examples/index.md) — five complete Fortran projects (BLAS, LAPACK,
+  FFTPACK, MINPACK, and BSPLINE-FORTRAN) plus the direct-C libm project.
 - [Troubleshooting](troubleshooting/compiler-issues.md) — compiler detection,
   selection, and toolchain problems.
 - [FAQ](faq/index.md) — short answers to common questions.

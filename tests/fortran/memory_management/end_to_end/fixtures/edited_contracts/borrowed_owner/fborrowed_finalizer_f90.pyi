@@ -1,10 +1,10 @@
 # Intentional difference: the borrowed child states that its containing wrapper
 # owns and ultimately finalizes the native instance.
-from prik.contracts import Annotated, Destruction, Int32, Ownership, Transfer, native_type
+from prik.contracts import Annotated, Destruction, Int32, Ownership, Transfer, destroy
 
-@native_type(finalizers=('cleanup_child',))
 class child:
-    pass
+    @destroy
+    def cleanup_child(self) -> None: ...
 
 class parent:
     def __init__(

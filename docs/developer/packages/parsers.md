@@ -18,9 +18,10 @@ its input says; it does not assign stable semantic types, choose ownership,
 decide wrapper support, or emit a Python API.
 
 The `c/` frontend preserves C declarations, types, locations, directives, and
-project relationships before semantic conversion. Its detailed parser model is
-documented in the [C parser reference](../deferred/c-parser.md); the public
-wrapping surface belongs to [C support](../../user/language-support/c-support.md).
+project relationships before semantic conversion. It follows the same rule: a
+declaration it accepts is a source fact, not wrapper support. The supported
+wrapping surface belongs to
+[C support](../../user/language-support/c-support.md).
 
 ## Inputs And Results
 
@@ -32,6 +33,11 @@ prepared Fortran text
   -> source-visible type, shape, kind, and visibility resolution
   -> FortranFile or dependency-aware FortranProject
   -> Fortran-to-IR conversion
+
+prepared C text and directive metadata
+  -> C lexer and declaration/declarator parser
+  -> CFile or resolved CProject
+  -> C-to-IR conversion
 
 semantic .pyi text or path
   -> ast.parse
@@ -61,7 +67,12 @@ prik/parsers/
 ├── pyi/
 │   ├── __init__.py
 │   └── parser.py
-└── c/                         C parser models and project assembly
+└── c/
+    ├── cli.py
+    ├── lexer.py
+    ├── models.py
+    ├── parser.py
+    └── type_resolver.py
 ```
 
 ## Directory Tour
@@ -77,6 +88,7 @@ prik/parsers/
 | [`prik/parsers/fortran/type_resolver.py`](../../../prik/parsers/fortran/type_resolver.py) | `extract_kind_from_type_spec()` preserves intrinsic kind and character syntax after declaration parsing. | Parser-level type-spec spelling extraction changes. |
 | [`prik/parsers/fortran/parser.py`](../../../prik/parsers/fortran/parser.py) | `FortranParser`, `parse_fortran_file()`, and `parse_fortran_project()` build file and project models. | Grammar, source-unit structure, declarations, parser diagnostics, or project assembly changes. |
 | [`prik/parsers/fortran/cli.py`](../../../prik/parsers/fortran/cli.py) | `main()` formats parser reports and diagnostics. Its `--semantics` and `--pyi` options explicitly invoke later stages. | Parser CLI arguments, report layout, or diagnostic presentation changes. |
+| [`prik/parsers/c/`](../../../prik/parsers/c/README.md) | `parse_c_file()` and `parse_c_project()` build `CFile`/`CProject` records; the local lexer, models, resolver, and CLI preserve C declarations, project facts, diagnostics, and report output. | C tokenization, declarations, type resolution, project assembly, or parser reports change. |
 | [`prik/parsers/pyi/__init__.py`](../../../prik/parsers/pyi/__init__.py) | Re-exports `parse_pyi_text()` and `parse_pyi_file()`. | The supported raw-`.pyi` parser import surface changes. |
 | [`prik/parsers/pyi/parser.py`](../../../prik/parsers/pyi/parser.py) | Parses text or a file into `ast.Module` with no contract interpretation. | Raw Python syntax input, file reading, or parse diagnostics change. |
 
@@ -146,6 +158,15 @@ but they do not make target, ownership, or wrapper-support decisions.
 `parse_pyi_file()` reads UTF-8 text then uses the same function. The module
 does not recognize PRIK decorators, validate contract types, or build a
 `SemanticModule`; `semantics/pyi2ir.py` owns all of that interpretation.
+
+### `c/`: prepared C source to parser models
+
+`parse_c_file()` preserves one translation unit; `parse_c_project()` resolves
+explicitly supplied units into shared typedef, tag, function, and declaration
+registries. The lexer and type resolver retain C spelling and declarator
+topology without choosing Python storage or wrapper support. Compiler directive
+handling belongs to `preprocessing/c.py`, and runtime eligibility belongs to
+post-IR policy.
 
 ### `cli.py`: presentation after parsing
 
@@ -243,6 +264,24 @@ The script parses a one-function `.pyi` string and selects its AST node. The
 function name and annotation are syntax facts; `False` confirms that semantic
 conversion remains the next stage's responsibility.
 
+The C parser example shows the equivalent source-fact boundary:
+
+```bash
+python3 prik/parsers/c/parser.py
+```
+
+```text
+Parsed: state_api.h
+Typedef: api_size -> unsigned long
+Struct: state (id)
+Function: count() -> api_size
+Function: step(value) -> pointer to struct state
+```
+
+It parses a typedef, struct, value-returning function, and pointer parameter
+into a `CFile`. The printed native spellings are parser facts; they do not claim
+that an aggregate or pointer form is buildable.
+
 ## Tests And Evidence
 
 | Evidence | What it establishes |
@@ -252,6 +291,8 @@ conversion remains the next stage's responsibility.
 | [Source forms and diagnostics](../../../tests/fortran/infrastructure/parsing/test_source_form_and_diagnostics_regressions.py) | Logical source preparation, unit boundaries, and public diagnostic metadata. |
 | [Parser CLI](../../../tests/fortran/infrastructure/cli/pipeline/test_stage_dispatch.py) | Module launcher, report modes, diagnostic presentation, and explicit semantic/`.pyi` inspection modes. |
 | [Semantic `.pyi` parsing](../../../tests/fortran/infrastructure/semantic_pyi/parsing/test_python_ast_contracts.py) | Raw `ast.Module` results and the AST-to-semantic-conversion handoff. |
+| [C parser suite](../../../tests/c/infrastructure/parsing/) | C tokenization, declarations, compiler extensions, diagnostics, project assembly, fixtures, and public entrypoints. |
+| [C parser CLI](../../../tests/c/infrastructure/cli/pipeline/) | C input selection, stage dispatch, output contracts, and report behavior. |
 
 ## Change Routes
 
@@ -262,6 +303,8 @@ conversion remains the next stage's responsibility.
 - Change grammar, source-unit classification, declarations, source-visible
   compile-time resolution, or project assembly in `fortran/parser.py`.
 - Change presentation and CLI options in `fortran/cli.py`.
+- Change C tokenization, models, type resolution, grammar, project assembly, or
+  report presentation in the corresponding module under `c/`.
 - Change only raw `.pyi` AST parsing in `pyi/parser.py`; put contract meaning in
   `semantics/pyi2ir.py`.
 
@@ -272,6 +315,11 @@ conversion remains the next stage's responsibility.
 - Preserve source coordinates through lexical and structural parsing.
 - Keep parser models source-faithful and policy-free.
 - A construct that parses successfully is not automatically wrapper support.
+- Treat serialized C parser output as a maintained format: prefer additive
+  changes, preserve concrete model identity and source or diagnostic locations,
+  retain unresolved facts, and use references instead of recursive copies when
+  a type object is reused. Refresh parser goldens only for intentional format
+  changes.
 - Target kind values come from preprocessing probes; stable semantic types and
   contract interpretation come from `semantics/`.
 

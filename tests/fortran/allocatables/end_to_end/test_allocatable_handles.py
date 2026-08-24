@@ -21,7 +21,7 @@ from prik.contracts import Allocatable, Float64
 from prik.runtime.handles import AllocatableArray
 
 FIXTURES = Path(__file__).parent / "fixtures"
-ALLOCATABLE_VIEW_F90_SOURCE = FIXTURES / "fallocatable_views_f90.f90"
+ALLOCATABLE_VIEW_F90_SOURCE = FIXTURES / "native" / "fallocatable_views_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
 PLAIN_ALLOCATABLE_MODULE_SOURCE = """\

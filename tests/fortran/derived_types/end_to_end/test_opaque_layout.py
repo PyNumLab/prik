@@ -10,7 +10,7 @@ from tests.fortran._support.wrapper_build import (
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
-BIND_C_DERIVED_LAYOUT_F90_SOURCE = FIXTURES / "fbind_c_derived_layout_f90.f90"
+BIND_C_DERIVED_LAYOUT_F90_SOURCE = FIXTURES / "native" / "fbind_c_derived_layout_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
 

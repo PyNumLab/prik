@@ -13,7 +13,7 @@ from tests.fortran._support.wrapper_build import (
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
-MODULE_VARIABLES_F90_SOURCE = FIXTURES / "fmodule_vars_f90.f90"
+MODULE_VARIABLES_F90_SOURCE = FIXTURES / "native" / "fmodule_vars_f90.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
 

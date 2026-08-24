@@ -7,6 +7,28 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Multi-source Fortran builds compile in dependency order instead of the order
+  you listed. PRIK records which parsed file provides each module and
+  submodule, resolves the `use` dependencies between them, and groups the
+  objects into batches that only depend on earlier batches, so naming a
+  consumer before its provider no longer fails the build. Batches within a
+  level can compile concurrently; `--jobs N` bounds that. When a compiled
+  source was never parsed — an extra `--native-fortran-sources` file, for
+  example — or the dependencies cannot be ordered, the build falls back to the
+  order you supplied. Discovering sources you did not name, prebuilt module
+  search paths, and external libraries remains the caller's responsibility.
+  The reference and feature matrix previously described this as unsupported.
+
+- Every Python fence in `docs/` is now checked, not only those on the README,
+  Getting Started, and User Guide pages. Each is parsed, and one importing from
+  `prik.contracts` is loaded as a semantic `.pyi` contract, so a reference-page
+  snippet can no longer drift into a contract that does not load. Two markers
+  support this: `prik-doc-test-output` now also tells the audit that a fence
+  holds captured output rather than source, and the new
+  `prik-doc-contract: invalid` marks a negative example and asserts that
+  loading it fails. `docs/developer/workflows/documentation.md` documents the
+  marker set.
+
 - The copied LAPACK example now mirrors Reference LAPACK's default source
   selection: XBLAS-only routines are excluded, the two required `INSTALL/`
   workspace helpers are bundled, and a failed native build now stops without a
@@ -14,6 +36,27 @@ release tags add a leading `v` to the package version.
   example build consistently on Linux and both hosted macOS architectures.
 
 ### Changed
+
+- Removed the redundant user recipe section and the unpublished deferred C
+  parser page. Their maintained workflows and evidence now point directly to
+  Getting Started, the User Guide, Language Support, and the active API, CLI,
+  parser, and preprocessing references.
+
+- Semantic class contracts now use class-level `@native_abi("c")` for Fortran
+  `bind(C)` derived types as well as callable entrypoints. The redundant
+  `@native_type` decorator has been removed, and the behavior-neutral Fortran
+  `sequence` attribute is no longer serialized into semantic `.pyi` or carried
+  into wrapper planning. Native teardown operations use one language-neutral
+  `@destroy` declaration per operation and remain lifecycle metadata rather
+  than public Python methods. The generated class reference also clarifies
+  constructor replacement, complete method overload sets, object destruction,
+  and when native resource ownership needs custom teardown.
+
+- Fortran feature tests now keep permanent native inputs, reviewed generated
+  contracts, edited contracts, and routing cases in one consistent fixture
+  layout. The exhaustive primitive-array evidence now belongs to the arrays
+  feature, and the documented array journey is checked through both source and
+  generated-`.pyi` builds.
 
 - Report commands now share one output rule: **`--json` selects the format and
   `--out` selects the destination, and neither changes the other.** Without
@@ -49,6 +92,11 @@ release tags add a leading `v` to the package version.
   `fortran_type_mapping_report()` returning measured records, plus
   `type_mapping_markdown()` and `expression_probe_markdown()` renderers,
   replacing `c_type_mapping_markdown()` and `fortran_type_mapping_markdown()`.
+
+- Documentation: added a source-backed Fortran support reference, clarified
+  the C direct-wrapper boundary, aligned root CLI help with Fortran, supported
+  C, and semantic-`.pyi` inputs, and refreshed the user and contributor
+  documentation navigation.
 
 ### Fixed
 
@@ -168,12 +216,16 @@ release tags add a leading `v` to the package version.
   owned buffers stay fail-closed.
 
 - `@raises(message=...)` can now name a visible argument instead of a projected
-  hidden output, in both the C and Fortran lanes. The caller then supplies the
-  storage the native code writes into — a rank-zero NumPy bytes array for
-  `String[n][()]`, or a `str` payload for `String` — so no capacity has to be
-  declared, and the buffer survives the raise for inspection. Only the hidden
-  form still requires a fixed width, because there the binding allocates the
-  buffer and the size the native code assumes is not in the signature.
+  hidden output, in both the C and Fortran lanes. The caller then supplies
+  writable storage — a rank-zero NumPy bytes array for `String[n][()]` or
+  `String[...][()]` — so no capacity has to be declared, and the buffer
+  survives the raise for inspection. A visible `String` is accepted too, but it
+  borrows the Python object's own buffer and lowers to `const char *`: the
+  contract states a read-only input, so native code that writes through it is
+  violating the declaration it was handed. That is the C API author's call to
+  make; prefer NumPy storage for any message the native code fills. Only the
+  hidden form still requires a fixed width, because there the binding allocates
+  the buffer and the size the native code assumes is not in the signature.
 
 - `Hidden(name, T)` declares a native output the Python signature never shows.
   It is planned, passed, and released exactly like a returned output — the
@@ -415,10 +467,10 @@ release tags add a leading `v` to the package version.
   success.
 
 - A deferred type-bound binding (`procedure(iface), deferred :: name`) now
-  parses, so the decision about whether it can be wrapped is reported by policy
-  as an unsupported derived-type diagnostic naming the binding, rather than by
-  the parser as a syntax error. Abstract types and deferred bindings remain
-  unsupported; only the stage that owns the refusal has changed.
+  parses instead of failing as a syntax error, so whether it can be wrapped is
+  a policy decision rather than a parser limit. Abstract types and deferred
+  bindings are wrapped as described above; this entry records only the parsing
+  change that made that possible.
 
 - A named `block` construct (`main: block ... end block main`) is recognized as
   the start of a procedure's execution part. A construct name prefix is now
@@ -614,7 +666,7 @@ release tags add a leading `v` to the package version.
   Fortran-adapter facets, with planner-owned generated support procedure
   entrypoints for accessors, lifecycles, descriptors, and callbacks, without
   changing generated wrappers.
-- Build manifest schema 3 records physical generated sources and separate
+- Build manifest schema 4 records physical generated sources and separate
   adapter/support membership, including zero-generated-native builds.
 
 ## 0.3.0 — 2026-08-14

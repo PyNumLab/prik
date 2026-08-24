@@ -23,6 +23,7 @@ policy, or render text.
 ```text
 prik/planning/
 ├── __init__.py
+├── entrypoints.py
 ├── models.py
 └── planner.py
 ```
@@ -103,12 +104,9 @@ helper that calls native support to resolve an entrypoint with the matching
 owner and role.
 
 `ModulePlan.native_generated_code_groups` records generated native membership
-without using the presence of a physical source file as policy. Adapter groups
-contain only user operations selected for a generated Fortran adapter; support
-groups contain only Fortran-owned generated support procedure keys. Empty
-groups are omitted. Both groups may initially name the same Fortran source,
-but their membership remains independently inspectable for support-only and
-mixed builds.
+without using the presence of a physical source file as policy: adapter groups
+hold user operations selected for a generated Fortran adapter, support groups
+hold Fortran-owned support-procedure keys, and empty groups are omitted.
 
 `NativeEntrypointFunctionPlan.results` includes public Python results and
 binding-private outputs such as native status and message values. A public

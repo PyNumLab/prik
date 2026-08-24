@@ -621,9 +621,8 @@ class WrapperPlanner(ClassVisitor):
             native_scope=policy.native_scope,
             python_names=python_names,
             fields=planned_fields,
-            finalizers=policy.finalizers,
+            destructors=policy.destructors,
             bind_c=policy.bind_c,
-            sequence=policy.sequence,
             abstract=policy.abstract,
             deferred_bindings=policy.deferred_bindings,
         )

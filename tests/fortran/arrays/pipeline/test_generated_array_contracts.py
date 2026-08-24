@@ -13,6 +13,7 @@ from tests.fortran._support.generated_contracts import (
 )
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "end_to_end" / "fixtures"
+NATIVE_ROOT = FIXTURE_ROOT / "native"
 CONTRACT_ROOT = FIXTURE_ROOT / "contracts"
 CASES = tuple(
     GeneratedContractCase(
@@ -21,10 +22,13 @@ CASES = tuple(
         expected_package=CONTRACT_ROOT / source.stem,
     )
     for source in (
-        FIXTURE_ROOT / "farray_contracts_f90.f90",
-        FIXTURE_ROOT / "farray_results_f90.f90",
-        FIXTURE_ROOT / "fassumed_rank_f90.f90",
-        FIXTURE_ROOT / "multid_arrays.f90",
+        NATIVE_ROOT / "array_ops.f90",
+        NATIVE_ROOT / "farray_contracts_f90.f90",
+        NATIVE_ROOT / "farray_results_f90.f90",
+        NATIVE_ROOT / "fassumed_rank_f90.f90",
+        NATIVE_ROOT / "fmath_arrays.f",
+        NATIVE_ROOT / "fmath_arrays_f90.f90",
+        NATIVE_ROOT / "multid_arrays.f90",
     )
 )
 

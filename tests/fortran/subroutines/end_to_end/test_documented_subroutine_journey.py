@@ -12,7 +12,7 @@ from prik.runtime.handles import AllocatableArray
 
 pytestmark = pytest.mark.fortran_end_to_end
 
-SOURCE = Path(__file__).parent / "fixtures" / "documented_subroutines.f90"
+SOURCE = Path(__file__).parent / "fixtures" / "native" / "documented_subroutines.f90"
 
 
 def test_subroutine_outputs_and_caller_storage_follow_documented_projection_rules(

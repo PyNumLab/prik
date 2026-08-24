@@ -17,12 +17,12 @@ CONTRACT_ROOT = FIXTURES / "contracts"
 CASES = (
     GeneratedContractCase(
         "foptional_fixed",
-        (FIXTURES / "foptional_fixed.f",),
+        (FIXTURES / "native" / "foptional_fixed.f",),
         CONTRACT_ROOT / "foptional_fixed",
     ),
     GeneratedContractCase(
         "foptional_f90",
-        (FIXTURES / "foptional_f90.f90",),
+        (FIXTURES / "native" / "foptional_f90.f90",),
         CONTRACT_ROOT / "foptional_f90",
     ),
 )

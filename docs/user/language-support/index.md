@@ -11,6 +11,8 @@ publication: reviewed
 
 **Will PRIK wrap my code?** Choose the path that matches your source:
 
+- [Fortran Support](fortran-support.md) lists the Fortran source forms,
+  program units, and declaration syntax PRIK reads.
 - [C Support](c-support.md) is the complete workflow for C projects. Current
   C wrapper coverage is the direct ABI subset documented on that page.
 - The [language feature matrix](feature-matrix.md) is the authoritative
@@ -34,6 +36,8 @@ particular, C parsing accepts a wider set of source facts than the current
 direct C wrapper lane; use the C guide's limits before treating a parsed C
 declaration as buildable.
 
-If a feature is unsupported, PRIK blocks it before code generation and reports
-the boundary and the reason. See [diagnostic codes](../reference/diagnostic-codes.md)
-for what a specific rejection means.
+If a feature is unsupported, PRIK normally blocks it before code generation and
+reports the boundary and the reason. The current exception is the
+[parameterized-derived-type diagnostic gap](fortran-support.md#where-reading-ends),
+which can surface during compiler probing. See [diagnostic
+codes](../reference/diagnostic-codes.md) for what a PRIK rejection means.

@@ -68,12 +68,34 @@ class State:
     assert module.classes[0].methods[0].origin.native_abi == "c"
 
 
+def test_native_abi_marks_fortran_bind_c_class_and_round_trips():
+    original = parse_pyi_text(
+        """
+@native_abi("c")
+class point:
+    x: Float64
+""",
+        module_name="class_native_abi",
+    )
+
+    semantic_class = original.classes[0]
+    assert semantic_class.origin.source_language == "fortran"
+    assert semantic_class.origin.native_abi == "c"
+    assert semantic_class.metadata["fortran_bind_c"] is True
+
+    rendered = emit_module(original)
+    loaded = parse_pyi_text(rendered, module_name=original.name)
+
+    assert '@native_abi("c")\nclass point:' in rendered
+    assert loaded.classes[0].origin.native_abi == "c"
+    assert loaded.classes[0].metadata["fortran_bind_c"] is True
+
+
 @pytest.mark.parametrize(
     ("source", "native_language", "message"),
     [
         ('@native_abi("fortran")\ndef bad() -> None: ...', "fortran", 'accepts only "c"'),
         ('@native_abi("c")\n@native_abi("c")\ndef bad() -> None: ...', "fortran", "Duplicate"),
-        ('@native_abi("c")\nclass Bad:\n    pass', "fortran", "Unsupported class decorator"),
         ('@native_abi("c")\ndef bad() -> None: ...', "c", "only valid for Fortran"),
     ],
 )

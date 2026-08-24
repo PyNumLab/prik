@@ -11,7 +11,7 @@ from tests.fortran._support.wrapper_build import _build_source_and_import
 
 pytestmark = pytest.mark.fortran_end_to_end
 
-SOURCE = Path(__file__).parent / "fixtures" / "abstract_hierarchy.f90"
+SOURCE = Path(__file__).parent / "fixtures" / "native" / "abstract_hierarchy.f90"
 GENERATED = {
     "bind_c_abstract_hierarchy_wrapper.f90",
     "abstract_hierarchy_wrapper.c",

@@ -14,7 +14,7 @@ from prik import build_pyi_extension
 from tests.fortran._support.paths import FORTRAN_ROOT
 
 STRING_FIXTURES = FORTRAN_ROOT / "strings" / "end_to_end" / "fixtures"
-STRING_F90_SOURCE = STRING_FIXTURES / "fstrings_f90.f90"
+STRING_F90_SOURCE = STRING_FIXTURES / "native" / "fstrings_f90.f90"
 RAW_CONTRACT = Path(__file__).parent / "fixtures" / "edited_contracts" / "raw_string_array" / "__init__.pyi"
 pytestmark = pytest.mark.fortran_end_to_end
 

@@ -7,17 +7,20 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tests.fortran._support.wrapper_build import _build_source_and_import
+from tests.fortran._support.wrapper_build import _build_source_or_generated_pyi_and_import
 
 pytestmark = pytest.mark.fortran_end_to_end
 
-SOURCE = Path(__file__).parent / "fixtures" / "array_ops.f90"
+FIXTURES = Path(__file__).parent / "fixtures"
+SOURCE = FIXTURES / "native" / "array_ops.f90"
+CONTRACT = FIXTURES / "contracts" / "array_ops"
 
 
-def test_documented_array_source_build_validates_layout_flat_strides_mutation_and_results(
+def test_documented_array_build_validates_layout_flat_strides_mutation_and_results(
+    pyi_parity_build_mode: str,
     tmp_path: Path,
 ):
-    module = _build_source_and_import(
+    module = _build_source_or_generated_pyi_and_import(
         SOURCE,
         tmp_path,
         {
@@ -25,6 +28,8 @@ def test_documented_array_source_build_validates_layout_flat_strides_mutation_an
             "array_ops_wrapper.h",
             "bind_c_array_ops_wrapper.f90",
         },
+        CONTRACT,
+        pyi_parity_build_mode,
     )
 
     matrix = np.ones((2, 3), dtype=np.float64, order="F")

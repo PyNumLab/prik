@@ -218,6 +218,7 @@ code generation with a diagnostic naming the boundary and the reason.
 **Types and arrays**
 
 - arrays of derived types, and assumed-type `type(*)` arrays;
+- parameterized derived types such as `type :: buffer_type(k, n)`;
 - character arrays that cannot be represented as a fixed-width NumPy bytes
   dtype, and `allocatable` and `pointer` character *fields*.
 - real and complex storage wider than the target's `long double`. NumPy's
@@ -241,8 +242,10 @@ states the direct C lane's current boundary.
 ## C support
 
 PRIK builds C and Fortran code into importable Python extensions. For C,
-generated binding code calls your exported symbol **directly** — no C adapter
-and no Fortran bridge in between.
+generated binding code calls your exported symbol **directly** — no
+ABI-conversion adapter and no Fortran bridge in between. The one exception is
+opt-in: `--collision-adapter NAME` writes a small forwarding translation unit
+when one of your headers declares a name that `Python.h` also declares.
 
 C has no `intent` and no shape information, so a bare `double *` could be one
 value, a mutable output, or an array. PRIK never guesses: it generates a
@@ -507,9 +510,7 @@ notice when redistributed.
 - **[Getting Started](https://pynumlab.github.io/prik/user/getting-started/)** — Installation, verification, standalone procedures, modules, and rebuild workflow
 - **[User Guide](https://pynumlab.github.io/prik/user/guide/)** — Data types, functions, modules, arrays, derived types, callbacks, ownership, and runtime behavior
 - **[C Support](https://pynumlab.github.io/prik/user/language-support/c-support/)** — Direct C ABI scope, contracts, CLI, Python API, and executable examples
+- **[CLI Reference](https://pynumlab.github.io/prik/user/reference/cli-commands/)** — Every command, option, and checked workflow
+- **[Language Support](https://pynumlab.github.io/prik/user/language-support/)** — What is supported, partially supported, or planned
+- **[FAQ](https://pynumlab.github.io/prik/user/faq/)** — Concise answers to common questions
 - **[Changelog](CHANGELOG.md)** — User-visible changes by release
-<!--
-- **[CLI Reference](docs/user/reference/cli-commands.md)** — Complete command-line documentation
-- **[Language Support](docs/user/language-support/index.md)** — What is supported, partially supported, or planned
-- **[FAQ](docs/user/faq/index.md)** — Concise answers to common questions
--->

@@ -1,6 +1,6 @@
 ---
 title: Error Handling & Diagnostics
-description: How prik reports errors at different stages and how to diagnose them
+description: How PRIK reports errors at different stages and how to diagnose them
 audience: users, advanced users
 prerequisites: common beginner workflow, data types
 related: callbacks.md
@@ -10,7 +10,7 @@ publication: reviewed
 
 # Error Handling & Diagnostics
 
-prik reports failures at several distinct stages. Understanding which stage failed helps you know where to look and what to fix.
+PRIK reports failures at several distinct stages. Understanding which stage failed helps you know where to look and what to fix.
 
 ---
 
@@ -18,7 +18,7 @@ prik reports failures at several distinct stages. Understanding which stage fail
 
 | Stage                        | Typical Cause                                      | What to do |
 |-----------------------------|----------------------------------------------------|----------|
-| Parsing                     | Syntax prik cannot model, missing include           | Check the diagnostic code and source location |
+| Parsing                     | Syntax PRIK cannot model, missing include           | Check the diagnostic code and source location |
 | Interface conversion        | Unresolved types or missing interface details       | Fix the source or edit the generated `.pyi` |
 | Wrapper planning            | Unsupported storage, layout, or callback combination | Read the full error message; it points to the declaration |
 | Compilation / Linking       | Compiler issues, missing modules/libraries         | Run with `--verbose` to see native commands |
@@ -36,9 +36,9 @@ Use the two diagnostic flags for different problems:
 | Flag | Use it when |
 | --- | --- |
 | `--verbose` | A build or link fails and you need the generated files, build steps, timings, or compiler commands. |
-| `--debug` | prik fails unexpectedly and you need the full Python traceback. |
+| `--debug` | PRIK fails unexpectedly and you need the full Python traceback. |
 
-`--verbose` keeps the normal concise error message. `--debug` exposes prik's
+`--verbose` keeps the normal concise error message. `--debug` exposes PRIK's
 internal call stack, so it is mainly useful when reporting or investigating a
 PRIK bug.
 
@@ -160,7 +160,7 @@ Result:
 value must be non-negative
 ```
 
-prik uses the projected status and message to determine the Python result: a
+PRIK uses the projected status and message to determine the Python result: a
 successful call returns `None`, while a non-success status raises
 `RuntimeError` with the native message instead of returning either hidden
 output.
@@ -183,7 +183,7 @@ For the complete status and message rules, see
 
 - Always start with the **full error message** — it usually tells you exactly what went wrong.
 - Use `--verbose` when investigating build failures.
-- Use `--debug` only when an unexpected prik failure requires a Python
+- Use `--debug` only when an unexpected PRIK failure requires a Python
   traceback.
 - For complex contracts, generate the `.pyi` first and inspect it.
 - Run risky or untrusted callbacks in a subprocess if you need the main process to survive failures.

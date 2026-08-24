@@ -17,17 +17,17 @@ CONTRACT_ROOT = FIXTURES / "contracts"
 CASES = (
     GeneratedContractCase(
         "foverloads_f90",
-        (FIXTURES / "foverloads_f90.f90",),
+        (FIXTURES / "native" / "foverloads_f90.f90",),
         CONTRACT_ROOT / "foverloads_f90",
     ),
     GeneratedContractCase(
         "foverloads_fixed",
-        (FIXTURES / "foverloads_fixed.f",),
+        (FIXTURES / "native" / "foverloads_fixed.f",),
         CONTRACT_ROOT / "foverloads_fixed",
     ),
     GeneratedContractCase(
         "foperators_f90",
-        (FIXTURES / "foperators_f90.f90",),
+        (FIXTURES / "native" / "foperators_f90.f90",),
         CONTRACT_ROOT / "foperators_f90",
     ),
 )

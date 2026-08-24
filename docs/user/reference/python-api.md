@@ -111,9 +111,10 @@ Reach past the root facade when you need a single stage rather than a build.
 - A parser success is only a source fact. Semantic conversion, policy
   completion, planning, and generation are separate stages that can each
   reject input the parser accepted.
-- C source builds are limited to the documented direct-only primitive lane.
-  Other parser-accepted C forms fail before wrapper planning rather than using
-  a generated adapter.
+- C source builds are limited to the documented direct-C subset recorded in
+  [C Support](../language-support/c-support.md#what-is-supported). Other
+  parser-accepted C forms fail before wrapper planning rather than falling back
+  to a generated ABI-conversion adapter.
 
 ## Related pages
 

@@ -1,6 +1,6 @@
 ---
 title: Enumerations
-description: How prik handles Fortran `enum` and enumerators
+description: How PRIK handles Fortran `enum` and enumerators
 audience: users
 prerequisites: wrapping modules, data types
 related: wrapping-modules.md, generic-interfaces.md
@@ -10,7 +10,7 @@ publication: reviewed
 
 # Enumerations
 
-prik turns supported Fortran `enum` declarations into **typed integer constants**. It does **not** generate Python `Enum` or `IntEnum` classes — values remain plain integers with the resolved dtype.
+PRIK turns supported Fortran `enum` declarations into **typed integer constants**. It does **not** generate Python `Enum` or `IntEnum` classes — values remain plain integers with the resolved dtype.
 
 ---
 

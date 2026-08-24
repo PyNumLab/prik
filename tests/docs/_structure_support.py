@@ -14,15 +14,8 @@ DOCS_ROOT = ROOT / "docs"
 FEATURE_MATRIX_PATH = DOCS_ROOT / "user/language-support/feature-matrix.md"
 CLI_REFERENCE_PATH = DOCS_ROOT / "user/reference/cli-commands.md"
 PYTHON_API_REFERENCE_PATH = DOCS_ROOT / "user/reference/python-api.md"
-DOC_PATHS = sorted(path for path in DOCS_ROOT.rglob("*.md") if "old_docs" not in path.parts)
-DEFERRED_C_PAGE_PATHS = [
-    ROOT / "docs/developer/deferred/c-parser.md",
-    ROOT / "docs/user/examples/recipes/inspect-c-api.md",
-]
+DOC_PATHS = sorted(DOCS_ROOT.rglob("*.md"))
 MARKDOWN_LINK = re.compile(r"\[[^\]]+\]\(([^)#]+)(?:#[^)]+)?\)")
-C_DOCS_START = "<!-- PRIK_C_DOCS_START"
-C_DOCS_END = "PRIK_C_DOCS_END -->"
-C_DOCS_DISABLED = "<!-- PRIK_C_DOCS_DISABLED:"
 REQUIRED_METADATA = {"title", "audience", "prerequisites", "related", "status", "publication"}
 ALLOWED_PUBLICATION_STATES = {"draft", "reviewed"}
 ALLOWED_STATUSES = {
@@ -128,27 +121,19 @@ def _visible_documentation_source(path: Path) -> str:
         lines = lines[lines.index("---", 1) + 1 :]
 
     visible: list[str] = []
-    hidden: str | None = None
+    hidden = False
     for line in lines:
         stripped = line.strip()
-        if stripped == C_DOCS_START:
-            assert not hidden, f"{path.relative_to(ROOT)}: nested deferred documentation comment"
-            hidden = "deferred-c"
-        elif stripped == "<!--":
+        if stripped == "<!--":
             assert not hidden, f"{path.relative_to(ROOT)}: nested documentation comment"
-            hidden = "ordinary"
-        elif stripped == C_DOCS_END:
-            assert hidden == "deferred-c", f"{path.relative_to(ROOT)}: unmatched deferred documentation comment end"
-            hidden = None
-        elif stripped == "-->" and hidden == "ordinary":
-            hidden = None
-        elif hidden == "deferred-c":
-            assert "--" not in line, f"{path.relative_to(ROOT)}: invalid double hyphen in deferred comment"
-        elif hidden == "ordinary":
+            hidden = True
+        elif stripped == "-->" and hidden:
+            hidden = False
+        elif hidden:
             continue
-        elif not line.lstrip().startswith(C_DOCS_DISABLED):
+        else:
             visible.append(line)
-    assert not hidden, f"{path.relative_to(ROOT)}: unclosed deferred documentation comment"
+    assert not hidden, f"{path.relative_to(ROOT)}: unclosed documentation comment"
     return "\n".join(visible)
 
 

@@ -9,7 +9,7 @@ from tests.fortran._support.wrapper_build import (
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
-SOURCE = FIXTURES / "multid_arrays.f90"
+SOURCE = FIXTURES / "native" / "multid_arrays.f90"
 CONTRACT_FIXTURES = FIXTURES / "contracts"
 EXPECTED_GENERATED_SOURCES = {
     "bind_c_multid_arrays_wrapper.f90",

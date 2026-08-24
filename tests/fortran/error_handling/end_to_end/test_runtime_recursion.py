@@ -8,7 +8,7 @@ import pytest
 from tests.fortran._support.wrapper_build import _build_source_or_generated_pyi_and_import, wrapper_source
 
 RECURSION_SOURCE = wrapper_source("fruntime_recursion_f90.f90")
-CONTRACT_FIXTURES = Path(__file__).parent / "fixtures" / "runtime" / "contracts"
+CONTRACT_FIXTURES = Path(__file__).parent / "fixtures" / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
 
 

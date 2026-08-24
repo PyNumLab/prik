@@ -18,7 +18,7 @@ standard build tools.
 
 ## Supported Python Versions
 
-prik requires **Python 3.10 or newer**.
+PRIK requires **Python 3.10 or newer**.
 The project is regularly tested on Python 3.10, 3.11, and 3.12.
 
 Check your Python version first:

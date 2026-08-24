@@ -115,15 +115,20 @@ storage is not C-compatible with the source declaration.
 For a scalar address, conversion happens before taking the address:
 
 ```python
+from prik.contracts import Addr, Arg, CLongLong, Int64, Returns, native_call
+
 @native_call([Addr(CLongLong(Arg(0)))])
-def update(value: Int64) -> Int64: ...
+def update(value: Int64) -> Returns["value", Int64]: ...
 ```
 
 This converts the extracted `int64_t` into a `long long` call-local and passes
 that local's address, so the callee receives a genuine `long long *`. It never
-casts `int64_t *` to an incompatible pointer type. If the updated scalar is a
-Python result, the binding converts that call-local back into the public
-`Int64` dtype; Python scalar inputs themselves are immutable.
+casts `int64_t *` to an incompatible pointer type. Naming the argument in
+`Returns[...]` projects the updated call-local back into the public `Int64`
+dtype; Python scalar inputs are immutable, so an updated scalar always reaches
+Python as a result rather than in place. A bare `-> Int64` declares something
+different — that the native function itself returns an `int64_t` — and leaves
+the update invisible.
 
 For a ranked argument, the same operator selects the exact NumPy storage that
 can cross the pointer boundary without a cast:
@@ -162,7 +167,7 @@ def scale(
 ) -> Returns["values", Float64[:]]: ...
 ```
 
-prik calls the native procedure with separate writable storage and returns the
+PRIK calls the native procedure with separate writable storage and returns the
 replacement. The original array remains unchanged.
 
 Do not combine replacement-only mutation with a writable borrowed view. Those
@@ -190,7 +195,7 @@ Supported edits include:
   optional in the native procedure.
 
 Changing dtype or rank, or inventing optionality, changes the declared native
-binary interface. It is valid only when the implementation matches. prik can
+binary interface. It is valid only when the implementation matches. PRIK can
 check exact NumPy dtype, rank, shape, layout, writeability, byte order,
 alignment, and zero-sized-array rules. Plain multidimensional arrays in a
 Fortran contract use Fortran order by default. The

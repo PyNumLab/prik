@@ -1,8 +1,8 @@
-from prik.contracts import Int32, native_type
+from prik.contracts import Int32, destroy
 
-@native_type(finalizers=('cleanup_child',))
 class child:
-    pass
+    @destroy
+    def cleanup_child(self) -> None: ...
 
 class parent:
     def __init__(self) -> None: ...

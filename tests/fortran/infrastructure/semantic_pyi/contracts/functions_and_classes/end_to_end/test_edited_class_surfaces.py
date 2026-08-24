@@ -16,8 +16,8 @@ from tests.fortran._support.paths import FORTRAN_ROOT
 FEATURE_ROOT = Path(__file__).parent / "fixtures" / "edited_contracts"
 DERIVED_FIXTURES = FORTRAN_ROOT / "derived_types" / "end_to_end" / "fixtures"
 GENERIC_FIXTURES = FORTRAN_ROOT / "generic_interfaces" / "end_to_end" / "fixtures"
-CLASS_SOURCE = DERIVED_FIXTURES / "fclasses_f90.f90"
-OVERLOAD_SOURCE = GENERIC_FIXTURES / "foverloads_f90.f90"
+CLASS_SOURCE = DERIVED_FIXTURES / "native" / "fclasses_f90.f90"
+OVERLOAD_SOURCE = GENERIC_FIXTURES / "native" / "foverloads_f90.f90"
 pytestmark = pytest.mark.fortran_end_to_end
 
 

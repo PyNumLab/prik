@@ -1,6 +1,6 @@
 ---
 title: Wrapping Subroutines
-description: How prik wraps Fortran `subroutine` procedures — output arguments, in-place mutation, and result projection
+description: How PRIK wraps Fortran `subroutine` procedures — output arguments, in-place mutation, and result projection
 audience: users
 prerequisites: data types, first wrapped function
 related: wrapping-functions.md, arrays.md, optional-arguments.md
@@ -30,7 +30,7 @@ change in place.
 | No `intent`                 | Visible argument             | Conservative `intent(inout)` rule |
 | No `intent`, assumed input  | Visible argument             | Not returned (opt-in, see below)  |
 
-Without `intent`, prik uses the conservative `intent(inout)` behavior. A
+Without `intent`, PRIK uses the conservative `intent(inout)` behavior. A
 scalar stays visible and its replacement value is returned — `character`
 scalars included, on the same terms as numeric ones. This is common in legacy
 sources, but the rule applies to any dummy declaration without `intent`.
@@ -57,8 +57,8 @@ python3 -m prik ddot.f --out blas --assume-intent-in-scalars
 # --assume-intent-in-scalars   ddot(...) -> float64
 ```
 
-The option is an assertion you make about the source, not a fact prik derives
-from it. prik does not inspect the procedure body, so a procedure that *does*
+The option is an assertion you make about the source, not a fact PRIK derives
+from it. PRIK does not inspect the procedure body, so a procedure that *does*
 write such a dummy silently loses that value, exactly as it would if you
 removed the result from the contract by hand. Use it on sources whose scalar
 arguments are known controls; leave it off when you are not sure.

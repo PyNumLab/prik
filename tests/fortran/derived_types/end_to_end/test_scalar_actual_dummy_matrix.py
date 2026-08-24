@@ -18,7 +18,7 @@ from tests.fortran._support.wrapper_build import _import_from_build_dir
 from prik import build_pyi_extension
 
 FIXTURES = Path(__file__).parent / "fixtures"
-SOURCE = FIXTURES / "fscalar_derived_actual_dummy_matrix_f90.f90"
+SOURCE = FIXTURES / "native" / "fscalar_derived_actual_dummy_matrix_f90.f90"
 CONTRACT = FIXTURES / "edited_contracts" / "scalar_actual_dummy_matrix" / "__init__.pyi"
 pytestmark = pytest.mark.fortran_end_to_end
 

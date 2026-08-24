@@ -11,7 +11,7 @@ from tests.fortran._support.wrapper_build import (
 )
 
 BIND_VALUE_F90_SOURCE = wrapper_source("fbind_value_f90.f90")
-CONTRACT_FIXTURES = Path(__file__).parent / "fixtures" / "baseline" / "contracts"
+CONTRACT_FIXTURES = Path(__file__).parent / "fixtures" / "contracts"
 pytestmark = pytest.mark.fortran_end_to_end
 
 

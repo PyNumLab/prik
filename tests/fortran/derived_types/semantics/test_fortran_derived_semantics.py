@@ -119,10 +119,15 @@ end module lifecycle_mod
 
     assert state.fields[0].default_value == "7"
     assert state.fields[0].metadata["fortran_initializer"] == "7"
-    assert state.metadata["fortran_final_procedures"] == ["cleanup"]
+    assert [item.name for item in state.destructors] == ["cleanup"]
+    assert state.destructors[0].origin.source_language == "fortran"
+    assert state.destructors[0].origin.source_kind == "destructor"
     emitted = emit_module(module)
-    assert "@native_type(finalizers=('cleanup',))" in emitted
-    assert native_contract_issues(parse_pyi_text(emitted, module_name=module.name)) == []
+    assert "    @destroy\n    def cleanup(self) -> None: ..." in emitted
+    reloaded = parse_pyi_text(emitted, module_name=module.name)
+    assert reloaded.classes[0].methods == []
+    assert [item.name for item in reloaded.classes[0].destructors] == ["cleanup"]
+    assert native_contract_issues(reloaded) == []
 
 
 def test_bind_c_and_sequence_types_preserve_accessor_layout_metadata():
@@ -148,9 +153,12 @@ end module layout_mod
 
     module = fortran_module_to_semantic_module(parse_fortran_source(source))
     point, tagged, ordered = module.classes
+    rendered = emit_module(module)
 
     assert point.metadata["fortran_type_attributes"] == ["bind(c)"]
-    assert "@native_type(attributes=('bind(c)',))" in emit_module(module)
+    assert '@native_abi("c")\nclass point:' in rendered
+    assert '@native_abi("c")\nclass tagged_point:' in rendered
+    assert "native_type" not in rendered
     assert point.metadata["fortran_bind_c"] is True
     assert point.metadata["fortran_layout_policy"] == "accessors"
     assert point.metadata["fortran_direct_layout"] is False
@@ -182,9 +190,12 @@ end module layout_mod
     assert tagged.fields[1].origin.source_type == "logical(kind=c_bool)"
     assert tagged.fields[2].origin.source_type == "complex(kind=c_double_complex)"
     assert ordered.metadata["fortran_type_attributes"] == ["sequence"]
-    assert "@native_type(attributes=('sequence',))" in emit_module(module)
     assert ordered.metadata["fortran_sequence"] is True
     assert ordered.metadata["fortran_layout_policy"] == "accessors"
+
+    reloaded = parse_pyi_text(rendered, module_name=module.name)
+    assert reloaded.classes[0].metadata["fortran_bind_c"] is True
+    assert "fortran_sequence" not in reloaded.classes[2].metadata
 
 
 def test_bind_c_derived_value_argument_is_accessor_routed():
