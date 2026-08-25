@@ -507,6 +507,7 @@ notice when redistributed.
 ## Documentation
 
 - **[Documentation](https://pynumlab.github.io/prik/)** — Learn how to install and use PRIK
+- **[Project Vision](https://github.com/PyNumLab/prik/wiki)** — Long-term direction for PRIK's semantic interoperability model
 - **[Getting Started](https://pynumlab.github.io/prik/user/getting-started/)** — Installation, verification, standalone procedures, modules, and rebuild workflow
 - **[User Guide](https://pynumlab.github.io/prik/user/guide/)** — Data types, functions, modules, arrays, derived types, callbacks, ownership, and runtime behavior
 - **[C Support](https://pynumlab.github.io/prik/user/language-support/c-support/)** — Direct C ABI scope, contracts, CLI, Python API, and executable examples

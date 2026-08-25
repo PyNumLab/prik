@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 330" role="img" aria-labelledby="title description">
+  <title id="title">Editable semantic contract workflow</title>
+  <desc id="description">A native declaration passes through a source frontend and semantic IR to generate a semantic pyi contract. After user review or editing, the contract frontend produces the authoritative semantic IR.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#607080"/>
+    </marker>
+    <style>
+      .section { fill: #52616f; font: 700 14px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; letter-spacing: .08em; }
+      .label { fill: #17212b; font: 700 16px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .detail { fill: #52616f; font: 14px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .white-label { fill: #ffffff; font: 700 16px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .white-detail { fill: #ffffff; font: 14px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .arrow { fill: none; stroke: #607080; stroke-width: 2.5; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect x="1" y="1" width="1198" height="328" rx="18" fill="#fbfcfd" stroke="#d8e1e8" stroke-width="2"/>
+  <text x="350" y="42" text-anchor="middle" class="section">SOURCE-FIRST DISCOVERY</text>
+  <text x="940" y="42" text-anchor="middle" class="section">AUTHORITATIVE CONTRACT ROUTE</text>
+  <line x1="697" y1="28" x2="697" y2="236" stroke="#d8e1e8" stroke-width="2" stroke-dasharray="6 7"/>
+
+  <g>
+    <rect x="24" y="90" width="142" height="112" rx="11" fill="#f7f3ff" stroke="#8250df" stroke-width="2"/>
+    <text x="95" y="132" text-anchor="middle" class="label">Native</text>
+    <text x="95" y="154" text-anchor="middle" class="label">declaration</text>
+    <text x="95" y="181" text-anchor="middle" class="detail">source facts</text>
+  </g>
+  <path d="M166 146 H184" class="arrow"/>
+  <g>
+    <rect x="196" y="90" width="142" height="112" rx="11" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
+    <text x="267" y="132" text-anchor="middle" class="label">Source</text>
+    <text x="267" y="154" text-anchor="middle" class="label">frontend</text>
+  </g>
+  <path d="M338 146 H356" class="arrow"/>
+  <g>
+    <rect x="368" y="90" width="142" height="112" rx="11" fill="#eef6ff" stroke="#0969da" stroke-width="2"/>
+    <text x="439" y="143" text-anchor="middle" class="label">Semantic IR</text>
+    <text x="439" y="174" text-anchor="middle" class="detail">discovered model</text>
+  </g>
+  <path d="M510 146 H528" class="arrow"/>
+  <g>
+    <rect x="540" y="76" width="142" height="140" rx="11" fill="#0969da" stroke="#0550ae" stroke-width="2"/>
+    <text x="611" y="119" text-anchor="middle" class="white-label">Generated</text>
+    <text x="611" y="141" text-anchor="middle" class="white-label">semantic .pyi</text>
+    <text x="611" y="174" text-anchor="middle" class="white-detail">editable contract</text>
+    <text x="611" y="195" text-anchor="middle" class="white-detail">starting point</text>
+  </g>
+  <path d="M682 146 H700" class="arrow"/>
+  <g>
+    <rect x="712" y="76" width="142" height="140" rx="11" fill="#fff4e8" stroke="#bc4c00" stroke-width="2"/>
+    <text x="783" y="119" text-anchor="middle" class="label">User review</text>
+    <text x="783" y="141" text-anchor="middle" class="label">or edit</text>
+    <text x="783" y="174" text-anchor="middle" class="detail">public API</text>
+    <text x="783" y="195" text-anchor="middle" class="detail">and semantics</text>
+  </g>
+  <path d="M854 146 H872" class="arrow"/>
+  <g>
+    <rect x="884" y="90" width="142" height="112" rx="11" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
+    <text x="955" y="132" text-anchor="middle" class="label">Contract</text>
+    <text x="955" y="154" text-anchor="middle" class="label">frontend</text>
+  </g>
+  <path d="M1026 146 H1044" class="arrow"/>
+  <g>
+    <rect x="1056" y="76" width="120" height="140" rx="11" fill="#1a7f37" stroke="#116329" stroke-width="2"/>
+    <text x="1116" y="119" text-anchor="middle" class="white-label">Semantic</text>
+    <text x="1116" y="141" text-anchor="middle" class="white-label">IR</text>
+    <text x="1116" y="174" text-anchor="middle" class="white-detail">authoritative</text>
+    <text x="1116" y="195" text-anchor="middle" class="white-detail">model</text>
+  </g>
+
+  <text x="600" y="275" text-anchor="middle" class="detail">Removed declarations stay removed; the edited contract defines the build surface.</text>
+</svg>

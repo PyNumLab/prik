@@ -75,6 +75,9 @@ Longer term, PRIK is intended to support additional native languages and
 execution environments, including C++, CUDA, and other backends. These are
 future directions and are not part of the current release.
 
+For the longer-term architecture and design direction, see the
+[PRIK Vision](https://github.com/PyNumLab/prik/wiki).
+
 ## Stewardship and development
 
 PRIK is created and maintained by **Said Hadjout**

@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 850" role="img" aria-labelledby="title description">
+  <title id="title">PRIK architecture pipeline</title>
+  <desc id="description">Native sources and semantic contracts enter separate frontends and converge on semantic IR. Policy completion decides enforceable behavior before shared planning, backend lowering, binding generation, and the Python API.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#607080"/>
+    </marker>
+    <style>
+      .heading { fill: #17212b; font: 700 22px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .label { fill: #17212b; font: 700 19px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .detail { fill: #52616f; font: 15px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .white-label { fill: #ffffff; font: 700 20px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .white-detail { fill: #ffffff; font: 15px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .policy-item { fill: #ffffff; font: 16px Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      .arrow { fill: none; stroke: #607080; stroke-width: 3; marker-end: url(#arrow); }
+      .join { fill: none; stroke: #607080; stroke-width: 3; }
+    </style>
+  </defs>
+
+  <rect x="1" y="1" width="1198" height="848" rx="18" fill="#fbfcfd" stroke="#d8e1e8" stroke-width="2"/>
+  <text x="600" y="40" text-anchor="middle" class="heading">Every input route converges before policy and generation</text>
+
+  <g>
+    <rect x="80" y="68" width="430" height="68" rx="12" fill="#f7f3ff" stroke="#8250df" stroke-width="2"/>
+    <text x="295" y="96" text-anchor="middle" class="label">Native sources or interfaces</text>
+    <text x="295" y="121" text-anchor="middle" class="detail">language-specific declarations and target facts</text>
+  </g>
+  <g>
+    <rect x="690" y="68" width="430" height="68" rx="12" fill="#eef6ff" stroke="#0969da" stroke-width="2"/>
+    <text x="905" y="96" text-anchor="middle" class="label">Semantic .pyi contract</text>
+    <text x="905" y="121" text-anchor="middle" class="detail">explicit public and native relationship</text>
+  </g>
+
+  <path d="M295 136 V158" class="arrow"/>
+  <path d="M905 136 V158" class="arrow"/>
+
+  <g>
+    <rect x="130" y="170" width="330" height="60" rx="11" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
+    <text x="295" y="207" text-anchor="middle" class="label">Optional source frontends</text>
+  </g>
+  <g>
+    <rect x="740" y="170" width="330" height="60" rx="11" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
+    <text x="905" y="207" text-anchor="middle" class="label">Contract frontend</text>
+  </g>
+
+  <path d="M295 230 V258 H600" class="join"/>
+  <path d="M905 230 V258 H600" class="join"/>
+  <path d="M600 258 V278" class="arrow"/>
+
+  <g>
+    <rect x="400" y="290" width="400" height="68" rx="12" fill="#0969da" stroke="#0550ae" stroke-width="2"/>
+    <text x="600" y="321" text-anchor="middle" class="white-label">Semantic IR</text>
+    <text x="600" y="345" text-anchor="middle" class="white-detail">one language-neutral internal meaning</text>
+  </g>
+
+  <path d="M600 358 V384" class="arrow"/>
+
+  <g>
+    <rect x="230" y="396" width="740" height="142" rx="14" fill="#bc4c00" stroke="#953800" stroke-width="2"/>
+    <text x="600" y="429" text-anchor="middle" class="white-label">Post-IR policy completion</text>
+    <text x="600" y="455" text-anchor="middle" class="white-detail">complete every semantic decision required by generation</text>
+    <circle cx="294" cy="488" r="4" fill="#ffffff"/>
+    <text x="310" y="494" class="policy-item">coercions</text>
+    <circle cx="715" cy="488" r="4" fill="#ffffff"/>
+    <text x="731" y="494" class="policy-item">constraints and validation</text>
+    <circle cx="294" cy="516" r="4" fill="#ffffff"/>
+    <text x="310" y="522" class="policy-item">ownership, lifetime and destruction</text>
+    <circle cx="715" cy="516" r="4" fill="#ffffff"/>
+    <text x="731" y="522" class="policy-item">contract enforcement</text>
+  </g>
+
+  <path d="M600 538 V562" class="arrow"/>
+
+  <g>
+    <rect x="400" y="574" width="400" height="58" rx="11" fill="#fff4e8" stroke="#bc4c00" stroke-width="2"/>
+    <text x="600" y="610" text-anchor="middle" class="label">Shared wrapper plan</text>
+  </g>
+  <path d="M600 632 V654" class="arrow"/>
+  <g>
+    <rect x="400" y="666" width="400" height="58" rx="11" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
+    <text x="600" y="702" text-anchor="middle" class="label">Backend lowering</text>
+  </g>
+  <path d="M600 724 V742 H355 V750" class="arrow"/>
+
+  <g>
+    <rect x="180" y="758" width="350" height="60" rx="11" fill="#ffffff" stroke="#a7b9c7" stroke-width="2"/>
+    <text x="355" y="795" text-anchor="middle" class="label">Generated Python binding</text>
+  </g>
+  <path d="M530 788 H658" class="arrow"/>
+  <g>
+    <rect x="670" y="758" width="350" height="60" rx="11" fill="#1a7f37" stroke="#116329" stroke-width="2"/>
+    <text x="845" y="795" text-anchor="middle" class="white-label">Python API</text>
+  </g>
+</svg>
