@@ -1,6 +1,8 @@
 """Compiled scalar-reference and NumPy-array contracts for one-level C pointers."""
 
 import shutil
+import subprocess
+import sys
 import warnings
 from pathlib import Path
 
@@ -9,6 +11,49 @@ import pytest
 
 from prik import build_pyi_extension
 from tests.c._support.runtime import sole_native_module
+
+
+@pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")
+def test_generated_c_int_array_uses_its_probed_primitive_storage(tmp_path: Path):
+    """The public ``Int`` spelling retains its probed dtype for array policy."""
+    source = tmp_path / "integer_array.c"
+    source.write_text(
+        "void fill_indices(int values[4]) { for (int i = 0; i < 4; ++i) values[i] = i + 1; }\n",
+        encoding="utf-8",
+    )
+
+    contract = tmp_path / "integer_array.pyi"
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "prik",
+            "generate",
+            "--pyi",
+            "--language",
+            "c",
+            str(source),
+            "--out",
+            str(contract),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "values: Int[4]" in contract.read_text(encoding="utf-8")
+
+    result = build_pyi_extension(
+        contract,
+        native_language="c",
+        native_c_sources=[source],
+        output_dir=tmp_path / "build_integer_array",
+        output_name="integer_array",
+    )
+    module = sole_native_module(result.import_module())
+    values = np.zeros(4, dtype=np.intc)
+
+    assert module.fill_indices(values) is None
+    np.testing.assert_array_equal(values, np.array([1, 2, 3, 4], dtype=np.intc))
 
 
 @pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")

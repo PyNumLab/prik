@@ -157,7 +157,7 @@ without changing the underlying Fortran implementation.
 
 ## Proven on real libraries
 
-PRIK builds and numerically tests six maintained libraries, not just generated
+PRIK builds and numerically tests seven maintained libraries, not just generated
 wrappers.
 
 | Project | Validated surface |
@@ -168,12 +168,14 @@ wrappers.
 | [MINPACK](examples/minpack/README.md) | 22 nonlinear and least-squares procedures, including callbacks |
 | [BSPLINE-FORTRAN](examples/bspline/README.md) | 15 interpolation routines and modern Fortran classes |
 | [libm](examples/libm/README.md) | 60 target-generated ISO C99 math functions |
+| [TA-Lib](examples/ta_lib/README.md) | All 322 double and float-input indicators over NumPy arrays, checked against TA-Lib's reference results |
 
-The **Real Libraries Portability** workflow runs all six on Linux x86-64,
+The **Real Libraries Portability** workflow runs all seven on Linux x86-64,
 Linux Arm64, macOS Intel, and macOS Arm64 with Python 3.12. The Fortran
 examples use GNU Fortran 13 and GCC 13. libm runs twice on every target: GCC
-13 and Clang 18 on Linux; GNU GCC 13 and Apple Clang on macOS. BLAS and LAPACK
-also receive their full-surface audits on Linux x86-64.
+13 and Clang 18 on Linux; GNU GCC 13 and Apple Clang on macOS. TA-Lib builds
+its pinned v0.7.1 C release with the target's primary C compiler. BLAS and
+LAPACK also receive their full-surface audits on Linux x86-64.
 
 ## Key Features
 

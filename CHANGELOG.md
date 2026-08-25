@@ -7,6 +7,13 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Added a maintained TA-Lib v0.7.1 example with a checked-in semantic contract
+  for all 322 double and float-input indicators plus initialization and
+  shutdown. Its reviewed inventory accounts for all 522 public functions, its
+  edited contract projects TA-Lib's output range metadata, and its
+  fail-closed differential harness sends the same request through a direct
+  native reference and the PRIK wrapper for every numerical entrypoint.
+
 - Multi-source Fortran builds compile in dependency order instead of the order
   you listed. PRIK records which parsed file provides each module and
   submodule, resolves the `use` dependencies between them, and groups the
@@ -99,6 +106,12 @@ release tags add a leading `v` to the package version.
   documentation navigation.
 
 ### Fixed
+
+- Source-free C contracts now carry compiler-probed `Int`, `UInt`, and `SizeT`
+  storage through primitive arrays and projected outputs while preserving exact
+  standard C spellings such as `int *` in generated prototypes. Target-
+  generated `int[]` contracts therefore stay in the documented direct-C lane
+  without requiring a manual `Int32[:]` rewrite.
 
 - Verbose wrapper builds now print each compiler command before it starts, so
   failed invocations remain directly replayable.

@@ -86,6 +86,7 @@ jobs:
           ln -sf "$(command -v "${{ matrix.fortran_c_compiler }}")" "$compiler_dir/gcc"
           echo "$compiler_dir" >> "$GITHUB_PATH"
           echo "PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR=$RUNNER_TEMP/prik-example-native" >> "$GITHUB_ENV"
+          echo "PRIK_TALIB_CACHE_DIR=$RUNNER_TEMP/prik-ta-lib-native" >> "$GITHUB_ENV"
       - name: Install example dependencies
         run: |
           python -m pip install --upgrade pip
@@ -99,6 +100,11 @@ jobs:
         with:
           path: ${{ runner.temp }}/prik-example-native
           key: real-libraries-portability-${{ matrix.cache_key }}-gfortran13-${{ hashFiles('examples/native_library.py', 'examples/blas/native/**', 'examples/lapack/native/**', 'examples/lapack/support/**', 'examples/lapack/xblas_sources.txt') }}
+      - name: Restore pinned TA-Lib cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/prik-ta-lib-native
+          key: real-libraries-portability-${{ matrix.cache_key }}-ta-lib-v0.7.1-${{ hashFiles('examples/ta_lib/native_build.py') }}
       - name: Show target and compilers
         run: |
           uname -a
@@ -119,6 +125,12 @@ jobs:
         run: |
           source examples/libm/build_all.sh
           python -m pytest -q examples/libm/tests
+      - name: Run TA-Lib with ${{ matrix.primary_c_compiler }}
+        env:
+          PRIK_TALIB_CC: ${{ matrix.primary_c_compiler }}
+        run: |
+          source examples/ta_lib/build_all.sh
+          python -m pytest -q examples/ta_lib/tests
       - name: Run BLAS example
         run: |
           source examples/blas/build_all.sh

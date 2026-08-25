@@ -287,7 +287,9 @@ Five maintained Fortran examples wrap and numerically validate
 [MINPACK](user/examples/minpack-wrapper.md), plus the object-oriented
 [BSPLINE-FORTRAN](user/examples/bspline-wrapper.md) API. The direct-C
 [libm example](user/examples/libm-wrapper.md) validates the supported C lane
-against the platform math library. The reproducible
+against the platform math library, while the
+[TA-Lib example](user/examples/ta-lib-wrapper.md) verifies all 322 double and
+float-input indicators from a pinned C release. The reproducible
 [performance comparison](user/performance.md) measures PRIK and NumPy's f2py
 against the same Fortran kernels.
 

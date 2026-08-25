@@ -24,6 +24,11 @@ void split_four(int n, int *doubled, int *tripled, int *quadrupled, int *quintup
     *quadrupled = n * 4;
     *quintupled = n * 5;
 }
+
+int split_target_int(int value, int *copy) {
+    *copy = value;
+    return 0;
+}
 """
 
 
@@ -58,6 +63,25 @@ def tally(n: Int32) -> None: ...
     assert "void tally(int32_t n, int32_t * doubled, int32_t * squared);" in binding
     assert module.tally(np.int32(5)) is None
     assert module.tally.__doc__.splitlines()[0] == "tally(n) -> None"
+
+
+@pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")
+def test_target_c_int_hidden_output_keeps_int_pointer_abi(tmp_path: Path):
+    """A projected ``Int`` output resolves storage without losing C identity."""
+    result = _build(
+        tmp_path,
+        """from prik.contracts import Arg, Int, Return, Returns, native_call
+
+@native_call([Arg(0), Return("copy", 1)])
+def split_target_int(value: Int) -> tuple[Int, Returns["copy", Int]]: ...
+""",
+        "target_int_output",
+    )
+    module = sole_native_module(result.import_module())
+    binding = next(path.read_text(encoding="utf-8") for path in result.generated_sources if path.suffix == ".c")
+
+    assert "int split_target_int(int value, int * copy);" in binding
+    assert module.split_target_int(np.intc(7)) == (np.intc(0), np.intc(7))
 
 
 @pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")

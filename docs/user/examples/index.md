@@ -9,17 +9,18 @@ publication: reviewed
 
 # Examples Gallery
 
-This section includes six complete real-library examples: BLAS, LAPACK,
-FFTPACK, MINPACK, BSPLINE-FORTRAN, and libm. Each one provides build commands,
-Python usage, and numerical checks for its public routines.
+This section includes seven complete real-library examples: BLAS, LAPACK,
+FFTPACK, MINPACK, BSPLINE-FORTRAN, libm, and TA-Lib. Each one provides build
+commands, Python usage, and numerical checks for its public routines.
 
 ## CI portability
 
 The **Real Libraries Portability** workflow runs every example on Linux
 x86-64, Linux Arm64, macOS Intel, and macOS Arm64 with Python 3.12. GNU
 Fortran 13 and GCC 13 build the Fortran examples. libm is tested with GCC 13
-and Clang 18 on Linux, and GNU GCC 13 and Apple Clang on macOS. BLAS and LAPACK
-add full-surface audits on Linux x86-64.
+and Clang 18 on Linux, and GNU GCC 13 and Apple Clang on macOS. TA-Lib v0.7.1
+is built with the primary C compiler on each target. BLAS and LAPACK add
+full-surface audits on Linux x86-64.
 
 For a smaller first workflow, start with one of the checked guides below. Each
 links to a complete source, build, import, or result path, rather than a
@@ -43,3 +44,4 @@ draft-only recipe.
 | Wrap all 22 MINPACK procedures and use Python callbacks | [MINPACK wrapper](minpack-wrapper.md) |
 | Build and validate modern Fortran classes and 15 interpolation routines | [BSPLINE-FORTRAN wrapper](bspline-wrapper.md) |
 | Wrap 60 target-generated ISO C99 math routines from a system library | [libm wrapper](libm-wrapper.md) |
+| Wrap and reference-check all 322 TA-Lib double and float-input indicators | [TA-Lib wrapper](ta-lib-wrapper.md) |

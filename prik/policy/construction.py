@@ -1884,18 +1884,20 @@ def _normalize_c_direct_scalar_identities(
         for argument in arguments
     ]
     return_name = _c_direct_scalar_name(function.return_type)
-    normalized_results = tuple(
-        replace(
-            result,
-            semantic_type_name=return_name,
-            direct_result_abi=DirectResultABI.NATIVE_SCALAR,
-            bridge_data_action=BridgeDataAction.DIRECT_TRANSFER,
-            bridge_copy_reason=None,
-        )
-        if result.source_kind == "direct_return" and return_name is not None
-        else result
-        for result in results
-    )
+
+    def normalize_result(result: ResultPolicy) -> ResultPolicy:
+        if result.source_kind == "direct_return" and return_name is not None:
+            return replace(
+                result,
+                semantic_type_name=return_name,
+                direct_result_abi=DirectResultABI.NATIVE_SCALAR,
+                bridge_data_action=BridgeDataAction.DIRECT_TRANSFER,
+                bridge_copy_reason=None,
+            )
+        projected_name = by_name.get(result.native_name)
+        return replace(result, semantic_type_name=projected_name) if projected_name is not None else result
+
+    normalized_results = tuple(normalize_result(result) for result in results)
     # Only a slot that transports one visible argument inherits that argument's
     # identity.  A binding-owned extent, length, presence, or literal slot owns
     # its own completed type and must keep it.
@@ -2565,17 +2567,21 @@ def _direct_c_abi_type_policy(
     source = source or {}
     source_pointer_depth = int(source.get("pointer_depth", pointer_depth))
     contract_spelling = semantic_type.metadata.get("c_abi_spelling") if semantic_type is not None else None
-    # A source-free contract preserves no declaration text, so policy records
-    # only the resolved identity and leaves the backend spelling to the C
-    # binding generator that owns scalar projection.
+    # A source-free contract has no declaration text, but target-sized standard
+    # types still name an exact C spelling.  Preserve that spelling at every
+    # pointer depth instead of replacing ``int *`` or ``size_t *`` with a
+    # same-width fixed-width typedef in the generated prototype.
     native_spelling = None
     if native_scalar_c_type is not None:
         native_spelling = (
             f"{native_scalar_c_type} {'*' * source_pointer_depth}" if source_pointer_depth else native_scalar_c_type
         )
-    preserved = (
-        source.get("source_spelling") or native_spelling or (contract_spelling if not source_pointer_depth else None)
+    contract_declaration = (
+        f"{contract_spelling} {'*' * source_pointer_depth}"
+        if isinstance(contract_spelling, str) and source_pointer_depth
+        else contract_spelling
     )
+    preserved = source.get("source_spelling") or native_spelling or contract_declaration
     qualifiers = tuple(str(item) for item in source.get("qualifiers", ()))
     const = bool(source.get("const", False))
     declarable = _c_typedef_resolved_spelling(semantic_type, pointer_depth=source_pointer_depth, const=const)
@@ -5934,13 +5940,17 @@ def _ownership_decision(owner: object, metadata_key: str) -> OwnershipDecision |
 
 def _is_first_lane_scalar_type(semantic_type: models.SemanticType) -> bool:
     """Report whether a rank-zero primitive uses the supported ordinary scalar lane."""
-    scalar_name = semantic_type.dtype or semantic_type.name
     return bool(
         int(semantic_type.rank or 0) == 0
         and not _is_scalar_storage_type(semantic_type)
         and semantic_type.name != "String"
-        and scalar_name in _PLAN_PRIMITIVE_SCALAR_TYPES
+        and _is_plan_primitive_value_type(semantic_type)
     )
+
+
+def _is_plan_primitive_value_type(semantic_type: models.SemanticType) -> bool:
+    """Use resolved storage dtype when a source spelling keeps a public alias."""
+    return (semantic_type.dtype or semantic_type.name) in _PLAN_PRIMITIVE_SCALAR_TYPES
 
 
 def _target_long_double_mantissa_bits() -> int:
@@ -7170,7 +7180,8 @@ def _is_scalar_derived_type(semantic_type: models.SemanticType) -> bool:
     """Return whether semantic facts name a concrete rank-zero custom type."""
     return bool(
         int(semantic_type.rank or 0) == 0
-        and semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES | {"String", "Void"}
+        and semantic_type.name not in {"String", "Void"}
+        and not _is_plan_primitive_value_type(semantic_type)
         and semantic_type.name not in {"Procedure", "Callback", "FunctionPointer", "CFunctionPointer"}
     )
 
@@ -7186,7 +7197,9 @@ def _is_descriptor_backed_scalar_derived_type(semantic_type: models.SemanticType
 def _is_derived_value_array(semantic_type: models.SemanticType) -> bool:
     """Return whether an array contains custom derived values rather than primitives."""
     return bool(
-        int(semantic_type.rank or 0) > 0 and semantic_type.name not in _PLAN_PRIMITIVE_SCALAR_TYPES | {"String"}
+        int(semantic_type.rank or 0) > 0
+        and semantic_type.name != "String"
+        and not _is_plan_primitive_value_type(semantic_type)
     )
 
 
@@ -7374,7 +7387,7 @@ def _is_phase6_ordinary_array_type(semantic_type: models.SemanticType) -> bool:
     scalar_storage = _is_scalar_storage_array_policy(array_policy)
     # A character array may leave its width assumed: every element of a NumPy
     # ``S`` array shares one itemsize, which already travels beside the buffer.
-    supported_element = semantic_type.name in _PLAN_PRIMITIVE_SCALAR_TYPES or (
+    supported_element = _is_plan_primitive_value_type(semantic_type) or (
         semantic_type.name == "String" and not scalar_storage
     )
     supported_rank = array_policy.rank is None or 1 <= array_policy.rank <= 15 or scalar_storage
@@ -7405,7 +7418,7 @@ def _is_phase6_raw_array_address_type(semantic_type: models.SemanticType) -> boo
         return False
     if len(policy.shape) != policy.rank or len(policy.axes) != policy.rank:
         return False
-    supported_element = semantic_type.name in _PLAN_PRIMITIVE_SCALAR_TYPES or (
+    supported_element = _is_plan_primitive_value_type(semantic_type) or (
         semantic_type.name == "String" and policy.itemsize is not None
     )
     return supported_element and all(item not in {":", "::Strided", "...", "Flat"} for item in policy.shape)

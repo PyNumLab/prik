@@ -10,5 +10,5 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "fortran_end_to_end: compiled and called Fortran example")
     config.addinivalue_line(
         "markers",
-        "real_library: complete native-library example (BLAS, LAPACK, FFTPACK, MINPACK, BSPLINE-FORTRAN, or libm)",
+        "real_library: complete native-library example (BLAS, LAPACK, FFTPACK, MINPACK, BSPLINE-FORTRAN, libm, or TA-Lib)",
     )

@@ -27,6 +27,7 @@ DOC_PATHS = [
     ROOT / "examples/lapack/README.md",
     ROOT / "examples/libm/README.md",
     ROOT / "examples/minpack/README.md",
+    ROOT / "examples/ta_lib/README.md",
     *sorted((ROOT / "docs").rglob("*.md")),
 ]
 AUDITED_PYTHON_DOC_PATHS = [

@@ -73,6 +73,7 @@ nav:
           - MINPACK Wrapper: user/examples/minpack-wrapper.md
           - BSPLINE-FORTRAN Wrapper: user/examples/bspline-wrapper.md
           - libm Wrapper: user/examples/libm-wrapper.md
+          - TA-Lib Wrapper: user/examples/ta-lib-wrapper.md
       - Troubleshooting:
           - Compiler Issues: user/troubleshooting/compiler-issues.md
       - FAQ: user/faq/index.md
