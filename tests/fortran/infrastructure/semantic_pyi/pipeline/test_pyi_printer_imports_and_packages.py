@@ -35,6 +35,21 @@ def test_pyi_pipeline_exports_module_stub_emitter():
     assert pyi_pipeline.emit_module_stubs is emit_module_stubs
 
 
+def test_generated_pyi_separates_top_level_functions_with_a_blank_line():
+    int_type = SemanticType("Int")
+    code = emit_module(
+        SemanticModule(
+            name="readable",
+            functions=[
+                SemanticFunction("first", return_type=int_type),
+                SemanticFunction("second", return_type=int_type),
+            ],
+        )
+    )
+
+    assert "def first() -> Int: ...\n\ndef second() -> Int: ..." in code
+
+
 def test_fortran_generated_contracts_reserve_colliding_public_names_by_namespace():
     int32_type = SemanticType("Int32")
     origin = SemanticOrigin(source_language="fortran", native_scope="naming_mod")

@@ -160,22 +160,20 @@ without changing the underlying Fortran implementation.
 PRIK builds and numerically tests seven maintained libraries, not just generated
 wrappers.
 
-| Project | Validated surface |
-| --- | --- |
-| [BLAS](examples/blas/README.md) | 155 routines: vectors, matrices, in-place updates, and f2py comparisons |
-| [LAPACK](examples/lapack/README.md) | 127 float64 routines: solves, factorizations, eigenproblems, and SVD |
-| [FFTPACK](examples/fftpack/README.md) | 31 Fourier, cosine, and sine transform procedures |
-| [MINPACK](examples/minpack/README.md) | 22 nonlinear and least-squares procedures, including callbacks |
-| [BSPLINE-FORTRAN](examples/bspline/README.md) | 15 interpolation routines and modern Fortran classes |
-| [libm](examples/libm/README.md) | 60 target-generated ISO C99 math functions |
-| [TA-Lib](examples/ta_lib/README.md) | All 322 double and float-input indicators over NumPy arrays, checked against TA-Lib's reference results |
+| Project | Native language and PRIK input | Validated surface |
+| --- | --- | --- |
+| [BLAS](examples/fortran/blas/README.md) | Fortran source/interfaces | 155 routines: vectors, matrices, in-place updates, and f2py comparisons |
+| [LAPACK](examples/fortran/lapack/README.md) | Fortran source/interfaces | 127 float64 routines: solves, factorizations, eigenproblems, and SVD |
+| [FFTPACK](examples/fortran/fftpack/README.md) | Fortran source/interfaces | 31 Fourier, cosine, and sine transform procedures |
+| [MINPACK](examples/fortran/minpack/README.md) | Fortran source/interfaces | 22 nonlinear and least-squares procedures, including callbacks |
+| [BSPLINE-FORTRAN](examples/fortran/bspline/README.md) | Fortran source/interfaces | 15 interpolation routines and modern Fortran classes |
+| [libm](examples/c/libm/README.md) | C declarations from `<math.h>`; link compiled platform libm | 60 target-generated ISO C99 math functions |
+| [TA-Lib](examples/c/ta_lib/README.md) | C declarations from `ta_libc.h`; link compiled `libta-lib` | All 322 double and float-input indicators over NumPy arrays, checked against TA-Lib's reference results |
 
 The **Real Libraries Portability** workflow runs all seven on Linux x86-64,
-Linux Arm64, macOS Intel, and macOS Arm64 with Python 3.12. The Fortran
-examples use GNU Fortran 13 and GCC 13. libm runs twice on every target: GCC
-13 and Clang 18 on Linux; GNU GCC 13 and Apple Clang on macOS. TA-Lib builds
-its pinned v0.7.1 C release with the target's primary C compiler. BLAS and
-LAPACK also receive their full-surface audits on Linux x86-64.
+Linux ARM64, macOS Intel, and macOS ARM64 with Python 3.12. See the [Examples
+Gallery](docs/user/examples/index.md#tested-platforms) for the compiler matrix;
+each project guide also records its own tested platforms.
 
 ## Key Features
 

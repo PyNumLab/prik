@@ -99,12 +99,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/prik-example-native
-          key: real-libraries-portability-${{ matrix.cache_key }}-gfortran13-${{ hashFiles('examples/native_library.py', 'examples/blas/native/**', 'examples/lapack/native/**', 'examples/lapack/support/**', 'examples/lapack/xblas_sources.txt') }}
+          key: real-libraries-portability-${{ matrix.cache_key }}-gfortran13-${{ hashFiles('examples/native_library.py', 'examples/fortran/blas/native/**', 'examples/fortran/lapack/native/**', 'examples/fortran/lapack/support/**', 'examples/fortran/lapack/xblas_sources.txt') }}
       - name: Restore pinned TA-Lib cache
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/prik-ta-lib-native
-          key: real-libraries-portability-${{ matrix.cache_key }}-ta-lib-v0.7.1-${{ hashFiles('examples/ta_lib/native_build.py') }}
+          key: real-libraries-portability-${{ matrix.cache_key }}-ta-lib-v0.7.1-${{ hashFiles('examples/c/ta_lib/native_build.py') }}
       - name: Show target and compilers
         run: |
           uname -a
@@ -117,43 +117,43 @@ jobs:
         env:
           PRIK_LIBM_CC: ${{ matrix.primary_c_compiler }}
         run: |
-          source examples/libm/build_all.sh
-          python -m pytest -q examples/libm/tests
+          source examples/c/libm/build_all.sh
+          python -m pytest -q examples/c/libm/tests
       - name: Run libm with ${{ matrix.secondary_c_compiler }}
         env:
           PRIK_LIBM_CC: ${{ matrix.secondary_c_compiler }}
         run: |
-          source examples/libm/build_all.sh
-          python -m pytest -q examples/libm/tests
+          source examples/c/libm/build_all.sh
+          python -m pytest -q examples/c/libm/tests
       - name: Run TA-Lib with ${{ matrix.primary_c_compiler }}
         env:
           PRIK_TALIB_CC: ${{ matrix.primary_c_compiler }}
         run: |
-          source examples/ta_lib/build_all.sh
-          python -m pytest -q examples/ta_lib/tests
+          source examples/c/ta_lib/build_all.sh
+          python -m pytest -q examples/c/ta_lib/tests
       - name: Run BLAS example
         run: |
-          source examples/blas/build_all.sh
-          python -m pytest -q examples/blas/tests
+          source examples/fortran/blas/build_all.sh
+          python -m pytest -q examples/fortran/blas/tests
           if [[ "${{ matrix.target }}" == "Linux x86-64" ]]; then
-            python -m pytest -q examples/blas/ci/full_surface.py
+            python -m pytest -q examples/fortran/blas/ci/full_surface.py
           fi
       - name: Run LAPACK example
         run: |
-          source examples/lapack/build_all.sh
-          python -m pytest -q examples/lapack/tests
+          source examples/fortran/lapack/build_all.sh
+          python -m pytest -q examples/fortran/lapack/tests
           if [[ "${{ matrix.target }}" == "Linux x86-64" ]]; then
-            python -m pytest -q examples/lapack/ci/full_surface.py
+            python -m pytest -q examples/fortran/lapack/ci/full_surface.py
           fi
       - name: Run FFTPACK example
         run: |
-          source examples/fftpack/build_all.sh
-          python -m pytest -q examples/fftpack/tests
+          source examples/fortran/fftpack/build_all.sh
+          python -m pytest -q examples/fortran/fftpack/tests
       - name: Run MINPACK example
         run: |
-          source examples/minpack/build_all.sh
-          python -m pytest -q examples/minpack/tests
+          source examples/fortran/minpack/build_all.sh
+          python -m pytest -q examples/fortran/minpack/tests
       - name: Run BSPLINE-FORTRAN example
         run: |
-          source examples/bspline/build_all.sh
-          python -m pytest -q examples/bspline/tests
+          source examples/fortran/bspline/build_all.sh
+          python -m pytest -q examples/fortran/bspline/tests

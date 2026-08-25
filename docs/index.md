@@ -280,24 +280,23 @@ Same Fortran source, but a more natural Python API: module procedures become met
 
 ## Proven on real libraries
 
-Five maintained Fortran examples wrap and numerically validate
-[BLAS](user/examples/blas-wrapper.md),
-[LAPACK](user/examples/lapack-wrapper.md),
-[FFTPACK](user/examples/fftpack-wrapper.md), and
-[MINPACK](user/examples/minpack-wrapper.md), plus the object-oriented
-[BSPLINE-FORTRAN](user/examples/bspline-wrapper.md) API. The direct-C
-[libm example](user/examples/libm-wrapper.md) validates the supported C lane
-against the platform math library, while the
-[TA-Lib example](user/examples/ta-lib-wrapper.md) verifies all 322 double and
-float-input indicators from a pinned C release. The reproducible
-[performance comparison](user/performance.md) measures PRIK and NumPy's f2py
-against the same Fortran kernels.
+The maintained example suite covers five Fortran libraries—
+[BLAS](user/examples/fortran/blas-wrapper.md),
+[LAPACK](user/examples/fortran/lapack-wrapper.md),
+[FFTPACK](user/examples/fortran/fftpack-wrapper.md),
+[MINPACK](user/examples/fortran/minpack-wrapper.md), and
+[BSPLINE-FORTRAN](user/examples/fortran/bspline-wrapper.md)—and two C
+libraries: [libm](user/examples/c/libm-wrapper.md) and
+[TA-Lib](user/examples/c/ta-lib-wrapper.md). Each project has a complete build
+and numerical validation workflow, including its tested platforms and
+toolchains, in the [Examples Gallery](user/examples/index.md).
 
 ## Measured against NumPy's f2py
 
-The published benchmark compares both tools on the same Fortran sources and
-the same machine. The charts show the current published snapshot. Results are
-specific to its machine and toolchain, which are documented with the full results.
+The reproducible [performance comparison](user/performance.md) measures PRIK
+and NumPy's f2py against the same Fortran kernels on the same machine. The
+charts show the current published snapshot. Results are specific to its
+machine and toolchain, which are documented with the full results.
 
 **Runtime-call performance** — values above `1.0×` favor PRIK.
 

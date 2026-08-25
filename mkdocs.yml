@@ -67,13 +67,15 @@ nav:
       - Performance: user/performance.md
       - Examples:
           - Overview: user/examples/index.md
-          - BLAS Wrapper: user/examples/blas-wrapper.md
-          - LAPACK Wrapper: user/examples/lapack-wrapper.md
-          - FFTPACK Wrapper: user/examples/fftpack-wrapper.md
-          - MINPACK Wrapper: user/examples/minpack-wrapper.md
-          - BSPLINE-FORTRAN Wrapper: user/examples/bspline-wrapper.md
-          - libm Wrapper: user/examples/libm-wrapper.md
-          - TA-Lib Wrapper: user/examples/ta-lib-wrapper.md
+          - Fortran:
+              - BLAS Wrapper: user/examples/fortran/blas-wrapper.md
+              - LAPACK Wrapper: user/examples/fortran/lapack-wrapper.md
+              - FFTPACK Wrapper: user/examples/fortran/fftpack-wrapper.md
+              - MINPACK Wrapper: user/examples/fortran/minpack-wrapper.md
+              - BSPLINE-FORTRAN Wrapper: user/examples/fortran/bspline-wrapper.md
+          - C:
+              - libm Wrapper: user/examples/c/libm-wrapper.md
+              - TA-Lib Wrapper: user/examples/c/ta-lib-wrapper.md
       - Troubleshooting:
           - Compiler Issues: user/troubleshooting/compiler-issues.md
       - FAQ: user/faq/index.md

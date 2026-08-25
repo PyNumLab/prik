@@ -98,10 +98,11 @@ python3 -m pytest -q tests/tools
 python3 -m pytest -q tests/workflows
 ```
 
-The maintained BLAS, LAPACK, FFTPACK, MINPACK, BSPLINE-FORTRAN, and libm
-projects remain in the dedicated real-library job. Their complete correctness
-tests live under the corresponding `examples/<project>/tests/` owner; focused
-FFTPACK and MINPACK native-source integration also lives under
+The maintained BLAS, LAPACK, FFTPACK, MINPACK, BSPLINE-FORTRAN, libm, and
+TA-Lib projects remain in the dedicated real-library job. Their complete
+correctness tests live under the corresponding
+`examples/<language>/<project>/tests/` owner; focused FFTPACK and MINPACK
+native-source integration also lives under
 `tests/fortran/infrastructure/building/end_to_end/real_libraries/`. LAPACK is
 not part of the default local verification command.
 
@@ -113,8 +114,8 @@ selection:
 - `fortran_end_to_end` selects every compiled, imported, and called Fortran
   feature test, and nothing else;
 - `real_library` selects the maintained BLAS, LAPACK, FFTPACK, MINPACK,
-  BSPLINE-FORTRAN, and direct-C libm projects, plus their focused native-source
-  integration nodes;
+  BSPLINE-FORTRAN, and direct-C libm and TA-Lib projects, plus their focused
+  native-source integration nodes;
 - `property`, `regression`, `benchmark`, and `slow` retain their ordinary
   meanings; and
 - `toolchain_smoke` selects only the bounded portable compiler-profile subset

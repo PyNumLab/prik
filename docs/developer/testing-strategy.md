@@ -95,7 +95,7 @@ modified-contract test stays separate because it asserts a deliberately
 different public API.
 
 The real-library lane covers five Fortran projects—BLAS, LAPACK, FFTPACK,
-MINPACK, and BSPLINE-FORTRAN—plus the direct-C libm project.
+MINPACK, and BSPLINE-FORTRAN—plus the direct-C libm and TA-Lib projects.
 
 ## Test And Fixture Placement
 

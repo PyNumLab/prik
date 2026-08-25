@@ -20,7 +20,7 @@ Run the complete feature with:
 python3 -m pytest -q tests/fortran/infrastructure/building
 ```
 
-Full BLAS and LAPACK corpus coverage lives in `examples/blas/` and
-`examples/lapack/`. Their dedicated GitHub Actions lane executes the documented
-build scripts, user-facing correctness tests, and maintainer-only full-surface
-audits without rebuilding a second wrapper.
+Full BLAS and LAPACK corpus coverage lives in `examples/fortran/blas/` and
+`examples/fortran/lapack/`. Their dedicated GitHub Actions lane executes the
+documented build scripts, user-facing correctness tests, and maintainer-only
+full-surface audits without rebuilding a second wrapper.

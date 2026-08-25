@@ -16,10 +16,11 @@ from collections.abc import Sequence
 
 
 EXAMPLES_ROOT = Path(__file__).resolve().parent
-BLAS_SOURCE_ROOT = EXAMPLES_ROOT / "blas" / "native"
-LAPACK_SOURCE_ROOT = EXAMPLES_ROOT / "lapack" / "native"
-LAPACK_SUPPORT_ROOT = EXAMPLES_ROOT / "lapack" / "support"
-LAPACK_XBLAS_SOURCE_LIST = EXAMPLES_ROOT / "lapack" / "xblas_sources.txt"
+FORTRAN_EXAMPLES_ROOT = EXAMPLES_ROOT / "fortran"
+BLAS_SOURCE_ROOT = FORTRAN_EXAMPLES_ROOT / "blas" / "native"
+LAPACK_SOURCE_ROOT = FORTRAN_EXAMPLES_ROOT / "lapack" / "native"
+LAPACK_SUPPORT_ROOT = FORTRAN_EXAMPLES_ROOT / "lapack" / "support"
+LAPACK_XBLAS_SOURCE_LIST = FORTRAN_EXAMPLES_ROOT / "lapack" / "xblas_sources.txt"
 NATIVE_CACHE_ENV = "PRIK_REAL_LIBRARY_NATIVE_CACHE_DIR"
 NATIVE_JOBS_ENV = "PRIK_REAL_LIBRARY_NATIVE_JOBS"
 NATIVE_CACHE_VERSION = "copyable-examples-v4-default-lapack-sources"

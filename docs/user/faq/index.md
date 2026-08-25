@@ -38,12 +38,13 @@ public procedures and module state through Python. Start with
 Build the public Fortran sources with PRIK and link their native dependencies
 into the same extension. The
 [shared-library guide](../guide/building-shared-library.md) explains the build
-options, while the tested [BLAS](../examples/blas-wrapper.md),
-[LAPACK](../examples/lapack-wrapper.md), [FFTPACK](../examples/fftpack-wrapper.md),
-[MINPACK](../examples/minpack-wrapper.md), and
-[BSPLINE-FORTRAN](../examples/bspline-wrapper.md) examples show complete
+options, while the tested [BLAS](../examples/fortran/blas-wrapper.md),
+[LAPACK](../examples/fortran/lapack-wrapper.md), [FFTPACK](../examples/fortran/fftpack-wrapper.md),
+[MINPACK](../examples/fortran/minpack-wrapper.md), and
+[BSPLINE-FORTRAN](../examples/fortran/bspline-wrapper.md) examples show complete
 libraries. The [example gallery](../examples/index.md) also includes direct-C
-libm.
+[libm](../examples/c/libm-wrapper.md) and
+[TA-Lib](../examples/c/ta-lib-wrapper.md).
 
 </details>
 

@@ -32,7 +32,9 @@ f2py comparison.
 - [Reference](reference/index.md) — the exact CLI, Python API, generated-wrapper,
   and `.pyi` contract surfaces.
 - [Examples](examples/index.md) — five complete Fortran projects (BLAS, LAPACK,
-  FFTPACK, MINPACK, and BSPLINE-FORTRAN) plus the direct-C libm project.
+  FFTPACK, MINPACK, and BSPLINE-FORTRAN) plus the direct-C
+  [libm](examples/c/libm-wrapper.md) and
+  [TA-Lib](examples/c/ta-lib-wrapper.md) projects.
 - [Troubleshooting](troubleshooting/compiler-issues.md) — compiler detection,
   selection, and toolchain problems.
 - [FAQ](faq/index.md) — short answers to common questions.

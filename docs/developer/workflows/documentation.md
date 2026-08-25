@@ -77,7 +77,7 @@ comment on the line before a fence changes how it is treated:
 | --- | --- |
 | `<!-- prik-doc-test: run \| exact -->` | Execute the command in the fence. `exact` also compares its output. |
 | `<!-- prik-doc-test-output -->` | The fence holds captured output, not source. It is skipped by the Python audit. |
-| `<!-- prik-doc-source: PATH -->` | The fence mirrors a repository file and must match it. |
+| `<!-- prik-doc-source: PATH -->` | The fence mirrors a repository file and must match it. Append `::FUNCTION` to select one top-level function together with its decorators. |
 | `<!-- prik-doc-contract: invalid -->` | The fence is a negative example; loading it must fail. |
 
 Use `prik-doc-contract: invalid` when a page teaches a diagnostic by showing

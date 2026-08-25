@@ -7,12 +7,25 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Grouped the maintained library projects under `examples/fortran/` and
+  `examples/c/`, with the same Fortran and C grouping in the published example
+  navigation. Commands, CI jobs, source-linked documentation, and package
+  imports now use the language-specific paths. General documentation names
+  both direct-C projects, while the homepage defers their technical details to
+  the example guides. The gallery summarizes the hosted compiler and
+  architecture matrix, and every project guide records its own tested
+  platforms.
+
 - Added a maintained TA-Lib v0.7.1 example with a checked-in semantic contract
   for all 322 double and float-input indicators plus initialization and
   shutdown. Its reviewed inventory accounts for all 522 public functions, its
   edited contract projects TA-Lib's output range metadata, and its
   fail-closed differential harness sends the same request through a direct
-  native reference and the PRIK wrapper for every numerical entrypoint.
+  native reference and the PRIK wrapper for every numerical entrypoint. The
+  guide explains the common indicator signature, semantic `.pyi` mapping, and
+  provenance and limits of those live reference results. Maintained-example
+  pages now distinguish the five Fortran source examples from libm and TA-Lib,
+  whose wrappers consume public C declarations and link compiled libraries.
 
 - Multi-source Fortran builds compile in dependency order instead of the order
   you listed. PRIK records which parsed file provides each module and
@@ -34,7 +47,9 @@ release tags add a leading `v` to the package version.
   holds captured output rather than source, and the new
   `prik-doc-contract: invalid` marks a negative example and asserts that
   loading it fails. `docs/developer/workflows/documentation.md` documents the
-  marker set.
+  marker set. A function selected by `prik-doc-source` is checked together
+  with its decorators, so semantic-call mappings cannot drift outside the
+  verified excerpt.
 
 - The copied LAPACK example now mirrors Reference LAPACK's default source
   selection: XBLAS-only routines are excluded, the two required `INSTALL/`
@@ -391,12 +406,13 @@ release tags add a leading `v` to the package version.
   refused on `__init__`, since a constructor is published or absent and the
   accessibility of the specific it selects is that procedure's own fact.
 
-- Added the BSPLINE-FORTRAN example under `examples/bspline`. It wraps the
-  upstream sources unmodified and validates both public interfaces from Python:
-  the object-oriented classes over an abstract base with deferred bindings and
-  generic constructors, and the procedural interpolation routines. Numerical
-  checks use analytic values and `scipy.interpolate` as independent oracles. It
-  is the first example project written in modern Fortran rather than FORTRAN 77.
+- Added the BSPLINE-FORTRAN example under `examples/fortran/bspline`. It wraps
+  the upstream sources unmodified and validates both public interfaces from
+  Python: the object-oriented classes over an abstract base with deferred
+  bindings and generic constructors, and the procedural interpolation
+  routines. Numerical checks use analytic values and `scipy.interpolate` as
+  independent oracles. It is the first example project written in modern
+  Fortran rather than FORTRAN 77.
 
 - BSPLINE-FORTRAN now follows the maintained real-library example workflow:
   its checked-in build instructions are verified with the documentation suite,
@@ -942,15 +958,16 @@ release tags add a leading `v` to the package version.
   discovered routines through PRIK, independent mathematical expectations, and
   f2py differential comparisons.
 - Moved the repository's authoritative Reference BLAS sources to
-  `examples/blas/native/` for shared use by the example, integration tests,
-  LAPACK CI build, and build comparison tooling.
+  `examples/fortran/blas/native/` for shared use by the example, integration
+  tests, LAPACK CI build, and build comparison tooling.
 - Added a complete Reference LAPACK build and correctness project. It wraps all
   2,062 implementation sources once and explicitly validates the reviewed 127
   SciPy 1.18.0 double-precision real routines against independent mathematical
   invariants and f2py comparisons in the dedicated CI lane.
 - Moved the repository's authoritative Reference LAPACK implementation sources
-  to `examples/lapack/native/` and updated full-library integration and CI to
-  consume that single source owner alongside `examples/blas/native/`.
+  to `examples/fortran/lapack/native/` and updated full-library integration and
+  CI to consume that single source owner alongside
+  `examples/fortran/blas/native/`.
 - Fixed dependency-safe Python argument conversion ordering for wrappers whose
   array extents depend on later native scalar arguments, including padded BLAS
   leading dimensions.

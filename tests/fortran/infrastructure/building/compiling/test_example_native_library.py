@@ -9,12 +9,12 @@ import subprocess
 import pytest
 
 from examples import native_library
-from examples.lapack.routine_inventory import EXPECTED_LAPACK_WRAPPED_SOURCE_FILES
+from examples.fortran.lapack.routine_inventory import EXPECTED_LAPACK_WRAPPED_SOURCE_FILES
 
 
 @pytest.mark.parametrize("example", ("blas", "lapack"))
 def test_aggregate_example_build_restores_the_workspace(example: str) -> None:
-    script = (native_library.EXAMPLES_ROOT / example / "build_all.sh").read_text(encoding="utf-8")
+    script = (native_library.FORTRAN_EXAMPLES_ROOT / example / "build_all.sh").read_text(encoding="utf-8")
     lines = script.splitlines()
 
     f2py_build = next(index for index, line in enumerate(lines) if "build_f2py.sh" in line)
@@ -31,7 +31,7 @@ def test_lapack_build_script_stops_when_the_native_library_build_fails(tmp_path:
     environment = os.environ | {"PATH": f"{tmp_path}:{os.environ['PATH']}"}
 
     result = subprocess.run(  # nosec B603 - fixed shell and repository-owned example script
-        ("bash", "-e", "-c", "source examples/lapack/build_prik.sh"),
+        ("bash", "-e", "-c", "source examples/fortran/lapack/build_prik.sh"),
         cwd=native_library.EXAMPLES_ROOT.parent,
         env=environment,
         capture_output=True,

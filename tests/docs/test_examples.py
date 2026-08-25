@@ -21,13 +21,15 @@ from prik.pipeline.pyi import pyi_text_to_semantic_module
 ROOT = Path(__file__).parents[2]
 DOC_PATHS = [
     ROOT / "README.md",
-    ROOT / "examples/blas/README.md",
-    ROOT / "examples/bspline/README.md",
-    ROOT / "examples/fftpack/README.md",
-    ROOT / "examples/lapack/README.md",
-    ROOT / "examples/libm/README.md",
-    ROOT / "examples/minpack/README.md",
-    ROOT / "examples/ta_lib/README.md",
+    ROOT / "examples/fortran/README.md",
+    ROOT / "examples/fortran/blas/README.md",
+    ROOT / "examples/fortran/bspline/README.md",
+    ROOT / "examples/fortran/fftpack/README.md",
+    ROOT / "examples/fortran/lapack/README.md",
+    ROOT / "examples/c/README.md",
+    ROOT / "examples/c/libm/README.md",
+    ROOT / "examples/fortran/minpack/README.md",
+    ROOT / "examples/c/ta_lib/README.md",
     *sorted((ROOT / "docs").rglob("*.md")),
 ]
 AUDITED_PYTHON_DOC_PATHS = [
@@ -420,7 +422,9 @@ def test_documented_source_input(source: DocumentedSource):
         tree = ast.parse(file_text, filename=str(source.source_path))
         selected = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == source.selector]
         assert len(selected) == 1, f"{source.test_id}: source selector {source.selector!r} did not name one function"
-        expected_text = ast.get_source_segment(file_text, selected[0]) or ""
+        function = selected[0]
+        first_line = min((function.lineno, *(decorator.lineno for decorator in function.decorator_list)))
+        expected_text = "\n".join(file_text.splitlines()[first_line - 1 : function.end_lineno])
     assert source.source_text.rstrip("\n") == expected_text.rstrip("\n")
 
 

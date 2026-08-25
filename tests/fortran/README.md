@@ -134,10 +134,9 @@ The permanent evidence index is
 
 - Every pytest node below a Fortran `end_to_end/` directory carries
   `fortran_end_to_end`, and no other node does.
-- The repository-wide `real_library` marker covers the maintained BLAS,
-  LAPACK, FFTPACK, MINPACK, BSPLINE-FORTRAN, and direct-C libm projects. Within
-  the Fortran suite, focused FFTPACK and MINPACK native-source integration nodes
-  carry it as well.
+- Within the Fortran suite, `real_library` marks the focused FFTPACK and
+  MINPACK native-source integration nodes. The repository-level
+  [`tests/README.md`](../README.md) owns the complete maintained-library list.
 - `toolchain_smoke` will select exact portable rows from the completed ordinary
   end-to-end suite; it is not a separate directory.
 
@@ -147,5 +146,6 @@ Run all migrated Fortran evidence with:
 python3 -m pytest -q tests/fortran
 ```
 
-Each project has its own `examples/<project>/build_all.sh` and test directory.
+Each maintained project has its own
+`examples/<language>/<project>/build_all.sh` and test directory.
 Never run LAPACK locally without an explicit request.
