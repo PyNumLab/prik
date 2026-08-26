@@ -140,8 +140,8 @@ def test_verbose_c_build_reports_c_compilation_and_link_commands(tmp_path: Path,
 
 
 @pytest.mark.skipif(
-    shutil.which("cc") is None or shutil.which("gfortran") is None,
-    reason="requires C and Fortran compilers",
+    shutil.which("gcc") is None or shutil.which("gfortran") is None,
+    reason="requires a matching GNU C and Fortran compiler pair",
 )
 def test_c_direct_symbol_survives_a_mixed_language_link_with_the_fortran_driver(tmp_path: Path, capsys):
     source = tmp_path / "answer.c"
@@ -162,7 +162,9 @@ def test_c_direct_symbol_survives_a_mixed_language_link_with_the_fortran_driver(
 
     assert module.answer(np.int32(4)) == np.int32(5)
     assert {unit.language for unit in result.native_build_plan.compilation_units} == {"c", "fortran"}
-    assert "gfortran" in capsys.readouterr().out
+    build_output = capsys.readouterr().out
+    assert "gcc" in build_output
+    assert "gfortran" in build_output
 
 
 @pytest.mark.skipif(

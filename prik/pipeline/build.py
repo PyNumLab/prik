@@ -644,6 +644,44 @@ def _new_compiler(
     )
 
 
+def _c_build_compiler_and_preprocessing(
+    preprocessing: PreprocessingConfig | None,
+    *,
+    input_compiler: str,
+    input_c_compiler: str | None,
+    requires_fortran: bool,
+    execute_commands: bool,
+    debug: bool,
+) -> tuple[Compiler | None, PreprocessingConfig]:
+    """Select coherent C preprocessing and an optional early mixed compiler.
+
+    A C-only build can postpone compiler construction until intrinsic policy
+    preflight completes. A Fortran-led build with no explicit C override must
+    resolve the Fortran pair first so direct compiler preprocessing, the ABI
+    probe, and C compilation all use its matching C driver.
+    """
+    compiler = None
+    preprocessing_compiler = input_c_compiler or "cc"
+    if requires_fortran and input_c_compiler is None:
+        compiler = _new_compiler(
+            execute_commands=execute_commands,
+            debug=debug,
+            input_compiler=input_compiler,
+            requires_fortran=True,
+        )
+        preprocessing_compiler = compiler.resolved_executable("c")
+    if preprocessing is None:
+        return compiler, _default_c_preprocessing_config(preprocessing_compiler)
+    if (
+        compiler is not None
+        and preprocessing.uses_compiler
+        and preprocessing.compile_commands is None
+        and preprocessing.command_template is None
+    ):
+        preprocessing = replace(preprocessing, compiler=preprocessing_compiler)
+    return compiler, preprocessing
+
+
 def _validated_wrapper_module_name(requested_name: str | None, default_name: str) -> str:
     """Choose a requested or default extension name and validate it.
 
@@ -3432,7 +3470,7 @@ def build_c_extension(
     *,
     output_dir: str | Path | None = None,
     output_name: str | None = None,
-    input_c_compiler: str = "cc",
+    input_c_compiler: str | None = None,
     preprocessing: PreprocessingConfig | None = None,
     c_type_report=None,
     c_type_probe_runner: list[str] | None = None,
@@ -3463,7 +3501,10 @@ def build_c_extension(
     """Build a direct-only C extension from explicit C implementation sources.
 
     C declarations are parsed from ``sources`` and converted using a probe of
-    ``input_c_compiler``. Their C ABI facts select the direct binding route;
+    the selected C compiler. A C-only build defaults to ``cc``. When Fortran
+    implementation sources require the Fortran link driver, omitting
+    ``input_c_compiler`` selects the C compiler paired with ``input_compiler``.
+    Their C ABI facts select the direct binding route;
     unsupported operations raise a documented completed-policy diagnostic
     before planning, generated files, or compiler commands. A selected genuine
     identifier collision may use a separate C forwarder translation unit.
@@ -3473,9 +3514,9 @@ def build_c_extension(
     Fortran inputs are supported only as ordinary link dependencies.
 
     ``preprocessing`` supplies the C preprocessing configuration used to expand
-    ``sources`` before parsing; the default runs ``input_c_compiler``.  Without
-    it a source containing any directive other than ``#include`` could not be
-    parsed at all.
+    ``sources`` before parsing; the default runs the selected C compiler.
+    Without it a source containing any directive other than ``#include`` could
+    not be parsed at all.
     """
     generation_only, compile_jobs = _resolve_build_mode(
         makefile=makefile,
@@ -3500,7 +3541,15 @@ def build_c_extension(
         native_library_dirs=native_library_dirs,
         native_include_dirs=native_include_dirs,
     )
-    preprocessing = preprocessing or _default_c_preprocessing_config(input_c_compiler)
+    requires_fortran = _native_inputs_require_fortran(native_inputs)
+    compiler, preprocessing = _c_build_compiler_and_preprocessing(
+        preprocessing,
+        input_compiler=input_compiler,
+        input_c_compiler=input_c_compiler,
+        requires_fortran=requires_fortran,
+        execute_commands=not generation_only,
+        debug=wrapper_compiler_debug,
+    )
     parsed_sources = tuple(_parse_c_wrapper_source(path, preprocessing) for path in source_paths)
     # Fail forms that are intrinsically outside the primitive lane before the
     # ABI probe, generated files, or native build commands. A supported source
@@ -3512,10 +3561,18 @@ def build_c_extension(
         preflight_modules,
         strict_wrapper_names=strict_wrapper_names,
     )
+    compiler = compiler or _new_compiler(
+        execute_commands=not generation_only,
+        debug=wrapper_compiler_debug,
+        input_compiler=input_compiler,
+        input_c_compiler=input_c_compiler,
+        requires_fortran=requires_fortran,
+    )
+    selected_input_c_compiler = compiler.resolved_executable("c")
     c_report = c_type_report or probe_c_standard_types(
         PreprocessingConfig(
             mode="compiler",
-            compiler=input_c_compiler,
+            compiler=selected_input_c_compiler,
             compiler_args=list(native_inputs.c_source_flags),
         ),
         runner=c_type_probe_runner,
@@ -3544,13 +3601,6 @@ def build_c_extension(
     native_source_objects, native_build_plan = _prepare_native_build_plan(native_inputs, output_path=output_path)
     wrapper_fortran_flags = _compiler_flags(wrapper_fortran_flags)
     wrapper_c_flags = _compiler_flags(wrapper_c_flags)
-    compiler = _new_compiler(
-        execute_commands=not generation_only,
-        debug=wrapper_compiler_debug,
-        input_compiler=input_compiler,
-        input_c_compiler=input_c_compiler,
-        requires_fortran=_native_inputs_require_fortran(native_inputs),
-    )
     result = _build_generated_wrapper_extension(
         generated_wrapper,
         output_dir=output_path,

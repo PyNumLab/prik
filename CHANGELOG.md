@@ -133,9 +133,9 @@ release tags add a leading `v` to the package version.
   passed back into the same direct-C API on LP64 targets.
 - Manifest replay now validates the recorded semantic `.pyi` import graph
   before generating files or invoking a compiler.
-- Mixed-language builds now compile C with the same explicitly selected driver
-  used for C probing, and reject a C/Fortran compiler-family mismatch instead
-  of silently substituting the Fortran driver's default C compiler.
+- Mixed-language builds now use the Fortran driver's matching C compiler when
+  no C override is supplied, use that same driver for C probing and
+  compilation, and reject an explicitly supplied C/Fortran family mismatch.
 - Native link-item language requirements now survive result serialization and
   manifest replay for named libraries and linker arguments as well as path
   artifacts, preserving link-driver selection.

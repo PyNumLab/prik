@@ -1485,7 +1485,7 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
             args.paths,
             output_dir=getattr(args, "out_dir", None),
             output_name=_wrapper_output_name(args),
-            input_c_compiler=preprocessing.compiler or "cc",
+            input_c_compiler=getattr(args, "compiler", None),
             preprocessing=preprocessing,
             export_symbols=getattr(args, "_resolved_export_symbols", None),
             input_compiler="gfortran",
