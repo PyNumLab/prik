@@ -11,15 +11,13 @@ publication: reviewed
 # C Support
 
 PRIK builds a supported subset of C APIs as importable Python extensions. The
-generated binding calls your exported C symbol directly; there is no
-ABI-conversion adapter and no Fortran bridge in between. Every extension has a
-generated CPython binding translation unit. The only optional additional C
-translation unit between that binding and your API is the opt-in forwarder for
-a symbol that your headers and `Python.h` both declare, described in [Symbols
-your binding's own headers
-declare](#symbols-your-bindings-own-headers-declare).
+generated binding calls your exported C symbol without ABI conversion. Every
+extension has a generated CPython binding translation unit. The only optional
+additional C translation unit is the opt-in forwarder for a symbol that your
+headers and `Python.h` both declare, described in [Symbols your binding's own
+headers declare](#symbols-your-bindings-own-headers-declare).
 
-The C lane is best for standalone numerical functions with primitive values,
+C wrapping is best for standalone numerical functions with primitive values,
 NumPy buffers, and explicit output storage. It is deliberately fail-closed:
 parsing a declaration does not promise that it can be wrapped, and an unsupported
 form stops the build before native compilation.
@@ -72,7 +70,13 @@ python3 -m prik --language c native_math.c \
 
 <div class="prik-example-panel" id="c-scalar-contract" role="tabpanel" aria-labelledby="c-scalar-contract-tab" tabindex="0" markdown="1">
 
-PRIK writes `build/contracts/native_math.pyi`:
+To inspect the contract without compiling, write `native_math.pyi`:
+
+```bash
+python3 -m prik generate --pyi --language c native_math.c --out native_math.pyi
+```
+
+The file contains:
 
 ```python
 from prik.contracts import Float64
@@ -80,11 +84,9 @@ from prik.contracts import Float64
 def add(left: Float64, right: Float64) -> Float64: ...
 ```
 
-To inspect the contract without compiling, run:
-
-```bash
-python3 -m prik generate --pyi --language c native_math.c --out native_math.pyi
-```
+C contract extraction writes one file rather than the Fortran package layout;
+the [`.pyi` format reference](../reference/pyi-format.md#source-to-contract-layout)
+shows both forms.
 
 </div>
 
@@ -762,8 +764,7 @@ The adapter targets a real function symbol; PRIK does not expose macros. The
 forwarder has hidden visibility, so it is not part of the extension's exported
 ABI. It is correct with or without the shared `--lto` build optimization. Use
 `--collision-adapter-all` to adapt every eligible function instead of naming
-each one. Only C-source functions are eligible; generated Fortran bridge
-symbols and Fortran `bind(C)` procedures are not.
+each one. Only functions declared by C source inputs are eligible.
 
 This isolates a declaration collision inside the binding translation unit. It
 does not choose between two different linked libraries that both export the
@@ -791,8 +792,8 @@ PRIK rejects these forms rather than guessing their ABI or memory contract:
 
 For a feature-by-feature view, see the [language support
 matrix](feature-matrix.md). The C parser can inspect a broader set of
-declarations than this runtime lane; use its output to understand source, not
-as a build promise.
+declarations than the supported wrapper subset; use its output to understand
+source, not as a build promise.
 
 ## Build and inspect APIs
 
@@ -828,8 +829,8 @@ python3 -m prik generate --pyi --language c api_probe.h \
 The export file names the reviewed functions that become public, including
 functions declared by an otherwise-private system header. Every unlisted
 declaration is excluded. This selects the semantic API rather than linker
-exports: selected functions still need native link inputs and a signature the
-direct C lane supports. See [CLI Commands: C include
+exports: selected functions still need native link inputs and a signature
+supported by the C wrapper. See [CLI Commands: C include
 exposure](../reference/cli-commands.md#c-include-exposure) for the file format
 and fail-closed validation rules.
 
@@ -846,9 +847,9 @@ build = build_c_extension(
 
 ### Inspect a broader C API
 
-The C parser and contract generator accept more syntax than the direct wrapper
-lane. Use them to examine declarations, not as a promise that each declaration
-can be built:
+The C parser and contract generator accept more syntax than the supported
+wrapper subset. Use them to examine declarations, not as a promise that each
+declaration can be built:
 
 ```bash
 python3 -m prik parse --language c include/library.h --json

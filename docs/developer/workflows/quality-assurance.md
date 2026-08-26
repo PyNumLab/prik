@@ -73,8 +73,8 @@ the seed from CI:
 python3 -m pytest -q --randomly-seed=<seed-from-failing-run>
 ```
 
-Run an alternate compiler lane when changing compiler portability or native
-generation:
+Run an alternate compiler configuration when changing compiler portability or
+native generation:
 
 ```bash
 python3 tools/run_fortran_toolchain_lane.py --compiler=/path/to/ifx
@@ -94,9 +94,9 @@ Minimize an actionable fuzz failure and retain it as a focused regression.
 ## Limits
 
 Native changes need focused codegen evidence and relevant end-to-end coverage.
-Ordinary local runs exclude `real_library`. The maintained lane covers the five
-Fortran examples—BLAS, LAPACK, FFTPACK, MINPACK, and BSPLINE-FORTRAN—and the
-direct-C libm and TA-Lib examples across the hosted portability matrix. Each
-has its own example workflow; leave LAPACK wrapper tests to GitHub Actions
+Ordinary local runs exclude `real_library`. Maintained coverage includes the
+five Fortran examples—BLAS, LAPACK, FFTPACK, MINPACK, and BSPLINE-FORTRAN—and
+the C libm and TA-Lib examples across the hosted portability matrix. Each has
+its own example workflow; leave LAPACK wrapper tests to GitHub Actions
 unless explicitly requested. See [Pull request checks](ci.md) for hosted
 coverage, compiler, real-library, benchmark, and documentation evidence.

@@ -9,20 +9,24 @@ publication: reviewed
 
 # Reference
 
-Reference pages describe the exact command, API, and editable-contract
-surfaces. They assume you have already built a wrapper — start with [Getting
-Started](../getting-started/index.md) and the [User Guide](../guide/index.md)
-if you have not.
+Reference pages describe exact commands, APIs, editable contracts, generated
+wrapper behavior, and generated build files. They assume you have already built
+a wrapper — start with [Getting
+Started](../getting-started/index.md) and the [User Guide](../guide/index.md) if
+you have not.
 
 ## Drive PRIK
 
 - [CLI commands](cli-commands.md) — every command, option, and checked workflow.
 - [Python API](python-api.md) — the build entrypoints and advanced package imports.
-- [C Support](../language-support/c-support.md) — the direct C lane's source,
-  contract, and build workflows.
+- [Build manifests and Makefiles](configuration-files.md) — how both files are
+  generated, what they contain, and how to build or replay them.
 
-## Shape the API with contracts
+## Edit contracts
 
+- [`.pyi` Format](pyi-format.md) — project and namespace structure,
+  declarations, C and Fortran forms, decorators, native calls, types, storage,
+  and metadata.
 - [Editing `.pyi` contracts](pyi-contracts/index.md) — the complete supported
   editing workflow.
 - [Exports and modules](pyi-contracts/exports-and-modules.md) — names,
@@ -36,8 +40,23 @@ The contract pages describe the shared generated Python surface. Start from a
 contract generated for the same native implementation, then rebuild and call
 the changed path once.
 
-## Diagnose and check support
+## Generated wrapper behavior
 
-- [Diagnostic codes](diagnostic-codes.md) — what a rejected wrapper is telling you.
+- [Fortran Wrapper Reference](fortran-wrapper.md) — the canonical generated
+  Python API, ownership, lifetime, naming, ABI, and limitation contract for
+  Fortran wrappers.
+- [C Support](../language-support/c-support.md) — the complete C source,
+  contract, build, generated API, and support-boundary workflow.
+- [Generated functions](generated-functions.md) — callable placement,
+  signatures, result projection, mutation, overloads, and errors.
+- [Generated modules](generated-modules.md) — extension identity, package
+  shape, imports, module members, and state access.
+- [Generated classes](generated-classes.md) — constructors, fields, methods,
+  ownership, lifetime, inheritance, and unsupported class forms.
+
+## Check support and diagnostics
+
 - [Language feature matrix](../language-support/feature-matrix.md) — whether a
   feature is supported at all, with its evidence.
+- [Diagnostic codes](diagnostic-codes.md) — what a rejected wrapper is telling
+  you and which stage owns the rejection.

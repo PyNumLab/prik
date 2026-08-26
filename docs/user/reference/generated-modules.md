@@ -2,7 +2,7 @@
 title: Generated Modules Reference
 audience: users
 prerequisites: wrapping modules
-related: generated-functions.md, generated-classes.md, semantic-pyi-format.md, ../guide/wrapping-modules.md
+related: generated-functions.md, generated-classes.md, pyi-format.md, ../guide/wrapping-modules.md
 status: maintained
 publication: reviewed
 ---

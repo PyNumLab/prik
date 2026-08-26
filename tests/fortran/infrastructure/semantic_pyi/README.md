@@ -1,7 +1,7 @@
-# Semantic `.pyi` Format
+# `.pyi` Format
 
 This feature owns the executable format contract described by the
-[Semantic `.pyi` Format](../../../../docs/user/reference/semantic-pyi-format.md)
+[`.pyi` Format](../../../../docs/user/reference/pyi-format.md)
 reference. It covers contract syntax, semantic loading and printing, imports
 and type identity, generated package layout, structural diagnostics, and one
 ordinary source-free runtime rebuild from an authoritative generated contract.

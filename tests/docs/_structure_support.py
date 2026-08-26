@@ -90,8 +90,6 @@ FEATURE_MATRIX_STATUSES = {
     "Supported",
     "Partially supported",
     "Unsupported",
-    "Planned",
-    "Not implemented",
 }
 
 
@@ -161,8 +159,8 @@ def _prik_cli_help() -> str:
 
 
 def _feature_matrix_rows() -> list[dict[str, str]]:
-    header = "| Feature | Status | User docs | Source owner | Evidence | Limitations |"
-    columns = ["Feature", "Status", "User docs", "Source owner", "Evidence", "Limitations"]
+    header = "| Feature | Status | User docs | Evidence | Limitations |"
+    columns = ["Feature", "Status", "User docs", "Evidence", "Limitations"]
     rows: list[dict[str, str]] = []
     in_table = False
 

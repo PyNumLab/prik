@@ -1,114 +1,244 @@
 ---
-title: Configuration Files Reference
-audience: users, developers
-prerequisites: packaging, CLI commands
-related: cli-commands.md, python-api.md, ../guide/building-shared-library.md, ../../developer/workflows/quality-assurance.md
+title: Build Manifests and Makefiles
+audience: users
+prerequisites: packaging, CLI commands, .pyi format
+related: cli-commands.md, pyi-format.md, ../guide/building-shared-library.md
 status: maintained
 publication: reviewed
 ---
 
-# Configuration Files Reference
+# Build Manifests and Makefiles
 
-PRIK currently has no user-authored project configuration file for wrapper
-builds. The stable file contracts are generated build replay files and
-repository tooling configuration. Command-line flags and Python API arguments
-remain the source of truth for selecting wrapper inputs.
+`generate --makefile` writes generated wrapper sources and build instructions.
+Running the resulting Makefile performs the compilation and linking.
 
-Use [CLI Commands Reference](cli-commands.md) for the option surface and
-[Python API Reference](python-api.md) for the equivalent library entrypoints.
+What it writes depends on the input:
 
-## `prik-build.json`
+| Input | Generated build files |
+| --- | --- |
+| Fortran or C source | Wrapper sources and `Makefile.prik` |
+| Semantic `.pyi` contract | Wrapper sources, `prik-build.json`, then `Makefile.prik` |
 
-`prik-build.json` is emitted only for semantic `.pyi` wrapper builds that use
-Makefile mode:
+With a semantic `.pyi` contract, PRIK first writes `prik-build.json` and then
+generates `Makefile.prik` from that recorded build. With native source input,
+PRIK generates `Makefile.prik` directly from the current planned build.
+
+## Generate both files from a semantic contract
+
+For a Fortran-native contract:
 
 ```bash
 python3 -m prik generate --makefile contracts/module.pyi \
   --native-fortran-sources native/module.f90 \
-  --out-dir build/module \
-  --json
+  --out-dir build/module
 ```
 
-The manifest is written to `<out-dir>/prik-build.json` before
-`Makefile.prik`. It is a replay contract for the `.pyi` build, not a general
-project settings file.
-
-Stable top-level fields:
-
-| Field | Meaning |
-| --- | --- |
-| `schema_version` | Manifest schema version. The current supported value is `4`. |
-| `build_kind` | Manifest kind. The current supported value is `pyi-wrapper`. |
-| `entry_contract` | Entry semantic `.pyi` path used for the build. |
-| `contract_paths` | Complete discovered `.pyi` import graph. Replay checks the current graph before generating files or invoking a compiler and fails if it differs. |
-| `extension` | Requested and resolved Python extension names, the native input language, and any opt-in collision-adapter selection. |
-| `output` | Output directory, shared-library path, and strict-name setting. |
-| `compiler` | Input-language compiler executable, compiler profile, and wrapper/native flag values recorded by the build. |
-| `generated_wrapper` | Physical generated sources plus separate adapter and generated-support membership groups. |
-| `native_array_build_requirements` | Array-contract facts the native build must satisfy. |
-| `native_build_plan` | Native compilation units, produced objects, prebuilt artifacts, module/include directories, library directories, and ordered link items. |
-
-Relative paths are resolved relative to the manifest directory during replay.
-A manifest records generated-native group membership alongside the selected
-input-language compiler executable and the build-wide include directories
-needed to reproduce native, adapter, binding, and link commands. This makes an
-all-direct build's empty generated-native set, a support-only source, and mixed
-adapter/support membership explicit. Replay accepts only the current schema
-version; a manifest written by an earlier PRIK is rejected rather than
-migrated. Use:
+For a C-native contract, select C and provide the C implementation instead:
 
 ```bash
-python3 -m prik --build-manifest build/module/prik-build.json
-python3 -m prik generate --makefile --build-manifest build/module/prik-build.json
+python3 -m prik generate --makefile --language c contracts/module.pyi \
+  --native-c-sources native/module.c \
+  --out-dir build/module
 ```
 
-The first command reads the existing manifest and rebuilds from it; it does not
-generate a manifest. The second also reads the existing manifest, then
-regenerates `Makefile.prik` without positional contracts or repeated native
-build flags. The preceding `generate --makefile` command is what writes a new
-`prik-build.json`.
+Both commands produce this general layout:
 
-Replay accepts only settings that are defined as overrides: `--out`,
-`--compiler`, `-I`/`--include-dir`, `--jobs`, `--json`, `--verbose`,
-`--no-color`, and `--debug`. The manifest remains authoritative for its
-output directory, language, preprocessing recipe, wrapper behavior, native
-inputs, and ordered link plan. Passing one of those saved settings again is an
-error rather than an ignored command-line value.
+```text
+build/module/
+├── prik-build.json
+├── Makefile.prik
+├── module_wrapper.c
+└── other generated bridge or support sources, when required
+```
+
+Generated source names depend on the contract and selected wrapper route.
+The `--json` CLI option selects JSON for PRIK's terminal report; the input mode
+shown in the table above determines which build files are written.
+
+## `prik-build.json`
+
+`prik-build.json` is the complete replay contract for one semantic `.pyi`
+wrapper build. It records the contract graph, generated sources, native inputs,
+compiler configuration, compilation units, ordered link inputs, and output
+extension. Treat it as a generated replay contract and select build settings
+through the CLI or Python API.
+
+A representative manifest has this structure:
+
+```json
+{
+  "build_kind": "pyi-wrapper",
+  "compiler": {
+    "c_flags": [],
+    "fortran_flags": [],
+    "input_c_executable": "gcc",
+    "input_executable": "gfortran",
+    "position_independent_code": true,
+    "vendor": "GNU",
+    "wrapper_c_flags": [],
+    "wrapper_compiler_debug": false,
+    "wrapper_fortran_flags": []
+  },
+  "contract_paths": [
+    "../../contracts/module.pyi"
+  ],
+  "entry_contract": "../../contracts/module.pyi",
+  "extension": {
+    "collision_adapter_all": false,
+    "collision_adapters": [],
+    "module_name": "module",
+    "native_language": "fortran",
+    "positional_only": false,
+    "requested_name": null
+  },
+  "generated_wrapper": {
+    "native_code_groups": [],
+    "sources": [
+      "module_wrapper.c"
+    ]
+  },
+  "native_array_build_requirements": {
+    "headers": [],
+    "items": [],
+    "pointer_c_descriptor_interop": false
+  },
+  "native_build_plan": {
+    "compilation_units": [
+      {
+        "flags": [],
+        "include_dirs": [],
+        "language": "fortran",
+        "module_dir": ".",
+        "object": "module.o",
+        "source": "../../native/module.f90"
+      }
+    ],
+    "include_dirs": [],
+    "library_dirs": [],
+    "link_items": [
+      {
+        "kind": "object",
+        "path": "module.o"
+      }
+    ],
+    "module_dirs": [
+      "."
+    ],
+    "prebuilt_artifacts": [],
+    "produced_objects": [
+      "module.o"
+    ]
+  },
+  "output": {
+    "output_dir": ".",
+    "shared_library": "module.cpython-<platform>.so",
+    "strict_wrapper_names": false
+  },
+  "schema_version": 4
+}
+```
+
+The values and array contents vary by build. In particular,
+`generated_wrapper.native_code_groups` records any generated Fortran adapters
+or support sources, while `native_build_plan.link_items` preserves the exact
+order of objects, archives, shared libraries, named libraries, and linker
+arguments. Paths are stored relative to the manifest directory when possible
+and resolved from that directory during replay.
+
+Replay reads the current schema version, `4`. Regenerate the manifest with the
+current PRIK version when upgrading from an older schema.
 
 ## `Makefile.prik`
 
-`Makefile.prik` is generated by `--makefile`. It records the compile and
-link commands PRIK would run for the selected wrapper build. Makefile mode does
-not compile the shared library at generation time.
+`Makefile.prik` contains the compile and link commands PRIK planned for the
+wrapper. It is generated for both source and semantic `.pyi` inputs. Running
+the Makefile executes those commands.
 
-Run it with GNU Make:
+The file has this general structure; paths, flags, dependencies, and repeated
+compile rules are shortened here:
+
+```makefile
+# Generated by prik. Edit variables or override them on the make command line.
+
+FC := gfortran
+CC := gcc
+PRIK_LD := gfortran
+PRIK_FFLAGS ?=
+PRIK_CFLAGS ?=
+PRIK_LDFLAGS ?=
+
+.PHONY: all rebuild clean
+all: build/module/module.cpython-<platform>.so
+
+build/module/module.o: native/module.f90
+	cd <working-directory> && $(FC) -c ... $(PRIK_FFLAGS) -o module.o
+
+build/module/module_wrapper.o: build/module/module_wrapper.c
+	cd <working-directory> && $(CC) -c ... $(PRIK_CFLAGS) -o module_wrapper.o
+
+build/module/module.cpython-<platform>.so: \
+    build/module/module.o \
+    build/module/module_wrapper.o \
+    build/module/prik-build.json \
+    contracts/module.pyi
+	cd <working-directory> && $(PRIK_LD) -shared ... $(PRIK_LDFLAGS) -o module.cpython-<platform>.so
+
+rebuild:
+	$(MAKE) -f build/module/Makefile.prik clean
+	$(MAKE) -f build/module/Makefile.prik all
+
+clean:
+	rm -f <generated-objects> <shared-library>
+```
+
+The actual file contains complete recorded commands and dependency-safe native
+source ordering. Generated bridge and binding objects that are independent may
+still compile in parallel with `make -j`. For semantic `.pyi` builds, the link
+target depends on `prik-build.json`, the complete `.pyi` graph, and native link
+inputs. Source-driven Makefiles instead record the selected source inputs and
+generated wrapper artifacts directly.
+
+The compiler variables preserve PRIK's selected compilers. The empty
+`PRIK_FFLAGS`, `PRIK_CFLAGS`, and `PRIK_LDFLAGS` variables let you add flags
+without replacing the recorded ones:
+
+```bash
+make -f build/module/Makefile.prik -j4 PRIK_FFLAGS=-O3
+```
+
+Treat the Makefile as generated output. Regenerate it after changing source
+inputs, semantic contracts, native artifacts, compiler flags, output names, or
+the PRIK version.
+
+## Build or replay
+
+Run the generated Makefile directly:
 
 ```bash
 make -f build/module/Makefile.prik -j4
 ```
 
-The generated Makefile may expose override variables for native and wrapper
-flags, such as `PRIK_FFLAGS`, `PRIK_CFLAGS`, and `PRIK_LDFLAGS`. Treat the file
-as generated output: regenerate it after changing source inputs, semantic
-contracts, native artifacts, compiler flags, output names, or the PRIK version.
+Use a saved manifest as the complete input for a direct build:
 
-For semantic `.pyi` builds, the Makefile depends on `prik-build.json`, the
-complete `.pyi` graph, and native link inputs. For source-driven builds, the
-Makefile records the selected native source ordering and generated wrapper
-artifacts.
+```bash
+python3 -m prik --build-manifest build/module/prik-build.json
+```
 
-## Repository Tooling Configuration
+Generate a fresh `Makefile.prik` from the saved manifest with:
 
-`pyproject.toml`, `setup.cfg`, `codecov.yml`, and `mkdocs.yml` configure the
-repository itself — packaging, QA tools, coverage, and the documentation site.
-None of them configure a wrapper build, and nothing in them changes the
-generated Python API. Contributors will find their contracts in
-[Quality Assurance](../../developer/workflows/quality-assurance.md) and
-[Documentation maintenance](../../developer/workflows/documentation.md).
+```bash
+python3 -m prik generate --makefile \
+  --build-manifest build/module/prik-build.json
+```
+
+During replay, the saved manifest is authoritative for the output directory,
+language, wrapper behavior, native inputs, compiler recipe, and ordered link
+plan. Rerun the original semantic `.pyi` `generate --makefile` command to
+record changes to those inputs.
 
 ## Evidence
 
 Manifest and Makefile replay behavior is covered by
-[`test_pyi_build_modes.py`](../../../tests/fortran/infrastructure/building/pipeline/test_pyi_build_modes.py) and
-source-build Makefile behavior by
-[`test_build_modes.py`](../../../tests/fortran/infrastructure/building/end_to_end/test_source_build_modes.py).
+[`test_pyi_build_modes.py`](../../../tests/fortran/infrastructure/building/pipeline/test_pyi_build_modes.py),
+and source-driven Makefile behavior by
+[`test_source_build_modes.py`](../../../tests/fortran/infrastructure/building/end_to_end/test_source_build_modes.py).

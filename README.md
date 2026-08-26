@@ -21,8 +21,8 @@ C wrapper features are implemented and tested across supported compilers, but
 public APIs may still change before `1.0`.
 
 PRIK supports both languages. Fortran currently has the broader, more mature
-wrapper surface. C provides a focused direct-ABI lane for primitive values,
-one-level pointers, NumPy arrays, and strings. In both languages, editable
+wrapper surface. C supports primitive values, one-level pointers, NumPy arrays,
+and strings. In both languages, editable
 `.pyi` contracts let you shape the Python API. See [C
 Support](https://pynumlab.github.io/prik/user/language-support/c-support/) for
 C examples and current limits.
@@ -237,15 +237,15 @@ code generation with a diagnostic naming the boundary and the reason.
 The [language feature matrix](https://pynumlab.github.io/prik/user/language-support/feature-matrix/)
 records the full support status of every feature with its evidence. The
 [C support guide](https://pynumlab.github.io/prik/user/language-support/c-support/)
-states the direct C lane's current boundary.
+states the current C wrapper boundary.
 
 ## C support
 
 PRIK builds C and Fortran code into importable Python extensions. For C,
-generated binding code calls your exported symbol **directly** — no
-ABI-conversion adapter and no Fortran bridge in between. The one exception is
-opt-in: `--collision-adapter NAME` writes a small forwarding translation unit
-when one of your headers declares a name that `Python.h` also declares.
+generated binding code calls your exported symbol without ABI conversion. The
+one exception is opt-in: `--collision-adapter NAME` writes a small forwarding
+translation unit when one of your headers declares a name that `Python.h` also
+declares.
 
 C has no `intent` and no shape information, so a bare `double *` could be one
 value, a mutable output, or an array. PRIK never guesses: it generates a
@@ -316,7 +316,7 @@ applies to Fortran contracts.
 
 ### What C support covers
 
-The direct C lane supports target-probed arithmetic scalars and `void`,
+C wrappers support target-probed arithmetic scalars and `void`,
 C-contiguous NumPy arrays of ranks 1–15, and both read-only and writable C
 strings. Contracts can also rename or reorder calls, derive lengths and shapes,
 return native outputs, overload Python names, and turn status codes into Python
@@ -324,7 +324,7 @@ exceptions.
 
 ### Current C limitations
 
-The direct C lane does not yet cover arrays of strings, multi-level pointers,
+Current C support does not cover arrays of strings, multi-level pointers,
 structs, unions, function pointers, or callbacks. Unsupported declarations
 stop before wrapper generation or compilation; parsing a declaration alone does
 not promise that it can be built.
@@ -437,7 +437,7 @@ Fortran or supported C sources
   -> compiler preprocessing and target-type probing
   -> language parser and semantic IR construction
   -> completed policy and wrapper plan
-  -> generated Python binding, with a Fortran bridge where needed
+  -> generated Python binding and native wrapper support
   -> native compilation and shared-library link
   -> importable Python extension
 ```
@@ -447,7 +447,7 @@ For diagnostic and inspection commands beyond the main build path, start with
 
 ## Python API
 
-Root entrypoints cover Fortran and supported direct C extension builds.
+Root entrypoints cover Fortran and supported C extension builds.
 Advanced parsing, semantic conversion, and `.pyi` emission use their owning
 packages:
 
@@ -463,8 +463,8 @@ print(result.module_name)
 print(result.shared_library)
 ```
 
-Use `build_c_extension("api.c", output_dir="build")` for the source-driven C
-lane, or `build_pyi_extension(..., native_language="c", native_c_sources=[...])`
+Use `build_c_extension("api.c", output_dir="build")` for a C source build, or
+`build_pyi_extension(..., native_language="c", native_c_sources=[...])`
 for an authored C contract. The C support guide shows complete examples.
 
 ## Development
@@ -510,8 +510,8 @@ notice when redistributed.
 - **[Project Vision](https://github.com/PyNumLab/prik/wiki)** — Long-term direction for PRIK's semantic interoperability model
 - **[Getting Started](https://pynumlab.github.io/prik/user/getting-started/)** — Installation, verification, standalone procedures, modules, and rebuild workflow
 - **[User Guide](https://pynumlab.github.io/prik/user/guide/)** — Data types, functions, modules, arrays, derived types, callbacks, ownership, and runtime behavior
-- **[C Support](https://pynumlab.github.io/prik/user/language-support/c-support/)** — Direct C ABI scope, contracts, CLI, Python API, and executable examples
+- **[C Support](https://pynumlab.github.io/prik/user/language-support/c-support/)** — C ABI scope, contracts, CLI, Python API, and executable examples
 - **[CLI Reference](https://pynumlab.github.io/prik/user/reference/cli-commands/)** — Every command, option, and checked workflow
-- **[Language Support](https://pynumlab.github.io/prik/user/language-support/)** — What is supported, partially supported, or planned
+- **[Language Support](https://pynumlab.github.io/prik/user/language-support/)** — Supported, partially supported, and unsupported native-language features
 - **[FAQ](https://pynumlab.github.io/prik/user/faq/)** — Concise answers to common questions
 - **[Changelog](CHANGELOG.md)** — User-visible changes by release

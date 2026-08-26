@@ -23,7 +23,7 @@ extension initialization, and generated Python surfaces. The entrypoint view
 owns the C ABI prototype and call. The generator may select local names and
 the necessary C syntax, but never reads adapter-local conversion or original
 Fortran invocation facts and never chooses ownership, optionality, storage, or
-conversion policy. A completed direct-C entrypoint supplies the native ABI
+conversion policy. A completed C-source entrypoint supplies the native ABI
 identity and declaration facts the binding emits before calling the user symbol
 directly. Source-free contracts use the completed canonical spelling. The
 binding does not infer a nearby C type from a NumPy dtype or emit a C adapter.

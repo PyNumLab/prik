@@ -1,6 +1,6 @@
 ---
 title: Fortran Support
-description: Which Fortran PRIK reads, and where reading ends and wrapper support begins.
+description: What Fortran PRIK wraps, where the detailed guides live, and which source files become Python APIs.
 audience: users
 prerequisites: installation
 related: index.md, feature-matrix.md, ../guide/index.md, ../reference/cli-commands.md, ../reference/fortran-wrapper.md
@@ -10,18 +10,56 @@ publication: reviewed
 
 # Fortran Support
 
-This page answers one question: **will PRIK read my Fortran?** It is the
-inventory of source forms, program units, and declaration syntax the parser
-accepts.
+This page is the entry point for **what Fortran PRIK wraps**. Start with the
+wrapper areas below and follow the linked guide for the complete Python
+behavior, constraints, and examples. Use the [language feature
+matrix](feature-matrix.md) when you need the exact status, evidence, and
+limitation for an individual feature. For the exhaustive generated API,
+ownership, lifetime, naming, and ABI contract, use the [Fortran Wrapper
+Reference](../reference/fortran-wrapper.md).
 
-Reading is not the same as wrapping. A construct PRIK parses may still be
-rejected later, because a wrapper needs facts a declaration alone does not
-prove — ownership, lifetime, shape, or ABI. For what PRIK does with what it
-reads, use the [User Guide](../guide/index.md); for whether a feature is
-supported end to end, use the
-[language feature matrix](feature-matrix.md).
+## Supported Wrapper Areas
 
-## Source Forms
+| Area | Supported wrapping surface | Detailed guide |
+| --- | --- | --- |
+| Primitive values and kinds | Documented integer, real, complex, logical, and character kinds, including target-resolved kind expressions, `value` arguments, and guarded existing `bind(C)` procedures. | [Data Types](../guide/data-types.md) |
+| Functions and subroutines | Scalar and array arguments, function results, output arguments, multiple Python results, mutation, and documented call projections. | [Wrapping Functions](../guide/wrapping-functions.md), [Wrapping Subroutines](../guide/wrapping-subroutines.md) |
+| Arrays | NumPy argument and result arrays with documented rank, shape, lower-bound, layout, stride, contiguity, mutation, and ownership rules. | [Arrays](../guide/arrays.md) |
+| Strings | Scalar character inputs, outputs, and results; mutable character storage; allocatable and pointer scalars; and fixed-width character arrays. | [Strings](../guide/strings.md) |
+| Modules, state, and constants | Module namespaces, variables, constants, saved state, procedures using common-block state, and Fortran enum constants. | [Wrapping Modules](../guide/wrapping-modules.md), [Enumerations](../guide/enumerations.md) |
+| Optional and overloaded APIs | Optional arguments, generic procedure interfaces, defined operators and assignment, public naming, and overload dispatch. | [Optional Arguments](../guide/optional-arguments.md), [Generic Interfaces](../guide/generic-interfaces.md) |
+| Derived types | Scalar derived types with fields, methods, constructors, finalizers, type-bound generics, and the documented inheritance and polymorphism subset. | [Wrapping Derived Types](../guide/wrapping-derived-types.md) |
+| Managed native storage | Allocatable arrays and values, pointer projections and array handles, borrowed and owned storage, and documented release behavior. Pointer support has additional policy limits. | [Allocatables](../guide/allocatables.md), [Pointers](../guide/pointers.md), [Memory Management](../guide/memory-management.md) |
+| Callbacks | Immediate Python callbacks whose lifetime is limited to the active wrapped call. | [Callbacks](../guide/callbacks.md) |
+| Errors and status results | Native status projection and Python exception construction under the documented error contract. | [Error Handling](../guide/error-handling.md) |
+| Raw addresses | Advanced primitive, array, and fixed-string address boundaries with explicit storage and lifetime requirements. | [Raw Addresses](../guide/raw-addresses.md) |
+| Projects and native builds | Ordered single-source and multi-source builds, Makefiles, output placement, compiler selection, and explicit native dependencies. | [Building the Shared Library](../guide/building-shared-library.md) |
+| Editable Python interfaces | Generated or authored semantic `.pyi` contracts can rename, select, reorder, and reshape the documented wrapper surface. | [Editing `.pyi` Contracts](../reference/pyi-contracts/index.md) |
+
+## Important Boundaries
+
+The table above names supported areas, not blanket support for every related
+Fortran declaration:
+
+- Pointer arrays and projections have useful supported forms, but target
+  lifetime, deallocation, and writable reassociation remain policy-gated. See
+  [Pointers](../guide/pointers.md) and [Memory Management](../guide/memory-management.md).
+- Callbacks are immediate and call-scoped. Stored, asynchronous, optional, and
+  cross-thread callbacks are unsupported. See [Callbacks](../guide/callbacks.md).
+- Scalar derived types are supported, but arrays of derived types and several
+  mutable or result polymorphic forms are not. See [Wrapping Derived
+  Types](../guide/wrapping-derived-types.md).
+- Assumed-rank and other advanced array forms are supported only where the
+  [Arrays](../guide/arrays.md) guide defines a complete runtime contract.
+- Parameterized derived types, unlimited polymorphism, procedure pointers, and
+  real or complex storage wider than the target C `long double` are unsupported.
+  Parameterized derived types can currently reach compiler probing and surface
+  a compiler diagnostic instead of a PRIK diagnostic.
+
+The [unsupported and blocked forms](feature-matrix.md#unsupported-or-blocked-forms)
+table gives the complete feature-by-feature boundary and links to its evidence.
+
+## Source Files And Public Entry Points
 
 PRIK selects the source form from the filename suffix:
 
@@ -30,113 +68,28 @@ PRIK selects the source form from the filename suffix:
 | Fixed | `.f`, `.for`, `.ftn`, `.f77` |
 | Free | `.f90`, `.f95`, `.f03`, `.f08` |
 
-Suffix matching is case-insensitive. When a source arrives without a
-recognizable suffix — inline text, or a file named some other way — PRIK
-inspects the first twenty lines and treats the source as fixed form if it finds
-a continuation character in column six. Both forms handle comment stripping and
-continuation folding, and both preserve original line numbers so diagnostics
-point at the line you wrote.
+For editable output, `generate --pyi --out DIR` writes a Fortran contract
+package: `__init__.pyi` holds standalone procedures and imports one leaf per
+native module. The [`.pyi` format reference](../reference/pyi-format.md#source-to-contract-layout)
+contrasts that package with C's single-file output.
 
-Mixed suffixes in one build are fine: each source is classified on its own.
+Suffix matching is case-insensitive, and fixed-form and free-form sources can
+be mixed in one build. For multi-source projects, PRIK orders named sources
+from their module dependency graph. It does not discover files or external
+libraries that were not supplied explicitly; see [Building the Shared
+Library](../guide/building-shared-library.md).
 
-## Program Units
+The Python-facing entry points are:
 
-| Unit | Notes |
-| --- | --- |
-| `module` | Becomes a Python namespace. See [Wrapping Modules](../guide/wrapping-modules.md). |
-| `submodule (parent) name` | Parsed, including `module procedure` implementations. |
-| `program` | Parsed for its declarations; a program is not an importable API. |
-| `block data` | Parsed. Its variables appear in `parse --show-vars` reports. |
-| Standalone `subroutine` / `function` | Exposed at the extension root. |
-| `interface` / `abstract interface` | Parsed, including generic interface blocks and callback prototypes. |
-| `enum, bind(C)` | Enumerators become integer constants. See [Enumerations](../guide/enumerations.md). |
+- standalone functions and subroutines, exposed at the extension root;
+- public module procedures, variables, constants, and derived types, exposed
+  through a Python module namespace;
+- supported generic interfaces, defined operators, assignment overloads, and
+  type-bound procedures; and
+- Fortran enumerators, exposed as integer constants.
 
-Procedures contained inside another procedure are recognized and then skipped:
-they are implementation detail, not public API.
-
-## Procedures
-
-Accepted prefixes are `pure`, `elemental`, `recursive`, `impure`, and `module`,
-in any combination the language allows. Function results may be named with
-`result(...)`.
-
-Arguments are read with their declared type, kind, shape, and attributes:
-
-| Attribute | Read from a dummy argument, field, or module variable |
-| --- | --- |
-| `intent(in)`, `intent(out)`, `intent(inout)` | Yes. A missing `intent` is treated conservatively — see [Wrapping Subroutines](../guide/wrapping-subroutines.md). |
-| `optional` | Yes. See [Optional Arguments](../guide/optional-arguments.md). |
-| `value` | Yes |
-| `allocatable` | Yes. See [Allocatables](../guide/allocatables.md). |
-| `pointer` | Yes. See [Pointers](../guide/pointers.md). |
-| `target` | Yes |
-| `contiguous` | Yes |
-| `external` | Yes |
-| `parameter` | Yes, including compile-time evaluation of its expression |
-
-Array shape is read from `dimension(...)` or from the variable itself
-(`x(:)`, `x(n)`, `x(0:n-1)`, `x(*)`, `x(..)`). Intrinsic kinds are read as
-written — `real(8)`, `real(real64)`, `real(kind=selected_real_kind(15))`,
-legacy `real*8` — and resolved against the selected compiler rather than
-assumed. [Data Types](../guide/data-types.md) covers the resulting NumPy dtypes.
-
-## Modules And Imports
-
-`use` statements are read with their full form: `only:` lists, renames, and the
-`intrinsic` / `non_intrinsic` qualifiers. A rename keeps both names, so
-`use kinds, only: wp => real64` records `real64` as the source name and `wp` as
-the local one. Module-level imports are propagated into contained procedures.
-
-Across a directory or a multi-source build, PRIK parses each file once, orders
-files by dependency, resolves compile-time symbols that cross files — a kinds
-module, for example — and reports duplicate symbols at the project level.
-
-## Derived Types
-
-Both `type :: name` and the legacy `type name` spellings are read, along with:
-
-- the `abstract` attribute and `extends(parent)` inheritance;
-- fields with their type, kind, shape, `allocatable`, and `pointer` attributes;
-- type-bound procedures, including `pass(name)` and `nopass` bindings;
-- `generic :: name => specific1, specific2` bindings; and
-- `final` procedures.
-
-[Wrapping Derived Types](../guide/wrapping-derived-types.md) covers what these
-become in Python, and [Generic Interfaces](../guide/generic-interfaces.md)
-covers overload dispatch.
-
-## Where Reading Ends
-
-Some constructs are recognized and refused at the source level, so you get a
-located diagnostic instead of a confusing failure later:
-
-- `class(*)` unlimited polymorphism;
-- `select type` constructs;
-- coarray syntax;
-- procedure pointers (`procedure, pointer`); and
-- `type(c_ptr)` values.
-
-Parameterized derived types are not supported. A header such as
-`type :: buffer_type(k, n)` is accepted by the parser, but its kind and length
-parameters are not modeled as parameters, so builds using them fail rather than
-producing a correct wrapper.
-
-Everything else that parses continues to the next stage, where support is
-decided from complete facts. When PRIK refuses a wrapper there, the message
-carries a diagnostic code. Parameterized derived types are a known exception:
-they can currently reach compiler probing and report a compiler diagnostic
-instead. [Diagnostic Codes](../reference/diagnostic-codes.md) explains PRIK
-diagnostic codes, and the [feature matrix](feature-matrix.md) records which
-forms are blocked and why.
-
-## Check A Specific File
-
-To see exactly what PRIK read from your source, without building anything:
-
-```bash
-python3 -m prik parse path/to/solver.f90 --show-vars
-```
-
-Add `--json` when a tool needs the same report as structured data. The
-[CLI reference](../reference/cli-commands.md#parse-and-semantics) documents both
-commands.
+A Fortran `program` or `block data` unit is not an importable Python API, and a
+procedure contained inside another procedure remains an implementation detail.
+When a source declaration is readable but lacks a safe wrapper contract, PRIK
+rejects the build rather than treating parser acceptance as wrapper support.
+See [Diagnostic Codes](../reference/diagnostic-codes.md) for those rejections.

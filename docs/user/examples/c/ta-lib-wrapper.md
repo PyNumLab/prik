@@ -86,7 +86,7 @@ for example, cannot produce its first value until input index 2.
 | native return value | TA-Lib status: zero on success and a nonzero error code otherwise |
 
 “Optional input” is TA-Lib's C naming convention for a parameter with a
-documented default. This direct wrapper still makes every selected `optIn...`
+documented default. The generated wrapper still makes every selected `optIn...`
 value explicit in the Python call.
 
 Different indicators vary only in how many of those pieces they use:
@@ -154,8 +154,8 @@ with additional input, option, and output arrays as required.
 
 ## What this example proves
 
-- PRIK can build a large, array-centered C API without a Fortran bridge or an
-  ABI-conversion adapter.
+- PRIK can build a large, array-centered C API against the compiled library
+  without ABI conversion.
 - Generated C `int[]`, `float[]`, and `double[]` contracts use the compiler-
   probed NumPy storage for the active target.
 - TA-Lib's caller-owned output buffers remain caller-owned NumPy arrays.
@@ -381,19 +381,19 @@ audit and 322-indicator numerical comparison with Python 3.12 on:
 | Linux | x86-64, ARM64 | GCC 13 |
 | macOS | Intel, ARM64 | Apple Clang |
 
-Each lane exercises the compiler-specific native cache, generated inventory,
-semantic lowering, extension build, and runtime comparison. TA-Lib therefore
-covers both GCC and Clang families across the matrix, but unlike libm it does
-not run both compiler families on every target. Native Windows/MSVC remains
-outside PRIK's current POSIX C build lane. See the [complete portability
-matrix](../index.md#tested-platforms).
+Each compiler and target combination exercises the compiler-specific native
+cache, generated inventory, semantic lowering, extension build, and runtime
+comparison. TA-Lib therefore covers both GCC and Clang families across the
+matrix, but unlike libm it does not run both compiler families on every target.
+Native Windows/MSVC remains outside PRIK's current POSIX C build support. See
+the [complete portability matrix](../index.md#tested-platforms).
 
 ## Support boundary
 
 The excluded abstraction API is useful to programs that discover indicators
 and parameter schemas dynamically. It requires aggregate records, callbacks,
 multi-level pointers, and library-owned pointer results, which are outside the
-current direct-C subset. The maintained example therefore uses TA-Lib's
+current supported C subset. The maintained example therefore uses TA-Lib's
 ordinary typed batch functions, which are the numerical API Python callers
 need.
 

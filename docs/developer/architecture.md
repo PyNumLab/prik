@@ -34,7 +34,7 @@ module = result.import_module()
 
 `prik.__init__` exposes `__version__` and four public build entrypoints:
 `build_fortran_extension` for Fortran source, `build_c_extension` for the
-supported direct-C subset, `build_pyi_extension` for an authoritative semantic
+supported C subset, `build_pyi_extension` for an authoritative semantic
 `.pyi` contract, and `build_pyi_extension_from_manifest` for replaying a saved
 contract build. The CLI enters through `python3 -m prik` and dispatches to the
 same stage owners. Its parser, semantic, and report commands intentionally stop
@@ -140,9 +140,9 @@ planning, lowering, build, and runtime architecture afterward.
 | --- | --- | --- |
 | Fortran source | preprocessing, Fortran parsing, and Fortran-to-IR conversion | Source-first wrapper contract. |
 | Semantic `.pyi` | raw `.pyi` parsing and `.pyi`-to-IR conversion | Contract-first wrapper surface with explicit native implementation inputs. |
-| C source | preprocessing, C parsing, and C-to-IR conversion | Source-first wrapper contract for the direct-ABI subset. |
+| C source | preprocessing, C parsing, and C-to-IR conversion | Source-first wrapper contract for the supported C subset. |
 
-The C route is implemented for the direct-ABI subset published in
+The C workflow is implemented for the supported subset published in
 [C support](../user/language-support/c-support.md); its parser accepts more
 declarations than that subset, and the rest fail in policy before planning.
 These guides describe the Fortran route in detail because it is the broader

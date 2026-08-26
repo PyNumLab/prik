@@ -2,7 +2,7 @@
 title: Editing Fortran Functions and Classes
 audience: users, advanced users
 prerequisites: editing .pyi contracts overview
-related: index.md, exports-and-modules.md, calls-and-results.md, ../semantic-pyi-format.md, ../../guide/wrapping-derived-types.md, ../../guide/generic-interfaces.md
+related: index.md, exports-and-modules.md, calls-and-results.md, ../pyi-format.md, ../../guide/wrapping-derived-types.md, ../../guide/generic-interfaces.md
 status: maintained
 publication: reviewed
 ---

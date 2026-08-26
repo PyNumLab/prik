@@ -32,7 +32,7 @@ coverage audits, numerical tests, documentation, and CI execution.
 - Test every exported function and audit the inventory against the built module.
 
 Read [C support](../../language-support/c-support.md) and the
-[CLI reference](../../reference/cli-commands.md) first if the direct C workflow is
+[CLI reference](../../reference/cli-commands.md) first if the C workflow is
 new to you. For a maintained C example built around NumPy arrays and an edited
 semantic contract, see [TA-Lib](ta-lib-wrapper.md).
 
@@ -329,9 +329,10 @@ The Real Libraries Portability workflow builds and runs the complete
 | Linux | x86-64, ARM64 | GCC 13 and Clang 18 |
 | macOS | Intel, ARM64 | Apple Clang and GNU GCC 13 |
 
-Every lane exercises the target's own `math.h`, libm, scalar probe, generated
-contract, collision adapter, and numerical tests. Native Windows/MSVC remains
-outside PRIK's current POSIX C build lane. See the [complete portability
+Every compiler and target combination exercises the target's own `math.h`,
+libm, scalar probe, generated contract, collision adapter, and numerical tests.
+Native Windows/MSVC remains outside PRIK's current POSIX C build support. See
+the [complete portability
 matrix](../index.md#tested-platforms).
 
 ## Source provenance

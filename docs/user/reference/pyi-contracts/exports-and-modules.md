@@ -2,7 +2,7 @@
 title: .pyi Exports and Modules
 audience: users, advanced users
 prerequisites: editing .pyi contracts overview
-related: index.md, functions-and-classes.md, ../semantic-pyi-format.md, ../../guide/wrapping-modules.md
+related: index.md, functions-and-classes.md, ../pyi-format.md, ../../guide/wrapping-modules.md
 status: maintained
 publication: reviewed
 ---
@@ -126,7 +126,7 @@ def norm2(values: Float64[:]) -> Float64: ...
 ```
 
 This marker does not guarantee direct routing. Policy still validates the
-complete operation before choosing the direct C ABI entrypoint or a generated
+complete operation before choosing the C ABI entrypoint or a generated
 Fortran adapter.
 
 The declaration must include the correct native arguments, types, ranks, and

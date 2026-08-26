@@ -61,8 +61,8 @@ test.
 | [Python API](../../docs/user/reference/python-api.md#advanced-package-imports) | `infrastructure/parsing/` | `python3 -m pytest -q tests/fortran/infrastructure/parsing` |
 | [Compiler Preprocessing](../../docs/user/reference/cli-commands.md#compiler-preprocessing) | `infrastructure/preprocessing/` | `python3 -m pytest -q tests/fortran/infrastructure/preprocessing` |
 | [CLI Commands](../../docs/user/reference/cli-commands.md) | `infrastructure/cli/` | `python3 -m pytest -q tests/fortran/infrastructure/cli` |
-| [Semantic IR](../../docs/user/reference/semantic-ir.md) | `infrastructure/semantic_ir/` | `python3 -m pytest -q tests/fortran/infrastructure/semantic_ir` |
-| [Semantic `.pyi` Format](../../docs/user/reference/semantic-pyi-format.md) and [contract guides](../../docs/user/reference/pyi-contracts/index.md) | `infrastructure/semantic_pyi/` | `python3 -m pytest -q tests/fortran/infrastructure/semantic_pyi` |
+| [Semantics Stage](../../docs/developer/packages/semantics.md) | `infrastructure/semantic_ir/` | `python3 -m pytest -q tests/fortran/infrastructure/semantic_ir` |
+| [`.pyi` Format](../../docs/user/reference/pyi-format.md) and [contract guides](../../docs/user/reference/pyi-contracts/index.md) | `infrastructure/semantic_pyi/` | `python3 -m pytest -q tests/fortran/infrastructure/semantic_pyi` |
 | [Building the Shared Library](../../docs/user/guide/building-shared-library.md) | `infrastructure/building/` | `python3 -m pytest -q tests/fortran/infrastructure/building` |
 | Completed ownership and wrapper-policy decisions | `infrastructure/policy/` | `python3 -m pytest -q tests/fortran/infrastructure/policy` |
 

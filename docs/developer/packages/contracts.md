@@ -1,7 +1,7 @@
 ---
 title: Contracts Component
 audience: developers, maintainers, contributors
-prerequisites: contributor architecture guide, semantic .pyi format
+prerequisites: contributor architecture guide, .pyi format
 related: index.md, parsers.md, semantics.md, ../architecture.md
 status: maintained
 publication: reviewed

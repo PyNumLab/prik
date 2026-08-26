@@ -116,7 +116,7 @@ interoperable dummies use a nullable C pointer, while optional `VALUE` dummies
 remain adapter-backed.
 
 A C-source or explicitly C-native `.pyi` operation instead selects
-`DIRECT_C_ABI` only when completed direct-C policy supports its ABI and
+`DIRECT_C_ABI` only when completed C policy supports its ABI and
 contract. The policy carries the native declaration identity, transport, and
 user symbol required downstream. An ineligible C operation raises its stable
 diagnostic before `WrapperPlanner` runs and never falls back to

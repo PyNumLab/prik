@@ -19,7 +19,7 @@ python3 -m prik {parse,semantics,generate,probe} [OPTIONS] ...
 
 | Command | Purpose |
 | --- | --- |
-| no subcommand | Builds one importable extension from Fortran source, a supported direct C source, or a semantic `.pyi` contract. |
+| no subcommand | Builds one importable extension from Fortran source, a supported C source, or a semantic `.pyi` contract. |
 | `parse` | Prints parser facts and diagnostics. |
 | `semantics` | Prints a human-readable semantic-IR report; `--json` selects the complete JSON record. |
 | `generate` | Writes `.pyi` contracts, wrapper sources, or a Makefile without compiling. |
@@ -61,7 +61,7 @@ The default build accepts either one or more Fortran or supported C source
 | `--build-manifest PATH` | Replays a saved `prik-build.json`. It does not generate one. |
 | `--jobs N` | Limits concurrent compiler processes. The default uses available CPUs. |
 
-Compiled wrapper builds support Fortran and the documented direct-C subset —
+Compiled wrapper builds support Fortran and the documented C subset —
 scalars, one-level primitive pointers, arrays, rank-zero strings, hidden
 outputs, and status projection. C paths require `--language c`; the parser
 accepts more C forms than that runtime subset, and those fail before wrapper
@@ -70,8 +70,8 @@ records the exact boundary.
 
 Directories are expanded recursively in deterministic path order. Fortran
 source files can usually be inferred from their suffix;
-[Fortran Support](../language-support/fortran-support.md#source-forms) lists the
-accepted ones. C files, directories, and unknown suffixes require
+[Fortran Support](../language-support/fortran-support.md#source-files-and-public-entry-points)
+lists the accepted ones. C files, directories, and unknown suffixes require
 `--language c`.
 
 ## Wrapper builds
@@ -100,7 +100,7 @@ least one explicit native input: `--native-fortran-sources`, `--native-c-sources
 | `--native-library-dir DIR ...` | Library search directories and runtime paths. |
 | `--lto` | Enables link-time optimization for Fortran and C builds by adding `-flto` to generated and native compilation and to the extension link. |
 | `--collision-adapter NAME ...` | Calls native symbol `NAME` through a forwarder defined in a separate translation unit, so the binding never declares an identifier its own headers already declare. |
-| `--collision-adapter-all` | Applies `--collision-adapter` to every direct C symbol in the build. |
+| `--collision-adapter-all` | Applies `--collision-adapter` to every eligible C function in the build. |
 | `--positional-only` | For Fortran and C, exposes every wrapper whose arguments are all required as positional-only, renaming them `arg0`..`argN`. |
 | `--wrapper-compiler-debug` | Uses the compiler debug profile instead of release. |
 | `--wrapper-fortran-flags FLAG ...` | Flags for generated Fortran bridge compilation. |
@@ -188,7 +188,7 @@ python3 -m prik semantics path/to/api.c --language c
 ```
 
 Parsing reports source declarations and diagnostics; it does not promise that
-the declaration fits the direct C wrapper contract. Read [C
+the declaration fits the supported C wrapper contract. Read [C
 Support](../language-support/c-support.md) before building a C API.
 
 ## Generate
@@ -207,7 +207,7 @@ python3 -m prik generate (--sources | --makefile) --build-manifest PATH [OVERRID
 | `--makefile` | Writes wrapper sources, the replay manifest when applicable, and `Makefile.prik`. |
 
 ```bash
-python3 -m prik generate --pyi points.f90 --out contracts
+python3 -m prik generate --pyi points.f90 --out contracts/points
 python3 -m prik generate --sources points.f90 --out-dir build
 python3 -m prik generate --makefile points.f90 --out-dir build
 ```
@@ -215,13 +215,16 @@ python3 -m prik generate --makefile points.f90 --out-dir build
 For a C source contract, `--language c` is valid with `--pyi`:
 
 ```bash
-python3 -m prik generate --pyi --language c path/to/api.c --out contracts
+python3 -m prik generate --pyi --language c path/to/api.c --out api.pyi
 ```
 
 `--sources` and `--makefile` still run preprocessing and semantic policy to
 produce a valid wrapper plan; they skip object compilation and linking, and
 use `--out-dir`. With no `--out`, `generate --pyi` prints every generated
-contract. `--pyi` uses `--out` to write its contract package, and there
+contract. For Fortran, `--out PATH` names a package directory containing
+`__init__.pyi` and any module leaves. For C, it names the single output `.pyi`
+file. Bare `--out` writes beside the inputs. The [source-to-contract
+layouts](pyi-format.md#source-to-contract-layout) show both forms.
 `--compiler` and `-I` affect only preprocessing and datatype measurement.
 
 In `.pyi` Makefile mode, PRIK writes `<out-dir>/prik-build.json` first, then
@@ -371,7 +374,7 @@ for semantic `.pyi` builds the normalized replay `manifest`.
 | Build with an explicit module and `.so` name | `python3 -m prik path/to/file.f90 --out my_extension` |
 | Generate wrapper sources only | `python3 -m prik generate --sources dependency.f90 api.f90 --out-dir build` |
 | Generate an editable Makefile | `python3 -m prik generate --makefile dependency.f90 api.f90 --out-dir build` |
-| Generate a `.pyi` replay manifest and Makefile | `python3 -m prik generate --makefile contracts/module.pyi --native-fortran-sources native/module.f90 --out-dir build --json` |
+| Generate a `.pyi` replay manifest and Makefile | `python3 -m prik generate --makefile contracts/module.pyi --native-fortran-sources native/module.f90 --out-dir build` |
 | Replay a `.pyi` manifest | `python3 -m prik --build-manifest build/prik-build.json` |
 
 The `points.f90` examples reuse the source from the
@@ -381,6 +384,6 @@ which has a complete source, build, import, and result flow.
 ## Related pages
 
 - [Python API Reference](python-api.md) — the same workflows from Python.
-- [C Support](../language-support/c-support.md) — the direct C lane's complete
+- [C Support](../language-support/c-support.md) — the complete C
   source, contract, build, and Python workflows.
 - [Editing `.pyi` Contracts](pyi-contracts/index.md) — supported contract edits.

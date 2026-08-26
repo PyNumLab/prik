@@ -106,8 +106,8 @@ completion remains the next shared stage after those converters produce
 
 ## Tests And Docs
 
-- Semantic reference: `docs/user/reference/semantic-ir.md`
-- `.pyi` reference: `docs/user/reference/semantic-pyi-format.md`
+- Semantic reference: `docs/developer/packages/semantics.md`
+- `.pyi` reference: `docs/user/reference/pyi-format.md`
 - Source navigation: `docs/developer/codebase-map.md`, `docs/developer/feature-to-code-map.md`
 - Architecture: `docs/developer/architecture.md`
 - Semantics package guide: `docs/developer/packages/semantics.md`

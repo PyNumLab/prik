@@ -72,7 +72,7 @@ may instead provide the exact C executable used by the preceding C stages; it
 must identify the same vendor family. The constructor rejects an unknown
 family, a missing executable, or a mixed-vendor pair.
 
-`Compiler.from_c_executable()` is the direct-C counterpart. It resolves the
+`Compiler.from_c_executable()` is the C counterpart. It resolves the
 selected C executable, identifies its vendor from the executable name or its
 own version banner, and constructs a C-only profile. If the native build plan
 also contains Fortran, the pipeline selects the Fortran-led paired profile
@@ -201,7 +201,7 @@ and conditional support installation.
 | [Generated-wrapper build handoff](../../../tests/fortran/infrastructure/building/pipeline/test_generated_wrapper_build.py) | Generated sources, conditional support installation, explicit C and Fortran object requests, and the final ordered link request passed from the pipeline. |
 | [Source build modes](../../../tests/fortran/infrastructure/building/end_to_end/test_source_build_modes.py) | The selected source-build mode produces an importable native extension. |
 | [Native-support surface](../../../tests/fortran/infrastructure/runtime/test_native_support.py) | The bundled payload remains header-only and exposes the small native binding API expected by generated sources. |
-| [Direct-C build integration](../../../tests/c/infrastructure/building/pipeline/test_c_build_cli.py) | C-only builds use the selected C compiler without a Fortran dependency; mixed-language inputs select the required Fortran link driver. |
+| [C build integration](../../../tests/c/infrastructure/building/pipeline/test_c_build_cli.py) | C-only builds use the selected C compiler; mixed-language inputs select the required Fortran link driver. |
 
 ## Change Routes
 

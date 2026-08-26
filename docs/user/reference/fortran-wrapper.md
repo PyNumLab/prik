@@ -62,8 +62,8 @@ examples; this page states the exact contract.
 The direct wrapper path accepts fixed-form and free-form Fortran sources and
 requires a supported native toolchain, Python development headers, and NumPy
 development files. GNU is the default and the most exercised path; Intel and
-LLVM toolchains have maintained smoke lanes, and NVIDIA and PGI have compiler
-profiles without a maintained lane. [Wrapper Build
+LLVM toolchains have maintained smoke coverage, and NVIDIA and PGI have
+compiler profiles without maintained coverage. [Wrapper Build
 Mechanism](#wrapper-build-mechanism) describes how `--compiler` selects each
 family and its matching C compiler. Recognizable Fortran sources default to a wrapper build.
 
@@ -159,7 +159,7 @@ The semantic `.pyi` is the editable contract and wrapper-planning surface.
 The supported edit workflow, including removal, addition, call projection,
 ownership, and destruction, is explained in
 [Editing `.pyi` Contracts](pyi-contracts/index.md). The complete grammar
-appears in the [Semantic `.pyi` Format](semantic-pyi-format.md) reference.
+appears in the [`.pyi` Format](pyi-format.md) reference.
 The normal CLI build is source-driven: recognizable Fortran sources build
 wrappers without a stage flag and cannot be combined with `--pyi`. A semantic
 `.pyi` entry contract also selects the wrapper stage automatically when its
@@ -294,7 +294,7 @@ behavior.
 
 Misuse handling, diagnostic categories, and risky explicit-contract behavior
 are covered in [Editing `.pyi` Contracts](pyi-contracts/index.md) and the
-Semantic `.pyi` Format reference.
+`.pyi` Format reference.
 
 The [language feature matrix](../language-support/feature-matrix.md) records the
 current semantic-`.pyi` build boundary and its evidence.
@@ -617,7 +617,7 @@ lifetime, and release facts. It can select implemented descriptor extraction or
 policy-gated operations, but it cannot extend a pointer target's lifetime or
 manufacture proof of target ownership.
 
-[Semantic `.pyi` Format](semantic-pyi-format.md) gives the canonical spelling
+[`.pyi` Format](pyi-format.md) gives the canonical spelling
 and an example for every `Transfer(...)` and `Destruction(...)` mode.
 
 ## Scalar Calls And Verified Baseline
@@ -1587,11 +1587,11 @@ replacement for `intent(inout)`, and optional arguments. Default character,
 `kind=1`, and `c_char` are supported; other kinds are blocked.
 
 An interoperable `character(kind=c_char)` scalar or explicit/assumed-size
-array with element length one may use the direct C ABI. A scalar `VALUE` dummy
-is passed as `char`; a non-`VALUE` scalar or `S1` NumPy buffer is passed as
-`char *`. The binding still owns UTF-8 conversion, fixed-width dtype and shape
-validation, mutation/writeback, and Python-owned results. No hidden Fortran
-length or implicit terminator is added to the direct buffer ABI. Longer,
+array with element length one may use the C ABI entrypoint. A scalar `VALUE`
+dummy is passed as `char`; a non-`VALUE` scalar or `S1` NumPy buffer is passed
+as `char *`. The binding still owns UTF-8 conversion, fixed-width dtype and
+shape validation, mutation/writeback, and Python-owned results. No hidden
+Fortran length or implicit terminator is added to the direct buffer ABI. Longer,
 assumed-length, deferred-length, and returned character buffers retain their
 generated-adapter or descriptor mechanisms.
 
@@ -1763,14 +1763,14 @@ p.tag = np.int32(8)  # generated accessor writes the native component
 
 The parser and semantic IR still preserve `bind(C)`, `sequence`, component
 order, types, kinds, ranks, shapes, and storage facts. A non-`value` dummy of a
-`bind(C)` type may use a direct C ABI pointer to the wrapper's opaque native
+`bind(C)` type may use a C ABI pointer to the wrapper's opaque native
 instance; construction, fields, and destruction still use their independently
 planned Fortran support procedures. Every supported exact rank-zero
 monomorphic derived-type `value` argument remains routed through a typed
 Fortran adapter so the Fortran compiler performs the aggregate copy. The
 binding never mirrors the aggregate.
 
-Direct C layout access and by-value aggregate lowering are not currently
+C layout access and by-value aggregate lowering are not currently
 enabled. They would require
 compiler-validated size, alignment, padding, component offsets, and nested
 layout, with accessor fallback whenever proof is unavailable.
@@ -2173,12 +2173,12 @@ the whole call, disjoint storage, or the default held-GIL policy where its
 limited serialization scope is sufficient.
 
 GNU is the default and most exercised compiler path, and the only one whose
-debug/optimized ABI equivalence is verified. Maintained hosted smoke lanes
+debug/optimized ABI equivalence is verified. Maintained hosted smoke jobs
 exercise Intel IFX/ICX and LLVM Flang/Clang against a bounded subset of runtime
 contracts that does not include that ABI check. NVIDIA and PGI profiles are
-available but have no maintained lane. Every other compiler and platform
-requires its own ABI validation; support is not inferred from GNU, Intel, or
-LLVM results.
+available but have no maintained hosted coverage. Every other compiler and
+platform requires its own ABI validation; support is not inferred from GNU,
+Intel, or LLVM results.
 
 ## Not Handled Or Not Yet Settled
 
@@ -2249,7 +2249,7 @@ wrappers:
 | Characters | Deferred-length mutable character fields | Allocation, encoding, replacement, and destruction. |
 | Kinds | Real or complex mantissa wider than the target C `long double`, or a logical storage width outside 8/16/32/64 bits | Portable NumPy round-trip without silent precision loss; all four documented logical storage widths are supported through explicit boundary conversion. |
 | Callbacks | Stored, optional, cross-thread, or procedure-pointer callbacks | Persistent ownership, thread, exception, nullability, and teardown. |
-| Layout | Direct C struct views of Fortran derived types | Compiler-validated size, alignment, padding, offsets, and nested layout. |
+| Layout | C struct views of Fortran derived types | Compiler-validated size, alignment, padding, offsets, and nested layout. |
 
 ## Troubleshooting
 

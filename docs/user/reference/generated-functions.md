@@ -2,7 +2,7 @@
 title: Generated Functions Reference
 audience: users
 prerequisites: wrapping functions, wrapping subroutines
-related: generated-modules.md, generated-classes.md, semantic-pyi-format.md, ../guide/wrapping-functions.md
+related: generated-modules.md, generated-classes.md, pyi-format.md, ../guide/wrapping-functions.md
 status: maintained
 publication: reviewed
 ---
@@ -76,7 +76,7 @@ also remains visible as an argument. `tuple[...]` is used when a callable has
 more than one Python return value. `@native_call` entries such as `Arg(0)`,
 `Addr(Arg(0))`, `Return("status", 0)`, `Len(...)`, `IsPresent(...)`, and
 `Work(...)` are described in
-[Semantic `.pyi` Format](semantic-pyi-format.md#misuse-diagnostics-and-risk).
+[`.pyi` Format](pyi-format.md#misuse-diagnostics-and-risk).
 
 Edited native-order contracts may omit `@native_call` only when every native
 dummy argument remains visible in native order. In that lower-level form,

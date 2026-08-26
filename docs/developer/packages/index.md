@@ -49,7 +49,7 @@ Each guide records the same local contract:
 3. Direct-execution examples and the behavior they demonstrate.
 4. Focused tests, change routes, and invariants.
 
-The guides keep the broader Fortran route and the direct-C route explicit while
+The guides keep the broader Fortran and C wrapper workflows explicit while
 pointing detailed support claims to the published
 [C support](../../user/language-support/c-support.md) boundary. Parser and
-semantic acceptance remain broader than direct-C runtime support.
+semantic acceptance remain broader than C wrapper support.

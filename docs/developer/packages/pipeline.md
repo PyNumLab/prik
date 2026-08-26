@@ -205,8 +205,8 @@ measured fact, semantic identity, and NumPy projection separate.
 | [Build pipeline](../../../tests/fortran/infrastructure/building/pipeline/) | Artifact output, manifests, build modes, and build-plan handoffs. |
 | [Compilation integration](../../../tests/fortran/infrastructure/building/compiling/) | Native command integration. |
 | [End-to-end builds](../../../tests/fortran/infrastructure/building/end_to_end/) | Build, import, and generated-extension behavior. |
-| [Direct-C build pipeline](../../../tests/c/infrastructure/building/pipeline/) | C-only compiler selection, source and contract builds, manifests, Makefiles, explicit artifacts, and pre-artifact rejections. |
-| [Direct-C runtime features](../../../tests/c/primitive_scalars/end_to_end/) | C source reaches an imported extension through binding-only lowering and calls the selected native symbol. |
+| [C build pipeline](../../../tests/c/infrastructure/building/pipeline/) | C-only compiler selection, source and contract builds, manifests, Makefiles, explicit artifacts, and pre-artifact rejections. |
+| [C runtime features](../../../tests/c/primitive_scalars/end_to_end/) | C source reaches an imported extension through binding-only lowering and calls the selected native symbol. |
 | [Collision-forwarder pipeline](../../../tests/c/symbol_collisions/) | Optional forwarder selection, separate generated C membership, compilation, and runtime behavior. |
 
 ## Change Routes

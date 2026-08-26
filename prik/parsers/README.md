@@ -14,4 +14,4 @@ facade.
 
 See `docs/developer/packages/parsers.md`, `docs/developer/codebase-map.md`,
 `docs/developer/feature-to-code-map.md`, and
-`docs/user/reference/semantic-pyi-format.md` for maintained behavior.
+`docs/user/reference/pyi-format.md` for maintained behavior.

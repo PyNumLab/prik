@@ -2,7 +2,7 @@
 title: .pyi Calls and Results
 audience: users, advanced users
 prerequisites: editing .pyi contracts overview
-related: index.md, functions-and-classes.md, ../semantic-pyi-format.md, ../../guide/arrays.md, ../../guide/error-handling.md
+related: index.md, functions-and-classes.md, ../pyi-format.md, ../../guide/arrays.md, ../../guide/error-handling.md
 status: maintained
 publication: reviewed
 ---
@@ -63,7 +63,7 @@ duplicate, and out-of-range positions are errors.
 The mapping may use entries such as `Arg(...)`, `Addr(...)`, `Value(...)`,
 `Len(...)`, `IsPresent(...)`, and `Work(...)`. These entries describe the
 existing native call; they cannot change what the implementation accepts. The
-complete projection grammar will be covered by the Semantic `.pyi` Format
+complete projection grammar is covered by the `.pyi` Format
 reference.
 
 ## Preserve an Exact C Scalar at the Native Call

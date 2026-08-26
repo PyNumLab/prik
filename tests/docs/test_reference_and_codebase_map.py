@@ -55,9 +55,9 @@ def test_feature_matrix_has_rows() -> None:
 @pytest.mark.parametrize("row", FEATURE_MATRIX_ROWS, ids=lambda row: row["Feature"])
 def test_feature_matrix_support_claim_is_complete(row: dict[str, str]) -> None:
     assert row["Status"] in FEATURE_MATRIX_STATUSES
-    for column in ["Feature", "Status", "User docs", "Source owner", "Evidence", "Limitations"]:
+    for column in ["Feature", "Status", "User docs", "Evidence", "Limitations"]:
         assert row[column]
-    for column in ["User docs", "Source owner", "Evidence"]:
+    for column in ["User docs", "Evidence"]:
         assert MARKDOWN_LINK.search(row[column]), f"{row['Feature']}: {column} must contain a Markdown link"
     if row["Status"] in {"Supported", "Partially supported"}:
         evidence_targets = [
@@ -70,7 +70,7 @@ def test_feature_matrix_support_claim_is_complete(row: dict[str, str]) -> None:
 
 @pytest.mark.parametrize("row", FEATURE_MATRIX_ROWS, ids=lambda row: row["Feature"])
 def test_feature_matrix_links_point_to_existing_files(row: dict[str, str]) -> None:
-    for column in ["User docs", "Source owner", "Evidence"]:
+    for column in ["User docs", "Evidence"]:
         for target in MARKDOWN_LINK.findall(row[column]):
             if target.startswith(("http://", "https://")):
                 continue

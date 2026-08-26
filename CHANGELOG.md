@@ -7,6 +7,31 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+- Reorganized the Reference overview by task and linked every published user
+  reference, including the editable `.pyi` format, generated wrapper surfaces,
+  and generated build files. The Reference sidebar now follows the same grouped
+  structure, and the build-file reference clearly distinguishes source and
+  semantic-contract generation while showing the structures of both the
+  replay manifest and Makefile. The user Reference now presents `.pyi` Format
+  as a top-down guide to the distinct Fortran package and C single-file
+  layouts, namespace exports, declarations, C- and Fortran-specific forms,
+  decorators, native-call entries, types, storage, and metadata, while leaving
+  the internal Semantic IR model to the developer Semantics Stage guide.
+
+- Added C-focused FAQ answers for first builds, pointer contracts, supported
+  arrays and strings, a runnable existing-library or large-header workflow with
+  task-specific follow-up links, and fail-closed unsupported APIs.
+
+- Linked the Language Support overview directly to an expanded **At A Glance**
+  comparison, separated the detailed Fortran, C, and shared sections, gave each
+  supported and unsupported C capability family its own evidence row, removed
+  the ambiguous implementation-route column and empty planned-work placeholder,
+  replaced vague lane terminology with explicit C wrapper wording, and made
+  Fortran Support a complete guide-linked wrapper overview while retaining its
+  concise source-format and public-entrypoint reference. The canonical Fortran
+  Wrapper Reference remains separate and is now linked from both the support
+  overview and Reference index.
+
 - Grouped the maintained library projects under `examples/fortran/` and
   `examples/c/`, with the same Fortran and C grouping in the published example
   navigation. Commands, CI jobs, source-linked documentation, and package

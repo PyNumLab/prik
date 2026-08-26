@@ -181,22 +181,22 @@ declarator, or compiler-extension diagnostic.
 | `C_CONFLICTING_TYPEDEF` | Typedef declarations conflict. |
 | `C_DUPLICATE_TAG_DEFINITION` | A struct, union, or enum tag has more than one definition. |
 
-## Direct C wrapper diagnostics
+## C wrapper diagnostics
 
 These identifiers name a C declaration or authored contract outside the
-direct-only lane. They are policy diagnostics rather than bracketed parser
-codes. Each may end in `:name` to identify the affected return, argument, or
-declaration.
+supported wrapper subset. They are policy diagnostics rather than bracketed
+parser codes. Each may end in `:name` to identify the affected return,
+argument, or declaration.
 
 | Code | Meaning |
 | --- | --- |
-| `C_DIRECT_CALLBACK`, `C_DIRECT_VARIADIC_FUNCTION` | A callback or variadic function needs an adapter ABI that the direct lane does not create. |
-| `C_DIRECT_AGGREGATE_TYPE`, `C_DIRECT_UNRESOLVED_PRIMITIVE_ABI`, `C_DIRECT_UNPROBED_PRIMITIVE_ABI` | An aggregate or a primitive with no measured target ABI cannot cross the direct boundary. |
+| `C_DIRECT_CALLBACK`, `C_DIRECT_VARIADIC_FUNCTION` | A callback or variadic function requires ABI adaptation that C wrappers do not provide. |
+| `C_DIRECT_AGGREGATE_TYPE`, `C_DIRECT_UNRESOLVED_PRIMITIVE_ABI`, `C_DIRECT_UNPROBED_PRIMITIVE_ABI` | An aggregate or a primitive with no measured target ABI cannot cross the C ABI boundary. |
 | `C_DIRECT_ARRAY_DECLARATOR`, `C_DIRECT_ARRAY_RANK`, `C_DIRECT_ARRAY_CONTRACT`, `C_DIRECT_ARRAY_PASSING`, `C_DIRECT_ARRAY_TRANSFORMATION`, `C_DIRECT_ARRAY_ORDER` | An array declaration or authored NumPy contract is outside the supported rank, passing, shape, transformation, or C-order rules. |
 | `C_DIRECT_POINTER_DEPTH`, `C_DIRECT_POINTER_RESULT`, `C_DIRECT_NULLABLE_POINTER`, `C_DIRECT_RAW_ADDRESS`, `C_DIRECT_CONST_POINTER_OUTPUT` | A pointer has unsupported depth, result, nullability, raw-address, or const-output semantics. |
-| `C_DIRECT_BOOL_ARRAY` | Boolean arrays do not have a supported direct C array contract. |
-| `C_DIRECT_TRANSLATION_UNIT_LOCAL_SYMBOL`, `C_DIRECT_UNSUPPORTED_CALLING_CONVENTION`, `C_DIRECT_UNSUPPORTED_QUALIFIER` | The symbol is not externally callable through the documented direct ABI. |
-| `C_DIRECT_NATIVE_GLOBAL_STATE`, `C_DIRECT_ENUM_CONSTANT`, `C_DIRECT_MACRO_CONSTANT` | Native global state and constants are not exposed by the direct C wrapper lane. |
+| `C_DIRECT_BOOL_ARRAY` | Boolean arrays do not have a supported C array contract. |
+| `C_DIRECT_TRANSLATION_UNIT_LOCAL_SYMBOL`, `C_DIRECT_UNSUPPORTED_CALLING_CONVENTION`, `C_DIRECT_UNSUPPORTED_QUALIFIER` | The symbol is not externally callable through the documented C ABI. |
+| `C_DIRECT_NATIVE_GLOBAL_STATE`, `C_DIRECT_ENUM_CONSTANT`, `C_DIRECT_MACRO_CONSTANT` | Native global state and constants are not exposed by C wrappers. |
 | `C_DIRECT_UNMODELED_DECLARATION` | A declaration would otherwise be omitted from a C wrapper build. |
 
 See [C Support](../language-support/c-support.md#current-limits) for the

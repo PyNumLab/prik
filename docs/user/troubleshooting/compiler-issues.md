@@ -10,13 +10,12 @@ publication: reviewed
 # Compiler Issues
 
 For a Fortran build, PRIK uses the Fortran compiler passed to `--compiler` and
-its matching C compiler. A direct-C build uses the selected C compiler without
-requiring Fortran, unless explicit Fortran implementation sources make the
-final link mixed-language.
+its matching C compiler. A C build uses the selected C compiler. Explicit
+Fortran implementation sources make the final link mixed-language.
 
-## Direct-C Builds
+## C Builds
 
-Select the C lane and its compiler explicitly when the input suffix does not
+Select C and its compiler explicitly when the input suffix does not
 already determine the language:
 
 ```bash
@@ -28,7 +27,8 @@ python3 -m prik api.c --language c --compiler clang \
 `--native-c-compile-flags` applies to user C implementation sources;
 `--wrapper-c-flags` applies to the generated CPython binding and any selected
 collision forwarder. Use [C Support](../language-support/c-support.md) to decide
-whether a declaration is in the direct-C subset before debugging the compiler.
+whether a declaration is in the supported C subset before debugging the
+compiler.
 If explicit Fortran sources make the link mixed-language, the C and Fortran
 drivers must belong to one supported family. When the C compiler is omitted,
 the selected Fortran driver supplies its matching C compiler, such as `gcc`

@@ -94,8 +94,8 @@ reparse source — and say why in the test name or a comment beside it. A
 modified-contract test stays separate because it asserts a deliberately
 different public API.
 
-The real-library lane covers five Fortran projects—BLAS, LAPACK, FFTPACK,
-MINPACK, and BSPLINE-FORTRAN—plus the direct-C libm and TA-Lib projects.
+The real-library suite covers five Fortran projects—BLAS, LAPACK, FFTPACK,
+MINPACK, and BSPLINE-FORTRAN—plus the C libm and TA-Lib projects.
 
 ## Test And Fixture Placement
 
