@@ -47,3 +47,14 @@ def test_documentation_links_use_published_pages_or_repository_evidence() -> Non
                 assert resolved.is_file(), (
                     f"{path.relative_to(ROOT)}: documentation link must target a website page or asset: {target}"
                 )
+
+
+def test_readme_uses_absolute_targets_outside_document_anchors() -> None:
+    source = _visible_documentation_source(ROOT / "README.md")
+    markdown_targets = re.findall(r"\[[^\]]+\]\(([^)]+)\)", source)
+    html_targets = re.findall(r"\b(?:href|src)=[\"']([^\"']+)[\"']", source)
+
+    for target in [*markdown_targets, *html_targets]:
+        if target.startswith("#"):
+            continue
+        assert target.startswith(("https://", "mailto:")), f"README.md: relative PyPI target: {target}"

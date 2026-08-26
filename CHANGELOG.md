@@ -7,6 +7,12 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+## 0.4.1 — 2026-08-27
+
+- Fixed README links and the logo for PyPI rendering. Documentation links now
+  open the published website, maintained-library links open their complete
+  website guides, and repository files use absolute GitHub URLs.
+
 ## 0.4.0 — 2026-08-26
 
 - Reorganized the Reference overview by task and linked every published user

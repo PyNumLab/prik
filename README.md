@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/user/assets/prik-logo.png"
+  <img src="https://raw.githubusercontent.com/PyNumLab/prik/main/docs/user/assets/prik-logo.png"
        alt="PRIK — Bring Native Code to Python"
        width="450">
 </p>
@@ -155,10 +155,10 @@ print(item.norm_squared())  # 20.0
 The contract reorganizes native procedures into methods and renames them
 without changing the underlying Fortran implementation.
 
-The [`.pyi` Format](docs/user/reference/pyi-format.md) defines the contract
-language. [Editing `.pyi`
-Contracts](docs/user/reference/pyi-contracts/index.md) provides task-oriented
-recipes for reshaping the API.
+The [`.pyi` Format](https://pynumlab.github.io/prik/user/reference/pyi-format/)
+defines the contract language. [Editing `.pyi`
+Contracts](https://pynumlab.github.io/prik/user/reference/pyi-contracts/)
+provides task-oriented recipes for reshaping the API.
 
 ## Proven on real libraries
 
@@ -167,18 +167,18 @@ wrappers.
 
 | Project | Native language and PRIK input | Validated surface |
 | --- | --- | --- |
-| [BLAS](examples/fortran/blas/README.md) | Fortran source/interfaces | 155 routines: vectors, matrices, in-place updates, and f2py comparisons |
-| [LAPACK](examples/fortran/lapack/README.md) | Fortran source/interfaces | 127 float64 routines: solves, factorizations, eigenproblems, and SVD |
-| [FFTPACK](examples/fortran/fftpack/README.md) | Fortran source/interfaces | 31 Fourier, cosine, and sine transform procedures |
-| [MINPACK](examples/fortran/minpack/README.md) | Fortran source/interfaces | 22 nonlinear and least-squares procedures, including callbacks |
-| [BSPLINE-FORTRAN](examples/fortran/bspline/README.md) | Fortran source/interfaces | 15 interpolation routines and modern Fortran classes |
-| [libm](examples/c/libm/README.md) | C declarations from `<math.h>`; link compiled platform libm | 60 target-generated ISO C99 math functions |
-| [TA-Lib](examples/c/ta_lib/README.md) | C declarations from `ta_libc.h`; link compiled `libta-lib` | All 322 double and float-input indicators over NumPy arrays, checked against TA-Lib's reference results |
+| [BLAS](https://pynumlab.github.io/prik/user/examples/fortran/blas-wrapper/) | Fortran source/interfaces | 155 routines: vectors, matrices, in-place updates, and f2py comparisons |
+| [LAPACK](https://pynumlab.github.io/prik/user/examples/fortran/lapack-wrapper/) | Fortran source/interfaces | 127 float64 routines: solves, factorizations, eigenproblems, and SVD |
+| [FFTPACK](https://pynumlab.github.io/prik/user/examples/fortran/fftpack-wrapper/) | Fortran source/interfaces | 31 Fourier, cosine, and sine transform procedures |
+| [MINPACK](https://pynumlab.github.io/prik/user/examples/fortran/minpack-wrapper/) | Fortran source/interfaces | 22 nonlinear and least-squares procedures, including callbacks |
+| [BSPLINE-FORTRAN](https://pynumlab.github.io/prik/user/examples/fortran/bspline-wrapper/) | Fortran source/interfaces | 15 interpolation routines and modern Fortran classes |
+| [libm](https://pynumlab.github.io/prik/user/examples/c/libm-wrapper/) | C declarations from `<math.h>`; link compiled platform libm | 60 target-generated ISO C99 math functions |
+| [TA-Lib](https://pynumlab.github.io/prik/user/examples/c/ta-lib-wrapper/) | C declarations from `ta_libc.h`; link compiled `libta-lib` | All 322 double and float-input indicators over NumPy arrays, checked against TA-Lib's reference results |
 
 The **Real Libraries Portability** workflow runs all seven on Linux x86-64,
 Linux ARM64, macOS Intel, and macOS ARM64 with Python 3.12. See the [Examples
-Gallery](docs/user/examples/index.md#tested-platforms) for the compiler matrix;
-each project guide also records its own tested platforms.
+Gallery](https://pynumlab.github.io/prik/user/examples/#tested-platforms) for the
+compiler matrix; each project guide also records its own tested platforms.
 
 ## Key Features
 
@@ -496,11 +496,11 @@ If you use PRIK in research, cite the release you used.
 [10.5281/zenodo.21881987](https://doi.org/10.5281/zenodo.21881987) covers all
 archived releases and links to their version-specific records. Machine-readable
 metadata is available in
-[`CITATION.cff`](CITATION.cff).
+[`CITATION.cff`](https://github.com/PyNumLab/prik/blob/main/CITATION.cff).
 
 ## License
 
-PRIK is distributed under the [MIT License](LICENSE).
+PRIK is distributed under the [MIT License](https://github.com/PyNumLab/prik/blob/main/LICENSE).
 Copyright (c) 2026 Said Hadjout.
 
 Using PRIK does not impose the MIT License on the user's native sources or on
@@ -521,4 +521,4 @@ notice when redistributed.
 - **[CLI Reference](https://pynumlab.github.io/prik/user/reference/cli-commands/)** — Every command, option, and checked workflow
 - **[Language Support](https://pynumlab.github.io/prik/user/language-support/)** — Supported, partially supported, and unsupported native-language features
 - **[FAQ](https://pynumlab.github.io/prik/user/faq/)** — Concise answers to common questions
-- **[Changelog](CHANGELOG.md)** — User-visible changes by release
+- **[Changelog](https://github.com/PyNumLab/prik/blob/main/CHANGELOG.md)** — User-visible changes by release
