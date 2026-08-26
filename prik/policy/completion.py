@@ -134,7 +134,8 @@ def complete_semantic_policies(
 
         # Resolve all remaining ownership and wrapper-facing semantic choices.
         _complete_ownership_policies(module, strict_wrapper_names=strict_wrapper_names)
-        _reject_ineligible_direct_c_operations(module)
+    _reject_ineligible_direct_c_operations(modules)
+    for module in modules:
         if positional_only:
             _complete_positional_only_surface(module)
     return modules
@@ -176,9 +177,12 @@ _REQUIRED_ARGUMENT_MODES = frozenset({OptionalMode.REQUIRED, OptionalMode.REQUIR
 
 
 _C_DIRECT_DIAGNOSTIC_PREFIX = "C_DIRECT_"
+_DEFERRED_C_DIRECT_DIAGNOSTIC_CODES = frozenset(
+    {"C_DIRECT_UNPROBED_PRIMITIVE_ABI", "C_DIRECT_UNRESOLVED_PRIMITIVE_ABI"}
+)
 
 
-def _reject_ineligible_direct_c_operations(module: models.SemanticModule) -> None:
+def _reject_ineligible_direct_c_operations(modules: Iterable[models.SemanticModule]) -> None:
     """Raise C primitive-lane diagnostics before wrapper planning can begin.
 
     The direct-only C lane has no adapter to fall back to, so a declaration of
@@ -188,6 +192,27 @@ def _reject_ineligible_direct_c_operations(module: models.SemanticModule) -> Non
     A blocker every language shares -- an unexported concrete procedure behind
     an overload set, for example -- is left to planning.
     """
+    diagnostics = tuple(diagnostic for module in modules for diagnostic in _c_direct_policy_diagnostics(module))
+    if not diagnostics:
+        return
+
+    # Unmeasured primitive identities are expected during the pre-probe pass.
+    # Prefer any declaration whose failure is intrinsic so one deferred
+    # operation cannot hide a callback, aggregate, or native global in a later
+    # declaration or module.
+    owner_path, blockers, _codes = next(
+        (diagnostic for diagnostic in diagnostics if not diagnostic[2].issubset(_DEFERRED_C_DIRECT_DIAGNOSTIC_CODES)),
+        diagnostics[0],
+    )
+    details = "; ".join(blockers)
+    raise ValueError(f"C direct operation {owner_path!r} is unsupported before wrapper planning: {details}")
+
+
+def _c_direct_policy_diagnostics(
+    module: models.SemanticModule,
+) -> tuple[tuple[str, tuple[str, ...], frozenset[str]], ...]:
+    """Collect direct-C blockers for one completed semantic module."""
+    diagnostics: list[tuple[str, tuple[str, ...], frozenset[str]]] = []
     declarations = [*module.functions]
     declarations.extend(procedure for group in module.overload_sets for procedure in group.procedures)
     declarations.extend(method for semantic_class in module.classes for method in semantic_class.methods)
@@ -203,22 +228,19 @@ def _reject_ineligible_direct_c_operations(module: models.SemanticModule) -> Non
             # way it does for Fortran, so only this lane's own diagnostics stop
             # the build here.
             continue
-        details = "; ".join(policy.blockers)
-        raise ValueError(f"C direct operation {policy.owner_path!r} is unsupported before wrapper planning: {details}")
+        codes = frozenset(re.findall(r"C_DIRECT_[A-Z0-9_]+", "; ".join(policy.blockers)))
+        diagnostics.append((policy.owner_path, policy.blockers, codes))
     for variable in module.variables:
         if not _is_wrapped_c_declaration(module, variable):
             continue
-        raise ValueError(
-            f"C direct operation '{module.name}.{variable.name}' is unsupported before wrapper planning: "
-            f"{_c_module_variable_blocker(variable)}"
-        )
+        blocker = _c_module_variable_blocker(variable)
+        diagnostics.append((f"{module.name}.{variable.name}", (blocker,), frozenset({blocker.partition(":")[0]})))
     for semantic_class in module.classes:
         if not _is_wrapped_c_declaration(module, semantic_class):
             continue
-        raise ValueError(
-            f"C direct operation '{module.name}.{semantic_class.name}' is unsupported before wrapper planning: "
-            f"C_DIRECT_AGGREGATE_TYPE:{semantic_class.name}"
-        )
+        blocker = f"C_DIRECT_AGGREGATE_TYPE:{semantic_class.name}"
+        diagnostics.append((f"{module.name}.{semantic_class.name}", (blocker,), frozenset({"C_DIRECT_AGGREGATE_TYPE"})))
+    return tuple(diagnostics)
 
 
 def _c_module_variable_blocker(variable: models.SemanticVariable) -> str:

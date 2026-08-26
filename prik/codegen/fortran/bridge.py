@@ -2149,13 +2149,18 @@ class FortranBridgeGenerator(ClassVisitor):
     def _lower_module_derived_presence(self, plan: ModuleVariablePlan) -> tuple[FortranFunction, ...]:
         """Expose descriptor state for one nullable typed module proxy."""
         storage = plan.derived.handoff.storage
-        inquiry = {
-            DerivedObjectStorage.MODULE_ALLOCATABLE: "allocated",
-            DerivedObjectStorage.MODULE_ALLOCATABLE_TARGET: "allocated",
-            DerivedObjectStorage.MODULE_POINTER: "associated",
-        }.get(storage)
-        if inquiry is None:
+        if storage is DerivedObjectStorage.MODULE_PROXY:
             return ()
+        try:
+            inquiry = {
+                DerivedObjectStorage.MODULE_ALLOCATABLE: "allocated",
+                DerivedObjectStorage.MODULE_ALLOCATABLE_TARGET: "allocated",
+                DerivedObjectStorage.MODULE_POINTER: "associated",
+            }[storage]
+        except KeyError as error:
+            raise ValueError(
+                f"Derived module object {plan.owner_path!r} has unsupported presence storage: {storage.value}"
+            ) from error
         name = self._module_derived_presence_bridge_name(plan)
         return (
             FortranFunction(
@@ -8398,10 +8403,17 @@ class FortranBridgeGenerator(ClassVisitor):
         """Declare one completed scalar-derived output."""
         if slot.derived is None:
             raise ValueError(f"Derived output {slot.owner_path!r} has no handoff plan")
-        attribute = {
-            DerivedObjectStorage.ALLOCATABLE_HOLDER: ("allocatable",),
-            DerivedObjectStorage.POINTER_HOLDER: ("pointer",),
-        }.get(slot.derived.storage, ())
+        try:
+            attribute = {
+                DerivedObjectStorage.DIRECT: (),
+                DerivedObjectStorage.ALLOCATABLE_HOLDER: ("allocatable",),
+                DerivedObjectStorage.POINTER_HOLDER: ("pointer",),
+            }[slot.derived.storage]
+        except KeyError as error:
+            raise ValueError(
+                f"Derived output {slot.owner_path!r} has unsupported external-interface storage: "
+                f"{slot.derived.storage.value}"
+            ) from error
         return FortranParameter(
             slot.native_name.lower(),
             f"type({self._derived_native_alias(slot.derived.backend_symbol)})",
@@ -8442,10 +8454,17 @@ class FortranBridgeGenerator(ClassVisitor):
         if result.object_kind is ObjectKind.DERIVED_TYPE:
             if result.derived is None:
                 raise ValueError(f"Derived result {result.owner_path!r} has no handoff plan")
-            attribute = {
-                DerivedObjectStorage.ALLOCATABLE_HOLDER: ", allocatable",
-                DerivedObjectStorage.POINTER_HOLDER: ", pointer",
-            }.get(result.derived.storage, "")
+            try:
+                attribute = {
+                    DerivedObjectStorage.DIRECT: "",
+                    DerivedObjectStorage.ALLOCATABLE_HOLDER: ", allocatable",
+                    DerivedObjectStorage.POINTER_HOLDER: ", pointer",
+                }[result.derived.storage]
+            except KeyError as error:
+                raise ValueError(
+                    f"Derived result {result.owner_path!r} has unsupported external-interface storage: "
+                    f"{result.derived.storage.value}"
+                ) from error
             return f"type({self._derived_native_alias(result.derived.backend_symbol)}){attribute}"
         return PrimitiveScalarTypeRegistry.type_for(result.semantic_type_name).fortran_spelling
 

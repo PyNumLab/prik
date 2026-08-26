@@ -122,6 +122,45 @@ release tags add a leading `v` to the package version.
 
 ### Fixed
 
+- Coercive integer callback results now raise `OverflowError` when a Python
+  integer falls outside the declared native width instead of narrowing or
+  wrapping it silently.
+- `UInt64` and `SizeT` scalar results now use the same target-specific NumPy
+  scalar identities accepted by their arguments, so a generated result can be
+  passed back into the same direct-C API on LP64 targets.
+- Manifest replay now validates the recorded semantic `.pyi` import graph
+  before generating files or invoking a compiler.
+- Mixed-language builds now compile C with the same explicitly selected driver
+  used for C probing, and reject a C/Fortran compiler-family mismatch instead
+  of silently substituting the Fortran driver's default C compiler.
+- Native link-item language requirements now survive result serialization and
+  manifest replay for named libraries and linker arguments as well as path
+  artifacts, preserving link-driver selection.
+- Generated bindings now allocate writable string-replacement buffers only
+  after all inputs validate, release every live buffer on later setup or
+  conversion failure, free replacements before other fallible output
+  conversions, and release unpublished native results if string write-back
+  conversion fails.
+- Binding-owned array-coercion temporaries now clear their local owner when
+  released, so later native-status error cleanup cannot release them twice.
+- Failed Python conversion of one native result now releases every later
+  unpublished string, array, descriptor, or derived-result owner instead of
+  leaking storage returned by the same native call.
+- Source builds now fail before native compilation if their promised semantic
+  contract package cannot be rendered, and report the written `.pyi` files in
+  `WrapperBuildResult.generated_files`.
+- Direct-C preflight now rejects every intrinsic unsupported-policy diagnostic
+  before target ABI probing; only diagnostics that require compiler-probed
+  primitive facts are deferred.
+- Direct-C array policy now rejects explicitly non-C layouts instead of
+  silently replacing the authored semantic contract with C-order validation.
+- Semantic `.pyi` decorators used on declaration kinds where their meaning
+  cannot be represented are now rejected instead of silently discarded.
+- Abstract derived-type identity is now module-qualified during semantic
+  conversion. A concrete type with the same local name in another module no
+  longer inherits abstract-dummy policy, while imported abstract types are
+  recognized regardless of project source order.
+
 - Source-free C contracts now carry compiler-probed `Int`, `UInt`, and `SizeT`
   storage through primitive arrays and projected outputs while preserving exact
   standard C spellings such as `int *` in generated prototypes. Target-

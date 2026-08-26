@@ -11,7 +11,7 @@ from types import ModuleType
 import numpy as np
 import pytest
 
-from prik import build_pyi_extension
+from prik import build_pyi_extension, build_pyi_extension_from_manifest
 from prik.pipeline.build import WrapperBuildResult, build_fortran_extension
 from tests.fortran._support.pyi_fixtures import assert_generated_pyi_package_matches_fixture
 
@@ -325,6 +325,33 @@ def direct(value: Int32) -> Int32: ...
     assert {Path(path).suffix for path in generated["sources"]} == {".c", ".h"}
     assert "bind_c_direct_manifest_wrapper.f90" not in makefile
     assert "direct_manifest.f90" in makefile
+
+
+def test_manifest_replay_preserves_language_for_named_and_raw_link_items(tmp_path: Path) -> None:
+    contract = tmp_path / "api.pyi"
+    contract.write_text(
+        "from prik.contracts import Int32\ndef identity(value: Int32) -> Int32: ...\n", encoding="utf-8"
+    )
+    link_items = (
+        {"kind": "named_library", "name": "runtime", "language": "fortran"},
+        {"kind": "linker_argument", "argument": "-pthread", "language": "c"},
+    )
+
+    generated = build_pyi_extension(
+        contract,
+        native_link_items=link_items,
+        output_dir=tmp_path / "generated",
+        makefile=True,
+    )
+    replayed = build_pyi_extension_from_manifest(
+        generated.build_manifest,
+        generate_sources=True,
+    )
+
+    assert [item.to_dict() for item in replayed.native_build_plan.link_items] == [
+        {"kind": "named_library", "name": "runtime", "language": "fortran"},
+        {"kind": "linker_argument", "argument": "-pthread", "language": "c"},
+    ]
 
 
 def test_pyi_cli_accepts_exactly_one_entry_contract(tmp_path: Path):

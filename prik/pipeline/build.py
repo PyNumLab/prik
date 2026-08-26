@@ -26,6 +26,7 @@ from importlib.util import module_from_spec, spec_from_file_location
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import sys
 import time
@@ -72,7 +73,7 @@ from prik.policy.native_array_handles import (
     NativeArrayBuildRequirements,
     native_array_handle_build_requirements,
 )
-from prik.policy.completion import complete_semantic_policies
+from prik.policy.completion import _DEFERRED_C_DIRECT_DIAGNOSTIC_CODES, complete_semantic_policies
 from prik.policy.models import FunctionWrapperPolicy, NativeEntrypointAction
 from prik.pipeline.pyi import _PyiSemanticModuleCache
 from prik.semantics.pyi_metadata import PYI_LOADED_METADATA
@@ -111,29 +112,6 @@ _UNMODELED_C_DECLARATION_DIAGNOSTIC_CODES = frozenset(
         "C_UNMODELED_COMPILER_EXTENSION",
     }
 )
-_INTRINSIC_C_DIRECT_DIAGNOSTIC_CODES = frozenset(
-    {
-        "C_DIRECT_CALLBACK",
-        "C_DIRECT_ARRAY_DECLARATOR",
-        "C_DIRECT_POINTER_DEPTH",
-        "C_DIRECT_POINTER_RESULT",
-        "C_DIRECT_VARIADIC_FUNCTION",
-        "C_DIRECT_TRANSLATION_UNIT_LOCAL_SYMBOL",
-        "C_DIRECT_UNSUPPORTED_CALLING_CONVENTION",
-        "C_DIRECT_UNSUPPORTED_QUALIFIER",
-        "C_DIRECT_NULLABLE_POINTER",
-        "C_DIRECT_RAW_ADDRESS",
-        "C_DIRECT_BOOL_ARRAY",
-        "C_DIRECT_CONST_POINTER_OUTPUT",
-        "C_DIRECT_ARRAY_RANK",
-        "C_DIRECT_ARRAY_CONTRACT",
-        "C_DIRECT_ARRAY_PASSING",
-        "C_DIRECT_ARRAY_TRANSFORMATION",
-        "C_DIRECT_ARRAY_ORDER",
-    }
-)
-
-
 # Build configuration, timing, and mode validation
 
 
@@ -338,22 +316,23 @@ class NativeLinkItem:
         Path-based kinds use ``path``, named libraries use ``name``, and raw
         arguments use ``argument``.  The record itself remains unchanged.
         """
+        language = {"language": self.language} if self.language is not None else {}
         if self.kind in _NATIVE_PATH_LINK_KINDS:
-            record = {
+            return {
                 "kind": self.kind,
                 "path": str(self.value),
+                **language,
             }
-            if self.language is not None:
-                record["language"] = self.language
-            return record
         if self.kind == "named_library":
             return {
                 "kind": self.kind,
                 "name": str(self.value),
+                **language,
             }
         return {
             "kind": self.kind,
             "argument": str(self.value),
+            **language,
         }
 
 
@@ -652,6 +631,7 @@ def _new_compiler(
     if requires_fortran:
         return Compiler.from_fortran_executable(
             input_compiler or "gfortran",
+            c_executable=input_c_compiler,
             debug=debug,
             execute_commands=execute_commands,
             search_path=search_path,
@@ -735,13 +715,7 @@ def _write_build_contract_package(
     """
     if not source_modules:
         return ()
-    try:
-        stubs = emit_module_stubs(source_modules)
-    except (ValueError, KeyError) as error:
-        # The extension is already built; a contract that cannot be rendered is
-        # reported rather than allowed to fail the build behind it.
-        _print_verbose_step(verbose, f"Skip contract package: {error}")
-        return ()
+    stubs = emit_module_stubs(source_modules)
     package_dir = output_dir / BUILD_CONTRACT_DIRECTORY_NAME
     package_dir.mkdir(parents=True, exist_ok=True)
     written = []
@@ -1329,39 +1303,16 @@ def _preflight_intrinsic_c_direct_policy(
     those unsupported forms away from the compiler while a supported
     ``int``/``size_t`` operation acquires its target ABI facts normally.
     """
+    source_modules = tuple(modules)
     try:
         complete_semantic_policies(
-            deepcopy(list(modules)),
+            deepcopy(source_modules),
             strict_wrapper_names=strict_wrapper_names,
         )
     except ValueError as error:
-        if any(code in str(error) for code in _INTRINSIC_C_DIRECT_DIAGNOSTIC_CODES) or (
-            "C_DIRECT_UNRESOLVED_PRIMITIVE_ABI" in str(error) and _c_direct_aggregate_contract_requested(modules)
-        ):
+        codes = frozenset(re.findall(r"C_DIRECT_[A-Z0-9_]+", str(error)))
+        if not codes or not codes.issubset(_DEFERRED_C_DIRECT_DIAGNOSTIC_CODES):
             raise
-
-
-def _c_direct_aggregate_contract_requested(modules: Iterable[SemanticModule]) -> bool:
-    """Return whether a C contract passes a declared aggregate at its boundary."""
-    for module in modules:
-        aggregate_names = {
-            semantic_class.name
-            for semantic_class in module.classes
-            if semantic_class.metadata.get("c_kind") in {"struct", "union"}
-        }
-        if not aggregate_names:
-            continue
-        for function in module.functions:
-            boundary_types = (function.return_type, *(argument.semantic_type for argument in function.arguments))
-            if any(
-                semantic_type is not None
-                and (
-                    semantic_type.name in aggregate_names or semantic_type.metadata.get("c_kind") in {"struct", "union"}
-                )
-                for semantic_type in boundary_types
-            ):
-                return True
-    return False
 
 
 # Native source compilation scheduling
@@ -2174,27 +2125,32 @@ def _coerce_native_link_items(items: Iterable[NativeLinkItem | dict[str, object]
         kind = item.get("kind")
         if not isinstance(kind, str):
             raise ValueError("native link item dictionaries require a string 'kind'")
+        language = _native_link_item_language(item.get("language"))
         if kind in _NATIVE_PATH_LINK_KINDS:
             path = item.get("path")
             if not isinstance(path, str | Path):
                 raise ValueError(f"{kind!r} native link item requires a path")
-            language = item.get("language")
-            if language is not None and language not in {"c", "fortran"}:
-                raise ValueError("native link-item language must be 'c' or 'fortran'")
             result.append(NativeLinkItem(kind, path, language=language))
         elif kind == "named_library":
             name = item.get("name")
             if not isinstance(name, str):
                 raise ValueError("named_library native link item requires a name")
-            result.append(NativeLinkItem(kind, name))
+            result.append(NativeLinkItem(kind, name, language=language))
         elif kind == "linker_argument":
             argument = item.get("argument")
             if not isinstance(argument, str):
                 raise ValueError("linker_argument native link item requires an argument")
-            result.append(NativeLinkItem(kind, argument))
+            result.append(NativeLinkItem(kind, argument, language=language))
         else:
             raise ValueError(f"Unsupported native link item kind: {kind!r}")
     return tuple(result)
+
+
+def _native_link_item_language(value: object) -> str | None:
+    """Validate one optional explicit link-language requirement."""
+    if value is not None and value not in {"c", "fortran"}:
+        raise ValueError("native link-item language must be 'c' or 'fortran'")
+    return value
 
 
 def _link_item_paths(link_items: Iterable[NativeLinkItem]) -> tuple[Path, ...]:
@@ -2432,22 +2388,23 @@ def _manifest_link_item(item: NativeLinkItem, *, base: Path) -> dict[str, object
     and raw arguments retain their string values.  The input item is not
     modified.
     """
+    language = {"language": item.language} if item.language is not None else {}
     if item.kind in _NATIVE_PATH_LINK_KINDS:
-        record = {
+        return {
             "kind": item.kind,
             "path": _manifest_path(Path(item.value), base=base),
+            **language,
         }
-        if item.language is not None:
-            record["language"] = item.language
-        return record
     if item.kind == "named_library":
         return {
             "kind": item.kind,
             "name": str(item.value),
+            **language,
         }
     return {
         "kind": item.kind,
         "argument": str(item.value),
+        **language,
     }
 
 
@@ -2669,6 +2626,13 @@ def _load_build_manifest(path: str | Path) -> tuple[Path, dict[str, object]]:
     return manifest_path, payload
 
 
+def _build_manifest_native_language(path: str | Path) -> str:
+    """Return the validated native contract language recorded for replay."""
+    _manifest_path_value, payload = _load_build_manifest(path)
+    extension = _manifest_section(payload, "extension")
+    return _native_contract_language(_manifest_string(extension, "native_language"))
+
+
 def _manifest_section(payload: dict[str, object], key: str) -> dict[str, object]:
     """Return a required object section from a validated manifest payload."""
     value = payload.get(key)
@@ -2718,24 +2682,22 @@ def _native_link_item_from_manifest(item: object, *, base: Path) -> NativeLinkIt
     kind = item.get("kind")
     if not isinstance(kind, str):
         raise ValueError("Wrapper build manifest link item is missing kind")
+    language = _native_link_item_language(item.get("language"))
     if kind in _NATIVE_PATH_LINK_KINDS:
         path = item.get("path")
         if not isinstance(path, str):
             raise ValueError(f"Wrapper build manifest {kind!r} link item is missing path")
-        language = item.get("language")
-        if language is not None and language not in {"c", "fortran"}:
-            raise ValueError("Wrapper build manifest native link-item language must be 'c' or 'fortran'")
         return NativeLinkItem(kind, _resolve_manifest_path(path, base=base), language=language)
     if kind == "named_library":
         name = item.get("name")
         if not isinstance(name, str):
             raise ValueError("Wrapper build manifest named library link item is missing name")
-        return NativeLinkItem(kind, name)
+        return NativeLinkItem(kind, name, language=language)
     if kind == "linker_argument":
         argument = item.get("argument")
         if not isinstance(argument, str):
             raise ValueError("Wrapper build manifest linker argument item is missing argument")
-        return NativeLinkItem(kind, argument)
+        return NativeLinkItem(kind, argument, language=language)
     raise ValueError(f"Unsupported wrapper build manifest link item kind: {kind!r}")
 
 
@@ -2961,7 +2923,7 @@ def _write_build_makefile(
     # Preserve compiler selection while leaving caller-overridable flags empty.
     lines = [
         "# Generated by prik. Edit variables or override them on the make command line.",
-        "# User Fortran sources are conservatively chained in supplied order.",
+        "# Native sources are chained in PRIK's recorded dependency-safe order.",
         "# Generated bridge and C binding objects may be built in parallel with make -j.",
         f"FC := {_make_shell_literal(shlex.quote(_compiler_executable(commands, language='fortran', shared=False, source_languages=source_languages)))}",
         f"CC := {_make_shell_literal(shlex.quote(_compiler_executable(commands, language='c', shared=False, source_languages=source_languages)))}",
@@ -2975,7 +2937,7 @@ def _write_build_makefile(
     link_output = _absolute_command_path(_command_output(link_command), working_directory)
     lines.extend([".PHONY: all rebuild clean", f"all: {_make_target(link_output)}", ""])
 
-    # User sources remain ordered; generated objects depend on all native objects.
+    # Native sources retain the recorded safe order; generated objects depend on them.
     previous_user_output = None
     for command, output in zip(compile_commands, compile_outputs, strict=True):
         source = _absolute_command_path(_command_source(command), working_directory)
@@ -3419,6 +3381,7 @@ def build_fortran_extension(
         collision_adapter_all=collision_adapter_all,
         positional_only=positional_only,
     )
+    contract_files = _write_build_contract_package(source_modules, output_path, verbose=verbose)
 
     # 4. Prepare native compilation, dependency batches, and link inputs.
     wrapper_fortran_flags = _compiler_flags(wrapper_fortran_flags)
@@ -3455,7 +3418,7 @@ def build_fortran_extension(
         source_objects=native_source_objects,
         extra_dependencies=_link_item_paths(native_build_plan.link_items),
     )
-    _write_build_contract_package(source_modules, output_path, verbose=verbose)
+    result = replace(result, generated_files=(*result.generated_files, *contract_files))
     _report_total_build_time(
         verbose,
         time.perf_counter() - build_started,
@@ -3573,6 +3536,11 @@ def build_c_extension(
         positional_only=positional_only,
     )
     output_path.mkdir(parents=True, exist_ok=True)
+    contract_files = _write_build_contract_package(
+        tuple(_wrapped_c_translation_unit(module) for module in source_modules),
+        output_path,
+        verbose=verbose,
+    )
     native_source_objects, native_build_plan = _prepare_native_build_plan(native_inputs, output_path=output_path)
     wrapper_fortran_flags = _compiler_flags(wrapper_fortran_flags)
     wrapper_c_flags = _compiler_flags(wrapper_c_flags)
@@ -3606,11 +3574,7 @@ def build_c_extension(
         source_objects=native_source_objects,
         extra_dependencies=_link_item_paths(native_build_plan.link_items),
     )
-    _write_build_contract_package(
-        tuple(_wrapped_c_translation_unit(module) for module in source_modules),
-        output_path,
-        verbose=verbose,
-    )
+    result = replace(result, generated_files=(*result.generated_files, *contract_files))
     _report_total_build_time(
         verbose,
         time.perf_counter() - build_started,
@@ -3934,9 +3898,23 @@ def build_pyi_extension_from_manifest(
     if selected_input_c_compiler is None:
         selected_input_c_compiler = _manifest_string(compiler_section, "input_c_executable")
 
+    # The manifest owns the complete contract graph. Validate it before the
+    # delegated build can generate sources, replace artifacts, or invoke a
+    # compiler; a changed graph is an input error, not a post-build audit.
+    resolved_entry_contract = _resolve_manifest_path(entry_contract, base=base)
+    recorded_contracts = tuple(
+        _resolve_manifest_path(path, base=base) for path in _manifest_string_list(payload, "contract_paths")
+    )
+    current_contracts = _pyi_contract_bundle(
+        resolved_entry_contract,
+        native_language=native_language,
+    ).paths
+    if current_contracts != recorded_contracts:
+        raise ValueError("Current .pyi import graph does not match the wrapper build manifest contract_paths")
+
     # 3. Delegate execution to the regular `.pyi` build path.
     result = build_pyi_extension(
-        _resolve_manifest_path(entry_contract, base=base),
+        resolved_entry_contract,
         input_compiler=selected_input_compiler,
         input_c_compiler=selected_input_c_compiler,
         native_language=native_language,
@@ -3963,12 +3941,7 @@ def build_pyi_extension_from_manifest(
         _on_total_build_time=lambda _elapsed: None,
     )
 
-    # 4. Ensure the current contract graph still matches the recorded build.
-    recorded_contracts = tuple(
-        _resolve_manifest_path(path, base=base) for path in _manifest_string_list(payload, "contract_paths")
-    )
-    if result.sources != recorded_contracts:
-        raise ValueError("Current .pyi import graph does not match the wrapper build manifest contract_paths")
+    # 4. Report the complete replay duration after the delegated build.
     _report_total_build_time(
         verbose,
         time.perf_counter() - build_started,

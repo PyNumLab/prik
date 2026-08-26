@@ -1,5 +1,7 @@
 """Combined callback contract covering value, storage, arrays, strings, and derived types."""
 
+import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -73,3 +75,26 @@ def test_immediate_callbacks_cover_all_supported_argument_shapes(
     )
     assert shifted.x == np.float64(3.0)
     assert shifted.y == np.float64(10.0)
+
+    build_dir = (
+        tmp_path / "source_build"
+        if pyi_parity_build_mode == "source"
+        else tmp_path / "generated_pyi_build" / "pyi_build"
+    )
+    out_of_range = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import numpy as np; import fcallback_all_f90 as root; "
+                "module = root.fcallback_all_f90; "
+                "module.apply_value_callback(lambda value: 2**40, np.int32(4))"
+            ),
+        ],
+        cwd=build_dir,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert out_of_range.returncode != 0
+    assert "OverflowError: Python integer is outside the native signed-integer range" in out_of_range.stderr

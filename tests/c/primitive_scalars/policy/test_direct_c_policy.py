@@ -79,6 +79,22 @@ def update(value: Bool[()]) -> None: ...
         complete_semantic_policies(module)
 
 
+@pytest.mark.parametrize("order", ["ORDER_F", "ORDER_ANY"])
+def test_direct_c_arrays_reject_non_c_layout_contracts_before_planning(order: str):
+    module = pyi_text_to_semantic_module(
+        f"""from prik.contracts import Annotated, Arg, Float64, {order}, native_call
+@native_call([Arg(0)])
+def update(values: Annotated[Float64[:, :], {order}]) -> None: ...
+""",
+        module_name="non_c_layout",
+        native_language="c",
+    )
+    validate_pyi_native_contract([module])
+
+    with pytest.raises(ValueError, match="C_DIRECT_ARRAY_ORDER:values"):
+        complete_semantic_policies(module)
+
+
 @pytest.mark.parametrize(
     ("source", "diagnostic"),
     [
@@ -86,7 +102,7 @@ def update(value: Bool[()]) -> None: ...
         ("void values(double input[3]);", "C_DIRECT_ARRAY_DECLARATOR:input"),
         ("void indirect(double **input);", "C_DIRECT_POINTER_DEPTH:input"),
         ("void callback(void (*action)(int));", "C_DIRECT_CALLBACK:action"),
-        ("struct state { int value; }; void consume(struct state value);", "C_DIRECT_UNRESOLVED_PRIMITIVE_ABI:value"),
+        ("struct state { int value; }; void consume(struct state value);", "C_DIRECT_AGGREGATE_TYPE:state"),
         ("int total(int first, ...);", "C_DIRECT_VARIADIC_FUNCTION"),
         ("static double hidden(double value);", "C_DIRECT_TRANSLATION_UNIT_LOCAL_SYMBOL"),
         ("void volatile_value(volatile double value);", "C_DIRECT_UNSUPPORTED_QUALIFIER:value"),

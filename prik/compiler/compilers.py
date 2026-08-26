@@ -56,30 +56,48 @@ class Compiler:
         cls,
         executable: str = "gfortran",
         *,
+        c_executable: str | None = None,
         debug: bool = False,
         execute_commands: bool = True,
         search_path: str | None = None,
     ) -> Compiler:
-        """Create the coherent vendor toolchain selected by one Fortran driver."""
+        """Create a mixed toolchain whose final link uses one Fortran driver.
+
+        When ``c_executable`` is omitted, the Fortran driver's matching C
+        compiler is selected. An explicit C executable keeps C probing and C
+        compilation on the same driver while Fortran still owns the link.
+        """
         resolved_fortran = shutil.which(executable, path=search_path)
         if resolved_fortran is None:
             raise FileNotFoundError(f"Could not find compiler executable: {executable}")
 
         token, vendor, default_c = fortran_compiler_family(resolved_fortran)
-        fortran_name = Path(resolved_fortran).name
-        c_names = tuple(dict.fromkeys((fortran_name.replace(token, default_c, 1), default_c)))
-        c_candidates = (
-            *(str(Path(resolved_fortran).parent / name) for name in c_names),
-            *c_names,
-        )
-        resolved_c = next(
-            (candidate for name in c_candidates if (candidate := shutil.which(name, path=search_path)) is not None),
-            None,
-        )
+        if c_executable is None:
+            fortran_name = Path(resolved_fortran).name
+            c_names = tuple(dict.fromkeys((fortran_name.replace(token, default_c, 1), default_c)))
+            c_candidates = (
+                *(str(Path(resolved_fortran).parent / name) for name in c_names),
+                *c_names,
+            )
+            resolved_c = next(
+                (candidate for name in c_candidates if (candidate := shutil.which(name, path=search_path)) is not None),
+                None,
+            )
+        else:
+            c_names = (c_executable,)
+            resolved_c = shutil.which(c_executable, path=search_path)
         if resolved_c is None:
+            if c_executable is not None:
+                raise FileNotFoundError(f"Could not find C compiler executable: {c_executable}")
             names = ", ".join(c_names)
             raise FileNotFoundError(
                 f"Could not find the {vendor} C compiler matching {resolved_fortran}: expected {names}"
+            )
+        _c_token, c_vendor = cls._c_family(resolved_c)
+        if c_vendor != vendor:
+            raise ValueError(
+                f"Mixed-language builds require one compiler family; "
+                f"{resolved_fortran} selects {vendor}, but {resolved_c} selects {c_vendor}"
             )
         return cls(
             vendor,

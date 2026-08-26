@@ -179,6 +179,7 @@ def test_c_parser_cli_helpers_errors_and_module_entrypoint(monkeypatch, capsys):
     assert "bad.h:1:1: error[CPARSE_ERROR]: invalid" in capsys.readouterr().err
 
     monkeypatch.setattr(c_parser_cli, "main", lambda _argv=None: 0)
+    monkeypatch.delitem(sys.modules, "prik.parsers.c.__main__", raising=False)
     with pytest.raises(SystemExit) as exc_info:
         runpy.run_module("prik.parsers.c.__main__", run_name="__main__")
     assert exc_info.value.code == 0

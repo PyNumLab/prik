@@ -1412,6 +1412,7 @@ def _run_stage_reports_with_diagnostics(args: argparse.Namespace, preprocessing:
 
 def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig):
     from prik.pipeline.build import (
+        _build_manifest_native_language,
         build_c_extension,
         build_fortran_extension,
         build_pyi_extension,
@@ -1423,11 +1424,13 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
 
     total_build_time_reporter = record_total_build_time if getattr(args, "verbose", False) else None
     if _wrapper_build_uses_manifest(args):
+        manifest_language = _build_manifest_native_language(args.build_manifest)
+        selected_compiler = getattr(args, "compiler", None)
         result = build_pyi_extension_from_manifest(
             args.build_manifest,
             output_name=_wrapper_output_name(args),
-            input_compiler=getattr(args, "compiler", None),
-            input_c_compiler=getattr(args, "compiler", None),
+            input_compiler=selected_compiler if manifest_language == "fortran" else None,
+            input_c_compiler=selected_compiler if manifest_language == "c" else None,
             include_dirs=getattr(args, "include_dirs", None),
             makefile=getattr(args, "makefile", False),
             generate_sources=getattr(args, "generate_sources", False),

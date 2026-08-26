@@ -922,7 +922,7 @@ class _PyiAstParser:
         """Mark a type-bound declaration as a deferred binding with no native target."""
         if isinstance(node, ast.Call):
             raise ValueError("abstractmethod does not accept arguments")
-        if context == "class":
+        if context != "class body":
             raise ValueError("abstractmethod is only valid on a method declaration")
         if parsed.abstract_method:
             raise ValueError("Duplicate abstractmethod decorator")
@@ -3579,9 +3579,13 @@ class _ClassBodyVisitor(ClassVisitor):
         if (
             decorators.has_native_call
             or decorators.bind_target is not None
+            or decorators.overload_target is not None
+            or decorators.is_static
             or decorators.release_gil
             or decorators.error_status_policy is not None
             or decorators.standalone
+            or decorators.abstract_method
+            or decorators.destroy
         ):
             raise ValueError(f"Unsupported class body decorator: {ast.unparse(node.decorator_list[-1])!r}")
         if (
@@ -3643,6 +3647,8 @@ class _ModuleVisitor(ClassVisitor):
         if (
             decorators.has_native_call
             or decorators.bind_target is not None
+            or decorators.overload_target is not None
+            or decorators.is_static
             or decorators.release_gil
             or decorators.error_status_policy is not None
             or decorators.standalone

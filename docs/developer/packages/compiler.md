@@ -40,9 +40,11 @@ generated imports + output directory -> conditional native-support installation
 
 The pipeline supplies dependency-ready batches and decides when native support
 is needed. This component executes one explicit request at a time. Selecting a
-Fortran compiler identifies its compatible C driver and family-specific flags;
-it never combines unrelated toolchain profiles. A C-only build selects its C
-driver directly and does not discover or require a Fortran compiler.
+Fortran compiler identifies its compatible C driver and family-specific flags.
+A mixed build may name that family's C executable explicitly so C probing and
+C compilation use the same driver; a C executable from another family is
+rejected. A C-only build selects its C driver directly and does not discover or
+require a Fortran compiler.
 
 ## Directory Tour
 
@@ -65,8 +67,10 @@ Python and NumPy include and link settings required for a CPython extension.
 returns the identifying token, vendor profile, and matching C executable name.
 It does not locate executables or run a command.
 `Compiler.from_fortran_executable()` performs the lookup, first beside the
-selected Fortran executable and then on the configured search path. It rejects
-an unknown family or a missing matching C driver.
+selected Fortran executable and then on the configured search path. A caller
+may instead provide the exact C executable used by the preceding C stages; it
+must identify the same vendor family. The constructor rejects an unknown
+family, a missing executable, or a mixed-vendor pair.
 
 `Compiler.from_c_executable()` is the direct-C counterpart. It resolves the
 selected C executable, identifies its vendor from the executable name or its

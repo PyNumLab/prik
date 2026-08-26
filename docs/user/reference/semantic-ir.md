@@ -4,7 +4,7 @@ audience: advanced users, developers
 prerequisites: parser references, native datatype model
 related: index.md
 status: maintained
-publication: draft
+publication: reviewed
 ---
 
 # Semantic IR Reference

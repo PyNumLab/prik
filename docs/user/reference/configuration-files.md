@@ -40,7 +40,7 @@ Stable top-level fields:
 | `schema_version` | Manifest schema version. The current supported value is `4`. |
 | `build_kind` | Manifest kind. The current supported value is `pyi-wrapper`. |
 | `entry_contract` | Entry semantic `.pyi` path used for the build. |
-| `contract_paths` | Complete discovered `.pyi` import graph. Replay fails if the current graph differs. |
+| `contract_paths` | Complete discovered `.pyi` import graph. Replay checks the current graph before generating files or invoking a compiler and fails if it differs. |
 | `extension` | Requested and resolved Python extension names, the native input language, and any opt-in collision-adapter selection. |
 | `output` | Output directory, shared-library path, and strict-name setting. |
 | `compiler` | Input-language compiler executable, compiler profile, and wrapper/native flag values recorded by the build. |

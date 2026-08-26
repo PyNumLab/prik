@@ -621,10 +621,8 @@ class WrapperPlanner(ClassVisitor):
             native_scope=policy.native_scope,
             python_names=python_names,
             fields=planned_fields,
-            destructors=policy.destructors,
             bind_c=policy.bind_c,
             abstract=policy.abstract,
-            deferred_bindings=policy.deferred_bindings,
         )
 
     # Generated class surfaces compose Phase 8 types and ordinary function plans.

@@ -79,6 +79,7 @@ void no_result(void) {}
             assert isinstance(output, np.generic)
             assert output.dtype == _DTYPES[dtype_name]
             assert output == value
+        assert getattr(module, function_name)(output) == value
     assert module.no_result() is None
     with pytest.raises(TypeError, match=r"numpy\.uint8"):
         module.unsigned_char_identity(np.uint16(256))

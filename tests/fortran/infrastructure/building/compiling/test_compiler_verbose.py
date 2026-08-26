@@ -161,6 +161,51 @@ def test_fortran_selection_rejects_a_missing_vendor_c_compiler(tmp_path: Path):
         )
 
 
+def test_mixed_selection_preserves_the_explicit_c_driver(tmp_path: Path):
+    """C probing and C compilation must not diverge when Fortran owns linking."""
+    fortran = tmp_path / "gfortran"
+    c_compiler = tmp_path / "gcc"
+    for executable in (fortran, c_compiler):
+        executable.touch(mode=0o755)
+
+    compiler = Compiler.from_fortran_executable(
+        str(fortran),
+        c_executable=str(c_compiler),
+        execute_commands=False,
+        search_path=str(tmp_path),
+    )
+    native = ObjectFile(tmp_path / "native.f90", tmp_path / "native.o", "fortran")
+    binding = ObjectFile(tmp_path / "binding.c", tmp_path / "binding.o", "c")
+
+    compiler.compile_object(native)
+    compiler.compile_object(binding)
+    compiler.link_extension(
+        module_name="wrapped",
+        output_dir=tmp_path,
+        language="fortran",
+        objects=(native, binding),
+    )
+
+    assert compiler.command_log[0][0] == str(fortran)
+    assert compiler.command_log[1][0] == str(c_compiler)
+    assert compiler.command_log[2][0] == str(fortran)
+
+
+def test_mixed_selection_rejects_an_explicit_c_driver_from_another_family(tmp_path: Path):
+    fortran = tmp_path / "gfortran"
+    c_compiler = tmp_path / "clang"
+    for executable in (fortran, c_compiler):
+        executable.touch(mode=0o755)
+
+    with pytest.raises(ValueError, match="Mixed-language builds require one compiler family"):
+        Compiler.from_fortran_executable(
+            str(fortran),
+            c_executable=str(c_compiler),
+            execute_commands=False,
+            search_path=str(tmp_path),
+        )
+
+
 def test_python_sysconfig_compile_flags_are_not_forwarded_to_vendor_compiler(monkeypatch, tmp_path: Path):
     compiler = Compiler("GNU", debug=False, execute_commands=False)
     monkeypatch.setattr(compiler, "_executable", lambda _language, _tools: "gcc")

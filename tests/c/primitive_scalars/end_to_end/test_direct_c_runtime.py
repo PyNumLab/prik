@@ -189,7 +189,10 @@ size_t total(size_t value) { return value + 1; }
     binding = next(path.read_text(encoding="utf-8") for path in result.generated_sources if path.suffix == ".c")
 
     assert module.scaled(np.float64(2.0)) == np.float64(6.0)
-    assert module.total(np.uint64(4)) == np.uint64(5)
+    output = module.total(np.uintp(4))
+    assert type(output) is type(np.uintp(0))
+    assert output == np.uintp(5)
+    assert module.total(output) == np.uintp(6)
     # A typedef-written parameter declares the exact underlying builtin, which
     # the binding can always spell; the typedef itself is source provenance.
     assert "unsigned long total(unsigned long value);" in binding

@@ -290,7 +290,7 @@ class FortranToIRConverter(ClassVisitor):
         default and never applies to a declared ``intent``.
         """
         self.assume_intent_in_scalars = bool(assume_intent_in_scalars)
-        self._abstract_type_names: set[str] = set()
+        self._abstract_derived_types: set[tuple[str, str]] = set()
         self.type_map = FORTRAN_TYPE_MAP if type_map is None else type_map
         self.compile_time_values = _normalize_compile_time_values(compile_time_values)
         self.wrapped_derived_types = {
@@ -353,6 +353,7 @@ class FortranToIRConverter(ClassVisitor):
         """
         converter = self._with_additional_wrapped_types(self._wrapped_types_from_file(parsed_file))
         converter = converter._with_additional_known_procedures(self._known_procedures_from_file(parsed_file))
+        converter = converter._with_additional_abstract_types(self._abstract_types_from_file(parsed_file))
         modules = [converter.visit(module) for module in parsed_file.modules]
         if parsed_file.procedures:
             modules.append(
@@ -373,6 +374,7 @@ class FortranToIRConverter(ClassVisitor):
         """
         converter = self._with_additional_wrapped_types(self._wrapped_types_from_project(project))
         converter = converter._with_additional_known_procedures(self._known_procedures_from_project(project))
+        converter = converter._with_additional_abstract_types(self._abstract_types_from_project(project))
         semantic_modules = []
         for parsed_file in project.files:
             file_converter = converter._with_additional_wrapped_types(converter._wrapped_types_from_file(parsed_file))
@@ -461,7 +463,7 @@ class FortranToIRConverter(ClassVisitor):
             metadata["fortran_allocatable"] = True
         if getattr(var, "polymorphic", False):
             metadata["fortran_polymorphic"] = True
-        if semantic_name.casefold() in self._abstract_type_names:
+        if self._is_abstract_derived_type(var, derived_type_context):
             metadata["fortran_abstract_type"] = True
         if getattr(var, "target", False):
             metadata["aliased"] = True
@@ -1081,12 +1083,25 @@ class FortranToIRConverter(ClassVisitor):
         }
 
     def _record_abstract_type_names(self, module: FortranModule) -> None:
-        """Remember which of the module's derived types are declared abstract."""
-        self._abstract_type_names |= {
-            str(dtype.name).casefold()
+        """Remember module-qualified abstract derived-type identities."""
+        self._abstract_derived_types |= {
+            (str(module.name).casefold(), str(dtype.name).casefold())
             for dtype in module.derived_types
             if any(str(attribute).casefold() == "abstract" for attribute in dtype.attributes)
         }
+
+    def _is_abstract_derived_type(
+        self,
+        variable: FortranVariable,
+        context: _DerivedTypeContext | None,
+    ) -> bool:
+        """Return whether one resolved derived-type identity is abstract."""
+        if str(variable.base_type).casefold() != "derived" or not variable.kind:
+            return False
+        origin = self._resolve_derived_type_origin(str(variable.kind), context)
+        if origin.module is None:
+            return False
+        return (origin.module.casefold(), origin.name.casefold()) in self._abstract_derived_types
 
     def _visit_FortranModule(
         self,
@@ -1452,6 +1467,7 @@ class FortranToIRConverter(ClassVisitor):
             assume_intent_in_scalars=self.assume_intent_in_scalars,
         )
         converter._known_procedures = set(self._known_procedures)
+        converter._abstract_derived_types = set(self._abstract_derived_types)
         return converter
 
     def _with_additional_known_procedures(
@@ -1472,6 +1488,28 @@ class FortranToIRConverter(ClassVisitor):
             assume_intent_in_scalars=self.assume_intent_in_scalars,
         )
         converter._known_procedures = merged
+        converter._abstract_derived_types = set(self._abstract_derived_types)
+        return converter
+
+    def _with_additional_abstract_types(
+        self,
+        abstract_types: Iterable[tuple[str, str]],
+    ) -> FortranToIRConverter:
+        """Return this converter or a clone with module-qualified abstract types."""
+        merged = self._abstract_derived_types | {
+            (str(module).casefold(), str(name).casefold()) for module, name in abstract_types
+        }
+        if merged == self._abstract_derived_types:
+            return self
+        converter = FortranToIRConverter(
+            type_map=self.type_map,
+            compile_time_values=self.compile_time_values,
+            wrapped_derived_types=self.wrapped_derived_types,
+            type_facts=self.type_facts,
+            assume_intent_in_scalars=self.assume_intent_in_scalars,
+        )
+        converter._known_procedures = set(self._known_procedures)
+        converter._abstract_derived_types = merged
         return converter
 
     @staticmethod
@@ -1482,6 +1520,16 @@ class FortranToIRConverter(ClassVisitor):
             for module in parsed_file.modules
             for dtype in module.derived_types
             if dtype.module
+        }
+
+    @staticmethod
+    def _abstract_types_from_file(parsed_file: FortranFile) -> set[tuple[str, str]]:
+        """Collect module-qualified abstract types declared by one parsed file."""
+        return {
+            (module.name.casefold(), dtype.name.casefold())
+            for module in parsed_file.modules
+            for dtype in module.derived_types
+            if any(str(attribute).casefold() == "abstract" for attribute in dtype.attributes)
         }
 
     @staticmethod
@@ -1524,6 +1572,15 @@ class FortranToIRConverter(ClassVisitor):
     def _wrapped_types_from_project(project: FortranProject) -> set[tuple[str, str]]:
         """Collect project-known module-qualified derived types for import resolution."""
         return {(dtype.module.lower(), dtype.name.lower()) for dtype in project.derived_types.values() if dtype.module}
+
+    @staticmethod
+    def _abstract_types_from_project(project: FortranProject) -> set[tuple[str, str]]:
+        """Collect project-known module-qualified abstract derived types."""
+        return {
+            (dtype.module.casefold(), dtype.name.casefold())
+            for dtype in project.derived_types.values()
+            if dtype.module and any(str(attribute).casefold() == "abstract" for attribute in dtype.attributes)
+        }
 
     @staticmethod
     def _module_derived_type_context(module: FortranModule) -> _DerivedTypeContext:

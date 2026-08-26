@@ -12,10 +12,37 @@ from prik.preprocessing import PreprocessingConfig
 def test_unsupported_c_callback_fails_before_build_output_or_native_compilation(tmp_path: Path):
     source = tmp_path / "callback.c"
     output_dir = tmp_path / "build"
-    source.write_text("void callback(void (*action)(int));\n", encoding="utf-8")
+    source.write_text(
+        "int identity(int value);\nvoid callback(void (*action)(int));\n",
+        encoding="utf-8",
+    )
 
     with pytest.raises(ValueError, match="C_DIRECT_CALLBACK:action"):
-        build_c_extension(source, output_dir=output_dir)
+        build_c_extension(
+            source,
+            preprocessing=PreprocessingConfig(mode="compiler", compiler="cc"),
+            input_c_compiler="compiler-that-must-not-run",
+            output_dir=output_dir,
+        )
+
+    assert not output_dir.exists()
+
+
+@pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")
+def test_later_c_module_blocker_fails_before_earlier_module_abi_probe(tmp_path: Path):
+    primitive = tmp_path / "primitive.c"
+    callback = tmp_path / "callback.c"
+    output_dir = tmp_path / "build"
+    primitive.write_text("int identity(int value);\n", encoding="utf-8")
+    callback.write_text("void callback(void (*action)(int));\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="C_DIRECT_CALLBACK:action"):
+        build_c_extension(
+            [primitive, callback],
+            preprocessing=PreprocessingConfig(mode="compiler", compiler="cc"),
+            input_c_compiler="compiler-that-must-not-run",
+            output_dir=output_dir,
+        )
 
     assert not output_dir.exists()
 
@@ -42,7 +69,7 @@ def test_c_aggregate_fails_before_target_probe_or_build_output(tmp_path: Path):
 
     # Source preparation uses a working preprocessor; the target ABI probe uses
     # the executable that must never run, so reaching it would fail differently.
-    with pytest.raises(ValueError, match="C_DIRECT_UNRESOLVED_PRIMITIVE_ABI:value"):
+    with pytest.raises(ValueError, match="C_DIRECT_AGGREGATE_TYPE:pair"):
         build_c_extension(
             source,
             preprocessing=PreprocessingConfig(mode="compiler", compiler="cc"),
@@ -57,10 +84,15 @@ def test_c_aggregate_fails_before_target_probe_or_build_output(tmp_path: Path):
 def test_c_native_global_state_fails_before_any_generated_adapter_source(tmp_path: Path):
     source = tmp_path / "globals.c"
     output_dir = tmp_path / "build"
-    source.write_text("double gain = 2.0;\ndouble scale(double value) { return value * gain; }\n", encoding="utf-8")
+    source.write_text("int scale(int value) { return value; }\nint gain = 2;\n", encoding="utf-8")
 
     with pytest.raises(ValueError, match="C_DIRECT_NATIVE_GLOBAL_STATE:gain"):
-        build_c_extension(source, output_dir=output_dir)
+        build_c_extension(
+            source,
+            preprocessing=PreprocessingConfig(mode="compiler", compiler="cc"),
+            input_c_compiler="compiler-that-must-not-run",
+            output_dir=output_dir,
+        )
 
     assert not output_dir.exists()
 

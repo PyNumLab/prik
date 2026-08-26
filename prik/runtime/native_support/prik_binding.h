@@ -628,44 +628,90 @@ static inline int prik_bool_unpack(PyObject *value, bool *destination)
     return 0;
 }
 
+static inline int prik_signed_integer_unpack(
+    PyObject *value,
+    int64_t minimum,
+    int64_t maximum,
+    int64_t *destination)
+{
+    long long parsed = PyLong_AsLongLong(value);
+    if (PyErr_Occurred() != NULL) {
+        return -1;
+    }
+    if (parsed < (long long)minimum || parsed > (long long)maximum) {
+        PyErr_SetString(PyExc_OverflowError, "Python integer is outside the native signed-integer range");
+        return -1;
+    }
+    *destination = (int64_t)parsed;
+    return 0;
+}
+
+static inline int prik_unsigned_integer_unpack(
+    PyObject *value,
+    uint64_t maximum,
+    uint64_t *destination)
+{
+    unsigned long long parsed = PyLong_AsUnsignedLongLong(value);
+    if (PyErr_Occurred() != NULL) {
+        return -1;
+    }
+    if (parsed > (unsigned long long)maximum) {
+        PyErr_SetString(PyExc_OverflowError, "Python integer is outside the native unsigned-integer range");
+        return -1;
+    }
+    *destination = (uint64_t)parsed;
+    return 0;
+}
+
 static inline int prik_int8_unpack(PyObject *value, int8_t *destination)
 {
+    int64_t parsed;
     if (PyArray_IsScalar(value, Int8)) {
         PyArray_ScalarAsCtype(value, destination);
-    } else {
-        *destination = (int8_t)PyLong_AsLong(value);
+        return 0;
     }
-    return PyErr_Occurred() == NULL ? 0 : -1;
+    if (prik_signed_integer_unpack(value, INT8_MIN, INT8_MAX, &parsed) < 0) {
+        return -1;
+    }
+    *destination = (int8_t)parsed;
+    return 0;
 }
 
 static inline int prik_int16_unpack(PyObject *value, int16_t *destination)
 {
+    int64_t parsed;
     if (PyArray_IsScalar(value, Int16)) {
         PyArray_ScalarAsCtype(value, destination);
-    } else {
-        *destination = (int16_t)PyLong_AsLong(value);
+        return 0;
     }
-    return PyErr_Occurred() == NULL ? 0 : -1;
+    if (prik_signed_integer_unpack(value, INT16_MIN, INT16_MAX, &parsed) < 0) {
+        return -1;
+    }
+    *destination = (int16_t)parsed;
+    return 0;
 }
 
 static inline int prik_int32_unpack(PyObject *value, int32_t *destination)
 {
+    int64_t parsed;
     if (PyArray_IsScalar(value, Int)) {
         PyArray_ScalarAsCtype(value, destination);
-    } else {
-        *destination = (int32_t)PyLong_AsLong(value);
+        return 0;
     }
-    return PyErr_Occurred() == NULL ? 0 : -1;
+    if (prik_signed_integer_unpack(value, INT32_MIN, INT32_MAX, &parsed) < 0) {
+        return -1;
+    }
+    *destination = (int32_t)parsed;
+    return 0;
 }
 
 static inline int prik_int64_unpack(PyObject *value, int64_t *destination)
 {
     if (PyArray_IsScalar(value, Int64)) {
         PyArray_ScalarAsCtype(value, destination);
-    } else {
-        *destination = (int64_t)PyLong_AsLongLong(value);
+        return 0;
     }
-    return PyErr_Occurred() == NULL ? 0 : -1;
+    return prik_signed_integer_unpack(value, INT64_MIN, INT64_MAX, destination);
 }
 
 static inline int prik_float32_unpack(PyObject *value, float *destination)
@@ -856,12 +902,16 @@ static inline int prik_uint8_unpack_exact(PyObject *value, uint8_t *destination)
 
 static inline int prik_uint8_unpack(PyObject *value, uint8_t *destination)
 {
+    uint64_t parsed;
     if (PyArray_IsScalar(value, UByte)) {
         PyArray_ScalarAsCtype(value, destination);
-    } else {
-        *destination = (uint8_t)PyLong_AsUnsignedLong(value);
+        return 0;
     }
-    return PyErr_Occurred() == NULL ? 0 : -1;
+    if (prik_unsigned_integer_unpack(value, UINT8_MAX, &parsed) < 0) {
+        return -1;
+    }
+    *destination = (uint8_t)parsed;
+    return 0;
 }
 
 static inline PyObject *prik_uint8_to_python(const uint8_t *value)
@@ -889,12 +939,16 @@ static inline int prik_uint16_unpack_exact(PyObject *value, uint16_t *destinatio
 
 static inline int prik_uint16_unpack(PyObject *value, uint16_t *destination)
 {
+    uint64_t parsed;
     if (PyArray_IsScalar(value, UShort)) {
         PyArray_ScalarAsCtype(value, destination);
-    } else {
-        *destination = (uint16_t)PyLong_AsUnsignedLong(value);
+        return 0;
     }
-    return PyErr_Occurred() == NULL ? 0 : -1;
+    if (prik_unsigned_integer_unpack(value, UINT16_MAX, &parsed) < 0) {
+        return -1;
+    }
+    *destination = (uint16_t)parsed;
+    return 0;
 }
 
 static inline PyObject *prik_uint16_to_python(const uint16_t *value)
@@ -922,12 +976,16 @@ static inline int prik_uint32_unpack_exact(PyObject *value, uint32_t *destinatio
 
 static inline int prik_uint32_unpack(PyObject *value, uint32_t *destination)
 {
+    uint64_t parsed;
     if (PyArray_IsScalar(value, UInt)) {
         PyArray_ScalarAsCtype(value, destination);
-    } else {
-        *destination = (uint32_t)PyLong_AsUnsignedLong(value);
+        return 0;
     }
-    return PyErr_Occurred() == NULL ? 0 : -1;
+    if (prik_unsigned_integer_unpack(value, UINT32_MAX, &parsed) < 0) {
+        return -1;
+    }
+    *destination = (uint32_t)parsed;
+    return 0;
 }
 
 static inline PyObject *prik_uint32_to_python(const uint32_t *value)
@@ -964,10 +1022,9 @@ static inline int prik_uint64_unpack(PyObject *value, uint64_t *destination)
 {
     if (PyArray_IsScalar(value, ULongLong)) {
         PyArray_ScalarAsCtype(value, destination);
-    } else {
-        *destination = (uint64_t)PyLong_AsUnsignedLongLong(value);
+        return 0;
     }
-    return PyErr_Occurred() == NULL ? 0 : -1;
+    return prik_unsigned_integer_unpack(value, UINT64_MAX, destination);
 }
 
 static inline PyObject *prik_uint64_to_python(const uint64_t *value)
@@ -977,16 +1034,28 @@ static inline PyObject *prik_uint64_to_python(const uint64_t *value)
 
 static inline PyObject *prik_uint64_to_numpy(const uint64_t *value)
 {
+#if NPY_SIZEOF_LONG == 8
+    PyObject *result = PyArrayScalar_New(ULong);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, ULong, (npy_uint64)*value);
+    }
+#else
     PyObject *result = PyArrayScalar_New(ULongLong);
     if (result != NULL) {
         PyArrayScalar_ASSIGN(result, ULongLong, (npy_uint64)*value);
     }
+#endif
     return result;
 }
 
 static inline int prik_uintp_unpack_exact(PyObject *value, size_t *destination)
 {
-#if NPY_SIZEOF_INTP == 8
+#if NPY_SIZEOF_LONG == NPY_SIZEOF_INTP
+    if (!PyArray_IsScalar(value, ULong)) {
+        return -1;
+    }
+    *destination = (size_t)PyArrayScalar_VAL(value, ULong);
+#elif NPY_SIZEOF_INTP == 8
     if (!PyArray_IsScalar(value, ULongLong)) {
         return -1;
     }
@@ -1002,16 +1071,22 @@ static inline int prik_uintp_unpack_exact(PyObject *value, size_t *destination)
 
 static inline int prik_uintp_unpack(PyObject *value, size_t *destination)
 {
-#if NPY_SIZEOF_INTP == 8
+    uint64_t parsed;
+#if NPY_SIZEOF_LONG == NPY_SIZEOF_INTP
+    if (PyArray_IsScalar(value, ULong)) {
+#elif NPY_SIZEOF_INTP == 8
     if (PyArray_IsScalar(value, ULongLong)) {
 #else
     if (PyArray_IsScalar(value, UInt)) {
 #endif
         PyArray_ScalarAsCtype(value, destination);
-    } else {
-        *destination = (size_t)PyLong_AsUnsignedLongLong(value);
+        return 0;
     }
-    return PyErr_Occurred() == NULL ? 0 : -1;
+    if (prik_unsigned_integer_unpack(value, SIZE_MAX, &parsed) < 0) {
+        return -1;
+    }
+    *destination = (size_t)parsed;
+    return 0;
 }
 
 static inline PyObject *prik_uintp_to_python(const size_t *value)
@@ -1021,7 +1096,12 @@ static inline PyObject *prik_uintp_to_python(const size_t *value)
 
 static inline PyObject *prik_uintp_to_numpy(const size_t *value)
 {
-#if NPY_SIZEOF_INTP == 8
+#if NPY_SIZEOF_LONG == NPY_SIZEOF_INTP
+    PyObject *result = PyArrayScalar_New(ULong);
+    if (result != NULL) {
+        PyArrayScalar_ASSIGN(result, ULong, (npy_ulong)*value);
+    }
+#elif NPY_SIZEOF_INTP == 8
     PyObject *result = PyArrayScalar_New(ULongLong);
     if (result != NULL) {
         PyArrayScalar_ASSIGN(result, ULongLong, (npy_uint64)*value);

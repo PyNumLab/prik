@@ -578,6 +578,19 @@ class vector:
         ("@bad\nclass C:\n    pass\n", "Unsupported class decorator: 'bad'"),
         ("class C:\n    @bad\n    def f(self) -> None: ...\n", "Unsupported class body decorator: 'bad'"),
         ("@native_call([])\nclass C:\n    pass\n", "Unsupported class decorator: 'native_call([])'"),
+        ("@staticmethod\nclass C:\n    pass\n", "Unsupported class decorator: 'staticmethod'"),
+        (
+            '@overload("missing")\nclass C:\n    pass\n',
+            "Unsupported class decorator: \"overload('missing')\"",
+        ),
+        (
+            "@abstractmethod\ndef f() -> None: ...\n",
+            "abstractmethod is only valid on a method declaration",
+        ),
+        (
+            "class Outer:\n    @destroy\n    class Inner:\n        pass\n",
+            "Unsupported class body decorator: 'destroy'",
+        ),
         ("@native_call(Arg(0))\ndef f(x: Int32) -> None: ...\n", "native_call expects a list of projection entries"),
         (
             "@native_call([Arg(0)], foo=1)\ndef f(x: Int32) -> None: ...\n",

@@ -108,9 +108,13 @@ def test_build_writes_its_semantic_contract_beside_the_extension(tmp_path: Path)
     )
 
     contracts = result.output_dir / BUILD_CONTRACT_DIRECTORY_NAME
-    assert (contracts / "abstract_hierarchy.pyi").is_file()
-    assert (contracts / "__init__.pyi").read_text(encoding="utf-8").strip() == ("from . import abstract_hierarchy")
+    module_contract = contracts / "abstract_hierarchy.pyi"
+    package_contract = contracts / "__init__.pyi"
+    assert module_contract in result.generated_files
+    assert package_contract in result.generated_files
+    assert module_contract.is_file()
+    assert package_contract.read_text(encoding="utf-8").strip() == ("from . import abstract_hierarchy")
 
-    text = (contracts / "abstract_hierarchy.pyi").read_text(encoding="utf-8")
+    text = module_contract.read_text(encoding="utf-8")
     assert "@abstract" in text
     assert "@abstractmethod" in text

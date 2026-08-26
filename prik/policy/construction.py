@@ -1700,8 +1700,6 @@ def build_function_wrapper_policy(
         arguments,
         native_call_slots,
     )
-    if function.origin.source_language == "c":
-        arguments, native_call_slots = _complete_c_direct_array_layouts(arguments, native_call_slots)
     # Record ordered writeback, cleanup, and ownership-transfer lifecycle work.
     writeback_actions, lifecycle_blockers = _lifecycle_policies(arguments)
     cleanup_actions, release_actions = _derived_result_lifecycle_policies(results)
@@ -1908,37 +1906,6 @@ def _normalize_c_direct_scalar_identities(
         for slot in slots
     )
     return normalized_arguments, normalized_results, normalized_slots
-
-
-def _complete_c_direct_array_layouts(
-    arguments: list[ArgumentPolicy],
-    slots: tuple[NativeCallSlotPolicy, ...],
-) -> tuple[list[ArgumentPolicy], tuple[NativeCallSlotPolicy, ...]]:
-    """Select C-contiguous NumPy buffer validation for direct C arrays.
-
-    A semantic array contract is an author-selected view of a one-level C
-    pointer. The C entrypoint receives only its first element, so policy owns
-    rank, concrete-shape, writable, and C-layout requirements before planning.
-    """
-    completed = []
-    arrays_by_position: dict[int, ArrayHandoffPolicy] = {}
-    for argument in arguments:
-        if argument.rank <= 0 or argument.array is None:
-            completed.append(argument)
-            continue
-        array = replace(argument.array, order="ORDER_C", native_order="ORDER_C", contiguous=True)
-        actual = argument.native_array_actual
-        if actual is not None:
-            actual = replace(actual, order="C", require_contiguous=True)
-        completed.append(replace(argument, array=array, native_array_actual=actual))
-        arrays_by_position[argument.native_position] = array
-    completed_slots = tuple(
-        replace(slot, array=arrays_by_position[slot.native_position])
-        if slot.native_position in arrays_by_position
-        else slot
-        for slot in slots
-    )
-    return completed, completed_slots
 
 
 def _complete_entrypoint_argument_route(
@@ -2240,7 +2207,7 @@ def _direct_c_array_ineligibility(argument: ArgumentPolicy) -> tuple[str, ...]:
         reasons.append(f"C_DIRECT_ARRAY_TRANSFORMATION:{argument.name}")
     if argument.entrypoint_optionality is not EntrypointOptionalityAction.REQUIRED:
         reasons.append(f"C_DIRECT_NULLABLE_POINTER:{argument.name}")
-    if argument.array is not None and argument.array.order != "ORDER_C":
+    if argument.rank > 1 and argument.array is not None and argument.array.order != "ORDER_C":
         reasons.append(f"C_DIRECT_ARRAY_ORDER:{argument.name}")
     return tuple(dict.fromkeys(reasons))
 

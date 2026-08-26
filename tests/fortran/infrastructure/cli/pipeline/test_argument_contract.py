@@ -321,6 +321,49 @@ def test_source_build_routes_disabled_input_compilation_to_the_pipeline(monkeypa
     assert calls[0][1]["native_objects"] == ["libnative.so"]
 
 
+@pytest.mark.parametrize(
+    ("native_language", "expected_compilers"),
+    [
+        ("fortran", ("selected-driver", None)),
+        ("c", (None, "selected-driver")),
+    ],
+)
+def test_manifest_compiler_override_targets_only_its_recorded_native_language(
+    tmp_path: Path,
+    monkeypatch,
+    native_language: str,
+    expected_compilers: tuple[str | None, str | None],
+) -> None:
+    from prik.pipeline import build as pipeline_build
+
+    manifest = tmp_path / "prik-build.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": 4,
+                "build_kind": "pyi-wrapper",
+                "extension": {"native_language": native_language},
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls = []
+    result = types.SimpleNamespace(compiled=False)
+    monkeypatch.setattr(
+        pipeline_build,
+        "build_pyi_extension_from_manifest",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or result,
+    )
+    args = _main_args(
+        paths=[],
+        build_manifest=str(manifest),
+        compiler="selected-driver",
+    )
+
+    assert prik_cli._run_wrap_build(args, types.SimpleNamespace(compiler=None)) is result
+    assert (calls[0][1]["input_compiler"], calls[0][1]["input_c_compiler"]) == expected_compilers
+
+
 @pytest.mark.parametrize("jobs", ("0", "many"))
 def test_cli_compile_jobs_rejects_non_positive_or_non_integer_values(jobs: str, capsys) -> None:
     with pytest.raises(SystemExit) as exc_info:

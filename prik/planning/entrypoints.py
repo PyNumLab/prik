@@ -1132,6 +1132,9 @@ class _GeneratedSupportProcedureEntrypointBuilder:
     def _derived_origin_supports(variable: ModuleVariablePlan, operation: str) -> bool:
         storage = variable.derived.handoff.storage
         support = {
+            # A derived constant is copied through its getter and needs no
+            # persistent-origin operation.
+            DerivedObjectStorage.DIRECT: set(),
             DerivedObjectStorage.MODULE_PROXY: {"scoped"},
             DerivedObjectStorage.MODULE_TARGET: {"address"},
             DerivedObjectStorage.MODULE_ALLOCATABLE: {"present", "scoped", "checkout", "restore"},
@@ -1143,4 +1146,10 @@ class _GeneratedSupportProcedureEntrypointBuilder:
             },
             DerivedObjectStorage.MODULE_POINTER: {"present", "scoped", "checkout", "restore"},
         }
-        return operation in support.get(storage, set())
+        try:
+            operations = support[storage]
+        except KeyError as error:
+            raise ValueError(
+                f"Derived module object {variable.owner_path!r} has unsupported origin storage: {storage.value}"
+            ) from error
+        return operation in operations

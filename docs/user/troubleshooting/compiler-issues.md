@@ -29,6 +29,9 @@ python3 -m prik api.c --language c --compiler clang \
 `--wrapper-c-flags` applies to the generated CPython binding and any selected
 collision forwarder. Use [C Support](../language-support/c-support.md) to decide
 whether a declaration is in the direct-C subset before debugging the compiler.
+If explicit Fortran sources make the link mixed-language, the C and Fortran
+drivers must belong to one supported family. PRIK rejects a mixed-vendor pair
+instead of probing with one C compiler and silently compiling with another.
 
 ## Verify A Fortran Compiler Pair
 

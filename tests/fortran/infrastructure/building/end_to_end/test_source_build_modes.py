@@ -548,6 +548,23 @@ def test_native_link_plan_serializes_interleaved_item_kinds():
     ]
 
 
+def test_native_link_plan_preserves_language_requirements_for_every_item_kind():
+    """A serialized link plan must retain every fact used to select its driver."""
+    plan = NativeBuildPlan(
+        link_items=(
+            NativeLinkItem("object", Path("objects/entry.o"), language="fortran"),
+            NativeLinkItem("named_library", "runtime", language="fortran"),
+            NativeLinkItem("linker_argument", "-pthread", language="c"),
+        )
+    )
+
+    assert plan.to_dict()["link_items"] == [
+        {"kind": "object", "path": "objects/entry.o", "language": "fortran"},
+        {"kind": "named_library", "name": "runtime", "language": "fortran"},
+        {"kind": "linker_argument", "argument": "-pthread", "language": "c"},
+    ]
+
+
 def test_wrapper_build_rejects_empty_source_list(tmp_path: Path):
     with pytest.raises(ValueError, match="at least one Fortran source"):
         build_fortran_extension([], output_dir=tmp_path)

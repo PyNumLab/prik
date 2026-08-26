@@ -4,7 +4,7 @@ audience: users, advanced users
 prerequisites: first wrapped module, NumPy basics
 related: ../guide/index.md, pyi-contracts/index.md, ../language-support/index.md
 status: maintained
-publication: draft
+publication: reviewed
 ---
 
 # Fortran Wrapper Reference
@@ -1904,10 +1904,9 @@ make -f build/Makefile.prik -j4 PRIK_FFLAGS=-O3 PRIK_CFLAGS=-O3
 
 The Makefile covers user sources, generated wrappers, the header-only native binding support, and the
 shared-library link. It records resolved compilers and exposes `FC`, `CC`,
-`PRIK_LD`, `PRIK_FFLAGS`, `PRIK_CFLAGS`, and `PRIK_LDFLAGS`. User Fortran
-sources are conservatively chained in supplied order; generated bridge and C
-binding work may run in parallel. This target expects GNU Make and a POSIX
-shell.
+`PRIK_LD`, `PRIK_FFLAGS`, `PRIK_CFLAGS`, and `PRIK_LDFLAGS`. Native sources are
+chained in PRIK's recorded dependency-safe order; generated bridge and C binding
+work may run in parallel. This target expects GNU Make and a POSIX shell.
 
 For semantic `.pyi` builds, Makefile mode writes `prik-build.json` before
 `Makefile.prik` and the Makefile is regenerated from that manifest:

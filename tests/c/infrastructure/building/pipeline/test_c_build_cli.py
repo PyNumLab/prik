@@ -104,6 +104,30 @@ def test_c_native_manifest_replay_and_makefile_retain_the_c_language(tmp_path: P
 
 
 @pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")
+def test_manifest_replay_rejects_a_changed_contract_graph_before_compiler_selection(tmp_path: Path):
+    contract = tmp_path / "api.pyi"
+    contract.write_text("from prik.contracts import Int\ndef add(value: Int) -> Int: ...\n", encoding="utf-8")
+    source = tmp_path / "implementation.c"
+    source.write_text("int add(int value) { return value + 1; }\n", encoding="utf-8")
+    result = build_pyi_extension(
+        contract,
+        native_language="c",
+        native_c_sources=[source],
+        output_dir=tmp_path / "build",
+        makefile=True,
+    )
+    manifest = json.loads(result.build_manifest.read_text(encoding="utf-8"))
+    manifest["contract_paths"].append("contract-that-was-not-recorded.pyi")
+    result.build_manifest.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="import graph does not match"):
+        build_pyi_extension_from_manifest(
+            result.build_manifest,
+            input_c_compiler="compiler-that-must-not-run",
+        )
+
+
+@pytest.mark.skipif(shutil.which("cc") is None, reason="requires a C compiler")
 def test_verbose_c_build_reports_c_compilation_and_link_commands(tmp_path: Path, capsys):
     source = tmp_path / "answer.c"
     source.write_text("int answer(int value) { return value + 1; }\n", encoding="utf-8")
@@ -205,8 +229,12 @@ double hypotenuse(double a, double b) { return sqrt(a * a + b * b); }
 
     result = build_c_extension(source, output_dir=tmp_path / "build", output_name="mathlib")
     module = sole_native_module(result.import_module())
-    contract = (tmp_path / "build" / "contracts" / "mathlib.pyi").read_text(encoding="utf-8")
+    contract_path = tmp_path / "build" / "contracts" / "mathlib.pyi"
+    package_path = tmp_path / "build" / "contracts" / "__init__.pyi"
+    contract = contract_path.read_text(encoding="utf-8")
 
+    assert contract_path in result.generated_files
+    assert package_path in result.generated_files
     assert module.amplify(np.float64(3.0)) == np.float64(6.0)
     assert module.hypotenuse(np.float64(3.0), np.float64(4.0)) == np.float64(5.0)
     assert "def amplify(" in contract

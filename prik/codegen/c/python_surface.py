@@ -583,7 +583,6 @@ if __name__ == "__main__":
         native_scope="state",
         python_names=("State",),
         fields=(),
-        destructors=(),
         bind_c=False,
     )
     example_surface = ClassSurfacePlan(

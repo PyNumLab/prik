@@ -123,7 +123,8 @@ Build rules worth knowing:
   `--jobs`, `--json`, `--verbose`, `--no-color`, and `--debug`. The manifest
   owns output directory, input language, preprocessing recipe, wrapper
   behavior, native inputs, and link plan, so other flags are rejected rather
-  than silently ignored.
+  than silently ignored. Replay validates the recorded semantic-contract graph
+  before it generates files or starts a compiler.
 
 - A source-free C `.pyi` contract is C-native only when `--language c` is
   supplied. PRIK does not infer that identity from the contract filename,

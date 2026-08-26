@@ -4,7 +4,7 @@ audience: users, advanced users, developers
 prerequisites: semantic IR reference, wrapper build workflow
 related: index.md, semantic-ir.md
 status: maintained
-publication: draft
+publication: reviewed
 ---
 
 # Semantic `.pyi` Format
