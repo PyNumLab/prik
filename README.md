@@ -21,8 +21,8 @@ C wrapper features are implemented and tested across supported compilers, but
 public APIs may still change before `1.0`.
 
 PRIK supports both languages. Fortran currently has the broader, more mature
-wrapper surface. C supports primitive values, one-level pointers, NumPy arrays,
-and strings. In both languages, editable
+wrapper surface. C currently supports a focused wrapper subset: primitive
+values, one-level pointers, NumPy arrays, and strings. In both languages, editable
 `.pyi` contracts let you shape the Python API. See [C
 Support](https://pynumlab.github.io/prik/user/language-support/c-support/) for
 C examples and current limits.

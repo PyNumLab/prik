@@ -7,6 +7,8 @@ release tags add a leading `v` to the package version.
 
 ## Unreleased
 
+## 0.4.0 — 2026-08-26
+
 - Reorganized the Reference overview by task and linked every published user
   reference, including the editable `.pyi` format and generated build files.
   The Reference sidebar now follows the same grouped
@@ -32,7 +34,10 @@ release tags add a leading `v` to the package version.
   concise source-format and public-entrypoint reference. The duplicated
   monolithic Fortran Wrapper Reference and the three redundant generated
   Fortran API pages were removed; their unique public rules now live in
-  Fortran Support, the topic-specific User Guide, and `.pyi` Format.
+  Fortran Support, the topic-specific User Guide, and `.pyi` Format. The README
+  and website homepage now describe C as a focused wrapper subset and name its
+  currently supported primitive, one-level-pointer, NumPy-array, and string
+  surface without changing PRIK's Fortran-and-C positioning.
 
 - Grouped the maintained library projects under `examples/fortran/` and
   `examples/c/`, with the same Fortran and C grouping in the published example
