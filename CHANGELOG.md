@@ -122,6 +122,9 @@ release tags add a leading `v` to the package version.
 
 ### Fixed
 
+- Fortran-led semantic `.pyi` builds now select the C compiler paired with the
+  chosen Fortran driver when no C override is supplied, and record that
+  resolved driver for manifest replay instead of forcing the system `cc`.
 - Coercive integer callback results now raise `OverflowError` when a Python
   integer falls outside the declared native width instead of narrowing or
   wrapping it silently.

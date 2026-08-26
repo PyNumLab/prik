@@ -3587,7 +3587,7 @@ def build_pyi_extension(
     contract: str | Path,
     *,
     input_compiler: str = "gfortran",
-    input_c_compiler: str = "cc",
+    input_c_compiler: str | None = None,
     native_language: str = "fortran",
     native_fortran_sources: Iterable[str | Path] | None = None,
     native_fortran_flags: Iterable[str] | None = None,
@@ -3634,8 +3634,9 @@ def build_pyi_extension(
         Existing semantic ``.pyi`` entry file.  Its relative-import graph is
         loaded as one contract bundle.
     input_compiler, input_c_compiler
-        Explicit Fortran and C compiler executables. A build with any Fortran
-        object uses the Fortran link driver; a C-only build uses the C driver.
+        Fortran and optional C compiler executables. A Fortran-led build uses
+        the C driver matching ``input_compiler`` unless ``input_c_compiler`` is
+        supplied explicitly. A C-only build defaults to ``cc``.
     native_language
         Explicit ABI language of the source-free semantic contract: ``"fortran"``
         (the default) or ``"c"``. It is not inferred from filenames, compiler
@@ -3689,6 +3690,9 @@ def build_pyi_extension(
     # 1. Load the contract graph and collect native implementation inputs.
     entry = _pyi_entry_path(contract)
     native_language = _native_contract_language(native_language)
+    selected_input_c_compiler = input_c_compiler
+    if native_language == "c" and selected_input_c_compiler is None:
+        selected_input_c_compiler = "cc"
     bundle = _pyi_contract_bundle(entry, native_language=native_language)
     native_inputs = _native_build_inputs(
         native_fortran_sources=native_fortran_sources,
@@ -3722,7 +3726,7 @@ def build_pyi_extension(
         )
         _complete_pyi_c_standard_types(
             modules,
-            compiler=input_c_compiler,
+            compiler=selected_input_c_compiler,
             compiler_args=(*native_inputs.c_source_flags, *wrapper_c_flags),
         )
     module_name = _validated_wrapper_module_name(output_name, _bundle_output_name(bundle))
@@ -3744,9 +3748,10 @@ def build_pyi_extension(
         execute_commands=not generation_only,
         debug=wrapper_compiler_debug,
         input_compiler=input_compiler,
-        input_c_compiler=input_c_compiler,
+        input_c_compiler=selected_input_c_compiler,
         requires_fortran=_native_inputs_require_fortran(native_inputs) or native_language == "fortran",
     )
+    resolved_input_c_compiler = compiler.resolved_executable("c")
     native_array_build_requirements = native_array_handle_build_requirements(module)
 
     # 4. Build the extension and attach its replayable manifest data.
@@ -3771,7 +3776,7 @@ def build_pyi_extension(
         strict_wrapper_names=strict_wrapper_names,
         requested_output_name=output_name,
         input_compiler=input_compiler,
-        input_c_compiler=input_c_compiler,
+        input_c_compiler=resolved_input_c_compiler,
         native_language=native_language,
         collision_adapters=collision_adapter_names,
         collision_adapter_all=collision_adapter_all,

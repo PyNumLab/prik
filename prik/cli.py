@@ -1444,7 +1444,7 @@ def _run_wrap_build(args: argparse.Namespace, preprocessing: PreprocessingConfig
         result = build_pyi_extension(
             args.paths[0],
             input_compiler=preprocessing.compiler or "gfortran",
-            input_c_compiler=(preprocessing.compiler or "cc") if args.language == "c" else "cc",
+            input_c_compiler=(preprocessing.compiler or "cc") if args.language == "c" else None,
             native_language=args.language,
             native_fortran_sources=getattr(args, "native_fortran_sources", None),
             native_fortran_flags=_with_link_time_optimization(

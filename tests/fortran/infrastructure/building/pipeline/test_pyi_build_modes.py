@@ -219,6 +219,7 @@ def test_pyi_makefile_manifest_and_replay_workflows(tmp_path: Path):
     assert manifest["schema_version"] == 4
     assert manifest["build_kind"] == "pyi-wrapper"
     assert manifest["compiler"]["input_executable"] == str(selected_compiler)
+    assert Path(manifest["compiler"]["input_c_executable"]).resolve() == Path(shutil.which("gcc")).resolve()
     assert manifest["compiler"]["fortran_flags"] == ["-O2", "-g0"]
     assert manifest["compiler"]["wrapper_compiler_debug"] is True
     assert manifest["compiler"]["wrapper_fortran_flags"] == ["-fno-range-check", "-g0"]

@@ -192,6 +192,10 @@ class Compiler:
         with self._command_log_lock:
             return tuple(self._command_log)
 
+    def resolved_executable(self, language: str) -> str:
+        """Return the resolved compiler executable selected for ``language``."""
+        return self._executable(self._language(language), ())
+
     def compile_object(self, object_file: ObjectFile, *, verbose: bool | int = False) -> tuple[str, ...]:
         """Compile exactly one source file into its declared object path."""
 

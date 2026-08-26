@@ -321,6 +321,27 @@ def test_source_build_routes_disabled_input_compilation_to_the_pipeline(monkeypa
     assert calls[0][1]["native_objects"] == ["libnative.so"]
 
 
+def test_fortran_pyi_build_defers_c_driver_selection_to_the_compiler_pair(monkeypatch):
+    from prik.pipeline import build as pipeline_build
+
+    calls = []
+    result = types.SimpleNamespace(compiled=False)
+    monkeypatch.setattr(
+        pipeline_build,
+        "build_pyi_extension",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or result,
+    )
+    args = _main_args(
+        paths=["contract.pyi"],
+        language="fortran",
+        native_objects=["native.o"],
+    )
+
+    assert prik_cli._run_wrap_build(args, types.SimpleNamespace(compiler="selected-ifx")) is result
+    assert calls[0][1]["input_compiler"] == "selected-ifx"
+    assert calls[0][1]["input_c_compiler"] is None
+
+
 @pytest.mark.parametrize(
     ("native_language", "expected_compilers"),
     [
