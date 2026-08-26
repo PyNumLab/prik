@@ -8,9 +8,10 @@ release tags add a leading `v` to the package version.
 ## Unreleased
 
 - Reorganized the Reference overview by task and linked every published user
-  reference, including the editable `.pyi` format, generated wrapper surfaces,
-  and generated build files. The Reference sidebar now follows the same grouped
-  structure, and the build-file reference clearly distinguishes source and
+  reference, including the editable `.pyi` format and generated build files.
+  The Reference sidebar now follows the same grouped
+  structure, with `.pyi` Format followed by the clearly named Editing Contracts
+  guide, and the build-file reference clearly distinguishes source and
   semantic-contract generation while showing the structures of both the
   replay manifest and Makefile. The user Reference now presents `.pyi` Format
   as a top-down guide to the distinct Fortran package and C single-file
@@ -28,9 +29,10 @@ release tags add a leading `v` to the package version.
   the ambiguous implementation-route column and empty planned-work placeholder,
   replaced vague lane terminology with explicit C wrapper wording, and made
   Fortran Support a complete guide-linked wrapper overview while retaining its
-  concise source-format and public-entrypoint reference. The canonical Fortran
-  Wrapper Reference remains separate and is now linked from both the support
-  overview and Reference index.
+  concise source-format and public-entrypoint reference. The duplicated
+  monolithic Fortran Wrapper Reference and the three redundant generated
+  Fortran API pages were removed; their unique public rules now live in
+  Fortran Support, the topic-specific User Guide, and `.pyi` Format.
 
 - Grouped the maintained library projects under `examples/fortran/` and
   `examples/c/`, with the same Fortran and C grouping in the published example

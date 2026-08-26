@@ -10,9 +10,10 @@ publication: reviewed
 
 # Wrapping Functions
 
-A Fortran `function` becomes a Python callable. Its direct result is the first
-Python return value. Other outputs follow only when their contract marks them
-as Python results.
+A Fortran `function` becomes a Python callable. Its generated `.pyi` contract,
+rather than the raw native argument list, defines the visible arguments and
+return values. The direct function result comes first; other outputs follow
+only when their contract marks them as Python results.
 
 ---
 
@@ -189,6 +190,10 @@ total, count = sum_with_count(data_array)
 - Without `intent`, an argument uses conservative `intent(inout)` behavior.
   Primitive scalar replacements follow the direct function result in the
   Python return tuple.
+- Generated callable docstrings describe the Python-visible signature,
+  including projected results, optional values, array constraints, ownership,
+  and documented native-status exceptions. Private wrapper helpers and hidden
+  native arguments are omitted.
 
 ## Next
 

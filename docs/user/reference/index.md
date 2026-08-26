@@ -22,7 +22,7 @@ you have not.
 - [Build manifests and Makefiles](configuration-files.md) — how both files are
   generated, what they contain, and how to build or replay them.
 
-## Edit contracts
+## Contracts
 
 - [`.pyi` Format](pyi-format.md) — project and namespace structure,
   declarations, C and Fortran forms, decorators, native calls, types, storage,
@@ -40,22 +40,12 @@ The contract pages describe the shared generated Python surface. Start from a
 contract generated for the same native implementation, then rebuild and call
 the changed path once.
 
-## Generated wrapper behavior
-
-- [Fortran Wrapper Reference](fortran-wrapper.md) — the canonical generated
-  Python API, ownership, lifetime, naming, ABI, and limitation contract for
-  Fortran wrappers.
-- [C Support](../language-support/c-support.md) — the complete C source,
-  contract, build, generated API, and support-boundary workflow.
-- [Generated functions](generated-functions.md) — callable placement,
-  signatures, result projection, mutation, overloads, and errors.
-- [Generated modules](generated-modules.md) — extension identity, package
-  shape, imports, module members, and state access.
-- [Generated classes](generated-classes.md) — constructors, fields, methods,
-  ownership, lifetime, inheritance, and unsupported class forms.
-
 ## Check support and diagnostics
 
+- [Fortran Support](../language-support/fortran-support.md) — the complete map
+  of supported Fortran wrapper areas, limits, and detailed guides.
+- [C Support](../language-support/c-support.md) — the complete C source,
+  contract, build, generated API, and support-boundary workflow.
 - [Language feature matrix](../language-support/feature-matrix.md) — whether a
   feature is supported at all, with its evidence.
 - [Diagnostic codes](diagnostic-codes.md) — what a rejected wrapper is telling

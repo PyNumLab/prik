@@ -90,17 +90,12 @@ nav:
               - CLI Commands: user/reference/cli-commands.md
               - Python API: user/reference/python-api.md
               - Build Manifests and Makefiles: user/reference/configuration-files.md
-          - Edit Contracts:
+          - Contracts:
               - .pyi Format: user/reference/pyi-format.md
-              - Overview: user/reference/pyi-contracts/index.md
+              - Editing Contracts: user/reference/pyi-contracts/index.md
               - Exports and Modules: user/reference/pyi-contracts/exports-and-modules.md
               - Functions and Classes: user/reference/pyi-contracts/functions-and-classes.md
               - Calls and Results: user/reference/pyi-contracts/calls-and-results.md
-          - Generated Wrappers:
-              - Fortran Wrapper Reference: user/reference/fortran-wrapper.md
-              - Generated Functions: user/reference/generated-functions.md
-              - Generated Modules: user/reference/generated-modules.md
-              - Generated Classes: user/reference/generated-classes.md
           - Diagnostics:
               - Diagnostic Codes: user/reference/diagnostic-codes.md
   - Developer Documentation:

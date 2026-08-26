@@ -50,7 +50,9 @@ When compiling multiple source files, each Fortran module becomes its own child 
 
 ## Public Variables and Constants
 
-Supported public scalar variables are exposed as direct Python attributes:
+Supported public scalar variables are exposed as direct Python attributes.
+Reads and supported assignments access current Fortran module storage through
+generated accessors:
 
 ```python
 mod.counter = np.int32(9)
@@ -180,6 +182,9 @@ For all supported imports, aliases, and namespace layouts, see
 - Common blocks are **not** exposed as Python variables (only indirectly through procedures that access them).
 - Module state is **shared** native storage — changes made through one reference are visible to all others.
 - The extension name is derived from the source filename unless overridden.
+- The module docstring indexes public attributes, functions, and classes.
+  Module attributes are documented there because extension modules do not
+  provide portable per-attribute descriptor docstrings.
 
 ---
 

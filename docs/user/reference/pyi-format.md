@@ -897,6 +897,17 @@ def consume(class_: Annotated[Int32, SourceName("class")]) -> None: ...
 Python export name. `SourceName(...)` preserves a native data or argument name.
 These are separate operations.
 
+When PRIK generates a Fortran contract, it lowercases Fortran identifiers,
+adds a trailing underscore to Python keywords, normalizes other invalid Python
+identifiers, and gives remaining collisions deterministic numeric suffixes.
+The same policy covers module members, classes, methods, fields, and argument
+names. `--strict-wrapper-names` rejects a generated name that would need any of
+these fixes.
+
+Fortran `bind(C, name=...)` changes the native symbol, not the Python name. In
+an edited contract, `@bind("native_name")` records that native-name distinction;
+entry-contract imports and aliases shape the public Python namespace.
+
 ## Fortran And C Forms At A Glance
 
 | Contract area | Fortran | C |
@@ -917,8 +928,8 @@ These are separate operations.
 Generated Fortran contracts can contain module leaves, `@standalone`
 procedures, `@native_abi("c")`, derived classes, module variables, descriptor
 handles, callbacks, generics, defined operators, and projected outputs. The
-[Fortran Wrapper Reference](fortran-wrapper.md) is authoritative for the
-runtime behavior behind those spellings.
+[Fortran User Guide](../guide/index.md) describes the runtime behavior behind
+those spellings.
 
 ### C Source Inspection Contracts
 

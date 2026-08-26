@@ -91,7 +91,9 @@ policy completion. Those decisions happen before generated sources reach this pa
 
 ## Tests And Docs
 
-- Wrapper reference: `docs/user/reference/fortran-wrapper.md`
+- Build guide: `docs/user/guide/building-shared-library.md`
+- Build manifests and Makefiles: `docs/user/reference/configuration-files.md`
+- CLI reference: `docs/user/reference/cli-commands.md`
 - Compiler package guide: `docs/developer/packages/compiler.md`
 - Pipeline package guide: `docs/developer/packages/pipeline.md`
 - Quality and static checks: `docs/developer/workflows/quality-assurance.md`

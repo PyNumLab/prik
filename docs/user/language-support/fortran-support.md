@@ -3,7 +3,7 @@ title: Fortran Support
 description: What Fortran PRIK wraps, where the detailed guides live, and which source files become Python APIs.
 audience: users
 prerequisites: installation
-related: index.md, feature-matrix.md, ../guide/index.md, ../reference/cli-commands.md, ../reference/fortran-wrapper.md
+related: index.md, feature-matrix.md, ../guide/index.md, ../reference/pyi-format.md, ../reference/pyi-contracts/index.md
 status: maintained
 publication: reviewed
 ---
@@ -14,9 +14,9 @@ This page is the entry point for **what Fortran PRIK wraps**. Start with the
 wrapper areas below and follow the linked guide for the complete Python
 behavior, constraints, and examples. Use the [language feature
 matrix](feature-matrix.md) when you need the exact status, evidence, and
-limitation for an individual feature. For the exhaustive generated API,
-ownership, lifetime, naming, and ABI contract, use the [Fortran Wrapper
-Reference](../reference/fortran-wrapper.md).
+limitation for an individual feature. Use [`.pyi` Format](../reference/pyi-format.md)
+for the contract language and [Editing Contracts](../reference/pyi-contracts/index.md)
+when reshaping the generated Python API.
 
 ## Supported Wrapper Areas
 
@@ -87,6 +87,12 @@ The Python-facing entry points are:
 - supported generic interfaces, defined operators, assignment overloads, and
   type-bound procedures; and
 - Fortran enumerators, exposed as integer constants.
+
+When a module explicitly lists a procedure from an unnamed, non-abstract
+interface as `public`, the interface declaration is the wrapper contract. Its
+declared argument types and intents remain authoritative even when its
+implementation is supplied as a separate native source. Unlisted interface
+declarations remain dependencies and do not become Python entry points.
 
 A Fortran `program` or `block data` unit is not an importable Python API, and a
 procedure contained inside another procedure remains an implementation detail.

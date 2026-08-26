@@ -224,6 +224,16 @@ print(points.point.__init__.__doc__)
 
 ---
 
+## Native Representation
+
+All wrapped Fortran derived types use opaque native-instance storage, including
+`bind(C)` and `sequence` types. Fields are read and written through generated
+Fortran operations. The generated C binding does not mirror a struct, calculate
+component offsets, or assume padding and alignment. Supported value-shaped
+objects cross calls through Fortran's typed value semantics.
+
+---
+
 ## Which Constructor You Get
 
 The Fortran source decides which constructor the generated class publishes:

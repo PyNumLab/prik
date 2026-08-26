@@ -165,10 +165,16 @@ before the call. Ask the handle for a new view afterward.
 ## Derived Objects And Fields
 
 A generated wrapper for a derived-type object can own a native instance. The
-wrapper releases that instance automatically when it is finalized.
+wrapper releases that instance exactly once when it is finalized. Normal
+Fortran deallocation and component finalization then apply, including an
+applicable user-defined `FINAL` procedure.
 
 Derived module variables remain live objects.
 The Fortran module owns their storage. Python only accesses it.
+
+Borrowed module objects and borrowed fields never destroy the native storage
+they reference. They retain their Python owner when one exists, but native
+reallocation or deallocation can still invalidate the borrowed storage.
 
 A field returned from that object may refer to storage inside its parent. The
 generated field object keeps its parent alive, but it cannot stop native code
